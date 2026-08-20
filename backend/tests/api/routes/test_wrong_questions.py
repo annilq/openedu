@@ -80,7 +80,7 @@ def test_correct_answer_not_collected(client):
 
 
 def test_wrong_answer_collected_with_full_fields(client):
-    """答错归集：家长与娃娃都能查到，条目含题干/答案/解析等完整字段。"""
+    """答错归集：家长/娃娃都能查到；娃娃端不含答案（防作弊），家长端含答案供核查。"""
     ptoken, child, task, ctoken = _setup(client, "wq2_parent", "wq2_kid")
     q = task["questions"][0]
     result = _answer(client, ctoken, task["id"], q["id"], "__wrong__")
@@ -94,7 +94,7 @@ def test_wrong_answer_collected_with_full_fields(client):
     assert item["question_id"] == q["id"]
     assert item["subject"] == "数学" and item["grade"] == 2
     assert item["stem"] == q["stem"]
-    assert item["answer"] == q["answer"]  # 错题本含答案，供复习
+    assert item["answer"] is None  # 娃娃端防作弊
     assert item["explanation"]
     assert item["wrong_count"] == 1
     assert item["first_wrong_at"] is not None
@@ -106,6 +106,7 @@ def test_wrong_answer_collected_with_full_fields(client):
     assert by_parent.status_code == 200
     assert len(by_parent.json()) == 1
     assert by_parent.json()[0]["question_id"] == q["id"]
+    assert by_parent.json()[0]["answer"] == q["answer"]  # 家长端含答案
 
 
 def test_repeat_wrong_not_duplicated(client):

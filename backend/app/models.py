@@ -1,5 +1,5 @@
 import uuid
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy import JSON, DateTime, UniqueConstraint
 from sqlmodel import Field, SQLModel
@@ -7,6 +7,11 @@ from sqlmodel import Field, SQLModel
 
 def get_datetime_utc() -> datetime:
     return datetime.now(UTC)
+
+
+def get_review_due_utc() -> datetime:
+    """错题首次归集时：1 天后到期复习（遗忘曲线首档间隔）。"""
+    return datetime.now(UTC) + timedelta(days=1)
 
 
 # ───────────────────────── 用户 / 账号 ─────────────────────────
@@ -90,6 +95,7 @@ class AnswerRecord(SQLModel, table=True):
     student_answer: str
     correct: bool = False
     score: float = 0.0
+    source: str = Field(max_length=16, default="practice")  # practice|review
 
 
 class Checkin(SQLModel, table=True):
@@ -100,7 +106,13 @@ class Checkin(SQLModel, table=True):
 
 
 class WrongQuestion(SQLModel, table=True):
-    """错题集：按 child + question 唯一，重复答错只累加次数，不建多条（故事 13）。"""
+    """错题集：按 child + question 唯一，重复答错只累加次数，不建多条（故事 13）。
+
+    遗忘曲线调度字段（故事 14/17）：
+    - review_stage：当前阶段 0..4，对应间隔 1/2/4/7/15 天
+    - last_wrong_at：最近一次答错时间，作为计时器起点（重复答错重置）
+    - due_at：下次复习到期时间
+    """
 
     __table_args__ = (UniqueConstraint("child_id", "question_id"),)
 
@@ -112,6 +124,15 @@ class WrongQuestion(SQLModel, table=True):
         sa_type=DateTime(timezone=True),  # type: ignore
     )
     wrong_count: int = Field(default=1)
+    review_stage: int = Field(default=0)
+    last_wrong_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    due_at: datetime | None = Field(
+        default_factory=get_review_due_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
 
 
 # ───────────────────────── API 响应模型 ─────────────────────────
@@ -179,6 +200,31 @@ class WrongQuestionResp(SQLModel):
     explanation: str = ""
     wrong_count: int
     first_wrong_at: datetime | None = None
+    review_stage: int = 0
+    due_at: datetime | None = None
+
+
+class ReviewAnswerSubmit(SQLModel):
+    wrong_question_id: uuid.UUID
+    student_answer: str
+
+
+class ReviewItemResp(SQLModel):
+    """到期复习项（娃娃端）：含题干、不含答案，附调度进度。"""
+
+    wrong_question_id: uuid.UUID
+    question_id: uuid.UUID
+    subject: str
+    grade: int
+    knowledge_point: str
+    qtype: str
+    stem: str
+    options: list[str] | None = None
+    explanation: str = ""
+    wrong_count: int
+    review_stage: int
+    next_interval_days: int
+    due_at: datetime | None = None
 
 
 # ───────────────────────── 通用 ─────────────────────────

@@ -1,9 +1,14 @@
 import uuid
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from sqlmodel import Session, func, select
 
 from app.core.security import get_password_hash, verify_password
+from app.domain.review_scheduler import (
+    advance_stage,
+    due_after_correct,
+    due_after_wrong,
+)
 from app.models import (
     AnswerRecord,
     Checkin,
@@ -112,6 +117,7 @@ def create_answer_record(
     student_answer: str,
     correct: bool,
     score: float,
+    source: str = "practice",
 ) -> AnswerRecord:
     rec = AnswerRecord(
         question_id=question_id,
@@ -119,6 +125,7 @@ def create_answer_record(
         student_answer=student_answer,
         correct=correct,
         score=score,
+        source=source,
     )
     session.add(rec)
     session.commit()
@@ -187,14 +194,19 @@ def get_progress(*, session: Session, child_id: uuid.UUID) -> tuple[int, int, in
     return total, correct, checkin_days, streak
 
 
-# ───────── 错题集 ─────────
+# ───────── 错题集 / 遗忘曲线复习 ─────────
 def upsert_wrong_question(
     *,
     session: Session,
     question_id: uuid.UUID,
     child_id: uuid.UUID,
 ) -> WrongQuestion:
-    """答错时归集错题：已存在则次数 +1，不建多条（故事 13）。"""
+    """答错归集错题（故事 13）：已存在则次数 +1 不建多条。
+
+    每次答错都重置遗忘曲线计时器（故事 17）：review_stage=0、last_wrong_at=now、
+    due_at=now+1d，保证「重复错 = 从头再来」。
+    """
+    now = datetime.now(UTC)
     existing = session.exec(
         select(WrongQuestion).where(
             WrongQuestion.child_id == child_id,
@@ -203,11 +215,21 @@ def upsert_wrong_question(
     ).first()
     if existing:
         existing.wrong_count += 1
+        existing.review_stage = 0
+        existing.last_wrong_at = now
+        existing.due_at = due_after_wrong(now)
         session.add(existing)
         session.commit()
         session.refresh(existing)
         return existing
-    wq = WrongQuestion(child_id=child_id, question_id=question_id)
+    wq = WrongQuestion(
+        child_id=child_id,
+        question_id=question_id,
+        wrong_count=1,
+        review_stage=0,
+        last_wrong_at=now,
+        due_at=due_after_wrong(now),
+    )
     session.add(wq)
     session.commit()
     session.refresh(wq)
@@ -225,3 +247,54 @@ def list_wrong_questions(
         .order_by(WrongQuestion.first_wrong_at.desc())
     ).all()
     return list(rows)
+
+
+def list_due_wrong_questions(
+    *, session: Session, child_id: uuid.UUID
+) -> list[tuple[WrongQuestion, Question]]:
+    """到期错题（due_at <= now）：遗忘曲线到点后纳入待复习队列（故事 14）。"""
+    rows = session.exec(
+        select(WrongQuestion, Question)
+        .join(Question, Question.id == WrongQuestion.question_id)
+        .where(
+            WrongQuestion.child_id == child_id,
+            WrongQuestion.due_at <= datetime.now(UTC),
+        )
+        .order_by(WrongQuestion.due_at.asc())
+    ).all()
+    return list(rows)
+
+
+def mark_review_result(
+    *,
+    session: Session,
+    wrong_question_id: uuid.UUID,
+    correct: bool,
+) -> WrongQuestion | None:
+    """更新复习作答后的调度状态。
+
+    - 答对：推进阶段（1→2→4→7→15 天）；末位阶段答对视为掌握，从错题集移除（返回 None）。
+    - 答错：重置为首档 1 天（故事 17），wrong_count +1。
+    """
+    wq = session.get(WrongQuestion, wrong_question_id)
+    if wq is None:
+        # 并发下末位答对已毕业删除，或 id 无效：调用方按「不存在」处理（路由转 404）
+        return None
+    now = datetime.now(UTC)
+    if correct:
+        new_stage = advance_stage(wq.review_stage)
+        if new_stage is None:
+            session.delete(wq)
+            session.commit()
+            return None
+        wq.review_stage = new_stage
+        wq.due_at = due_after_correct(now, new_stage)
+    else:
+        wq.review_stage = 0
+        wq.last_wrong_at = now
+        wq.due_at = due_after_wrong(now)
+        wq.wrong_count += 1
+    session.add(wq)
+    session.commit()
+    session.refresh(wq)
+    return wq

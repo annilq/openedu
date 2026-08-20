@@ -61,7 +61,9 @@ def _task_to_resp(task: Task, questions: list[Question], *, include_answer: bool
     )
 
 
-def _wrong_to_resp(wq: WrongQuestion, q: Question) -> WrongQuestionResp:
+def _wrong_to_resp(
+    wq: WrongQuestion, q: Question, *, include_answer: bool
+) -> WrongQuestionResp:
     return WrongQuestionResp(
         id=wq.id,
         question_id=q.id,
@@ -71,10 +73,12 @@ def _wrong_to_resp(wq: WrongQuestion, q: Question) -> WrongQuestionResp:
         qtype=q.qtype,
         stem=q.stem,
         options=q.options,
-        answer=q.answer,
+        answer=q.answer if include_answer else None,
         explanation=q.explanation or "",
         wrong_count=wq.wrong_count,
         first_wrong_at=wq.first_wrong_at,
+        review_stage=wq.review_stage,
+        due_at=wq.due_at,
     )
 
 
@@ -142,21 +146,21 @@ def today(*, session: SessionDep, child: CurrentChild) -> list[TaskResp]:
 def my_wrong_questions(
     *, session: SessionDep, child: CurrentChild
 ) -> list[WrongQuestionResp]:
-    """娃娃自查错题本（含答案与解析，供复习）。"""
+    """娃娃自查错题本：不含答案/解析细节外的泄题字段，防作弊（复习走 /review/*）。"""
     rows = list_wrong_questions(session=session, child_id=child.id)
-    return [_wrong_to_resp(wq, q) for wq, q in rows]
+    return [_wrong_to_resp(wq, q, include_answer=False) for wq, q in rows]
 
 
 @router.get("/children/{child_id}/wrong-questions", response_model=list[WrongQuestionResp])
 def child_wrong_questions(
     *, session: SessionDep, parent: CurrentParent, child_id: UUID
 ) -> list[WrongQuestionResp]:
-    """家长查某娃娃错题本。"""
+    """家长查某娃娃错题本（含答案/解析，供核查）。"""
     child = session.get(User, child_id)
     if child is None or child.parent_id != parent.id:
         raise HTTPException(status_code=403, detail="Not your child")
     rows = list_wrong_questions(session=session, child_id=child_id)
-    return [_wrong_to_resp(wq, q) for wq, q in rows]
+    return [_wrong_to_resp(wq, q, include_answer=True) for wq, q in rows]
 
 
 @router.post("/{task_id}/answer", response_model=AnswerResult)
