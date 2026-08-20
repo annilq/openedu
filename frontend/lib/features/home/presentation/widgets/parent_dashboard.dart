@@ -7,6 +7,7 @@ import '../../../../shared/widgets/app_loading.dart';
 import '../../../children/domain/providers/children_provider.dart';
 import '../../../children/presentation/providers/children_notifier.dart';
 import '../../../review/presentation/providers/review_notifier.dart';
+import '../../../tutor/presentation/providers/tutor_notifier.dart';
 import '../providers/home_notifier.dart';
 
 /// 家长端首页：娃娃列表 + 生成任务表单 + 进度看板
@@ -69,6 +70,7 @@ class _ParentDashboardState extends ConsumerState<ParentDashboard> {
     ref.read(progressNotifierProvider.notifier).load(id);
     ref.read(masteryNotifierProvider.notifier).load(id);
     ref.read(parentWrongQuestionsProvider.notifier).load(childId: id);
+    ref.read(tutorLogsNotifierProvider.notifier).load(childId: id);
   }
 
   @override
@@ -132,6 +134,11 @@ class _ParentDashboardState extends ConsumerState<ParentDashboard> {
 
           // —— 错题本 ——
           if (_selectedChildId.isNotEmpty) _buildParentWrongSection(),
+
+          const SizedBox(height: 32),
+
+          // —— AI 答疑日志（家长可查，F-305）——
+          if (_selectedChildId.isNotEmpty) _buildTutorLogsSection(),
         ],
       ),
     );
@@ -350,6 +357,41 @@ class _ParentDashboardState extends ConsumerState<ParentDashboard> {
       ],
     );
   }
+
+  // —— AI 答疑日志（家长可查，F-305）——
+  Widget _buildTutorLogsSection() {
+    final state = ref.watch(tutorLogsNotifierProvider);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('AI 答疑记录', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        switch (state) {
+          TutorLogsInitial() || TutorLogsLoading() =>
+            const AppLoading(message: '加载答疑记录...'),
+          TutorLogsError() => AppError(message: state.message),
+          TutorLogsLoaded() => state.logs.isEmpty
+              ? const Card(
+                  child: Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text('这个娃娃还没有问过 AI 老师'),
+                  ),
+                )
+              : Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: state.logs
+                          .map((log) => _TutorLogCard(log: log))
+                          .toList(),
+                    ),
+                  ),
+                ),
+        },
+      ],
+    );
+  }
 }
 
 class _MasteryBar extends StatelessWidget {
@@ -445,6 +487,41 @@ class _ParentWrongCard extends StatelessWidget {
               child: Text('解析：${item.explanation}',
                   style: Theme.of(context).textTheme.bodySmall),
             ),
+          const Divider(height: 24),
+        ],
+      ),
+    );
+  }
+}
+
+class _TutorLogCard extends StatelessWidget {
+  final TutorLogModel log;
+  const _TutorLogCard({required this.log});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text('问：${log.question}',
+                    style: Theme.of(context).textTheme.bodyLarge),
+              ),
+              Chip(
+                label: Text(log.blocked ? '已拦截' : '正常'),
+                labelStyle: const TextStyle(color: Colors.white, fontSize: 12),
+                backgroundColor: log.blocked ? Colors.orange : Colors.green,
+                visualDensity: VisualDensity.compact,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text('答：${log.answer}', style: Theme.of(context).textTheme.bodyMedium),
           const Divider(height: 24),
         ],
       ),

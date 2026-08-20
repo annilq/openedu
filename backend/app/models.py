@@ -255,6 +255,55 @@ class MasteryResp(SQLModel):
     items: list[KnowledgeMasteryResp] = []
 
 
+# ───────────────────────── AI 伴学答疑（三期 F-302~305） ─────────────────────────
+class TutorLog(SQLModel, table=True):
+    """AI 伴学答疑交互日志（F-305，家长可查）。"""
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    child_id: uuid.UUID = Field(foreign_key="user.id", index=True)
+    grade: int
+    subject: str = Field(max_length=32)
+    knowledge_point: str = Field(default="", max_length=128)
+    question: str
+    answer: str
+    input_safe: bool = True
+    output_safe: bool = True
+    blocked: bool = False  # 因安全原因返回兜底（未调用/未采用模型输出）
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
+class TutorAskReq(SQLModel):
+    subject: str = Field(max_length=32)
+    grade: int
+    knowledge_point: str = Field(default="", max_length=128)
+    context: str | None = None
+    question: str = Field(min_length=1, max_length=2000)
+
+
+class TutorAnswer(SQLModel):
+    answer: str
+    blocked: bool = False
+    reason: str | None = None
+
+
+class TutorLogResp(SQLModel):
+    """单条 AI 答疑日志（家长端查看，F-305）。"""
+
+    id: uuid.UUID
+    grade: int
+    subject: str
+    knowledge_point: str
+    question: str
+    answer: str
+    input_safe: bool
+    output_safe: bool
+    blocked: bool
+    created_at: datetime | None = None
+
+
 # ───────────────────────── 通用 ─────────────────────────
 class Token(SQLModel):
     access_token: str

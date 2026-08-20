@@ -6,6 +6,7 @@ from app.domain.langchain_provider import LangChainProvider
 from app.domain.mock_provider import MockProvider
 from app.domain.provider import GeneratedQuestion, LLMProvider
 from app.domain.question_generator import QuestionGenerator
+from app.domain.tutor import TutorService
 
 __all__ = [
     "LLMProvider",
@@ -14,6 +15,7 @@ __all__ = [
     "LangChainProvider",
     "QuestionGenerator",
     "Grader",
+    "TutorService",
     "build_provider",
 ]
 

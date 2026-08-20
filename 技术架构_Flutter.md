@@ -88,7 +88,7 @@ lib/
 │   ├── children/                   # 家长：娃娃账号管理、每日时长/内容范围设置
 │   ├── profile/                    # 设置、连续打卡、徽章
 │   ├── review/           (二期)    # 错题本 + 遗忘曲线复习（T07 已落地）
-│   └── ai_tutor/         (三期)    # AI 伴学答疑（套用安全层）
+│   └── tutor/            (三期)    # AI 伴学答疑（T08 已落地，套用后端安全层）
 └── main.dart                       # 指向 main_dev / main_staging
 ```
 
@@ -208,8 +208,8 @@ final practiceNotifierProvider =
 | children | `childrenNotifier`（增/列娃娃、设设置） | `children_screen` | 家长专属 |
 | profile | `profileNotifier`（连续天数、徽章、设置） | `profile_screen` | 轻量激励展示 |
 | review (二期，T07 已落地) | `dueReviewNotifier`（待复习队列）/ `childWrongQuestionsProvider`（娃娃自查）/ `parentWrongQuestionsProvider`（家长含答案） | `review_screen` / `wrong_questions_screen` | 遗忘曲线复习作答 + 错题本；娃娃端答题不含答案（防作弊） |
-| home (二期，T07 扩展) | `masteryNotifier`（家长掌握度看板）/ `progressNotifier` | `parent_dashboard` 掌握度进度条 + 错题列表区块 | 家长查看孩子知识点掌握度 |
-| ai_tutor (三期) | `tutorNotifier`（套 safety 层） | `tutor_chat_screen` | AI 答疑，受内容安全约束 |
+| home (二期，T07 扩展) | `masteryNotifier`（家长掌握度看板）/ `progressNotifier` | `parent_dashboard` 掌握度进度条 + 错题列表区块 + AI 答疑日志区块 | 家长查看孩子知识点掌握度与答疑记录 |
+| tutor (三期，T08 已落地) | `tutorNotifier`（对话：POST /tutor/ask）/ `tutorLogsNotifier`（家长日志：GET /tutor/logs） | `tutor_chat_screen`（娃娃答疑页，防重入 + 错误保留历史） | AI 伴学答疑，后端内容安全层约束（F-302/F-304/F-305） |
 
 ---
 
@@ -224,7 +224,7 @@ final practiceNotifierProvider =
 ## 13. ★ 二三期扩展点
 
 - **二期 错题本/复习（已落地，`features/review/`）**：娃娃首页复习卡片显示今日待复习数（`/review/due`），进入逐题作答（`/review/answer`，答对推进阶段/毕业、答错重置计时，前端仅交互不做调度）；错题本娃娃端走 `/tasks/wrong-questions`（answer=None 防作弊），家长端走 `/tasks/children/{id}/wrong-questions`（含答案）；家长看板新增掌握度区块（`/tasks/children/{id}/mastery`，进度条 + 等级）。
-- **三期 AI 答疑**：新增 `features/ai_tutor/`，调用后端 `/tutor/*`；**所有 AI 回复在渲染前须经 `safety` 层校验**（异常转家长提示），聊天记录可存本地供家长查阅。
+- **三期 AI 答疑（已落地，`features/tutor/`，T08）**：娃娃首页「问 AI 老师」入口进入 `tutor_chat_screen`，调用 `POST /tutor/ask`；内容安全由**后端 `domain/safety.py` 三层防护**统一保证（输入/输出校验 + 年龄锁系统提示），前端无需重复校验、也不渲染拒答原因；家长端 `parent_dashboard` 新增 AI 答疑日志区块（`GET /tutor/logs`，越权 403）。聊天记录由后端 `tutor_log` 落库供家长监督（F-305）。
 - **知识库（三期后端）**：前端无需改动，仅后端 `/knowledge/*` 提供知识点检索，出题接口透传。
 
 ---

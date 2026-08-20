@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
     DEEPSEEK_MODEL: str = "deepseek-chat"
 
+    # —— 三期 AI 伴学答疑（F-304 每日上限）——
+    # MVP 以「每日消息条数」计上限；时长上限（如累计分钟）为后续增强项。
+    TUTOR_DAILY_LIMIT: int = 50
+
     def _check_default_secret(self, var_name: str, value: str | None) -> None:
         if value in (None, "", "changeme"):
             message = (

@@ -53,3 +53,13 @@ class MockProvider(LLMProvider):
             "score": 1.0 if correct else 0.0,
             "explanation": question.explanation or "已收到作答。",
         }
+
+    async def tutor(
+        self, *, grade, subject, knowledge_point, context, question
+    ) -> str:
+        return (
+            f"【{subject} · {grade}年级】关于“{knowledge_point}”：\n"
+            f"你问的“{question}”，我们可以这样想——先回顾{knowledge_point}的定义，"
+            f"再一步步分析。举例来说，{knowledge_point}常出现在{subject}的基础练习里，"
+            f"多练几道就会啦！如果有具体题目，可以把题目发给我哦～"
+        )

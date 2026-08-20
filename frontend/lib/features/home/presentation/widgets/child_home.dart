@@ -13,6 +13,7 @@ class ChildHome extends ConsumerWidget {
   final void Function(TaskModel task) onNavigateToPractice;
   final VoidCallback onNavigateToReview;
   final VoidCallback onNavigateToWrongQuestions;
+  final VoidCallback onNavigateToTutor;
 
   const ChildHome({
     super.key,
@@ -20,6 +21,7 @@ class ChildHome extends ConsumerWidget {
     required this.onNavigateToPractice,
     required this.onNavigateToReview,
     required this.onNavigateToWrongQuestions,
+    required this.onNavigateToTutor,
   });
 
   @override
@@ -41,6 +43,7 @@ class ChildHome extends ConsumerWidget {
             onReview: onNavigateToReview,
             onWrong: onNavigateToWrongQuestions,
           ),
+          _TutorBanner(onTutor: onNavigateToTutor),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             child: Text('今日任务', style: Theme.of(context).textTheme.titleMedium),
@@ -129,6 +132,47 @@ class _ReviewBanner extends StatelessWidget {
             FilledButton(
               onPressed: onReview,
               child: const Text('去复习'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TutorBanner extends StatelessWidget {
+  final VoidCallback onTutor;
+  const _TutorBanner({required this.onTutor});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      color: theme.colorScheme.secondaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Icon(Icons.smart_toy, size: 40, color: theme.colorScheme.secondary),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('问 AI 老师',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                          color: theme.colorScheme.onSecondaryContainer)),
+                  const SizedBox(height: 4),
+                  Text('遇到不懂的题，随时来问～',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSecondaryContainer)),
+                ],
+              ),
+            ),
+            FilledButton(
+              onPressed: onTutor,
+              child: const Text('去提问'),
             ),
           ],
         ),

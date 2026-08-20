@@ -358,3 +358,85 @@ class MasteryModel {
     );
   }
 }
+
+// ───────── AI 伴学答疑（三期 F-302~305） ─────────
+class TutorAskReq {
+  final String subject;
+  final int grade;
+  final String knowledgePoint;
+  final String? context;
+  final String question;
+
+  TutorAskReq({
+    required this.subject,
+    required this.grade,
+    required this.knowledgePoint,
+    this.context,
+    required this.question,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'subject': subject,
+        'grade': grade,
+        'knowledge_point': knowledgePoint,
+        'context': context,
+        'question': question,
+      };
+}
+
+class TutorAnswer {
+  final String answer;
+  final bool blocked;
+  final String? reason;
+
+  TutorAnswer({required this.answer, required this.blocked, this.reason});
+
+  factory TutorAnswer.fromJson(Map<String, dynamic> json) {
+    return TutorAnswer(
+      answer: json['answer'] as String,
+      blocked: json['blocked'] as bool? ?? false,
+      reason: json['reason'] as String?,
+    );
+  }
+}
+
+class TutorLogModel {
+  final String id;
+  final int grade;
+  final String subject;
+  final String knowledgePoint;
+  final String question;
+  final String answer;
+  final bool inputSafe;
+  final bool outputSafe;
+  final bool blocked;
+  final String? createdAt;
+
+  TutorLogModel({
+    required this.id,
+    required this.grade,
+    required this.subject,
+    required this.knowledgePoint,
+    required this.question,
+    required this.answer,
+    required this.inputSafe,
+    required this.outputSafe,
+    required this.blocked,
+    this.createdAt,
+  });
+
+  factory TutorLogModel.fromJson(Map<String, dynamic> json) {
+    return TutorLogModel(
+      id: json['id'] as String,
+      grade: json['grade'] as int,
+      subject: json['subject'] as String,
+      knowledgePoint: json['knowledge_point'] as String? ?? '',
+      question: json['question'] as String,
+      answer: json['answer'] as String,
+      inputSafe: json['input_safe'] as bool? ?? true,
+      outputSafe: json['output_safe'] as bool? ?? true,
+      blocked: json['blocked'] as bool? ?? false,
+      createdAt: json['created_at'] as String?,
+    );
+  }
+}

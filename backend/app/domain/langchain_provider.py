@@ -94,6 +94,39 @@ class LangChainProvider(LLMProvider):
             "explanation": data.get("explanation", ""),
         }
 
+    async def tutor(
+        self, *, grade, subject, knowledge_point, context, question
+    ) -> str:
+        from app.domain.safety import tutor_system_prompt
+
+        model = self._build_model()
+        ctx = f"\n相关上下文：{context}" if context else ""
+        prompt = (
+            f"学生问：{question}\n"
+            f"所属知识点：{knowledge_point}{ctx}\n"
+            "请用简洁、鼓励的语气，结合知识点给出适合该年级学生的分步讲解，"
+            "必要时举例。只讲解学习相关内容，不要回答与学习无关的话题。"
+        )
+        resp = await model.ainvoke(
+            [
+                {"role": "system", "content": tutor_system_prompt(grade, subject)},
+                {"role": "user", "content": prompt},
+            ]
+        )
+        return self._as_text(resp.content)
+
+    @staticmethod
+    def _as_text(content) -> str:
+        if isinstance(content, str):
+            return content
+        # langchain 返回的是 list[dict] 或 AIMessage，统一取文本
+        if isinstance(content, list):
+            return "".join(
+                part.get("text", "") if isinstance(part, dict) else str(part)
+                for part in content
+            )
+        return str(getattr(content, "content", content))
+
     @staticmethod
     def _parse_json(content) -> dict:
         text = content if isinstance(content, str) else getattr(content, "content", str(content))

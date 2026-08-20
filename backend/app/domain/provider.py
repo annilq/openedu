@@ -27,3 +27,13 @@ class LLMProvider(ABC):
     async def grade_open(self, *, question, student_answer) -> dict:
         """开放题批改，返回 {"correct": bool, "score": float, "explanation": str}"""
         ...
+
+    @abstractmethod
+    async def tutor(
+        self, *, grade, subject, knowledge_point, context, question
+    ) -> str:
+        """AI 伴学答疑（F-302）：针对娃娃的提问返回适龄、纯学习相关的讲解文本。
+
+        实现应自行注入「仅适合对应年级、纯学习相关」的系统约束（见 domain/safety）。
+        """
+        ...

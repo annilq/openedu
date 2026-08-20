@@ -16,6 +16,7 @@ from app.models import (
     Checkin,
     Question,
     Task,
+    TutorLog,
     User,
     UserCreate,
     WrongQuestion,
@@ -99,7 +100,7 @@ def get_questions(*, session: Session, task_id: uuid.UUID) -> list[Question]:
 
 
 def get_child_tasks_today(*, session: Session, child_id: uuid.UUID) -> list[Task]:
-    today = date.today()
+    today = datetime.now(UTC).date()
     return list(
         session.exec(
             select(Task).where(
@@ -361,3 +362,57 @@ def get_knowledge_point_mastery(
             agg.max_review_stage = max(agg.max_review_stage, wq.review_stage)
 
     return list(groups.values())
+
+
+# ───────── AI 伴学答疑日志（F-305） ─────────
+def create_tutor_log(
+    *,
+    session: Session,
+    child_id: uuid.UUID,
+    grade: int,
+    subject: str,
+    knowledge_point: str,
+    question: str,
+    answer: str,
+    input_safe: bool,
+    output_safe: bool,
+    blocked: bool,
+) -> TutorLog:
+    log = TutorLog(
+        child_id=child_id,
+        grade=grade,
+        subject=subject,
+        knowledge_point=knowledge_point,
+        question=question,
+        answer=answer,
+        input_safe=input_safe,
+        output_safe=output_safe,
+        blocked=blocked,
+    )
+    session.add(log)
+    session.commit()
+    session.refresh(log)
+    return log
+
+
+def count_tutor_today(*, session: Session, child_id: uuid.UUID) -> int:
+    """当日已使用的 AI 答疑次数（F-304 每日上限判定）。"""
+    today = datetime.now(UTC).date()
+    return session.exec(
+        select(func.count(TutorLog.id)).where(
+            TutorLog.child_id == child_id,
+            func.date(TutorLog.created_at) == today.isoformat(),
+        )
+    ).one()
+
+
+def list_tutor_logs(
+    *, session: Session, child_id: uuid.UUID, limit: int = 200
+) -> list[TutorLog]:
+    """按时间倒序返回某娃娃的 AI 答疑日志（家长端查看）。"""
+    return session.exec(
+        select(TutorLog)
+        .where(TutorLog.child_id == child_id)
+        .order_by(TutorLog.created_at.desc())
+        .limit(limit)
+    ).all()
