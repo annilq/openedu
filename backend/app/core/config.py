@@ -1,0 +1,65 @@
+import warnings
+from typing import Literal, Self
+
+from pydantic import field_validator, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    # 本地开发从仓库根目录的 .env 读取；容器内通过环境变量注入
+    model_config = SettingsConfigDict(
+        env_file=("../.env", ".env"),
+        env_ignore_empty=True,
+        extra="ignore",
+    )
+
+    API_V1_STR: str = "/api/v1"
+    PROJECT_NAME: str = "娃娃学习App"
+    SECRET_KEY: str = "changeme"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8
+    FASTAPI_ENV: Literal["development", "production"] | None = "development"
+    # 家教自用，CORS 默认放开；部署到公网时收紧为平板 App 的来源
+    CORS_ORIGINS: list[str] = ["*"]
+
+    # SQLite 本地零依赖；生产改为 postgresql+psycopg://
+    DATABASE_URL: str = "sqlite:///./app.db"
+
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def _normalize_db_url(cls, value: str) -> str:
+        database_url = str(value)
+        for scheme in ("postgres://", "postgresql://"):
+            if database_url.startswith(scheme):
+                return database_url.replace(scheme, "postgresql+psycopg://", 1)
+        return database_url
+
+    # —— LLM / 出题引擎（可插拔，对应 ADR-003）——
+    LLM_PROVIDER: str = "mock"  # mock | langchain | deepseek
+    LLM_API_KEY: str = ""
+    LLM_BASE_URL: str = ""  # 国产模型 OpenAI 兼容端点（混元/通义等）
+    LLM_MODEL: str = ""
+    LLM_TEMPERATURE: float = 0.3
+
+    # DeepSeek 快捷配置：LLM_PROVIDER=deepseek 时读取，无需填 LLM_*
+    DEEPSEEK_API_KEY: str = ""
+    DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
+    DEEPSEEK_MODEL: str = "deepseek-chat"
+
+    def _check_default_secret(self, var_name: str, value: str | None) -> None:
+        if value in (None, "", "changeme"):
+            message = (
+                f'The value of {var_name} is default/empty, '
+                "please change it for deployments."
+            )
+            if self.FASTAPI_ENV == "development":
+                warnings.warn(message, stacklevel=1)
+            else:
+                raise ValueError(message)
+
+    @model_validator(mode="after")
+    def _enforce_non_default_secrets(self) -> Self:
+        self._check_default_secret("SECRET_KEY", self.SECRET_KEY)
+        return self
+
+
+settings = Settings()  # type: ignore
