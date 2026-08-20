@@ -26,7 +26,9 @@ class FakeNetwork implements NetworkService {
   }
 
   @override
-  Future<dynamic> put(String path, {Map<String, dynamic>? body}) async => null;
+  Future<dynamic> put(String path,
+      {Map<String, dynamic>? query, Map<String, dynamic>? body}) async =>
+      null;
 
   @override
   Future<dynamic> delete(String path) async => null;

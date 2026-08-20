@@ -8,6 +8,7 @@ import '../../../children/domain/providers/children_provider.dart';
 import '../../../children/presentation/providers/children_notifier.dart';
 import '../../../review/presentation/providers/review_notifier.dart';
 import '../../../tutor/presentation/providers/tutor_notifier.dart';
+import '../../../tutor/presentation/screens/tutor_quota_screen.dart';
 import '../providers/home_notifier.dart';
 
 /// 家长端首页：娃娃列表 + 生成任务表单 + 进度看板
@@ -71,6 +72,8 @@ class _ParentDashboardState extends ConsumerState<ParentDashboard> {
     ref.read(masteryNotifierProvider.notifier).load(id);
     ref.read(parentWrongQuestionsProvider.notifier).load(childId: id);
     ref.read(tutorLogsNotifierProvider.notifier).load(childId: id);
+    ref.read(tutorQuotaNotifierProvider(id).notifier).load(childId: id);
+    ref.read(tutorUsageNotifierProvider(id).notifier).load(childId: id);
   }
 
   @override
@@ -139,6 +142,11 @@ class _ParentDashboardState extends ConsumerState<ParentDashboard> {
 
           // —— AI 答疑日志（家长可查，F-305）——
           if (_selectedChildId.isNotEmpty) _buildTutorLogsSection(),
+
+          const SizedBox(height: 32),
+
+          // —— AI 使用管控（T10，故事 23/26）——
+          if (_selectedChildId.isNotEmpty) _buildTutorQuotaSection(),
         ],
       ),
     );
@@ -359,8 +367,7 @@ class _ParentDashboardState extends ConsumerState<ParentDashboard> {
   }
 
   // —— AI 答疑日志（家长可查，F-305）——
-  Widget _buildTutorLogsSection() {
-    final state = ref.watch(tutorLogsNotifierProvider);
+  Widget _buildTutorLogsSection() {    final state = ref.watch(tutorLogsNotifierProvider);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -391,6 +398,99 @@ class _ParentDashboardState extends ConsumerState<ParentDashboard> {
         },
       ],
     );
+  }
+
+  // —— AI 使用管控（T10，故事 23/26）——
+  Widget _buildTutorQuotaSection() {
+    final quotaState = ref.watch(tutorQuotaNotifierProvider(_selectedChildId));
+    final usageState = ref.watch(tutorUsageNotifierProvider(_selectedChildId));
+
+    // 取当前选中娃娃的昵称做设置页标题
+    final childrenState = ref.read(childrenNotifierProvider);
+    String childName = '';
+    if (childrenState is ChildrenLoaded) {
+      for (final c in childrenState.children) {
+        if (c.id == _selectedChildId) childName = c.displayName;
+      }
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child:
+                  Text('AI 使用管控', style: Theme.of(context).textTheme.titleMedium),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => TutorQuotaScreen(
+                    childId: _selectedChildId,
+                    childName: childName,
+                  ),
+                ),
+              ),
+              child: const Text('设置'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  switch (quotaState) {
+                    TutorQuotaLoaded() => _quotaSummary(quotaState.quota),
+                    TutorQuotaError() => '加载失败：${quotaState.message}',
+                    _ => '加载中…',
+                  },
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  switch (usageState) {
+                    TutorUsageLoaded() => _usageSummary(usageState.usage),
+                    TutorUsageError() => '用量加载失败',
+                    _ => '今日用量加载中…',
+                  },
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _quotaSummary(TutorQuotaModel quota) {
+    final parts = <String>[];
+    parts.add(quota.dailyAskLimit != null
+        ? '每日提问上限 ${quota.dailyAskLimit} 次'
+        : '每日提问按全局默认上限');
+    parts.add(quota.dailyMinutesLimit != null
+        ? '时长上限 ${quota.dailyMinutesLimit} 分钟'
+        : '时长不限');
+    parts.add(quota.allowedSubjects != null && quota.allowedSubjects!.isNotEmpty
+        ? '仅允许 ${quota.allowedSubjects!.join('、')}'
+        : '学科不限');
+    return parts.join(' · ');
+  }
+
+  String _usageSummary(TutorUsageModel usage) {
+    final minutes = (usage.usedSeconds / 60).toStringAsFixed(1);
+    final asks = usage.askLimit != null
+        ? '${usage.asksToday}/${usage.askLimit} 次'
+        : '${usage.asksToday} 次';
+    final time = usage.minutesLimit != null
+        ? '$minutes/${usage.minutesLimit} 分钟'
+        : '$minutes 分钟';
+    return '今日已用：提问 $asks · 时长 $time';
   }
 }
 

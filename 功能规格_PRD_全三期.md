@@ -191,6 +191,7 @@
 | F-303 | 意图路由（出题/讲解/答疑分流） | system |
 | F-304 | 内容安全层（双层防护 + 日志） | system/parent |
 | F-305 | AI 交互日志可查 | parent |
+| F-306 | AI 使用管控（每日次数/时长上限 + 内容范围） | parent/system |
 
 ## 20. 三期 EARS
 
@@ -224,6 +225,7 @@
 - [x] AC-303：家长可查阅全部 AI 交互日志（T08：TutorLog + GET /tutor/logs）。
 - [x] AC-304：达每日上限后 AI 答疑被拒（T08：TUTOR_DAILY_LIMIT + count_tutor_today，429）。注：MVP 以「每日消息条数」计上限，时长上限为后续增强。
 - [ ] AC-305：知识库就绪后，答疑优先基于知识库检索结果。（**deferred**：教材版权为 🔴 硬门槛 ADR-012，知识库/RAG 前置条件未就绪，本期仅做自由问答，预留检索接入点。）
+- [x] AC-306：家长可按娃配置每日 AI 使用上限与内容范围，超额/越界请求被拒并提示（T10：tutor_quota 配置 + check_quota 前置强制——学科越界 403、次数/时长达限 429；时长按服务端累计答疑耗时计；PUT/GET /tutor/quota、GET /tutor/usage）。
 
 ---
 

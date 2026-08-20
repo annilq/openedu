@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kids_learn/features/tutor/presentation/providers/tutor_notifier.dart';
 import 'package:kids_learn/shared/data/remote/network_service.dart';
 import 'package:kids_learn/shared/domain/models/models.dart';
+import 'package:kids_learn/shared/exceptions/app_exception.dart';
 
 /// 内存版 NetworkService：按 path 返回预置响应，记录 POST body。
 class FakeNetwork implements NetworkService {
@@ -28,7 +29,9 @@ class FakeNetwork implements NetworkService {
   }
 
   @override
-  Future<dynamic> put(String path, {Map<String, dynamic>? body}) async => null;
+  Future<dynamic> put(String path,
+      {Map<String, dynamic>? query, Map<String, dynamic>? body}) async =>
+      null;
 
   @override
   Future<dynamic> delete(String path) async => null;
@@ -106,6 +109,20 @@ void main() {
       expect(network.postBodies.length, 1);
       expect(network.postBodies.single['question'], '第一问');
     });
+
+    test('服务端业务错误（429/403）透出提示文案', () async {
+      final notifier = TutorNotifier(_BusinessErrorNetwork());
+      await notifier.ask(TutorAskReq(
+        subject: '英语',
+        grade: 2,
+        knowledgePoint: '',
+        question: 'hi',
+      ));
+
+      final state = notifier.state as TutorLoaded;
+      expect(state.messages.last.text, contains('明日再来'));
+      expect(state.messages.last.text, isNot(contains('网络异常')));
+    });
   });
 
   group('TutorLogsNotifier', () {
@@ -145,6 +162,95 @@ void main() {
       expect(notifier.state, isA<TutorLogsError>());
     });
   });
+
+  group('TutorQuotaNotifier（T10 AI 使用管控）', () {
+    test('load 命中 /tutor/quota 并解析配置', () async {
+      final network = FakePutNetwork(getResponses: {
+        '/tutor/quota': {
+          'child_id': 'c1',
+          'daily_ask_limit': 10,
+          'daily_minutes_limit': 20,
+          'allowed_subjects': ['数学', '语文'],
+        },
+      });
+      final notifier = TutorQuotaNotifier(network);
+
+      await notifier.load(childId: 'c1');
+
+      expect(network.getPaths.single, '/tutor/quota');
+      final state = notifier.state as TutorQuotaLoaded;
+      expect(state.quota.dailyAskLimit, 10);
+      expect(state.quota.dailyMinutesLimit, 20);
+      expect(state.quota.allowedSubjects, ['数学', '语文']);
+    });
+
+    test('save 发送 PUT body（整体覆盖，null 字段显式传）', () async {
+      final network = FakePutNetwork(putResponse: {
+        'child_id': 'c1',
+        'daily_ask_limit': 5,
+        'daily_minutes_limit': null,
+        'allowed_subjects': ['数学'],
+      });
+      final notifier = TutorQuotaNotifier(network);
+
+      final error = await notifier.save(
+        childId: 'c1',
+        req: TutorQuotaUpdateReq(dailyAskLimit: 5, allowedSubjects: ['数学']),
+      );
+
+      expect(error, isNull);
+      final call = network.putCalls.single;
+      expect(call.$1, '/tutor/quota');
+      expect(call.$2?['child_id'], 'c1');
+      expect(call.$3?['daily_ask_limit'], 5);
+      expect(call.$3?['daily_minutes_limit'], isNull);
+      expect(call.$3?['allowed_subjects'], ['数学']);
+      // 保存成功进入 Loaded
+      expect(notifier.state, isA<TutorQuotaLoaded>());
+    });
+
+    test('save 业务校验失败返回错误文案不抛异常', () async {
+      final network = FakePutNetwork(
+        putResponse: null,
+        putError: HttpException('不支持的学科：物理', statusCode: 422),
+      );
+      final notifier = TutorQuotaNotifier(network);
+
+      final error = await notifier.save(
+        childId: 'c1',
+        req: TutorQuotaUpdateReq(allowedSubjects: ['物理']),
+      );
+
+      expect(error, contains('物理'));
+      expect(notifier.state, isA<TutorQuotaInitial>());
+    });
+  });
+
+  group('TutorUsageNotifier（T10 当日用量）', () {
+    test('load 命中 /tutor/usage 并解析用量与生效限额', () async {
+      final network = FakePutNetwork(getResponses: {
+        '/tutor/usage': {
+          'child_id': 'c1',
+          'date': '2026-08-20',
+          'asks_today': 3,
+          'used_seconds': 127,
+          'ask_limit': 9,
+          'minutes_limit': 30,
+          'allowed_subjects': ['数学'],
+        },
+      });
+      final notifier = TutorUsageNotifier(network);
+
+      await notifier.load(childId: 'c1');
+
+      expect(network.getPaths.single, '/tutor/usage');
+      final state = notifier.state as TutorUsageLoaded;
+      expect(state.usage.asksToday, 3);
+      expect(state.usage.usedSeconds, 127);
+      expect(state.usage.askLimit, 9);
+      expect(state.usage.minutesLimit, 30);
+    });
+  });
 }
 
 /// 让 post/get 抛错的假网络。
@@ -160,7 +266,62 @@ class _ThrowingNetwork implements NetworkService {
   }
 
   @override
-  Future<dynamic> put(String path, {Map<String, dynamic>? body}) async => null;
+  Future<dynamic> put(String path,
+      {Map<String, dynamic>? query, Map<String, dynamic>? body}) async =>
+      null;
+
+  @override
+  Future<dynamic> delete(String path) async => null;
+}
+
+/// post 抛业务异常（如 429 上限）的假网络：验证提示文案透出。
+class _BusinessErrorNetwork implements NetworkService {
+  @override
+  Future<dynamic> get(String path, {Map<String, dynamic>? query}) async => null;
+
+  @override
+  Future<dynamic> post(String path, {Map<String, dynamic>? body}) async {
+    throw HttpException('今日 AI 答疑次数已达上限（50 次），明日再来哦～',
+        statusCode: 429);
+  }
+
+  @override
+  Future<dynamic> put(String path,
+      {Map<String, dynamic>? query, Map<String, dynamic>? body}) async =>
+      null;
+
+  @override
+  Future<dynamic> delete(String path) async => null;
+}
+
+/// 支持 GET 预置响应 + PUT 记录/预置响应的假网络（quota/usage 用）。
+class FakePutNetwork implements NetworkService {
+  final Map<String, dynamic> getResponses;
+  final Map<String, dynamic>? putResponse;
+  final Object? putError;
+  final List<String> getPaths = [];
+  // (path, query, body)
+  final List<(String, Map<String, dynamic>?, Map<String, dynamic>?)> putCalls =
+      [];
+
+  FakePutNetwork({this.getResponses = const {}, this.putResponse, this.putError});
+
+  @override
+  Future<dynamic> get(String path, {Map<String, dynamic>? query}) async {
+    getPaths.add(path);
+    return getResponses[path];
+  }
+
+  @override
+  Future<dynamic> post(String path, {Map<String, dynamic>? body}) async => null;
+
+  @override
+  Future<dynamic> put(String path,
+      {Map<String, dynamic>? query, Map<String, dynamic>? body}) async {
+    putCalls.add((path, query, body));
+    if (putError != null) throw putError!;
+    return putResponse;
+  }
 
   @override
   Future<dynamic> delete(String path) async => null;

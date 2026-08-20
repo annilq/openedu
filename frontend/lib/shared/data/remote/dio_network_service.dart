@@ -73,9 +73,10 @@ class DioNetworkService implements NetworkService {
   }
 
   @override
-  Future<dynamic> put(String path, {Map<String, dynamic>? body}) async {
+  Future<dynamic> put(String path,
+      {Map<String, dynamic>? query, Map<String, dynamic>? body}) async {
     try {
-      final r = await _dio.put(path, data: body);
+      final r = await _dio.put(path, queryParameters: query, data: body);
       return r.data;
     } on DioException catch (e) {
       _handleError(e);

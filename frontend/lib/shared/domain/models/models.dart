@@ -440,3 +440,84 @@ class TutorLogModel {
     );
   }
 }
+
+// ───────── AI 使用管控（T10，故事 23/26） ─────────
+/// 家长按娃配置的 AI 管控；null 表示该项不启用（走全局默认/不限）。
+class TutorQuotaModel {
+  final String childId;
+  final int? dailyAskLimit;
+  final int? dailyMinutesLimit;
+  final List<String>? allowedSubjects;
+
+  TutorQuotaModel({
+    required this.childId,
+    this.dailyAskLimit,
+    this.dailyMinutesLimit,
+    this.allowedSubjects,
+  });
+
+  factory TutorQuotaModel.fromJson(Map<String, dynamic> json) {
+    return TutorQuotaModel(
+      childId: json['child_id'] as String,
+      dailyAskLimit: json['daily_ask_limit'] as int?,
+      dailyMinutesLimit: json['daily_minutes_limit'] as int?,
+      allowedSubjects: (json['allowed_subjects'] as List?)
+          ?.map((e) => e as String)
+          .toList(),
+    );
+  }
+}
+
+/// 设置请求体； toJson 时 null 字段也会显式传出（整体覆盖语义）。
+class TutorQuotaUpdateReq {
+  final int? dailyAskLimit;
+  final int? dailyMinutesLimit;
+  final List<String>? allowedSubjects;
+
+  TutorQuotaUpdateReq({
+    this.dailyAskLimit,
+    this.dailyMinutesLimit,
+    this.allowedSubjects,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'daily_ask_limit': dailyAskLimit,
+        'daily_minutes_limit': dailyMinutesLimit,
+        'allowed_subjects': allowedSubjects,
+      };
+}
+
+/// 当日用量 + 生效限额（家长端展示剩余）。
+class TutorUsageModel {
+  final String childId;
+  final String date;
+  final int asksToday;
+  final int usedSeconds;
+  final int? askLimit;
+  final int? minutesLimit;
+  final List<String>? allowedSubjects;
+
+  TutorUsageModel({
+    required this.childId,
+    required this.date,
+    required this.asksToday,
+    required this.usedSeconds,
+    this.askLimit,
+    this.minutesLimit,
+    this.allowedSubjects,
+  });
+
+  factory TutorUsageModel.fromJson(Map<String, dynamic> json) {
+    return TutorUsageModel(
+      childId: json['child_id'] as String,
+      date: json['date'] as String? ?? '',
+      asksToday: json['asks_today'] as int? ?? 0,
+      usedSeconds: json['used_seconds'] as int? ?? 0,
+      askLimit: json['ask_limit'] as int?,
+      minutesLimit: json['minutes_limit'] as int?,
+      allowedSubjects: (json['allowed_subjects'] as List?)
+          ?.map((e) => e as String)
+          .toList(),
+    );
+  }
+}

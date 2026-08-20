@@ -14,6 +14,11 @@ def get_review_due_utc() -> datetime:
     return datetime.now(UTC) + timedelta(days=1)
 
 
+def get_usage_date_utc() -> date:
+    """当日用量行的日期口径：统一 UTC（与 created_at 存储时区一致）。"""
+    return datetime.now(UTC).date()
+
+
 # ───────────────────────── 用户 / 账号 ─────────────────────────
 class UserBase(SQLModel):
     username: str = Field(unique=True, index=True, max_length=64)
@@ -302,6 +307,68 @@ class TutorLogResp(SQLModel):
     output_safe: bool
     blocked: bool
     created_at: datetime | None = None
+
+
+# ───────── AI 使用管控（T10，故事 23/26） ─────────
+class TutorQuota(SQLModel, table=True):
+    """家长按娃配置的 AI 使用管控（每娃一条）。
+
+    - daily_ask_limit：每日提问条数上限；None → 回退全局 TUTOR_DAILY_LIMIT；0 → 今日禁用
+    - daily_minutes_limit：每日累计使用分钟上限；None → 不限时；0 → 今日禁用
+    - allowed_subjects：允许提问的学科白名单；None → 不限
+    """
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    child_id: uuid.UUID = Field(foreign_key="user.id", unique=True, index=True)
+    daily_ask_limit: int | None = None
+    daily_minutes_limit: int | None = None
+    allowed_subjects: list[str] | None = Field(default=None, sa_type=JSON)
+    updated_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
+class TutorUsage(SQLModel, table=True):
+    """当日 AI 使用累计（按 child + 日期唯一）。
+
+    次数口径沿用 TutorLog 计数（count_tutor_today）；
+    此表只累计服务端实测的答疑耗时秒数，用于时长上限判定。
+    """
+
+    __table_args__ = (UniqueConstraint("child_id", "usage_date"),)
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    child_id: uuid.UUID = Field(foreign_key="user.id", index=True)
+    usage_date: date = Field(default_factory=get_usage_date_utc)
+    used_seconds: int = Field(default=0)
+
+
+class TutorQuotaUpdate(SQLModel):
+    """家长设置管控的请求体；字段缺省（None）= 清除该项限制（恢复默认）。"""
+
+    daily_ask_limit: int | None = None
+    daily_minutes_limit: int | None = None
+    allowed_subjects: list[str] | None = None
+
+
+class TutorQuotaResp(SQLModel):
+    child_id: uuid.UUID
+    daily_ask_limit: int | None = None
+    daily_minutes_limit: int | None = None
+    allowed_subjects: list[str] | None = None
+
+
+class TutorUsageResp(SQLModel):
+    """当日用量（家长端展示）；同时回带生效的限额，便于前端直接展示剩余。"""
+
+    child_id: uuid.UUID
+    date: date
+    asks_today: int
+    used_seconds: int
+    ask_limit: int | None = None
+    minutes_limit: int | None = None
+    allowed_subjects: list[str] | None = None
 
 
 # ───────────────────────── 通用 ─────────────────────────

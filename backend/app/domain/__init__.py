@@ -6,6 +6,14 @@ from app.domain.langchain_provider import LangChainProvider
 from app.domain.mock_provider import MockProvider
 from app.domain.provider import GeneratedQuestion, LLMProvider
 from app.domain.question_generator import QuestionGenerator
+from app.domain.quota import (
+    REASON_ASK_LIMIT,
+    REASON_SUBJECT_SCOPE,
+    REASON_TIME_LIMIT,
+    SUBJECTS,
+    check_quota,
+    validate_quota_config,
+)
 from app.domain.tutor import TutorService
 
 __all__ = [
@@ -17,6 +25,12 @@ __all__ = [
     "Grader",
     "TutorService",
     "build_provider",
+    "SUBJECTS",
+    "check_quota",
+    "validate_quota_config",
+    "REASON_ASK_LIMIT",
+    "REASON_TIME_LIMIT",
+    "REASON_SUBJECT_SCOPE",
 ]
 
 

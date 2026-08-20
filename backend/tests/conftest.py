@@ -18,6 +18,9 @@ from app.models import (  # noqa: E402
     Checkin,
     Question,
     Task,
+    TutorLog,
+    TutorQuota,
+    TutorUsage,
     User,
     WrongQuestion,
 )
@@ -28,7 +31,17 @@ def db() -> Generator[Session]:
     init_db()
     with Session(engine) as session:
         yield session
-        for model in (AnswerRecord, Checkin, WrongQuestion, Question, Task, User):
+        for model in (
+            TutorUsage,
+            TutorQuota,
+            TutorLog,
+            AnswerRecord,
+            Checkin,
+            WrongQuestion,
+            Question,
+            Task,
+            User,
+        ):
             session.execute(delete(model))
         session.commit()
 
