@@ -96,6 +96,10 @@ class AnswerRecord(SQLModel, table=True):
     correct: bool = False
     score: float = 0.0
     source: str = Field(max_length=16, default="practice")  # practice|review
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
 
 
 class Checkin(SQLModel, table=True):
@@ -225,6 +229,30 @@ class ReviewItemResp(SQLModel):
     review_stage: int
     next_interval_days: int
     due_at: datetime | None = None
+
+
+class KnowledgeMasteryResp(SQLModel):
+    """单个知识点的掌握度（家长看板，F-204）。"""
+
+    knowledge_point: str
+    subject: str
+    grade: int
+    total_answers: int
+    correct_answers: int
+    accuracy: float
+    active_wrong: int
+    max_review_stage: int
+    score: float
+    level: str
+
+
+class MasteryResp(SQLModel):
+    """知识点掌握度看板（家长端）。"""
+
+    child_id: uuid.UUID
+    total_knowledge_points: int
+    mastered_count: int
+    items: list[KnowledgeMasteryResp] = []
 
 
 # ───────────────────────── 通用 ─────────────────────────
