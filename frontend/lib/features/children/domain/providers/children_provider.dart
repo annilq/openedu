@@ -4,7 +4,7 @@ import '../../../../shared/domain/providers/core_providers.dart';
 import '../../data/datasource/children_remote_data_source.dart';
 import '../../data/repositories/children_repository_impl.dart';
 import '../../domain/repositories/children_repository.dart';
-import 'children_notifier.dart';
+import '../../presentation/providers/children_notifier.dart';
 
 final childrenRepositoryProvider = Provider<ChildrenRepository>((ref) {
   final network = ref.watch(networkServiceProvider);

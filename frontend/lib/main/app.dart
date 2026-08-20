@@ -7,7 +7,6 @@ import '../features/authentication/presentation/screens/login_screen.dart';
 import '../features/home/presentation/screens/home_screen.dart';
 import '../features/profile/presentation/screens/profile_screen.dart';
 import '../services/auth_session/domain/providers/auth_session_provider.dart';
-import '../shared/data/local/storage_service.dart';
 import '../shared/domain/models/models.dart';
 import '../shared/domain/providers/core_providers.dart';
 import '../shared/theme/app_theme.dart';

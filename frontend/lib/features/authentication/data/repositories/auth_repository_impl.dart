@@ -9,9 +9,8 @@ import '../../domain/repositories/auth_repository.dart';
 class AuthRepositoryImpl implements AuthRepository {
   final AuthRemoteDataSource _dataSource;
   final StorageService _storage;
-  final NetworkService _network;
 
-  AuthRepositoryImpl(this._dataSource, this._storage, this._network);
+  AuthRepositoryImpl(this._dataSource, this._storage, NetworkService network);
 
   @override
   Future<({String token, UserModel user})> register({

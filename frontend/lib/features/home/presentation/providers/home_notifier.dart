@@ -135,3 +135,39 @@ final progressNotifierProvider =
   final network = ref.watch(networkServiceProvider);
   return ProgressNotifier(network);
 });
+
+// —— 家长端：知识点掌握度看板 ——
+sealed class MasteryState {
+  const MasteryState();
+}
+class MasteryInitial extends MasteryState { const MasteryInitial(); }
+class MasteryLoading extends MasteryState { const MasteryLoading(); }
+class MasteryLoaded extends MasteryState {
+  final MasteryModel mastery;
+  const MasteryLoaded(this.mastery);
+}
+class MasteryError extends MasteryState {
+  final String message;
+  const MasteryError(this.message);
+}
+
+class MasteryNotifier extends StateNotifier<MasteryState> {
+  final NetworkService _network;
+  MasteryNotifier(this._network) : super(const MasteryInitial());
+
+  Future<void> load(String childId) async {
+    state = const MasteryLoading();
+    try {
+      final data = await _network.get('/tasks/children/$childId/mastery');
+      state = MasteryLoaded(MasteryModel.fromJson(data));
+    } catch (e) {
+      state = MasteryError(e.toString());
+    }
+  }
+}
+
+final masteryNotifierProvider =
+    StateNotifierProvider<MasteryNotifier, MasteryState>((ref) {
+  final network = ref.watch(networkServiceProvider);
+  return MasteryNotifier(network);
+});

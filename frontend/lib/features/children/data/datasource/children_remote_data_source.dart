@@ -10,7 +10,7 @@ class ChildrenRemoteDataSource {
     required String displayName,
     int? grade,
   }) async {
-    final body = {
+    final body = <String, dynamic>{
       'username': username,
       'password': password,
       'display_name': displayName,

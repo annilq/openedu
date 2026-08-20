@@ -178,3 +178,183 @@ class ProgressModel {
     );
   }
 }
+
+DateTime? _parseDate(dynamic value) {
+  if (value is String && value.isNotEmpty) {
+    return DateTime.tryParse(value);
+  }
+  return null;
+}
+
+class WrongQuestionModel {
+  /// 错题项（错题本）。`answer` 在娃娃端恒为 null（防作弊），家长端含答案。
+  final String id;
+  final String questionId;
+  final String subject;
+  final int grade;
+  final String knowledgePoint;
+  final String qtype;
+  final String stem;
+  final List<String>? options;
+  final String? answer;
+  final String explanation;
+  final int wrongCount;
+  final DateTime? firstWrongAt;
+  final int reviewStage;
+  final DateTime? dueAt;
+
+  WrongQuestionModel({
+    required this.id,
+    required this.questionId,
+    required this.subject,
+    required this.grade,
+    required this.knowledgePoint,
+    required this.qtype,
+    required this.stem,
+    this.options,
+    this.answer,
+    this.explanation = '',
+    required this.wrongCount,
+    this.firstWrongAt,
+    this.reviewStage = 0,
+    this.dueAt,
+  });
+
+  factory WrongQuestionModel.fromJson(Map<String, dynamic> json) {
+    return WrongQuestionModel(
+      id: json['id'] as String,
+      questionId: json['question_id'] as String,
+      subject: json['subject'] as String,
+      grade: json['grade'] as int,
+      knowledgePoint: json['knowledge_point'] as String,
+      qtype: json['qtype'] as String,
+      stem: json['stem'] as String,
+      options: (json['options'] as List?)?.map((e) => e.toString()).toList(),
+      answer: json['answer'] as String?,
+      explanation: json['explanation'] as String? ?? '',
+      wrongCount: json['wrong_count'] as int? ?? 1,
+      firstWrongAt: _parseDate(json['first_wrong_at']),
+      reviewStage: json['review_stage'] as int? ?? 0,
+      dueAt: _parseDate(json['due_at']),
+    );
+  }
+}
+
+class ReviewItemModel {
+  /// 到期复习项（娃娃端）：含题干、不含答案，附调度进度。
+  final String wrongQuestionId;
+  final String questionId;
+  final String subject;
+  final int grade;
+  final String knowledgePoint;
+  final String qtype;
+  final String stem;
+  final List<String>? options;
+  final String explanation;
+  final int wrongCount;
+  final int reviewStage;
+  final int nextIntervalDays;
+  final DateTime? dueAt;
+
+  ReviewItemModel({
+    required this.wrongQuestionId,
+    required this.questionId,
+    required this.subject,
+    required this.grade,
+    required this.knowledgePoint,
+    required this.qtype,
+    required this.stem,
+    this.options,
+    this.explanation = '',
+    required this.wrongCount,
+    required this.reviewStage,
+    required this.nextIntervalDays,
+    this.dueAt,
+  });
+
+  factory ReviewItemModel.fromJson(Map<String, dynamic> json) {
+    return ReviewItemModel(
+      wrongQuestionId: json['wrong_question_id'] as String,
+      questionId: json['question_id'] as String,
+      subject: json['subject'] as String,
+      grade: json['grade'] as int,
+      knowledgePoint: json['knowledge_point'] as String,
+      qtype: json['qtype'] as String,
+      stem: json['stem'] as String,
+      options: (json['options'] as List?)?.map((e) => e.toString()).toList(),
+      explanation: json['explanation'] as String? ?? '',
+      wrongCount: json['wrong_count'] as int? ?? 1,
+      reviewStage: json['review_stage'] as int? ?? 0,
+      nextIntervalDays: json['next_interval_days'] as int? ?? 1,
+      dueAt: _parseDate(json['due_at']),
+    );
+  }
+}
+
+class KnowledgeMasteryModel {
+  /// 单个知识点的掌握度（家长看板）。
+  final String knowledgePoint;
+  final String subject;
+  final int grade;
+  final int totalAnswers;
+  final int correctAnswers;
+  final double accuracy;
+  final int activeWrong;
+  final int maxReviewStage;
+  final double score;
+  final String level;
+
+  KnowledgeMasteryModel({
+    required this.knowledgePoint,
+    required this.subject,
+    required this.grade,
+    required this.totalAnswers,
+    required this.correctAnswers,
+    required this.accuracy,
+    required this.activeWrong,
+    required this.maxReviewStage,
+    required this.score,
+    required this.level,
+  });
+
+  factory KnowledgeMasteryModel.fromJson(Map<String, dynamic> json) {
+    return KnowledgeMasteryModel(
+      knowledgePoint: json['knowledge_point'] as String,
+      subject: json['subject'] as String,
+      grade: json['grade'] as int,
+      totalAnswers: json['total_answers'] as int? ?? 0,
+      correctAnswers: json['correct_answers'] as int? ?? 0,
+      accuracy: (json['accuracy'] as num?)?.toDouble() ?? 0.0,
+      activeWrong: json['active_wrong'] as int? ?? 0,
+      maxReviewStage: json['max_review_stage'] as int? ?? 0,
+      score: (json['score'] as num?)?.toDouble() ?? 0.0,
+      level: json['level'] as String? ?? '',
+    );
+  }
+}
+
+class MasteryModel {
+  /// 知识点掌握度看板（家长端）。
+  final String childId;
+  final int totalKnowledgePoints;
+  final int masteredCount;
+  final List<KnowledgeMasteryModel> items;
+
+  MasteryModel({
+    required this.childId,
+    required this.totalKnowledgePoints,
+    required this.masteredCount,
+    required this.items,
+  });
+
+  factory MasteryModel.fromJson(Map<String, dynamic> json) {
+    return MasteryModel(
+      childId: json['child_id'] as String,
+      totalKnowledgePoints: json['total_knowledge_points'] as int? ?? 0,
+      masteredCount: json['mastered_count'] as int? ?? 0,
+      items: (json['items'] as List? ?? [])
+          .map((e) => KnowledgeMasteryModel.fromJson(e as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+}

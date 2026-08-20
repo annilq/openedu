@@ -4,6 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../shared/domain/models/models.dart';
 import '../../../children/domain/providers/children_provider.dart';
 import '../../../practice/presentation/screens/practice_screen.dart';
+import '../../../review/presentation/providers/review_notifier.dart';
+import '../../../review/presentation/screens/review_screen.dart';
+import '../../../review/presentation/screens/wrong_questions_screen.dart';
 import '../providers/home_notifier.dart';
 import '../widgets/parent_dashboard.dart';
 import '../widgets/child_home.dart';
@@ -28,6 +31,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ref.read(childrenNotifierProvider.notifier).loadChildren();
       } else {
         ref.read(todayTasksNotifierProvider.notifier).load();
+        ref.read(dueReviewNotifierProvider.notifier).load();
       }
     });
   }
@@ -45,6 +49,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ),
       ),
     );
+  }
+
+  void _navigateToReview() {
+    Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const ReviewScreen()))
+        .then((_) {
+      if (!mounted) return;
+      ref.read(dueReviewNotifierProvider.notifier).load();
+    });
+  }
+
+  void _navigateToWrongQuestions() {
+    Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const WrongQuestionsScreen()))
+        .then((_) {
+      if (!mounted) return;
+      ref.read(dueReviewNotifierProvider.notifier).load();
+    });
   }
 
   @override
@@ -70,6 +92,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           : ChildHome(
               user: widget.user,
               onNavigateToPractice: _navigateToPractice,
+              onNavigateToReview: _navigateToReview,
+              onNavigateToWrongQuestions: _navigateToWrongQuestions,
             ),
     );
   }

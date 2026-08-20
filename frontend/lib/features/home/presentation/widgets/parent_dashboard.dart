@@ -6,6 +6,7 @@ import '../../../../shared/widgets/app_error.dart';
 import '../../../../shared/widgets/app_loading.dart';
 import '../../../children/domain/providers/children_provider.dart';
 import '../../../children/presentation/providers/children_notifier.dart';
+import '../../../review/presentation/providers/review_notifier.dart';
 import '../providers/home_notifier.dart';
 
 /// 家长端首页：娃娃列表 + 生成任务表单 + 进度看板
@@ -60,6 +61,16 @@ class _ParentDashboardState extends ConsumerState<ParentDashboard> {
         );
   }
 
+  void _selectChild(String id, int grade) {
+    setState(() {
+      _selectedChildId = id;
+      _selectedGrade = grade;
+    });
+    ref.read(progressNotifierProvider.notifier).load(id);
+    ref.read(masteryNotifierProvider.notifier).load(id);
+    ref.read(parentWrongQuestionsProvider.notifier).load(childId: id);
+  }
+
   @override
   Widget build(BuildContext context) {
     final childrenState = ref.watch(childrenNotifierProvider);
@@ -75,6 +86,9 @@ class _ParentDashboardState extends ConsumerState<ParentDashboard> {
         // 刷新进度
         if (_selectedChildId.isNotEmpty) {
           ref.read(progressNotifierProvider.notifier).load(_selectedChildId);
+          ref.read(masteryNotifierProvider.notifier).load(_selectedChildId);
+          ref.read(parentWrongQuestionsProvider.notifier)
+              .load(childId: _selectedChildId);
         }
       }
       if (next is TaskGenError) {
@@ -108,6 +122,16 @@ class _ParentDashboardState extends ConsumerState<ParentDashboard> {
 
           // —— 进度看板 ——
           if (_selectedChildId.isNotEmpty) _buildProgressSection(),
+
+          const SizedBox(height: 32),
+
+          // —— 掌握度看板 ——
+          if (_selectedChildId.isNotEmpty) _buildMasterySection(),
+
+          const SizedBox(height: 32),
+
+          // —— 错题本 ——
+          if (_selectedChildId.isNotEmpty) _buildParentWrongSection(),
         ],
       ),
     );
@@ -135,13 +159,7 @@ class _ParentDashboardState extends ConsumerState<ParentDashboard> {
                 return ChoiceChip(
                   label: Text('${c.displayName} · ${c.grade ?? '?'}年级'),
                   selected: isSelected,
-                  onSelected: (_) {
-                    setState(() {
-                      _selectedChildId = c.id;
-                      _selectedGrade = c.grade ?? 2;
-                    });
-                    ref.read(progressNotifierProvider.notifier).load(c.id);
-                  },
+                  onSelected: (_) => _selectChild(c.id, c.grade ?? 2),
                 );
               }).toList(),
             ),
@@ -156,7 +174,7 @@ class _ParentDashboardState extends ConsumerState<ParentDashboard> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             DropdownButtonFormField<String>(
-              value: _selectedQtype,
+              initialValue: _selectedQtype,
               decoration: const InputDecoration(labelText: '题型'),
               items: const [
                 DropdownMenuItem(value: 'calc', child: Text('计算题')),
@@ -189,7 +207,7 @@ class _ParentDashboardState extends ConsumerState<ParentDashboard> {
                 const SizedBox(width: 16),
                 Expanded(
                   child: DropdownButtonFormField<int>(
-                    value: _selectedGrade,
+                    initialValue: _selectedGrade,
                     decoration: const InputDecoration(labelText: '年级'),
                     items: List.generate(9, (i) => i + 1)
                         .map((g) => DropdownMenuItem(
@@ -252,6 +270,182 @@ class _ParentDashboardState extends ConsumerState<ParentDashboard> {
           Text(value, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
           const SizedBox(height: 4),
           Text(label, style: Theme.of(context).textTheme.bodyMedium),
+        ],
+      ),
+    );
+  }
+
+  // —— 掌握度看板 ——
+  Widget _buildMasterySection() {
+    final state = ref.watch(masteryNotifierProvider);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('知识点掌握度', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        switch (state) {
+          MasteryInitial() || MasteryLoading() =>
+            const AppLoading(message: '加载掌握度...'),
+          MasteryError() => AppError(message: state.message),
+          MasteryLoaded() => state.mastery.items.isEmpty
+              ? const Card(
+                  child: Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text('还没有作答记录，先布置任务吧'),
+                  ),
+                )
+              : Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '已掌握 ${state.mastery.masteredCount} / ${state.mastery.totalKnowledgePoints} 个知识点',
+                          style: Theme.of(context).textTheme.bodyLarge,
+                        ),
+                        const SizedBox(height: 16),
+                        ...state.mastery.items
+                            .map((m) => _MasteryBar(item: m)),
+                      ],
+                    ),
+                  ),
+                ),
+        },
+      ],
+    );
+  }
+
+  // —— 家长错题本 ——
+  Widget _buildParentWrongSection() {
+    final state = ref.watch(parentWrongQuestionsProvider);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('错题本', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 8),
+        switch (state) {
+          WrongQuestionsInitial() || WrongQuestionsLoading() =>
+            const AppLoading(message: '加载错题...'),
+          WrongQuestionsError() => AppError(message: state.message),
+          WrongQuestionsLoaded() => state.items.isEmpty
+              ? const Card(
+                  child: Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text('暂无错题'),
+                  ),
+                )
+              : Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: state.items
+                          .map((item) => _ParentWrongCard(item: item))
+                          .toList(),
+                    ),
+                  ),
+                ),
+        },
+      ],
+    );
+  }
+}
+
+class _MasteryBar extends StatelessWidget {
+  final KnowledgeMasteryModel item;
+  const _MasteryBar({required this.item});
+
+  Color get _levelColor => switch (item.level) {
+        '已掌握' => Colors.green,
+        '较扎实' => Colors.lightGreen,
+        '巩固中' => Colors.blue,
+        '薄弱' => Colors.orange,
+        '待加强' => Colors.red,
+        _ => Colors.grey,
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text('${item.subject} · ${item.knowledgePoint}',
+                    style: Theme.of(context).textTheme.bodyMedium),
+              ),
+              Text('${item.score.round()}分',
+                  style: Theme.of(context).textTheme.bodyMedium),
+              const SizedBox(width: 8),
+              Chip(
+                label: Text(item.level),
+                labelStyle: TextStyle(
+                    color: Colors.white, fontSize: 12),
+                backgroundColor: _levelColor,
+                visualDensity: VisualDensity.compact,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: (item.score / 100).clamp(0.0, 1.0),
+              minHeight: 8,
+              backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+              color: _levelColor,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            item.activeWrong > 0
+                ? '正确率 ${(item.accuracy * 100).round()}% · 有 ${item.activeWrong} 题待复习'
+                : '正确率 ${(item.accuracy * 100).round()}% · 无待复习错题',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ParentWrongCard extends StatelessWidget {
+  final WrongQuestionModel item;
+  const _ParentWrongCard({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(item.stem, style: Theme.of(context).textTheme.bodyLarge),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              Chip(label: Text(item.knowledgePoint)),
+              Chip(label: Text('错过 ${item.wrongCount} 次')),
+              Chip(label: Text('复习阶段 ${item.reviewStage}')),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text('标准答案：${item.answer ?? '—'}',
+              style: const TextStyle(color: Colors.green)),
+          if (item.explanation.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text('解析：${item.explanation}',
+                  style: Theme.of(context).textTheme.bodySmall),
+            ),
+          const Divider(height: 24),
         ],
       ),
     );

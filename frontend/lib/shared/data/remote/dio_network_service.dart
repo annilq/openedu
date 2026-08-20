@@ -33,19 +33,16 @@ class DioNetworkService implements NetworkService {
         handler.next(options);
       },
     ));
+  }
 
-    // 错误拦截器
-    _dio.interceptors.add(InterceptorsWrapper(
-      onError: (error, handler) {
-        final statusCode = error.response?.statusCode;
-        if (statusCode == 401) {
-          handler.next(UnauthorizedException());
-        } else {
-          final detail = _extractDetail(error.response);
-          handler.next(HttpException(detail, statusCode: statusCode));
-        }
-      },
-    ));
+  /// 把 DioException 统一转为应用异常（HttpException / UnauthorizedException）。
+  Never _handleError(DioException e) {
+    final statusCode = e.response?.statusCode;
+    if (statusCode == 401) {
+      throw UnauthorizedException();
+    }
+    final detail = _extractDetail(e.response);
+    throw HttpException(detail, statusCode: statusCode);
   }
 
   String _extractDetail(Response? response) {
@@ -57,25 +54,41 @@ class DioNetworkService implements NetworkService {
 
   @override
   Future<dynamic> get(String path, {Map<String, dynamic>? query}) async {
-    final r = await _dio.get(path, queryParameters: query);
-    return r.data;
+    try {
+      final r = await _dio.get(path, queryParameters: query);
+      return r.data;
+    } on DioException catch (e) {
+      _handleError(e);
+    }
   }
 
   @override
   Future<dynamic> post(String path, {Map<String, dynamic>? body}) async {
-    final r = await _dio.post(path, data: body);
-    return r.data;
+    try {
+      final r = await _dio.post(path, data: body);
+      return r.data;
+    } on DioException catch (e) {
+      _handleError(e);
+    }
   }
 
   @override
   Future<dynamic> put(String path, {Map<String, dynamic>? body}) async {
-    final r = await _dio.put(path, data: body);
-    return r.data;
+    try {
+      final r = await _dio.put(path, data: body);
+      return r.data;
+    } on DioException catch (e) {
+      _handleError(e);
+    }
   }
 
   @override
   Future<dynamic> delete(String path) async {
-    final r = await _dio.delete(path);
-    return r.data;
+    try {
+      final r = await _dio.delete(path);
+      return r.data;
+    } on DioException catch (e) {
+      _handleError(e);
+    }
   }
 }

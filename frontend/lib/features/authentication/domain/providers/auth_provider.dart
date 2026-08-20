@@ -4,7 +4,7 @@ import '../../../../shared/domain/providers/core_providers.dart';
 import '../../data/datasource/auth_remote_data_source.dart';
 import '../../data/repositories/auth_repository_impl.dart';
 import '../../domain/repositories/auth_repository.dart';
-import 'auth_notifier.dart';
+import '../../presentation/providers/auth_notifier.dart';
 
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
   final network = ref.watch(networkServiceProvider);
