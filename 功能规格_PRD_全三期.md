@@ -224,7 +224,7 @@
 - [x] AC-302：越狱/敏感提问被拦截并转安全兜底，娃娃看不到违规内容（T08：domain/safety 输入/输出双层校验）。
 - [x] AC-303：家长可查阅全部 AI 交互日志（T08：TutorLog + GET /tutor/logs）。
 - [x] AC-304：达每日上限后 AI 答疑被拒（T08：TUTOR_DAILY_LIMIT + count_tutor_today，429）。注：MVP 以「每日消息条数」计上限，时长上限为后续增强。
-- [ ] AC-305：知识库就绪后，答疑优先基于知识库检索结果。（**deferred**：教材版权为 🔴 硬门槛 ADR-012，知识库/RAG 前置条件未就绪，本期仅做自由问答，预留检索接入点。）
+- [x] AC-305：知识库就绪后，答疑优先基于知识库检索结果。（T11：`KnowledgeRetriever` 检索层已落地——`/tutor/ask` 命中内置自编知识点库时把内容注入讲解上下文；🔴 **教材授权仍未解决**（ADR-012），当前为自编内容源，对外分发前须换用已授权/公版内容。）
 - [x] AC-306：家长可按娃配置每日 AI 使用上限与内容范围，超额/越界请求被拒并提示（T10：tutor_quota 配置 + check_quota 前置强制——学科越界 403、次数/时长达限 429；时长按服务端累计答疑耗时计；PUT/GET /tutor/quota、GET /tutor/usage）。
 - [x] AC-307：Flutter AI 伴学模块完整落地（T12：娃娃提问/适龄讲解、拦截内容转安全提示、受时长与内容范围管控、家长可查日志、notifier 状态机 Idle/Loading/Success 有 mocktail 单测；故事 18/20/21/22/23/26）。
 

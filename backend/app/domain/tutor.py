@@ -1,6 +1,6 @@
-"""AI 伴学答疑编排服务（F-302 适龄讲解 + F-304 内容安全）。
+"""AI 伴学答疑编排服务（F-302 适龄讲解 + F-304 内容安全 + T11 知识库检索）。
 
-组装顺序：输入安全校验 → 调用 provider 讲解 → 输出安全校验。
+组装顺序：输入安全校验 → 知识库检索注入 → 调用 provider 讲解 → 输出安全校验。
 仅同步封装（与 Grader 一致）：内部用 asyncio.run 驱动 provider 的 async 方法，
 由 FastAPI 同步路由在独立线程中调用，无事件循环冲突。
 """
@@ -9,6 +9,7 @@ import asyncio
 from dataclasses import dataclass
 
 from app.domain.provider import LLMProvider
+from app.domain.retriever import KnowledgeRetriever
 from app.domain.safety import SAFE_REFUSAL, check_input, check_output
 
 
@@ -22,8 +23,13 @@ class TutorResult:
 
 
 class TutorService:
-    def __init__(self, provider: LLMProvider) -> None:
+    def __init__(
+        self,
+        provider: LLMProvider,
+        retriever: KnowledgeRetriever | None = None,
+    ) -> None:
         self.provider = provider
+        self.retriever = retriever
 
     def explain(
         self,
@@ -49,18 +55,38 @@ class TutorService:
                 reason=inp.reason,
             )
 
-        # 2) 调用模型（provider 内部已注入年龄锁系统提示）
+        # 2) 知识库检索（T11，故事 24/25）：命中则把知识点内容拼入上下文，
+        #    让讲解优先对齐教材口径；未命中时上下文保持原样。
+        #    注：当前内置自编库为可信内容；接入外部检索源（vector/web）后，
+        #    外部内容视为不可信输入，须先经 check_input 再注入。
+        effective_context = context
+        if self.retriever is not None:
+            chunks = self.retriever.retrieve(
+                subject=subject,
+                grade=grade,
+                knowledge_point=knowledge_point,
+                query=question,
+            )
+            if chunks:
+                kb = "\n".join(f"- {c.content}" for c in chunks)
+                effective_context = (
+                    f"{context}\n\n【知识库】\n{kb}".strip()
+                    if context
+                    else f"【知识库】\n{kb}"
+                )
+
+        # 3) 调用模型（provider 内部已注入年龄锁系统提示）
         raw = asyncio.run(
             self.provider.tutor(
                 grade=grade,
                 subject=subject,
                 knowledge_point=knowledge_point,
-                context=context,
+                context=effective_context,
                 question=question,
             )
         )
 
-        # 3) 输出安全校验（敏感词）
+        # 4) 输出安全校验（敏感词）
         out = check_output(raw)
         if not out.safe:
             return TutorResult(

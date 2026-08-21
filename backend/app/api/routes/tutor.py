@@ -19,6 +19,7 @@ from app.domain import (
     REASON_SUBJECT_SCOPE,
     TutorService,
     build_provider,
+    build_retriever,
     check_quota,
     validate_quota_config,
 )
@@ -92,7 +93,7 @@ def ask(
             code = status.HTTP_403_FORBIDDEN
         raise HTTPException(status_code=code, detail=decision.message)
 
-    service = TutorService(build_provider())
+    service = TutorService(build_provider(), build_retriever())
     started = time.perf_counter()
     result = service.explain(
         grade=payload.grade,

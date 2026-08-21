@@ -49,6 +49,11 @@ class Settings(BaseSettings):
     # MVP 以「每日消息条数」计上限；时长上限（如累计分钟）为后续增强项。
     TUTOR_DAILY_LIMIT: int = 50
 
+    # —— 三期 教材知识库检索（T11 / AC-305 检索能力）——
+    # mock/builtin = 内置自编知识点库（无版权风险，闭环可用）；
+    # vector（预留）= 后续接入 embedding 向量库；未知值回退 mock 并告警。
+    RETRIEVER_PROVIDER: str = "mock"
+
     def _check_default_secret(self, var_name: str, value: str | None) -> None:
         if value in (None, "", "changeme"):
             message = (

@@ -14,6 +14,12 @@ from app.domain.quota import (
     check_quota,
     validate_quota_config,
 )
+from app.domain.retriever import (
+    KnowledgeChunk,
+    KnowledgeRetriever,
+    MockKnowledgeRetriever,
+    build_retriever,
+)
 from app.domain.tutor import TutorService
 
 __all__ = [
@@ -31,6 +37,10 @@ __all__ = [
     "REASON_ASK_LIMIT",
     "REASON_TIME_LIMIT",
     "REASON_SUBJECT_SCOPE",
+    "KnowledgeChunk",
+    "KnowledgeRetriever",
+    "MockKnowledgeRetriever",
+    "build_retriever",
 ]
 
 
