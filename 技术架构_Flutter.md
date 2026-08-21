@@ -85,7 +85,7 @@ lib/
 │   ├── home/                       # 首页：家长看娃娃+任务；娃娃看今日任务+进度
 │   ├── practice/                   # 做题：题目展示、作答、批改反馈
 │   ├── checkin/                    # 打卡
-│   ├── children/                   # 家长：娃娃账号管理、每日时长/内容范围设置
+│   ├── children/                   # 家长：娃娃账号管理（列表 + 添加娃娃入口）、每日时长/内容范围设置
 │   ├── profile/                    # 设置、连续打卡、徽章
 │   ├── review/           (二期)    # 错题本 + 遗忘曲线复习（T07 已落地）
 │   └── tutor/            (三期)    # AI 伴学答疑（T08）+ AI 使用管控设置（T10，套用后端安全层/管控层）
@@ -205,7 +205,7 @@ final practiceNotifierProvider =
 | home | `homeNotifier`（家长：children+tasks；娃娃：today+progress） | `home_screen` | 角色分流首页 |
 | practice | `practiceNotifier`（加载题目→提交→批改→解析） | `practice_screen` / `question_card` | 核心做题闭环 |
 | checkin | `checkinNotifier` | `checkin_screen` / 首页按钮 | 任务打卡 |
-| children | `childrenNotifier`（增/列娃娃、设设置） | `children_screen` | 家长专属 |
+| children | `childrenNotifier`（增/列娃娃；createChild 成功自动刷新） | `add_child_screen`（表单：昵称/账号/密码/年级，前端校验+防重入+错误兜底）；入口在家长首页娃娃列表区（空态大按钮 / 列表尾 + 块） | 家长专属；创建入口 T13 补齐（F-102 / AC-102） |
 | profile | `profileNotifier`（连续天数、徽章、设置） | `profile_screen` | 轻量激励展示 |
 | review (二期，T07 已落地) | `dueReviewNotifier`（待复习队列）/ `childWrongQuestionsProvider`（娃娃自查）/ `parentWrongQuestionsProvider`（家长含答案） | `review_screen` / `wrong_questions_screen` | 遗忘曲线复习作答 + 错题本；娃娃端答题不含答案（防作弊） |
 | home (二期，T07 扩展) | `masteryNotifier`（家长掌握度看板）/ `progressNotifier` | `parent_dashboard` 掌握度进度条 + 错题列表区块 + AI 答疑日志区块 | 家长查看孩子知识点掌握度与答疑记录 |

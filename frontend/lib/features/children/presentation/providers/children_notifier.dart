@@ -39,22 +39,25 @@ class ChildrenNotifier extends StateNotifier<ChildrenState> {
     }
   }
 
-  Future<void> createChild({
+  /// 创建娃娃；成功返回新用户（并自动刷新列表），失败返回 null（state 置 Error）。
+  Future<UserModel?> createChild({
     required String username,
     required String password,
     required String displayName,
     int? grade,
   }) async {
     try {
-      await _repo.createChild(
+      final created = await _repo.createChild(
         username: username,
         password: password,
         displayName: displayName,
         grade: grade,
       );
       await loadChildren();
+      return created;
     } catch (e) {
       state = ChildrenError(e.toString());
+      return null;
     }
   }
 }
