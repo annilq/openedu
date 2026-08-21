@@ -24,7 +24,10 @@ class ProfileScreen extends ConsumerWidget {
         : AppTags.info('${user.grade ?? "?"}年级');
 
     return ListView(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.xl,
+        vertical: AppSpacing.xxl,
+      ),
       children: [
         // Header: avatar + name + role
         Center(
@@ -139,10 +142,9 @@ class ProfileScreen extends ConsumerWidget {
             },
             child: Text(
               '退出登录',
-              style: TextStyle(
+              style: AppTheme.textOf(context).bodyMedium?.copyWith(
                 color: app.onErrorContainer,
                 fontWeight: FontWeight.w600,
-                fontSize: 18,
               ),
             ),
           ),
@@ -266,10 +268,10 @@ Widget _segLabel(BuildContext context, String label, bool selected) {
     padding: const EdgeInsets.symmetric(horizontal: 10),
     child: Text(
       label,
-      style: TextStyle(
+      style: AppTheme.textOf(context).labelSmall?.copyWith(
         color: selected ? app.onPrimaryContainer : app.onSurfaceVariant,
         fontWeight: FontWeight.w600,
-        fontSize: 16,
+        height: 1.3,
       ),
     ),
   );

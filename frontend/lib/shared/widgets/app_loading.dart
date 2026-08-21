@@ -2,75 +2,115 @@ import 'package:cupertino_ui/cupertino_ui.dart';
 
 import '../theme/app_theme.dart';
 
+/// 加载状态展示模式。
+enum _LoadingMode { spinner, skeleton, skeletonInline }
+
 /// 通用加载状态。
 ///
-/// 当 [skeleton] 为 true 时，显示骨架屏（对应当前页面的内容形状）；
-/// 否则显示居中的柔和 spinner + 可选文案。
+/// - [AppLoading()]：居中柔和 spinner + 可选文案（整页/区域占位）。
+/// - [AppLoading.skeleton]：整页骨架屏（可滚动 ListView，需有垂直边界）。
+/// - [AppLoading.skeletonInline]：内联骨架行（Column，用于已滚动容器内的占位）。
 class AppLoading extends StatelessWidget {
   final String? message;
-  final bool skeleton;
   final int skeletonLines;
+  final _LoadingMode _mode;
 
   const AppLoading({
     super.key,
     this.message,
-  })  : skeleton = false,
+  })  : _mode = _LoadingMode.spinner,
         skeletonLines = 0;
 
-  /// 骨架屏：模拟列表/卡片内容的形状
+  /// 整页骨架屏：模拟列表/卡片内容的形状（可滚动）。
   const AppLoading.skeleton({
     super.key,
     this.skeletonLines = 6,
-  })  : skeleton = true,
+  })  : _mode = _LoadingMode.skeleton,
+        message = null;
+
+  /// 内联骨架行：Column 排布，用于已存在于滚动容器内的占位（不嵌套滚动）。
+  const AppLoading.skeletonInline({
+    super.key,
+    this.skeletonLines = 3,
+  })  : _mode = _LoadingMode.skeletonInline,
         message = null;
 
   @override
   Widget build(BuildContext context) {
-    if (skeleton) return _SkeletonList(lines: skeletonLines);
-
-    final app = AppTheme.colorsOf(context);
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(
-            width: 36,
-            height: 36,
-            child: CupertinoActivityIndicator(
-              color: app.primary,
-              radius: 16,
-            ),
+    switch (_mode) {
+      case _LoadingMode.skeleton:
+        return _SkeletonList(lines: skeletonLines);
+      case _LoadingMode.skeletonInline:
+        return _SkeletonRows(lines: skeletonLines);
+      case _LoadingMode.spinner:
+        final app = AppTheme.colorsOf(context);
+        return Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 36,
+                height: 36,
+                child: CupertinoActivityIndicator(
+                  color: app.primary,
+                  radius: 16,
+                ),
+              ),
+              if (message != null) ...[
+                const SizedBox(height: AppSpacing.md),
+                Text(
+                  message!,
+                  style: AppTheme.textOf(context).bodyLarge?.copyWith(
+                        color: app.onSurfaceVariant,
+                      ),
+                ),
+              ],
+            ],
           ),
-          if (message != null) ...[
-            const SizedBox(height: AppSpacing.md),
-            Text(
-              message!,
-              style: AppTheme.textOf(context).bodyLarge?.copyWith(
-                    color: app.onSurfaceVariant,
-                  ),
-            ),
-          ],
-        ],
-      ),
-    );
+        );
+    }
   }
 }
 
+/// 整页骨架：可滚动列表。
 class _SkeletonList extends StatelessWidget {
   final int lines;
   const _SkeletonList({required this.lines});
 
   @override
   Widget build(BuildContext context) {
-    return ListView.separated(
+    return ListView.builder(
       padding: const EdgeInsets.all(AppSpacing.lg),
       itemCount: lines,
-      separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.md),
-      itemBuilder: (_, i) {
-        // 交错卡片高度，营造真实感
-        final withCover = i % 3 == 0;
-        return _SkeletonCard(withCover: withCover);
-      },
+      itemBuilder: (_, i) => Padding(
+        padding: const EdgeInsets.only(bottom: AppSpacing.md),
+        child: _SkeletonCard(withCover: i % 3 == 0),
+      ),
+    );
+  }
+}
+
+/// 内联骨架：Column 排布，用于已存在于滚动容器内的占位。
+class _SkeletonRows extends StatelessWidget {
+  final int lines;
+  const _SkeletonRows({required this.lines});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        vertical: AppSpacing.lg,
+        horizontal: AppSpacing.md,
+      ),
+      child: Column(
+        children: List.generate(
+          lines,
+          (i) => Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.md),
+            child: _SkeletonCard(withCover: i % 3 == 0),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -163,37 +203,33 @@ class _ShimmerBoxState extends State<_ShimmerBox>
     final base = app.surfaceContainerHighest;
     final highlight = app.surface;
 
-    return SizedBox(
-      width: widget.width == double.infinity ? null : widget.width,
-      height: widget.height,
-      child: LayoutBuilder(
-        builder: (_, c) {
-          final w = widget.width == double.infinity ? c.maxWidth : widget.width;
-          return AnimatedBuilder(
-            animation: _anim,
-            builder: (_, __) {
-              return Container(
-                width: w,
-                height: widget.height,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(widget.radius),
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    transform: _SlideGradient(_anim.value),
-                    colors: [
-                      base,
-                      highlight,
-                      base,
-                    ],
-                    stops: const [0.0, 0.5, 1.0],
-                  ),
+    return LayoutBuilder(
+      builder: (_, c) {
+        final w = widget.width == double.infinity ? c.maxWidth : widget.width;
+        return AnimatedBuilder(
+          animation: _anim,
+          builder: (_, __) {
+            return Container(
+              width: w,
+              height: widget.height,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(widget.radius),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  transform: _SlideGradient(_anim.value),
+                  colors: [
+                    base,
+                    highlight,
+                    base,
+                  ],
+                  stops: const [0.0, 0.5, 1.0],
                 ),
-              );
-            },
-          );
-        },
-      ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }

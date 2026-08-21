@@ -65,7 +65,7 @@ class AppTheme {
     surfaceContainer: Color(0xFFFBF5E8),
     surfaceContainerHigh: Color(0xFFF4ECDA),
     surfaceContainerHighest: Color(0xFFEEE4CE),
-    onSurfaceVariant: Color(0xFF7A7368), // Muted Stone 次文字
+    onSurfaceVariant: Color(0xFF70685B), // Muted Stone 次文字（达 WCAG AA ≥4.5:1）
     outline: Color(0xFFEFE7D8), // Whisper Border
     outlineVariant: Color(0x99EFE7D8), // whisper border 60%
     inverseSurface: Color(0xFFEDE6D8),

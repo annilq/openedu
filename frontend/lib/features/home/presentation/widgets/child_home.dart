@@ -5,6 +5,7 @@ import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_error.dart';
 import '../../../../shared/widgets/app_loading.dart';
+import '../../../../shared/widgets/app_motion.dart';
 import '../../../review/presentation/providers/review_notifier.dart';
 import '../providers/home_notifier.dart';
 
@@ -54,11 +55,14 @@ class ChildHome extends ConsumerWidget {
                   onReview: onNavigateToReview,
                   onWrong: onNavigateToWrongQuestions,
                 ),
-                _TutorBanner(onTutor: onNavigateToTutor),
+                PopIn(
+                  duration: const Duration(milliseconds: 420),
+                  child: _TutorBanner(onTutor: onNavigateToTutor),
+                ),
                 const SectionTitle('今日任务'),
                 ...switch (state) {
                   TodayTasksInitial() || TodayTasksLoading() =>
-                    const [Padding(padding: EdgeInsets.all(AppSpacing.xl5), child: AppLoading(message: '加载今日任务...'))],
+                  const [AppLoading.skeletonInline(skeletonLines: 2)],
                   TodayTasksError() => [
                       Padding(
                         padding: const EdgeInsets.all(AppSpacing.lg),
@@ -187,21 +191,11 @@ class _ReviewBanner extends StatelessWidget {
                 ),
               ),
               CupertinoButton(
-                padding: EdgeInsets.zero,
+                // 错题入口：扁平图标按钮，弱化为次要操作，突出「去复习」主按钮
+                padding: const EdgeInsets.all(AppSpacing.xs),
                 pressedOpacity: 0.6,
                 onPressed: onWrong,
-                child: Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: app.surfaceContainerLow,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                        color: app.outline,
-                        width: 1),
-                  ),
-                  child: Icon(CupertinoIcons.book, size: 24, color: app.primary),
-                ),
+                child: Icon(CupertinoIcons.book, size: 22, color: app.primary),
               ),
               const SizedBox(width: AppSpacing.md),
               CupertinoButton.filled(

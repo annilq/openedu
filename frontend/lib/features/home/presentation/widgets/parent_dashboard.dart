@@ -68,6 +68,8 @@ class _ParentDashboardState extends ConsumerState<ParentDashboard> {
   }
 
   void _selectChild(String id, int grade) {
+    // 重复点击已选中的娃娃时不重复拉取（避免无意义的并发加载闪动）
+    if (id == _selectedChildId) return;
     setState(() {
       _selectedChildId = id;
       _selectedGrade = grade;
@@ -310,7 +312,7 @@ class _ParentDashboardState extends ConsumerState<ParentDashboard> {
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
           child: switch (progState) {
             ProgressInitial() || ProgressLoading() =>
-              const AppLoading(message: '加载进度...'),
+              const AppLoading.skeletonInline(skeletonLines: 2),
             ProgressError() => AppError(message: progState.message),
             ProgressLoaded() => AppCard(
                 padding: const EdgeInsets.all(AppSpacing.xl),
@@ -371,7 +373,7 @@ class _ParentDashboardState extends ConsumerState<ParentDashboard> {
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
           child: switch (state) {
             MasteryInitial() || MasteryLoading() =>
-              const AppLoading(message: '加载掌握度...'),
+              const AppLoading.skeletonInline(skeletonLines: 3),
             MasteryError() => AppError(message: state.message),
             MasteryLoaded() => state.mastery.items.isEmpty
                 ? AppCard(
@@ -866,13 +868,13 @@ class _MasteryBar extends StatelessWidget {
       case '巩固中':
         return (
           _MasteryLevel.learning,
-          const Color(0xFF7FB97F), // 植物绿柔和变体
+          scheme.primary.withValues(alpha: 0.62), // 植物绿柔和变体
           scheme.surfaceContainerHigh,
         );
       case '薄弱':
         return (
           _MasteryLevel.weak,
-          const Color(0xFFF2A65C), // 暖橙柔和变体
+          scheme.secondary.withValues(alpha: 0.62), // 暖橙柔和变体
           scheme.secondaryContainer,
         );
       case '待加强':

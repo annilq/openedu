@@ -117,8 +117,8 @@ class _AppTextFieldState extends State<AppTextField> {
           const SizedBox(height: AppSpacing.xs),
           Row(
             children: [
-              const Icon(CupertinoIcons.exclamationmark_circle,
-                  size: 14, color: Color(0xFFE56B54)),
+              Icon(CupertinoIcons.exclamationmark_circle,
+                  size: 14, color: app.error),
               const SizedBox(width: 4),
               Expanded(
                 child: Text(

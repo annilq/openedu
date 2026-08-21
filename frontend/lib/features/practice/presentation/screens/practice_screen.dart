@@ -5,6 +5,7 @@ import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_error.dart';
 import '../../../../shared/widgets/app_loading.dart';
+import '../../../../shared/widgets/app_motion.dart';
 import '../providers/practice_notifier.dart';
 
 /// 做题页。v2 redesign：
@@ -67,24 +68,28 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
       builder: (_) => CupertinoAlertDialog(
         title: Row(
           children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: result.correct
-                    ? scheme.tertiaryContainer
-                    : scheme.errorContainer,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              alignment: Alignment.center,
-              child: Icon(
-                result.correct
-                    ? CupertinoIcons.checkmark
-                    : CupertinoIcons.refresh,
-                size: 22,
-                color: result.correct
-                    ? scheme.onTertiaryContainer
-                    : scheme.onErrorContainer,
+            PopIn(
+              fromScale: 0.72,
+              duration: const Duration(milliseconds: 360),
+              child: Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: result.correct
+                      ? scheme.tertiaryContainer
+                      : scheme.errorContainer,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                alignment: Alignment.center,
+                child: Icon(
+                  result.correct
+                      ? CupertinoIcons.checkmark
+                      : CupertinoIcons.refresh,
+                  size: 22,
+                  color: result.correct
+                      ? scheme.onTertiaryContainer
+                      : scheme.onErrorContainer,
+                ),
               ),
             ),
             const SizedBox(width: AppSpacing.md),
@@ -301,86 +306,94 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
         ),
     };
 
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(AppSpacing.xl3),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 520),
-          child: Container(
-            padding: const EdgeInsets.all(AppSpacing.xl3),
-            decoration: BoxDecoration(
-              color: scheme.surfaceContainerLow,
-              borderRadius: BorderRadius.circular(AppRadius.banner),
-              border: Border.all(color: scheme.outline, width: 1),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 108,
-                  height: 108,
+    return Stack(
+      children: [
+        // 全部答对：成就彩带（IgnorePointer，不阻塞操作）
+        if (perfect) const Positioned.fill(child: ConfettiBurst()),
+        PopIn(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(AppSpacing.xl3),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 520),
+                child: Container(
+                  padding: const EdgeInsets.all(AppSpacing.xl3),
                   decoration: BoxDecoration(
-                    color: iconBg,
-                    borderRadius: BorderRadius.circular(36),
+                    color: scheme.surfaceContainerLow,
+                    borderRadius: BorderRadius.circular(AppRadius.banner),
+                    border: Border.all(color: scheme.outline, width: 1),
                   ),
-                  alignment: Alignment.center,
-                  child: Icon(iconData, size: 56, color: iconFg),
-                ),
-                const SizedBox(height: AppSpacing.xl2),
-                Text(
-                  perfect ? '全部答对！' : '完成练习',
-                  style: AppTheme.textOf(context).headlineMedium,
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  '$correct / $total 正确 · 正确率 $accuracy%',
-                  style: AppTheme.textOf(context).bodyLarge,
-                ),
-                const SizedBox(height: AppSpacing.xl3),
-                // 结果细节条
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: SizedBox(
-                    height: 12,
-                    child: AppProgressBar(
-                      value: (correct / total).clamp(0.0, 1.0),
-                      height: 12,
-                      color: scheme.primary,
-                      trackColor: scheme.surfaceContainerHighest,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xl4),
-                CupertinoButton.filled(
-                  borderRadius: BorderRadius.circular(AppRadius.button),
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 24, vertical: 14),
-                  onPressed: () async {
-                    await ref
-                        .read(practiceNotifierProvider.notifier)
-                        .checkin(widget.task.id);
-                    if (!mounted) return;
-                    ref.read(practiceNotifierProvider.notifier).reset();
-                    widget.onDone?.call();
-                  },
-                  child: Row(
+                  child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(CupertinoIcons.checkmark_circle_fill,
-                          size: 20, color: scheme.onPrimary),
-                      const SizedBox(width: 8),
-                      Text('完成打卡',
-                          style: AppTheme.textOf(context)
-                              .labelLarge
-                              ?.copyWith(color: scheme.onPrimary)),
+                      Container(
+                        width: 108,
+                        height: 108,
+                        decoration: BoxDecoration(
+                          color: iconBg,
+                          borderRadius: BorderRadius.circular(36),
+                        ),
+                        alignment: Alignment.center,
+                        child: Icon(iconData, size: 56, color: iconFg),
+                      ),
+                      const SizedBox(height: AppSpacing.xl2),
+                      Text(
+                        perfect ? '全部答对！' : '完成练习',
+                        style: AppTheme.textOf(context).headlineMedium,
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(
+                        '$correct / $total 正确 · 正确率 $accuracy%',
+                        style: AppTheme.textOf(context).bodyLarge,
+                      ),
+                      const SizedBox(height: AppSpacing.xl3),
+                      // 结果细节条
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: SizedBox(
+                          height: 12,
+                          child: AppProgressBar(
+                            value: (correct / total).clamp(0.0, 1.0),
+                            height: 12,
+                            color: scheme.primary,
+                            trackColor: scheme.surfaceContainerHighest,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.xl4),
+                      CupertinoButton.filled(
+                        borderRadius: BorderRadius.circular(AppRadius.button),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 24, vertical: 14),
+                        onPressed: () async {
+                          await ref
+                              .read(practiceNotifierProvider.notifier)
+                              .checkin(widget.task.id);
+                          if (!mounted) return;
+                          ref.read(practiceNotifierProvider.notifier).reset();
+                          widget.onDone?.call();
+                        },
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(CupertinoIcons.checkmark_circle_fill,
+                                size: 20, color: scheme.onPrimary),
+                            const SizedBox(width: 8),
+                            Text('完成打卡',
+                                style: AppTheme.textOf(context)
+                                    .labelLarge
+                                    ?.copyWith(color: scheme.onPrimary)),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
                 ),
-              ],
+              ),
             ),
           ),
         ),
-      ),
+      ],
     );
   }
 }
@@ -411,9 +424,10 @@ class _OptionTile extends StatelessWidget {
         index < _letters.length ? _letters[index] : '${index + 1}';
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.md),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
+      child: PressScale(
         onTap: onTap,
+        downScale: 0.975,
+        upDuration: const Duration(milliseconds: 300),
         child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),
             curve: Curves.easeOut,
@@ -458,7 +472,8 @@ class _OptionTile extends StatelessWidget {
                   child: Padding(
                     padding: const EdgeInsets.only(top: 4),
                     child: Text(text,
-                        style: AppTheme.textOf(context).bodyLarge?.copyWith(
+                        // 选项 ≥ 22sp（护眼规范），选中加粗
+                        style: AppTheme.textOf(context).titleMedium?.copyWith(
                               fontWeight: selected
                                   ? FontWeight.w600
                                   : FontWeight.w400,

@@ -11,11 +11,6 @@ import '../theme/app_theme.dart';
 class AppToast {
   AppToast._();
 
-  static final Map<bool, Color> _bgByError = {
-    false: const Color(0xFF2F2A24), // 暖炭
-    true: const Color(0xFFE56B54), // 温柔珊瑚
-  };
-
   /// 普通提示（暖炭）。
   static void show(BuildContext context, String message) {
     _show(context, message, isError: false);
@@ -34,11 +29,22 @@ class AppToast {
     final overlay = Overlay.maybeOf(context);
     if (overlay == null) return;
 
+    // 主题派生色：错误用温柔珊瑚；普通提示亮色用暖炭、暗色用抬高的暖面。
+    final app = AppTheme.colorsOf(context);
+    final isDark = app.brightness == Brightness.dark;
+    final bg = isError
+        ? app.error
+        : (isDark ? app.surfaceContainerHigh : const Color(0xFF2F2A24));
+    final fg = isError
+        ? app.onError
+        : (isDark ? app.onSurface : app.surfaceContainerLowest);
+
     late final OverlayEntry entry;
     entry = OverlayEntry(
       builder: (_) => _ToastHost(
         message: message,
-        color: _bgByError[isError]!,
+        color: bg,
+        textColor: fg,
         onDone: () => entry.remove(),
       ),
     );
@@ -49,11 +55,13 @@ class AppToast {
 class _ToastHost extends StatefulWidget {
   final String message;
   final Color color;
+  final Color textColor;
   final VoidCallback onDone;
 
   const _ToastHost({
     required this.message,
     required this.color,
+    required this.textColor,
     required this.onDone,
   });
 
@@ -99,7 +107,6 @@ class _ToastHostState extends State<_ToastHost>
   @override
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
-    final app = AppTheme.colorsOf(context);
     return Positioned(
       left: 24,
       right: 24,
@@ -122,7 +129,7 @@ class _ToastHostState extends State<_ToastHost>
               child: Text(
                 widget.message,
                 style: AppTheme.textOf(context).bodyMedium?.copyWith(
-                      color: app.surfaceContainerLowest,
+                      color: widget.textColor,
                       height: 1.3,
                     ),
               ),
