@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/domain/models/models.dart';
+import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_error.dart';
 import '../../../../shared/widgets/app_loading.dart';
 import '../../../review/presentation/providers/review_notifier.dart';
 import '../providers/home_notifier.dart';
 
 /// 娃娃端首页：复习入口 + 今日任务列表 + 做题入口 + 打卡
+/// v2 redesign：Banner 大圆角 24、Chip→AppTags、章节标题加左侧色条、
+/// 空状态增加图标氛围、任务卡片 CTA 与内容间距更松。
 class ChildHome extends ConsumerWidget {
   final UserModel user;
   final void Function(TaskModel task) onNavigateToPractice;
@@ -30,30 +33,32 @@ class ChildHome extends ConsumerWidget {
     final reviewState = ref.watch(dueReviewNotifierProvider);
     final dueCount =
         reviewState is DueReviewLoaded ? reviewState.items.length : 0;
+    final scheme = Theme.of(context).colorScheme;
 
     return RefreshIndicator(
+      color: scheme.primary,
+      backgroundColor: scheme.surfaceContainerLow,
       onRefresh: () async {
         await ref.read(todayTasksNotifierProvider.notifier).load();
         await ref.read(dueReviewNotifierProvider.notifier).load();
       },
       child: ListView(
+        padding: const EdgeInsets.only(bottom: AppSpacing.xl4),
         children: [
+          const SizedBox(height: AppSpacing.md),
           _ReviewBanner(
             dueCount: dueCount,
             onReview: onNavigateToReview,
             onWrong: onNavigateToWrongQuestions,
           ),
           _TutorBanner(onTutor: onNavigateToTutor),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: Text('今日任务', style: Theme.of(context).textTheme.titleMedium),
-          ),
+          SectionTitle('今日任务'),
           ...switch (state) {
             TodayTasksInitial() || TodayTasksLoading() =>
-              const [Padding(padding: EdgeInsets.all(48), child: AppLoading(message: '加载今日任务...'))],
+              const [Padding(padding: EdgeInsets.all(AppSpacing.xl5), child: AppLoading(message: '加载今日任务...'))],
             TodayTasksError() => [
                 Padding(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(AppSpacing.lg),
                   child: AppError(
                     message: state.message,
                     onRetry: () =>
@@ -62,20 +67,48 @@ class ChildHome extends ConsumerWidget {
                 ),
               ],
             TodayTasksLoaded() => state.tasks.isEmpty
-                ? const [
+                ? [
                     Padding(
-                      padding: EdgeInsets.only(top: 48),
-                      child: Center(
-                        child: Text('今天还没有任务哦\n等爸爸妈妈布置吧～',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(fontSize: 20)),
+                      padding: const EdgeInsets.only(
+                          top: AppSpacing.xl5,
+                          left: AppSpacing.xl2,
+                          right: AppSpacing.xl2),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 88,
+                            height: 88,
+                            decoration: BoxDecoration(
+                              color: scheme.tertiaryContainer,
+                              borderRadius: BorderRadius.circular(28),
+                            ),
+                            alignment: Alignment.center,
+                            child: Icon(Icons.wb_sunny_outlined,
+                                size: 44,
+                                color: scheme.onTertiaryContainer),
+                          ),
+                          const SizedBox(height: AppSpacing.xl2),
+                          Text('今天还没有任务哦',
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.titleMedium),
+                          const SizedBox(height: AppSpacing.sm),
+                          Text('等爸爸妈妈布置吧～',
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.bodyMedium),
+                        ],
                       ),
                     ),
                   ]
                 : state.tasks
-                    .map((t) => _TaskCard(
-                          task: t,
-                          onStart: () => onNavigateToPractice(t),
+                    .map((t) => Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: AppSpacing.lg,
+                              vertical: AppSpacing.xs),
+                          child: _TaskCard(
+                            task: t,
+                            onStart: () => onNavigateToPractice(t),
+                          ),
                         ))
                     .toList(),
           },
@@ -85,6 +118,7 @@ class ChildHome extends ConsumerWidget {
   }
 }
 
+/// 复习错题横幅：更大圆角 24、图标更大、色彩更柔和——Banner 与普通卡片区分。
 class _ReviewBanner extends StatelessWidget {
   final int dueCount;
   final VoidCallback onReview;
@@ -98,89 +132,149 @@ class _ReviewBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card(
-      margin: const EdgeInsets.all(16),
-      color: theme.colorScheme.primaryContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Icon(Icons.autorenew, size: 40, color: theme.colorScheme.primary),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('复习错题',
-                      style: theme.textTheme.titleMedium
-                          ?.copyWith(color: theme.colorScheme.onPrimaryContainer)),
-                  const SizedBox(height: 4),
-                  Text(
-                    dueCount > 0 ? '今天有 $dueCount 道题要复习' : '今天没有要复习的题',
-                    style: theme.textTheme.bodyMedium
-                        ?.copyWith(color: theme.colorScheme.onPrimaryContainer),
-                  ),
-                ],
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, AppSpacing.md),
+      child: Container(
+        decoration: BoxDecoration(
+          color: scheme.primaryContainer,
+          borderRadius: BorderRadius.circular(AppRadius.banner),
+          // 顶部极细的"植物绿高光"纹理：避免完全扁平
+          border: Border.all(
+            color: scheme.primary.withValues(alpha: 0.18),
+            width: 1,
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.xl),
+          child: Row(
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: scheme.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: Icon(Icons.autorenew_rounded,
+                    size: 32, color: scheme.primary),
               ),
-            ),
-            IconButton(
-              onPressed: onWrong,
-              icon: const Icon(Icons.menu_book),
-              tooltip: '错题本',
-            ),
-            FilledButton(
-              onPressed: onReview,
-              child: const Text('去复习'),
-            ),
-          ],
+              const SizedBox(width: AppSpacing.xl),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('复习错题',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            color: scheme.onPrimaryContainer,
+                            fontWeight: FontWeight.w700)),
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      dueCount > 0
+                          ? '今天有 $dueCount 道题要复习'
+                          : '今天没有要复习的题',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: scheme.onPrimaryContainer.withValues(alpha: 0.88)),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                style: IconButton.styleFrom(
+                  backgroundColor: scheme.surfaceContainerLow,
+                  foregroundColor: scheme.primary,
+                  padding: const EdgeInsets.all(AppSpacing.md),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    side: BorderSide(
+                        color: scheme.outline,
+                        width: 1),
+                  ),
+                ),
+                onPressed: onWrong,
+                icon: const Icon(Icons.menu_book_rounded, size: 24),
+                tooltip: '错题本',
+              ),
+              const SizedBox(width: AppSpacing.md),
+              FilledButton(
+                onPressed: onReview,
+                child: const Text('去复习'),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
+/// AI 老师横幅：用 secondaryContainer 的 AI 专属暖色调 + 更大圆角。
 class _TutorBanner extends StatelessWidget {
   final VoidCallback onTutor;
   const _TutorBanner({required this.onTutor});
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card(
-      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-      color: theme.colorScheme.secondaryContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Icon(Icons.smart_toy, size: 40, color: theme.colorScheme.secondary),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('问 AI 老师',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                          color: theme.colorScheme.onSecondaryContainer)),
-                  const SizedBox(height: 4),
-                  Text('遇到不懂的题，随时来问～',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSecondaryContainer)),
-                ],
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.md),
+      child: Container(
+        decoration: BoxDecoration(
+          color: scheme.secondaryContainer,
+          borderRadius: BorderRadius.circular(AppRadius.banner),
+          border: Border.all(
+            color: scheme.secondary.withValues(alpha: 0.18),
+            width: 1,
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.xl),
+          child: Row(
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: scheme.secondary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: Icon(Icons.smart_toy_rounded,
+                    size: 32, color: scheme.secondary),
               ),
-            ),
-            FilledButton(
-              onPressed: onTutor,
-              child: const Text('去提问'),
-            ),
-          ],
+              const SizedBox(width: AppSpacing.xl),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('问 AI 老师',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            color: scheme.onSecondaryContainer,
+                            fontWeight: FontWeight.w700)),
+                    const SizedBox(height: AppSpacing.xs),
+                    Text('遇到不懂的题，随时来问～',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: scheme.onSecondaryContainer
+                                .withValues(alpha: 0.88))),
+                  ],
+                ),
+              ),
+              FilledButton(
+                // AI 区主按钮沿用植物绿主色，保持单强调色一致性
+                onPressed: onTutor,
+                child: const Text('去提问'),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
+/// 今日任务卡片：标签使用 AppTags.normal，"已完成"用 AppBadge.successChip
+/// （避免 Colors.green 硬编码，避免芯片全都套 AI 暖黄）。
 class _TaskCard extends StatelessWidget {
   final TaskModel task;
   final VoidCallback onStart;
@@ -193,39 +287,37 @@ class _TaskCard extends StatelessWidget {
 
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AppSpacing.xl),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
                   child: Text(task.title,
                       style: Theme.of(context).textTheme.titleMedium),
                 ),
-                if (isDone)
-                  const Chip(
-                    label: Text('已完成'),
-                    backgroundColor: Colors.green,
-                    labelStyle: TextStyle(color: Colors.white),
-                  ),
+                const SizedBox(width: AppSpacing.md),
+                if (isDone) AppBadge.successChip('已完成'),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.md),
             Wrap(
-              spacing: 8,
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.sm,
               children: [
-                Chip(label: Text(task.subject)),
-                Chip(label: Text('年级 ${task.grade}')),
-                Chip(label: Text(task.knowledgePoint)),
-                Chip(label: Text('${task.questions.length}题')),
+                AppTags.normal(task.subject),
+                AppTags.normal('${task.grade}年级'),
+                AppTags.info(task.knowledgePoint),
+                AppTags.normal('${task.questions.length}题'),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: AppSpacing.xl),
             if (!isDone)
               SizedBox(
                 width: double.infinity,
-                child: ElevatedButton(
+                child: FilledButton(
                   onPressed: onStart,
                   child: const Text('开始做题'),
                 ),

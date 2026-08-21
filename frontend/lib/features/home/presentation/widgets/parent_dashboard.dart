@@ -2,16 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/domain/models/models.dart';
+import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_error.dart';
 import '../../../../shared/widgets/app_loading.dart';
 import '../../../children/domain/providers/children_provider.dart';
 import '../../../children/presentation/providers/children_notifier.dart';
+import '../../../children/presentation/screens/add_child_screen.dart';
 import '../../../review/presentation/providers/review_notifier.dart';
 import '../../../tutor/presentation/providers/tutor_notifier.dart';
 import '../../../tutor/presentation/screens/tutor_quota_screen.dart';
 import '../providers/home_notifier.dart';
 
 /// 家长端首页：娃娃列表 + 生成任务表单 + 进度看板
+/// v2 redesign：章节用 SectionTitle、统计卡片窄屏自动换行、
+/// 掌握度颜色改用主题派生色（替换 Colors.*）、Chip 改用 AppTags 语义化。
 class ParentDashboard extends ConsumerStatefulWidget {
   final UserModel user;
   final void Function(TaskModel task) onNavigateToPractice;
@@ -76,6 +80,24 @@ class _ParentDashboardState extends ConsumerState<ParentDashboard> {
     ref.read(tutorUsageNotifierProvider(id).notifier).load(childId: id);
   }
 
+  /// 打开「添加娃娃」页；成功后 createChild 已自动刷新列表，
+  /// 携带新用户 id 定向选中，方便立即布置任务。
+  Future<void> _openAddChild() async {
+    final newId = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => const AddChildScreen()),
+    );
+    if (newId == null || !mounted) return;
+    final childrenState = ref.read(childrenNotifierProvider);
+    if (childrenState is ChildrenLoaded) {
+      for (final c in childrenState.children) {
+        if (c.id == newId) {
+          _selectChild(c.id, c.grade ?? 2);
+          break;
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final childrenState = ref.watch(childrenNotifierProvider);
@@ -88,7 +110,6 @@ class _ParentDashboardState extends ConsumerState<ParentDashboard> {
           SnackBar(content: Text('已生成 ${next.task.count} 道题，可见答案用于核查')),
         );
         ref.read(taskGenNotifierProvider.notifier).reset();
-        // 刷新进度
         if (_selectedChildId.isNotEmpty) {
           ref.read(progressNotifierProvider.notifier).load(_selectedChildId);
           ref.read(masteryNotifierProvider.notifier).load(_selectedChildId);
@@ -104,146 +125,197 @@ class _ParentDashboardState extends ConsumerState<ParentDashboard> {
     });
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // —— 娃娃列表 ——
-          Text('我的娃娃', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          _buildChildrenSection(childrenState),
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.xl2, AppSpacing.md, AppSpacing.xl2, AppSpacing.xl4),
+      child: Center(
+        // 大屏平板最大宽度 1080 居中，避免超宽屏拉伸
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1080),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // —— 娃娃列表 ——
+              SectionTitle('我的娃娃'),
+              _buildChildrenSection(childrenState),
 
-          const SizedBox(height: 32),
+              const SizedBox(height: AppSpacing.xl3),
 
-          // —— 生成任务表单 ——
-          Text('布置练习任务', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 12),
-          _buildGenForm(childrenState),
+              // —— 生成任务表单 ——
+              SectionTitle('布置练习任务'),
+              _buildGenForm(childrenState),
 
-          if (genState is TaskGenLoading)
-            const Padding(padding: EdgeInsets.all(16), child: AppLoading()),
+              if (genState is TaskGenLoading)
+                const Padding(padding: EdgeInsets.all(AppSpacing.xl2), child: AppLoading()),
 
-          const SizedBox(height: 32),
+              const SizedBox(height: AppSpacing.xl3),
 
-          // —— 进度看板 ——
-          if (_selectedChildId.isNotEmpty) _buildProgressSection(),
+              // —— 进度看板 ——
+              if (_selectedChildId.isNotEmpty) _buildProgressSection(),
 
-          const SizedBox(height: 32),
+              const SizedBox(height: AppSpacing.xl3),
 
-          // —— 掌握度看板 ——
-          if (_selectedChildId.isNotEmpty) _buildMasterySection(),
+              // —— 掌握度看板 ——
+              if (_selectedChildId.isNotEmpty) _buildMasterySection(),
 
-          const SizedBox(height: 32),
+              const SizedBox(height: AppSpacing.xl3),
 
-          // —— 错题本 ——
-          if (_selectedChildId.isNotEmpty) _buildParentWrongSection(),
+              // —— 错题本 ——
+              if (_selectedChildId.isNotEmpty) _buildParentWrongSection(),
 
-          const SizedBox(height: 32),
+              const SizedBox(height: AppSpacing.xl3),
 
-          // —— AI 答疑日志（家长可查，F-305）——
-          if (_selectedChildId.isNotEmpty) _buildTutorLogsSection(),
+              // —— AI 答疑日志（家长可查，F-305）——
+              if (_selectedChildId.isNotEmpty) _buildTutorLogsSection(),
 
-          const SizedBox(height: 32),
+              const SizedBox(height: AppSpacing.xl3),
 
-          // —— AI 使用管控（T10，故事 23/26）——
-          if (_selectedChildId.isNotEmpty) _buildTutorQuotaSection(),
-        ],
+              // —— AI 使用管控（T10，故事 23/26）——
+              if (_selectedChildId.isNotEmpty) _buildTutorQuotaSection(),
+            ],
+          ),
+        ),
       ),
     );
   }
 
   Widget _buildChildrenSection(ChildrenState state) {
-    return switch (state) {
-      ChildrenInitial() || ChildrenLoading() => const AppLoading(message: '加载娃娃...'),
-      ChildrenError() => AppError(
-          message: state.message,
-          onRetry: () => ref.read(childrenNotifierProvider.notifier).loadChildren(),
-        ),
-      ChildrenLoaded() => state.children.isEmpty
-          ? const Card(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text('还没有娃娃账号\n在下方注册一个娃娃账号'),
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+      child: switch (state) {
+        ChildrenInitial() || ChildrenLoading() =>
+          const AppLoading(message: '加载娃娃...'),
+        ChildrenError() => AppError(
+            message: state.message,
+            onRetry: () => ref.read(childrenNotifierProvider.notifier).loadChildren(),
+          ),
+        ChildrenLoaded() => state.children.isEmpty
+            ? Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(AppSpacing.xl3),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 52,
+                        height: 52,
+                        decoration: BoxDecoration(
+                          color: scheme.primaryContainer,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        alignment: Alignment.center,
+                        child: Icon(Icons.child_care_rounded,
+                            size: 28, color: scheme.onPrimaryContainer),
+                      ),
+                      const SizedBox(width: AppSpacing.xl),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('还没有娃娃账号',
+                                style: Theme.of(context).textTheme.titleSmall),
+                            const SizedBox(height: AppSpacing.xs),
+                            Text('先创建一个娃娃账号吧～',
+                                style: Theme.of(context).textTheme.bodyMedium),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      FilledButton.tonalIcon(
+                        onPressed: _openAddChild,
+                        icon: const Icon(Icons.add, size: 18),
+                        label: const Text('添加娃娃'),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            : Wrap(
+                spacing: AppSpacing.md,
+                runSpacing: AppSpacing.md,
+                children: [
+                  ...state.children.map((c) {
+                    final isSelected = _selectedChildId == c.id;
+                    return _ChildSelector(
+                      name: c.displayName,
+                      grade: c.grade ?? 0,
+                      selected: isSelected,
+                      onTap: () => _selectChild(c.id, c.grade ?? 2),
+                    );
+                  }),
+                  _AddChildTile(onTap: _openAddChild),
+                ],
               ),
-            )
-          : Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: state.children.map((c) {
-                final isSelected = _selectedChildId == c.id;
-                return ChoiceChip(
-                  label: Text('${c.displayName} · ${c.grade ?? '?'}年级'),
-                  selected: isSelected,
-                  onSelected: (_) => _selectChild(c.id, c.grade ?? 2),
-                );
-              }).toList(),
-            ),
-    };
+      },
+    );
   }
 
   Widget _buildGenForm(ChildrenState state) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            DropdownButtonFormField<String>(
-              initialValue: _selectedQtype,
-              decoration: const InputDecoration(labelText: '题型'),
-              items: const [
-                DropdownMenuItem(value: 'calc', child: Text('计算题')),
-                DropdownMenuItem(value: 'fill', child: Text('填空题')),
-                DropdownMenuItem(value: 'choice', child: Text('选择题')),
-                DropdownMenuItem(value: 'open', child: Text('应用题')),
-              ],
-              onChanged: (v) => setState(() => _selectedQtype = v ?? 'calc'),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _subjectCtrl,
-              decoration: const InputDecoration(labelText: '学科'),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _kpCtrl,
-              decoration: const InputDecoration(labelText: '知识点'),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _countCtrl,
-                    decoration: const InputDecoration(labelText: '题数'),
-                    keyboardType: TextInputType.number,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: DropdownButtonFormField<int>(
-                    initialValue: _selectedGrade,
-                    decoration: const InputDecoration(labelText: '年级'),
-                    items: List.generate(9, (i) => i + 1)
-                        .map((g) => DropdownMenuItem(
-                              value: g,
-                              child: Text('$g年级'),
-                            ))
-                        .toList(),
-                    onChanged: (v) => setState(() => _selectedGrade = v ?? 2),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _generate,
-                child: const Text('生成任务'),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.xl),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              DropdownButtonFormField<String>(
+                initialValue: _selectedQtype,
+                decoration: const InputDecoration(labelText: '题型'),
+                items: const [
+                  DropdownMenuItem(value: 'calc', child: Text('计算题')),
+                  DropdownMenuItem(value: 'fill', child: Text('填空题')),
+                  DropdownMenuItem(value: 'choice', child: Text('选择题')),
+                  DropdownMenuItem(value: 'open', child: Text('应用题')),
+                ],
+                onChanged: (v) => setState(() => _selectedQtype = v ?? 'calc'),
               ),
-            ),
-          ],
+              const SizedBox(height: AppSpacing.md),
+              TextField(
+                controller: _subjectCtrl,
+                decoration: const InputDecoration(labelText: '学科'),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              TextField(
+                controller: _kpCtrl,
+                decoration: const InputDecoration(labelText: '知识点'),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _countCtrl,
+                      decoration: const InputDecoration(labelText: '题数'),
+                      keyboardType: TextInputType.number,
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.xl),
+                  Expanded(
+                    child: DropdownButtonFormField<int>(
+                      initialValue: _selectedGrade,
+                      decoration: const InputDecoration(labelText: '年级'),
+                      items: List.generate(9, (i) => i + 1)
+                          .map((g) => DropdownMenuItem(
+                                value: g,
+                                child: Text('$g年级'),
+                              ))
+                          .toList(),
+                      onChanged: (v) => setState(() => _selectedGrade = v ?? 2),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.xl),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _generate,
+                  icon: const Icon(Icons.auto_awesome_rounded, size: 22),
+                  label: const Text('生成任务'),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -252,81 +324,160 @@ class _ParentDashboardState extends ConsumerState<ParentDashboard> {
   Widget _buildProgressSection() {
     final progState = ref.watch(progressNotifierProvider);
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text('学习进度', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
-        switch (progState) {
-          ProgressInitial() || ProgressLoading() =>
-            const AppLoading(message: '加载进度...'),
-          ProgressError() => AppError(message: progState.message),
-          ProgressLoaded() => Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    _stat('总题数', '${progState.progress.total}'),
-                    _stat('答对', '${progState.progress.correct}'),
-                    _stat('正确率', '${(progState.progress.accuracy * 100).round()}%'),
-                    _stat('连续打卡', '${progState.progress.streakDays}天'),
-                  ],
+        SectionTitle('学习进度'),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+          child: switch (progState) {
+            ProgressInitial() || ProgressLoading() =>
+              const AppLoading(message: '加载进度...'),
+            ProgressError() => AppError(message: progState.message),
+            ProgressLoaded() => Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(AppSpacing.xl),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      // 窄屏 2 列，宽屏 4 列——响应式不拥挤
+                      final wide = constraints.maxWidth >= 560;
+                      return Wrap(
+                        runSpacing: AppSpacing.xl2,
+                        spacing: AppSpacing.md,
+                        children: [
+                          _StatCard(
+                            label: '总题数',
+                            value: '${progState.progress.total}',
+                            wide: wide,
+                            icon: Icons.format_list_numbered_rounded,
+                          ),
+                          _StatCard(
+                            label: '答对',
+                            value: '${progState.progress.correct}',
+                            wide: wide,
+                            icon: Icons.check_circle_outline_rounded,
+                          ),
+                          _StatCard(
+                            label: '正确率',
+                            value: '${(progState.progress.accuracy * 100).round()}%',
+                            wide: wide,
+                            icon: Icons.insights_rounded,
+                            tone: _Tone.positive,
+                          ),
+                          _StatCard(
+                            label: '连续打卡',
+                            value: '${progState.progress.streakDays}天',
+                            wide: wide,
+                            icon: Icons.local_fire_department_rounded,
+                            tone: _Tone.warm,
+                          ),
+                        ],
+                      );
+                    },
+                  ),
                 ),
               ),
-            ),
-        },
+          },
+        ),
       ],
-    );
-  }
-
-  Widget _stat(String label, String value) {
-    return Expanded(
-      child: Column(
-        children: [
-          Text(value, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 4),
-          Text(label, style: Theme.of(context).textTheme.bodyMedium),
-        ],
-      ),
     );
   }
 
   // —— 掌握度看板 ——
   Widget _buildMasterySection() {
+    final scheme = Theme.of(context).colorScheme;
     final state = ref.watch(masteryNotifierProvider);
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text('知识点掌握度', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
-        switch (state) {
-          MasteryInitial() || MasteryLoading() =>
-            const AppLoading(message: '加载掌握度...'),
-          MasteryError() => AppError(message: state.message),
-          MasteryLoaded() => state.mastery.items.isEmpty
-              ? const Card(
-                  child: Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Text('还没有作答记录，先布置任务吧'),
-                  ),
-                )
-              : Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '已掌握 ${state.mastery.masteredCount} / ${state.mastery.totalKnowledgePoints} 个知识点',
-                          style: Theme.of(context).textTheme.bodyLarge,
-                        ),
-                        const SizedBox(height: 16),
-                        ...state.mastery.items
-                            .map((m) => _MasteryBar(item: m)),
-                      ],
+        SectionTitle('知识点掌握度'),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+          child: switch (state) {
+            MasteryInitial() || MasteryLoading() =>
+              const AppLoading(message: '加载掌握度...'),
+            MasteryError() => AppError(message: state.message),
+            MasteryLoaded() => state.mastery.items.isEmpty
+                ? Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(AppSpacing.xl3),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 52,
+                            height: 52,
+                            decoration: BoxDecoration(
+                              color: scheme.tertiaryContainer,
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            alignment: Alignment.center,
+                            child: Icon(Icons.psychology_alt_rounded,
+                                size: 28, color: scheme.onTertiaryContainer),
+                          ),
+                          const SizedBox(width: AppSpacing.xl),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('还没有作答记录',
+                                    style:
+                                        Theme.of(context).textTheme.titleSmall),
+                                const SizedBox(height: AppSpacing.xs),
+                                Text('先布置任务吧～',
+                                    style:
+                                        Theme.of(context).textTheme.bodyMedium),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(AppSpacing.xl),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: RichText(
+                                  text: TextSpan(
+                                    style:
+                                        Theme.of(context).textTheme.bodyLarge,
+                                    children: [
+                                      const TextSpan(text: '已掌握 '),
+                                      TextSpan(
+                                        text:
+                                            '${state.mastery.masteredCount}',
+                                        style: TextStyle(
+                                          color: scheme.primary,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      TextSpan(
+                                        text:
+                                            ' / ${state.mastery.totalKnowledgePoints} 个知识点',
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: AppSpacing.xl),
+                          ...state.mastery.items
+                              .map((m) => Padding(
+                                    padding: const EdgeInsets.only(
+                                        bottom: AppSpacing.md),
+                                    child: _MasteryBar(item: m),
+                                  )),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-        },
+          },
+        ),
       ],
     );
   }
@@ -335,77 +486,88 @@ class _ParentDashboardState extends ConsumerState<ParentDashboard> {
   Widget _buildParentWrongSection() {
     final state = ref.watch(parentWrongQuestionsProvider);
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text('错题本', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
-        switch (state) {
-          WrongQuestionsInitial() || WrongQuestionsLoading() =>
-            const AppLoading(message: '加载错题...'),
-          WrongQuestionsError() => AppError(message: state.message),
-          WrongQuestionsLoaded() => state.items.isEmpty
-              ? const Card(
-                  child: Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Text('暂无错题'),
-                  ),
-                )
-              : Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: state.items
-                          .map((item) => _ParentWrongCard(item: item))
-                          .toList(),
+        SectionTitle('错题本'),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+          child: switch (state) {
+            WrongQuestionsInitial() || WrongQuestionsLoading() =>
+              const AppLoading(message: '加载错题...'),
+            WrongQuestionsError() => AppError(message: state.message),
+            WrongQuestionsLoaded() => state.items.isEmpty
+                ? Card(
+                    child: Padding(
+                      padding: EdgeInsets.all(AppSpacing.xl3),
+                      child: Center(
+                        child: Text('暂无错题，继续保持～',
+                            style: Theme.of(context).textTheme.bodyLarge),
+                      ),
+                    ),
+                  )
+                : Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(AppSpacing.xl),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: state.items
+                            .map((item) => _ParentWrongCard(item: item))
+                            .toList(),
+                      ),
                     ),
                   ),
-                ),
-        },
+          },
+        ),
       ],
     );
   }
 
   // —— AI 答疑日志（家长可查，F-305）——
-  Widget _buildTutorLogsSection() {    final state = ref.watch(tutorLogsNotifierProvider);
+  Widget _buildTutorLogsSection() {
+    final state = ref.watch(tutorLogsNotifierProvider);
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text('AI 答疑记录', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
-        switch (state) {
-          TutorLogsInitial() || TutorLogsLoading() =>
-            const AppLoading(message: '加载答疑记录...'),
-          TutorLogsError() => AppError(message: state.message),
-          TutorLogsLoaded() => state.logs.isEmpty
-              ? const Card(
-                  child: Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Text('这个娃娃还没有问过 AI 老师'),
-                  ),
-                )
-              : Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: state.logs
-                          .map((log) => _TutorLogCard(log: log))
-                          .toList(),
+        SectionTitle('AI 答疑记录'),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+          child: switch (state) {
+            TutorLogsInitial() || TutorLogsLoading() =>
+              const AppLoading(message: '加载答疑记录...'),
+            TutorLogsError() => AppError(message: state.message),
+            TutorLogsLoaded() => state.logs.isEmpty
+                ? Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(AppSpacing.xl3),
+                      child: Center(
+                        child: Text('这个娃娃还没有问过 AI 老师',
+                            style: Theme.of(context).textTheme.bodyLarge),
+                      ),
+                    ),
+                  )
+                : Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(AppSpacing.xl),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: state.logs
+                            .map((log) => _TutorLogCard(log: log))
+                            .toList(),
+                      ),
                     ),
                   ),
-                ),
-        },
+          },
+        ),
       ],
     );
   }
 
   // —— AI 使用管控（T10，故事 23/26）——
   Widget _buildTutorQuotaSection() {
+    final scheme = Theme.of(context).colorScheme;
     final quotaState = ref.watch(tutorQuotaNotifierProvider(_selectedChildId));
     final usageState = ref.watch(tutorUsageNotifierProvider(_selectedChildId));
 
-    // 取当前选中娃娃的昵称做设置页标题
     final childrenState = ref.read(childrenNotifierProvider);
     String childName = '';
     if (childrenState is ChildrenLoaded) {
@@ -415,15 +577,10 @@ class _ParentDashboardState extends ConsumerState<ParentDashboard> {
     }
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child:
-                  Text('AI 使用管控', style: Theme.of(context).textTheme.titleMedium),
-            ),
-            TextButton(
+        SectionTitle('AI 使用管控',
+            trailing: TextButton.icon(
               onPressed: () => Navigator.of(context).push(
                 MaterialPageRoute<void>(
                   builder: (_) => TutorQuotaScreen(
@@ -432,35 +589,62 @@ class _ParentDashboardState extends ConsumerState<ParentDashboard> {
                   ),
                 ),
               ),
-              child: const Text('设置'),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  switch (quotaState) {
-                    TutorQuotaLoaded() => _quotaSummary(quotaState.quota),
-                    TutorQuotaError() => '加载失败：${quotaState.message}',
-                    _ => '加载中…',
-                  },
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  switch (usageState) {
-                    TutorUsageLoaded() => _usageSummary(usageState.usage),
-                    TutorUsageError() => '用量加载失败',
-                    _ => '今日用量加载中…',
-                  },
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ],
+              icon: const Icon(Icons.tune_rounded, size: 20),
+              label: const Text('设置'),
+            )),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpacing.xl),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: scheme.secondaryContainer,
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        alignment: Alignment.center,
+                        child: Icon(Icons.timer_outlined,
+                            size: 24, color: scheme.onSecondaryContainer),
+                      ),
+                      const SizedBox(width: AppSpacing.md),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              switch (quotaState) {
+                                TutorQuotaLoaded() =>
+                                  _quotaSummary(quotaState.quota),
+                                TutorQuotaError() =>
+                                  '加载失败：${quotaState.message}',
+                                _ => '加载中…',
+                              },
+                              style: Theme.of(context).textTheme.bodyMedium,
+                            ),
+                            const SizedBox(height: AppSpacing.xs2),
+                            Text(
+                              switch (usageState) {
+                                TutorUsageLoaded() =>
+                                  _usageSummary(usageState.usage),
+                                TutorUsageError() => '用量加载失败',
+                                _ => '今日用量加载中…',
+                              },
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -494,135 +678,432 @@ class _ParentDashboardState extends ConsumerState<ParentDashboard> {
   }
 }
 
-class _MasteryBar extends StatelessWidget {
-  final KnowledgeMasteryModel item;
-  const _MasteryBar({required this.item});
+// =====================================================================
+// 私有组件
+// =====================================================================
 
-  Color get _levelColor => switch (item.level) {
-        '已掌握' => Colors.green,
-        '较扎实' => Colors.lightGreen,
-        '巩固中' => Colors.blue,
-        '薄弱' => Colors.orange,
-        '待加强' => Colors.red,
-        _ => Colors.grey,
-      };
+/// 娃娃选择器：替代 ChoiceChip 单 Pills 样式——有头像感、选中态突出 2px 主色描边。
+class _ChildSelector extends StatelessWidget {
+  final String name;
+  final int grade;
+  final bool selected;
+  final VoidCallback onTap;
+  const _ChildSelector({
+    required this.name,
+    required this.grade,
+    required this.selected,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppRadius.card),
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+          padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md, vertical: AppSpacing.md),
+          decoration: BoxDecoration(
+            color: selected
+                ? scheme.primaryContainer
+                : scheme.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(AppRadius.card),
+            border: Border.all(
+              color: selected
+                  ? scheme.primary
+                  : scheme.outline,
+              width: selected ? 2 : 1,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Expanded(
-                child: Text('${item.subject} · ${item.knowledgePoint}',
-                    style: Theme.of(context).textTheme.bodyMedium),
+              AvatarSquircle(
+                name: name,
+                size: 40,
+                bg: selected ? scheme.primary : scheme.surfaceContainerHigh,
+                fg: selected
+                    ? scheme.onPrimary
+                    : scheme.onSurfaceVariant,
               ),
-              Text('${item.score.round()}分',
-                  style: Theme.of(context).textTheme.bodyMedium),
-              const SizedBox(width: 8),
-              Chip(
-                label: Text(item.level),
-                labelStyle: TextStyle(
-                    color: Colors.white, fontSize: 12),
-                backgroundColor: _levelColor,
-                visualDensity: VisualDensity.compact,
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              const SizedBox(width: AppSpacing.md),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(name,
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: selected
+                                ? scheme.onPrimaryContainer
+                                : scheme.onSurface,
+                          )),
+                  const SizedBox(height: 2),
+                  Text(grade > 0 ? '$grade年级' : '未设置',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: selected
+                                ? scheme.onPrimaryContainer.withValues(alpha: 0.75)
+                                : scheme.onSurfaceVariant,
+                          )),
+                ],
               ),
             ],
           ),
-          const SizedBox(height: 6),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: (item.score / 100).clamp(0.0, 1.0),
-              minHeight: 8,
-              backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-              color: _levelColor,
+        ),
+      ),
+    );
+  }
+}
+
+/// 「＋ 添加娃娃」入口块，样式与 _ChildSelector 对齐（虚线语义的加号卡片）。
+class _AddChildTile extends StatelessWidget {
+  final VoidCallback onTap;
+  const _AddChildTile({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppRadius.card),
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+          padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md, vertical: AppSpacing.md),
+          constraints: const BoxConstraints(minHeight: 64),
+          decoration: BoxDecoration(
+            color: scheme.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(AppRadius.card),
+            border: Border.all(color: scheme.outlineVariant),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.add_circle_outline_rounded,
+                  size: 22, color: scheme.primary),
+              const SizedBox(width: AppSpacing.xs),
+              Text('添加娃娃', style: Theme.of(context).textTheme.bodyMedium),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 家长端统计卡片：宽屏 4 列 / 窄屏 2 列自适应。
+enum _Tone { neutral, positive, warm, alert }
+
+class _StatCard extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool wide;
+  final IconData icon;
+  final _Tone tone;
+  const _StatCard({
+    required this.label,
+    required this.value,
+    required this.wide,
+    required this.icon,
+    this.tone = _Tone.neutral,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final (bg, fg) = switch (tone) {
+      _Tone.positive => (
+          scheme.tertiaryContainer,
+          scheme.onTertiaryContainer
+        ),
+      _Tone.warm => (scheme.secondaryContainer, scheme.onSecondaryContainer),
+      _Tone.alert => (scheme.errorContainer, scheme.onErrorContainer),
+      _Tone.neutral => (
+          scheme.surfaceContainerHigh,
+          scheme.onSurface
+        ),
+    };
+    return Container(
+      width: wide ? null : 160, // 窄屏固定 2 列对齐
+      constraints: wide
+          ? BoxConstraints(
+              minWidth: 140,
+              maxWidth: (MediaQuery.of(context).size.width -
+                      AppSpacing.xl2 * 2 -
+                      AppSpacing.lg * 2 -
+                      AppSpacing.md * 3) /
+                  4,
+            )
+          : null,
+      padding: const EdgeInsets.all(AppSpacing.xl),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(AppRadius.card),
+        border: Border.all(color: scheme.outline, width: 1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: bg,
+              borderRadius: BorderRadius.circular(12),
             ),
+            alignment: Alignment.center,
+            child: Icon(icon, size: 20, color: fg),
           ),
-          const SizedBox(height: 4),
-          Text(
-            item.activeWrong > 0
-                ? '正确率 ${(item.accuracy * 100).round()}% · 有 ${item.activeWrong} 题待复习'
-                : '正确率 ${(item.accuracy * 100).round()}% · 无待复习错题',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
+          const SizedBox(height: AppSpacing.md),
+          Text(value,
+              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                    color: scheme.onSurface,
+                    fontFamily: 'HarmonyOS_Sans_SC',
+                    // tabular figures 防统计数字抖动
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  )),
+          const SizedBox(height: AppSpacing.xs),
+          Text(label, style: Theme.of(context).textTheme.bodySmall),
         ],
       ),
     );
   }
 }
 
+/// 掌握度进度条：用主题派生色替换硬编码 Colors.*。
+class _MasteryBar extends StatelessWidget {
+  final KnowledgeMasteryModel item;
+  const _MasteryBar({required this.item});
+
+  /// 全部映射到植物绿→珊瑚的暖色连续体，不引入新色相。
+  /// 取色走传入的 [scheme]，保证亮/暗模式一致。
+  (_MasteryLevel, Color, Color) _mappingOf(ColorScheme scheme) {
+    switch (item.level) {
+      case '已掌握':
+        return (
+          _MasteryLevel.mastered,
+          scheme.primary,
+          scheme.tertiaryContainer,
+        );
+      case '较扎实':
+        return (
+          _MasteryLevel.solid,
+          scheme.tertiary,
+          scheme.primaryContainer,
+        );
+      case '巩固中':
+        return (
+          _MasteryLevel.learning,
+          const Color(0xFF8AA48A), // 植物绿 40% 饱和变体
+          scheme.surfaceContainerHigh,
+        );
+      case '薄弱':
+        return (
+          _MasteryLevel.weak,
+          const Color(0xFFD7A25C), // 暖色琥珀变体，不越界到蓝
+          scheme.secondaryContainer,
+        );
+      case '待加强':
+        return (
+          _MasteryLevel.needWork,
+          scheme.error, // Gentle Coral
+          scheme.errorContainer,
+        );
+      default:
+        return (
+          _MasteryLevel.unknown,
+          scheme.onSurfaceVariant,
+          scheme.surfaceContainerHighest,
+        );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final (_, fgColor, _) = _mappingOf(scheme);
+    final bgColor = scheme.surfaceContainerHighest;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text('${item.subject} · ${item.knowledgePoint}',
+                  style: Theme.of(context).textTheme.bodyMedium),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Text('${item.score.round()}分',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: scheme.onSurface,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    )),
+            const SizedBox(width: AppSpacing.md),
+            AppBadge.infoChip(item.level),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: LinearProgressIndicator(
+            value: (item.score / 100).clamp(0.0, 1.0),
+            minHeight: 10,
+            backgroundColor: bgColor,
+            valueColor: AlwaysStoppedAnimation<Color>(fgColor),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          item.activeWrong > 0
+              ? '正确率 ${(item.accuracy * 100).round()}% · 有 ${item.activeWrong} 题待复习'
+              : '正确率 ${(item.accuracy * 100).round()}% · 无待复习错题',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      ],
+    );
+  }
+}
+
+enum _MasteryLevel { mastered, solid, learning, weak, needWork, unknown }
+
+/// 家长端错题条目：标准答案用 tertiary（植物绿变体格）替代 Colors.green。
 class _ParentWrongCard extends StatelessWidget {
   final WrongQuestionModel item;
   const _ParentWrongCard({required this.item});
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(item.stem, style: Theme.of(context).textTheme.bodyLarge),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.md),
           Wrap(
-            spacing: 8,
-            runSpacing: 4,
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
             children: [
-              Chip(label: Text(item.knowledgePoint)),
-              Chip(label: Text('错过 ${item.wrongCount} 次')),
-              Chip(label: Text('复习阶段 ${item.reviewStage}')),
+              AppTags.normal(item.knowledgePoint),
+              AppTags.warning('错过 ${item.wrongCount} 次'),
+              AppTags.info('复习阶段 ${item.reviewStage}'),
             ],
           ),
-          const SizedBox(height: 8),
-          Text('标准答案：${item.answer ?? '—'}',
-              style: const TextStyle(color: Colors.green)),
+          const SizedBox(height: AppSpacing.md),
+          Container(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            decoration: BoxDecoration(
+              color: scheme.tertiaryContainer.withValues(alpha: 0.6),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.check_circle_outline_rounded,
+                    size: 20, color: scheme.onTertiaryContainer),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Text(
+                    '标准答案：${item.answer ?? '—'}',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: scheme.onTertiaryContainer,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                ),
+              ],
+            ),
+          ),
           if (item.explanation.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.only(top: 4),
+              padding: const EdgeInsets.only(top: AppSpacing.md),
               child: Text('解析：${item.explanation}',
-                  style: Theme.of(context).textTheme.bodySmall),
+                  style: Theme.of(context).textTheme.bodyMedium),
             ),
-          const Divider(height: 24),
+          const SizedBox(height: AppSpacing.md),
+          const Divider(height: 1),
         ],
       ),
     );
   }
 }
 
+/// AI 答疑日志条目：拦截/正常 Badge 改为 AppBadge，移除硬编码橙/绿。
 class _TutorLogCard extends StatelessWidget {
   final TutorLogModel log;
   const _TutorLogCard({required this.log});
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Container(
+                width: 32,
+                height: 32,
+                margin: const EdgeInsets.only(right: AppSpacing.sm, top: 2),
+                decoration: BoxDecoration(
+                  color: scheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                alignment: Alignment.center,
+                child: Icon(Icons.help_outline_rounded,
+                    size: 18, color: scheme.onPrimaryContainer),
+              ),
               Expanded(
                 child: Text('问：${log.question}',
-                    style: Theme.of(context).textTheme.bodyLarge),
+                    style: Theme.of(context).textTheme.bodyMedium),
               ),
-              Chip(
-                label: Text(log.blocked ? '已拦截' : '正常'),
-                labelStyle: const TextStyle(color: Colors.white, fontSize: 12),
-                backgroundColor: log.blocked ? Colors.orange : Colors.green,
-                visualDensity: VisualDensity.compact,
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              const SizedBox(width: AppSpacing.md),
+              log.blocked
+                  ? AppBadge.warningChip('已拦截')
+                  : AppBadge.successChip('正常'),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                margin: const EdgeInsets.only(right: AppSpacing.sm, top: 2),
+                decoration: BoxDecoration(
+                  color: scheme.secondaryContainer,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                alignment: Alignment.center,
+                child: Icon(Icons.smart_toy_outlined,
+                    size: 18, color: scheme.onSecondaryContainer),
+              ),
+              Expanded(
+                child: Text('答：${log.answer}',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: scheme.onSurface,
+                        )),
               ),
             ],
           ),
-          const SizedBox(height: 4),
-          Text('答：${log.answer}', style: Theme.of(context).textTheme.bodyMedium),
-          const Divider(height: 24),
+          const SizedBox(height: AppSpacing.md),
+          const Divider(height: 1),
         ],
       ),
     );

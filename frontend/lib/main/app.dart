@@ -10,6 +10,7 @@ import '../services/auth_session/domain/providers/auth_session_provider.dart';
 import '../shared/domain/models/models.dart';
 import '../shared/domain/providers/core_providers.dart';
 import '../shared/theme/app_theme.dart';
+import '../shared/theme/theme_provider.dart';
 
 class MyApp extends ConsumerStatefulWidget {
   const MyApp({super.key});
@@ -25,7 +26,9 @@ class _MyAppState extends ConsumerState<MyApp> {
   @override
   void initState() {
     super.initState();
-    _restoreSession();
+    // 推迟到首帧构建完成后，避免在 build 阶段同步修改 StateProvider
+    // 导致 framework 的 !_dirty 断言失败。
+    WidgetsBinding.instance.addPostFrameCallback((_) => _restoreSession());
   }
 
   Future<void> _restoreSession() async {
@@ -67,12 +70,14 @@ class _MyAppState extends ConsumerState<MyApp> {
 
   @override
   Widget build(BuildContext context) {
+    final themeMode = ref.watch(themeModeProvider);
+
     if (!_initialized) {
       return MaterialApp(
-        home: Scaffold(
-          backgroundColor: AppTheme.light.colorScheme.surface,
-          body: const Center(child: CircularProgressIndicator()),
-        ),
+        theme: AppTheme.light,
+        darkTheme: AppTheme.dark,
+        themeMode: themeMode,
+        home: Scaffold(body: const Center(child: CircularProgressIndicator())),
       );
     }
 
@@ -80,6 +85,8 @@ class _MyAppState extends ConsumerState<MyApp> {
       title: '娃娃学习',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
+      darkTheme: AppTheme.dark,
+      themeMode: themeMode,
       home: _currentUser == null
           ? LoginScreen(onLoginSuccess: _onLoginSuccess)
           : _MainShell(user: _currentUser!, onLogout: _logout),

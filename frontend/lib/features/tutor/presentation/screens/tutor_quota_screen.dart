@@ -2,14 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/domain/models/models.dart';
+import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/app_error.dart';
+import '../../../../shared/widgets/app_loading.dart';
 import '../providers/tutor_notifier.dart';
 
-/// 家长端：AI 使用管控设置页（T10，故事 23/26）。
-///
-/// 三项管控（整体覆盖保存，留空 = 不限制该 item）：
-/// - 每日提问条数上限（默认走全局 50 次）
-/// - 每日使用时长上限（分钟，按服务端累计答疑耗时）
-/// - 允许提问的学科（多选，全不选 = 不限）
+/// 家长端：AI 使用管控设置页。
+/// v2 redesign：统一使用 AppLoading / AppError、用 AppTags 替代 FilterChip 的默认样式、
+/// 空状态友好、SectionTitle 章节头。
 class TutorQuotaScreen extends ConsumerStatefulWidget {
   final String childId;
   final String childName;
@@ -53,7 +53,6 @@ class _TutorQuotaScreenState extends ConsumerState<TutorQuotaScreen> {
     super.dispose();
   }
 
-  /// 首次加载成功后把已有配置回填到表单。
   void _syncForm(TutorQuotaModel quota) {
     if (_initialized) return;
     _initialized = true;
@@ -68,7 +67,6 @@ class _TutorQuotaScreenState extends ConsumerState<TutorQuotaScreen> {
 
   Future<void> _save() async {
     if (_saving) return;
-    // 非空但非法的数字输入不静默忽略，明确提示
     final askText = _askLimitCtrl.text.trim();
     final minutesText = _minutesLimitCtrl.text.trim();
     final askLimit = askText.isEmpty ? null : int.tryParse(askText);
@@ -94,7 +92,6 @@ class _TutorQuotaScreenState extends ConsumerState<TutorQuotaScreen> {
     if (!mounted) return;
     setState(() => _saving = false);
     if (error == null) {
-      // 同步刷新用量展示（限额变了，剩余量随之变化）
       ref
           .read(tutorUsageNotifierProvider(widget.childId).notifier)
           .load(childId: widget.childId);
@@ -110,10 +107,10 @@ class _TutorQuotaScreenState extends ConsumerState<TutorQuotaScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final quotaState = ref.watch(tutorQuotaNotifierProvider(widget.childId));
     final usageState = ref.watch(tutorUsageNotifierProvider(widget.childId));
 
-    // 配置加载成功后回填表单（仅首次）
     ref.listen<TutorQuotaState>(
       tutorQuotaNotifierProvider(widget.childId),
       (prev, next) {
@@ -124,31 +121,76 @@ class _TutorQuotaScreenState extends ConsumerState<TutorQuotaScreen> {
     return Scaffold(
       appBar: AppBar(title: Text('${widget.childName} · AI 使用管控')),
       body: switch (quotaState) {
-        TutorQuotaInitial() || TutorQuotaLoading() => const Center(
-            child: CircularProgressIndicator(),
+        TutorQuotaInitial() || TutorQuotaLoading() =>
+          const AppLoading(message: '加载设置...'),
+        TutorQuotaError() => AppError(
+            message: quotaState.message,
+            onRetry: () {
+              ref
+                  .read(tutorQuotaNotifierProvider(widget.childId).notifier)
+                  .load(childId: widget.childId);
+            },
           ),
-        TutorQuotaError() => Center(child: Text(quotaState.message)),
         TutorQuotaLoaded() => ListView(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.fromLTRB(
+                AppSpacing.xl2, AppSpacing.md, AppSpacing.xl2, AppSpacing.xl4),
             children: [
-              _buildUsageCard(usageState),
-              const SizedBox(height: 24),
-              _buildForm(context),
-              const SizedBox(height: 8),
-              Text(
-                '提示：0 表示今日禁用 AI 答疑；留空表示不限制（次数留空走全局默认上限）。',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-              const SizedBox(height: 16),
-              FilledButton(
-                onPressed: _saving ? null : _save,
-                child: _saving
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Text('保存'),
+              Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 720),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildUsageCard(usageState),
+                      const SizedBox(height: AppSpacing.xl3),
+                      _buildForm(context),
+                      const SizedBox(height: AppSpacing.md),
+                      Container(
+                        padding: const EdgeInsets.all(AppSpacing.md),
+                        decoration: BoxDecoration(
+                          color: scheme.secondaryContainer.withValues(alpha: 0.5),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(Icons.info_outline_rounded,
+                                size: 20,
+                                color: scheme.onSecondaryContainer),
+                            const SizedBox(width: AppSpacing.sm),
+                            Expanded(
+                              child: Text(
+                                '提示：0 表示今日禁用 AI 答疑；留空表示不限制（次数留空走全局默认上限）。',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .labelSmall
+                                    ?.copyWith(
+                                        color: scheme.onSecondaryContainer,
+                                        fontWeight: FontWeight.w500),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.xl2),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          onPressed: _saving ? null : _save,
+                          icon: _saving
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2.2, color: Colors.white),
+                                )
+                              : const Icon(Icons.save_rounded, size: 20),
+                          label: Text(_saving ? '保存中…' : '保存设置'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ],
           ),
@@ -157,25 +199,53 @@ class _TutorQuotaScreenState extends ConsumerState<TutorQuotaScreen> {
   }
 
   Widget _buildUsageCard(TutorUsageState usageState) {
+    final scheme = Theme.of(context).colorScheme;
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AppSpacing.xl),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('今日已用', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            switch (usageState) {
-              TutorUsageLoaded() => Text(
-                  '提问 ${usageState.usage.asksToday}'
-                  '${usageState.usage.askLimit != null ? ' / ${usageState.usage.askLimit} 次' : ' 次'}'
-                  '　·　时长 ${(usageState.usage.usedSeconds / 60).toStringAsFixed(1)}'
-                  '${usageState.usage.minutesLimit != null ? ' / ${usageState.usage.minutesLimit} 分钟' : ' 分钟'}',
-                  style: Theme.of(context).textTheme.bodyLarge,
+            Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: scheme.secondaryContainer,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(Icons.insights_rounded,
+                      size: 22, color: scheme.onSecondaryContainer),
                 ),
-              TutorUsageError() => Text(usageState.message),
-              _ => const Text('…'),
-            },
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: Text('今日已用',
+                      style: Theme.of(context).textTheme.titleSmall),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.md),
+            Padding(
+              padding: const EdgeInsets.only(left: 52),
+              child: switch (usageState) {
+                TutorUsageLoaded() => Text(
+                    '提问 ${usageState.usage.asksToday}'
+                    '${usageState.usage.askLimit != null ? ' / ${usageState.usage.askLimit} 次' : ' 次'}'
+                    '　·　时长 ${(usageState.usage.usedSeconds / 60).toStringAsFixed(1)}'
+                    '${usageState.usage.minutesLimit != null ? ' / ${usageState.usage.minutesLimit} 分钟' : ' 分钟'}',
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                  ),
+                TutorUsageError() => Text(usageState.message,
+                    style: TextStyle(
+                        color: Theme.of(context).colorScheme.error)),
+                _ => Text('今日用量加载中…',
+                    style: Theme.of(context).textTheme.bodyMedium),
+              },
+            ),
           ],
         ),
       ),
@@ -185,7 +255,7 @@ class _TutorQuotaScreenState extends ConsumerState<TutorQuotaScreen> {
   Widget _buildForm(BuildContext context) {
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AppSpacing.xl),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -194,35 +264,96 @@ class _TutorQuotaScreenState extends ConsumerState<TutorQuotaScreen> {
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(
                 labelText: '每日提问上限（次，留空不限）',
+                prefixIcon: Icon(Icons.format_list_numbered_rounded),
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: AppSpacing.md),
             TextField(
               controller: _minutesLimitCtrl,
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(
                 labelText: '每日使用时长上限（分钟，留空不限）',
+                prefixIcon: Icon(Icons.timer_outlined),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: AppSpacing.xl2),
             Text('允许提问的学科（不选 = 不限）',
-                style: Theme.of(context).textTheme.bodyMedium),
-            const SizedBox(height: 8),
+                style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: AppSpacing.md),
             Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              children: _subjects
-                  .map((s) => FilterChip(
-                        label: Text(s),
-                        selected: _selectedSubjects.contains(s),
-                        onSelected: (v) => setState(() {
-                          v ? _selectedSubjects.add(s)
-                            : _selectedSubjects.remove(s);
-                        }),
-                      ))
-                  .toList(),
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.sm,
+              children: _subjects.map((s) {
+                final selected = _selectedSubjects.contains(s);
+                return _SubjectToggle(
+                  label: s,
+                  selected: selected,
+                  onTap: () => setState(() {
+                    selected
+                        ? _selectedSubjects.remove(s)
+                        : _selectedSubjects.add(s);
+                  }),
+                );
+              }).toList(),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SubjectToggle extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  const _SubjectToggle({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppRadius.chip),
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+          padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+          decoration: BoxDecoration(
+            color: selected
+                ? scheme.primaryContainer
+                : scheme.surfaceContainerHigh,
+            borderRadius: BorderRadius.circular(AppRadius.chip),
+            border: Border.all(
+              color: selected ? scheme.primary : Colors.transparent,
+              width: selected ? 1.5 : 0,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (selected)
+                Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: Icon(Icons.check_rounded,
+                      size: 18, color: scheme.onPrimaryContainer),
+                ),
+              Text(label,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: selected
+                            ? scheme.onPrimaryContainer
+                            : scheme.onSurface,
+                        fontWeight: FontWeight.w600,
+                      )),
+            ],
+          ),
         ),
       ),
     );
