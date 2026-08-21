@@ -1,9 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
 
 import 'package:kids_learn/features/tutor/presentation/providers/tutor_notifier.dart';
 import 'package:kids_learn/shared/data/remote/network_service.dart';
 import 'package:kids_learn/shared/domain/models/models.dart';
 import 'package:kids_learn/shared/exceptions/app_exception.dart';
+
+/// mocktail 假网络：按 stub 返回/抛错，可 verify 调用次数。
+class MockNetworkService extends Mock implements NetworkService {}
 
 /// 内存版 NetworkService：按 path 返回预置响应，记录 POST body。
 class FakeNetwork implements NetworkService {
@@ -249,6 +255,161 @@ void main() {
       expect(state.usage.usedSeconds, 127);
       expect(state.usage.askLimit, 9);
       expect(state.usage.minutesLimit, 30);
+    });
+  });
+
+  group('TutorNotifier 状态机（mocktail）', () {
+    test('Idle → Loading → Loaded（成功迁移）', () async {
+      final network = MockNetworkService();
+      final completer = Completer<dynamic>();
+      when(() => network.post('/tutor/ask', body: any(named: 'body')))
+          .thenAnswer((_) => completer.future);
+      final notifier = TutorNotifier(network);
+
+      expect(notifier.state, isA<TutorInitial>());
+
+      final future = notifier.ask(TutorAskReq(
+          subject: '数学', grade: 2, knowledgePoint: '', question: '1+1'));
+      // 同步进入 Loading，娃娃气泡即时上屏
+      final loading = notifier.state as TutorLoading;
+      expect(loading.messages.length, 1);
+      expect(loading.messages.first.role, 'child');
+
+      completer.complete(
+          {'answer': '答案是 2', 'blocked': false, 'reason': null});
+      await future;
+
+      final loaded = notifier.state as TutorLoaded;
+      expect(loaded.messages.length, 2);
+      expect(loaded.messages.last.text, '答案是 2');
+      verify(() => network.post('/tutor/ask', body: any(named: 'body')))
+          .called(1);
+    });
+
+    test('Idle → Loading → Loaded（AppException 透出提示文案）', () async {
+      final network = MockNetworkService();
+      when(() => network.post('/tutor/ask', body: any(named: 'body')))
+          .thenThrow(HttpException(
+              '今日 AI 答疑次数已达上限（50 次），明日再来哦～',
+              statusCode: 429));
+      final notifier = TutorNotifier(network);
+
+      await notifier.ask(
+          TutorAskReq(subject: '数学', grade: 2, knowledgePoint: '', question: 'hi'));
+
+      final loaded = notifier.state as TutorLoaded;
+      expect(loaded.messages.last.text, contains('上限'));
+      expect(loaded.messages.last.text, isNot(contains('网络异常')));
+    });
+
+    test('Loading 期间重复 ask 被忽略（防重入，仅一次请求）', () async {
+      final network = MockNetworkService();
+      final completer = Completer<dynamic>();
+      when(() => network.post('/tutor/ask', body: any(named: 'body')))
+          .thenAnswer((_) => completer.future);
+      final notifier = TutorNotifier(network);
+
+      final f1 = notifier.ask(TutorAskReq(
+          subject: '数学', grade: 2, knowledgePoint: '', question: '第一问'));
+      final f2 = notifier.ask(TutorAskReq(
+          subject: '数学', grade: 2, knowledgePoint: '', question: '第二问'));
+
+      expect(notifier.state, isA<TutorLoading>());
+      completer.complete(
+          {'answer': 'ok', 'blocked': false, 'reason': null});
+      await Future.wait([f1, f2]);
+
+      final loaded = notifier.state as TutorLoaded;
+      // 只有第一问上屏、只发一次请求
+      expect(loaded.messages.where((m) => m.role == 'child').length, 1);
+      verify(() => network.post('/tutor/ask', body: any(named: 'body')))
+          .called(1);
+    });
+  });
+
+  group('日志/管控/用量 notifier 四态（mocktail）', () {
+    test('TutorLogsNotifier: Initial → Loading → Loaded', () async {
+      final network = MockNetworkService();
+      when(() => network.get('/tutor/logs', query: any(named: 'query')))
+          .thenAnswer((_) async => [
+                {
+                  'id': 'l1',
+                  'grade': 2,
+                  'subject': '数学',
+                  'knowledge_point': '',
+                  'question': 'q',
+                  'answer': 'a',
+                  'input_safe': true,
+                  'output_safe': true,
+                  'blocked': false,
+                  'created_at': '2026-08-20T10:00:00',
+                },
+              ]);
+      final notifier = TutorLogsNotifier(network);
+
+      expect(notifier.state, isA<TutorLogsInitial>());
+      final future = notifier.load(childId: 'c1');
+      expect(notifier.state, isA<TutorLogsLoading>());
+      await future;
+
+      final loaded = notifier.state as TutorLogsLoaded;
+      expect(loaded.logs.length, 1);
+      expect(loaded.logs.first.question, 'q');
+    });
+
+    test('TutorLogsNotifier: Error 态', () async {
+      final network = MockNetworkService();
+      when(() => network.get('/tutor/logs', query: any(named: 'query')))
+          .thenThrow(Exception('boom'));
+      final notifier = TutorLogsNotifier(network);
+
+      await notifier.load(childId: 'c1');
+
+      expect(notifier.state, isA<TutorLogsError>());
+    });
+
+    test('TutorQuotaNotifier: Initial → Loading → Loaded', () async {
+      final network = MockNetworkService();
+      when(() => network.get('/tutor/quota', query: any(named: 'query')))
+          .thenAnswer((_) async => {
+                'child_id': 'c1',
+                'daily_ask_limit': 10,
+                'daily_minutes_limit': null,
+                'allowed_subjects': ['数学'],
+              });
+      final notifier = TutorQuotaNotifier(network);
+
+      expect(notifier.state, isA<TutorQuotaInitial>());
+      final future = notifier.load(childId: 'c1');
+      expect(notifier.state, isA<TutorQuotaLoading>());
+      await future;
+
+      final loaded = notifier.state as TutorQuotaLoaded;
+      expect(loaded.quota.dailyAskLimit, 10);
+    });
+
+    test('TutorUsageNotifier: Initial → Loading → Loaded', () async {
+      final network = MockNetworkService();
+      when(() => network.get('/tutor/usage', query: any(named: 'query')))
+          .thenAnswer((_) async => {
+                'child_id': 'c1',
+                'date': '2026-08-21',
+                'asks_today': 2,
+                'used_seconds': 60,
+                'ask_limit': 9,
+                'minutes_limit': 30,
+                'allowed_subjects': null,
+              });
+      final notifier = TutorUsageNotifier(network);
+
+      expect(notifier.state, isA<TutorUsageInitial>());
+      final future = notifier.load(childId: 'c1');
+      expect(notifier.state, isA<TutorUsageLoading>());
+      await future;
+
+      final loaded = notifier.state as TutorUsageLoaded;
+      expect(loaded.usage.asksToday, 2);
+      expect(loaded.usage.minutesLimit, 30);
     });
   });
 }

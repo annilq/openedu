@@ -1,5 +1,5 @@
-/// 领域模型：与后端 SQLModel schema 对齐的纯 Dart 模型。
-/// 注意：所有 ID 均为 UUID 字符串（后端用 uuid.UUID）。
+// 领域模型：与后端 SQLModel schema 对齐的纯 Dart 模型。
+// 注意：所有 ID 均为 UUID 字符串（后端用 uuid.UUID）。
 
 class UserModel {
   final String id;

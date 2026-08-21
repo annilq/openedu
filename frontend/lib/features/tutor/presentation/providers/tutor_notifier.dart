@@ -27,6 +27,13 @@ class TutorInitial extends TutorState {
   const TutorInitial();
 }
 
+/// 请求进行中：保留已提交的气泡列表，等待 AI 回复。
+class TutorLoading extends TutorState {
+  final List<TutorMessage> messages;
+  const TutorLoading(this.messages);
+}
+
+/// 请求完成：消息列表即当前对话（错误以气泡形式保留在列表里，见 ask()）。
 class TutorLoaded extends TutorState {
   final List<TutorMessage> messages;
   const TutorLoaded(this.messages);
@@ -44,10 +51,14 @@ class TutorNotifier extends StateNotifier<TutorState> {
     _submitting = true;
 
     // 立即把娃娃的问题气泡加进去，给出即时反馈
-    final history = state is TutorLoaded
-        ? List<TutorMessage>.from((state as TutorLoaded).messages)
-        : <TutorMessage>[];
-    state = TutorLoaded([
+    // 注：TutorLoading 分支在防重入下实际不可达（Loading 期间 _submitting 恒 true，
+    // 第二次 ask 直接返回），保留作防御；历史列表从两态均可提取。
+    final history = switch (state) {
+      TutorLoaded(:final messages) || TutorLoading(:final messages) =>
+        List<TutorMessage>.from(messages),
+      _ => <TutorMessage>[],
+    };
+    state = TutorLoading([
       ...history,
       TutorMessage(role: 'child', text: req.question),
     ]);
