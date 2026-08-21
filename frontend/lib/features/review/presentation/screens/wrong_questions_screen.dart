@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/domain/models/models.dart';
@@ -33,11 +33,11 @@ class _WrongQuestionsScreenState extends ConsumerState<WrongQuestionsScreen> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(childWrongQuestionsProvider);
-    final scheme = Theme.of(context).colorScheme;
+    final scheme = AppTheme.colorsOf(context);
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('我的错题本')),
-      body: switch (state) {
+    return CupertinoPageScaffold(
+      navigationBar: CupertinoNavigationBar(middle: const Text('我的错题本')),
+      child: switch (state) {
         WrongQuestionsInitial() || WrongQuestionsLoading() =>
           const AppLoading(message: '加载错题...'),
         WrongQuestionsError() => AppError(
@@ -68,38 +68,45 @@ class _WrongQuestionsScreenState extends ConsumerState<WrongQuestionsScreen> {
                               borderRadius: BorderRadius.circular(28),
                             ),
                             alignment: Alignment.center,
-                            child: Icon(Icons.verified_outlined,
+                            child: Icon(CupertinoIcons.checkmark_seal,
                                 size: 44,
                                 color: scheme.onTertiaryContainer),
                           ),
                           const SizedBox(height: AppSpacing.xl2),
                           Text('还没有错题',
                               textAlign: TextAlign.center,
-                              style: Theme.of(context).textTheme.titleLarge),
+                              style: AppTheme.textOf(context).titleLarge),
                           const SizedBox(height: AppSpacing.xs),
                           Text('继续保持，做题仔细一点就不会错啦～',
                               textAlign: TextAlign.center,
-                              style: Theme.of(context).textTheme.bodyMedium),
+                              style: AppTheme.textOf(context).bodyMedium),
                         ],
                       ),
                     ),
                   ),
                 ),
               )
-            : RefreshIndicator(
-                color: scheme.primary,
-                backgroundColor: scheme.surfaceContainerLow,
-                onRefresh: () =>
-                    ref.read(childWrongQuestionsProvider.notifier).load(),
-                child: ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xl4),
-                  itemCount: state.items.length,
-                  itemBuilder: (ctx, i) => Padding(
-                    padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-                    child: _WrongQuestionCard(item: state.items[i]),
+            : CustomScrollView(
+                slivers: [
+                  CupertinoSliverRefreshControl(
+                    onRefresh: () =>
+                        ref.read(childWrongQuestionsProvider.notifier).load(),
                   ),
-                ),
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(AppSpacing.lg,
+                        AppSpacing.md, AppSpacing.lg, AppSpacing.xl4),
+                    sliver: SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (ctx, i) => Padding(
+                          padding: const EdgeInsets.symmetric(
+                              vertical: AppSpacing.xs),
+                          child: _WrongQuestionCard(item: state.items[i]),
+                        ),
+                        childCount: state.items.length,
+                      ),
+                    ),
+                  ),
+                ],
               ),
       },
     );
@@ -112,52 +119,51 @@ class _WrongQuestionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.xl),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(item.stem, style: Theme.of(context).textTheme.titleSmall),
-            const SizedBox(height: AppSpacing.md),
-            Wrap(
-              spacing: AppSpacing.sm,
-              runSpacing: AppSpacing.sm,
+    final scheme = AppTheme.colorsOf(context);
+    return AppCard(
+      padding: const EdgeInsets.all(AppSpacing.xl),
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(item.stem, style: AppTheme.textOf(context).titleSmall),
+          const SizedBox(height: AppSpacing.md),
+          Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
+            children: [
+              AppTags.normal(item.subject),
+              AppTags.info(item.knowledgePoint),
+              AppTags.warning('错过 ${item.wrongCount} 次'),
+              AppTags.normal('复习阶段 ${item.reviewStage}'),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Container(
+            padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHigh,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                AppTags.normal(item.subject),
-                AppTags.info(item.knowledgePoint),
-                AppTags.warning('错过 ${item.wrongCount} 次'),
-                AppTags.normal('复习阶段 ${item.reviewStage}'),
+                Text('最近答错：${_fmtDate(item.firstWrongAt)}',
+                    style: AppTheme.textOf(context).labelSmall),
+                if (item.dueAt != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text('下次复习：${_fmtDate(item.dueAt)}',
+                        style: AppTheme.textOf(context).labelSmall?.copyWith(
+                              color: scheme.primary,
+                              fontWeight: FontWeight.w600,
+                            )),
+                  ),
               ],
             ),
-            const SizedBox(height: AppSpacing.md),
-            Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-              decoration: BoxDecoration(
-                color: scheme.surfaceContainerHigh,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('最近答错：${_fmtDate(item.firstWrongAt)}',
-                      style: Theme.of(context).textTheme.labelSmall),
-                  if (item.dueAt != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Text('下次复习：${_fmtDate(item.dueAt)}',
-                          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                color: scheme.primary,
-                                fontWeight: FontWeight.w600,
-                              )),
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

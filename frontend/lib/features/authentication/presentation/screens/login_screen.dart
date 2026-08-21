@@ -1,7 +1,9 @@
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/app_inputs.dart';
+import '../../../../shared/widgets/app_toast.dart';
 import '../../domain/providers/auth_provider.dart';
 import '../providers/auth_notifier.dart';
 
@@ -14,14 +16,28 @@ class LoginScreen extends ConsumerStatefulWidget {
 }
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
-  final _formKey = GlobalKey<FormState>();
   final _username = TextEditingController();
   final _password = TextEditingController();
   final _displayName = TextEditingController();
+  String? _usernameError;
+  String? _passwordError;
+  String? _displayNameError;
   bool _isRegister = false;
 
+  bool _submitValid() {
+    final usernameOk = _username.text.isNotEmpty;
+    final passwordOk = _password.text.length >= 4;
+    final displayNameOk = !_isRegister || _displayName.text.isNotEmpty;
+    setState(() {
+      _usernameError = usernameOk ? null : '请输入用户名';
+      _passwordError = passwordOk ? null : '密码至少4位';
+      _displayNameError = displayNameOk ? null : '请输入昵称';
+    });
+    return usernameOk && passwordOk && displayNameOk;
+  }
+
   void _submit() {
-    if (!_formKey.currentState!.validate()) return;
+    if (!_submitValid()) return;
     ref.read(authNotifierProvider.notifier).register(
           username: _username.text,
           password: _password.text,
@@ -30,7 +46,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   void _login() {
-    if (!_formKey.currentState!.validate()) return;
+    if (!_submitValid()) return;
     ref.read(authNotifierProvider.notifier).login(
           username: _username.text,
           password: _password.text,
@@ -47,34 +63,23 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final app = AppTheme.colorsOf(context);
+    final text = AppTheme.textOf(context);
     final authState = ref.watch(authNotifierProvider);
     final isLoading = authState is AuthLoading;
 
     // 监听状态变化
     ref.listen<AuthState>(authNotifierProvider, (prev, next) {
       if (next is AuthError) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppRadius.button),
-            ),
-            backgroundColor: theme.colorScheme.errorContainer,
-            content: Text(
-              next.message,
-              style: TextStyle(color: theme.colorScheme.onErrorContainer),
-            ),
-          ),
-        );
+        AppToast.error(context, next.message);
       }
       if (next is AuthSuccess) {
         widget.onLoginSuccess?.call();
       }
     });
 
-    return Scaffold(
-      body: SafeArea(
+    return CupertinoPageScaffold(
+      child: SafeArea(
         child: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(
@@ -93,13 +98,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       width: 96,
                       height: 96,
                       decoration: BoxDecoration(
-                        color: theme.colorScheme.primaryContainer,
+                        color: app.primaryContainer,
                         borderRadius: BorderRadius.circular(28),
                       ),
                       child: Icon(
-                        Icons.auto_stories_rounded,
+                        CupertinoIcons.book,
                         size: 52,
-                        color: theme.colorScheme.onPrimaryContainer,
+                        color: app.onPrimaryContainer,
                       ),
                     ),
                   ),
@@ -107,7 +112,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   Center(
                     child: Text(
                       '娃娃学习',
-                      style: theme.textTheme.headlineMedium?.copyWith(
+                      style: text.headlineMedium?.copyWith(
                         fontWeight: FontWeight.w700,
                         letterSpacing: -0.5,
                       ),
@@ -117,8 +122,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   Center(
                     child: Text(
                       _isRegister ? '创建家长账号，和孩子一起成长' : '欢迎回来，继续今天的学习',
-                      style: theme.textTheme.bodyLarge?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
+                      style: text.bodyLarge?.copyWith(
+                        color: app.onSurfaceVariant,
                       ),
                     ),
                   ),
@@ -128,115 +133,70 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   Container(
                     padding: const EdgeInsets.all(AppSpacing.xl),
                     decoration: BoxDecoration(
-                      color: theme.colorScheme.surface,
+                      color: app.surface,
                       borderRadius: BorderRadius.circular(AppRadius.card),
                       border: Border.all(
-                        color: theme.colorScheme.outlineVariant,
+                        color: app.outlineVariant,
                         width: 1,
                       ),
                     ),
-                    child: Form(
-                      key: _formKey,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Text(
-                            _isRegister ? '注册' : '登录',
-                            style: theme.textTheme.titleLarge?.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          _isRegister ? '注册' : '登录',
+                          style: text.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w600,
                           ),
-                          const SizedBox(height: AppSpacing.lg),
-                          TextFormField(
-                            controller: _username,
-                            textInputAction: TextInputAction.next,
-                            decoration: const InputDecoration(
-                              labelText: '用户名',
-                              prefixIcon: Icon(Icons.person_2_outlined),
-                            ),
-                            validator: (v) =>
-                                v == null || v.isEmpty ? '请输入用户名' : null,
-                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.lg),
+                        AppTextField(
+                          label: '用户名',
+                          controller: _username,
+                          prefixIcon: CupertinoIcons.person,
+                          errorText: _usernameError,
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        AppTextField(
+                          label: '密码',
+                          controller: _password,
+                          obscureText: true,
+                          prefixIcon: CupertinoIcons.lock,
+                          errorText: _passwordError,
+                        ),
+                        if (_isRegister) ...[
                           const SizedBox(height: AppSpacing.md),
-                          TextFormField(
-                            controller: _password,
-                            textInputAction: _isRegister
-                                ? TextInputAction.next
-                                : TextInputAction.done,
-                            decoration: const InputDecoration(
-                              labelText: '密码',
-                              prefixIcon: Icon(Icons.lock_outline_rounded),
-                            ),
-                            obscureText: true,
-                            validator: (v) =>
-                                v == null || v.length < 4 ? '密码至少4位' : null,
-                          ),
-                          if (_isRegister) ...[
-                            const SizedBox(height: AppSpacing.md),
-                            TextFormField(
-                              controller: _displayName,
-                              textInputAction: TextInputAction.done,
-                              decoration: const InputDecoration(
-                                labelText: '昵称',
-                                prefixIcon: Icon(Icons.badge_outlined),
-                              ),
-                              validator: (v) =>
-                                  v == null || v.isEmpty ? '请输入昵称' : null,
-                            ),
-                          ],
-                          const SizedBox(height: AppSpacing.xl),
-                          FilledButton(
-                            onPressed: isLoading
-                                ? null
-                                : (_isRegister ? _submit : _login),
-                            style: FilledButton.styleFrom(
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 16),
-                              shape: RoundedRectangleBorder(
-                                borderRadius:
-                                    BorderRadius.circular(AppRadius.button),
-                              ),
-                            ),
-                            child: isLoading
-                                ? Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      SizedBox(
-                                        height: 20,
-                                        width: 20,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2.5,
-                                          color: theme.colorScheme.onPrimary,
-                                        ),
-                                      ),
-                                      const SizedBox(width: AppSpacing.sm),
-                                      const Text('处理中…'),
-                                    ],
-                                  )
-                                : Text(
-                                    _isRegister ? '注册并进入' : '登录',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                          ),
-                          const SizedBox(height: AppSpacing.md),
-                          TextButton(
-                            onPressed: isLoading
-                                ? null
-                                : () {
-                                    setState(() => _isRegister = !_isRegister);
-                                    ref
-                                        .read(authNotifierProvider.notifier)
-                                        .reset();
-                                  },
-                            child: Text(
-                              _isRegister ? '已有账号？去登录' : '没有账号？注册家长账号',
-                            ),
+                          AppTextField(
+                            label: '昵称',
+                            controller: _displayName,
+                            prefixIcon: CupertinoIcons.person_crop_circle,
+                            errorText: _displayNameError,
                           ),
                         ],
-                      ),
+                        const SizedBox(height: AppSpacing.xl),
+                        AppPrimaryButton(
+                          label: _isRegister ? '注册并进入' : '登录',
+                          onPressed: isLoading
+                              ? null
+                              : (_isRegister ? _submit : _login),
+                          loading: isLoading,
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        CupertinoButton(
+                          onPressed: isLoading
+                              ? null
+                              : () {
+                                  setState(() => _isRegister = !_isRegister);
+                                  ref
+                                      .read(authNotifierProvider.notifier)
+                                      .reset();
+                                },
+                          child: Text(
+                            _isRegister ? '已有账号？去登录' : '没有账号？注册家长账号',
+                          ),
+                        ),
+                      ],
                     ),
                   ),
 
@@ -244,8 +204,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   Center(
                     child: Text(
                       '护眼模式 · 适合孩子的舒适界面',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
+                      style: text.bodySmall?.copyWith(
+                        color: app.onSurfaceVariant,
                       ),
                     ),
                   ),

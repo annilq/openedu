@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/domain/models/models.dart';
@@ -61,11 +61,10 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
   }
 
   void _showResult(BuildContext context, AnswerResultModel result) {
-    final scheme = Theme.of(context).colorScheme;
-    showDialog(
+    final scheme = AppTheme.colorsOf(context);
+    showCupertinoDialog(
       context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
+      builder: (_) => CupertinoAlertDialog(
         title: Row(
           children: [
             Container(
@@ -79,7 +78,9 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
               ),
               alignment: Alignment.center,
               child: Icon(
-                result.correct ? Icons.check_rounded : Icons.refresh_rounded,
+                result.correct
+                    ? CupertinoIcons.checkmark
+                    : CupertinoIcons.refresh,
                 size: 22,
                 color: result.correct
                     ? scheme.onTertiaryContainer
@@ -102,9 +103,8 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
         content: Text(result.explanation.isEmpty
             ? (result.correct ? '做得不错，继续加油～' : '没关系，记住下次就好')
             : result.explanation),
-        actionsAlignment: MainAxisAlignment.center,
         actions: [
-          FilledButton(
+          CupertinoDialogAction(
             onPressed: () => Navigator.pop(context),
             child: const Text('继续'),
           ),
@@ -115,7 +115,7 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final scheme = AppTheme.colorsOf(context);
     final state = ref.watch(practiceNotifierProvider);
 
     // 答题结果弹窗（仅在题号推进时触发）
@@ -128,31 +128,30 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
       }
     });
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.task.title),
-        actions: [
-          if (state is Practicing)
-            Padding(
-              padding: const EdgeInsets.only(right: AppSpacing.xl),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.md, vertical: AppSpacing.xs),
-                decoration: BoxDecoration(
-                  color: scheme.surfaceContainerHigh,
-                  borderRadius: BorderRadius.circular(999),
+    return CupertinoPageScaffold(
+      navigationBar: CupertinoNavigationBar(
+        middle: Text(widget.task.title, overflow: TextOverflow.ellipsis),
+        trailing: state is Practicing
+            ? Padding(
+                padding: const EdgeInsets.only(right: AppSpacing.xl),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.md, vertical: AppSpacing.xs),
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHigh,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    '${state.currentIndex + 1}/${widget.task.questions.length}',
+                    style: AppTheme.textOf(context).labelMedium?.copyWith(
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                  ),
                 ),
-                child: Text(
-                  '${state.currentIndex + 1}/${widget.task.questions.length}',
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                      ),
-                ),
-              ),
-            ),
-        ],
+              )
+            : null,
       ),
-      body: switch (state) {
+      child: switch (state) {
         PracticeIdle() => const AppLoading(message: '准备中...'),
         Practicing() => _buildQuestionView(state),
         PracticeDone() => _buildDoneView(context, state),
@@ -166,7 +165,7 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
   }
 
   Widget _buildQuestionView(Practicing state) {
-    final scheme = Theme.of(context).colorScheme;
+    final scheme = AppTheme.colorsOf(context);
     final q = state.currentQuestion;
 
     return SingleChildScrollView(
@@ -199,7 +198,7 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
                   border: Border.all(color: scheme.outline, width: 1),
                 ),
                 child: Text(q.stem,
-                    style: Theme.of(context).textTheme.titleMedium),
+                    style: AppTheme.textOf(context).titleMedium),
               ),
               const SizedBox(height: AppSpacing.xl3),
               // 选项 / 输入
@@ -218,22 +217,36 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
                   );
                 })
               else
-                TextField(
+                CupertinoTextField(
                   controller: _answerController,
-                  onChanged: (_) => setState(() {}),
-                  style: Theme.of(context).textTheme.bodyLarge,
-                  decoration: const InputDecoration(
-                    labelText: '输入你的答案',
-                    hintText: '在此填写...',
+                  placeholder: '在此填写...',
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 14),
+                  style: AppTheme.textOf(context).bodyLarge,
+                  decoration: BoxDecoration(
+                    border:
+                        Border.all(color: scheme.outline, width: 1),
+                    borderRadius: BorderRadius.circular(AppRadius.input),
                   ),
+                  onChanged: (_) => setState(() {}),
                 ),
               const SizedBox(height: AppSpacing.xl4),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: _answerReady ? () => _submit(q.id) : null,
-                  icon: const Icon(Icons.send_rounded, size: 20),
-                  label: const Text('提交答案'),
+              CupertinoButton.filled(
+                borderRadius: BorderRadius.circular(AppRadius.button),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 24, vertical: 14),
+                onPressed: _answerReady ? () => _submit(q.id) : null,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(CupertinoIcons.paperplane_fill,
+                        size: 20, color: scheme.onPrimary),
+                    const SizedBox(width: 8),
+                    Text('提交答案',
+                        style: AppTheme.textOf(context)
+                            .labelLarge
+                            ?.copyWith(color: scheme.onPrimary)),
+                  ],
                 ),
               ),
               // 答案为空时的友好提示
@@ -242,7 +255,7 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
                   padding: const EdgeInsets.only(top: AppSpacing.md),
                   child: Center(
                     child: Text('请先选择或输入答案再提交',
-                        style: Theme.of(context).textTheme.labelSmall),
+                        style: AppTheme.textOf(context).labelSmall),
                   ),
                 ),
             ],
@@ -253,7 +266,7 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
   }
 
   Widget _buildDoneView(BuildContext context, PracticeDone state) {
-    final scheme = Theme.of(context).colorScheme;
+    final scheme = AppTheme.colorsOf(context);
     final correct = state.correctCount;
     final total = state.total;
     final perfect = correct == total;
@@ -269,22 +282,22 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
       ResultTone.positive => (
           scheme.tertiaryContainer,
           scheme.onTertiaryContainer,
-          Icons.emoji_events_rounded
+          CupertinoIcons.rosette
         ),
       ResultTone.warm => (
           scheme.secondaryContainer,
           scheme.onSecondaryContainer,
-          Icons.thumb_up_alt_rounded
+          CupertinoIcons.hand_thumbsup_fill
         ),
       ResultTone.alert => (
           scheme.primaryContainer,
           scheme.onPrimaryContainer,
-          Icons.auto_graph_rounded
+          CupertinoIcons.chart_bar
         ),
       ResultTone.neutral => (
           scheme.surfaceContainerHigh,
           scheme.onSurface,
-          Icons.check_circle_rounded
+          CupertinoIcons.checkmark_circle_fill
         ),
     };
 
@@ -316,39 +329,51 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
                 const SizedBox(height: AppSpacing.xl2),
                 Text(
                   perfect ? '全部答对！' : '完成练习',
-                  style: Theme.of(context).textTheme.headlineMedium,
+                  style: AppTheme.textOf(context).headlineMedium,
                 ),
                 const SizedBox(height: AppSpacing.xs),
                 Text(
                   '$correct / $total 正确 · 正确率 $accuracy%',
-                  style: Theme.of(context).textTheme.bodyLarge,
+                  style: AppTheme.textOf(context).bodyLarge,
                 ),
                 const SizedBox(height: AppSpacing.xl3),
                 // 结果细节条
                 ClipRRect(
                   borderRadius: BorderRadius.circular(8),
-                  child: LinearProgressIndicator(
-                    value: (correct / total).clamp(0.0, 1.0),
-                    minHeight: 12,
-                    backgroundColor: scheme.surfaceContainerHighest,
-                    valueColor:
-                        AlwaysStoppedAnimation<Color>(scheme.primary),
+                  child: SizedBox(
+                    height: 12,
+                    child: AppProgressBar(
+                      value: (correct / total).clamp(0.0, 1.0),
+                      height: 12,
+                      color: scheme.primary,
+                      trackColor: scheme.surfaceContainerHighest,
+                    ),
                   ),
                 ),
                 const SizedBox(height: AppSpacing.xl4),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: () async {
-                      await ref
-                          .read(practiceNotifierProvider.notifier)
-                          .checkin(widget.task.id);
-                      if (!mounted) return;
-                      ref.read(practiceNotifierProvider.notifier).reset();
-                      widget.onDone?.call();
-                    },
-                    icon: const Icon(Icons.check_circle_rounded, size: 20),
-                    label: const Text('完成打卡'),
+                CupertinoButton.filled(
+                  borderRadius: BorderRadius.circular(AppRadius.button),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 24, vertical: 14),
+                  onPressed: () async {
+                    await ref
+                        .read(practiceNotifierProvider.notifier)
+                        .checkin(widget.task.id);
+                    if (!mounted) return;
+                    ref.read(practiceNotifierProvider.notifier).reset();
+                    widget.onDone?.call();
+                  },
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(CupertinoIcons.checkmark_circle_fill,
+                          size: 20, color: scheme.onPrimary),
+                      const SizedBox(width: 8),
+                      Text('完成打卡',
+                          style: AppTheme.textOf(context)
+                              .labelLarge
+                              ?.copyWith(color: scheme.onPrimary)),
+                    ],
                   ),
                 ),
               ],
@@ -381,17 +406,15 @@ class _OptionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final scheme = AppTheme.colorsOf(context);
     final letter =
         index < _letters.length ? _letters[index] : '${index + 1}';
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.md),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(AppRadius.card),
-          onTap: onTap,
-          child: AnimatedContainer(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),
             curve: Curves.easeOut,
             padding: const EdgeInsets.all(AppSpacing.xl),
@@ -422,7 +445,7 @@ class _OptionTile extends StatelessWidget {
                   alignment: Alignment.center,
                   child: Text(
                     letter,
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    style: AppTheme.textOf(context).labelLarge?.copyWith(
                           color: selected
                               ? scheme.onPrimary
                               : scheme.onSurface,
@@ -435,7 +458,7 @@ class _OptionTile extends StatelessWidget {
                   child: Padding(
                     padding: const EdgeInsets.only(top: 4),
                     child: Text(text,
-                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        style: AppTheme.textOf(context).bodyLarge?.copyWith(
                               fontWeight: selected
                                   ? FontWeight.w600
                                   : FontWeight.w400,
@@ -448,14 +471,13 @@ class _OptionTile extends StatelessWidget {
                 if (selected)
                   Padding(
                     padding: const EdgeInsets.only(top: 4, left: AppSpacing.md),
-                    child: Icon(Icons.check_circle_rounded,
+                    child: Icon(CupertinoIcons.checkmark_circle_fill,
                         color: scheme.primary, size: 24),
                   ),
               ],
             ),
           ),
         ),
-      ),
     );
   }
 }

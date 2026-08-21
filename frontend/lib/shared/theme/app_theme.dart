@@ -1,623 +1,475 @@
-import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
 
 /// 按正确率分级的视觉情绪。
 ///
-/// 用于做题完成页的图标容器配色，以植物绿暖色系为基础，
-/// 不引入红/黄/蓝等新色相。
+/// 用于做题完成页的图标容器配色，基于植物绿/暖橙/天蓝语义色。
 enum ResultTone { positive, warm, alert, neutral }
 
-/// 护眼双主题（亮色 + 暗色 · redesign 升级）。
+/// 应用主题模式（替代 Material ThemeMode）。
+enum AppThemeMode { system, light, dark }
+
+/// 解析系统/主题下的实际亮度。
+Brightness resolveBrightness(AppThemeMode mode, Brightness systemBrightness) {
+  return switch (mode) {
+    AppThemeMode.system => systemBrightness,
+    AppThemeMode.light => Brightness.light,
+    AppThemeMode.dark => Brightness.dark,
+  };
+}
+
+/// 护眼双主题（亮色 + 暗色 · 纯 Cupertino 设计系统 · 明快儿童化配色）。
 ///
 /// 设计约定（见 .impeccable.md / copilot-instructions.md）：
-/// - 亮色：低饱和暖白背景 + 植物绿单强调色
-/// - 暗色：暖调深炭（**禁用纯黑**）+ 植物绿强调色
-/// - 单强调色方案：primary 主操作 / secondary AI 暖区（琥珀）/ tertiary 积极反馈 / error 温柔珊瑚
+/// - 亮色：护眼暖白背景 + 明快植物绿主强调（提亮饱和）+ 暖橙/天蓝次强调
+/// - 暗色：暖调深炭（**禁用纯黑**）+ 提亮后的植物绿/暖橙/天蓝
+/// - 三强调色方案：primary 植物绿主操作 / secondary 暖橙（AI 暖区）/ tertiary 天蓝（积极反馈）/ error 温柔珊瑚
 /// - 正文 ≥ 20sp、选项 ≥ 22sp、辅助说明 ≥ 16sp、行高 ≥ 1.5
 /// - 卡片 1px 描边 + 暖色填充（无重阴影）、大圆角
 /// - 字体：HarmonyOS Sans SC / Noto Sans SC 回退链
 ///
-/// 业务代码中请一律使用 `Theme.of(context).colorScheme.* / textTheme.*`，
-/// 或调用本文件下方的语义化组件（AppTags、AppBadge、AvatarSquircle 等）。
+/// 本文件 **不含任何 Material 主题配置**。业务代码请统一通过
+/// `AppTheme.colorsOf(context)` 取语义色、`AppTheme.textOf(context)` 取排版，
+/// 或使用本文件下方的语义化组件（AppTags、AppBadge、AvatarSquircle 等）。
 /// 语义化组件会自动跟随亮/暗模式。
+///
+/// 依赖：Flutter 3.47 去耦合落地后的独立包 `cupertino_ui`（纯 Cupertino 组件库）。
 class AppTheme {
-  // ============ §1 亮色色彩令牌 ============
-  static const Color primary = Color(0xFF5B8C5A); // Botanical Green
-  static const Color onPrimary = Color(0xFFFFFFFF);
-  static const Color primaryContainer = Color(0xFFE8F0E7);
-  static const Color onPrimaryContainer = Color(0xFF1F3A26);
+  const AppTheme._();
 
-  static const Color secondary = Color(0xFFB5894A); // 柔和琥珀（AI 语义）
-  static const Color secondaryContainer = Color(0xFFFBF0DB);
-  static const Color onSecondaryContainer = Color(0xFF3A2A10);
-
-  static const Color tertiary = Color(0xFF6FA06E);
-  static const Color tertiaryContainer = Color(0xFFDDEBDB);
-  static const Color onTertiaryContainer = Color(0xFF24402A);
-
-  static const Color error = Color(0xFFD97757); // 温柔珊瑚
-  static const Color errorContainer = Color(0xFFFBE4DA);
-  static const Color onErrorContainer = Color(0xFF3E1A10);
-
-  static const Color surface = Color(0xFFFDF8F0); // Warm Canvas 主背景
-  static const Color onSurface = Color(0xFF2D2D2D); // Charcoal Ink 主文字
-  static const Color surfaceContainerLowest = Color(0xFFFFFDF9);
-  static const Color surfaceContainerLow = Color(0xFFFFFBF3);
-  static const Color surfaceContainer = Color(0xFFFBF5E8);
-  static const Color surfaceContainerHigh = Color(0xFFF4ECDA);
-  static const Color surfaceContainerHighest = Color(0xFFEEE4CE);
-  static const Color onSurfaceVariant = Color(0xFF7A7368); // Muted Stone 次文字
-  static const Color outline = Color(0xFFEFE7D8); // Whisper Border
-  static Color get outlineVariant => outline.withValues(alpha: 0.6);
-
-  // ============ §2 暗色色彩令牌（暖调深炭，非纯黑）============
-  static const Color darkPrimary = Color(0xFF7FBA7E); // 深底用提亮后的植物绿
-  static const Color darkOnPrimary = Color(0xFF0E2E14);
-  static const Color darkPrimaryContainer = Color(0xFF26451F);
-  static const Color darkOnPrimaryContainer = Color(0xFFD0E5CB);
-
-  static const Color darkSecondary = Color(0xFFD0A25A);
-  static const Color darkOnSecondary = Color(0xFF2A1A00);
-  static const Color darkSecondaryContainer = Color(0xFF4A3A12);
-  static const Color darkOnSecondaryContainer = Color(0xFFF6E3BB);
-
-  static const Color darkTertiary = Color(0xFF8FB98D);
-  static const Color darkOnTertiary = Color(0xFF12301A);
-  static const Color darkTertiaryContainer = Color(0xFF33562F);
-  static const Color darkOnTertiaryContainer = Color(0xFFD7E8D0);
-
-  static const Color darkError = Color(0xFFE5A390);
-  static const Color darkOnError = Color(0xFF3A1206);
-  static const Color darkErrorContainer = Color(0xFF61301F);
-  static const Color darkOnErrorContainer = Color(0xFFFBE4DA);
-
-  static const Color darkSurface = Color(0xFF1D1B17); // 暖调深炭主背景
-  static const Color darkOnSurface = Color(0xFFEDE6D8);
-  static const Color darkSurfaceContainerLowest = Color(0xFF171512);
-  static const Color darkSurfaceContainerLow = Color(0xFF232019);
-  static const Color darkSurfaceContainer = Color(0xFF2A261F);
-  static const Color darkSurfaceContainerHigh = Color(0xFF322D25);
-  static const Color darkSurfaceContainerHighest = Color(0xFF3A342B);
-  static const Color darkOnSurfaceVariant = Color(0xFFBFB6A8);
-  static const Color darkOutline = Color(0xFF4A4438);
-  static Color get darkOutlineVariant => darkOutline.withValues(alpha: 0.7);
-
-  // ============ §3 字体与圆角 ============
+  /// 字体回退链（HarmonyOS Sans SC 优先，运行时缺失自动回退）。
   static const String fontFamily = 'HarmonyOS_Sans_SC';
 
-  /// 统一的字体排版。字号/行高与亮暗无关，行内颜色用传入的语义色传入。
-  static TextTheme _textTheme({
-    required Color base,
-    required Color muted,
-    required Color onPrimaryText,
-  }) {
-    return TextTheme(
-      displayLarge: const TextStyle(
-        fontFamily: fontFamily,
-        fontSize: 40,
-        fontWeight: FontWeight.w700,
-        letterSpacing: -1.0,
-        height: 1.15,
-      ).copyWith(color: base),
-      displayMedium: const TextStyle(
-        fontFamily: fontFamily,
-        fontSize: 32,
-        fontWeight: FontWeight.w700,
-        letterSpacing: -0.6,
-        height: 1.2,
-      ).copyWith(color: base),
-      headlineLarge: const TextStyle(
-        fontFamily: fontFamily,
-        fontSize: 28,
-        fontWeight: FontWeight.w700,
-        letterSpacing: -0.4,
-        height: 1.25,
-      ).copyWith(color: base),
-      headlineMedium: const TextStyle(
-        fontFamily: fontFamily,
-        fontSize: 26,
-        fontWeight: FontWeight.w700,
-        letterSpacing: -0.3,
-        height: 1.3,
-      ).copyWith(color: base),
-      headlineSmall: const TextStyle(
-        fontFamily: fontFamily,
-        fontSize: 24,
-        fontWeight: FontWeight.w600,
-        letterSpacing: -0.2,
-        height: 1.3,
-      ).copyWith(color: base),
-      titleLarge: const TextStyle(
-        fontFamily: fontFamily,
-        fontSize: 24,
-        fontWeight: FontWeight.w700,
-        letterSpacing: -0.3,
-        height: 1.35,
-      ).copyWith(color: base),
-      titleMedium: const TextStyle(
-        fontFamily: fontFamily,
-        fontSize: 22,
-        fontWeight: FontWeight.w600,
-        letterSpacing: -0.15,
-        height: 1.4,
-      ).copyWith(color: base),
-      titleSmall: const TextStyle(
-        fontFamily: fontFamily,
-        fontSize: 20,
-        fontWeight: FontWeight.w600,
-        height: 1.4,
-      ).copyWith(color: base),
-      bodyLarge: const TextStyle(
-        fontFamily: fontFamily,
-        fontSize: 20,
-        fontWeight: FontWeight.w400,
-        height: 1.55,
-      ).copyWith(color: base),
-      bodyMedium: const TextStyle(
-        fontFamily: fontFamily,
-        fontSize: 18,
-        fontWeight: FontWeight.w400,
-        height: 1.55,
-      ).copyWith(color: base),
-      bodySmall: const TextStyle(
-        fontFamily: fontFamily,
-        fontSize: 16,
-        fontWeight: FontWeight.w400,
-        height: 1.5,
-      ).copyWith(color: muted),
-      labelLarge: TextStyle(
-        fontFamily: fontFamily,
-        fontSize: 20,
-        fontWeight: FontWeight.w600,
-        height: 1.3,
-        color: onPrimaryText,
-      ),
-      labelMedium: const TextStyle(
-        fontFamily: fontFamily,
-        fontSize: 18,
-        fontWeight: FontWeight.w600,
-        height: 1.3,
-      ).copyWith(color: base),
-      labelSmall: const TextStyle(
-        fontFamily: fontFamily,
-        fontSize: 16,
-        fontWeight: FontWeight.w500,
-        height: 1.3,
-      ).copyWith(color: muted),
-    );
+  /// 亮色语义色令牌。
+  static const AppColors light = AppColors(
+    brightness: Brightness.light,
+    primary: Color(0xFF43A047), // 明快植物绿
+    onPrimary: Color(0xFFFFFFFF),
+    primaryContainer: Color(0xFFD8F0D9),
+    onPrimaryContainer: Color(0xFF0F3D1A),
+    secondary: Color(0xFFF97316), // 暖橙次强调
+    onSecondary: Color(0xFFFFFFFF),
+    secondaryContainer: Color(0xFFFFE4D0),
+    onSecondaryContainer: Color(0xFF4A1D00),
+    tertiary: Color(0xFF38BDF8), // 天蓝次强调
+    onTertiary: Color(0xFFFFFFFF),
+    tertiaryContainer: Color(0xFFD3F0FC),
+    onTertiaryContainer: Color(0xFF0B3447),
+    error: Color(0xFFE56B54), // 温柔珊瑚
+    onError: Color(0xFFFFFFFF),
+    errorContainer: Color(0xFFFBE3DC),
+    onErrorContainer: Color(0xFF44150F),
+    surface: Color(0xFFFDF8F0), // Warm Canvas 主背景
+    onSurface: Color(0xFF2D2D2D), // Charcoal Ink 主文字
+    surfaceContainerLowest: Color(0xFFFFFDF9),
+    surfaceContainerLow: Color(0xFFFFFBF3),
+    surfaceContainer: Color(0xFFFBF5E8),
+    surfaceContainerHigh: Color(0xFFF4ECDA),
+    surfaceContainerHighest: Color(0xFFEEE4CE),
+    onSurfaceVariant: Color(0xFF7A7368), // Muted Stone 次文字
+    outline: Color(0xFFEFE7D8), // Whisper Border
+    outlineVariant: Color(0x99EFE7D8), // whisper border 60%
+    inverseSurface: Color(0xFFEDE6D8),
+    onInverseSurface: Color(0xFF1D1B17),
+  );
+
+  /// 暗色语义色令牌（暖调深炭，非纯黑）。
+  static const AppColors dark = AppColors(
+    brightness: Brightness.dark,
+    primary: Color(0xFF76C87A), // 深底用提亮后的植物绿
+    onPrimary: Color(0xFF0A3311),
+    primaryContainer: Color(0xFF23522A),
+    onPrimaryContainer: Color(0xFFCBEECE),
+    secondary: Color(0xFFFFA85C), // 暖橙提亮
+    onSecondary: Color(0xFF3A1C00),
+    secondaryContainer: Color(0xFF5C3408),
+    onSecondaryContainer: Color(0xFFFFE3C4),
+    tertiary: Color(0xFF6FD0F4), // 天蓝提亮
+    onTertiary: Color(0xFF062A3A),
+    tertiaryContainer: Color(0xFF10455C),
+    onTertiaryContainer: Color(0xFFCDEDFC),
+    error: Color(0xFFF29B8F),
+    onError: Color(0xFF3A0D06),
+    errorContainer: Color(0xFF5E2B20),
+    onErrorContainer: Color(0xFFFBE3DC),
+    surface: Color(0xFF1D1B17), // 暖调深炭主背景
+    onSurface: Color(0xFFEDE6D8),
+    surfaceContainerLowest: Color(0xFF171512),
+    surfaceContainerLow: Color(0xFF232019),
+    surfaceContainer: Color(0xFF2A261F),
+    surfaceContainerHigh: Color(0xFF322D25),
+    surfaceContainerHighest: Color(0xFF3A342B),
+    onSurfaceVariant: Color(0xFFBFB6A8),
+    outline: Color(0xFF4A4438),
+    outlineVariant: Color(0xB34A4438), // outline 70%
+    inverseSurface: Color(0xFF2D2D2D),
+    onInverseSurface: Color(0xFFFDF8F0),
+  );
+
+  static bool isDarkOf(BuildContext context) {
+    return CupertinoTheme.brightnessOf(context) == Brightness.dark;
   }
 
-  static ThemeData get light => _build(
-        brightness: Brightness.light,
-        primary: primary,
-        onPrimary: onPrimary,
-        primaryContainer: primaryContainer,
-        onPrimaryContainer: onPrimaryContainer,
-        secondary: secondary,
-        onSecondary: Colors.white,
-        secondaryContainer: secondaryContainer,
-        onSecondaryContainer: onSecondaryContainer,
-        tertiary: tertiary,
-        onTertiary: Colors.white,
-        tertiaryContainer: tertiaryContainer,
-        onTertiaryContainer: onTertiaryContainer,
-        error: error,
-        onError: Colors.white,
-        errorContainer: errorContainer,
-        onErrorContainer: onErrorContainer,
-        surface: surface,
-        onSurface: onSurface,
-        surfaceContainerLowest: surfaceContainerLowest,
-        surfaceContainerLow: surfaceContainerLow,
-        surfaceContainer: surfaceContainer,
-        surfaceContainerHigh: surfaceContainerHigh,
-        surfaceContainerHighest: surfaceContainerHighest,
-        onSurfaceVariant: onSurfaceVariant,
-        outline: outline,
-        outlineVariant: outlineVariant,
-      );
+  /// 取当前主题亮/暗对应的语义色集合。
+  static AppColors colorsOf(BuildContext context) {
+    return CupertinoTheme.brightnessOf(context) == Brightness.dark ? dark : light;
+  }
 
-  static ThemeData get dark => _build(
-        brightness: Brightness.dark,
-        primary: darkPrimary,
-        onPrimary: darkOnPrimary,
-        primaryContainer: darkPrimaryContainer,
-        onPrimaryContainer: darkOnPrimaryContainer,
-        secondary: darkSecondary,
-        onSecondary: darkOnSecondary,
-        secondaryContainer: darkSecondaryContainer,
-        onSecondaryContainer: darkOnSecondaryContainer,
-        tertiary: darkTertiary,
-        onTertiary: darkOnTertiary,
-        tertiaryContainer: darkTertiaryContainer,
-        onTertiaryContainer: darkOnTertiaryContainer,
-        error: darkError,
-        onError: darkOnError,
-        errorContainer: darkErrorContainer,
-        onErrorContainer: darkOnErrorContainer,
-        surface: darkSurface,
-        onSurface: darkOnSurface,
-        surfaceContainerLowest: darkSurfaceContainerLowest,
-        surfaceContainerLow: darkSurfaceContainerLow,
-        surfaceContainer: darkSurfaceContainer,
-        surfaceContainerHigh: darkSurfaceContainerHigh,
-        surfaceContainerHighest: darkSurfaceContainerHighest,
-        onSurfaceVariant: darkOnSurfaceVariant,
-        outline: darkOutline,
-        outlineVariant: darkOutlineVariant,
-      );
+  // ============ 排版令牌 ============
+  static final AppText _lightText = AppText._build(light);
+  static final AppText _darkText = AppText._build(dark);
 
-  /// 统一构建亮/暗主题：组件与配色全部引用传入的 [scheme]，保证不越界。
-  static ThemeData _build({
-    required Brightness brightness,
-    required Color primary,
-    required Color onPrimary,
-    required Color primaryContainer,
-    required Color onPrimaryContainer,
-    required Color secondary,
-    required Color onSecondary,
-    required Color secondaryContainer,
-    required Color onSecondaryContainer,
-    required Color tertiary,
-    required Color onTertiary,
-    required Color tertiaryContainer,
-    required Color onTertiaryContainer,
-    required Color error,
-    required Color onError,
-    required Color errorContainer,
-    required Color onErrorContainer,
-    required Color surface,
-    required Color onSurface,
-    required Color surfaceContainerLowest,
-    required Color surfaceContainerLow,
-    required Color surfaceContainer,
-    required Color surfaceContainerHigh,
-    required Color surfaceContainerHighest,
-    required Color onSurfaceVariant,
-    required Color outline,
-    required Color outlineVariant,
-  }) {
-    final scheme = ColorScheme(
-      brightness: brightness,
-      primary: primary,
-      onPrimary: onPrimary,
-      primaryContainer: primaryContainer,
-      onPrimaryContainer: onPrimaryContainer,
-      secondary: secondary,
-      onSecondary: onSecondary,
-      secondaryContainer: secondaryContainer,
-      onSecondaryContainer: onSecondaryContainer,
-      tertiary: tertiary,
-      onTertiary: onTertiary,
-      tertiaryContainer: tertiaryContainer,
-      onTertiaryContainer: onTertiaryContainer,
-      error: error,
-      onError: onError,
-      errorContainer: errorContainer,
-      onErrorContainer: onErrorContainer,
-      surface: surface,
-      onSurface: onSurface,
-      surfaceContainerLowest: surfaceContainerLowest,
-      surfaceContainerLow: surfaceContainerLow,
-      surfaceContainer: surfaceContainer,
-      surfaceContainerHigh: surfaceContainerHigh,
-      surfaceContainerHighest: surfaceContainerHighest,
-      onSurfaceVariant: onSurfaceVariant,
-      outline: outline,
-      outlineVariant: outlineVariant,
-      shadow: brightness == Brightness.light
-          ? const Color(0x24000000)
-          : const Color(0x3D000000),
-      scrim: const Color(0x66000000),
-      inverseSurface: brightness == Brightness.light
-          ? darkOnSurface
-          : onSurface,
-      onInverseSurface: brightness == Brightness.light
-          ? darkSurface
-          : surface,
-      inversePrimary: brightness == Brightness.light
-          ? primaryContainer
-          : primaryContainer,
-      surfaceTint: primary,
-    );
+  /// 取当前主题对应的排版。字号/行高与亮暗无关，行内颜色取自语义色。
+  static AppText textOf(BuildContext context) =>
+      CupertinoTheme.brightnessOf(context) == Brightness.dark ? _darkText : _lightText;
 
-    final textTheme = _textTheme(
-      base: onSurface,
-      muted: onSurfaceVariant,
-      onPrimaryText: onPrimary,
-    );
+  // ============ Cupertino 主题 ============
 
-    // —— 圆角令牌副本 ——
-    const cardRadius = Radius.circular(AppRadius.card);
-    const bannerRadius = Radius.circular(AppRadius.banner);
-    const btnRadius = Radius.circular(AppRadius.button);
-    const inputRadius = Radius.circular(AppRadius.input);
-    const chipRadius = Radius.circular(AppRadius.chip);
+  /// 亮色 Cupertino 主题，用于 [CupertinoApp.theme]。
+  static CupertinoThemeData get cupertinoLight => _cupertino(light);
 
-    return ThemeData(
-      useMaterial3: true,
-      colorScheme: scheme,
-      fontFamily: fontFamily,
-      textTheme: textTheme,
-      primaryColor: primary,
+  /// 暗色 Cupertino 主题。
+  static CupertinoThemeData get cupertinoDark => _cupertino(dark);
 
-      // —— 背景 & 分割 ——
-      scaffoldBackgroundColor: surface,
-      dividerColor: outline,
-      dividerTheme: DividerThemeData(
-        color: outline,
-        thickness: 1,
-        space: 24,
-      ),
-
-      // —— 全局动画 / 水波纹：统一用强调色，避免暗色下高亮刺眼 ——
-      pageTransitionsTheme: const PageTransitionsTheme(
-        builders: {
-          TargetPlatform.android: OpenUpwardsPageTransitionsBuilder(),
-          TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
-          TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
-        },
-      ),
-      splashFactory: InkSparkle.splashFactory,
-      splashColor: primary.withValues(alpha: 0.08),
-      highlightColor: primary.withValues(alpha: 0.04),
-
-      // —— 卡片：1px 边 + 0 阴影 ——
-      cardTheme: CardThemeData(
-        color: surfaceContainerLow,
-        elevation: 0,
-        shadowColor: Colors.transparent,
-        margin: const EdgeInsets.symmetric(vertical: 6),
-        clipBehavior: Clip.antiAlias,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(cardRadius),
-          side: BorderSide(color: outline, width: 1),
+  static CupertinoThemeData _cupertino(AppColors c) {
+    return CupertinoThemeData(
+      brightness: c.brightness,
+      primaryColor: c.primary,
+      primaryContrastingColor: c.onPrimary,
+      barBackgroundColor: c.surface,
+      scaffoldBackgroundColor: c.surface,
+      textTheme: CupertinoTextThemeData(
+        primaryColor: c.primary,
+        textStyle: TextStyle(
+          fontFamily: fontFamily,
+          color: c.onSurface,
         ),
-      ),
-
-      // —— AppBar ——
-      appBarTheme: AppBarTheme(
-        centerTitle: true,
-        backgroundColor: surface,
-        foregroundColor: onSurface,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        shadowColor: Colors.transparent,
-        surfaceTintColor: Colors.transparent,
-        titleTextStyle: textTheme.titleLarge,
-        toolbarHeight: 64,
-        iconTheme: IconThemeData(color: primary, size: 26),
-        actionsIconTheme: IconThemeData(color: onSurfaceVariant, size: 26),
-      ),
-
-      // —— 填充按钮（主按钮）——
-      filledButtonTheme: FilledButtonThemeData(
-        style: FilledButton.styleFrom(
-          minimumSize: const Size(88, 56),
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-          backgroundColor: primary,
-          foregroundColor: onPrimary,
-          disabledBackgroundColor: surfaceContainerHighest,
-          disabledForegroundColor: onSurfaceVariant,
-          textStyle: textTheme.labelLarge,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.all(btnRadius),
-          ),
-        ).copyWith(elevation: const WidgetStatePropertyAll(0)),
-      ),
-
-      // —— 轮廓按钮 ——
-      elevatedButtonTheme: ElevatedButtonThemeData(
-        style: ElevatedButton.styleFrom(
-          minimumSize: const Size(88, 56),
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-          backgroundColor: surfaceContainerLow,
-          foregroundColor: onSurface,
-          elevation: 0,
-          shadowColor: Colors.transparent,
-          textStyle: textTheme.labelLarge,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.all(btnRadius),
-            side: BorderSide(color: outline, width: 1),
-          ),
-          disabledBackgroundColor: surfaceContainerLow,
-          disabledForegroundColor: onSurfaceVariant.withValues(alpha: 0.5),
-        ),
-      ),
-
-      // —— 文本按钮 ——
-      textButtonTheme: TextButtonThemeData(
-        style: TextButton.styleFrom(
-          foregroundColor: primary,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          textStyle: textTheme.labelMedium,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppRadius.chip),
-          ),
-        ),
-      ),
-
-      // —— 输入框 ——
-      inputDecorationTheme: InputDecorationTheme(
-        filled: true,
-        fillColor: surfaceContainerLow,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        hintStyle: textTheme.bodyMedium?.copyWith(color: onSurfaceVariant),
-        labelStyle: textTheme.bodyMedium?.copyWith(color: onSurfaceVariant),
-        floatingLabelStyle: textTheme.bodyMedium?.copyWith(color: primary),
-        helperStyle: textTheme.bodySmall,
-        errorStyle: textTheme.bodySmall?.copyWith(color: error),
-        prefixIconColor: onSurfaceVariant,
-        suffixIconColor: onSurfaceVariant,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.all(inputRadius),
-          borderSide: BorderSide(color: outline, width: 1),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.all(inputRadius),
-          borderSide: BorderSide(color: outline, width: 1),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.all(inputRadius),
-          borderSide: BorderSide(color: primary, width: 2),
-        ),
-        errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.all(inputRadius),
-          borderSide: BorderSide(color: error, width: 1),
-        ),
-        focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.all(inputRadius),
-          borderSide: BorderSide(color: error, width: 2),
-        ),
-        disabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.all(inputRadius),
-          borderSide: BorderSide(color: outlineVariant, width: 1),
-        ),
-      ),
-
-      // —— Chip ——
-      chipTheme: ChipThemeData(
-        backgroundColor: surfaceContainerHigh,
-        selectedColor: primaryContainer,
-        disabledColor: surfaceContainer,
-        labelStyle: textTheme.labelSmall?.copyWith(color: onSurface),
-        secondaryLabelStyle:
-            textTheme.labelSmall?.copyWith(color: onPrimaryContainer),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(chipRadius),
-        ),
-        side: BorderSide.none,
-        labelPadding: const EdgeInsets.symmetric(horizontal: 2),
-        iconTheme: const IconThemeData(size: 16),
-      ),
-
-      // —— 下拉菜单 ——
-      dropdownMenuTheme: DropdownMenuThemeData(
-        menuStyle: MenuStyle(
-          backgroundColor: WidgetStatePropertyAll(surfaceContainerLow),
-          elevation: const WidgetStatePropertyAll(2),
-          shadowColor: WidgetStatePropertyAll(
-            onSurface.withValues(alpha: 0.06),
-          ),
-          shape: WidgetStatePropertyAll(
-            RoundedRectangleBorder(
-              borderRadius: BorderRadius.all(Radius.circular(16)),
-              side: BorderSide(color: outline, width: 1),
-            ),
-          ),
-          padding: const WidgetStatePropertyAll(
-            EdgeInsets.symmetric(vertical: 8),
-          ),
-        ),
-        textStyle: textTheme.bodyMedium,
-      ),
-
-      // —— 图标 & ListTile ——
-      iconTheme: IconThemeData(color: primary, size: 24, opticalSize: 24),
-      listTileTheme: ListTileThemeData(
-        iconColor: primary,
-        textColor: onSurface,
-        minVerticalPadding: 12,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-        titleTextStyle: textTheme.bodyLarge,
-        subtitleTextStyle: textTheme.bodySmall,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-      ),
-
-      // —— AlertDialog ——
-      dialogTheme: DialogThemeData(
-        backgroundColor: surfaceContainerLowest,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(bannerRadius),
-          side: BorderSide(color: outline, width: 1),
-        ),
-        alignment: Alignment.center,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
-      ),
-
-      // —— SnackBar ——
-      snackBarTheme: SnackBarThemeData(
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: scheme.inverseSurface,
-        contentTextStyle: textTheme.bodyMedium?.copyWith(
-          color: scheme.onInverseSurface,
-        ),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(Radius.circular(14)),
-        ),
-        elevation: 4,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-        closeIconColor: scheme.onInverseSurface,
-        showCloseIcon: true,
-      ),
-
-      // —— 进度条 ——
-      progressIndicatorTheme: ProgressIndicatorThemeData(
-        color: primary,
-        linearTrackColor: surfaceContainerHighest,
-        linearMinHeight: 8,
-        circularTrackColor: surfaceContainerHighest,
-        refreshBackgroundColor: surfaceContainerLow,
-      ),
-
-      // —— SegmentedButton ——
-      segmentedButtonTheme: SegmentedButtonThemeData(
-        style: SegmentedButton.styleFrom(
-          backgroundColor: surfaceContainerLow,
-          foregroundColor: onSurface,
-          selectedBackgroundColor: primaryContainer,
-          selectedForegroundColor: onPrimaryContainer,
-          disabledBackgroundColor: surfaceContainer,
-          disabledForegroundColor: onSurfaceVariant,
-          side: BorderSide(color: outline, width: 1),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.all(btnRadius),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          textStyle: textTheme.labelMedium,
-        ),
-      ),
-
-      // —— 选择框 / 单选 ——
-      checkboxTheme: CheckboxThemeData(
-        fillColor: WidgetStateProperty.resolveWith((s) {
-          if (s.contains(WidgetState.selected)) return primary;
-          return Colors.transparent;
-        }),
-        checkColor: WidgetStatePropertyAll(onPrimary),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
-        side: BorderSide(color: outline, width: 1.5),
-      ),
-      radioTheme: RadioThemeData(
-        fillColor: WidgetStateProperty.resolveWith((s) {
-          if (s.contains(WidgetState.selected)) return primary;
-          return onSurfaceVariant;
-        }),
-      ),
-      switchTheme: SwitchThemeData(
-        thumbColor: WidgetStateProperty.resolveWith((s) =>
-            s.contains(WidgetState.selected) ? primary : onSurfaceVariant),
-        trackColor: WidgetStateProperty.resolveWith((s) =>
-            s.contains(WidgetState.selected)
-                ? primaryContainer
-                : surfaceContainerHighest),
       ),
     );
   }
 }
 
 // =====================================================================
-// §语义化组件（自动跟随亮/暗模式，取色一律来自 Theme.of(context)）
+// §语义色令牌集合（亮/暗实例）
 // =====================================================================
 
-/// 4 种语义化 Chip/Pill：避免全局 chipTheme 被误用，且兼容双主题。
+/// 应用自有语义色令牌（对应过去 Material ColorScheme 的角色，但完全独立于 Material）。
+class AppColors {
+  final Brightness brightness;
+
+  final Color primary;
+  final Color onPrimary;
+  final Color primaryContainer;
+  final Color onPrimaryContainer;
+
+  final Color secondary;
+  final Color onSecondary;
+  final Color secondaryContainer;
+  final Color onSecondaryContainer;
+
+  final Color tertiary;
+  final Color onTertiary;
+  final Color tertiaryContainer;
+  final Color onTertiaryContainer;
+
+  final Color error;
+  final Color onError;
+  final Color errorContainer;
+  final Color onErrorContainer;
+
+  final Color surface;
+  final Color onSurface;
+  final Color surfaceContainerLowest;
+  final Color surfaceContainerLow;
+  final Color surfaceContainer;
+  final Color surfaceContainerHigh;
+  final Color surfaceContainerHighest;
+  final Color onSurfaceVariant;
+  final Color outline;
+  final Color outlineVariant;
+
+  final Color inverseSurface;
+  final Color onInverseSurface;
+
+  const AppColors({
+    required this.brightness,
+    required this.primary,
+    required this.onPrimary,
+    required this.primaryContainer,
+    required this.onPrimaryContainer,
+    required this.secondary,
+    required this.onSecondary,
+    required this.secondaryContainer,
+    required this.onSecondaryContainer,
+    required this.tertiary,
+    required this.onTertiary,
+    required this.tertiaryContainer,
+    required this.onTertiaryContainer,
+    required this.error,
+    required this.onError,
+    required this.errorContainer,
+    required this.onErrorContainer,
+    required this.surface,
+    required this.onSurface,
+    required this.surfaceContainerLowest,
+    required this.surfaceContainerLow,
+    required this.surfaceContainer,
+    required this.surfaceContainerHigh,
+    required this.surfaceContainerHighest,
+    required this.onSurfaceVariant,
+    required this.outline,
+    required this.outlineVariant,
+    required this.inverseSurface,
+    required this.onInverseSurface,
+  });
+
+  /// 主操作（植物绿）。
+  Color get accent => primary;
+
+  /// AI 暖区（暖橙）。
+  Color get aiAccent => secondary;
+
+  /// 积极反馈（天蓝）。
+  Color get feedbackAccent => tertiary;
+}
+
+// =====================================================================
+// §排版令牌（自研 AppText，非 Material TextTheme）
+// =====================================================================
+
+/// 应用自有排版集合。字号/行高固定，行内颜色随亮暗语义色。
+class AppText {
+  final TextStyle? displayLarge;
+  final TextStyle? displayMedium;
+  final TextStyle? headlineLarge;
+  final TextStyle? headlineMedium;
+  final TextStyle? headlineSmall;
+  final TextStyle? titleLarge;
+  final TextStyle? titleMedium;
+  final TextStyle? titleSmall;
+  final TextStyle? bodyLarge;
+  final TextStyle? bodyMedium;
+  final TextStyle? bodySmall;
+  final TextStyle? labelLarge;
+  final TextStyle? labelMedium;
+  final TextStyle? labelSmall;
+
+  const AppText({
+    required this.displayLarge,
+    required this.displayMedium,
+    required this.headlineLarge,
+    required this.headlineMedium,
+    required this.headlineSmall,
+    required this.titleLarge,
+    required this.titleMedium,
+    required this.titleSmall,
+    required this.bodyLarge,
+    required this.bodyMedium,
+    required this.bodySmall,
+    required this.labelLarge,
+    required this.labelMedium,
+    required this.labelSmall,
+  });
+
+  factory AppText._build(AppColors c) {
+    const fontFamily = AppTheme.fontFamily;
+    final base = c.onSurface;
+    final muted = c.onSurfaceVariant;
+    final onPrimaryText = c.onPrimary;
+
+    TextStyle textStyle({
+      required double size,
+      required FontWeight weight,
+      double height = 1.4,
+      double spacing = 0,
+      Color? color,
+    }) {
+      return TextStyle(
+        fontFamily: fontFamily,
+        fontSize: size,
+        fontWeight: weight,
+        height: height,
+        letterSpacing: spacing,
+        color: color ?? base,
+      );
+    }
+
+    return AppText(
+      displayLarge: textStyle(size: 40, weight: FontWeight.w700, height: 1.15, spacing: -1.0),
+      displayMedium: textStyle(size: 32, weight: FontWeight.w700, height: 1.2, spacing: -0.6),
+      headlineLarge: textStyle(size: 28, weight: FontWeight.w700, height: 1.25, spacing: -0.4),
+      headlineMedium: textStyle(size: 26, weight: FontWeight.w700, height: 1.3, spacing: -0.3),
+      headlineSmall: textStyle(size: 24, weight: FontWeight.w600, height: 1.3, spacing: -0.2),
+      titleLarge: textStyle(size: 24, weight: FontWeight.w700, height: 1.35, spacing: -0.3),
+      titleMedium: textStyle(size: 22, weight: FontWeight.w600, height: 1.4, spacing: -0.15),
+      titleSmall: textStyle(size: 20, weight: FontWeight.w600),
+      bodyLarge: textStyle(size: 20, weight: FontWeight.w400, height: 1.55),
+      bodyMedium: textStyle(size: 18, weight: FontWeight.w400, height: 1.55),
+      bodySmall: textStyle(size: 16, weight: FontWeight.w400, height: 1.5, color: muted),
+      labelLarge: textStyle(size: 20, weight: FontWeight.w600, color: onPrimaryText),
+      labelMedium: textStyle(size: 18, weight: FontWeight.w600),
+      labelSmall: textStyle(size: 16, weight: FontWeight.w500, color: muted),
+    );
+  }
+}
+
+// =====================================================================
+// §通用扁平化组件（纯 Cupertino 场景下的补位）
+// =====================================================================
+
+/// 扁平卡片：1px 描边 + 暖色填充，无阴影（替代 Material Card）。
+class AppCard extends StatelessWidget {
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+  final EdgeInsetsGeometry margin;
+  final Color? color;
+  final double? radius;
+  final Border? border;
+  final VoidCallback? onTap;
+
+  const AppCard({
+    super.key,
+    required this.child,
+    this.padding = const EdgeInsets.all(20),
+    this.margin = const EdgeInsets.symmetric(vertical: 6),
+    this.color,
+    this.radius,
+    this.border,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final app = AppTheme.colorsOf(context);
+    final box = Container(
+      padding: padding,
+      decoration: BoxDecoration(
+        color: color ?? app.surfaceContainerLow,
+        borderRadius: BorderRadius.all(
+          Radius.circular(radius ?? AppRadius.card),
+        ),
+        border: border ??
+            Border.all(
+              color: app.outline,
+              width: 1,
+            ),
+      ),
+      child: child,
+    );
+    return Container(
+      margin: margin,
+      child: onTap != null
+          ? CupertinoButton(
+              padding: EdgeInsets.zero,
+              pressedOpacity: 0.8,
+              onPressed: onTap,
+              child: box,
+            )
+          : box,
+    );
+  }
+}
+
+/// 主操作按钮：纯 CupertinoButton.filled，扁平（无阴影）。
+class AppPrimaryButton extends StatelessWidget {
+  final String label;
+  final VoidCallback? onPressed;
+  final bool loading;
+  final bool fullWidth;
+
+  const AppPrimaryButton({
+    super.key,
+    required this.label,
+    this.onPressed,
+    this.loading = false,
+    this.fullWidth = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final app = AppTheme.colorsOf(context);
+    return SizedBox(
+      height: 56,
+      child: fullWidth
+          ? _inner(context, app)
+          : Center(child: _inner(context, app)),
+    );
+  }
+
+  Widget _inner(BuildContext context, AppColors app) {
+    return CupertinoButton.filled(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+      borderRadius: const BorderRadius.all(
+        Radius.circular(AppRadius.button),
+      ),
+      disabledColor: app.surfaceContainerHighest,
+      onPressed: loading ? null : onPressed,
+      child: loading
+          ? const SizedBox(
+              width: 22,
+              height: 22,
+              child: CupertinoActivityIndicator(radius: 11),
+            )
+          : Text(
+              label,
+              textAlign: TextAlign.center,
+              style: AppTheme.textOf(context).labelLarge?.copyWith(
+                    color: loading ? app.onSurfaceVariant : app.onPrimary,
+                  ),
+            ),
+    );
+  }
+}
+
+/// 扁平线性进度条（替代 Material LinearProgressIndicator）。
+class AppProgressBar extends StatelessWidget {
+  final double value; // 0.0 - 1.0
+  final double height;
+  final Color? color;
+  final Color? trackColor;
+
+  const AppProgressBar({
+    super.key,
+    required this.value,
+    this.height = 8,
+    this.color,
+    this.trackColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final app = AppTheme.colorsOf(context);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(height / 2),
+      child: SizedBox(
+        height: height,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            DecoratedBox(
+              decoration: BoxDecoration(color: trackColor ?? app.surfaceContainerHighest),
+            ),
+            FractionallySizedBox(
+              alignment: Alignment.centerLeft,
+              widthFactor: value.clamp(0.0, 1.0),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: color ?? app.primary,
+                  borderRadius: BorderRadius.circular(height / 2),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// =====================================================================
+// §语义化组件（自动跟随亮/暗模式，取色一律来自 AppTheme）
+// =====================================================================
+
+/// 4 种语义化 Chip/Pill：避免全局 comparator 风格被误用，且兼容双主题。
 class AppTags {
   static Widget normal(String label, {IconData? icon}) => _TagChip(
         label: label,
@@ -633,13 +485,13 @@ class AppTags {
 
   static Widget ai(String label, {IconData? icon}) => _TagChip(
         label: label,
-        icon: icon ?? Icons.auto_awesome_rounded,
+        icon: icon ?? CupertinoIcons.sparkles,
         semantics: _TagSemantics.ai,
       );
 
   static Widget success(String label, {IconData? icon}) => _TagChip(
         label: label,
-        icon: icon ?? Icons.check_circle_rounded,
+        icon: icon ?? CupertinoIcons.checkmark_circle_fill,
         semantics: _TagSemantics.success,
       );
 
@@ -664,13 +516,13 @@ class _TagChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final app = AppTheme.colorsOf(context);
     final (bg, fg) = switch (semantics) {
-      _TagSemantics.normal => (scheme.surfaceContainerHigh, scheme.onSurface),
-      _TagSemantics.info => (scheme.primaryContainer, scheme.onPrimaryContainer),
-      _TagSemantics.ai => (scheme.secondaryContainer, scheme.onSecondaryContainer),
-      _TagSemantics.success => (scheme.tertiaryContainer, scheme.onTertiaryContainer),
-      _TagSemantics.warning => (scheme.errorContainer, scheme.onErrorContainer),
+      _TagSemantics.normal => (app.surfaceContainerHigh, app.onSurface),
+      _TagSemantics.info => (app.primaryContainer, app.onPrimaryContainer),
+      _TagSemantics.ai => (app.secondaryContainer, app.onSecondaryContainer),
+      _TagSemantics.success => (app.tertiaryContainer, app.onTertiaryContainer),
+      _TagSemantics.warning => (app.errorContainer, app.onErrorContainer),
     };
 
     return Container(
@@ -688,7 +540,7 @@ class _TagChip extends StatelessWidget {
           ],
           Text(
             label,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            style: AppTheme.textOf(context).labelSmall?.copyWith(
                   color: fg,
                   fontWeight: FontWeight.w600,
                 ),
@@ -703,19 +555,19 @@ class _TagChip extends StatelessWidget {
 class AppBadge {
   static Widget successChip(String label) => _BadgePill(
         label: label,
-        icon: Icons.check_rounded,
+        icon: CupertinoIcons.checkmark,
         semantics: _BadgeSemantics.success,
       );
 
   static Widget warningChip(String label) => _BadgePill(
         label: label,
-        icon: Icons.warning_amber_rounded,
+        icon: CupertinoIcons.exclamationmark_triangle,
         semantics: _BadgeSemantics.warning,
       );
 
   static Widget infoChip(String label) => _BadgePill(
         label: label,
-        icon: Icons.info_outline_rounded,
+        icon: CupertinoIcons.info,
         semantics: _BadgeSemantics.info,
       );
 }
@@ -734,11 +586,11 @@ class _BadgePill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final app = AppTheme.colorsOf(context);
     final (bg, fg) = switch (semantics) {
-      _BadgeSemantics.success => (scheme.tertiaryContainer, scheme.onTertiaryContainer),
-      _BadgeSemantics.warning => (scheme.errorContainer, scheme.onErrorContainer),
-      _BadgeSemantics.info => (scheme.primaryContainer, scheme.onPrimaryContainer),
+      _BadgeSemantics.success => (app.tertiaryContainer, app.onTertiaryContainer),
+      _BadgeSemantics.warning => (app.errorContainer, app.onErrorContainer),
+      _BadgeSemantics.info => (app.primaryContainer, app.onPrimaryContainer),
     };
 
     return Container(
@@ -754,7 +606,7 @@ class _BadgePill extends StatelessWidget {
           const SizedBox(width: 4),
           Text(
             label,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            style: AppTheme.textOf(context).labelSmall?.copyWith(
                   color: fg,
                   fontWeight: FontWeight.w600,
                 ),
@@ -779,8 +631,8 @@ class SectionTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = Theme.of(context).colorScheme.primary;
-    final style = Theme.of(context).textTheme.titleMedium;
+    final app = AppTheme.colorsOf(context);
+    final style = AppTheme.textOf(context).titleMedium;
     return Padding(
       padding: padding,
       child: Row(
@@ -791,7 +643,7 @@ class SectionTitle extends StatelessWidget {
             height: 22,
             margin: const EdgeInsets.only(right: 10),
             decoration: BoxDecoration(
-              color: color,
+              color: app.primary,
               borderRadius: BorderRadius.circular(4),
             ),
           ),
@@ -841,9 +693,9 @@ class AvatarSquircle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final background = bg ?? scheme.primaryContainer;
-    final foreground = fg ?? scheme.onPrimaryContainer;
+    final app = AppTheme.colorsOf(context);
+    final background = bg ?? app.primaryContainer;
+    final foreground = fg ?? app.onPrimaryContainer;
     return Container(
       width: size,
       height: size,
@@ -851,7 +703,7 @@ class AvatarSquircle extends StatelessWidget {
         color: background,
         borderRadius: BorderRadius.all(Radius.circular(size * 0.32)),
         border: Border.all(
-          color: scheme.outline,
+          color: app.outline,
           width: 1,
         ),
       ),

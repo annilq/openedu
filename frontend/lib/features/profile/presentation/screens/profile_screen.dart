@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/domain/models/models.dart';
@@ -17,7 +17,8 @@ class ProfileScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
+    final app = AppTheme.colorsOf(context);
+    final text = AppTheme.textOf(context);
     final roleTag = user.isParent
         ? AppTags.normal('家长账号')
         : AppTags.info('${user.grade ?? "?"}年级');
@@ -35,7 +36,7 @@ class ProfileScreen extends ConsumerWidget {
         Center(
           child: Text(
             user.displayName,
-            style: theme.textTheme.headlineSmall?.copyWith(
+            style: text.headlineSmall?.copyWith(
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -47,8 +48,8 @@ class ProfileScreen extends ConsumerWidget {
           Center(
             child: Text(
               '@${user.username}',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+              style: text.bodyMedium?.copyWith(
+                color: app.onSurfaceVariant,
               ),
             ),
           ),
@@ -67,30 +68,30 @@ class ProfileScreen extends ConsumerWidget {
         const SizedBox(height: AppSpacing.sm),
         Container(
           decoration: BoxDecoration(
-            color: theme.colorScheme.surface,
+            color: app.surface,
             borderRadius: BorderRadius.circular(AppRadius.card),
             border: Border.all(
-              color: theme.colorScheme.outlineVariant,
+              color: app.outlineVariant,
               width: 1,
             ),
           ),
           child: Column(
             children: [
               _InfoRow(
-                icon: Icons.person_outline,
+                icon: CupertinoIcons.person,
                 label: '用户名',
                 value: user.username,
               ),
               _Divider(),
               _InfoRow(
-                icon: Icons.school_outlined,
+                icon: CupertinoIcons.book,
                 label: '角色',
                 value: user.isParent ? '家长' : '学生',
               ),
               if (user.grade != null) ...[
                 _Divider(),
                 _InfoRow(
-                  icon: Icons.grade_outlined,
+                  icon: CupertinoIcons.book,
                   label: '年级',
                   value: '${user.grade}年级',
                 ),
@@ -104,45 +105,46 @@ class ProfileScreen extends ConsumerWidget {
         // Logout
         SizedBox(
           width: double.infinity,
-          child: FilledButton.tonal(
-            style: FilledButton.styleFrom(
-              backgroundColor: theme.colorScheme.errorContainer,
-              foregroundColor: theme.colorScheme.onErrorContainer,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(AppRadius.button),
-              ),
-            ),
+          child: CupertinoButton(
+            color: app.errorContainer,
+            disabledColor: app.errorContainer,
+            borderRadius: BorderRadius.circular(AppRadius.button),
+            padding: const EdgeInsets.symmetric(vertical: 16),
             onPressed: () {
-              showDialog(
+              showCupertinoDialog(
                 context: context,
-                builder: (ctx) => AlertDialog(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(AppRadius.card),
-                  ),
+                builder: (ctx) => CupertinoAlertDialog(
                   title: const Text('退出登录'),
                   content: const Text('确定要退出当前账号吗？'),
                   actions: [
-                    TextButton(
+                    CupertinoDialogAction(
+                      isDefaultAction: true,
                       onPressed: () => Navigator.pop(ctx),
                       child: const Text('取消'),
                     ),
-                    FilledButton(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: theme.colorScheme.error,
-                        foregroundColor: theme.colorScheme.onError,
-                      ),
+                    CupertinoDialogAction(
                       onPressed: () {
                         Navigator.pop(ctx);
                         onLogout();
                       },
+                      textStyle: TextStyle(
+                        color: app.error,
+                        fontWeight: FontWeight.w600,
+                      ),
                       child: const Text('确定退出'),
                     ),
                   ],
                 ),
               );
             },
-            child: const Text('退出登录'),
+            child: Text(
+              '退出登录',
+              style: TextStyle(
+                color: app.onErrorContainer,
+                fontWeight: FontWeight.w600,
+                fontSize: 18,
+              ),
+            ),
           ),
         ),
       ],
@@ -163,7 +165,8 @@ class _InfoRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final app = AppTheme.colorsOf(context);
+    final text = AppTheme.textOf(context);
     return Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: AppSpacing.lg,
@@ -174,21 +177,21 @@ class _InfoRow extends StatelessWidget {
           Icon(
             icon,
             size: 20,
-            color: theme.colorScheme.primary,
+            color: app.primary,
           ),
           const SizedBox(width: AppSpacing.md),
           Text(
             label,
-            style: theme.textTheme.bodyLarge?.copyWith(
-              color: theme.colorScheme.onSurface,
+            style: text.bodyLarge?.copyWith(
+              color: app.onSurface,
             ),
           ),
           const Spacer(),
           Text(
             value,
-            style: theme.textTheme.bodyLarge?.copyWith(
+            style: text.bodyLarge?.copyWith(
               fontWeight: FontWeight.w500,
-              color: theme.colorScheme.onSurfaceVariant,
+              color: app.onSurfaceVariant,
             ),
           ),
         ],
@@ -200,12 +203,12 @@ class _InfoRow extends StatelessWidget {
 class _Divider extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
+    final app = AppTheme.colorsOf(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-      child: Divider(
+      child: Container(
         height: 1,
-        thickness: 1,
-        color: Theme.of(context).colorScheme.outlineVariant,
+        color: app.outlineVariant,
       ),
     );
   }
@@ -217,16 +220,16 @@ class _ThemeModeSetting extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
+    final app = AppTheme.colorsOf(context);
     final mode = ref.watch(themeModeProvider);
     final controller = ref.read(themeModeProvider.notifier);
 
     return Container(
       decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
+        color: app.surface,
         borderRadius: BorderRadius.circular(AppRadius.card),
         border: Border.all(
-          color: theme.colorScheme.outlineVariant,
+          color: app.outlineVariant,
           width: 1,
         ),
       ),
@@ -234,31 +237,40 @@ class _ThemeModeSetting extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SegmentedButton<ThemeMode>(
-            segments: const [
-              ButtonSegment(
-                value: ThemeMode.light,
-                icon: Icon(Icons.light_mode_outlined),
-                label: Text('亮色'),
-              ),
-              ButtonSegment(
-                value: ThemeMode.dark,
-                icon: Icon(Icons.dark_mode_outlined),
-                label: Text('暗色'),
-              ),
-              ButtonSegment(
-                value: ThemeMode.system,
-                icon: Icon(Icons.brightness_auto_outlined),
-                label: Text('跟随系统'),
-              ),
-            ],
-            selected: {mode},
-            onSelectionChanged: (selection) =>
-                controller.setMode(selection.first),
-            showSelectedIcon: false,
+          CupertinoSlidingSegmentedControl<AppThemeMode>(
+            groupValue: mode,
+            onValueChanged: (v) {
+              if (v != null) controller.setMode(v);
+            },
+            backgroundColor: app.surfaceContainerHigh,
+            thumbColor: app.primaryContainer,
+            children: {
+              AppThemeMode.light:
+                  _segLabel(context, '亮色', mode == AppThemeMode.light),
+              AppThemeMode.dark:
+                  _segLabel(context, '暗色', mode == AppThemeMode.dark),
+              AppThemeMode.system:
+                  _segLabel(context, '跟随系统', mode == AppThemeMode.system),
+            },
           ),
         ],
       ),
     );
   }
+}
+
+/// 分段控件的标签：显式指定选中/未选中颜色，避免被 Cupertino 默认蓝覆盖。
+Widget _segLabel(BuildContext context, String label, bool selected) {
+  final app = AppTheme.colorsOf(context);
+  return Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 10),
+    child: Text(
+      label,
+      style: TextStyle(
+        color: selected ? app.onPrimaryContainer : app.onSurfaceVariant,
+        fontWeight: FontWeight.w600,
+        fontSize: 16,
+      ),
+    ),
+  );
 }

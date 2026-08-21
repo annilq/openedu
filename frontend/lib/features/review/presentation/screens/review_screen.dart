@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/domain/models/models.dart';
@@ -89,14 +89,13 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
 
   void _showResult(
       BuildContext context, AnswerResultModel result, ReviewItemModel item) {
-    final scheme = Theme.of(context).colorScheme;
+    final scheme = AppTheme.colorsOf(context);
     final nextIn = result.correct
         ? '下次 ${item.nextIntervalDays} 天后复习'
         : '已重新计时，明天再来';
-    showDialog(
+    showCupertinoDialog(
       context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
+      builder: (_) => CupertinoAlertDialog(
         title: Row(
           children: [
             Container(
@@ -110,7 +109,9 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
               ),
               alignment: Alignment.center,
               child: Icon(
-                result.correct ? Icons.check_rounded : Icons.refresh_rounded,
+                result.correct
+                    ? CupertinoIcons.checkmark
+                    : CupertinoIcons.refresh,
                 size: 22,
                 color: result.correct
                     ? scheme.onTertiaryContainer
@@ -134,7 +135,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(nextIn, style: Theme.of(context).textTheme.bodyMedium),
+            Text(nextIn, style: AppTheme.textOf(context).bodyMedium),
             if (result.explanation.isNotEmpty) ...[
               const SizedBox(height: AppSpacing.md),
               Container(
@@ -145,14 +146,13 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(result.explanation,
-                    style: Theme.of(context).textTheme.bodyMedium),
+                    style: AppTheme.textOf(context).bodyMedium),
               ),
             ],
           ],
         ),
-        actionsAlignment: MainAxisAlignment.center,
         actions: [
-          FilledButton(
+          CupertinoDialogAction(
             onPressed: () => Navigator.pop(context),
             child: const Text('继续'),
           ),
@@ -163,34 +163,33 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final scheme = AppTheme.colorsOf(context);
     final state = ref.watch(dueReviewNotifierProvider);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('复习'),
-        actions: [
-          if (state is DueReviewLoaded && !_done && _totalCount > 0)
-            Padding(
-              padding: const EdgeInsets.only(right: AppSpacing.xl),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.md, vertical: AppSpacing.xs),
-                decoration: BoxDecoration(
-                  color: scheme.surfaceContainerHigh,
-                  borderRadius: BorderRadius.circular(999),
+    return CupertinoPageScaffold(
+      navigationBar: CupertinoNavigationBar(
+        middle: const Text('复习'),
+        trailing: state is DueReviewLoaded && !_done && _totalCount > 0
+            ? Padding(
+                padding: const EdgeInsets.only(right: AppSpacing.xl),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.md, vertical: AppSpacing.xs),
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHigh,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    '${_currentIndex + 1}/$_totalCount',
+                    style: AppTheme.textOf(context).labelMedium?.copyWith(
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                  ),
                 ),
-                child: Text(
-                  '${_currentIndex + 1}/$_totalCount',
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                      ),
-                ),
-              ),
-            ),
-        ],
+              )
+            : null,
       ),
-      body: switch (state) {
+      child: switch (state) {
         DueReviewInitial() || DueReviewLoading() =>
           const AppLoading(message: '加载待复习...'),
         DueReviewError() => AppError(
@@ -208,7 +207,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
   }
 
   Widget _buildEmptyView() {
-    final scheme = Theme.of(context).colorScheme;
+    final scheme = AppTheme.colorsOf(context);
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(AppSpacing.xl3),
@@ -232,24 +231,21 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
                     borderRadius: BorderRadius.circular(32),
                   ),
                   alignment: Alignment.center,
-                  child: Icon(Icons.celebration_rounded,
+                  child: Icon(CupertinoIcons.sparkles,
                       size: 48, color: scheme.onTertiaryContainer),
                 ),
                 const SizedBox(height: AppSpacing.xl2),
                 Text('今天没有要复习的题',
                     textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.headlineMedium),
+                    style: AppTheme.textOf(context).headlineMedium),
                 const SizedBox(height: AppSpacing.sm),
                 Text('把错题复习掉，就能记得更牢～',
                     textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodyMedium),
+                    style: AppTheme.textOf(context).bodyMedium),
                 const SizedBox(height: AppSpacing.xl4),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('返回'),
-                  ),
+                AppPrimaryButton(
+                  label: '返回',
+                  onPressed: () => Navigator.of(context).pop(),
                 ),
               ],
             ),
@@ -260,7 +256,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
   }
 
   Widget _buildQuestionView(ReviewItemModel item) {
-    final scheme = Theme.of(context).colorScheme;
+    final scheme = AppTheme.colorsOf(context);
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(
           AppSpacing.xl2, AppSpacing.md, AppSpacing.xl2, AppSpacing.xl4),
@@ -290,7 +286,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
                   border: Border.all(color: scheme.outline, width: 1),
                 ),
                 child: Text(item.stem,
-                    style: Theme.of(context).textTheme.titleMedium),
+                    style: AppTheme.textOf(context).titleMedium),
               ),
               const SizedBox(height: AppSpacing.xl3),
               if (item.options != null && item.options!.isNotEmpty)
@@ -307,30 +303,44 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
                             },
                     ))
               else
-                TextField(
+                CupertinoTextField(
                   controller: _answerController,
-                  onChanged: (_) => setState(() {}),
+                  placeholder: '在此填写...',
                   enabled: !_submitting,
-                  style: Theme.of(context).textTheme.bodyLarge,
-                  decoration: const InputDecoration(
-                    labelText: '输入你的答案',
-                    hintText: '在此填写...',
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 14),
+                  style: AppTheme.textOf(context).bodyLarge,
+                  decoration: BoxDecoration(
+                    border:
+                        Border.all(color: scheme.outline, width: 1),
+                    borderRadius: BorderRadius.circular(AppRadius.input),
                   ),
+                  onChanged: (_) => setState(() {}),
                 ),
               const SizedBox(height: AppSpacing.xl4),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: _answerReady(item) ? () => _submit(item) : null,
-                  icon: _submitting
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2.2, color: Colors.white),
-                        )
-                      : const Icon(Icons.send_rounded, size: 20),
-                  label: Text(_submitting ? '判题中…' : '提交复习'),
+              CupertinoButton.filled(
+                borderRadius: BorderRadius.circular(AppRadius.button),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 24, vertical: 14),
+                onPressed: _answerReady(item) ? () => _submit(item) : null,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _submitting
+                        ? SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CupertinoActivityIndicator(
+                                color: scheme.onPrimary, radius: 11),
+                          )
+                        : Icon(CupertinoIcons.paperplane_fill,
+                            size: 20, color: scheme.onPrimary),
+                    const SizedBox(width: 8),
+                    Text(_submitting ? '判题中…' : '提交复习',
+                        style: AppTheme.textOf(context)
+                            .labelLarge
+                            ?.copyWith(color: scheme.onPrimary)),
+                  ],
                 ),
               ),
               if (!_answerReady(item) && !_submitting)
@@ -338,7 +348,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
                   padding: const EdgeInsets.only(top: AppSpacing.md),
                   child: Center(
                     child: Text('请先给出你的答案',
-                        style: Theme.of(context).textTheme.labelSmall),
+                        style: AppTheme.textOf(context).labelSmall),
                   ),
                 ),
             ],
@@ -349,7 +359,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
   }
 
   Widget _buildDoneView(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final scheme = AppTheme.colorsOf(context);
     final accuracy = _totalCount > 0
         ? (_correctCount / _totalCount * 100).round()
         : 0;
@@ -363,22 +373,22 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
       ResultTone.positive => (
           scheme.tertiaryContainer,
           scheme.onTertiaryContainer,
-          Icons.emoji_events_rounded
+          CupertinoIcons.rosette
         ),
       ResultTone.warm => (
           scheme.secondaryContainer,
           scheme.onSecondaryContainer,
-          Icons.thumb_up_alt_rounded
+          CupertinoIcons.hand_thumbsup_fill
         ),
       ResultTone.alert => (
           scheme.primaryContainer,
           scheme.onPrimaryContainer,
-          Icons.auto_graph_rounded
+          CupertinoIcons.chart_bar
         ),
       ResultTone.neutral => (
           scheme.surfaceContainerHigh,
           scheme.onSurface,
-          Icons.check_circle_rounded
+          CupertinoIcons.checkmark_circle_fill
         ),
     };
 
@@ -409,33 +419,32 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
                 ),
                 const SizedBox(height: AppSpacing.xl2),
                 Text('复习完成！',
-                    style: Theme.of(context).textTheme.headlineMedium),
+                    style: AppTheme.textOf(context).headlineMedium),
                 const SizedBox(height: AppSpacing.xs),
                 Text('答对 $_correctCount 题 · 正确率 $accuracy%',
-                    style: Theme.of(context).textTheme.bodyLarge),
+                    style: AppTheme.textOf(context).bodyLarge),
                 const SizedBox(height: AppSpacing.sm),
                 Text('记住的题会自动升级，错的题明天再来',
-                    style: Theme.of(context).textTheme.bodySmall),
+                    style: AppTheme.textOf(context).bodySmall),
                 const SizedBox(height: AppSpacing.xl3),
                 ClipRRect(
                   borderRadius: BorderRadius.circular(8),
-                  child: LinearProgressIndicator(
-                    value: _totalCount > 0
-                        ? (_correctCount / _totalCount).clamp(0.0, 1.0)
-                        : 0,
-                    minHeight: 12,
-                    backgroundColor: scheme.surfaceContainerHighest,
-                    valueColor:
-                        AlwaysStoppedAnimation<Color>(scheme.primary),
+                  child: SizedBox(
+                    height: 12,
+                    child: AppProgressBar(
+                      value: _totalCount > 0
+                          ? (_correctCount / _totalCount).clamp(0.0, 1.0)
+                          : 0,
+                      height: 12,
+                      color: scheme.primary,
+                      trackColor: scheme.surfaceContainerHighest,
+                    ),
                   ),
                 ),
                 const SizedBox(height: AppSpacing.xl4),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: () => Navigator.of(context).pop(true),
-                    child: const Text('返回首页'),
-                  ),
+                AppPrimaryButton(
+                  label: '返回首页',
+                  onPressed: () => Navigator.of(context).pop(true),
                 ),
               ],
             ),
@@ -465,17 +474,15 @@ class _ReviewOptionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final scheme = AppTheme.colorsOf(context);
     final letter = index < _letters.length ? _letters[index] : '${index + 1}';
     final disabled = submitting;
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.md),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(AppRadius.card),
-          onTap: disabled ? null : onTap,
-          child: AnimatedContainer(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: disabled ? null : onTap,
+        child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),
             curve: Curves.easeOut,
             padding: const EdgeInsets.all(AppSpacing.xl),
@@ -504,7 +511,7 @@ class _ReviewOptionTile extends StatelessWidget {
                   alignment: Alignment.center,
                   child: Text(
                     letter,
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    style: AppTheme.textOf(context).labelLarge?.copyWith(
                           color: selected
                               ? scheme.onPrimary
                               : scheme.onSurface,
@@ -517,7 +524,7 @@ class _ReviewOptionTile extends StatelessWidget {
                   child: Padding(
                     padding: const EdgeInsets.only(top: 4),
                     child: Text(text,
-                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        style: AppTheme.textOf(context).bodyLarge?.copyWith(
                               fontWeight:
                                   selected ? FontWeight.w600 : FontWeight.w400,
                               color: selected
@@ -529,14 +536,13 @@ class _ReviewOptionTile extends StatelessWidget {
                 if (selected)
                   Padding(
                     padding: const EdgeInsets.only(top: 4, left: AppSpacing.md),
-                    child: Icon(Icons.check_circle_rounded,
+                    child: Icon(CupertinoIcons.checkmark_circle_fill,
                         color: scheme.primary, size: 24),
                   ),
               ],
             ),
           ),
         ),
-      ),
     );
   }
 }

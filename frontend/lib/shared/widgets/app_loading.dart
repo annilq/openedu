@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
 
 import '../theme/app_theme.dart';
 
@@ -28,7 +28,7 @@ class AppLoading extends StatelessWidget {
   Widget build(BuildContext context) {
     if (skeleton) return _SkeletonList(lines: skeletonLines);
 
-    final theme = Theme.of(context);
+    final app = AppTheme.colorsOf(context);
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -36,20 +36,18 @@ class AppLoading extends StatelessWidget {
           SizedBox(
             width: 36,
             height: 36,
-            child: CircularProgressIndicator(
-              strokeWidth: 3,
-              valueColor: AlwaysStoppedAnimation<Color>(
-                theme.colorScheme.primary,
-              ),
+            child: CupertinoActivityIndicator(
+              color: app.primary,
+              radius: 16,
             ),
           ),
           if (message != null) ...[
             const SizedBox(height: AppSpacing.md),
             Text(
               message!,
-              style: theme.textTheme.bodyLarge?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
+              style: AppTheme.textOf(context).bodyLarge?.copyWith(
+                    color: app.onSurfaceVariant,
+                  ),
             ),
           ],
         ],
@@ -86,10 +84,10 @@ class _SkeletonCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
+        color: AppTheme.colorsOf(context).surface,
         borderRadius: BorderRadius.circular(AppRadius.card),
         border: Border.all(
-          color: Theme.of(context).colorScheme.outlineVariant,
+          color: AppTheme.colorsOf(context).outlineVariant,
           width: 1,
         ),
       ),
@@ -161,8 +159,9 @@ class _ShimmerBoxState extends State<_ShimmerBox>
 
   @override
   Widget build(BuildContext context) {
-    final base = Theme.of(context).colorScheme.surfaceContainerHighest;
-    final highlight = Theme.of(context).colorScheme.surface;
+    final app = AppTheme.colorsOf(context);
+    final base = app.surfaceContainerHighest;
+    final highlight = app.surface;
 
     return SizedBox(
       width: widget.width == double.infinity ? null : widget.width,

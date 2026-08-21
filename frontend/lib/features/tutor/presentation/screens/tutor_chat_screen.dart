@@ -1,12 +1,13 @@
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/app_inputs.dart';
 import '../providers/tutor_notifier.dart';
 
 /// 娃娃端 AI 伴学答疑页。v2 redesign：
-/// - DropdownButton(无框) → DropdownButtonFormField（与全局输入框一致）
+/// - 学科/年级选择统一使用自研组件（AppPickerField / 独立静态年级框）
 /// - 知识点输入框取消 isCollapsed，使用主题高度
 /// - 输入框取消自定义 OutlineInputBorder，复用全局主题
 /// - 气泡背景：孩子问 = 植物绿容器，AI 答 = 米色+1px 描边（区分）
@@ -72,51 +73,56 @@ class _TutorChatScreenState extends ConsumerState<TutorChatScreen> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(tutorNotifierProvider);
-    final scheme = Theme.of(context).colorScheme;
+    final scheme = AppTheme.colorsOf(context);
+    final text = AppTheme.textOf(context);
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('问 AI 老师')),
-      body: Column(
+    return CupertinoPageScaffold(
+      navigationBar: CupertinoNavigationBar(middle: const Text('问 AI 老师')),
+      child: Column(
         children: [
-          // 学科 / 年级选择：统一 DropdownButtonFormField 风格
+          // 学科 / 年级选择：统一扁平输入风格
           Padding(
             padding: const EdgeInsets.fromLTRB(
                 AppSpacing.xl2, AppSpacing.md, AppSpacing.xl2, 0),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
-                  child: DropdownButtonFormField<String>(
-                    initialValue: _subject,
-                    decoration: const InputDecoration(
-                      labelText: '学科',
-                      isDense: true,
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                    ),
-                    items: _subjects
-                        .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-                        .toList(),
-                    onChanged: (v) => setState(() => _subject = v ?? '数学'),
+                  child: AppPickerField<String>(
+                    label: '学科',
+                    values: _subjects,
+                    labels: _subjects,
+                    value: _subject,
+                    onChanged: (v) => setState(() => _subject = v),
                   ),
                 ),
                 const SizedBox(width: AppSpacing.xl),
                 Expanded(
-                  child: InputDecorator(
-                    decoration: const InputDecoration(
-                      labelText: '年级',
-                      isDense: true,
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                    ),
-                    child: Text('$_grade年级',
-                        style: Theme.of(context).textTheme.bodyLarge),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('年级', style: text.titleSmall),
+                      const SizedBox(height: AppSpacing.sm),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 14),
+                        decoration: BoxDecoration(
+                          color: scheme.surfaceContainerLow,
+                          borderRadius:
+                              BorderRadius.circular(AppRadius.input),
+                          border:
+                              Border.all(color: scheme.outline, width: 1),
+                        ),
+                        child: Text('$_grade年级', style: text.bodyLarge),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
           ),
           const SizedBox(height: AppSpacing.sm),
-          const Divider(height: 1, thickness: 1),
+          Container(height: 1, color: scheme.outline),
           // 对话区
           Expanded(
             child: switch (state) {
@@ -130,14 +136,25 @@ class _TutorChatScreenState extends ConsumerState<TutorChatScreen> {
           ),
           // 知识点 + 提问输入
           Padding(
-            padding:
-                const EdgeInsets.fromLTRB(AppSpacing.xl2, AppSpacing.sm, AppSpacing.xl2, 0),
-            child: TextField(
+            padding: const EdgeInsets.fromLTRB(
+                AppSpacing.xl2, AppSpacing.sm, AppSpacing.xl2, 0),
+            child: CupertinoTextField(
               controller: _kpCtrl,
-              style: Theme.of(context).textTheme.bodyMedium,
-              decoration: const InputDecoration(
-                labelText: '相关知识点（选填）',
-                prefixIcon: Icon(Icons.lightbulb_outline_rounded),
+              placeholder: '相关知识点（选填）',
+              placeholderStyle: text.bodyMedium
+                  ?.copyWith(color: scheme.onSurfaceVariant),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 16, vertical: 14),
+              style: text.bodyMedium,
+              prefix: Padding(
+                padding: const EdgeInsets.only(left: 16, right: 8),
+                child: Icon(CupertinoIcons.lightbulb,
+                    color: scheme.onSurfaceVariant, size: 20),
+              ),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(AppRadius.input),
+                border: Border.all(color: scheme.outline, width: 1),
               ),
             ),
           ),
@@ -150,18 +167,27 @@ class _TutorChatScreenState extends ConsumerState<TutorChatScreen> {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Expanded(
-                    child: TextField(
+                    child: CupertinoTextField(
                       controller: _questionCtrl,
                       enabled: !_sending,
                       minLines: 1,
                       maxLines: 4,
-                      style: Theme.of(context).textTheme.bodyLarge,
-                      decoration: InputDecoration(
-                        hintText: '输入你的学习问题…',
-                        hintStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: scheme.onSurfaceVariant,
-                            ),
-                        prefixIcon: const Icon(Icons.edit_note_rounded),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 14),
+                      style: text.bodyLarge,
+                      placeholder: '输入你的学习问题…',
+                      placeholderStyle: text.bodyMedium
+                          ?.copyWith(color: scheme.onSurfaceVariant),
+                      prefix: Padding(
+                        padding: const EdgeInsets.only(left: 16, right: 8),
+                        child: Icon(CupertinoIcons.pencil,
+                            color: scheme.onSurfaceVariant, size: 20),
+                      ),
+                      decoration: BoxDecoration(
+                        color: scheme.surfaceContainerLow,
+                        borderRadius:
+                            BorderRadius.circular(AppRadius.input),
+                        border: Border.all(color: scheme.outline, width: 1),
                       ),
                       onSubmitted: (_) => _send(),
                     ),
@@ -169,17 +195,30 @@ class _TutorChatScreenState extends ConsumerState<TutorChatScreen> {
                   const SizedBox(width: AppSpacing.md),
                   Padding(
                     padding: const EdgeInsets.only(bottom: 2),
-                    child: FilledButton.icon(
+                    child: CupertinoButton.filled(
+                      borderRadius:
+                          BorderRadius.circular(AppRadius.button),
                       onPressed: _sending ? null : _send,
-                      icon: _sending
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                  strokeWidth: 2.2, color: Colors.white),
-                            )
-                          : const Icon(Icons.send_rounded, size: 20),
-                      label: Text(_sending ? '思考中' : '发送'),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _sending
+                              ? SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CupertinoActivityIndicator(
+                                      color: scheme.onPrimary, radius: 8),
+                                )
+                              : Icon(CupertinoIcons.paperplane_fill,
+                                  size: 18, color: scheme.onPrimary),
+                          const SizedBox(width: 8),
+                          Text(
+                            _sending ? '思考中' : '发送',
+                            style: text.labelLarge
+                                ?.copyWith(color: scheme.onPrimary),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ],
@@ -192,7 +231,8 @@ class _TutorChatScreenState extends ConsumerState<TutorChatScreen> {
   }
 
   Widget _welcomeHint() {
-    final scheme = Theme.of(context).colorScheme;
+    final scheme = AppTheme.colorsOf(context);
+    final text = AppTheme.textOf(context);
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(AppSpacing.xl3),
@@ -218,21 +258,21 @@ class _TutorChatScreenState extends ConsumerState<TutorChatScreen> {
                     border: Border.all(color: scheme.outline, width: 1),
                   ),
                   alignment: Alignment.center,
-                  child: Icon(Icons.smart_toy_rounded,
+                  child: Icon(CupertinoIcons.sparkles,
                       size: 36, color: scheme.secondary),
                 ),
                 const SizedBox(height: AppSpacing.xl),
                 Text('有问题就问 AI 老师吧',
                     textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          color: scheme.onSecondaryContainer,
-                        )),
+                    style: text.titleLarge?.copyWith(
+                      color: scheme.onSecondaryContainer,
+                    )),
                 const SizedBox(height: AppSpacing.sm),
                 Text('只讲学习内容，其他问题不回答哦',
                     textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: scheme.onSecondaryContainer.withValues(alpha: 0.85),
-                        )),
+                    style: text.bodyMedium?.copyWith(
+                      color: scheme.onSecondaryContainer.withValues(alpha: 0.85),
+                    )),
               ],
             ),
           ),
@@ -246,7 +286,8 @@ class _TutorChatScreenState extends ConsumerState<TutorChatScreen> {
     List<TutorMessage> messages, {
     bool thinking = false,
   }) {
-    final scheme = Theme.of(context).colorScheme;
+    final scheme = AppTheme.colorsOf(context);
+    final text = AppTheme.textOf(context);
     final items = thinking ? [...messages, _thinkingBubble] : messages;
     return ListView.builder(
       controller: _scrollCtrl,
@@ -281,12 +322,12 @@ class _TutorChatScreenState extends ConsumerState<TutorChatScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(m.text,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: isChild
-                              ? scheme.onPrimaryContainer
-                              : scheme.onSurface,
-                          height: 1.55,
-                        )),
+                    style: text.bodyMedium?.copyWith(
+                      color: isChild
+                          ? scheme.onPrimaryContainer
+                          : scheme.onSurface,
+                      height: 1.55,
+                    )),
                 if (m.blocked)
                   Padding(
                     padding: const EdgeInsets.only(top: AppSpacing.sm),
@@ -300,16 +341,13 @@ class _TutorChatScreenState extends ConsumerState<TutorChatScreen> {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.shield_outlined,
+                          Icon(CupertinoIcons.shield,
                               size: 14, color: scheme.onErrorContainer),
                           const SizedBox(width: 4),
                           Text('已启用内容安全保护',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .labelSmall
-                                  ?.copyWith(
-                                      color: scheme.onErrorContainer,
-                                      fontWeight: FontWeight.w600)),
+                              style: text.labelSmall?.copyWith(
+                                  color: scheme.onErrorContainer,
+                                  fontWeight: FontWeight.w600)),
                         ],
                       ),
                     ),

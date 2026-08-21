@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/domain/models/models.dart';
@@ -39,7 +39,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   void _navigateToPractice(TaskModel task) {
     Navigator.of(context).push(
-      MaterialPageRoute(
+      CupertinoPageRoute(
         builder: (_) => PracticeScreen(
           task: task,
           onDone: () {
@@ -54,7 +54,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   void _navigateToReview() {
     Navigator.of(context)
-        .push(MaterialPageRoute(builder: (_) => const ReviewScreen()))
+        .push(CupertinoPageRoute(builder: (_) => const ReviewScreen()))
         .then((_) {
       if (!mounted) return;
       ref.read(dueReviewNotifierProvider.notifier).load();
@@ -63,7 +63,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   void _navigateToWrongQuestions() {
     Navigator.of(context)
-        .push(MaterialPageRoute(builder: (_) => const WrongQuestionsScreen()))
+        .push(CupertinoPageRoute(builder: (_) => const WrongQuestionsScreen()))
         .then((_) {
       if (!mounted) return;
       ref.read(dueReviewNotifierProvider.notifier).load();
@@ -72,7 +72,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   void _navigateToTutor() {
     Navigator.of(context)
-        .push(MaterialPageRoute(
+        .push(CupertinoPageRoute(
           builder: (_) => TutorChatScreen(user: widget.user),
         ))
         .then((_) {
@@ -83,31 +83,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.user.isParent
-            ? '家长端 · ${widget.user.displayName}'
-            : '${widget.user.displayName}的学习'),
-        actions: [
-          IconButton(
-            onPressed: widget.onLogout,
-            icon: const Icon(Icons.logout),
-            tooltip: '退出登录',
+    return Column(
+      children: [
+        CupertinoNavigationBar(
+          middle: Text(
+            widget.user.isParent
+                ? '家长端 · ${widget.user.displayName}'
+                : '${widget.user.displayName}的学习',
+            overflow: TextOverflow.ellipsis,
           ),
-        ],
-      ),
-      body: widget.user.isParent
-          ? ParentDashboard(
-              user: widget.user,
-              onNavigateToPractice: _navigateToPractice,
-            )
-          : ChildHome(
-              user: widget.user,
-              onNavigateToPractice: _navigateToPractice,
-              onNavigateToReview: _navigateToReview,
-              onNavigateToWrongQuestions: _navigateToWrongQuestions,
-              onNavigateToTutor: _navigateToTutor,
-            ),
+          trailing: CupertinoButton(
+            padding: EdgeInsets.zero,
+            onPressed: widget.onLogout,
+            child: const Icon(CupertinoIcons.square_arrow_right),
+          ),
+        ),
+        Expanded(
+          child: widget.user.isParent
+              ? ParentDashboard(
+                  user: widget.user,
+                  onNavigateToPractice: _navigateToPractice,
+                )
+              : ChildHome(
+                  user: widget.user,
+                  onNavigateToPractice: _navigateToPractice,
+                  onNavigateToReview: _navigateToReview,
+                  onNavigateToWrongQuestions: _navigateToWrongQuestions,
+                  onNavigateToTutor: _navigateToTutor,
+                ),
+        ),
+      ],
     );
   }
 }

@@ -1,10 +1,11 @@
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_error.dart';
 import '../../../../shared/widgets/app_loading.dart';
+import '../../../../shared/widgets/app_toast.dart';
 import '../providers/tutor_notifier.dart';
 
 /// 家长端：AI 使用管控设置页。
@@ -74,9 +75,7 @@ class _TutorQuotaScreenState extends ConsumerState<TutorQuotaScreen> {
         minutesText.isEmpty ? null : int.tryParse(minutesText);
     if ((askText.isNotEmpty && askLimit == null) ||
         (minutesText.isNotEmpty && minutesLimit == null)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('上限必须是数字（留空表示不限制）')),
-      );
+      AppToast.show(context, '上限必须是数字（留空表示不限制）');
       return;
     }
     setState(() => _saving = true);
@@ -95,19 +94,16 @@ class _TutorQuotaScreenState extends ConsumerState<TutorQuotaScreen> {
       ref
           .read(tutorUsageNotifierProvider(widget.childId).notifier)
           .load(childId: widget.childId);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('已保存 AI 使用管控')),
-      );
+      AppToast.show(context, '已保存 AI 使用管控');
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error)),
-      );
+      AppToast.error(context, error);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final scheme = AppTheme.colorsOf(context);
+    final text = AppTheme.textOf(context);
     final quotaState = ref.watch(tutorQuotaNotifierProvider(widget.childId));
     final usageState = ref.watch(tutorUsageNotifierProvider(widget.childId));
 
@@ -118,9 +114,14 @@ class _TutorQuotaScreenState extends ConsumerState<TutorQuotaScreen> {
       },
     );
 
-    return Scaffold(
-      appBar: AppBar(title: Text('${widget.childName} · AI 使用管控')),
-      body: switch (quotaState) {
+    return CupertinoPageScaffold(
+      navigationBar: CupertinoNavigationBar(
+        leading: CupertinoNavigationBarBackButton(
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
+        middle: Text('${widget.childName} · AI 使用管控'),
+      ),
+      child: switch (quotaState) {
         TutorQuotaInitial() || TutorQuotaLoading() =>
           const AppLoading(message: '加载设置...'),
         TutorQuotaError() => AppError(
@@ -154,19 +155,16 @@ class _TutorQuotaScreenState extends ConsumerState<TutorQuotaScreen> {
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Icon(Icons.info_outline_rounded,
+                            Icon(CupertinoIcons.info_circle,
                                 size: 20,
                                 color: scheme.onSecondaryContainer),
                             const SizedBox(width: AppSpacing.sm),
                             Expanded(
                               child: Text(
                                 '提示：0 表示今日禁用 AI 答疑；留空表示不限制（次数留空走全局默认上限）。',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .labelSmall
-                                    ?.copyWith(
-                                        color: scheme.onSecondaryContainer,
-                                        fontWeight: FontWeight.w500),
+                                style: text.labelSmall?.copyWith(
+                                    color: scheme.onSecondaryContainer,
+                                    fontWeight: FontWeight.w500),
                               ),
                             ),
                           ],
@@ -175,17 +173,30 @@ class _TutorQuotaScreenState extends ConsumerState<TutorQuotaScreen> {
                       const SizedBox(height: AppSpacing.xl2),
                       SizedBox(
                         width: double.infinity,
-                        child: FilledButton.icon(
+                        child: CupertinoButton.filled(
+                          borderRadius:
+                              BorderRadius.circular(AppRadius.button),
                           onPressed: _saving ? null : _save,
-                          icon: _saving
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2.2, color: Colors.white),
-                                )
-                              : const Icon(Icons.save_rounded, size: 20),
-                          label: Text(_saving ? '保存中…' : '保存设置'),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _saving
+                                  ? SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CupertinoActivityIndicator(
+                                          color: scheme.onPrimary, radius: 8),
+                                    )
+                                  : Icon(CupertinoIcons.checkmark,
+                                      size: 18, color: scheme.onPrimary),
+                              const SizedBox(width: 8),
+                              Text(
+                                _saving ? '保存中…' : '保存设置',
+                                style: text.labelLarge
+                                    ?.copyWith(color: scheme.onPrimary),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ],
@@ -199,105 +210,126 @@ class _TutorQuotaScreenState extends ConsumerState<TutorQuotaScreen> {
   }
 
   Widget _buildUsageCard(TutorUsageState usageState) {
-    final scheme = Theme.of(context).colorScheme;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.xl),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: scheme.secondaryContainer,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  alignment: Alignment.center,
-                  child: Icon(Icons.insights_rounded,
-                      size: 22, color: scheme.onSecondaryContainer),
+    final scheme = AppTheme.colorsOf(context);
+    final text = AppTheme.textOf(context);
+    return AppCard(
+      padding: const EdgeInsets.all(AppSpacing.xl),
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: scheme.secondaryContainer,
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                const SizedBox(width: AppSpacing.md),
-                Expanded(
-                  child: Text('今日已用',
-                      style: Theme.of(context).textTheme.titleSmall),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.md),
-            Padding(
-              padding: const EdgeInsets.only(left: 52),
-              child: switch (usageState) {
-                TutorUsageLoaded() => Text(
-                    '提问 ${usageState.usage.asksToday}'
-                    '${usageState.usage.askLimit != null ? ' / ${usageState.usage.askLimit} 次' : ' 次'}'
-                    '　·　时长 ${(usageState.usage.usedSeconds / 60).toStringAsFixed(1)}'
-                    '${usageState.usage.minutesLimit != null ? ' / ${usageState.usage.minutesLimit} 分钟' : ' 分钟'}',
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          fontFeatures: const [FontFeature.tabularFigures()],
-                        ),
+                alignment: Alignment.center,
+                child: Icon(CupertinoIcons.chart_bar,
+                    size: 22, color: scheme.onSecondaryContainer),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: Text('今日已用', style: text.titleSmall),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Padding(
+            padding: const EdgeInsets.only(left: 52),
+            child: switch (usageState) {
+              TutorUsageLoaded() => Text(
+                  '提问 ${usageState.usage.asksToday}'
+                  '${usageState.usage.askLimit != null ? ' / ${usageState.usage.askLimit} 次' : ' 次'}'
+                  '　·　时长 ${(usageState.usage.usedSeconds / 60).toStringAsFixed(1)}'
+                  '${usageState.usage.minutesLimit != null ? ' / ${usageState.usage.minutesLimit} 分钟' : ' 分钟'}',
+                  style: text.bodyLarge?.copyWith(
+                    fontFeatures: const [FontFeature.tabularFigures()],
                   ),
-                TutorUsageError() => Text(usageState.message,
-                    style: TextStyle(
-                        color: Theme.of(context).colorScheme.error)),
-                _ => Text('今日用量加载中…',
-                    style: Theme.of(context).textTheme.bodyMedium),
-              },
-            ),
-          ],
-        ),
+                ),
+              TutorUsageError() => Text(usageState.message,
+                  style: TextStyle(color: scheme.error)),
+              _ => Text('今日用量加载中…',
+                  style: text.bodyMedium),
+            },
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildForm(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.xl),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            TextField(
-              controller: _askLimitCtrl,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: '每日提问上限（次，留空不限）',
-                prefixIcon: Icon(Icons.format_list_numbered_rounded),
-              ),
+    final scheme = AppTheme.colorsOf(context);
+    final text = AppTheme.textOf(context);
+    return AppCard(
+      padding: const EdgeInsets.all(AppSpacing.xl),
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CupertinoTextField(
+            controller: _askLimitCtrl,
+            keyboardType: TextInputType.number,
+            placeholder: '每日提问上限（次，留空不限）',
+            placeholderStyle:
+                text.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            style: text.bodyMedium,
+            prefix: Padding(
+              padding: const EdgeInsets.only(left: 16, right: 8),
+              child: Icon(CupertinoIcons.list_number,
+                  color: scheme.onSurfaceVariant, size: 20),
             ),
-            const SizedBox(height: AppSpacing.md),
-            TextField(
-              controller: _minutesLimitCtrl,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: '每日使用时长上限（分钟，留空不限）',
-                prefixIcon: Icon(Icons.timer_outlined),
-              ),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(AppRadius.input),
+              border: Border.all(color: scheme.outline, width: 1),
             ),
-            const SizedBox(height: AppSpacing.xl2),
-            Text('允许提问的学科（不选 = 不限）',
-                style: Theme.of(context).textTheme.titleSmall),
-            const SizedBox(height: AppSpacing.md),
-            Wrap(
-              spacing: AppSpacing.sm,
-              runSpacing: AppSpacing.sm,
-              children: _subjects.map((s) {
-                final selected = _selectedSubjects.contains(s);
-                return _SubjectToggle(
-                  label: s,
-                  selected: selected,
-                  onTap: () => setState(() {
-                    selected
-                        ? _selectedSubjects.remove(s)
-                        : _selectedSubjects.add(s);
-                  }),
-                );
-              }).toList(),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          CupertinoTextField(
+            controller: _minutesLimitCtrl,
+            keyboardType: TextInputType.number,
+            placeholder: '每日使用时长上限（分钟，留空不限）',
+            placeholderStyle:
+                text.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            style: text.bodyMedium,
+            prefix: Padding(
+              padding: const EdgeInsets.only(left: 16, right: 8),
+              child: Icon(CupertinoIcons.timer,
+                  color: scheme.onSurfaceVariant, size: 20),
             ),
-          ],
-        ),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(AppRadius.input),
+              border: Border.all(color: scheme.outline, width: 1),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xl2),
+          Text('允许提问的学科（不选 = 不限）',
+              style: text.titleSmall),
+          const SizedBox(height: AppSpacing.md),
+          Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
+            children: _subjects.map((s) {
+              final selected = _selectedSubjects.contains(s);
+              return _SubjectToggle(
+                label: s,
+                selected: selected,
+                onTap: () => setState(() {
+                  selected
+                      ? _selectedSubjects.remove(s)
+                      : _selectedSubjects.add(s);
+                }),
+              );
+            }).toList(),
+          ),
+        ],
       ),
     );
   }
@@ -315,45 +347,43 @@ class _SubjectToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AppRadius.chip),
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOut,
-          padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-          decoration: BoxDecoration(
-            color: selected
-                ? scheme.primaryContainer
-                : scheme.surfaceContainerHigh,
-            borderRadius: BorderRadius.circular(AppRadius.chip),
-            border: Border.all(
-              color: selected ? scheme.primary : Colors.transparent,
-              width: selected ? 1.5 : 0,
-            ),
+    final scheme = AppTheme.colorsOf(context);
+    final text = AppTheme.textOf(context);
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+        decoration: BoxDecoration(
+          color: selected
+              ? scheme.primaryContainer
+              : scheme.surfaceContainerHigh,
+          borderRadius: BorderRadius.circular(AppRadius.chip),
+          border: Border.all(
+            color: selected ? scheme.primary : scheme.outline,
+            width: selected ? 1.5 : 0,
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (selected)
-                Padding(
-                  padding: const EdgeInsets.only(right: 6),
-                  child: Icon(Icons.check_rounded,
-                      size: 18, color: scheme.onPrimaryContainer),
-                ),
-              Text(label,
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: selected
-                            ? scheme.onPrimaryContainer
-                            : scheme.onSurface,
-                        fontWeight: FontWeight.w600,
-                      )),
-            ],
-          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (selected)
+              Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: Icon(CupertinoIcons.checkmark,
+                    size: 18, color: scheme.onPrimaryContainer),
+              ),
+            Text(label,
+                style: text.labelMedium?.copyWith(
+                  color: selected
+                      ? scheme.onPrimaryContainer
+                      : scheme.onSurface,
+                  fontWeight: FontWeight.w600,
+                )),
+          ],
         ),
       ),
     );

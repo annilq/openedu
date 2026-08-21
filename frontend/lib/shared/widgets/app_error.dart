@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
 
 import '../theme/app_theme.dart';
 
@@ -17,7 +17,7 @@ class AppError extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final app = AppTheme.colorsOf(context);
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.xl),
@@ -28,50 +28,53 @@ class AppError extends StatelessWidget {
               width: 88,
               height: 88,
               decoration: BoxDecoration(
-                color: theme.colorScheme.errorContainer.withValues(alpha: 0.6),
+                color: app.errorContainer.withValues(alpha: 0.6),
                 borderRadius: BorderRadius.circular(28),
               ),
               child: Icon(
-                Icons.sentiment_dissatisfied_rounded,
+                CupertinoIcons.exclamationmark_circle_fill,
                 size: 48,
-                color: theme.colorScheme.onErrorContainer,
+                color: app.onErrorContainer,
               ),
             ),
             const SizedBox(height: AppSpacing.lg),
             Text(
               '暂时出了点小问题',
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+              style: AppTheme.textOf(context).titleLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
             ),
             const SizedBox(height: AppSpacing.sm),
             Text(
               message,
               textAlign: TextAlign.center,
-              style: theme.textTheme.bodyLarge?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-                height: 1.5,
-              ),
+              style: AppTheme.textOf(context).bodyLarge?.copyWith(
+                    color: app.onSurfaceVariant,
+                    height: 1.5,
+                  ),
             ),
             if (onRetry != null) ...[
               const SizedBox(height: AppSpacing.xl),
-              FilledButton.tonal(
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.xl,
-                    vertical: 14,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(AppRadius.button),
-                  ),
+              CupertinoButton(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.xl,
+                  vertical: 14,
                 ),
+                borderRadius: BorderRadius.circular(AppRadius.button),
+                color: app.primary,
+                pressedOpacity: 0.85,
                 onPressed: onRetry,
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.refresh_rounded, size: 18),
+                    const Icon(CupertinoIcons.refresh, size: 18),
                     const SizedBox(width: AppSpacing.xs),
-                    Text(retryLabel),
+                    Text(
+                      retryLabel,
+                      style: AppTheme.textOf(context).labelMedium?.copyWith(
+                            color: app.onPrimary,
+                          ),
+                    ),
                   ],
                 ),
               ),

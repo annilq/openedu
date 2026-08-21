@@ -1,7 +1,8 @@
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/app_inputs.dart';
 import '../../domain/providers/children_provider.dart';
 import '../providers/children_notifier.dart';
 
@@ -91,67 +92,54 @@ class _AddChildScreenState extends ConsumerState<AddChildScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('添加娃娃账号')),
-      body: SingleChildScrollView(
+    final app = AppTheme.colorsOf(context);
+    return CupertinoPageScaffold(
+      navigationBar: CupertinoNavigationBar(
+        leading: CupertinoNavigationBarBackButton(
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
+        middle: const Text('添加娃娃账号'),
+      ),
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(AppSpacing.xl3),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            TextField(
+            AppTextField(
+              label: '娃娃昵称（例如：大宝）',
               controller: _nameCtrl,
-              decoration: const InputDecoration(
-                labelText: '娃娃昵称（例如：大宝）',
-                border: OutlineInputBorder(),
-              ),
             ),
             const SizedBox(height: AppSpacing.lg),
-            TextField(
+            AppTextField(
+              label: '登录账号（唯一，例如：dabao）',
               controller: _usernameCtrl,
-              decoration: const InputDecoration(
-                labelText: '登录账号（唯一，例如：dabao）',
-                border: OutlineInputBorder(),
-              ),
             ),
             const SizedBox(height: AppSpacing.lg),
-            TextField(
+            AppTextField(
+              label: '密码（至少 4 位）',
               controller: _passwordCtrl,
               obscureText: true,
-              decoration: const InputDecoration(
-                labelText: '密码（至少 4 位）',
-                border: OutlineInputBorder(),
-              ),
             ),
             const SizedBox(height: AppSpacing.lg),
-            DropdownButtonFormField<int>(
-              initialValue: _grade,
-              decoration: const InputDecoration(
-                labelText: '年级',
-                border: OutlineInputBorder(),
-              ),
-              items: List.generate(6, (i) {
-                final g = i + 1;
-                return DropdownMenuItem(value: g, child: Text('$g 年级'));
-              }),
-              onChanged: (v) => setState(() => _grade = v ?? 2),
+            AppPickerField<int>(
+              label: '年级',
+              values: List.generate(6, (i) => i + 1),
+              labels: List.generate(6, (i) => '${i + 1} 年级'),
+              value: _grade,
+              onChanged: (v) => setState(() => _grade = v),
             ),
             const SizedBox(height: AppSpacing.lg),
             if (_error != null) ...[
               Text(
                 _error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
+                style: TextStyle(color: app.error),
               ),
               const SizedBox(height: AppSpacing.md),
             ],
-            FilledButton(
+            AppPrimaryButton(
+              label: '创建娃娃账号',
               onPressed: _submitting ? null : _submit,
-              child: _submitting
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('创建娃娃账号'),
+              loading: _submitting,
             ),
           ],
         ),

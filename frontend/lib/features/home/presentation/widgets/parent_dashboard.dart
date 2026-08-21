@@ -1,10 +1,12 @@
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_error.dart';
+import '../../../../shared/widgets/app_inputs.dart';
 import '../../../../shared/widgets/app_loading.dart';
+import '../../../../shared/widgets/app_toast.dart';
 import '../../../children/domain/providers/children_provider.dart';
 import '../../../children/presentation/providers/children_notifier.dart';
 import '../../../children/presentation/screens/add_child_screen.dart';
@@ -49,9 +51,7 @@ class _ParentDashboardState extends ConsumerState<ParentDashboard> {
   void _generate() {
     final childrenState = ref.read(childrenNotifierProvider);
     if (childrenState is! ChildrenLoaded || childrenState.children.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先创建娃娃账号')),
-      );
+      AppToast.show(context, '请先创建娃娃账号');
       return;
     }
     if (_selectedChildId.isEmpty) {
@@ -84,7 +84,7 @@ class _ParentDashboardState extends ConsumerState<ParentDashboard> {
   /// 携带新用户 id 定向选中，方便立即布置任务。
   Future<void> _openAddChild() async {
     final newId = await Navigator.of(context).push<String>(
-      MaterialPageRoute(builder: (_) => const AddChildScreen()),
+      CupertinoPageRoute(builder: (_) => const AddChildScreen()),
     );
     if (newId == null || !mounted) return;
     final childrenState = ref.read(childrenNotifierProvider);
@@ -106,9 +106,7 @@ class _ParentDashboardState extends ConsumerState<ParentDashboard> {
     // 监听生成结果
     ref.listen<TaskGenState>(taskGenNotifierProvider, (prev, next) {
       if (next is TaskGenSuccess) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('已生成 ${next.task.count} 道题，可见答案用于核查')),
-        );
+        AppToast.show(context, '已生成 ${next.task.count} 道题，可见答案用于核查');
         ref.read(taskGenNotifierProvider.notifier).reset();
         if (_selectedChildId.isNotEmpty) {
           ref.read(progressNotifierProvider.notifier).load(_selectedChildId);
@@ -118,9 +116,7 @@ class _ParentDashboardState extends ConsumerState<ParentDashboard> {
         }
       }
       if (next is TaskGenError) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(next.message)),
-        );
+        AppToast.error(context, next.message);
       }
     });
 
@@ -179,7 +175,7 @@ class _ParentDashboardState extends ConsumerState<ParentDashboard> {
   }
 
   Widget _buildChildrenSection(ChildrenState state) {
-    final scheme = Theme.of(context).colorScheme;
+    final scheme = AppTheme.colorsOf(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
       child: switch (state) {
@@ -190,43 +186,49 @@ class _ParentDashboardState extends ConsumerState<ParentDashboard> {
             onRetry: () => ref.read(childrenNotifierProvider.notifier).loadChildren(),
           ),
         ChildrenLoaded() => state.children.isEmpty
-            ? Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(AppSpacing.xl3),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 52,
-                        height: 52,
-                        decoration: BoxDecoration(
-                          color: scheme.primaryContainer,
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        alignment: Alignment.center,
-                        child: Icon(Icons.child_care_rounded,
-                            size: 28, color: scheme.onPrimaryContainer),
+            ? AppCard(
+                padding: const EdgeInsets.all(AppSpacing.xl3),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 52,
+                      height: 52,
+                      decoration: BoxDecoration(
+                        color: scheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(16),
                       ),
-                      const SizedBox(width: AppSpacing.xl),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('还没有娃娃账号',
-                                style: Theme.of(context).textTheme.titleSmall),
-                            const SizedBox(height: AppSpacing.xs),
-                            Text('先创建一个娃娃账号吧～',
-                                style: Theme.of(context).textTheme.bodyMedium),
-                          ],
-                        ),
+                      alignment: Alignment.center,
+                      child: Icon(CupertinoIcons.person,
+                          size: 28, color: scheme.onPrimaryContainer),
+                    ),
+                    const SizedBox(width: AppSpacing.xl),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('还没有娃娃账号',
+                              style: AppTheme.textOf(context).titleSmall),
+                          const SizedBox(height: AppSpacing.xs),
+                          Text('先创建一个娃娃账号吧～',
+                              style: AppTheme.textOf(context).bodyMedium),
+                        ],
                       ),
-                      const SizedBox(width: AppSpacing.sm),
-                      FilledButton.tonalIcon(
-                        onPressed: _openAddChild,
-                        icon: const Icon(Icons.add, size: 18),
-                        label: const Text('添加娃娃'),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    CupertinoButton.filled(
+                      onPressed: _openAddChild,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(CupertinoIcons.add, size: 18),
+                          SizedBox(width: AppSpacing.xs),
+                          Text('添加娃娃'),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               )
             : Wrap(
@@ -252,70 +254,47 @@ class _ParentDashboardState extends ConsumerState<ParentDashboard> {
   Widget _buildGenForm(ChildrenState state) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.xl),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              DropdownButtonFormField<String>(
-                initialValue: _selectedQtype,
-                decoration: const InputDecoration(labelText: '题型'),
-                items: const [
-                  DropdownMenuItem(value: 'calc', child: Text('计算题')),
-                  DropdownMenuItem(value: 'fill', child: Text('填空题')),
-                  DropdownMenuItem(value: 'choice', child: Text('选择题')),
-                  DropdownMenuItem(value: 'open', child: Text('应用题')),
-                ],
-                onChanged: (v) => setState(() => _selectedQtype = v ?? 'calc'),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              TextField(
-                controller: _subjectCtrl,
-                decoration: const InputDecoration(labelText: '学科'),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              TextField(
-                controller: _kpCtrl,
-                decoration: const InputDecoration(labelText: '知识点'),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _countCtrl,
-                      decoration: const InputDecoration(labelText: '题数'),
-                      keyboardType: TextInputType.number,
-                    ),
+      child: AppCard(
+        padding: const EdgeInsets.all(AppSpacing.xl),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AppPickerField<String>(
+              label: '题型',
+              values: const ['calc', 'fill', 'choice', 'open'],
+              labels: const ['计算题', '填空题', '选择题', '应用题'],
+              value: _selectedQtype,
+              onChanged: (v) => setState(() => _selectedQtype = v),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            AppTextField(label: '学科', controller: _subjectCtrl),
+            const SizedBox(height: AppSpacing.md),
+            AppTextField(label: '知识点', controller: _kpCtrl),
+            const SizedBox(height: AppSpacing.md),
+            Row(
+              children: [
+                Expanded(
+                  child: AppTextField(
+                    label: '题数',
+                    controller: _countCtrl,
+                    keyboardType: TextInputType.number,
                   ),
-                  const SizedBox(width: AppSpacing.xl),
-                  Expanded(
-                    child: DropdownButtonFormField<int>(
-                      initialValue: _selectedGrade,
-                      decoration: const InputDecoration(labelText: '年级'),
-                      items: List.generate(9, (i) => i + 1)
-                          .map((g) => DropdownMenuItem(
-                                value: g,
-                                child: Text('$g年级'),
-                              ))
-                          .toList(),
-                      onChanged: (v) => setState(() => _selectedGrade = v ?? 2),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.xl),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: _generate,
-                  icon: const Icon(Icons.auto_awesome_rounded, size: 22),
-                  label: const Text('生成任务'),
                 ),
-              ),
-            ],
-          ),
+                const SizedBox(width: AppSpacing.xl),
+                Expanded(
+                  child: AppPickerField<int>(
+                    label: '年级',
+                    values: List.generate(9, (i) => i + 1),
+                    labels: List.generate(9, (i) => '${i + 1}年级'),
+                    value: _selectedGrade,
+                    onChanged: (v) => setState(() => _selectedGrade = v),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.xl),
+            AppPrimaryButton(label: '生成任务', onPressed: _generate),
+          ],
         ),
       ),
     );
@@ -333,47 +312,45 @@ class _ParentDashboardState extends ConsumerState<ParentDashboard> {
             ProgressInitial() || ProgressLoading() =>
               const AppLoading(message: '加载进度...'),
             ProgressError() => AppError(message: progState.message),
-            ProgressLoaded() => Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(AppSpacing.xl),
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      // 窄屏 2 列，宽屏 4 列——响应式不拥挤
-                      final wide = constraints.maxWidth >= 560;
-                      return Wrap(
-                        runSpacing: AppSpacing.xl2,
-                        spacing: AppSpacing.md,
-                        children: [
-                          _StatCard(
-                            label: '总题数',
-                            value: '${progState.progress.total}',
-                            wide: wide,
-                            icon: Icons.format_list_numbered_rounded,
-                          ),
-                          _StatCard(
-                            label: '答对',
-                            value: '${progState.progress.correct}',
-                            wide: wide,
-                            icon: Icons.check_circle_outline_rounded,
-                          ),
-                          _StatCard(
-                            label: '正确率',
-                            value: '${(progState.progress.accuracy * 100).round()}%',
-                            wide: wide,
-                            icon: Icons.insights_rounded,
-                            tone: _Tone.positive,
-                          ),
-                          _StatCard(
-                            label: '连续打卡',
-                            value: '${progState.progress.streakDays}天',
-                            wide: wide,
-                            icon: Icons.local_fire_department_rounded,
-                            tone: _Tone.warm,
-                          ),
-                        ],
-                      );
-                    },
-                  ),
+            ProgressLoaded() => AppCard(
+                padding: const EdgeInsets.all(AppSpacing.xl),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    // 窄屏 2 列，宽屏 4 列——响应式不拥挤
+                    final wide = constraints.maxWidth >= 560;
+                    return Wrap(
+                      runSpacing: AppSpacing.xl2,
+                      spacing: AppSpacing.md,
+                      children: [
+                        _StatCard(
+                          label: '总题数',
+                          value: '${progState.progress.total}',
+                          wide: wide,
+                          icon: CupertinoIcons.list_number,
+                        ),
+                        _StatCard(
+                          label: '答对',
+                          value: '${progState.progress.correct}',
+                          wide: wide,
+                          icon: CupertinoIcons.checkmark_circle,
+                        ),
+                        _StatCard(
+                          label: '正确率',
+                          value: '${(progState.progress.accuracy * 100).round()}%',
+                          wide: wide,
+                          icon: CupertinoIcons.chart_bar,
+                          tone: _Tone.positive,
+                        ),
+                        _StatCard(
+                          label: '连续打卡',
+                          value: '${progState.progress.streakDays}天',
+                          wide: wide,
+                          icon: CupertinoIcons.flame,
+                          tone: _Tone.warm,
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ),
           },
@@ -384,7 +361,7 @@ class _ParentDashboardState extends ConsumerState<ParentDashboard> {
 
   // —— 掌握度看板 ——
   Widget _buildMasterySection() {
-    final scheme = Theme.of(context).colorScheme;
+    final scheme = AppTheme.colorsOf(context);
     final state = ref.watch(masteryNotifierProvider);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -397,83 +374,79 @@ class _ParentDashboardState extends ConsumerState<ParentDashboard> {
               const AppLoading(message: '加载掌握度...'),
             MasteryError() => AppError(message: state.message),
             MasteryLoaded() => state.mastery.items.isEmpty
-                ? Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(AppSpacing.xl3),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 52,
-                            height: 52,
-                            decoration: BoxDecoration(
-                              color: scheme.tertiaryContainer,
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            alignment: Alignment.center,
-                            child: Icon(Icons.psychology_alt_rounded,
-                                size: 28, color: scheme.onTertiaryContainer),
+                ? AppCard(
+                    padding: const EdgeInsets.all(AppSpacing.xl3),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 52,
+                          height: 52,
+                          decoration: BoxDecoration(
+                            color: scheme.tertiaryContainer,
+                            borderRadius: BorderRadius.circular(16),
                           ),
-                          const SizedBox(width: AppSpacing.xl),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('还没有作答记录',
-                                    style:
-                                        Theme.of(context).textTheme.titleSmall),
-                                const SizedBox(height: AppSpacing.xs),
-                                Text('先布置任务吧～',
-                                    style:
-                                        Theme.of(context).textTheme.bodyMedium),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  )
-                : Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(AppSpacing.xl),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
+                          alignment: Alignment.center,
+                          child: Icon(CupertinoIcons.lightbulb,
+                              size: 28, color: scheme.onTertiaryContainer),
+                        ),
+                        const SizedBox(width: AppSpacing.xl),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Expanded(
-                                child: RichText(
-                                  text: TextSpan(
-                                    style:
-                                        Theme.of(context).textTheme.bodyLarge,
-                                    children: [
-                                      const TextSpan(text: '已掌握 '),
-                                      TextSpan(
-                                        text:
-                                            '${state.mastery.masteredCount}',
-                                        style: TextStyle(
-                                          color: scheme.primary,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                      TextSpan(
-                                        text:
-                                            ' / ${state.mastery.totalKnowledgePoints} 个知识点',
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
+                              Text('还没有作答记录',
+                                  style:
+                                      AppTheme.textOf(context).titleSmall),
+                              const SizedBox(height: AppSpacing.xs),
+                              Text('先布置任务吧～',
+                                  style:
+                                      AppTheme.textOf(context).bodyMedium),
                             ],
                           ),
-                          const SizedBox(height: AppSpacing.xl),
-                          ...state.mastery.items
-                              .map((m) => Padding(
-                                    padding: const EdgeInsets.only(
-                                        bottom: AppSpacing.md),
-                                    child: _MasteryBar(item: m),
-                                  )),
-                        ],
-                      ),
+                        ),
+                      ],
+                    ),
+                  )
+                : AppCard(
+                    padding: const EdgeInsets.all(AppSpacing.xl),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: RichText(
+                                text: TextSpan(
+                                  style:
+                                      AppTheme.textOf(context).bodyLarge,
+                                  children: [
+                                    const TextSpan(text: '已掌握 '),
+                                    TextSpan(
+                                      text:
+                                          '${state.mastery.masteredCount}',
+                                      style: TextStyle(
+                                        color: scheme.primary,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    TextSpan(
+                                      text:
+                                          ' / ${state.mastery.totalKnowledgePoints} 个知识点',
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: AppSpacing.xl),
+                        ...state.mastery.items
+                            .map((m) => Padding(
+                                  padding: const EdgeInsets.only(
+                                      bottom: AppSpacing.md),
+                                  child: _MasteryBar(item: m),
+                                )),
+                      ],
                     ),
                   ),
           },
@@ -496,24 +469,20 @@ class _ParentDashboardState extends ConsumerState<ParentDashboard> {
               const AppLoading(message: '加载错题...'),
             WrongQuestionsError() => AppError(message: state.message),
             WrongQuestionsLoaded() => state.items.isEmpty
-                ? Card(
-                    child: Padding(
-                      padding: EdgeInsets.all(AppSpacing.xl3),
-                      child: Center(
-                        child: Text('暂无错题，继续保持～',
-                            style: Theme.of(context).textTheme.bodyLarge),
-                      ),
+                ? AppCard(
+                    padding: const EdgeInsets.all(AppSpacing.xl3),
+                    child: Center(
+                      child: Text('暂无错题，继续保持～',
+                          style: AppTheme.textOf(context).bodyLarge),
                     ),
                   )
-                : Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(AppSpacing.xl),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: state.items
-                            .map((item) => _ParentWrongCard(item: item))
-                            .toList(),
-                      ),
+                : AppCard(
+                    padding: const EdgeInsets.all(AppSpacing.xl),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: state.items
+                          .map((item) => _ParentWrongCard(item: item))
+                          .toList(),
                     ),
                   ),
           },
@@ -536,24 +505,20 @@ class _ParentDashboardState extends ConsumerState<ParentDashboard> {
               const AppLoading(message: '加载答疑记录...'),
             TutorLogsError() => AppError(message: state.message),
             TutorLogsLoaded() => state.logs.isEmpty
-                ? Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(AppSpacing.xl3),
-                      child: Center(
-                        child: Text('这个娃娃还没有问过 AI 老师',
-                            style: Theme.of(context).textTheme.bodyLarge),
-                      ),
+                ? AppCard(
+                    padding: const EdgeInsets.all(AppSpacing.xl3),
+                    child: Center(
+                      child: Text('这个娃娃还没有问过 AI 老师',
+                          style: AppTheme.textOf(context).bodyLarge),
                     ),
                   )
-                : Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(AppSpacing.xl),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: state.logs
-                            .map((log) => _TutorLogCard(log: log))
-                            .toList(),
-                      ),
+                : AppCard(
+                    padding: const EdgeInsets.all(AppSpacing.xl),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: state.logs
+                          .map((log) => _TutorLogCard(log: log))
+                          .toList(),
                     ),
                   ),
           },
@@ -564,7 +529,7 @@ class _ParentDashboardState extends ConsumerState<ParentDashboard> {
 
   // —— AI 使用管控（T10，故事 23/26）——
   Widget _buildTutorQuotaSection() {
-    final scheme = Theme.of(context).colorScheme;
+    final scheme = AppTheme.colorsOf(context);
     final quotaState = ref.watch(tutorQuotaNotifierProvider(_selectedChildId));
     final usageState = ref.watch(tutorUsageNotifierProvider(_selectedChildId));
 
@@ -580,71 +545,76 @@ class _ParentDashboardState extends ConsumerState<ParentDashboard> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SectionTitle('AI 使用管控',
-            trailing: TextButton.icon(
+            trailing: CupertinoButton(
+              padding: EdgeInsets.zero,
               onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
+                CupertinoPageRoute<void>(
                   builder: (_) => TutorQuotaScreen(
                     childId: _selectedChildId,
                     childName: childName,
                   ),
                 ),
               ),
-              icon: const Icon(Icons.tune_rounded, size: 20),
-              label: const Text('设置'),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(CupertinoIcons.slider_horizontal_3, size: 20),
+                  SizedBox(width: AppSpacing.xs),
+                  Text('设置'),
+                ],
+              ),
             )),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-          child: Card(
-            child: Padding(
-              padding: const EdgeInsets.all(AppSpacing.xl),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: scheme.secondaryContainer,
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        alignment: Alignment.center,
-                        child: Icon(Icons.timer_outlined,
-                            size: 24, color: scheme.onSecondaryContainer),
+          child: AppCard(
+            padding: const EdgeInsets.all(AppSpacing.xl),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: scheme.secondaryContainer,
+                        borderRadius: BorderRadius.circular(14),
                       ),
-                      const SizedBox(width: AppSpacing.md),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              switch (quotaState) {
-                                TutorQuotaLoaded() =>
-                                  _quotaSummary(quotaState.quota),
-                                TutorQuotaError() =>
-                                  '加载失败：${quotaState.message}',
-                                _ => '加载中…',
-                              },
-                              style: Theme.of(context).textTheme.bodyMedium,
-                            ),
-                            const SizedBox(height: AppSpacing.xs2),
-                            Text(
-                              switch (usageState) {
-                                TutorUsageLoaded() =>
-                                  _usageSummary(usageState.usage),
-                                TutorUsageError() => '用量加载失败',
-                                _ => '今日用量加载中…',
-                              },
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                          ],
-                        ),
+                      alignment: Alignment.center,
+                      child: Icon(CupertinoIcons.timer,
+                          size: 24, color: scheme.onSecondaryContainer),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            switch (quotaState) {
+                              TutorQuotaLoaded() =>
+                                _quotaSummary(quotaState.quota),
+                              TutorQuotaError() =>
+                                '加载失败：${quotaState.message}',
+                              _ => '加载中…',
+                            },
+                            style: AppTheme.textOf(context).bodyMedium,
+                          ),
+                          const SizedBox(height: AppSpacing.xs2),
+                          Text(
+                            switch (usageState) {
+                              TutorUsageLoaded() =>
+                                _usageSummary(usageState.usage),
+                              TutorUsageError() => '用量加载失败',
+                              _ => '今日用量加载中…',
+                            },
+                            style: AppTheme.textOf(context).bodySmall,
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                ],
-              ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         ),
@@ -697,63 +667,60 @@ class _ChildSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AppRadius.card),
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
-          padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.md, vertical: AppSpacing.md),
-          decoration: BoxDecoration(
+    final scheme = AppTheme.colorsOf(context);
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+        padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md, vertical: AppSpacing.md),
+        decoration: BoxDecoration(
+          color: selected
+              ? scheme.primaryContainer
+              : scheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(AppRadius.card),
+          border: Border.all(
             color: selected
-                ? scheme.primaryContainer
-                : scheme.surfaceContainerLow,
-            borderRadius: BorderRadius.circular(AppRadius.card),
-            border: Border.all(
-              color: selected
-                  ? scheme.primary
-                  : scheme.outline,
-              width: selected ? 2 : 1,
+                ? scheme.primary
+                : scheme.outline,
+            width: selected ? 2 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AvatarSquircle(
+              name: name,
+              size: 40,
+              bg: selected ? scheme.primary : scheme.surfaceContainerHigh,
+              fg: selected
+                  ? scheme.onPrimary
+                  : scheme.onSurfaceVariant,
             ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AvatarSquircle(
-                name: name,
-                size: 40,
-                bg: selected ? scheme.primary : scheme.surfaceContainerHigh,
-                fg: selected
-                    ? scheme.onPrimary
-                    : scheme.onSurfaceVariant,
-              ),
-              const SizedBox(width: AppSpacing.md),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(name,
-                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: selected
-                                ? scheme.onPrimaryContainer
-                                : scheme.onSurface,
-                          )),
-                  const SizedBox(height: 2),
-                  Text(grade > 0 ? '$grade年级' : '未设置',
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                            color: selected
-                                ? scheme.onPrimaryContainer.withValues(alpha: 0.75)
-                                : scheme.onSurfaceVariant,
-                          )),
-                ],
-              ),
-            ],
-          ),
+            const SizedBox(width: AppSpacing.md),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(name,
+                    style: AppTheme.textOf(context).labelMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: selected
+                              ? scheme.onPrimaryContainer
+                              : scheme.onSurface,
+                        )),
+                const SizedBox(height: 2),
+                Text(grade > 0 ? '$grade年级' : '未设置',
+                    style: AppTheme.textOf(context).labelSmall?.copyWith(
+                          color: selected
+                              ? scheme.onPrimaryContainer.withValues(alpha: 0.75)
+                              : scheme.onSurfaceVariant,
+                        )),
+              ],
+            ),
+          ],
         ),
       ),
     );
@@ -767,32 +734,29 @@ class _AddChildTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AppRadius.card),
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
-          padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.md, vertical: AppSpacing.md),
-          constraints: const BoxConstraints(minHeight: 64),
-          decoration: BoxDecoration(
-            color: scheme.surfaceContainerLow,
-            borderRadius: BorderRadius.circular(AppRadius.card),
-            border: Border.all(color: scheme.outlineVariant),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.add_circle_outline_rounded,
-                  size: 22, color: scheme.primary),
-              const SizedBox(width: AppSpacing.xs),
-              Text('添加娃娃', style: Theme.of(context).textTheme.bodyMedium),
-            ],
-          ),
+    final scheme = AppTheme.colorsOf(context);
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+        padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md, vertical: AppSpacing.md),
+        constraints: const BoxConstraints(minHeight: 64),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(AppRadius.card),
+          border: Border.all(color: scheme.outlineVariant),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(CupertinoIcons.add_circled,
+                size: 22, color: scheme.primary),
+            const SizedBox(width: AppSpacing.xs),
+            Text('添加娃娃', style: AppTheme.textOf(context).bodyMedium),
+          ],
         ),
       ),
     );
@@ -818,7 +782,7 @@ class _StatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final scheme = AppTheme.colorsOf(context);
     final (bg, fg) = switch (tone) {
       _Tone.positive => (
           scheme.tertiaryContainer,
@@ -865,14 +829,14 @@ class _StatCard extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.md),
           Text(value,
-              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+              style: AppTheme.textOf(context).headlineMedium?.copyWith(
                     color: scheme.onSurface,
                     fontFamily: 'HarmonyOS_Sans_SC',
                     // tabular figures 防统计数字抖动
                     fontFeatures: const [FontFeature.tabularFigures()],
                   )),
           const SizedBox(height: AppSpacing.xs),
-          Text(label, style: Theme.of(context).textTheme.bodySmall),
+          Text(label, style: AppTheme.textOf(context).bodySmall),
         ],
       ),
     );
@@ -884,9 +848,8 @@ class _MasteryBar extends StatelessWidget {
   final KnowledgeMasteryModel item;
   const _MasteryBar({required this.item});
 
-  /// 全部映射到植物绿→珊瑚的暖色连续体，不引入新色相。
-  /// 取色走传入的 [scheme]，保证亮/暗模式一致。
-  (_MasteryLevel, Color, Color) _mappingOf(ColorScheme scheme) {
+  /// 映射到植物绿/暖橙/珊瑚的语义色，取色走传入的 [scheme]，保证亮/暗模式一致。
+  (_MasteryLevel, Color, Color) _mappingOf(AppColors scheme) {
     switch (item.level) {
       case '已掌握':
         return (
@@ -903,13 +866,13 @@ class _MasteryBar extends StatelessWidget {
       case '巩固中':
         return (
           _MasteryLevel.learning,
-          const Color(0xFF8AA48A), // 植物绿 40% 饱和变体
+          const Color(0xFF7FB97F), // 植物绿柔和变体
           scheme.surfaceContainerHigh,
         );
       case '薄弱':
         return (
           _MasteryLevel.weak,
-          const Color(0xFFD7A25C), // 暖色琥珀变体，不越界到蓝
+          const Color(0xFFF2A65C), // 暖橙柔和变体
           scheme.secondaryContainer,
         );
       case '待加强':
@@ -929,7 +892,7 @@ class _MasteryBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final scheme = AppTheme.colorsOf(context);
     final (_, fgColor, _) = _mappingOf(scheme);
     final bgColor = scheme.surfaceContainerHighest;
 
@@ -940,11 +903,11 @@ class _MasteryBar extends StatelessWidget {
           children: [
             Expanded(
               child: Text('${item.subject} · ${item.knowledgePoint}',
-                  style: Theme.of(context).textTheme.bodyMedium),
+                  style: AppTheme.textOf(context).bodyMedium),
             ),
             const SizedBox(width: AppSpacing.md),
             Text('${item.score.round()}分',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                style: AppTheme.textOf(context).bodyMedium?.copyWith(
                       fontWeight: FontWeight.w600,
                       color: scheme.onSurface,
                       fontFeatures: const [FontFeature.tabularFigures()],
@@ -954,21 +917,18 @@ class _MasteryBar extends StatelessWidget {
           ],
         ),
         const SizedBox(height: AppSpacing.sm),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(6),
-          child: LinearProgressIndicator(
-            value: (item.score / 100).clamp(0.0, 1.0),
-            minHeight: 10,
-            backgroundColor: bgColor,
-            valueColor: AlwaysStoppedAnimation<Color>(fgColor),
-          ),
+        AppProgressBar(
+          value: (item.score / 100).clamp(0.0, 1.0),
+          height: 10,
+          color: fgColor,
+          trackColor: bgColor,
         ),
         const SizedBox(height: AppSpacing.xs),
         Text(
           item.activeWrong > 0
               ? '正确率 ${(item.accuracy * 100).round()}% · 有 ${item.activeWrong} 题待复习'
               : '正确率 ${(item.accuracy * 100).round()}% · 无待复习错题',
-          style: Theme.of(context).textTheme.bodySmall,
+          style: AppTheme.textOf(context).bodySmall,
         ),
       ],
     );
@@ -984,13 +944,13 @@ class _ParentWrongCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final scheme = AppTheme.colorsOf(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(item.stem, style: Theme.of(context).textTheme.bodyLarge),
+          Text(item.stem, style: AppTheme.textOf(context).bodyLarge),
           const SizedBox(height: AppSpacing.md),
           Wrap(
             spacing: AppSpacing.sm,
@@ -1011,13 +971,13 @@ class _ParentWrongCard extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.check_circle_outline_rounded,
+                Icon(CupertinoIcons.checkmark_circle,
                     size: 20, color: scheme.onTertiaryContainer),
                 const SizedBox(width: AppSpacing.sm),
                 Expanded(
                   child: Text(
                     '标准答案：${item.answer ?? '—'}',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    style: AppTheme.textOf(context).bodyMedium?.copyWith(
                           color: scheme.onTertiaryContainer,
                           fontWeight: FontWeight.w600,
                         ),
@@ -1030,10 +990,14 @@ class _ParentWrongCard extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(top: AppSpacing.md),
               child: Text('解析：${item.explanation}',
-                  style: Theme.of(context).textTheme.bodyMedium),
+                  style: AppTheme.textOf(context).bodyMedium),
             ),
           const SizedBox(height: AppSpacing.md),
-          const Divider(height: 1),
+          Container(
+            width: double.infinity,
+            height: 1,
+            color: scheme.outlineVariant,
+          ),
         ],
       ),
     );
@@ -1047,7 +1011,7 @@ class _TutorLogCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final scheme = AppTheme.colorsOf(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
       child: Column(
@@ -1065,12 +1029,12 @@ class _TutorLogCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(10),
                 ),
                 alignment: Alignment.center,
-                child: Icon(Icons.help_outline_rounded,
+                child: Icon(CupertinoIcons.question_circle,
                     size: 18, color: scheme.onPrimaryContainer),
               ),
               Expanded(
                 child: Text('问：${log.question}',
-                    style: Theme.of(context).textTheme.bodyMedium),
+                    style: AppTheme.textOf(context).bodyMedium),
               ),
               const SizedBox(width: AppSpacing.md),
               log.blocked
@@ -1091,19 +1055,23 @@ class _TutorLogCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(10),
                 ),
                 alignment: Alignment.center,
-                child: Icon(Icons.smart_toy_outlined,
+                child: Icon(CupertinoIcons.sparkles,
                     size: 18, color: scheme.onSecondaryContainer),
               ),
               Expanded(
                 child: Text('答：${log.answer}',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    style: AppTheme.textOf(context).bodyMedium?.copyWith(
                           color: scheme.onSurface,
                         )),
               ),
             ],
           ),
           const SizedBox(height: AppSpacing.md),
-          const Divider(height: 1),
+          Container(
+            width: double.infinity,
+            height: 1,
+            color: scheme.outlineVariant,
+          ),
         ],
       ),
     );

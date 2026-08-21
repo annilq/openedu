@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/domain/models/models.dart';
@@ -33,87 +33,93 @@ class ChildHome extends ConsumerWidget {
     final reviewState = ref.watch(dueReviewNotifierProvider);
     final dueCount =
         reviewState is DueReviewLoaded ? reviewState.items.length : 0;
-    final scheme = Theme.of(context).colorScheme;
+    final app = AppTheme.colorsOf(context);
 
-    return RefreshIndicator(
-      color: scheme.primary,
-      backgroundColor: scheme.surfaceContainerLow,
-      onRefresh: () async {
-        await ref.read(todayTasksNotifierProvider.notifier).load();
-        await ref.read(dueReviewNotifierProvider.notifier).load();
-      },
-      child: ListView(
-        padding: const EdgeInsets.only(bottom: AppSpacing.xl4),
-        children: [
-          const SizedBox(height: AppSpacing.md),
-          _ReviewBanner(
-            dueCount: dueCount,
-            onReview: onNavigateToReview,
-            onWrong: onNavigateToWrongQuestions,
-          ),
-          _TutorBanner(onTutor: onNavigateToTutor),
-          SectionTitle('今日任务'),
-          ...switch (state) {
-            TodayTasksInitial() || TodayTasksLoading() =>
-              const [Padding(padding: EdgeInsets.all(AppSpacing.xl5), child: AppLoading(message: '加载今日任务...'))],
-            TodayTasksError() => [
-                Padding(
-                  padding: const EdgeInsets.all(AppSpacing.lg),
-                  child: AppError(
-                    message: state.message,
-                    onRetry: () =>
-                        ref.read(todayTasksNotifierProvider.notifier).load(),
-                  ),
-                ),
-              ],
-            TodayTasksLoaded() => state.tasks.isEmpty
-                ? [
-                    Padding(
-                      padding: const EdgeInsets.only(
-                          top: AppSpacing.xl5,
-                          left: AppSpacing.xl2,
-                          right: AppSpacing.xl2),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 88,
-                            height: 88,
-                            decoration: BoxDecoration(
-                              color: scheme.tertiaryContainer,
-                              borderRadius: BorderRadius.circular(28),
-                            ),
-                            alignment: Alignment.center,
-                            child: Icon(Icons.wb_sunny_outlined,
-                                size: 44,
-                                color: scheme.onTertiaryContainer),
-                          ),
-                          const SizedBox(height: AppSpacing.xl2),
-                          Text('今天还没有任务哦',
-                              textAlign: TextAlign.center,
-                              style: Theme.of(context).textTheme.titleMedium),
-                          const SizedBox(height: AppSpacing.sm),
-                          Text('等爸爸妈妈布置吧～',
-                              textAlign: TextAlign.center,
-                              style: Theme.of(context).textTheme.bodyMedium),
-                        ],
-                      ),
-                    ),
-                  ]
-                : state.tasks
-                    .map((t) => Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: AppSpacing.lg,
-                              vertical: AppSpacing.xs),
-                          child: _TaskCard(
-                            task: t,
-                            onStart: () => onNavigateToPractice(t),
-                          ),
-                        ))
-                    .toList(),
+    return CustomScrollView(
+      slivers: [
+        CupertinoSliverRefreshControl(
+          onRefresh: () async {
+            await ref.read(todayTasksNotifierProvider.notifier).load();
+            await ref.read(dueReviewNotifierProvider.notifier).load();
           },
-        ],
-      ),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.only(bottom: AppSpacing.xl4),
+          sliver: SliverToBoxAdapter(
+            child: Column(
+              children: [
+                const SizedBox(height: AppSpacing.md),
+                _ReviewBanner(
+                  dueCount: dueCount,
+                  onReview: onNavigateToReview,
+                  onWrong: onNavigateToWrongQuestions,
+                ),
+                _TutorBanner(onTutor: onNavigateToTutor),
+                const SectionTitle('今日任务'),
+                ...switch (state) {
+                  TodayTasksInitial() || TodayTasksLoading() =>
+                    const [Padding(padding: EdgeInsets.all(AppSpacing.xl5), child: AppLoading(message: '加载今日任务...'))],
+                  TodayTasksError() => [
+                      Padding(
+                        padding: const EdgeInsets.all(AppSpacing.lg),
+                        child: AppError(
+                          message: state.message,
+                          onRetry: () =>
+                              ref.read(todayTasksNotifierProvider.notifier).load(),
+                        ),
+                      ),
+                    ],
+                  TodayTasksLoaded() => state.tasks.isEmpty
+                      ? [
+                          Padding(
+                            padding: const EdgeInsets.only(
+                                top: AppSpacing.xl5,
+                                left: AppSpacing.xl2,
+                                right: AppSpacing.xl2),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 88,
+                                  height: 88,
+                                  decoration: BoxDecoration(
+                                    color: app.tertiaryContainer,
+                                    borderRadius: BorderRadius.circular(28),
+                                  ),
+                                  alignment: Alignment.center,
+                                  child: Icon(CupertinoIcons.sun_max,
+                                      size: 44,
+                                      color: app.onTertiaryContainer),
+                                ),
+                                const SizedBox(height: AppSpacing.xl2),
+                                Text('今天还没有任务哦',
+                                    textAlign: TextAlign.center,
+                                    style: AppTheme.textOf(context).titleMedium),
+                                const SizedBox(height: AppSpacing.sm),
+                                Text('等爸爸妈妈布置吧～',
+                                    textAlign: TextAlign.center,
+                                    style: AppTheme.textOf(context).bodyMedium),
+                              ],
+                            ),
+                          ),
+                        ]
+                      : state.tasks
+                          .map((t) => Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: AppSpacing.lg,
+                                    vertical: AppSpacing.xs),
+                                child: _TaskCard(
+                                  task: t,
+                                  onStart: () => onNavigateToPractice(t),
+                                ),
+                              ))
+                          .toList(),
+                },
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -132,17 +138,17 @@ class _ReviewBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final app = AppTheme.colorsOf(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(
           AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, AppSpacing.md),
       child: Container(
         decoration: BoxDecoration(
-          color: scheme.primaryContainer,
+          color: app.primaryContainer,
           borderRadius: BorderRadius.circular(AppRadius.banner),
           // 顶部极细的"植物绿高光"纹理：避免完全扁平
           border: Border.all(
-            color: scheme.primary.withValues(alpha: 0.18),
+            color: app.primary.withValues(alpha: 0.18),
             width: 1,
           ),
         ),
@@ -154,11 +160,11 @@ class _ReviewBanner extends StatelessWidget {
                 width: 56,
                 height: 56,
                 decoration: BoxDecoration(
-                  color: scheme.primary.withValues(alpha: 0.12),
+                  color: app.primary.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(18),
                 ),
-                child: Icon(Icons.autorenew_rounded,
-                    size: 32, color: scheme.primary),
+                child: Icon(CupertinoIcons.refresh,
+                    size: 32, color: app.primary),
               ),
               const SizedBox(width: AppSpacing.xl),
               Expanded(
@@ -166,38 +172,43 @@ class _ReviewBanner extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('复习错题',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            color: scheme.onPrimaryContainer,
+                        style: AppTheme.textOf(context).titleMedium?.copyWith(
+                            color: app.onPrimaryContainer,
                             fontWeight: FontWeight.w700)),
                     const SizedBox(height: AppSpacing.xs),
                     Text(
                       dueCount > 0
                           ? '今天有 $dueCount 道题要复习'
                           : '今天没有要复习的题',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: scheme.onPrimaryContainer.withValues(alpha: 0.88)),
+                      style: AppTheme.textOf(context).bodyMedium?.copyWith(
+                          color: app.onPrimaryContainer.withValues(alpha: 0.88)),
                     ),
                   ],
                 ),
               ),
-              IconButton(
-                style: IconButton.styleFrom(
-                  backgroundColor: scheme.surfaceContainerLow,
-                  foregroundColor: scheme.primary,
-                  padding: const EdgeInsets.all(AppSpacing.md),
-                  shape: RoundedRectangleBorder(
+              CupertinoButton(
+                padding: EdgeInsets.zero,
+                pressedOpacity: 0.6,
+                onPressed: onWrong,
+                child: Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: app.surfaceContainerLow,
                     borderRadius: BorderRadius.circular(14),
-                    side: BorderSide(
-                        color: scheme.outline,
+                    border: Border.all(
+                        color: app.outline,
                         width: 1),
                   ),
+                  child: Icon(CupertinoIcons.book, size: 24, color: app.primary),
                 ),
-                onPressed: onWrong,
-                icon: const Icon(Icons.menu_book_rounded, size: 24),
-                tooltip: '错题本',
               ),
               const SizedBox(width: AppSpacing.md),
-              FilledButton(
+              CupertinoButton.filled(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
+                borderRadius: const BorderRadius.all(
+                    Radius.circular(AppRadius.button)),
                 onPressed: onReview,
                 child: const Text('去复习'),
               ),
@@ -216,16 +227,16 @@ class _TutorBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final app = AppTheme.colorsOf(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(
           AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.md),
       child: Container(
         decoration: BoxDecoration(
-          color: scheme.secondaryContainer,
+          color: app.secondaryContainer,
           borderRadius: BorderRadius.circular(AppRadius.banner),
           border: Border.all(
-            color: scheme.secondary.withValues(alpha: 0.18),
+            color: app.secondary.withValues(alpha: 0.18),
             width: 1,
           ),
         ),
@@ -237,11 +248,11 @@ class _TutorBanner extends StatelessWidget {
                 width: 56,
                 height: 56,
                 decoration: BoxDecoration(
-                  color: scheme.secondary.withValues(alpha: 0.12),
+                  color: app.secondary.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(18),
                 ),
-                child: Icon(Icons.smart_toy_rounded,
-                    size: 32, color: scheme.secondary),
+                child: Icon(CupertinoIcons.sparkles,
+                    size: 32, color: app.secondary),
               ),
               const SizedBox(width: AppSpacing.xl),
               Expanded(
@@ -249,19 +260,23 @@ class _TutorBanner extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('问 AI 老师',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            color: scheme.onSecondaryContainer,
+                        style: AppTheme.textOf(context).titleMedium?.copyWith(
+                            color: app.onSecondaryContainer,
                             fontWeight: FontWeight.w700)),
                     const SizedBox(height: AppSpacing.xs),
                     Text('遇到不懂的题，随时来问～',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: scheme.onSecondaryContainer
+                        style: AppTheme.textOf(context).bodyMedium?.copyWith(
+                            color: app.onSecondaryContainer
                                 .withValues(alpha: 0.88))),
                   ],
                 ),
               ),
-              FilledButton(
+              CupertinoButton.filled(
                 // AI 区主按钮沿用植物绿主色，保持单强调色一致性
+                padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
+                borderRadius: const BorderRadius.all(
+                    Radius.circular(AppRadius.button)),
                 onPressed: onTutor,
                 child: const Text('去提问'),
               ),
@@ -285,45 +300,40 @@ class _TaskCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDone = task.status == 'done';
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.xl),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Text(task.title,
-                      style: Theme.of(context).textTheme.titleMedium),
-                ),
-                const SizedBox(width: AppSpacing.md),
-                if (isDone) AppBadge.successChip('已完成'),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.md),
-            Wrap(
-              spacing: AppSpacing.sm,
-              runSpacing: AppSpacing.sm,
-              children: [
-                AppTags.normal(task.subject),
-                AppTags.normal('${task.grade}年级'),
-                AppTags.info(task.knowledgePoint),
-                AppTags.normal('${task.questions.length}题'),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.xl),
-            if (!isDone)
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: onStart,
-                  child: const Text('开始做题'),
-                ),
+    return AppCard(
+      padding: const EdgeInsets.all(AppSpacing.xl),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(task.title,
+                    style: AppTheme.textOf(context).titleMedium),
               ),
-          ],
-        ),
+              const SizedBox(width: AppSpacing.md),
+              if (isDone) AppBadge.successChip('已完成'),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
+            children: [
+              AppTags.normal(task.subject),
+              AppTags.normal('${task.grade}年级'),
+              AppTags.info(task.knowledgePoint),
+              AppTags.normal('${task.questions.length}题'),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.xl),
+          if (!isDone)
+            AppPrimaryButton(
+              label: '开始做题',
+              onPressed: onStart,
+            ),
+        ],
       ),
     );
   }

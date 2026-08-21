@@ -1,5 +1,6 @@
-import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../../theme/app_theme.dart';
 
 /// 本地存储服务（shared_preferences 封装）。
 /// 存 token、当前用户 JSON、家长设置、主题模式。
@@ -23,12 +24,12 @@ class StorageService {
   Future<void> clearUser() => _prefs.remove(_keyUser);
 
   /// 主题模式：跟随系统 / 亮色 / 暗色。
-  ThemeMode getThemeMode() {
+  AppThemeMode getThemeMode() {
     final raw = _prefs.getString(_keyThemeMode);
-    return ThemeMode.values.asNameMap()[raw] ?? ThemeMode.system;
+    return AppThemeMode.values.asNameMap()[raw] ?? AppThemeMode.system;
   }
 
-  Future<void> saveThemeMode(ThemeMode mode) =>
+  Future<void> saveThemeMode(AppThemeMode mode) =>
       _prefs.setString(_keyThemeMode, mode.name);
 
   Future<void> clearAll() async {
