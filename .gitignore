@@ -20,9 +20,6 @@ frontend/.dart_tool/
 frontend/build/
 frontend/.idea/
 *.iml
-frontend/android/.gradle/
-frontend/android/local.properties
-frontend/ios/Pods/
 
 # ── 系统 ──
 .DS_Store
