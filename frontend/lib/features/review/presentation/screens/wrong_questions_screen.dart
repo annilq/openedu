@@ -1,10 +1,12 @@
-import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_error.dart';
 import '../../../../shared/widgets/app_loading.dart';
+import '../../../../shared/widgets/app_top_bar.dart';
 import '../providers/review_notifier.dart';
 
 String _fmtDate(DateTime? dt) {
@@ -30,85 +32,107 @@ class _WrongQuestionsScreenState extends ConsumerState<WrongQuestionsScreen> {
     });
   }
 
+  Future<void> _refresh() {
+    return ref.read(childWrongQuestionsProvider.notifier).load();
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(childWrongQuestionsProvider);
     final scheme = AppTheme.colorsOf(context);
 
-    return CupertinoPageScaffold(
-      navigationBar: CupertinoNavigationBar(middle: const Text('我的错题本')),
-      child: switch (state) {
-        WrongQuestionsInitial() || WrongQuestionsLoading() =>
-          const AppLoading(message: '加载错题...'),
-        WrongQuestionsError() => AppError(
-            message: state.message,
-            onRetry: () => ref.read(childWrongQuestionsProvider.notifier).load(),
-          ),
-        WrongQuestionsLoaded() => state.items.isEmpty
-            ? Center(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(AppSpacing.xl3),
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 440),
-                    child: Container(
-                      padding: const EdgeInsets.all(AppSpacing.xl4),
-                      decoration: BoxDecoration(
-                        color: scheme.surfaceContainerLow,
-                        borderRadius: BorderRadius.circular(AppRadius.banner),
-                        border: Border.all(color: scheme.outline, width: 1),
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 88,
-                            height: 88,
-                            decoration: BoxDecoration(
-                              color: scheme.tertiaryContainer,
-                              borderRadius: BorderRadius.circular(28),
-                            ),
-                            alignment: Alignment.center,
-                            child: Icon(CupertinoIcons.checkmark_seal,
-                                size: 44,
-                                color: scheme.onTertiaryContainer),
-                          ),
-                          const SizedBox(height: AppSpacing.xl2),
-                          Text('还没有错题',
-                              textAlign: TextAlign.center,
-                              style: AppTheme.textOf(context).titleLarge),
-                          const SizedBox(height: AppSpacing.xs),
-                          Text('继续保持，做题仔细一点就不会错啦～',
-                              textAlign: TextAlign.center,
-                              style: AppTheme.textOf(context).bodyMedium),
-                        ],
-                      ),
-                    ),
-                  ),
+    return SizedBox.expand(
+      child: ColoredBox(
+        color: scheme.surface,
+        child: Column(
+          children: [
+            AppTopBar(
+              title: '我的错题本',
+              showBack: true,
+              trailing: ShadButton.ghost(
+                width: 40,
+                height: 40,
+                padding: EdgeInsets.zero,
+                backgroundColor: const Color(0x00000000),
+                hoverBackgroundColor: scheme.surfaceContainerHigh,
+                pressedBackgroundColor: scheme.surfaceContainer,
+                onPressed: _refresh,
+                child: Icon(
+                  LucideIcons.refreshCw,
+                  color: scheme.onSurface,
+                  size: 20,
                 ),
-              )
-            : CustomScrollView(
-                slivers: [
-                  CupertinoSliverRefreshControl(
-                    onRefresh: () =>
-                        ref.read(childWrongQuestionsProvider.notifier).load(),
+              ),
+            ),
+            Expanded(
+              child: switch (state) {
+                WrongQuestionsInitial() || WrongQuestionsLoading() =>
+                  const AppLoading(message: '加载错题...'),
+                WrongQuestionsError() => AppError(
+                    message: state.message,
+                    onRetry: () => ref.read(childWrongQuestionsProvider.notifier).load(),
                   ),
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(AppSpacing.lg,
-                        AppSpacing.md, AppSpacing.lg, AppSpacing.xl4),
-                    sliver: SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (ctx, i) => Padding(
+                WrongQuestionsLoaded() => state.items.isEmpty
+                    ? _buildEmptyView()
+                    : ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(AppSpacing.lg,
+                            AppSpacing.md, AppSpacing.lg, AppSpacing.xl4),
+                        itemCount: state.items.length,
+                        itemBuilder: (ctx, i) => Padding(
                           padding: const EdgeInsets.symmetric(
                               vertical: AppSpacing.xs),
                           child: _WrongQuestionCard(item: state.items[i]),
                         ),
-                        childCount: state.items.length,
                       ),
-                    ),
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyView() {
+    final scheme = AppTheme.colorsOf(context);
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(AppSpacing.xl3),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 440),
+          child: Container(
+            padding: const EdgeInsets.all(AppSpacing.xl4),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(AppRadius.banner),
+              border: Border.all(color: scheme.outline, width: 1),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 88,
+                  height: 88,
+                  decoration: BoxDecoration(
+                    color: scheme.tertiaryContainer,
+                    borderRadius: BorderRadius.circular(28),
                   ),
-                ],
-              ),
-      },
+                  alignment: Alignment.center,
+                  child: Icon(LucideIcons.badgeCheck,
+                      size: 44, color: scheme.onTertiaryContainer),
+                ),
+                const SizedBox(height: AppSpacing.xl2),
+                Text('还没有错题',
+                    textAlign: TextAlign.center,
+                    style: AppTheme.textOf(context).titleLarge),
+                const SizedBox(height: AppSpacing.xs),
+                Text('继续保持，做题仔细一点就不会错啦～',
+                    textAlign: TextAlign.center,
+                    style: AppTheme.textOf(context).bodyMedium),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

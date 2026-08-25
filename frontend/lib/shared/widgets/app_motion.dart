@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:flutter/widgets.dart';
 
 /// 轻量运动组件，服务于「轻快愉悦」的情绪目标（见 .impeccable.md）。
 ///

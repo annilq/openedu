@@ -1,5 +1,6 @@
-import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_inputs.dart';
@@ -78,138 +79,144 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       }
     });
 
-    return CupertinoPageScaffold(
-      child: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.xl,
-              vertical: AppSpacing.xxl,
-            ),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 480),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // Brand area
-                  Center(
-                    child: Container(
-                      width: 96,
-                      height: 96,
-                      decoration: BoxDecoration(
-                        color: app.primaryContainer,
-                        borderRadius: BorderRadius.circular(28),
-                      ),
-                      child: Icon(
-                        CupertinoIcons.book,
-                        size: 52,
-                        color: app.onPrimaryContainer,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.lg),
-                  Center(
-                    child: Text(
-                      '娃娃学习',
-                      style: text.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.5,
+    return SizedBox.expand(
+      child: ColoredBox(
+        color: app.surface,
+        child: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.xl,
+                vertical: AppSpacing.xxl,
+              ),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 480),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Brand area
+                    Center(
+                      child: Container(
+                        width: 96,
+                        height: 96,
+                        decoration: BoxDecoration(
+                          color: app.primaryContainer,
+                          borderRadius: BorderRadius.circular(28),
+                        ),
+                        child: Icon(
+                          LucideIcons.bookOpen,
+                          size: 52,
+                          color: app.onPrimaryContainer,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                  Center(
-                    child: Text(
-                      _isRegister ? '创建家长账号，和孩子一起成长' : '欢迎回来，继续今天的学习',
-                      style: text.bodyLarge?.copyWith(
-                        color: app.onSurfaceVariant,
+                    const SizedBox(height: AppSpacing.lg),
+                    Center(
+                      child: Text(
+                        '娃娃学习',
+                        style: text.headlineMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.5,
+                        ),
                       ),
                     ),
-                  ),
-                  SizedBox(height: AppSpacing.xxl * 1.2),
+                    const SizedBox(height: AppSpacing.xs),
+                    Center(
+                      child: Text(
+                        _isRegister ? '创建家长账号，和孩子一起成长' : '欢迎回来，继续今天的学习',
+                        style: text.bodyLarge?.copyWith(
+                          color: app.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: AppSpacing.xxl * 1.2),
 
-                  // Form card
-                  Container(
-                    padding: const EdgeInsets.all(AppSpacing.xl),
-                    decoration: BoxDecoration(
-                      color: app.surface,
-                      borderRadius: BorderRadius.circular(AppRadius.card),
-                      border: Border.all(
-                        color: app.outlineVariant,
-                        width: 1,
+                    // Form card
+                    Container(
+                      padding: const EdgeInsets.all(AppSpacing.xl),
+                      decoration: BoxDecoration(
+                        color: app.surface,
+                        borderRadius: BorderRadius.circular(AppRadius.card),
+                        border: Border.all(
+                          color: app.outlineVariant,
+                          width: 1,
+                        ),
                       ),
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Text(
-                          _isRegister ? '注册' : '登录',
-                          style: text.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w600,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            _isRegister ? '注册' : '登录',
+                            style: text.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: AppSpacing.lg),
-                        AppTextField(
-                          label: '用户名',
-                          controller: _username,
-                          prefixIcon: CupertinoIcons.person,
-                          errorText: _usernameError,
-                        ),
-                        const SizedBox(height: AppSpacing.md),
-                        AppTextField(
-                          label: '密码',
-                          controller: _password,
-                          obscureText: true,
-                          prefixIcon: CupertinoIcons.lock,
-                          errorText: _passwordError,
-                        ),
-                        if (_isRegister) ...[
+                          const SizedBox(height: AppSpacing.lg),
+                          AppTextField(
+                            label: '用户名',
+                            controller: _username,
+                            prefixIcon: LucideIcons.userRound,
+                            errorText: _usernameError,
+                          ),
                           const SizedBox(height: AppSpacing.md),
                           AppTextField(
-                            label: '昵称',
-                            controller: _displayName,
-                            prefixIcon: CupertinoIcons.person_crop_circle,
-                            errorText: _displayNameError,
+                            label: '密码',
+                            controller: _password,
+                            obscureText: true,
+                            prefixIcon: LucideIcons.lock,
+                            errorText: _passwordError,
+                          ),
+                          if (_isRegister) ...[
+                            const SizedBox(height: AppSpacing.md),
+                            AppTextField(
+                              label: '昵称',
+                              controller: _displayName,
+                              prefixIcon: LucideIcons.circleUserRound,
+                              errorText: _displayNameError,
+                            ),
+                          ],
+                          const SizedBox(height: AppSpacing.xl),
+                          AppPrimaryButton(
+                            label: _isRegister ? '注册并进入' : '登录',
+                            onPressed: isLoading
+                                ? null
+                                : (_isRegister ? _submit : _login),
+                            loading: isLoading,
+                          ),
+                          const SizedBox(height: AppSpacing.md),
+                          ShadButton.ghost(
+                            width: double.infinity,
+                            onPressed: isLoading
+                                ? null
+                                : () {
+                                    setState(() => _isRegister = !_isRegister);
+                                    ref
+                                        .read(authNotifierProvider.notifier)
+                                        .reset();
+                                  },
+                            foregroundColor: app.primary,
+                            child: Text(
+                              _isRegister ? '已有账号？去登录' : '没有账号？注册家长账号',
+                              style: text.bodyMedium,
+                            ),
                           ),
                         ],
-                        const SizedBox(height: AppSpacing.xl),
-                        AppPrimaryButton(
-                          label: _isRegister ? '注册并进入' : '登录',
-                          onPressed: isLoading
-                              ? null
-                              : (_isRegister ? _submit : _login),
-                          loading: isLoading,
-                        ),
-                        const SizedBox(height: AppSpacing.md),
-                        CupertinoButton(
-                          onPressed: isLoading
-                              ? null
-                              : () {
-                                  setState(() => _isRegister = !_isRegister);
-                                  ref
-                                      .read(authNotifierProvider.notifier)
-                                      .reset();
-                                },
-                          child: Text(
-                            _isRegister ? '已有账号？去登录' : '没有账号？注册家长账号',
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: AppSpacing.xl),
-                  Center(
-                    child: Text(
-                      '护眼模式 · 适合孩子的舒适界面',
-                      style: text.bodySmall?.copyWith(
-                        color: app.onSurfaceVariant,
                       ),
                     ),
-                  ),
-                ],
+
+                    const SizedBox(height: AppSpacing.xl),
+                    Center(
+                      child: Text(
+                        '护眼模式 · 适合孩子的舒适界面',
+                        style: text.bodySmall?.copyWith(
+                          color: app.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

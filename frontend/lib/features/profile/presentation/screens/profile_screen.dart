@@ -1,9 +1,11 @@
-import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/theme/theme_provider.dart';
+import '../../../../shared/widgets/app_dialog.dart';
 
 class ProfileScreen extends ConsumerWidget {
   final UserModel user;
@@ -81,20 +83,20 @@ class ProfileScreen extends ConsumerWidget {
           child: Column(
             children: [
               _InfoRow(
-                icon: CupertinoIcons.person,
+                icon: LucideIcons.userRound,
                 label: '用户名',
                 value: user.username,
               ),
               _Divider(),
               _InfoRow(
-                icon: CupertinoIcons.book,
+                icon: LucideIcons.bookOpen,
                 label: '角色',
                 value: user.isParent ? '家长' : '学生',
               ),
               if (user.grade != null) ...[
                 _Divider(),
                 _InfoRow(
-                  icon: CupertinoIcons.book,
+                  icon: LucideIcons.bookOpen,
                   label: '年级',
                   value: '${user.grade}年级',
                 ),
@@ -108,41 +110,27 @@ class ProfileScreen extends ConsumerWidget {
         // Logout
         SizedBox(
           width: double.infinity,
-          child: CupertinoButton(
-            color: app.errorContainer,
-            disabledColor: app.errorContainer,
-            borderRadius: BorderRadius.circular(AppRadius.button),
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            onPressed: () {
-              showCupertinoDialog(
-                context: context,
-                builder: (ctx) => CupertinoAlertDialog(
-                  title: const Text('退出登录'),
-                  content: const Text('确定要退出当前账号吗？'),
-                  actions: [
-                    CupertinoDialogAction(
-                      isDefaultAction: true,
-                      onPressed: () => Navigator.pop(ctx),
-                      child: const Text('取消'),
-                    ),
-                    CupertinoDialogAction(
-                      onPressed: () {
-                        Navigator.pop(ctx);
-                        onLogout();
-                      },
-                      textStyle: TextStyle(
-                        color: app.error,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      child: const Text('确定退出'),
-                    ),
-                  ],
-                ),
+          child: ShadButton(
+            height: 52,
+            backgroundColor: app.errorContainer,
+            hoverBackgroundColor: app.errorContainer,
+            pressedBackgroundColor: app.error,
+            onPressed: () async {
+              final confirmed = await AppDialog.confirm(
+                context,
+                title: Text('退出登录',
+                    style: text.titleMedium?.copyWith(color: app.onSurface)),
+                content: Text('确定要退出当前账号吗？',
+                    style: text.bodyMedium),
+                cancelLabel: '取消',
+                confirmLabel: '确定退出',
+                destructive: true,
               );
+              if (confirmed == true) onLogout();
             },
             child: Text(
               '退出登录',
-              style: AppTheme.textOf(context).bodyMedium?.copyWith(
+              style: text.bodyMedium?.copyWith(
                 color: app.onErrorContainer,
                 fontWeight: FontWeight.w600,
               ),
@@ -236,43 +224,53 @@ class _ThemeModeSetting extends ConsumerWidget {
         ),
       ),
       padding: const EdgeInsets.all(AppSpacing.lg),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          CupertinoSlidingSegmentedControl<AppThemeMode>(
-            groupValue: mode,
-            onValueChanged: (v) {
-              if (v != null) controller.setMode(v);
-            },
-            backgroundColor: app.surfaceContainerHigh,
-            thumbColor: app.primaryContainer,
-            children: {
-              AppThemeMode.light:
-                  _segLabel(context, '亮色', mode == AppThemeMode.light),
-              AppThemeMode.dark:
-                  _segLabel(context, '暗色', mode == AppThemeMode.dark),
-              AppThemeMode.system:
-                  _segLabel(context, '跟随系统', mode == AppThemeMode.system),
-            },
-          ),
-        ],
+      child: Container(
+        decoration: BoxDecoration(
+          color: app.surfaceContainerHigh,
+          borderRadius: BorderRadius.circular(AppRadius.input),
+        ),
+        padding: const EdgeInsets.all(4),
+        child: Row(
+          children: [
+            _buildSegment(context, '亮色', AppThemeMode.light, mode, controller),
+            _buildSegment(context, '暗色', AppThemeMode.dark, mode, controller),
+            _buildSegment(context, '跟随系统', AppThemeMode.system, mode, controller),
+          ],
+        ),
       ),
     );
   }
-}
 
-/// 分段控件的标签：显式指定选中/未选中颜色，避免被 Cupertino 默认蓝覆盖。
-Widget _segLabel(BuildContext context, String label, bool selected) {
-  final app = AppTheme.colorsOf(context);
-  return Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 10),
-    child: Text(
-      label,
-      style: AppTheme.textOf(context).labelSmall?.copyWith(
-        color: selected ? app.onPrimaryContainer : app.onSurfaceVariant,
-        fontWeight: FontWeight.w600,
-        height: 1.3,
+  Widget _buildSegment(
+    BuildContext context,
+    String label,
+    AppThemeMode value,
+    AppThemeMode current,
+    ThemeModeController controller,
+  ) {
+    final app = AppTheme.colorsOf(context);
+    final text = AppTheme.textOf(context);
+    final selected = current == value;
+    return Expanded(
+      child: ShadButton.ghost(
+        height: 40,
+        backgroundColor: selected ? app.primaryContainer : const Color(0x00000000),
+        hoverBackgroundColor: selected
+            ? app.primaryContainer
+            : app.surfaceContainerHighest,
+        pressedBackgroundColor: selected
+            ? app.primary
+            : app.surfaceContainerHighest,
+        onPressed: () => controller.setMode(value),
+        child: Text(
+          label,
+          style: text.labelSmall?.copyWith(
+            color: selected ? app.onPrimaryContainer : app.onSurfaceVariant,
+            fontWeight: FontWeight.w600,
+            height: 1.3,
+          ),
+        ),
       ),
-    ),
-  );
+    );
+  }
 }

@@ -1,4 +1,5 @@
-import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:flutter/widgets.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../theme/app_theme.dart';
 
@@ -48,14 +49,16 @@ class AppLoading extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              SizedBox(
-                width: 36,
-                height: 36,
-                child: CupertinoActivityIndicator(
-                  color: app.primary,
-                  radius: 16,
-                ),
-              ),
+              Icon(
+                LucideIcons.loaderCircle,
+                size: 36,
+                color: app.primary,
+              ).animate(onPlay: (c) => c.repeat()).rotate(
+                    begin: 0,
+                    end: 1,
+                    duration: const Duration(milliseconds: 900),
+                    curve: Curves.linear,
+                  ),
               if (message != null) ...[
                 const SizedBox(height: AppSpacing.md),
                 Text(
@@ -124,12 +127,8 @@ class _SkeletonCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
-        color: AppTheme.colorsOf(context).surface,
+        color: AppTheme.colorsOf(context).surfaceRaised,
         borderRadius: BorderRadius.circular(AppRadius.card),
-        border: Border.all(
-          color: AppTheme.colorsOf(context).outlineVariant,
-          width: 1,
-        ),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -159,6 +158,7 @@ class _SkeletonCard extends StatelessWidget {
   }
 }
 
+/// 骨架块（自研 shimmer 渐变，不依赖 Material/Cupertino）。
 class _ShimmerBox extends StatefulWidget {
   final double width;
   final double height;
@@ -200,8 +200,8 @@ class _ShimmerBoxState extends State<_ShimmerBox>
   @override
   Widget build(BuildContext context) {
     final app = AppTheme.colorsOf(context);
-    final base = app.surfaceContainerHighest;
-    final highlight = app.surface;
+    final base = app.surfaceSunken;
+    final highlight = app.surfaceRaised;
 
     return LayoutBuilder(
       builder: (_, c) {

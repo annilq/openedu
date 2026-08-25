@@ -1,5 +1,6 @@
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/theme/app_theme.dart';
@@ -91,7 +92,7 @@ class ChildHome extends ConsumerWidget {
                                     borderRadius: BorderRadius.circular(28),
                                   ),
                                   alignment: Alignment.center,
-                                  child: Icon(CupertinoIcons.sun_max,
+                                  child: Icon(LucideIcons.sun,
                                       size: 44,
                                       color: app.onTertiaryContainer),
                                 ),
@@ -150,11 +151,6 @@ class _ReviewBanner extends StatelessWidget {
         decoration: BoxDecoration(
           color: app.primaryContainer,
           borderRadius: BorderRadius.circular(AppRadius.banner),
-          // 顶部极细的"植物绿高光"纹理：避免完全扁平
-          border: Border.all(
-            color: app.primary.withValues(alpha: 0.18),
-            width: 1,
-          ),
         ),
         child: Padding(
           padding: const EdgeInsets.all(AppSpacing.xl),
@@ -164,11 +160,11 @@ class _ReviewBanner extends StatelessWidget {
                 width: 56,
                 height: 56,
                 decoration: BoxDecoration(
-                  color: app.primary.withValues(alpha: 0.12),
+                  color: app.primary,
                   borderRadius: BorderRadius.circular(18),
                 ),
-                child: Icon(CupertinoIcons.refresh,
-                    size: 32, color: app.primary),
+                child: Icon(LucideIcons.refreshCw,
+                    size: 32, color: app.onPrimary),
               ),
               const SizedBox(width: AppSpacing.xl),
               Expanded(
@@ -185,24 +181,17 @@ class _ReviewBanner extends StatelessWidget {
                           ? '今天有 $dueCount 道题要复习'
                           : '今天没有要复习的题',
                       style: AppTheme.textOf(context).bodyMedium?.copyWith(
-                          color: app.onPrimaryContainer.withValues(alpha: 0.88)),
+                          color: app.onPrimaryContainer),
                     ),
                   ],
                 ),
               ),
-              CupertinoButton(
-                // 错题入口：扁平图标按钮，弱化为次要操作，突出「去复习」主按钮
-                padding: const EdgeInsets.all(AppSpacing.xs),
-                pressedOpacity: 0.6,
+              ShadButton.ghost(
                 onPressed: onWrong,
-                child: Icon(CupertinoIcons.book, size: 22, color: app.primary),
+                child: Icon(LucideIcons.bookOpen, size: 22, color: app.primary),
               ),
               const SizedBox(width: AppSpacing.md),
-              CupertinoButton.filled(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
-                borderRadius: const BorderRadius.all(
-                    Radius.circular(AppRadius.button)),
+              ShadButton(
                 onPressed: onReview,
                 child: const Text('去复习'),
               ),
@@ -229,10 +218,6 @@ class _TutorBanner extends StatelessWidget {
         decoration: BoxDecoration(
           color: app.secondaryContainer,
           borderRadius: BorderRadius.circular(AppRadius.banner),
-          border: Border.all(
-            color: app.secondary.withValues(alpha: 0.18),
-            width: 1,
-          ),
         ),
         child: Padding(
           padding: const EdgeInsets.all(AppSpacing.xl),
@@ -242,11 +227,11 @@ class _TutorBanner extends StatelessWidget {
                 width: 56,
                 height: 56,
                 decoration: BoxDecoration(
-                  color: app.secondary.withValues(alpha: 0.12),
+                  color: app.secondary,
                   borderRadius: BorderRadius.circular(18),
                 ),
-                child: Icon(CupertinoIcons.sparkles,
-                    size: 32, color: app.secondary),
+                child: Icon(LucideIcons.sparkles,
+                    size: 32, color: app.onSecondary),
               ),
               const SizedBox(width: AppSpacing.xl),
               Expanded(
@@ -260,17 +245,11 @@ class _TutorBanner extends StatelessWidget {
                     const SizedBox(height: AppSpacing.xs),
                     Text('遇到不懂的题，随时来问～',
                         style: AppTheme.textOf(context).bodyMedium?.copyWith(
-                            color: app.onSecondaryContainer
-                                .withValues(alpha: 0.88))),
+                            color: app.onSecondaryContainer)),
                   ],
                 ),
               ),
-              CupertinoButton.filled(
-                // AI 区主按钮沿用植物绿主色，保持单强调色一致性
-                padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
-                borderRadius: const BorderRadius.all(
-                    Radius.circular(AppRadius.button)),
+              ShadButton(
                 onPressed: onTutor,
                 child: const Text('去提问'),
               ),

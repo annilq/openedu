@@ -1,4 +1,5 @@
-import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:flutter/widgets.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../theme/app_theme.dart';
 
@@ -32,7 +33,7 @@ class AppError extends StatelessWidget {
                 borderRadius: BorderRadius.circular(28),
               ),
               child: Icon(
-                CupertinoIcons.exclamationmark_circle_fill,
+                LucideIcons.alertCircle,
                 size: 48,
                 color: app.onErrorContainer,
               ),
@@ -55,27 +56,16 @@ class AppError extends StatelessWidget {
             ),
             if (onRetry != null) ...[
               const SizedBox(height: AppSpacing.xl),
-              CupertinoButton(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.xl,
-                  vertical: 14,
-                ),
-                borderRadius: BorderRadius.circular(AppRadius.button),
-                color: app.primary,
-                pressedOpacity: 0.85,
+              ShadButton(
+                height: 52,
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
                 onPressed: onRetry,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(CupertinoIcons.refresh, size: 18),
-                    const SizedBox(width: AppSpacing.xs),
-                    Text(
-                      retryLabel,
-                      style: AppTheme.textOf(context).labelMedium?.copyWith(
-                            color: app.onPrimary,
-                          ),
-                    ),
-                  ],
+                leading: const Icon(LucideIcons.refreshCcw, size: 18),
+                child: Text(
+                  retryLabel,
+                  style: AppTheme.textOf(context).labelMedium?.copyWith(
+                        color: app.onPrimary,
+                      ),
                 ),
               ),
             ],

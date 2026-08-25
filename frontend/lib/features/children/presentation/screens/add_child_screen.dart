@@ -1,8 +1,9 @@
-import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_inputs.dart';
+import '../../../../shared/widgets/app_top_bar.dart';
 import '../../domain/providers/children_provider.dart';
 import '../providers/children_notifier.dart';
 
@@ -93,53 +94,57 @@ class _AddChildScreenState extends ConsumerState<AddChildScreen> {
   @override
   Widget build(BuildContext context) {
     final app = AppTheme.colorsOf(context);
-    return CupertinoPageScaffold(
-      navigationBar: CupertinoNavigationBar(
-        leading: CupertinoNavigationBarBackButton(
-          onPressed: () => Navigator.of(context).maybePop(),
-        ),
-        middle: const Text('添加娃娃账号'),
-      ),
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(AppSpacing.xl3),
+    return SizedBox.expand(
+      child: ColoredBox(
+        color: app.surface,
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            AppTextField(
-              label: '娃娃昵称（例如：大宝）',
-              controller: _nameCtrl,
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            AppTextField(
-              label: '登录账号（唯一，例如：dabao）',
-              controller: _usernameCtrl,
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            AppTextField(
-              label: '密码（至少 4 位）',
-              controller: _passwordCtrl,
-              obscureText: true,
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            AppPickerField<int>(
-              label: '年级',
-              values: List.generate(6, (i) => i + 1),
-              labels: List.generate(6, (i) => '${i + 1} 年级'),
-              value: _grade,
-              onChanged: (v) => setState(() => _grade = v),
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            if (_error != null) ...[
-              Text(
-                _error!,
-                style: TextStyle(color: app.error),
+            AppTopBar(title: '添加娃娃账号', showBack: true),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(AppSpacing.xl3),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    AppTextField(
+                      label: '娃娃昵称（例如：大宝）',
+                      controller: _nameCtrl,
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    AppTextField(
+                      label: '登录账号（唯一，例如：dabao）',
+                      controller: _usernameCtrl,
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    AppTextField(
+                      label: '密码（至少 4 位）',
+                      controller: _passwordCtrl,
+                      obscureText: true,
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    AppPickerField<int>(
+                      label: '年级',
+                      values: List.generate(6, (i) => i + 1),
+                      labels: List.generate(6, (i) => '${i + 1} 年级'),
+                      value: _grade,
+                      onChanged: (v) => setState(() => _grade = v),
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    if (_error != null) ...[
+                      Text(
+                        _error!,
+                        style: TextStyle(color: app.error),
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                    ],
+                    AppPrimaryButton(
+                      label: '创建娃娃账号',
+                      onPressed: _submitting ? null : _submit,
+                      loading: _submitting,
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: AppSpacing.md),
-            ],
-            AppPrimaryButton(
-              label: '创建娃娃账号',
-              onPressed: _submitting ? null : _submit,
-              loading: _submitting,
             ),
           ],
         ),

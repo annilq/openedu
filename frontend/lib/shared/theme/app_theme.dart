@@ -1,4 +1,6 @@
 import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:flutter/material.dart' show ThemeMode;
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// 按正确率分级的视觉情绪。
 ///
@@ -17,6 +19,13 @@ Brightness resolveBrightness(AppThemeMode mode, Brightness systemBrightness) {
   };
 }
 
+/// 应用主题模式 → Material [ThemeMode]，供 `ShadApp.custom.themeMode` 使用。
+ThemeMode appThemeModeToMaterial(AppThemeMode mode) => switch (mode) {
+      AppThemeMode.system => ThemeMode.system,
+      AppThemeMode.light => ThemeMode.light,
+      AppThemeMode.dark => ThemeMode.dark,
+    };
+
 /// 护眼双主题（亮色 + 暗色 · 纯 Cupertino 设计系统 · 明快儿童化配色）。
 ///
 /// 设计约定（见 .impeccable.md / copilot-instructions.md）：
@@ -24,7 +33,7 @@ Brightness resolveBrightness(AppThemeMode mode, Brightness systemBrightness) {
 /// - 暗色：暖调深炭（**禁用纯黑**）+ 提亮后的植物绿/暖橙/天蓝
 /// - 三强调色方案：primary 植物绿主操作 / secondary 暖橙（AI 暖区）/ tertiary 天蓝（积极反馈）/ error 温柔珊瑚
 /// - 正文 ≥ 20sp、选项 ≥ 22sp、辅助说明 ≥ 16sp、行高 ≥ 1.5
-/// - 卡片 1px 描边 + 暖色填充（无重阴影）、大圆角
+/// - 卡片无描边 + surfaceRaised 暖色填充（无重阴影）、大圆角
 /// - 字体：HarmonyOS Sans SC / Noto Sans SC 回退链
 ///
 /// 本文件 **不含任何 Material 主题配置**。业务代码请统一通过
@@ -60,11 +69,11 @@ class AppTheme {
     onErrorContainer: Color(0xFF44150F),
     surface: Color(0xFFFDF8F0), // Warm Canvas 主背景
     onSurface: Color(0xFF2D2D2D), // Charcoal Ink 主文字
-    surfaceContainerLowest: Color(0xFFFFFDF9),
-    surfaceContainerLow: Color(0xFFFFFBF3),
-    surfaceContainer: Color(0xFFFBF5E8),
-    surfaceContainerHigh: Color(0xFFF4ECDA),
-    surfaceContainerHighest: Color(0xFFEEE4CE),
+    surfaceContainerLowest: Color(0xFFFFFBF3), // → surfaceRaised
+    surfaceContainerLow: Color(0xFFFFFBF3), // = surfaceRaised
+    surfaceContainer: Color(0xFFFFFBF3), // = surfaceRaised
+    surfaceContainerHigh: Color(0xFFF4ECDA), // = surfaceSunken
+    surfaceContainerHighest: Color(0xFFF4ECDA), // → surfaceSunken
     onSurfaceVariant: Color(0xFF70685B), // Muted Stone 次文字（达 WCAG AA ≥4.5:1）
     outline: Color(0xFFEFE7D8), // Whisper Border
     outlineVariant: Color(0x99EFE7D8), // whisper border 60%
@@ -93,11 +102,11 @@ class AppTheme {
     onErrorContainer: Color(0xFFFBE3DC),
     surface: Color(0xFF1D1B17), // 暖调深炭主背景
     onSurface: Color(0xFFEDE6D8),
-    surfaceContainerLowest: Color(0xFF171512),
-    surfaceContainerLow: Color(0xFF232019),
-    surfaceContainer: Color(0xFF2A261F),
-    surfaceContainerHigh: Color(0xFF322D25),
-    surfaceContainerHighest: Color(0xFF3A342B),
+    surfaceContainerLowest: Color(0xFF171512), // = surfaceSunken
+    surfaceContainerLow: Color(0xFF2A261F), // → surfaceRaised
+    surfaceContainer: Color(0xFF2A261F), // = surfaceRaised
+    surfaceContainerHigh: Color(0xFF2A261F), // → surfaceRaised
+    surfaceContainerHighest: Color(0xFF171512), // → surfaceSunken
     onSurfaceVariant: Color(0xFFBFB6A8),
     outline: Color(0xFF4A4438),
     outlineVariant: Color(0xB34A4438), // outline 70%
@@ -143,6 +152,212 @@ class AppTheme {
           fontFamily: fontFamily,
           color: c.onSurface,
         ),
+      ),
+    );
+  }
+
+  // ============ Shad Theme（混合模式：Shadcn + Cupertino） ============
+
+  /// 由 [AppColors] 语义色令牌映射出 `ShadThemeData`，供
+  /// `ShadApp.custom(theme: …shadThemeData(light), darkTheme: …shadThemeData(dark))`。
+  ///
+  /// ShadColorScheme 结构体构造需全部必填字段通过；除标准角色外，
+  /// 把项目独有的三强调色与各 container 语义色放入 custom map 供业务侧读取。
+  static ShadThemeData shadThemeData(AppColors c) {
+    final scheme = ShadColorScheme(
+      background: c.surface,
+      foreground: c.onSurface,
+      card: c.surfaceContainerLow,
+      cardForeground: c.onSurface,
+      popover: c.surface,
+      popoverForeground: c.onSurface,
+      primary: c.primary,
+      primaryForeground: c.onPrimary,
+      secondary: c.secondaryContainer,
+      secondaryForeground: c.onSecondaryContainer,
+      muted: c.surfaceContainer,
+      mutedForeground: c.onSurfaceVariant,
+      accent: c.surfaceContainerHigh,
+      accentForeground: c.onSurface,
+      destructive: c.error,
+      destructiveForeground: c.onError,
+      border: c.outline,
+      input: c.outlineVariant,
+      ring: c.primary,
+      selection: c.primary,
+      custom: {
+        'secondary': c.secondary,
+        'onSecondary': c.onSecondary,
+        'tertiary': c.tertiary,
+        'onTertiary': c.onTertiary,
+        'primaryContainer': c.primaryContainer,
+        'onPrimaryContainer': c.onPrimaryContainer,
+        'secondaryContainer': c.secondaryContainer,
+        'onSecondaryContainer': c.onSecondaryContainer,
+        'tertiaryContainer': c.tertiaryContainer,
+        'onTertiaryContainer': c.onTertiaryContainer,
+        'errorContainer': c.errorContainer,
+        'onErrorContainer': c.onErrorContainer,
+        'surfaceContainerLowest': c.surfaceContainerLowest,
+        'surfaceContainer': c.surfaceContainer,
+        'surfaceContainerHigh': c.surfaceContainerHigh,
+        'surfaceContainerHighest': c.surfaceContainerHighest,
+      },
+    );
+
+    // 常量透明度（禁用纯黑，用透明表示“无填充”）
+    const transparent = Color(0x00000000);
+
+    /// 实心按钮（primary / secondary / destructive）。
+    ShadButtonTheme button(Color bg, Color fg) => ShadButtonTheme(
+          backgroundColor: bg,
+          foregroundColor: fg,
+          hoverBackgroundColor: bg,
+          hoverForegroundColor: fg,
+          pressedBackgroundColor: bg,
+          pressedForegroundColor: fg,
+          decoration: ShadDecoration(
+            border: ShadBorder.all(
+              color: bg,
+              width: 0,
+              radius: BorderRadius.all(Radius.circular(AppRadius.button)),
+            ),
+          ),
+        );
+
+    /// 胶囊/圆角徽标。
+    ShadBadgeTheme badge(Color bg, Color fg) => ShadBadgeTheme(
+          backgroundColor: bg,
+          foregroundColor: fg,
+          shape: RoundedRectangleBorder(
+            borderRadius: const BorderRadius.all(
+              Radius.circular(AppRadius.chip),
+            ),
+          ),
+        );
+
+    return ShadThemeData(
+      brightness: c.brightness,
+      colorScheme: scheme,
+      radius: const BorderRadius.all(Radius.circular(AppRadius.sm)),
+      textTheme: _shadTextTheme(c),
+      disabledOpacity: 0.5,
+      primaryButtonTheme: button(c.primary, c.onPrimary),
+      secondaryButtonTheme: button(c.secondaryContainer, c.onSecondaryContainer),
+      destructiveButtonTheme: button(c.error, c.onError),
+      outlineButtonTheme: ShadButtonTheme(
+        backgroundColor: transparent,
+        foregroundColor: c.primary,
+        hoverBackgroundColor: c.primaryContainer,
+        pressedBackgroundColor: c.primaryContainer,
+        decoration: ShadDecoration(
+          border: ShadBorder.all(
+            color: c.outline,
+            width: 1,
+            radius: BorderRadius.all(Radius.circular(AppRadius.button)),
+          ),
+        ),
+      ),
+      ghostButtonTheme: ShadButtonTheme(
+        backgroundColor: transparent,
+        foregroundColor: c.primary,
+        hoverBackgroundColor: c.primaryContainer,
+        pressedBackgroundColor: c.primaryContainer,
+      ),
+      linkButtonTheme: ShadButtonTheme(
+        backgroundColor: transparent,
+        foregroundColor: c.primary,
+        textDecoration: TextDecoration.underline,
+      ),
+      primaryBadgeTheme: badge(c.primary, c.onPrimary),
+      secondaryBadgeTheme: badge(c.secondaryContainer, c.onSecondaryContainer),
+      destructiveBadgeTheme: badge(c.error, c.onError),
+      outlineBadgeTheme: ShadBadgeTheme(
+        backgroundColor: transparent,
+        foregroundColor: c.onSurface,
+        shape: RoundedRectangleBorder(
+          side: BorderSide(color: c.outline, width: 1),
+          borderRadius: const BorderRadius.all(Radius.circular(999)),
+        ),
+      ),
+      cardTheme: ShadCardTheme(
+        backgroundColor: c.surfaceContainerLow,
+        border: ShadBorder.all(color: const Color(0x00000000), width: 0),
+        radius: const BorderRadius.all(Radius.circular(AppRadius.card)),
+        padding: const EdgeInsets.all(AppSpacing.xl),
+        shadows: const <BoxShadow>[],
+      ),
+      progressTheme: ShadProgressTheme(
+        backgroundColor: c.surfaceContainerHighest,
+        color: c.primary,
+        borderRadius: const BorderRadius.all(Radius.circular(4)),
+        minHeight: 8,
+      ),
+      inputTheme: ShadInputTheme(
+        decoration: ShadDecoration(
+          color: c.surfaceContainerLow,
+          border: ShadBorder.all(
+            color: c.outline,
+            width: 1,
+            radius: BorderRadius.all(Radius.circular(AppRadius.input)),
+          ),
+          focusedBorder: ShadBorder.all(
+            color: c.primary,
+            width: 1.5,
+            radius: BorderRadius.all(Radius.circular(AppRadius.input)),
+          ),
+        ),
+        placeholderStyle: TextStyle(
+          fontFamily: fontFamily,
+          fontSize: 20,
+          color: c.onSurfaceVariant,
+        ),
+        cursorColor: c.primary,
+      ),
+    );
+  }
+
+  /// 护眼排版 → `ShadTextTheme`（正文 ≥20sp、辅助 ≥16sp、行高 ≥1.4）。
+  static ShadTextTheme _shadTextTheme(AppColors c) {
+    TextStyle style({
+      required double size,
+      required FontWeight weight,
+      double height = 1.4,
+      Color? color,
+    }) {
+      return TextStyle(
+        fontFamily: fontFamily,
+        fontSize: size,
+        fontWeight: weight,
+        height: height,
+        color: color ?? c.onSurface,
+      );
+    }
+
+    return ShadTextTheme(
+      family: fontFamily,
+      h1Large: style(size: 40, weight: FontWeight.w700, height: 1.15),
+      h1: style(size: 34, weight: FontWeight.w700, height: 1.2),
+      h2: style(size: 30, weight: FontWeight.w700, height: 1.25),
+      h3: style(size: 26, weight: FontWeight.w700, height: 1.3),
+      h4: style(size: 24, weight: FontWeight.w600, height: 1.3),
+      p: style(size: 20, weight: FontWeight.w400, height: 1.5),
+      blockquote: style(
+        size: 20,
+        weight: FontWeight.w400,
+        height: 1.5,
+        color: c.onSurfaceVariant,
+      ),
+      table: style(size: 18, weight: FontWeight.w600, height: 1.4),
+      list: style(size: 20, weight: FontWeight.w400, height: 1.5),
+      lead: style(size: 24, weight: FontWeight.w500, height: 1.4),
+      large: style(size: 22, weight: FontWeight.w600, height: 1.4),
+      small: style(size: 16, weight: FontWeight.w500, height: 1.4),
+      muted: style(
+        size: 16,
+        weight: FontWeight.w400,
+        height: 1.5,
+        color: c.onSurfaceVariant,
       ),
     );
   }
@@ -230,6 +445,12 @@ class AppColors {
 
   /// 积极反馈（天蓝）。
   Color get feedbackAccent => tertiary;
+
+  /// 浮起表面（卡片/容器背景，替代 surfaceContainerLow）。
+  Color get surfaceRaised => surfaceContainerLow;
+
+  /// 下沉表面（轨道/凹槽/弱化背景，替代 surfaceContainerHighest）。
+  Color get surfaceSunken => surfaceContainerHighest;
 }
 
 // =====================================================================
@@ -316,7 +537,7 @@ class AppText {
 // §通用扁平化组件（纯 Cupertino 场景下的补位）
 // =====================================================================
 
-/// 扁平卡片：1px 描边 + 暖色填充，无阴影（替代 Material Card）。
+/// 扁平卡片：无描边 + surfaceRaised 暖色填充，无阴影（基于 ShadCard）。
 class AppCard extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry padding;
@@ -337,44 +558,68 @@ class AppCard extends StatelessWidget {
     this.onTap,
   });
 
+  /// 将 Flutter [Border] 转换为 [ShadBorder]（仅在调用方显式传 border 时使用）。
+  static ShadBorder _convertBorder(Border b) {
+    ShadBorderSide side(BorderSide s) => ShadBorderSide(
+          color: s.color,
+          width: s.width,
+          style: s.style,
+        );
+    return ShadBorder(
+      top: side(b.top),
+      right: side(b.right),
+      bottom: side(b.bottom),
+      left: side(b.left),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final app = AppTheme.colorsOf(context);
-    final box = Container(
+    final card = ShadCard(
       padding: padding,
-      decoration: BoxDecoration(
-        color: color ?? app.surfaceContainerLow,
-        borderRadius: BorderRadius.all(
-          Radius.circular(radius ?? AppRadius.card),
-        ),
-        border: border ??
-            Border.all(
-              color: app.outline,
-              width: 1,
-            ),
-      ),
+      backgroundColor: color ?? app.surfaceContainerLow,
+      radius: BorderRadius.circular(radius ?? AppRadius.card),
+      border: border != null
+          ? _convertBorder(border!)
+          : ShadBorder.all(color: const Color(0x00000000), width: 0),
+      shadows: const <BoxShadow>[],
       child: child,
     );
     return Container(
       margin: margin,
       child: onTap != null
-          ? CupertinoButton(
+          ? ShadButton.ghost(
+              width: double.infinity,
+              height: null,
               padding: EdgeInsets.zero,
-              pressedOpacity: 0.8,
+              backgroundColor: const Color(0x00000000),
+              hoverBackgroundColor: const Color(0x00000000),
+              pressedBackgroundColor: const Color(0x00000000),
+              decoration: const ShadDecoration(border: null),
               onPressed: onTap,
-              child: box,
+              child: card,
             )
-          : box,
+          : card,
     );
   }
 }
 
-/// 主操作按钮：纯 CupertinoButton.filled，扁平（无阴影）。
+/// 主操作按钮：ShadButton 主变体（扁平、无阴影），供业务主 CTA 使用。
+///
+/// [icon] 存在时渲染「图标 + 文案」行；[loadingLabel] 仅在 [loading] 且有 [icon]
+/// 时生效（如「判题中…」），缺省回退到 [label]。无 [icon] 时保持原行为
+/// （loading 显示裸 spinner，否则纯文案）。
+/// [fullWidth] 控制 [ShadButton.expands]：true 占满可用宽度（主 CTA / 保存），
+/// false 按内容宽度（行内发送、表单内提交）。
 class AppPrimaryButton extends StatelessWidget {
   final String label;
   final VoidCallback? onPressed;
   final bool loading;
   final bool fullWidth;
+  final IconData? icon;
+  final String? loadingLabel;
+  final double height;
 
   const AppPrimaryButton({
     super.key,
@@ -382,45 +627,52 @@ class AppPrimaryButton extends StatelessWidget {
     this.onPressed,
     this.loading = false,
     this.fullWidth = true,
+    this.icon,
+    this.loadingLabel,
+    this.height = 56,
   });
 
   @override
   Widget build(BuildContext context) {
     final app = AppTheme.colorsOf(context);
-    return SizedBox(
-      height: 56,
-      child: fullWidth
-          ? _inner(context, app)
-          : Center(child: _inner(context, app)),
+    final spinner = Icon(
+      LucideIcons.loaderCircle,
+      size: 22,
+      color: app.onPrimary,
+    ).animate(onPlay: (c) => c.repeat()).rotate(
+          begin: 0,
+          end: 1,
+          duration: const Duration(milliseconds: 900),
+          curve: Curves.linear,
+        );
+    final labelWidget = Text(
+      loading ? (loadingLabel ?? label) : label,
+      textAlign: TextAlign.center,
+      style: AppTheme.textOf(context).labelLarge?.copyWith(
+            color: app.onPrimary,
+          ),
     );
-  }
-
-  Widget _inner(BuildContext context, AppColors app) {
-    return CupertinoButton.filled(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-      borderRadius: const BorderRadius.all(
-        Radius.circular(AppRadius.button),
-      ),
-      disabledColor: app.surfaceContainerHighest,
+    final child = icon != null
+        ? Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              loading ? spinner : Icon(icon, size: 20, color: app.onPrimary),
+              const SizedBox(width: 8),
+              labelWidget,
+            ],
+          )
+        : (loading ? spinner : labelWidget);
+    return ShadButton(
+      height: height,
+      expands: fullWidth,
+      // loading 时 onPressed 置空以禁用点击，但保持 enabled（不触发半透明）
       onPressed: loading ? null : onPressed,
-      child: loading
-          ? const SizedBox(
-              width: 22,
-              height: 22,
-              child: CupertinoActivityIndicator(radius: 11),
-            )
-          : Text(
-              label,
-              textAlign: TextAlign.center,
-              style: AppTheme.textOf(context).labelLarge?.copyWith(
-                    color: loading ? app.onSurfaceVariant : app.onPrimary,
-                  ),
-            ),
+      child: child,
     );
   }
 }
 
-/// 扁平线性进度条（替代 Material LinearProgressIndicator）。
+/// 线性进度条：基于 ShadProgress。
 class AppProgressBar extends StatelessWidget {
   final double value; // 0.0 - 1.0
   final double height;
@@ -438,29 +690,11 @@ class AppProgressBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final app = AppTheme.colorsOf(context);
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(height / 2),
-      child: SizedBox(
-        height: height,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            DecoratedBox(
-              decoration: BoxDecoration(color: trackColor ?? app.surfaceContainerHighest),
-            ),
-            FractionallySizedBox(
-              alignment: Alignment.centerLeft,
-              widthFactor: value.clamp(0.0, 1.0),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: color ?? app.primary,
-                  borderRadius: BorderRadius.circular(height / 2),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+    return ShadProgress(
+      value: value.clamp(0.0, 1.0),
+      minHeight: height,
+      color: color ?? app.primary,
+      backgroundColor: trackColor ?? app.surfaceContainerHighest,
     );
   }
 }
@@ -469,7 +703,7 @@ class AppProgressBar extends StatelessWidget {
 // §语义化组件（自动跟随亮/暗模式，取色一律来自 AppTheme）
 // =====================================================================
 
-/// 4 种语义化 Chip/Pill：避免全局 comparator 风格被误用，且兼容双主题。
+/// 4 种语义化 Chip/Pill：基于 ShadBadge，避免全局 comparator 风格被误用，且兼容双主题。
 class AppTags {
   static Widget normal(String label, {IconData? icon}) => _TagChip(
         label: label,
@@ -485,13 +719,13 @@ class AppTags {
 
   static Widget ai(String label, {IconData? icon}) => _TagChip(
         label: label,
-        icon: icon ?? CupertinoIcons.sparkles,
+        icon: icon ?? LucideIcons.sparkles,
         semantics: _TagSemantics.ai,
       );
 
   static Widget success(String label, {IconData? icon}) => _TagChip(
         label: label,
-        icon: icon ?? CupertinoIcons.checkmark_circle_fill,
+        icon: icon ?? LucideIcons.checkCircle2,
         semantics: _TagSemantics.success,
       );
 
@@ -525,11 +759,13 @@ class _TagChip extends StatelessWidget {
       _TagSemantics.warning => (app.errorContainer, app.onErrorContainer),
     };
 
-    return Container(
+    return ShadBadge.raw(
+      variant: ShadBadgeVariant.primary,
+      backgroundColor: bg,
+      foregroundColor: fg,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(AppRadius.chip),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(Radius.circular(AppRadius.chip)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -551,23 +787,23 @@ class _TagChip extends StatelessWidget {
   }
 }
 
-/// 语义化 Badge（胶囊）。
+/// 语义化 Badge（胶囊，基于 ShadBadge）。
 class AppBadge {
   static Widget successChip(String label) => _BadgePill(
         label: label,
-        icon: CupertinoIcons.checkmark,
+        icon: LucideIcons.check,
         semantics: _BadgeSemantics.success,
       );
 
   static Widget warningChip(String label) => _BadgePill(
         label: label,
-        icon: CupertinoIcons.exclamationmark_triangle,
+        icon: LucideIcons.alertTriangle,
         semantics: _BadgeSemantics.warning,
       );
 
   static Widget infoChip(String label) => _BadgePill(
         label: label,
-        icon: CupertinoIcons.info,
+        icon: LucideIcons.info,
         semantics: _BadgeSemantics.info,
       );
 }
@@ -593,12 +829,12 @@ class _BadgePill extends StatelessWidget {
       _BadgeSemantics.info => (app.primaryContainer, app.onPrimaryContainer),
     };
 
-    return Container(
+    return ShadBadge.raw(
+      variant: ShadBadgeVariant.primary,
+      backgroundColor: bg,
+      foregroundColor: fg,
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(999),
-      ),
+      shape: const StadiumBorder(),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -655,7 +891,8 @@ class SectionTitle extends StatelessWidget {
   }
 }
 
-/// Squircle 方圆形头像（替代俗套 CircleAvatar）。自动折行亮/暗配色。
+/// Squircle 方圆形头像（基于 ShadAvatar，替代俗套 CircleAvatar）。
+/// 自动折行亮/暗配色。
 class AvatarSquircle extends StatelessWidget {
   final String name;
   final double size;
@@ -696,19 +933,15 @@ class AvatarSquircle extends StatelessWidget {
     final app = AppTheme.colorsOf(context);
     final background = bg ?? app.primaryContainer;
     final foreground = fg ?? app.onPrimaryContainer;
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: background,
+    return ShadAvatar(
+      null,
+      size: Size.square(size),
+      backgroundColor: background,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.all(Radius.circular(size * 0.32)),
-        border: Border.all(
-          color: app.outline,
-          width: 1,
-        ),
+        side: BorderSide.none,
       ),
-      alignment: Alignment.center,
-      child: Text(
+      placeholder: Text(
         name.isNotEmpty ? name[0] : '?',
         style: TextStyle(
           fontFamily: AppTheme.fontFamily,

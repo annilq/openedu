@@ -1,7 +1,10 @@
-import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/domain/models/models.dart';
+import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/app_top_bar.dart';
 import '../../../children/domain/providers/children_provider.dart';
 import '../../../practice/presentation/screens/practice_screen.dart';
 import '../../../review/presentation/providers/review_notifier.dart';
@@ -39,7 +42,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   void _navigateToPractice(TaskModel task) {
     Navigator.of(context).push(
-      CupertinoPageRoute(
+      MaterialPageRoute(
         builder: (_) => PracticeScreen(
           task: task,
           onDone: () {
@@ -54,7 +57,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   void _navigateToReview() {
     Navigator.of(context)
-        .push(CupertinoPageRoute(builder: (_) => const ReviewScreen()))
+        .push(MaterialPageRoute(builder: (_) => const ReviewScreen()))
         .then((_) {
       if (!mounted) return;
       ref.read(dueReviewNotifierProvider.notifier).load();
@@ -63,7 +66,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   void _navigateToWrongQuestions() {
     Navigator.of(context)
-        .push(CupertinoPageRoute(builder: (_) => const WrongQuestionsScreen()))
+        .push(MaterialPageRoute(builder: (_) => const WrongQuestionsScreen()))
         .then((_) {
       if (!mounted) return;
       ref.read(dueReviewNotifierProvider.notifier).load();
@@ -72,7 +75,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   void _navigateToTutor() {
     Navigator.of(context)
-        .push(CupertinoPageRoute(
+        .push(MaterialPageRoute(
           builder: (_) => TutorChatScreen(user: widget.user),
         ))
         .then((_) {
@@ -83,19 +86,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final app = AppTheme.colorsOf(context);
     return Column(
       children: [
-        CupertinoNavigationBar(
-          middle: Text(
-            widget.user.isParent
-                ? '家长端 · ${widget.user.displayName}'
-                : '${widget.user.displayName}的学习',
-            overflow: TextOverflow.ellipsis,
-          ),
-          trailing: CupertinoButton(
+        AppTopBar(
+          title: widget.user.isParent
+              ? '家长端 · ${widget.user.displayName}'
+              : '${widget.user.displayName}的学习',
+          trailing: ShadButton.ghost(
+            width: 40,
+            height: 40,
             padding: EdgeInsets.zero,
+            backgroundColor: const Color(0x00000000),
+            hoverBackgroundColor: app.surfaceContainerHigh,
+            pressedBackgroundColor: app.surfaceContainer,
             onPressed: widget.onLogout,
-            child: const Icon(CupertinoIcons.square_arrow_right),
+            child: Icon(
+              LucideIcons.logOut,
+              color: app.onSurface,
+              size: 22,
+            ),
           ),
         ),
         Expanded(
