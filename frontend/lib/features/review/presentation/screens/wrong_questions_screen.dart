@@ -17,7 +17,8 @@ String _fmtDate(DateTime? dt) {
 
 /// 娃娃端错题本：v2 redesign - 用 AppTags 语义化、SectionTitle、空状态加图标。
 class WrongQuestionsScreen extends ConsumerStatefulWidget {
-  const WrongQuestionsScreen({super.key});
+  final bool showBack;
+  const WrongQuestionsScreen({super.key, this.showBack = true});
 
   @override
   ConsumerState<WrongQuestionsScreen> createState() => _WrongQuestionsScreenState();
@@ -48,7 +49,7 @@ class _WrongQuestionsScreenState extends ConsumerState<WrongQuestionsScreen> {
           children: [
             AppTopBar(
               title: '我的错题本',
-              showBack: true,
+              showBack: widget.showBack,
               trailing: ShadButton.ghost(
                 width: 40,
                 height: 40,

@@ -8,6 +8,7 @@ class StorageService {
   static const _keyToken = 'auth_token';
   static const _keyUser = 'current_user';
   static const _keyThemeMode = 'theme_mode';
+  static const _keySidebarCollapsed = 'sidebar_collapsed';
 
   late SharedPreferences _prefs;
 
@@ -31,6 +32,11 @@ class StorageService {
 
   Future<void> saveThemeMode(AppThemeMode mode) =>
       _prefs.setString(_keyThemeMode, mode.name);
+
+  bool getSidebarCollapsed() =>
+      _prefs.getBool(_keySidebarCollapsed) ?? false;
+  Future<void> saveSidebarCollapsed(bool v) =>
+      _prefs.setBool(_keySidebarCollapsed, v);
 
   Future<void> clearAll() async {
     await _prefs.remove(_keyToken);

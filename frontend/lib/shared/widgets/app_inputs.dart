@@ -60,7 +60,7 @@ class _AppTextFieldState extends State<AppTextField> {
     final text = AppTheme.textOf(context);
     final hasError = widget.errorText != null;
     final borderColor = hasError ? app.error : app.outline;
-    final focusedBorderColor = hasError ? app.error : app.primary;
+    final focusedBorderColor = hasError ? app.error : app.accent;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -82,43 +82,44 @@ class _AppTextFieldState extends State<AppTextField> {
                   widget.hintText!,
                   style: text.bodyLarge?.copyWith(color: app.onSurfaceVariant),
                 ),
-          cursorColor: app.primary,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          cursorColor: app.accent,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           leading: widget.prefixIcon == null
               ? null
               : Padding(
-                  padding: const EdgeInsets.only(left: 16, right: 8),
+                  padding: const EdgeInsets.only(right: 8),
                   child: Icon(
                     widget.prefixIcon,
                     color: app.onSurfaceVariant,
-                    size: 22,
+                    size: 18,
                   ),
                 ),
           trailing: widget.obscureText
               ? ShadButton.ghost(
-                  width: 40,
-                  height: 40,
+                  width: 36,
+                  height: 36,
                   padding: EdgeInsets.zero,
                   onPressed: () => setState(() => _obscured = !_obscured),
                   child: Icon(
                     _obscured ? LucideIcons.eye : LucideIcons.eyeOff,
                     color: app.onSurfaceVariant,
-                    size: 20,
+                    size: 18,
                   ),
                 )
               : null,
           decoration: ShadDecoration(
+            disableSecondaryBorder: true,
             color: widget.enabled
                 ? app.surfaceRaised
                 : app.surfaceSunken,
             border: ShadBorder.all(
               color: borderColor,
-              width: hasError ? 1.5 : 1,
+              width: 1,
               radius: BorderRadius.circular(AppRadius.input),
             ),
             focusedBorder: ShadBorder.all(
               color: focusedBorderColor,
-              width: 1.5,
+              width: 1,
               radius: BorderRadius.circular(AppRadius.input),
             ),
           ),
@@ -208,10 +209,11 @@ class AppPickerField<T> extends StatelessWidget {
             style: text.bodyLarge?.copyWith(color: app.onSurfaceVariant),
           ),
           decoration: ShadDecoration(
+            disableSecondaryBorder: true,
             color: app.surfaceRaised,
             border: ShadBorder.all(
               color: borderColor,
-              width: hasError ? 1.5 : 1,
+              width: 1,
               radius: BorderRadius.circular(AppRadius.input),
             ),
           ),

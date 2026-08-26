@@ -18,7 +18,8 @@ import '../widgets/tutor_welcome_hint.dart';
 /// - "内容安全"字样改用 tertiaryContainer（暖色警告容器）
 class TutorChatScreen extends ConsumerStatefulWidget {
   final UserModel user;
-  const TutorChatScreen({super.key, required this.user});
+  final bool showBack;
+  const TutorChatScreen({super.key, required this.user, this.showBack = true});
 
   @override
   ConsumerState<TutorChatScreen> createState() => _TutorChatScreenState();
@@ -84,7 +85,7 @@ class _TutorChatScreenState extends ConsumerState<TutorChatScreen> {
         color: scheme.surface,
         child: Column(
           children: [
-            AppTopBar(title: '问 AI 老师', showBack: true),
+            AppTopBar(title: '问 AI 老师', showBack: widget.showBack),
             Padding(
               padding: const EdgeInsets.fromLTRB(
                   AppSpacing.xl2, AppSpacing.md, AppSpacing.xl2, 0),

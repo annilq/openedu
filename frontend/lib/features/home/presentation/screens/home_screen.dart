@@ -1,19 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/domain/models/models.dart';
-import '../../../../shared/theme/app_theme.dart';
-import '../../../../shared/widgets/app_top_bar.dart';
+import '../../../../shared/widgets/desktop_shell.dart';
 import '../../../children/domain/providers/children_provider.dart';
+import '../../../children/presentation/providers/children_notifier.dart';
+import '../../../children/presentation/screens/add_child_screen.dart';
 import '../../../practice/presentation/screens/practice_screen.dart';
+import '../../../profile/presentation/screens/profile_screen.dart';
 import '../../../review/presentation/providers/review_notifier.dart';
 import '../../../review/presentation/screens/review_screen.dart';
 import '../../../review/presentation/screens/wrong_questions_screen.dart';
 import '../../../tutor/presentation/screens/tutor_chat_screen.dart';
 import '../providers/home_notifier.dart';
-import '../widgets/parent_dashboard.dart';
+import '../providers/selected_child_provider.dart';
 import '../widgets/child_home.dart';
+import '../widgets/child_sidebar.dart';
+import '../widgets/parent/parent_overview_view.dart';
+import '../widgets/parent/parent_sidebar.dart';
+import '../widgets/parent/parent_task_form_view.dart';
+import '../widgets/parent/parent_tutor_logs_view.dart';
+import '../widgets/parent/parent_tutor_quota_view.dart';
+import '../widgets/parent/parent_wrong_questions_view.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   final UserModel user;
@@ -26,10 +34,13 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
+  int _parentNavIndex = 0;
+  int _childNavIndex = 0;
+  bool _showProfile = false;
+
   @override
   void initState() {
     super.initState();
-    // 初始加载
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (widget.user.isParent) {
         ref.read(childrenNotifierProvider.notifier).loadChildren();
@@ -47,7 +58,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           task: task,
           onDone: () {
             Navigator.of(context).pop();
-            // 刷新今日任务
             ref.read(todayTasksNotifierProvider.notifier).load();
           },
         ),
@@ -55,74 +65,111 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  void _navigateToReview() {
-    Navigator.of(context)
-        .push(MaterialPageRoute(builder: (_) => const ReviewScreen()))
-        .then((_) {
-      if (!mounted) return;
-      ref.read(dueReviewNotifierProvider.notifier).load();
+  void _onParentNavTap(int index) {
+    setState(() {
+      _showProfile = false;
+      _parentNavIndex = index;
     });
   }
 
-  void _navigateToWrongQuestions() {
-    Navigator.of(context)
-        .push(MaterialPageRoute(builder: (_) => const WrongQuestionsScreen()))
-        .then((_) {
-      if (!mounted) return;
-      ref.read(dueReviewNotifierProvider.notifier).load();
+  void _onProfileTap() {
+    setState(() => _showProfile = true);
+  }
+
+  void _onNavigateToAddChild() {
+    setState(() {
+      _showProfile = false;
+      _parentNavIndex = 5;
     });
   }
 
-  void _navigateToTutor() {
-    Navigator.of(context)
-        .push(MaterialPageRoute(
-          builder: (_) => TutorChatScreen(user: widget.user),
-        ))
-        .then((_) {
-      if (!mounted) return;
-      ref.read(dueReviewNotifierProvider.notifier).load();
+  void _onChildCreated(String newId) {
+    final state = ref.read(childrenNotifierProvider);
+    if (state is ChildrenLoaded) {
+      for (final c in state.children) {
+        if (c.id == newId) {
+          ref
+              .read(selectedChildProvider.notifier)
+              .select(c.id, c.grade ?? 2);
+          break;
+        }
+      }
+    }
+    setState(() {
+      _showProfile = false;
+      _parentNavIndex = 0;
     });
+  }
+
+  void _onChildNavTap(int index) {
+    setState(() {
+      _showProfile = false;
+      _childNavIndex = index;
+    });
+  }
+
+  Widget _buildParentView() {
+    if (_showProfile) {
+      return ProfileScreen(user: widget.user, onLogout: widget.onLogout);
+    }
+    return switch (_parentNavIndex) {
+      0 => const ParentOverviewView(),
+      1 => ParentTaskFormView(onNavigateToPractice: _navigateToPractice),
+      2 => const ParentWrongQuestionsView(),
+      3 => const ParentTutorLogsView(),
+      4 => const ParentTutorQuotaView(),
+      5 => AddChildScreen(
+          showBack: false,
+          onCreated: _onChildCreated,
+        ),
+      _ => const SizedBox(),
+    };
+  }
+
+  Widget _buildChildView() {
+    if (_showProfile) {
+      return ProfileScreen(user: widget.user, onLogout: widget.onLogout);
+    }
+    return IndexedStack(
+      index: _childNavIndex,
+      children: [
+        ChildHome(
+          user: widget.user,
+          onNavigateToPractice: _navigateToPractice,
+          onNavigateToReview: () => setState(() => _childNavIndex = 1),
+          onNavigateToWrongQuestions: () => setState(() => _childNavIndex = 2),
+          onNavigateToTutor: () => setState(() => _childNavIndex = 3),
+        ),
+        const ReviewScreen(showBack: false),
+        const WrongQuestionsScreen(showBack: false),
+        TutorChatScreen(user: widget.user, showBack: false),
+      ],
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final app = AppTheme.colorsOf(context);
-    return Column(
-      children: [
-        AppTopBar(
-          title: widget.user.isParent
-              ? '家长端 · ${widget.user.displayName}'
-              : '${widget.user.displayName}的学习',
-          trailing: ShadButton.ghost(
-            width: 40,
-            height: 40,
-            padding: EdgeInsets.zero,
-            backgroundColor: const Color(0x00000000),
-            hoverBackgroundColor: app.surfaceContainerHigh,
-            pressedBackgroundColor: app.surfaceContainer,
-            onPressed: widget.onLogout,
-            child: Icon(
-              LucideIcons.logOut,
-              color: app.onSurface,
-              size: 22,
-            ),
-          ),
+    if (widget.user.isParent) {
+      return DesktopShell(
+        sidebar: ParentSidebar(
+          user: widget.user,
+          selectedIndex: _parentNavIndex,
+          onNavTap: _onParentNavTap,
+          onProfileTap: _onProfileTap,
+          onNavigateToAddChild: _onNavigateToAddChild,
         ),
-        Expanded(
-          child: widget.user.isParent
-              ? ParentDashboard(
-                  user: widget.user,
-                  onNavigateToPractice: _navigateToPractice,
-                )
-              : ChildHome(
-                  user: widget.user,
-                  onNavigateToPractice: _navigateToPractice,
-                  onNavigateToReview: _navigateToReview,
-                  onNavigateToWrongQuestions: _navigateToWrongQuestions,
-                  onNavigateToTutor: _navigateToTutor,
-                ),
-        ),
-      ],
+        body: _buildParentView(),
+      );
+    }
+
+    return DesktopShell(
+      sidebar: ChildSidebar(
+        user: widget.user,
+        selectedIndex: _childNavIndex,
+        onNavTap: _onChildNavTap,
+        onProfileTap: _onProfileTap,
+      ),
+      body: _buildChildView(),
     );
   }
 }

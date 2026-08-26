@@ -13,7 +13,10 @@ import '../providers/children_notifier.dart';
 /// 昵称 display_name / 账号 username（唯一）/ 密码 password（≥4 位）/ 年级 grade（1~6）。
 /// 提交成功后 pop(true)，由调用方刷新并选中新娃娃。
 class AddChildScreen extends ConsumerStatefulWidget {
-  const AddChildScreen({super.key});
+  final bool showBack;
+  final void Function(String createdId)? onCreated;
+
+  const AddChildScreen({super.key, this.showBack = true, this.onCreated});
 
   @override
   ConsumerState<AddChildScreen> createState() => _AddChildScreenState();
@@ -64,8 +67,11 @@ class _AddChildScreenState extends ConsumerState<AddChildScreen> {
     if (!mounted) return;
 
     if (created != null) {
-      // 成功后 notifier 已自动刷新列表；携带新用户 id 返回，供首页定向选中
-      Navigator.of(context).pop(created.id);
+      if (widget.onCreated != null) {
+        widget.onCreated!(created.id);
+      } else {
+        Navigator.of(context).pop(created.id);
+      }
       return;
     }
 
@@ -99,7 +105,7 @@ class _AddChildScreenState extends ConsumerState<AddChildScreen> {
         color: app.surface,
         child: Column(
           children: [
-            AppTopBar(title: '添加娃娃账号', showBack: true),
+            AppTopBar(title: '添加娃娃账号', showBack: widget.showBack),
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(AppSpacing.xl3),

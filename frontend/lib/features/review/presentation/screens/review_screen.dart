@@ -15,7 +15,8 @@ import '../widgets/review_question_view.dart';
 /// 娃娃端复习作答页：逐题作答遗忘曲线到期的错题。
 /// v2 redesign：与 practice_screen 视觉一致（选项卡式答案、禁用提交、主题色弹窗）。
 class ReviewScreen extends ConsumerStatefulWidget {
-  const ReviewScreen({super.key});
+  final bool showBack;
+  const ReviewScreen({super.key, this.showBack = true});
 
   @override
   ConsumerState<ReviewScreen> createState() => _ReviewScreenState();
@@ -154,7 +155,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
           children: [
             AppTopBar(
               title: '复习',
-              showBack: true,
+              showBack: widget.showBack,
               trailing: state is DueReviewLoaded && !_done && _totalCount > 0
                   ? Center(
                       child: Container(
