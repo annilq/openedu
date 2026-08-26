@@ -34,11 +34,6 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
   @override
   void initState() {
     super.initState();
-    ref.listen<DueReviewState>(dueReviewNotifierProvider, (prev, next) {
-      if (next is DueReviewLoaded && !_done && _totalCount == 0) {
-        _totalCount = next.items.length;
-      }
-    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(dueReviewNotifierProvider.notifier).load();
     });
@@ -147,6 +142,12 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
   Widget build(BuildContext context) {
     final scheme = AppTheme.colorsOf(context);
     final state = ref.watch(dueReviewNotifierProvider);
+
+    ref.listen<DueReviewState>(dueReviewNotifierProvider, (prev, next) {
+      if (next is DueReviewLoaded && !_done && _totalCount == 0) {
+        _totalCount = next.items.length;
+      }
+    });
 
     return SizedBox.expand(
       child: ColoredBox(
