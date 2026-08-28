@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../theme/app_theme.dart';
@@ -68,7 +68,7 @@ class AppSidebarItem extends StatelessWidget {
           margin: const EdgeInsets.symmetric(
               horizontal: AppSpacing.sm, vertical: 2),
           decoration: BoxDecoration(
-            color: active ? scheme.surfaceActive : Colors.transparent,
+            color: active ? scheme.surfaceActive : CupertinoColors.transparent,
             borderRadius: BorderRadius.circular(AppRadius.chip),
           ),
           child: collapsed

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/domain/models/models.dart';
@@ -60,7 +60,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   void _navigateToPractice(TaskModel task) {
     Navigator.of(context).push(
-      MaterialPageRoute(
+      CupertinoPageRoute(
         builder: (_) => PracticeScreen(
           task: task,
           onDone: () {

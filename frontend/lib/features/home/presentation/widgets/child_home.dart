@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -35,84 +35,91 @@ class ChildHome extends ConsumerWidget {
         reviewState is DueReviewLoaded ? reviewState.items.length : 0;
     final app = AppTheme.colorsOf(context);
 
-    return RefreshIndicator(
-      onRefresh: () async {
-        await ref.read(todayTasksNotifierProvider.notifier).load();
-        await ref.read(dueReviewNotifierProvider.notifier).load();
-      },
-      child: ListView(
-        padding: const EdgeInsets.only(bottom: AppSpacing.xl4),
-        children: [
-          const SizedBox(height: AppSpacing.md),
-          _ReviewBanner(
-            dueCount: dueCount,
-            onReview: onNavigateToReview,
-            onWrong: onNavigateToWrongQuestions,
-          ),
-          PopIn(
-            duration: const Duration(milliseconds: 420),
-            child: _TutorBanner(onTutor: onNavigateToTutor),
-          ),
-          const SectionTitle('今日任务'),
-          ...switch (state) {
-            TodayTasksInitial() || TodayTasksLoading() =>
-              const [AppLoading.skeletonInline(skeletonLines: 2)],
-            TodayTasksError() => [
-                Padding(
-                  padding: const EdgeInsets.all(AppSpacing.lg),
-                  child: AppError(
-                    message: state.message,
-                    onRetry: () =>
-                        ref.read(todayTasksNotifierProvider.notifier).load(),
-                  ),
-                ),
-              ],
-            TodayTasksLoaded() => state.tasks.isEmpty
-                ? [
+    return CustomScrollView(
+      slivers: [
+        CupertinoSliverRefreshControl(
+          onRefresh: () async {
+            await ref.read(todayTasksNotifierProvider.notifier).load();
+            await ref.read(dueReviewNotifierProvider.notifier).load();
+          },
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.only(bottom: AppSpacing.xl4),
+          sliver: SliverList(
+            delegate: SliverChildListDelegate([
+              const SizedBox(height: AppSpacing.md),
+              _ReviewBanner(
+                dueCount: dueCount,
+                onReview: onNavigateToReview,
+                onWrong: onNavigateToWrongQuestions,
+              ),
+              PopIn(
+                duration: const Duration(milliseconds: 420),
+                child: _TutorBanner(onTutor: onNavigateToTutor),
+              ),
+              const SectionTitle('今日任务'),
+              ...switch (state) {
+                TodayTasksInitial() || TodayTasksLoading() =>
+                  const [AppLoading.skeletonInline(skeletonLines: 2)],
+                TodayTasksError() => [
                     Padding(
-                      padding: const EdgeInsets.only(
-                          top: AppSpacing.xl5,
-                          left: AppSpacing.xl2,
-                          right: AppSpacing.xl2),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 88,
-                            height: 88,
-                            decoration: BoxDecoration(
-                              color: app.tertiaryContainer,
-                              borderRadius: BorderRadius.circular(28),
-                            ),
-                            alignment: Alignment.center,
-                            child: Icon(LucideIcons.sun,
-                                size: 44, color: app.onTertiaryContainer),
-                          ),
-                          const SizedBox(height: AppSpacing.xl2),
-                          Text('今天还没有任务哦',
-                              textAlign: TextAlign.center,
-                              style: AppTheme.textOf(context).titleMedium),
-                          const SizedBox(height: AppSpacing.sm),
-                          Text('等爸爸妈妈布置吧～',
-                              textAlign: TextAlign.center,
-                              style: AppTheme.textOf(context).bodyMedium),
-                        ],
+                      padding: const EdgeInsets.all(AppSpacing.lg),
+                      child: AppError(
+                        message: state.message,
+                        onRetry: () =>
+                            ref.read(todayTasksNotifierProvider.notifier).load(),
                       ),
                     ),
-                  ]
-                : state.tasks
-                    .map((t) => Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: AppSpacing.lg, vertical: AppSpacing.xs),
-                          child: _TaskCard(
-                            task: t,
-                            onStart: () => onNavigateToPractice(t),
+                  ],
+                TodayTasksLoaded() => state.tasks.isEmpty
+                    ? [
+                        Padding(
+                          padding: const EdgeInsets.only(
+                              top: AppSpacing.xl5,
+                              left: AppSpacing.xl2,
+                              right: AppSpacing.xl2),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 88,
+                                height: 88,
+                                decoration: BoxDecoration(
+                                  color: app.tertiaryContainer,
+                                  borderRadius: BorderRadius.circular(28),
+                                ),
+                                alignment: Alignment.center,
+                                child: Icon(LucideIcons.sun,
+                                    size: 44, color: app.onTertiaryContainer),
+                              ),
+                              const SizedBox(height: AppSpacing.xl2),
+                              Text('今天还没有任务哦',
+                                  textAlign: TextAlign.center,
+                                  style: AppTheme.textOf(context).titleMedium),
+                              const SizedBox(height: AppSpacing.sm),
+                              Text('等爸爸妈妈布置吧～',
+                                  textAlign: TextAlign.center,
+                                  style: AppTheme.textOf(context).bodyMedium),
+                            ],
                           ),
-                        ))
-                    .toList(),
-          },
-        ],
-      ),
+                        ),
+                      ]
+                    : state.tasks
+                        .map((t) => Padding(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: AppSpacing.lg,
+                                  vertical: AppSpacing.xs),
+                              child: _TaskCard(
+                                task: t,
+                                onStart: () => onNavigateToPractice(t),
+                              ),
+                            ))
+                        .toList(),
+              },
+            ]),
+          ),
+        ),
+      ],
     );
   }
 }

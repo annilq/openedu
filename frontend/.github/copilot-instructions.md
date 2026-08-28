@@ -1,36 +1,19 @@
 # Copilot Instructions — 娃娃学习 (kids_learn)
 
-本项目为「娃娃日常学习 App」，Flutter + Riverpod，**平板优先**。
+> **本文件已改为指针。** 项目的设计规范以以下事实源为准，请勿在此维护重复的设计描述：
+>
+> - 设计系统（令牌 / 字号 / 动效 / 配色）：[`../.impeccable.md`](../.impeccable.md)
+> - 设计系统术语与错误码：[`../CONTEXT.md`](../CONTEXT.md)
+> - 单文件行数门禁：[`../CODE_CONVENTIONS.md`](../CODE_CONVENTIONS.md)
+> - 架构决策（ADR-0002 中性灰白 + 桌面壳、ADR-0003 Linear 化重设计）：[`../docs/adr/0002-neutral-default-theme-and-desktop-shell.md`](../docs/adr/0002-neutral-default-theme-and-desktop-shell.md) 与 [`../docs/adr/0003-linear-refinement-delete-warmgreen-dense-type.md`](../docs/adr/0003-linear-refinement-delete-warmgreen-dense-type.md)
+> - AI 代理总指引（命令 / 包管理器 / 分层）：仓库根 [`../../../AGENTS.md`](../../../AGENTS.md) 与 [`../../../docs/agents/`](../../../docs/agents/)
 
-## Design Context
+## 速览（当前生效的设计方向，ADR-0003）
 
-### Users
-- **孩子（核心用户）**：小学低年级（1-3 年级）儿童，回家后完成家长布置的每日任务（数学/语文等）。使用场景为平板娱乐间隙、专注力有限、易疲劳。需要大点击区、大字（正文 ≥ 20sp）、明确的反馈。
-- **家长**：创建/管理娃娃账号、生成任务、查看进度（正确率、连续打卡）。需要清晰的业务看板与信心感，不希望界面显得「玩具化」。
+- 主要用户是**家长**（专业工作台），家长专业体验 > 低龄友好。
+- **中性 + 靛蓝**设计语言：微暖白 surface、纯白卡片、1px 描边分层、**无阴影**；单一靛蓝强调色 `#5E6AD2`（暗 `#7B82EA`）；CTA 近黑底白字。
+- **密排 15sp** 统一字号（Inter 西文 / 数字 + HarmonyOS Sans SC CJK 回退）。
+- 桌面左右分栏壳（`DesktopShell` + `AppSidebar`），底部 Tab 已移除。
+- 所有间距 / 圆角 / 字号走令牌（`AppSpacing` / `AppRadius` / `AppText`），禁止 `Colors.*` 硬编码；UI 组件统一用 `app_theme.dart` 的 `App*` 语义组件；表现层基于 `cupertino_ui`。
 
-### Brand Personality
-- **关键词：温暖、可靠、可亲近**（warm / trustworthy / approachable）。
-- 情感目标：孩子感到「舒适被保护」而非「被命令」；家长感到「专业可信」而非「花哨」。
-
-### Aesthetic Direction
-- **护眼暖色主题（明快儿童化配色）+ 轻快愉悦基调**：护眼暖白亮色背景 + 明快植物绿主强调色（`#43A047`，提亮饱和），搭配暖橙（`#F97316`）与天蓝（`#38BDF8`）次强调色；并维护一套暖调暗色主题供夜间使用。色彩语义化，不发生硬编码打散主题。
-- **同时支持亮色 + 暗色模式**：暗色不直接用纯黑，采用暖调深炭，保留提亮后的植物绿/暖橙/天蓝强调色，确保晚间护眼。
-- **文字视觉层级**：正文 ≥ 20sp、选项 ≥ 22sp、辅助说明 ≥ 16sp，行高 1.5+ 防阅读疲劳；HarmonyOS Sans SC / Noto Sans SC。
-- **质感**：卡片用 1px 描边 + 暖色填充（无重阴影），大圆角（卡片 20 / Banner 24 / 按钮 14）；`AppTags / AppBadge / AvatarSquircle` 语义组件统一表达。
-- **轻快愉悦的手势**：保留护眼低饱和，但加入圆润插画、轻微弹性反馈与成就庆祝动画，让反馈更亲切（配合其情绪目标）。
-- **动画**：软缓动 200-300ms；加载用骨架屏而非纯 spinner；交互用 spring/弹性而非生硬直切。
-- **反参考（anti-reference）**：
-  - 不用俗套 AI 紫蓝渐变
-  - 不滥用高饱和荧光色（植物绿/暖橙/天蓝最多三种，且各司其职）
-  - 不用重阴影的纯白高对比质感
-  - 不出现低龄化但刺眼的纯色块堆砌
-  - 暗色模式下避免白字配纯黑底的生硬高对比
-
-### Design Principles
-1. **低龄友好 > 视觉炫技**：可读性、点击面积、反馈明确性优先于装饰。
-2. **轻快但克制**：愉悦的圆润插画与弹性反馈服务于情绪目标，配色明快但有度（一主两辅），不炫技不荧光。
-3. **一主两辅，克制配色**：颜色语义化（primary 植物绿主操作 / secondary 暖橙·AI 暖区 / tertiary 天蓝·积极反馈 / error 温柔珊瑚），最多三种强调色且各有用途。
-4. **亮暗双主题，护眼一致**：亮色护眼暖白、暗色暖调深炭，均走令牌，避免纯黑。
-5. **一致性来自令牌而非临时值**：所有间距/圆角/字号走 `AppSpacing / AppRadius / textTheme`，禁止 `Colors.*` 硬编码。
-6. **平板优先、护眼为先**：大圆角、暖白背景、明快但不刺眼，正文 ≥ 20sp。
-7. **反馈即安全感**：加载（骨架屏）、空态（引导）、错误（温柔提示 + 重试）都要有完整的、符合语气的状态。
+> 旧版「暖绿 `#43A047` / ≥20sp / 低龄友好 / 底部 Tab」描述已废弃，请勿参考。

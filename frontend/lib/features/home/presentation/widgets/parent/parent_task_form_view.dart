@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 // LucideIcons 由 shadcn_ui 再导出。
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -24,32 +24,54 @@ class ParentTaskFormView extends ConsumerStatefulWidget {
   ConsumerState<ParentTaskFormView> createState() => _ParentTaskFormViewState();
 }
 
+/// 内置学科选项（覆盖小学至初中 K9 全学科）。
+///
+/// 任务建接口（[taskGenNotifierProvider]）对 subject 仅原样存储、不做白名单校验，
+/// 故此处可放开到全学科；tutor 答疑学科白名单受后端 `SUBJECTS` 约束，不在此列。
+const List<String> _kSubjects = <String>[
+  '语文',
+  '数学',
+  '英语',
+  '道德与法治',
+  '科学',
+  '历史',
+  '地理',
+  '物理',
+  '化学',
+  '生物',
+  '音乐',
+  '美术',
+  '体育与健康',
+  '信息技术',
+];
+
 /// 一行学科规格（学科 + 知识点 + 题型 + 难度 + 题量 + 年级）。
 class _SpecRow {
-  final TextEditingController subject;
+  String subject;
   final TextEditingController knowledgePoint;
   final TextEditingController count;
   String qtype = 'calc';
-  int grade = 2;
+  // null = 继承当前选中娃娃的年级；非 null = 家长手动覆盖。
+  int? grade;
 
   _SpecRow({
     String? subject,
     String? knowledgePoint,
     String? count,
-  })  : subject = TextEditingController(text: subject ?? '数学'),
+  })  : subject = subject ?? '数学',
         knowledgePoint =
             TextEditingController(text: knowledgePoint ?? '两位数加减法'),
         count = TextEditingController(text: count ?? '5');
 
   void dispose() {
-    subject.dispose();
     knowledgePoint.dispose();
     count.dispose();
   }
 
-  TaskSpecModel toSpec() => TaskSpecModel(
-        subject: subject.text,
-        grade: grade,
+  TaskSpecModel toSpec(int defaultGrade) => TaskSpecModel(
+        subject: subject,
+        // 未手动指定时继承当前选中娃娃年级；娃娃年级维持家长手动维护（ADR-0005 修订）。
+        grade: grade ?? defaultGrade,
         knowledgePoint: knowledgePoint.text,
         qtype: qtype,
         count: int.tryParse(count.text) ?? 1,
@@ -107,7 +129,7 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
       AppToast.show(context, '请先在侧栏选择娃娃');
       return;
     }
-    final specs = _rows.map((r) => r.toSpec()).toList();
+    final specs = _rows.map((r) => r.toSpec(selected.grade)).toList();
     if (specs.any((s) => s.subject.isEmpty || s.knowledgePoint.isEmpty)) {
       AppToast.show(context, '学科与知识点不能为空');
       return;
@@ -187,12 +209,12 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
                             ),
                           ),
                           const SizedBox(width: AppSpacing.md),
-                          TextButton(
+                          CupertinoButton(
                             onPressed: _evenSplit,
                             child: const Text('一键均分'),
                           ),
                           const SizedBox(width: AppSpacing.sm),
-                          TextButton(
+                          CupertinoButton(
                             onPressed: _addRow,
                             child: const Text('+ 加学科'),
                           ),
@@ -247,9 +269,9 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
               child: Text('按兴趣出题',
                   style: text.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
             ),
-            Switch(
+            ShadSwitch(
               value: _useInterestMode,
-              activeThumbColor: app.primary,
+              checkedTrackColor: app.primary,
               onChanged: (v) => setState(() {
                 _useInterestMode = v;
                 if (!v) _focusThemes.clear();
@@ -308,14 +330,22 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
     );
   }
 
-  Widget _buildRow(int i) => Padding(
+  Widget _buildRow(int i) {
+    final selected = ref.watch(selectedChildProvider);
+    return Padding(
         padding: const EdgeInsets.only(bottom: AppSpacing.md),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
               flex: 2,
-              child: AppTextField(label: '学科', controller: _rows[i].subject),
+              child: AppPickerField<String>(
+                label: '学科',
+                values: _kSubjects,
+                labels: _kSubjects,
+                value: _rows[i].subject,
+                onChanged: (v) => setState(() => _rows[i].subject = v),
+              ),
             ),
             const SizedBox(width: AppSpacing.md),
             Expanded(
@@ -350,16 +380,17 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
                 label: '年级',
                 values: List.generate(9, (j) => j + 1),
                 labels: List.generate(9, (j) => '${j + 1}年级'),
-                value: _rows[i].grade,
+                // 未手动指定时显示当前选中娃娃年级（与生成逻辑一致）。
+                value: _rows[i].grade ?? selected?.grade ?? 2,
                 onChanged: (v) => setState(() => _rows[i].grade = v),
               ),
             ),
             if (_rows.length > 1) ...[
               const SizedBox(width: AppSpacing.sm),
-              IconButton(
-                icon: const Icon(Icons.close, size: 20),
+              CupertinoButton(
+                padding: EdgeInsets.zero,
                 onPressed: () => _removeRow(i),
-                tooltip: '删除该行',
+                child: const Icon(LucideIcons.x, size: 20),
               ),
             ],
           ],
@@ -367,6 +398,8 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
       );
 }
 
+
+}
 
 /// 兴趣出题主题芯片（WF-4）：点亮即把该主题加入 focus 轮询列表。
 /// 视觉风格对齐 [interest_picker.dart] 中的 [_LeafToggle]。

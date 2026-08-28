@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -43,26 +43,21 @@ class _ParentTaskReviewScreenState
   Widget build(BuildContext context) {
     final state = ref.watch(parentTaskReviewProvider(widget.task));
     final app = AppTheme.colorsOf(context);
-    return Scaffold(
+    return CupertinoPageScaffold(
       backgroundColor: app.surfaceContainerLowest,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        surfaceTintColor: Colors.transparent,
-        leading: IconButton(
+      navigationBar: CupertinoNavigationBar(
+        backgroundColor: app.surfaceContainerLowest,
+        leading: CupertinoButton(
+          padding: EdgeInsets.zero,
           onPressed: widget.onBackToHome,
-          tooltip: '返回首页',
-          icon: const Icon(LucideIcons.arrowLeft),
+          child: const Icon(LucideIcons.arrowLeft, size: 22),
         ),
-        title: const Text('草稿审核'),
-        actions: [
-          if (state is ReviewLoaded)
-            Padding(
-              padding: const EdgeInsets.only(right: AppSpacing.lg),
-              child: _buildActionBar(state.task, app),
-            ),
-        ],
+        middle: const Text('草稿审核'),
+        trailing: state is ReviewLoaded
+            ? _buildActionBar(state.task, app)
+            : null,
       ),
-      body: switch (state) {
+      child: switch (state) {
         ReviewLoading() => const AppLoading(),
         ReviewError(:final message) =>
           AppError(message: message, onRetry: () {
@@ -494,7 +489,7 @@ class _QuestionCardState extends ConsumerState<_QuestionCard> {
         border: Border.all(color: app.outlineVariant.withValues(alpha: 0.6)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
+            color: CupertinoColors.black.withValues(alpha: 0.03),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -684,12 +679,12 @@ class _QuestionCardState extends ConsumerState<_QuestionCard> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _label('题干（R-Q4：仅此处/选项/答案/解析允许修改）'),
-        TextField(
+        ShadInput(
           controller: _stemCtrl,
           maxLines: null,
           minLines: 2,
           style: AppTheme.textOf(context).bodyLarge,
-          decoration: _inputDecoration(app),
+          decoration: _fieldDecoration(app),
         ),
         if (q.options != null) ...[
           const SizedBox(height: AppSpacing.lg),
@@ -710,16 +705,15 @@ class _QuestionCardState extends ConsumerState<_QuestionCard> {
                   ),
                   const SizedBox(width: AppSpacing.sm),
                   Expanded(
-                    child: TextField(
+                    child: ShadInput(
                       controller: _optionCtrls[i],
                       style: AppTheme.textOf(context).bodyMedium,
-                      decoration: _inputDecoration(app),
+                      decoration: _fieldDecoration(app),
                     ),
                   ),
                   const SizedBox(width: AppSpacing.xs),
-                  IconButton(
-                    iconSize: 18,
-                    tooltip: '删除此选项',
+                  CupertinoButton(
+                    padding: EdgeInsets.zero,
                     onPressed: _optionCtrls.length <= 2
                         ? null
                         : () {
@@ -728,7 +722,8 @@ class _QuestionCardState extends ConsumerState<_QuestionCard> {
                               _optionCtrls.removeAt(i);
                             });
                           },
-                    icon: Icon(LucideIcons.minus,
+                    child: Icon(LucideIcons.minus,
+                        size: 18,
                         color: _optionCtrls.length <= 2
                             ? app.outline
                             : app.onSurfaceVariant),
@@ -754,19 +749,19 @@ class _QuestionCardState extends ConsumerState<_QuestionCard> {
         ],
         const SizedBox(height: AppSpacing.lg),
         _label('参考答案'),
-        TextField(
+        ShadInput(
           controller: _answerCtrl,
           style: AppTheme.textOf(context).bodyLarge,
-          decoration: _inputDecoration(app),
+          decoration: _fieldDecoration(app),
         ),
         const SizedBox(height: AppSpacing.lg),
         _label('解析'),
-        TextField(
+        ShadInput(
           controller: _explanationCtrl,
           minLines: 2,
           maxLines: null,
           style: AppTheme.textOf(context).bodyMedium,
-          decoration: _inputDecoration(app),
+          decoration: _fieldDecoration(app),
         ),
         const SizedBox(height: AppSpacing.md),
         Row(
@@ -820,22 +815,17 @@ class _QuestionCardState extends ConsumerState<_QuestionCard> {
                 )),
       );
 
-  InputDecoration _inputDecoration(dynamic app) => InputDecoration(
-        filled: true,
-        fillColor: app.surfaceContainerLow,
-        isDense: true,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.md,
-          vertical: AppSpacing.md,
+  ShadDecoration _fieldDecoration(dynamic app) => ShadDecoration(
+        color: app.surfaceContainerLow,
+        border: ShadBorder.all(
+          color: app.outlineVariant.withValues(alpha: 0.8),
+          width: 1,
+          radius: BorderRadius.circular(AppRadius.bubble),
         ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppRadius.bubble),
-          borderSide: BorderSide(
-              color: app.outlineVariant.withValues(alpha: 0.8), width: 1),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppRadius.bubble),
-          borderSide: BorderSide(color: app.primary, width: 1.2),
+        focusedBorder: ShadBorder.all(
+          color: app.primary,
+          width: 1.2,
+          radius: BorderRadius.circular(AppRadius.bubble),
         ),
       );
 

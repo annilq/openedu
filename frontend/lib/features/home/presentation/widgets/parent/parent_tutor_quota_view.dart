@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -46,7 +46,7 @@ class ParentTutorQuotaView extends ConsumerWidget {
               SectionTitle('AI 使用管控',
                   trailing: ShadButton.ghost(
                     onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
+                      CupertinoPageRoute<void>(
                         builder: (_) => TutorQuotaScreen(
                           childId: selected.id,
                           childName: childName,

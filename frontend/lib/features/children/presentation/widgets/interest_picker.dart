@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
 // LucideIcons 由 shadcn_ui 再导出。
 import 'package:shadcn_ui/shadcn_ui.dart';
 

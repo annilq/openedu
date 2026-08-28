@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -116,7 +116,7 @@ class _ParentChildSelectorState extends ConsumerState<ParentChildSelector> {
         padding: const EdgeInsets.symmetric(
             horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
         decoration: BoxDecoration(
-          color: _triggerHovered ? scheme.surfaceHover : Colors.transparent,
+          color: _triggerHovered ? scheme.surfaceHover : CupertinoColors.transparent,
           borderRadius: BorderRadius.circular(AppRadius.button),
         ),
         child: Row(
@@ -250,7 +250,7 @@ class _ChildOption extends StatelessWidget {
               horizontal: AppSpacing.md, vertical: AppSpacing.sm),
           margin: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
           decoration: BoxDecoration(
-            color: active ? scheme.surfaceActive : Colors.transparent,
+            color: active ? scheme.surfaceActive : CupertinoColors.transparent,
             borderRadius: BorderRadius.circular(AppRadius.chip),
           ),
           child: Row(
