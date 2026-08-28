@@ -3,7 +3,7 @@ from collections.abc import Generator
 from typing import Annotated
 
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, status
 from fastapi.security import OAuth2PasswordBearer
 from jwt.exceptions import InvalidTokenError
 from pydantic import ValidationError
@@ -12,6 +12,7 @@ from sqlmodel import Session
 from app.core import security
 from app.core.config import settings
 from app.core.db import engine
+from app.core.errors import AppErrorException, ErrCode
 from app.models import TokenPayload, User
 
 reusable_oauth2 = OAuth2PasswordBearer(
@@ -30,8 +31,8 @@ TokenDep = Annotated[str, Depends(reusable_oauth2)]
 
 def get_current_user(session: SessionDep, token: TokenDep) -> User:
     if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
+        raise AppErrorException(
+            ErrCode.UNAUTHORIZED, "未登录或登录已过期"
         )
     try:
         payload = jwt.decode(
@@ -39,17 +40,20 @@ def get_current_user(session: SessionDep, token: TokenDep) -> User:
         )
         token_data = TokenPayload(**payload)
     except (InvalidTokenError, ValidationError):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Could not validate credentials",
+        raise AppErrorException(
+            ErrCode.AUTH_INVALID_TOKEN, "凭证校验失败，请重新登录"
         )
     if token_data.sub is None:
-        raise HTTPException(status_code=403, detail="Invalid token")
+        raise AppErrorException(
+            ErrCode.AUTH_INVALID_TOKEN, "Token 缺少 sub 字段"
+        )
     user = session.get(User, uuid.UUID(token_data.sub))
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise AppErrorException(ErrCode.NOT_FOUND, "用户不存在")
     if not user.is_active:
-        raise HTTPException(status_code=400, detail="Inactive user")
+        raise AppErrorException(
+            ErrCode.AUTH_INACTIVE_USER, "账号已停用，请联系家长"
+        )
     return user
 
 
@@ -58,7 +62,9 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 
 def require_parent(current_user: CurrentUser) -> User:
     if current_user.role != "parent":
-        raise HTTPException(status_code=403, detail="Parent only")
+        raise AppErrorException(
+            ErrCode.AUTH_PARENT_ONLY, "该接口仅家长账号可用"
+        )
     return current_user
 
 
@@ -67,7 +73,9 @@ CurrentParent = Annotated[User, Depends(require_parent)]
 
 def require_child(current_user: CurrentUser) -> User:
     if current_user.role != "child":
-        raise HTTPException(status_code=403, detail="Child only")
+        raise AppErrorException(
+            ErrCode.AUTH_CHILD_ONLY, "该接口仅娃娃账号可用"
+        )
     return current_user
 
 

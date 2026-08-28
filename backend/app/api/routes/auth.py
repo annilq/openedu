@@ -1,9 +1,10 @@
 from datetime import timedelta
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
 from app.api.deps import CurrentUser, SessionDep
 from app.core.config import settings
+from app.core.errors import AppErrorException, ErrCode
 from app.core.security import create_access_token
 from app.crud import authenticate, create_user, get_user_by_username
 from app.models import LoginRequest, Token, UserCreate, UserPublic
@@ -22,7 +23,7 @@ def _token_for(user) -> Token:
 @router.post("/register", response_model=Token)
 def register(*, session: SessionDep, user_in: UserCreate) -> Token:
     if get_user_by_username(session=session, username=user_in.username):
-        raise HTTPException(status_code=400, detail="Username already registered")
+        raise AppErrorException(ErrCode.AUTH_USERNAME_TAKEN, "用户名已注册")
     user = create_user(session=session, user_create=user_in, role="parent")
     return _token_for(user)
 
@@ -33,7 +34,9 @@ def login(*, session: SessionDep, credentials: LoginRequest) -> Token:
         session=session, username=credentials.username, password=credentials.password
     )
     if not user:
-        raise HTTPException(status_code=401, detail="Incorrect username or password")
+        raise AppErrorException(
+            ErrCode.AUTH_BAD_CREDENTIALS, "账号或密码错误"
+        )
     return _token_for(user)
 
 

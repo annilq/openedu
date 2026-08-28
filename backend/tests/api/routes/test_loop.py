@@ -27,59 +27,80 @@ def test_full_closed_loop(client):
     child = _create_child(client, ptoken)
     cid = child["id"]
 
-    # 3) 家长出题（含答案）
+    # 3) 家长多科一卷批量生成（draft 态，含答案，ADR-0004 D4）
     gen = client.post(
-        "/api/v1/tasks",
+        "/api/v1/tasks/batch-generate",
         headers=auth_headers(ptoken),
         json={
-            "title": "二年级数学口算",
-            "subject": "数学",
-            "grade": 2,
-            "knowledge_point": "加法",
-            "qtype": "calc",
-            "difficulty": "easy",
-            "count": 2,
+            "title": "二年级混合卷",
             "child_id": cid,
+            "specs": [
+                {
+                    "subject": "数学",
+                    "grade": 2,
+                    "knowledge_point": "加法",
+                    "qtype": "calc",
+                    "difficulty": "easy",
+                    "count": 2,
+                },
+            ],
         },
     )
     assert gen.status_code == 201, gen.text
     task = gen.json()
+    assert task["status"] == "draft"
     assert len(task["questions"]) == 2
-    # 家长端能看到答案
+    # 家长端能看到答案（审阅质量）
     assert task["questions"][0]["answer"] is not None
     tid = task["id"]
-    qid, qanswer = task["questions"][0]["id"], task["questions"][0]["answer"]
+    # 4) 家长确认成卷 draft → ready（ADR-0004 D7）
+    cf = client.post(f"/api/v1/tasks/{tid}/confirm", headers=auth_headers(ptoken))
+    assert cf.status_code == 200, cf.text
+    assert cf.json()["status"] == "ready"
+    # question_id = 源 Question.id 在 confirm promote 后才落盘
+    confirmed = cf.json()
+    q0_question_id = confirmed["questions"][0]["question_id"]
+    q0_answer = confirmed["questions"][0]["answer"]
+    q1_question_id = confirmed["questions"][1]["question_id"]
 
-    # 4) 娃娃登录
+    # 5) 家长派发 ready → assigned（绑 child_id，ADR-0004 D7）
+    ag = client.post(
+        f"/api/v1/tasks/{tid}/assign",
+        headers=auth_headers(ptoken),
+        params={"child_id": cid},
+    )
+    assert ag.status_code == 200, ag.text
+    assert ag.json()["status"] == "assigned"
+
+    # 6) 娃娃登录
     lr = login(client, "kid1", "kid123456")
     assert lr.status_code == 200
     ctoken = lr.json()["access_token"]
 
-    # 5) 今日任务：娃娃端看不到答案
+    # 7) 今日任务：娃娃端看不到答案
     today = client.get("/api/v1/tasks/today", headers=auth_headers(ctoken))
     assert today.status_code == 200
     assert today.json()[0]["questions"][0]["answer"] is None
 
-    # 6) 作答：第一题答对，第二题答错
+    # 8) 作答：第一题答对，第二题答错（提交 question_id = 源 Question.id）
     a1 = client.post(
         f"/api/v1/tasks/{tid}/answer",
         headers=auth_headers(ctoken),
-        json={"question_id": qid, "student_answer": qanswer},
+        json={"question_id": q0_question_id, "student_answer": q0_answer},
     )
     assert a1.status_code == 200 and a1.json()["correct"] is True
-    q2 = task["questions"][1]
     a2 = client.post(
         f"/api/v1/tasks/{tid}/answer",
         headers=auth_headers(ctoken),
-        json={"question_id": q2["id"], "student_answer": "__wrong__"},
+        json={"question_id": q1_question_id, "student_answer": "__wrong__"},
     )
     assert a2.status_code == 200 and a2.json()["correct"] is False
 
-    # 7) 打卡
+    # 9) 打卡（assigned → done）
     ck = client.post(f"/api/v1/tasks/{tid}/checkin", headers=auth_headers(ctoken))
     assert ck.status_code == 200 and ck.json()["ok"] is True
 
-    # 8) 进度
+    # 10) 进度
     pr = client.get(
         f"/api/v1/tasks/children/{cid}/progress", headers=auth_headers(ptoken)
     )

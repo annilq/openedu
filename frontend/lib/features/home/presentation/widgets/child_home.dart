@@ -277,16 +277,28 @@ class _TaskCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: AppSpacing.md),
-          Wrap(
-            spacing: AppSpacing.sm,
-            runSpacing: AppSpacing.sm,
-            children: [
-              AppTags.normal(task.subject),
-              AppTags.normal('${task.grade}年级'),
-              AppTags.info(task.knowledgePoint),
-              AppTags.normal('${task.questions.length}题'),
-            ],
-          ),
+          Builder(builder: (_) {
+            // ADR-0004：Task 学科下沉到题，按题集汇总显示。
+            final subjects =
+                task.questions.map((q) => q.subject).where((s) => s.isNotEmpty).toSet().toList();
+            final firstQ =
+                task.questions.isNotEmpty ? task.questions.first : null;
+            final subjectLabel = subjects.length > 1
+                ? '多科（${subjects.length}）'
+                : (subjects.isNotEmpty ? subjects.first : '');
+            return Wrap(
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.sm,
+              children: [
+                if (subjectLabel.isNotEmpty) AppTags.normal(subjectLabel),
+                if (firstQ != null && firstQ.grade > 0)
+                  AppTags.normal('${firstQ.grade}年级'),
+                if (subjects.length == 1 && firstQ != null && firstQ.knowledgePoint.isNotEmpty)
+                  AppTags.info(firstQ.knowledgePoint),
+                AppTags.normal('${task.questions.length}题'),
+              ],
+            );
+          }),
           const SizedBox(height: AppSpacing.xl),
           if (!isDone)
             AppPrimaryButton(

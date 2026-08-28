@@ -29,22 +29,37 @@ def _create_child(client, ptoken, username="mk_kid"):
 
 
 def _make_task(client, ptoken, child_id, count=1):
+    # 批量生成 draft 草稿（ADR-0004 D4）
     r = client.post(
-        "/api/v1/tasks",
+        "/api/v1/tasks/batch-generate",
         headers=auth_headers(ptoken),
         json={
             "title": "掌握度测试",
-            "subject": "数学",
-            "grade": 2,
-            "knowledge_point": "加法",
-            "qtype": "calc",
-            "difficulty": "easy",
-            "count": count,
             "child_id": child_id,
+            "specs": [
+                {
+                    "subject": "数学",
+                    "grade": 2,
+                    "knowledge_point": "加法",
+                    "qtype": "calc",
+                    "difficulty": "easy",
+                    "count": count,
+                },
+            ],
         },
     )
     assert r.status_code == 201, r.text
-    return r.json()
+    tid = r.json()["id"]
+    # 确认成卷 draft → ready + 派发 ready → assigned（ADR-0004 D7）
+    cf = client.post(f"/api/v1/tasks/{tid}/confirm", headers=auth_headers(ptoken))
+    assert cf.status_code == 200, cf.text
+    ag = client.post(
+        f"/api/v1/tasks/{tid}/assign",
+        headers=auth_headers(ptoken),
+        params={"child_id": child_id},
+    )
+    assert ag.status_code == 200, ag.text
+    return ag.json()
 
 
 def _answer(client, ctoken, task_id, question_id, student_answer):
@@ -122,10 +137,10 @@ def test_wrong_review_graduate_flow(client):
     wrong_question = None
     for q in task["questions"]:
         res = _answer(
-            client, ctoken, task["id"], q["id"], "__wrong__" if wrong_question is None else q["answer"]
+            client, ctoken, task["id"], q["question_id"], "__wrong__" if wrong_question is None else q["answer"]
         )
         if not res["correct"]:
-            wrong_question = _load_wq(child["id"], q["id"])
+            wrong_question = _load_wq(child["id"], q["question_id"])
     assert wrong_question is not None
 
     # 答错后：正确率虽高，但活跃错题把分数封顶在 60（薄弱）
@@ -139,7 +154,7 @@ def test_wrong_review_graduate_flow(client):
     assert kp["level"] == "薄弱"
 
     # 复习答对一次：阶段推进 → 封顶提高 → 分数上升（AC-203）
-    wrong_q = next(q for q in task["questions"] if q["id"] == str(wrong_question.question_id))
+    wrong_q = next(q for q in task["questions"] if q["question_id"] == str(wrong_question.question_id))
     _force_due(str(wrong_question.id), stage=0)
     _review(client, ctoken, str(wrong_question.id), wrong_q["answer"])
     board = _get_mastery(client, ptoken, child["id"])
@@ -169,7 +184,7 @@ def test_mastery_forbidden_for_other_parent(client):
     # 给这个娃娃造一条作答记录，避免「无记录」歧义
     task = _make_task(client, ptoken, child["id"], count=1)
     lr = login(client, "mk2_kid", "kid123456")
-    _answer(client, lr.json()["access_token"], task["id"], task["questions"][0]["id"], "__wrong__")
+    _answer(client, lr.json()["access_token"], task["id"], task["questions"][0]["question_id"], "__wrong__")
 
     other = register_parent(client, username="mk2_other")
     other_token = other.json()["access_token"]

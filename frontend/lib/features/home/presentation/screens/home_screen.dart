@@ -14,6 +14,7 @@ import '../../../review/presentation/screens/wrong_questions_screen.dart';
 import '../../../tutor/presentation/screens/tutor_chat_screen.dart';
 import '../providers/home_notifier.dart';
 import '../providers/selected_child_provider.dart';
+import '../screens/parent_task_review_screen.dart';
 import '../widgets/child_home.dart';
 import '../widgets/child_sidebar.dart';
 import '../widgets/parent/parent_overview_view.dart';
@@ -21,6 +22,7 @@ import '../widgets/parent/parent_sidebar.dart';
 import '../widgets/parent/parent_task_form_view.dart';
 import '../widgets/parent/parent_tutor_logs_view.dart';
 import '../widgets/parent/parent_tutor_quota_view.dart';
+import '../widgets/parent/parent_question_bank_view.dart';
 import '../widgets/parent/parent_wrong_questions_view.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -37,6 +39,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   int _parentNavIndex = 0;
   int _childNavIndex = 0;
   bool _showProfile = false;
+
+  /// 草稿审核覆盖层：非 null 时覆盖侧栏导航展示 ParentTaskReviewScreen。
+  TaskModel? _reviewingTask;
 
   @override
   void initState() {
@@ -63,6 +68,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ),
       ),
     );
+  }
+
+  /// R3：生成草稿后跳审核页（非娃娃的「今日练习」）。
+  void _navigateToReview(TaskModel draft) {
+    setState(() => _reviewingTask = draft);
+  }
+
+  void _backToHomeFromReview() {
+    // 刷新家长侧概览（作废/派发后列表/进度可能变动）
+    final selected = ref.read(selectedChildProvider);
+    if (selected != null) {
+      ref.read(progressNotifierProvider.notifier).load(selected.id);
+      ref.read(masteryNotifierProvider.notifier).load(selected.id);
+      ref
+          .read(parentWrongQuestionsProvider.notifier)
+          .load(childId: selected.id);
+    }
+    setState(() => _reviewingTask = null);
   }
 
   void _onParentNavTap(int index) {
@@ -109,18 +132,39 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Widget _buildParentView() {
+    // 草稿审核覆盖层：优先级最高（即使切了侧栏也停在审核直到家长退出）
+    final reviewing = _reviewingTask;
+    if (reviewing != null) {
+      final selected = ref.watch(selectedChildProvider);
+      return ParentTaskReviewScreen(
+        task: reviewing,
+        defaultChildId: reviewing.childId ?? selected?.id,
+        onBackToHome: _backToHomeFromReview,
+        onNavigateToPractice: (task) {
+          // 派发完成后关审核层，并跳 PracticeScreen 预览
+          setState(() => _reviewingTask = null);
+          _navigateToPractice(task);
+        },
+      );
+    }
     if (_showProfile) {
       return ProfileScreen(user: widget.user, onLogout: widget.onLogout);
     }
     return switch (_parentNavIndex) {
       0 => const ParentOverviewView(),
-      1 => ParentTaskFormView(onNavigateToPractice: _navigateToPractice),
+      // 生成成功后不直接跳 PracticeScreen，改跳 ParentTaskReviewScreen
+      1 => ParentTaskFormView(
+          onNavigateToReview: _navigateToReview,
+        ),
       2 => const ParentWrongQuestionsView(),
       3 => const ParentTutorLogsView(),
       4 => const ParentTutorQuotaView(),
       5 => AddChildScreen(
           showBack: false,
           onCreated: _onChildCreated,
+        ),
+      6 => ParentQuestionBankView(
+          onNavigateToReview: _navigateToReview,
         ),
       _ => const SizedBox(),
     };
@@ -153,8 +197,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       return DesktopShell(
         sidebar: ParentSidebar(
           user: widget.user,
-          selectedIndex: _parentNavIndex,
-          onNavTap: _onParentNavTap,
+          selectedIndex: _reviewingTask != null ? 1 : _parentNavIndex,
+          onNavTap: (index) {
+            // 审核页内点击侧栏不直接切，先返回首页
+            if (_reviewingTask != null) {
+              setState(() => _reviewingTask = null);
+            }
+            _onParentNavTap(index);
+          },
           onProfileTap: _onProfileTap,
           onNavigateToAddChild: _onNavigateToAddChild,
         ),
@@ -173,3 +223,4 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 }
+

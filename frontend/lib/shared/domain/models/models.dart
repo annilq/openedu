@@ -42,78 +42,266 @@ class UserModel {
 }
 
 class QuestionModel {
+  /// 题目（娃娃端读 TaskQuestion 快照）。`id` = TaskQuestion.id，
+  /// `questionId` = 源 Question.id（作答提交与错题归集用，ADR-0004 D3）。
+  /// `answer` 在娃娃端恒为 null（防作弊）。
   final String id;
+  final String? questionId;
+  final String subject;
+  final int grade;
   final String stem;
   final List<String>? options;
   final String qtype;
   final String knowledgePoint;
   final String explanation;
-  final String? answer; // 娃娃端恒为 null（防作弊）
+  final String? answer;
+  final String difficulty;
+
+  /// 是否已加入题库（草稿审核用）：questionId != null。
+  bool get inQuestionBank => questionId != null;
 
   QuestionModel({
     required this.id,
+    this.questionId,
+    this.subject = '',
+    this.grade = 0,
     required this.stem,
     this.options,
     required this.qtype,
     required this.knowledgePoint,
     this.explanation = '',
     this.answer,
+    this.difficulty = 'medium',
   });
+
+  /// 草稿审核仅允许的编辑字段（R-Q4）。
+  Map<String, dynamic> editablePatch({
+    String? stem,
+    List<String>? options,
+    String? answer,
+    String? explanation,
+  }) {
+    final patch = <String, dynamic>{};
+    if (stem != null) patch['stem'] = stem;
+    if (options != null) patch['options'] = options;
+    if (answer != null) patch['answer'] = answer;
+    if (explanation != null) patch['explanation'] = explanation;
+    return patch;
+  }
+
+  QuestionModel copyWith({
+    String? id,
+    String? questionId,
+    String? subject,
+    int? grade,
+    String? stem,
+    List<String>? options,
+    String? qtype,
+    String? knowledgePoint,
+    String? explanation,
+    String? answer,
+    String? difficulty,
+  }) {
+    return QuestionModel(
+      id: id ?? this.id,
+      questionId: questionId ?? this.questionId,
+      subject: subject ?? this.subject,
+      grade: grade ?? this.grade,
+      stem: stem ?? this.stem,
+      options: options ?? this.options,
+      qtype: qtype ?? this.qtype,
+      knowledgePoint: knowledgePoint ?? this.knowledgePoint,
+      explanation: explanation ?? this.explanation,
+      answer: answer ?? this.answer,
+      difficulty: difficulty ?? this.difficulty,
+    );
+  }
 
   factory QuestionModel.fromJson(Map<String, dynamic> json) {
     return QuestionModel(
       id: json['id'] as String,
+      questionId: json['question_id'] as String?,
+      subject: json['subject'] as String? ?? '',
+      grade: json['grade'] as int? ?? 0,
       stem: json['stem'] as String,
       options: (json['options'] as List?)?.map((e) => e.toString()).toList(),
       qtype: json['qtype'] as String,
       knowledgePoint: json['knowledge_point'] as String,
       explanation: json['explanation'] as String? ?? '',
       answer: json['answer'] as String?,
+      difficulty: json['difficulty'] as String? ?? 'medium',
     );
   }
 }
 
-class TaskModel {
-  final String id;
-  final String title;
+/// 多学科一卷批量生成的一条规格（ADR-0004 D4）。
+class TaskSpecModel {
   final String subject;
   final int grade;
   final String knowledgePoint;
   final String qtype;
   final String difficulty;
   final int count;
-  final String status; // pending | done
-  final List<QuestionModel> questions;
 
-  TaskModel({
-    required this.id,
-    required this.title,
+  TaskSpecModel({
     required this.subject,
     required this.grade,
     required this.knowledgePoint,
     required this.qtype,
-    required this.difficulty,
+    this.difficulty = 'medium',
     required this.count,
-    required this.status,
-    required this.questions,
   });
 
-  factory TaskModel.fromJson(Map<String, dynamic> json) {
-    return TaskModel(
-      id: json['id'] as String,
-      title: json['title'] as String,
+  factory TaskSpecModel.fromJson(Map<String, dynamic> json) {
+    return TaskSpecModel(
       subject: json['subject'] as String,
       grade: json['grade'] as int,
       knowledgePoint: json['knowledge_point'] as String,
       qtype: json['qtype'] as String,
-      difficulty: json['difficulty'] as String,
+      difficulty: json['difficulty'] as String? ?? 'medium',
       count: json['count'] as int,
-      status: json['status'] as String,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'subject': subject,
+        'grade': grade,
+        'knowledge_point': knowledgePoint,
+        'qtype': qtype,
+        'difficulty': difficulty,
+        'count': count,
+      };
+}
+
+class TaskModel {
+  /// 出题派发容器（ADR-0004）。学科下沉到题，Task 仅存 title/status/questions。
+  /// status: draft | ready | assigned | done。
+  final String id;
+  final String title;
+  final String status;
+  final List<QuestionModel> questions;
+
+  /// 草稿原始规格，供整卷重生成（R-Q2=c）与审核页摘要展示。
+  final List<TaskSpecModel> specs;
+
+  /// 派发对象（创建时可选预先绑定，锁定→派发时强制绑定）。
+  final String? childId;
+
+  bool get isDraft => status == 'draft';
+  bool get isReady => status == 'ready';
+  bool get isAssigned => status == 'assigned';
+  bool get isDone => status == 'done';
+
+  /// 草稿审核：已入库数量（用于展示「X / 总数 已加入题库」）。
+  int get promotedCount =>
+      questions.where((q) => q.inQuestionBank).length;
+
+  TaskModel({
+    required this.id,
+    required this.title,
+    required this.status,
+    required this.questions,
+    this.specs = const [],
+    this.childId,
+  });
+
+  TaskModel copyWith({
+    String? id,
+    String? title,
+    String? status,
+    List<QuestionModel>? questions,
+    List<TaskSpecModel>? specs,
+    String? childId,
+  }) {
+    return TaskModel(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      status: status ?? this.status,
+      questions: questions ?? this.questions,
+      specs: specs ?? this.specs,
+      childId: childId ?? this.childId,
+    );
+  }
+
+  factory TaskModel.fromJson(Map<String, dynamic> json) {
+    final specList = (json['specs'] as List? ?? [])
+        .map((e) => TaskSpecModel.fromJson(e as Map<String, dynamic>))
+        .toList();
+    return TaskModel(
+      id: json['id'] as String,
+      title: json['title'] as String,
+      status: json['status'] as String? ?? 'draft',
+      childId: json['child_id'] as String?,
+      specs: specList,
       questions: (json['questions'] as List? ?? [])
           .map((e) => QuestionModel.fromJson(e as Map<String, dynamic>))
           .toList(),
     );
   }
+}
+
+// ───────── 题库复用闭环（GET /questions / POST /tasks/from-bank 等） ─────────
+class BankQuestionItem {
+  final String id;
+  final String subject;
+  final int grade;
+  final String stem;
+  final List<String>? options;
+  final String qtype;
+  final String knowledgePoint;
+  final String? difficulty;
+  final String? answer;
+  final String? explanation;
+  final int usageCount;
+
+  BankQuestionItem({
+    required this.id,
+    required this.subject,
+    required this.grade,
+    required this.stem,
+    this.options,
+    required this.qtype,
+    required this.knowledgePoint,
+    this.difficulty,
+    this.answer,
+    this.explanation,
+    this.usageCount = 0,
+  });
+
+  factory BankQuestionItem.fromJson(Map<String, dynamic> json) => BankQuestionItem(
+        id: json['id'] as String,
+        subject: json['subject'] as String? ?? '',
+        grade: json['grade'] as int? ?? 0,
+        stem: json['stem'] as String,
+        options: (json['options'] as List?)?.map((e) => e.toString()).toList(),
+        qtype: json['qtype'] as String,
+        knowledgePoint: json['knowledge_point'] as String,
+        difficulty: json['difficulty'] as String?,
+        answer: json['answer'] as String?,
+        explanation: json['explanation'] as String?,
+        usageCount: (json['usage_count'] as int?) ?? 0,
+      );
+}
+
+class BankListResp {
+  final List<BankQuestionItem> items;
+  final int total;
+  final int page;
+  final int pageSize;
+  BankListResp({
+    required this.items,
+    required this.total,
+    required this.page,
+    required this.pageSize,
+  });
+  factory BankListResp.fromJson(Map<String, dynamic> json) => BankListResp(
+        items: (json['items'] as List)
+            .map((e) => BankQuestionItem.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        total: json['total'] as int,
+        page: json['page'] as int,
+        pageSize: json['page_size'] as int,
+      );
 }
 
 class AnswerResultModel {

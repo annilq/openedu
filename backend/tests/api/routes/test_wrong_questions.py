@@ -22,22 +22,37 @@ def _create_child(client, ptoken, username="wq_kid"):
 
 
 def _make_task(client, ptoken, child_id, count=1):
+    # 批量生成 draft 草稿（ADR-0004 D4）
     r = client.post(
-        "/api/v1/tasks",
+        "/api/v1/tasks/batch-generate",
         headers=auth_headers(ptoken),
         json={
             "title": "错题测试",
-            "subject": "数学",
-            "grade": 2,
-            "knowledge_point": "加法",
-            "qtype": "calc",
-            "difficulty": "easy",
-            "count": count,
             "child_id": child_id,
+            "specs": [
+                {
+                    "subject": "数学",
+                    "grade": 2,
+                    "knowledge_point": "加法",
+                    "qtype": "calc",
+                    "difficulty": "easy",
+                    "count": count,
+                },
+            ],
         },
     )
     assert r.status_code == 201, r.text
-    return r.json()
+    tid = r.json()["id"]
+    # 确认成卷 draft → ready + 派发 ready → assigned（ADR-0004 D7）
+    cf = client.post(f"/api/v1/tasks/{tid}/confirm", headers=auth_headers(ptoken))
+    assert cf.status_code == 200, cf.text
+    ag = client.post(
+        f"/api/v1/tasks/{tid}/assign",
+        headers=auth_headers(ptoken),
+        params={"child_id": child_id},
+    )
+    assert ag.status_code == 200, ag.text
+    return ag.json()
 
 
 def _answer(client, ctoken, task_id, question_id, student_answer):
@@ -65,7 +80,7 @@ def test_correct_answer_not_collected(client):
     """正确作答不归集：答对后娃娃/家长的错题列表均为空。"""
     ptoken, _child, task, ctoken = _setup(client, "wq1_parent", "wq1_kid")
     q = task["questions"][0]
-    result = _answer(client, ctoken, task["id"], q["id"], q["answer"])
+    result = _answer(client, ctoken, task["id"], q["question_id"], q["answer"])
     assert result["correct"] is True
 
     mine = client.get("/api/v1/tasks/wrong-questions", headers=auth_headers(ctoken))
@@ -83,7 +98,7 @@ def test_wrong_answer_collected_with_full_fields(client):
     """答错归集：家长/娃娃都能查到；娃娃端不含答案（防作弊），家长端含答案供核查。"""
     ptoken, child, task, ctoken = _setup(client, "wq2_parent", "wq2_kid")
     q = task["questions"][0]
-    result = _answer(client, ctoken, task["id"], q["id"], "__wrong__")
+    result = _answer(client, ctoken, task["id"], q["question_id"], "__wrong__")
     assert result["correct"] is False
 
     mine = client.get("/api/v1/tasks/wrong-questions", headers=auth_headers(ctoken))
@@ -91,7 +106,7 @@ def test_wrong_answer_collected_with_full_fields(client):
     items = mine.json()
     assert len(items) == 1
     item = items[0]
-    assert item["question_id"] == q["id"]
+    assert item["question_id"] == q["question_id"]
     assert item["subject"] == "数学" and item["grade"] == 2
     assert item["stem"] == q["stem"]
     assert item["answer"] is None  # 娃娃端防作弊
@@ -105,7 +120,7 @@ def test_wrong_answer_collected_with_full_fields(client):
     )
     assert by_parent.status_code == 200
     assert len(by_parent.json()) == 1
-    assert by_parent.json()[0]["question_id"] == q["id"]
+    assert by_parent.json()[0]["question_id"] == q["question_id"]
     assert by_parent.json()[0]["answer"] == q["answer"]  # 家长端含答案
 
 
@@ -114,7 +129,7 @@ def test_repeat_wrong_not_duplicated(client):
     ptoken, child, task, ctoken = _setup(client, "wq3_parent", "wq3_kid")
     q = task["questions"][0]
     for _ in range(3):
-        _answer(client, ctoken, task["id"], q["id"], "__wrong__")
+        _answer(client, ctoken, task["id"], q["question_id"], "__wrong__")
 
     mine = client.get("/api/v1/tasks/wrong-questions", headers=auth_headers(ctoken))
     assert mine.status_code == 200
@@ -127,7 +142,7 @@ def test_repeat_wrong_not_duplicated(client):
 def test_wrong_questions_permission(client):
     """权限边界：娃娃不能查家长接口，家长不能查别人的娃娃。"""
     ptoken, _child, task, ctoken = _setup(client, "wq4_parent", "wq4_kid")
-    _answer(client, ctoken, task["id"], task["questions"][0]["id"], "__wrong__")
+    _answer(client, ctoken, task["id"], task["questions"][0]["question_id"], "__wrong__")
 
     # 娃娃调家长接口（CurrentParent）-> 403
     bad = client.get(

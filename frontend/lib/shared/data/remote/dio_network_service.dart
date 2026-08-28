@@ -7,7 +7,7 @@ import 'network_service.dart';
 
 /// Dio 网络服务实现。
 /// 拦截器 1: Token 注入 — 从 StorageService 取 JWT 放入 Authorization。
-/// 拦截器 2: 错误统一 — 非 2xx 转为 HttpException / UnauthorizedException。
+/// 拦截器 2: 错误统一 — 非 2xx 按 E-Q2 统一错误体解析，抛出带 code 的 HttpException。
 class DioNetworkService implements NetworkService {
   final StorageService _storage;
   late final Dio _dio;
@@ -41,15 +41,35 @@ class DioNetworkService implements NetworkService {
     if (statusCode == 401) {
       throw UnauthorizedException();
     }
-    final detail = _extractDetail(e.response);
-    throw HttpException(detail, statusCode: statusCode);
+    final parsed = _extractError(e.response);
+    throw HttpException(
+      parsed.message,
+      statusCode: statusCode,
+      code: parsed.code,
+    );
   }
 
-  String _extractDetail(Response? response) {
-    if (response?.data is Map) {
-      return response!.data['detail']?.toString() ?? '请求失败 (${response.statusCode})';
+  _ParsedError _extractError(Response? response) {
+    final data = response?.data;
+    final code = data is Map ? data['code']?.toString() : null;
+    final message = data is Map ? data['message']?.toString() : null;
+    if (code != null && message != null && message.isNotEmpty) {
+      return _ParsedError(code: code, message: message);
     }
-    return '请求失败 (${response?.statusCode})';
+    // 向后兼容老的 FastAPI / Starlette 默认格式
+    if (data is Map) {
+      final detail = data['detail'];
+      if (detail != null) {
+        final msg = detail is Map
+            ? (detail['msg']?.toString() ?? detail.toString())
+            : detail.toString();
+        return _ParsedError(code: code, message: msg);
+      }
+    }
+    return _ParsedError(
+      code: code,
+      message: '请求失败 (${response?.statusCode ?? '-1'})',
+    );
   }
 
   @override
@@ -92,4 +112,12 @@ class DioNetworkService implements NetworkService {
       _handleError(e);
     }
   }
+}
+
+/// 统一错误体解析结果。
+class _ParsedError {
+  final String? code;
+  final String message;
+
+  _ParsedError({required this.code, required this.message});
 }

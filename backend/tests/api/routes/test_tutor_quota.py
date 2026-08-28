@@ -154,7 +154,8 @@ def test_subject_scope_enforced(client):
 
     blocked = _ask(client, ctoken, subject="英语")
     assert blocked.status_code == 403
-    assert "数学" in blocked.json()["detail"]
+    # ErrorResp: {"code":..., "message":..., "status":..., "data":null}
+    assert "数学" in blocked.json()["message"]
 
     ok = _ask(client, ctoken, subject="数学")
     assert ok.status_code == 200
@@ -171,7 +172,7 @@ def test_per_child_ask_limit_overrides_global(client, monkeypatch):
     assert first.status_code == 200
     second = _ask(client, ctoken)
     assert second.status_code == 429
-    assert "上限" in second.json()["detail"]
+    assert "上限" in second.json()["message"]
 
 
 def test_ask_limit_zero_disables_tutor(client):
@@ -188,7 +189,7 @@ def test_time_limit_zero_disables_tutor(client):
     _set_quota(client, _ptoken, child["id"], {"daily_minutes_limit": 0})
     r = _ask(client, ctoken)
     assert r.status_code == 429
-    assert "时长" in r.json()["detail"]
+    assert "时长" in r.json()["message"]
 
 
 def test_usage_accumulates_and_reports(client, monkeypatch):

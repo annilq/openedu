@@ -10,28 +10,87 @@ import '../../providers/home_notifier.dart';
 import '../../providers/selected_child_provider.dart';
 import '../../../../review/presentation/providers/review_notifier.dart';
 
-/// 布置练习任务右栏：题型/学科/知识点/题数/年级表单 + 生成按钮。
+/// 布置练习任务右栏：多学科行表单 + 一键均分 + 生成（ADR-0004）。
+/// R3：生成成功后不直接跳娃娃练习页，回调 `onNavigateToReview` 进草稿审核页。
 class ParentTaskFormView extends ConsumerStatefulWidget {
-  final void Function(TaskModel task) onNavigateToPractice;
-  const ParentTaskFormView({super.key, required this.onNavigateToPractice});
+  final void Function(TaskModel task) onNavigateToReview;
+  const ParentTaskFormView({super.key, required this.onNavigateToReview});
 
   @override
   ConsumerState<ParentTaskFormView> createState() => _ParentTaskFormViewState();
 }
 
+/// 一行学科规格（学科 + 知识点 + 题型 + 难度 + 题量 + 年级）。
+class _SpecRow {
+  final TextEditingController subject;
+  final TextEditingController knowledgePoint;
+  final TextEditingController count;
+  String qtype = 'calc';
+  int grade = 2;
+
+  _SpecRow({
+    String? subject,
+    String? knowledgePoint,
+    String? count,
+  })  : subject = TextEditingController(text: subject ?? '数学'),
+        knowledgePoint =
+            TextEditingController(text: knowledgePoint ?? '两位数加减法'),
+        count = TextEditingController(text: count ?? '5');
+
+  void dispose() {
+    subject.dispose();
+    knowledgePoint.dispose();
+    count.dispose();
+  }
+
+  TaskSpecModel toSpec() => TaskSpecModel(
+        subject: subject.text,
+        grade: grade,
+        knowledgePoint: knowledgePoint.text,
+        qtype: qtype,
+        count: int.tryParse(count.text) ?? 1,
+      );
+}
+
 class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
-  final _subjectCtrl = TextEditingController(text: '数学');
-  final _kpCtrl = TextEditingController(text: '两位数加减法');
-  final _countCtrl = TextEditingController(text: '5');
-  String _selectedQtype = 'calc';
-  int _selectedGrade = 2;
+  final List<_SpecRow> _rows = [_SpecRow()];
+  final _totalCtrl = TextEditingController(text: '10');
+  final _titleCtrl = TextEditingController(text: '今日练习');
 
   @override
   void dispose() {
-    _subjectCtrl.dispose();
-    _kpCtrl.dispose();
-    _countCtrl.dispose();
+    for (final r in _rows) {
+      r.dispose();
+    }
+    _totalCtrl.dispose();
+    _titleCtrl.dispose();
     super.dispose();
+  }
+
+  void _addRow() => setState(() => _rows.add(_SpecRow(
+        subject: '语文',
+        knowledgePoint: '字词积累',
+      )));
+
+  void _removeRow(int i) => setState(() {
+        if (_rows.length > 1) {
+          _rows[i].dispose();
+          _rows.removeAt(i);
+        }
+      });
+
+  /// 一键均分（ADR-0004 D5）：总题数按当前行数等分，余数给前几行。
+  void _evenSplit() {
+    final total = int.tryParse(_totalCtrl.text) ?? 10;
+    final n = _rows.length;
+    if (n == 0) return;
+    final base = total ~/ n;
+    final extra = total % n;
+    setState(() {
+      for (var i = 0; i < n; i++) {
+        _rows[i].count.text = (base + (i < extra ? 1 : 0)).toString();
+      }
+    });
   }
 
   void _generate() {
@@ -40,13 +99,19 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
       AppToast.show(context, '请先在侧栏选择娃娃');
       return;
     }
+    final specs = _rows.map((r) => r.toSpec()).toList();
+    if (specs.any((s) => s.subject.isEmpty || s.knowledgePoint.isEmpty)) {
+      AppToast.show(context, '学科与知识点不能为空');
+      return;
+    }
+    if (specs.any((s) => s.count < 1)) {
+      AppToast.show(context, '每行题数至少为 1');
+      return;
+    }
     ref.read(taskGenNotifierProvider.notifier).generate(
           childId: selected.id,
-          subject: _subjectCtrl.text,
-          grade: _selectedGrade,
-          knowledgePoint: _kpCtrl.text,
-          qtype: _selectedQtype,
-          count: int.tryParse(_countCtrl.text) ?? 5,
+          title: _titleCtrl.text,
+          specs: specs,
         );
   }
 
@@ -55,20 +120,28 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
     final genState = ref.watch(taskGenNotifierProvider);
 
     ref.listen<TaskGenState>(taskGenNotifierProvider, (prev, next) {
-      if (next is TaskGenSuccess) {
-        AppToast.show(context, '已生成 ${next.task.count} 道题，可见答案用于核查');
-        ref.read(taskGenNotifierProvider.notifier).reset();
-        final selected = ref.read(selectedChildProvider);
-        if (selected != null) {
-          ref.read(progressNotifierProvider.notifier).load(selected.id);
-          ref.read(masteryNotifierProvider.notifier).load(selected.id);
-          ref.read(parentWrongQuestionsProvider.notifier).load(childId: selected.id);
+      // 推迟到下一帧：避免在 build 阶段同步弹 toast + 跳转，
+      // 导致 widget tree 在 shadcn_ui toast SlideEffect 动画中途销毁，
+      // padding 计算拿到 NaN 触发 isNonNegative 断言。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (next is TaskGenSuccess) {
+          AppToast.show(context, '已生成 ${next.task.questions.length} 道题');
+          ref.read(taskGenNotifierProvider.notifier).reset();
+          final selected = ref.read(selectedChildProvider);
+          if (selected != null) {
+            ref.read(progressNotifierProvider.notifier).load(selected.id);
+            ref.read(masteryNotifierProvider.notifier).load(selected.id);
+            ref
+                .read(parentWrongQuestionsProvider.notifier)
+                .load(childId: selected.id);
+          }
+          widget.onNavigateToReview(next.task);
         }
-        widget.onNavigateToPractice(next.task);
-      }
-      if (next is TaskGenError) {
-        AppToast.error(context, next.message);
-      }
+        if (next is TaskGenError) {
+          AppToast.error(context, next.message);
+        }
+      });
     });
 
     return SingleChildScrollView(
@@ -89,39 +162,31 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      AppPickerField<String>(
-                        label: '题型',
-                        values: const ['calc', 'fill', 'choice', 'open'],
-                        labels: const ['计算题', '填空题', '选择题', '应用题'],
-                        value: _selectedQtype,
-                        onChanged: (v) => setState(() => _selectedQtype = v),
-                      ),
-                      const SizedBox(height: AppSpacing.md),
-                      AppTextField(label: '学科', controller: _subjectCtrl),
-                      const SizedBox(height: AppSpacing.md),
-                      AppTextField(label: '知识点', controller: _kpCtrl),
+                      AppTextField(label: '试卷标题', controller: _titleCtrl),
                       const SizedBox(height: AppSpacing.md),
                       Row(
                         children: [
                           Expanded(
                             child: AppTextField(
-                              label: '题数',
-                              controller: _countCtrl,
+                              label: '总题数',
+                              controller: _totalCtrl,
                               keyboardType: TextInputType.number,
                             ),
                           ),
-                          const SizedBox(width: AppSpacing.xl),
-                          Expanded(
-                            child: AppPickerField<int>(
-                              label: '年级',
-                              values: List.generate(9, (i) => i + 1),
-                              labels: List.generate(9, (i) => '${i + 1}年级'),
-                              value: _selectedGrade,
-                              onChanged: (v) => setState(() => _selectedGrade = v),
-                            ),
+                          const SizedBox(width: AppSpacing.md),
+                          TextButton(
+                            onPressed: _evenSplit,
+                            child: const Text('一键均分'),
+                          ),
+                          const SizedBox(width: AppSpacing.sm),
+                          TextButton(
+                            onPressed: _addRow,
+                            child: const Text('+ 加学科'),
                           ),
                         ],
                       ),
+                      const SizedBox(height: AppSpacing.lg),
+                      ...List.generate(_rows.length, _buildRow),
                       const SizedBox(height: AppSpacing.xl),
                       if (genState is TaskGenLoading)
                         const AppLoading()
@@ -137,4 +202,62 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
       ),
     );
   }
+
+  Widget _buildRow(int i) => Padding(
+        padding: const EdgeInsets.only(bottom: AppSpacing.md),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              flex: 2,
+              child: AppTextField(label: '学科', controller: _rows[i].subject),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              flex: 3,
+              child: AppTextField(
+                  label: '知识点', controller: _rows[i].knowledgePoint),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              flex: 2,
+              child: AppPickerField<String>(
+                label: '题型',
+                values: const ['calc', 'fill', 'choice', 'open'],
+                labels: const ['计算', '填空', '选择', '应用'],
+                value: _rows[i].qtype,
+                onChanged: (v) => setState(() => _rows[i].qtype = v),
+              ),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              flex: 2,
+              child: AppTextField(
+                label: '题数',
+                controller: _rows[i].count,
+                keyboardType: TextInputType.number,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            Expanded(
+              flex: 2,
+              child: AppPickerField<int>(
+                label: '年级',
+                values: List.generate(9, (j) => j + 1),
+                labels: List.generate(9, (j) => '${j + 1}年级'),
+                value: _rows[i].grade,
+                onChanged: (v) => setState(() => _rows[i].grade = v),
+              ),
+            ),
+            if (_rows.length > 1) ...[
+              const SizedBox(width: AppSpacing.sm),
+              IconButton(
+                icon: const Icon(Icons.close, size: 20),
+                onPressed: () => _removeRow(i),
+                tooltip: '删除该行',
+              ),
+            ],
+          ],
+        ),
+      );
 }

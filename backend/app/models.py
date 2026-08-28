@@ -53,26 +53,41 @@ class User(UserBase, table=True):
     parent_id: uuid.UUID | None = Field(default=None, foreign_key="user.id")
 
 
-# ───────────────────────── 任务 / 题目 ─────────────────────────
+# ───────────────────────── 任务 / 题目 / 题库快照（ADR-0004） ─────────────────────────
 class TaskBase(SQLModel):
     title: str = Field(max_length=255)
+    status: str = Field(max_length=16, default="draft")  # draft|ready|assigned|done
+
+
+class TaskCreate(SQLModel):
+    """单科兼容入口（内部转调 batch-generate）。"""
+    title: str = Field(max_length=255)
+    child_id: uuid.UUID | None = None  # 可空，支持"先成卷晚点派"
+
+
+class TaskSpec(SQLModel):
+    """多学科一卷批量生成的一条规格（ADR-0004 D4）。"""
     subject: str = Field(max_length=32)
     grade: int
     knowledge_point: str = Field(max_length=128)
     qtype: str = Field(max_length=16)  # choice|fill|calc|open
     difficulty: str = Field(max_length=16, default="medium")
-    count: int = Field(default=1)
-    status: str = Field(max_length=16, default="pending")
+    count: int = Field(default=1, ge=1)
 
 
-class TaskCreate(TaskBase):
-    child_id: uuid.UUID
+class TaskBatchCreate(SQLModel):
+    """POST /tasks/batch-generate 请求体。"""
+    title: str = Field(max_length=255)
+    child_id: uuid.UUID | None = None  # 可空，支持"先成卷晚点派"
+    specs: list[TaskSpec]
 
 
 class Task(TaskBase, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     parent_id: uuid.UUID = Field(foreign_key="user.id")
-    child_id: uuid.UUID = Field(foreign_key="user.id")
+    child_id: uuid.UUID | None = Field(default=None, foreign_key="user.id")  # 可空，assigned 时绑
+    # 原始生成规格：batch-generate 完整保存，整卷重生成时按此规格重跑并覆盖草稿项（R-Q2=c）。
+    specs: list[dict] | None = Field(default=None, sa_type=JSON)
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore
@@ -80,8 +95,13 @@ class Task(TaskBase, table=True):
 
 
 class Question(SQLModel, table=True):
+    """题库层（ADR-0004 D2）：Question 表本身即题库，删 task_id 独立实体，可跨 Task 复用。
+
+    parent_id（题库复用闭环）：归属家长，实现 owner 隔离，避免多家庭互通题库。
+    旧库通过 db.run_migrations 回填（见 backend/app/core/db.py）。
+    """
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    task_id: uuid.UUID = Field(foreign_key="task.id")
+    parent_id: uuid.UUID = Field(foreign_key="user.id")  # 题库 owner 隔离（闭环）
     subject: str
     grade: int
     knowledge_point: str
@@ -91,6 +111,35 @@ class Question(SQLModel, table=True):
     answer: str | None = None
     explanation: str | None = None
     difficulty: str | None = None
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
+class TaskQuestion(SQLModel, table=True):
+    """派发快照层（ADR-0004 D3）。
+
+    创建时即深拷贝 Question 全字段为独立副本；draft 态可编辑（除 qtype），
+    ready/assigned 后冻结。question_id 指向源 Question（可空，重生成场景无源），
+    用于作答提交与错题归集的桥梁（AnswerRecord/WrongQuestion 仍指向 Question.id）。
+    """
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    task_id: uuid.UUID = Field(foreign_key="task.id", index=True)
+    question_id: uuid.UUID | None = Field(default=None, foreign_key="question.id")
+    subject: str
+    grade: int
+    knowledge_point: str
+    qtype: str
+    stem: str
+    options: list[str] | None = Field(default=None, sa_type=JSON)
+    answer: str | None = None
+    explanation: str | None = None
+    difficulty: str | None = None
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
 
 
 class AnswerRecord(SQLModel, table=True):
@@ -146,7 +195,10 @@ class WrongQuestion(SQLModel, table=True):
 
 # ───────────────────────── API 响应模型 ─────────────────────────
 class QuestionResp(SQLModel):
-    id: uuid.UUID
+    id: uuid.UUID  # TaskQuestion.id（娃娃端读快照）
+    question_id: uuid.UUID | None = None  # 源 Question.id，作答提交与错题归集用
+    subject: str = ""
+    grade: int = 0
     stem: str
     options: list[str] | None = None
     qtype: str
@@ -159,14 +211,59 @@ class QuestionResp(SQLModel):
 class TaskResp(SQLModel):
     id: uuid.UUID
     title: str
-    subject: str
-    grade: int
-    knowledge_point: str
-    qtype: str
-    difficulty: str
-    count: int
     status: str
+    # 原始生成规格（整卷重生成可用；前端展示方便）
+    specs: list[dict] | None = None
     questions: list[QuestionResp] = []
+
+
+# ───────── 题库复用闭环（GET /questions / POST /tasks/from-bank 等） ─────────
+class BankQuestionItem(SQLModel):
+    """题库列表项（家长私有视图，即可见 answer）。"""
+    id: uuid.UUID
+    subject: str = ""
+    grade: int = 0
+    stem: str
+    options: list[str] | None = None
+    qtype: str
+    knowledge_point: str
+    difficulty: str | None = None
+    answer: str | None = None
+    explanation: str | None = None
+    created_at: datetime | None = None
+    usage_count: int = 0  # 被多少个 Task 引用（复用度）
+
+
+class BankListResp(SQLModel):
+    items: list[BankQuestionItem]
+    total: int
+    page: int
+    page_size: int
+
+
+class TaskFromBankCreate(SQLModel):
+    """选项 A：从题库新建任务。"""
+    title: str = Field(max_length=255)
+    child_id: uuid.UUID | None = None
+    question_ids: list[uuid.UUID]
+
+
+class BankQuestionsAdd(SQLModel):
+    """选项 B：加入已有草稿任务。"""
+    question_ids: list[uuid.UUID]
+
+
+class TaskQuestionEdit(SQLModel):
+    """PUT /tasks/{task_id}/questions/{tq_id} 编辑请求体（仅 draft 态）。
+
+    可改：题干/选项/答案/解析/知识点（ADR-0004 D6）。
+    禁改：qtype（防娃娃端 UI 渲染崩），不在本 schema 暴露。
+    """
+    stem: str | None = None
+    options: list[str] | None = None
+    answer: str | None = None
+    explanation: str | None = None
+    knowledge_point: str | None = None
 
 
 class AnswerSubmit(SQLModel):

@@ -61,6 +61,12 @@ class ParentSidebar extends StatelessWidget {
           active: selectedIndex == 4,
           onTap: () => onNavTap(4),
         ),
+        AppSidebarItem(
+          icon: LucideIcons.library,
+          label: '题库',
+          active: selectedIndex == 6,
+          onTap: () => onNavTap(6),
+        ),
       ],
       bottom: _SidebarBottom(user: user, onProfileTap: onProfileTap),
     );

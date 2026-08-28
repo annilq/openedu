@@ -25,28 +25,18 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
 
   Future<void> generate({
     required String childId,
-    required String subject,
-    required int grade,
-    required String knowledgePoint,
-    required String qtype,
-    required int count,
-    String difficulty = 'medium',
-    String? title,
+    required String title,
+    required List<TaskSpecModel> specs,
   }) async {
     state = const TaskGenLoading();
     try {
-      final data = await _network.post('/tasks', body: {
+      final data = await _network.post('/tasks/batch-generate', body: {
         'child_id': childId,
-        'subject': subject,
-        'grade': grade,
-        'knowledge_point': knowledgePoint,
-        'qtype': qtype,
-        'count': count,
-        'difficulty': difficulty,
-        'title': title ?? '$subject·$knowledgePoint',
+        'title': title,
+        'specs': specs.map((s) => s.toJson()).toList(),
       });
-      final task = TaskModel.fromJson(data);
-      state = TaskGenSuccess(task);
+      // R3：生成后保持 draft 态，把确认/派发动作交给草稿审核页。
+      state = TaskGenSuccess(TaskModel.fromJson(data));
     } catch (e) {
       state = TaskGenError(e.toString());
     }

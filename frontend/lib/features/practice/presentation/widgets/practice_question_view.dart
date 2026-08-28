@@ -47,9 +47,11 @@ class PracticeQuestionView extends StatelessWidget {
                 spacing: AppSpacing.sm,
                 runSpacing: AppSpacing.sm,
                 children: [
-                  AppTags.normal(task.subject),
-                  AppTags.normal('${task.grade}年级'),
-                  AppTags.info(q.knowledgePoint),
+                  // ADR-0004：学科下沉到题，从当前题取字段。
+                  if (q.subject.isNotEmpty) AppTags.normal(q.subject),
+                  if (q.grade > 0) AppTags.normal('${q.grade}年级'),
+                  if (q.knowledgePoint.isNotEmpty)
+                    AppTags.info(q.knowledgePoint),
                 ],
               ),
               const SizedBox(height: AppSpacing.xl3),
