@@ -16,6 +16,7 @@ class ParentSidebar extends StatelessWidget {
   final ValueChanged<int> onNavTap;
   final VoidCallback onProfileTap;
   final VoidCallback? onNavigateToAddChild;
+  final void Function(UserModel child)? onNavigateToEditChild;
 
   const ParentSidebar({
     super.key,
@@ -24,12 +25,16 @@ class ParentSidebar extends StatelessWidget {
     required this.onNavTap,
     required this.onProfileTap,
     this.onNavigateToAddChild,
+    this.onNavigateToEditChild,
   });
 
   @override
   Widget build(BuildContext context) {
     return AppSidebar(
-      top: ParentChildSelector(onNavigateToAddChild: onNavigateToAddChild),
+      top: ParentChildSelector(
+        onNavigateToAddChild: onNavigateToAddChild,
+        onNavigateToEditChild: onNavigateToEditChild,
+      ),
       items: [
         AppSidebarItem(
           icon: LucideIcons.layoutDashboard,

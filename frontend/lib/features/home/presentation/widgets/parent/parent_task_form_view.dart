@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+// LucideIcons 由 shadcn_ui 再导出。
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../../shared/domain/models/models.dart';
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/widgets/app_inputs.dart';
 import '../../../../../shared/widgets/app_loading.dart';
 import '../../../../../shared/widgets/app_toast.dart';
+import '../../../../children/domain/providers/children_provider.dart';
+import '../../../../children/presentation/providers/children_notifier.dart';
 import '../../providers/home_notifier.dart';
 import '../../providers/selected_child_provider.dart';
 import '../../../../review/presentation/providers/review_notifier.dart';
@@ -56,6 +60,10 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
   final List<_SpecRow> _rows = [_SpecRow()];
   final _totalCtrl = TextEditingController(text: '10');
   final _titleCtrl = TextEditingController(text: '今日练习');
+
+  // 兴趣题模式（WF-4）：开=聚焦所选兴趣主题；关=后端自动轻融入娃娃画像。
+  bool _useInterestMode = false;
+  final Set<String> _focusThemes = {};
 
   @override
   void dispose() {
@@ -108,10 +116,15 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
       AppToast.show(context, '每行题数至少为 1');
       return;
     }
+    // 兴趣题模式（WF-4）：开启且至少选一个主题才下传聚焦主题。
+    final focus = _useInterestMode && _focusThemes.isNotEmpty
+        ? _focusThemes.toList()
+        : null;
     ref.read(taskGenNotifierProvider.notifier).generate(
           childId: selected.id,
           title: _titleCtrl.text,
           specs: specs,
+          focusInterest: focus,
         );
   }
 
@@ -188,6 +201,8 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
                       const SizedBox(height: AppSpacing.lg),
                       ...List.generate(_rows.length, _buildRow),
                       const SizedBox(height: AppSpacing.xl),
+                      _buildInterestSection(),
+                      const SizedBox(height: AppSpacing.xl),
                       if (genState is TaskGenLoading)
                         const AppLoading()
                       else
@@ -200,6 +215,96 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildInterestSection() {
+    final app = AppTheme.colorsOf(context);
+    final text = AppTheme.textOf(context);
+    final selected = ref.watch(selectedChildProvider);
+    final childState = ref.watch(childrenNotifierProvider);
+
+    // 当前娃娃的兴趣主题（受控分类叶子 + 自由文本）。
+    List<String> themes = const [];
+    if (selected != null && childState is ChildrenLoaded) {
+      for (final c in childState.children) {
+        if (c.id == selected.id && c.interests != null) {
+          themes = [...c.interests!.categories];
+          if (c.interests!.freeText != null && c.interests!.freeText!.isNotEmpty) {
+            themes.add(c.interests!.freeText!);
+          }
+          break;
+        }
+      }
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text('按兴趣出题',
+                  style: text.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+            ),
+            Switch(
+              value: _useInterestMode,
+              activeThumbColor: app.primary,
+              onChanged: (v) => setState(() {
+                _useInterestMode = v;
+                if (!v) _focusThemes.clear();
+              }),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          _useInterestMode
+              ? '开启后，题目将围绕所选兴趣主题生成情境。'
+              : '关闭时，AI 会自动把娃娃画像中的兴趣轻融入题目。',
+          style: text.bodySmall?.copyWith(color: app.onSurfaceVariant),
+        ),
+        if (_useInterestMode) ...[
+          const SizedBox(height: AppSpacing.md),
+          if (themes.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              decoration: BoxDecoration(
+                color: app.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(AppRadius.bubble),
+              ),
+              child: Text(
+                '该娃娃尚未设置兴趣，请先去编辑娃娃资料添加兴趣标签。',
+                style: text.bodySmall?.copyWith(color: app.onSurfaceVariant),
+              ),
+            )
+          else ...[
+              Wrap(
+                spacing: AppSpacing.sm,
+                runSpacing: AppSpacing.sm,
+                children: themes
+                    .map((t) => _ThemeToggle(
+                          label: t,
+                          selected: _focusThemes.contains(t),
+                          onTap: () => setState(() {
+                            if (_focusThemes.contains(t)) {
+                              _focusThemes.remove(t);
+                            } else {
+                              _focusThemes.add(t);
+                            }
+                          }),
+                        ))
+                    .toList(),
+              ),
+              if (_focusThemes.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: AppSpacing.sm),
+                  child: Text('已选 ${_focusThemes.length} 个主题，题量将在所选主题间轮询均分',
+                      style: text.labelSmall?.copyWith(color: app.primary)),
+                ),
+            ],
+        ],
+      ],
     );
   }
 
@@ -260,4 +365,59 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
           ],
         ),
       );
+}
+
+
+/// 兴趣出题主题芯片（WF-4）：点亮即把该主题加入 focus 轮询列表。
+/// 视觉风格对齐 [interest_picker.dart] 中的 [_LeafToggle]。
+class _ThemeToggle extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ThemeToggle({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = AppTheme.colorsOf(context);
+    final text = AppTheme.textOf(context);
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOut,
+        padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+        decoration: BoxDecoration(
+          color: selected ? scheme.primaryContainer : scheme.surfaceContainerHigh,
+          borderRadius: BorderRadius.circular(AppRadius.chip),
+          border: Border.all(
+            color: selected ? scheme.primary : scheme.outline,
+            width: selected ? 1.5 : 0,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (selected)
+              Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: Icon(LucideIcons.check,
+                    size: 16, color: scheme.onPrimaryContainer),
+              ),
+            Text(label,
+                style: text.labelMedium?.copyWith(
+                  color: selected ? scheme.onPrimaryContainer : scheme.onSurface,
+                  fontWeight: FontWeight.w600,
+                )),
+          ],
+        ),
+      ),
+    );
+  }
 }

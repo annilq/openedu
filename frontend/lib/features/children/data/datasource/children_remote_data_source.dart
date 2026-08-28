@@ -9,6 +9,7 @@ class ChildrenRemoteDataSource {
     required String password,
     required String displayName,
     int? grade,
+    Map<String, dynamic>? interests,
   }) async {
     final body = <String, dynamic>{
       'username': username,
@@ -16,7 +17,22 @@ class ChildrenRemoteDataSource {
       'display_name': displayName,
     };
     if (grade != null) body['grade'] = grade;
+    // 兴趣画像：全空则不下传（后端 interests 默认 None）。
+    if (interests != null) body['interests'] = interests;
     return await _network.post('/children', body: body);
+  }
+
+  Future<Map<String, dynamic>> updateChild({
+    required String childId,
+    String? displayName,
+    int? grade,
+    Map<String, dynamic>? interests,
+  }) async {
+    final body = <String, dynamic>{};
+    if (displayName != null) body['display_name'] = displayName;
+    if (grade != null) body['grade'] = grade;
+    if (interests != null) body['interests'] = interests;
+    return await _network.put('/children/$childId', body: body);
   }
 
   Future<List<dynamic>> getChildren() async {

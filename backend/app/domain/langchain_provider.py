@@ -54,12 +54,34 @@ class LangChainProvider(LLMProvider):
         )
 
     async def generate_question(
-        self, *, subject, grade, knowledge_point, qtype, difficulty
+        self, *, subject, grade, knowledge_point, qtype, difficulty,
+        interests: list[str] | None = None,
+        focus_interest: str | None = None,
     ) -> GeneratedQuestion:
         model = self._build_model()
+        # 兴趣注入（WF-3）：轻融入（interests 池）或兴趣题模式（focus_interest 聚焦）。
+        # _SYSTEM 年龄锁保持不变；两种模式均锁死"必须紧扣 knowledge_point、不偏离教材、不引入不当内容"。
+        if focus_interest:
+            interest_clause = (
+                f"请围绕该娃娃感兴趣的主题“{focus_interest}”，为{grade}年级《{subject}》的"
+                f"“{knowledge_point}”出一道{qtype}题，难度{difficulty}。"
+                f"题目情境应以“{focus_interest}”为载体讲清“{knowledge_point}”，"
+                f"必须紧扣知识点，不偏离教材，不引入与学习无关或不当内容。"
+            )
+        elif interests:
+            interest_clause = (
+                f"请为{grade}年级《{subject}》的“{knowledge_point}”出一道{qtype}题，"
+                f"难度{difficulty}。可结合该娃娃的兴趣（如：{', '.join(interests)}）"
+                f"作为题目情境包装，但内容必须紧扣“{knowledge_point}”，"
+                f"不得偏离教材知识点，不得引入与学习无关或不当内容。"
+            )
+        else:
+            interest_clause = (
+                f"请为{grade}年级《{subject}》的“{knowledge_point}”出一道{qtype}题，"
+                f"难度{difficulty}。"
+            )
         prompt = (
-            f"请为{grade}年级《{subject}》的“{knowledge_point}”出一道{qtype}题，"
-            f"难度{difficulty}。返回 JSON："
+            f"{interest_clause}返回 JSON："
             '{"stem": str, "options": list[str]|null, "answer": str, "explanation": str}'
         )
         resp = await model.ainvoke(

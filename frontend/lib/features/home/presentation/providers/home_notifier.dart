@@ -27,14 +27,18 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
     required String childId,
     required String title,
     required List<TaskSpecModel> specs,
+    List<String>? focusInterest,
   }) async {
     state = const TaskGenLoading();
     try {
-      final data = await _network.post('/tasks/batch-generate', body: {
+      final body = <String, dynamic>{
         'child_id': childId,
         'title': title,
         'specs': specs.map((s) => s.toJson()).toList(),
-      });
+      };
+      // 兴趣题模式（WF-4）：显式聚焦主题放请求顶层；缺省=后端自动轻融入画像。
+      if (focusInterest != null) body['focus_interest'] = focusInterest;
+      final data = await _network.post('/tasks/batch-generate', body: body);
       // R3：生成后保持 draft 态，把确认/派发动作交给草稿审核页。
       state = TaskGenSuccess(TaskModel.fromJson(data));
     } catch (e) {

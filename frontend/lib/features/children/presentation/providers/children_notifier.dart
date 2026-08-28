@@ -45,6 +45,7 @@ class ChildrenNotifier extends StateNotifier<ChildrenState> {
     required String password,
     required String displayName,
     int? grade,
+    InterestsModel? interests,
   }) async {
     try {
       final created = await _repo.createChild(
@@ -52,9 +53,32 @@ class ChildrenNotifier extends StateNotifier<ChildrenState> {
         password: password,
         displayName: displayName,
         grade: grade,
+        interests: interests,
       );
       await loadChildren();
       return created;
+    } catch (e) {
+      state = ChildrenError(e.toString());
+      return null;
+    }
+  }
+
+  /// 编辑娃娃资料（WF-5）：昵称/年级/兴趣；成功返回更新后的用户并刷新列表，失败返回 null。
+  Future<UserModel?> updateChild({
+    required String childId,
+    String? displayName,
+    int? grade,
+    InterestsModel? interests,
+  }) async {
+    try {
+      final updated = await _repo.updateChild(
+        childId: childId,
+        displayName: displayName,
+        grade: grade,
+        interests: interests,
+      );
+      await loadChildren();
+      return updated;
     } catch (e) {
       state = ChildrenError(e.toString());
       return null;

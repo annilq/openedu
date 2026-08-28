@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+import '../../../../../shared/domain/models/models.dart';
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/widgets/app_loading.dart';
 import '../../../../children/domain/providers/children_provider.dart';
@@ -12,8 +13,13 @@ import '../../providers/selected_child_provider.dart';
 /// 娃娃列表加载完成时自动选中第一个。
 class ParentChildSelector extends ConsumerStatefulWidget {
   final VoidCallback? onNavigateToAddChild;
+  final void Function(UserModel child)? onNavigateToEditChild;
 
-  const ParentChildSelector({super.key, this.onNavigateToAddChild});
+  const ParentChildSelector({
+    super.key,
+    this.onNavigateToAddChild,
+    this.onNavigateToEditChild,
+  });
 
   @override
   ConsumerState<ParentChildSelector> createState() =>
@@ -187,6 +193,12 @@ class _ParentChildSelectorState extends ConsumerState<ParentChildSelector> {
                       .select(c.id, c.grade ?? 2);
                   _popoverCtrl.hide();
                 },
+                onEdit: widget.onNavigateToEditChild == null
+                    ? null
+                    : () {
+                        _popoverCtrl.hide();
+                        widget.onNavigateToEditChild!(c);
+                      },
                 scheme: scheme,
               )),
           Padding(
@@ -213,6 +225,7 @@ class _ChildOption extends StatelessWidget {
   final bool active;
   final IconData? icon;
   final VoidCallback onTap;
+  final VoidCallback? onEdit;
   final AppColors scheme;
 
   const _ChildOption({
@@ -221,6 +234,7 @@ class _ChildOption extends StatelessWidget {
     required this.active,
     this.icon,
     required this.onTap,
+    this.onEdit,
     required this.scheme,
   });
 
@@ -259,6 +273,19 @@ class _ChildOption extends StatelessWidget {
                     style: AppTheme.textOf(context).labelSmall?.copyWith(
                       color: scheme.onSurfaceVariant,
                     )),
+              if (onEdit != null)
+                Padding(
+                  padding: const EdgeInsets.only(left: AppSpacing.xs),
+                  child: MouseRegion(
+                    cursor: SystemMouseCursors.click,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: onEdit,
+                      child: Icon(LucideIcons.pencil,
+                          size: 16, color: scheme.onSurfaceVariant),
+                    ),
+                  ),
+                ),
               if (active)
                 Icon(LucideIcons.check,
                     size: 16, color: scheme.accent),

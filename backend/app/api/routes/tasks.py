@@ -108,6 +108,22 @@ def _wrong_to_resp(
     )
 
 
+def _extract_interests_pool(child: User | None) -> list[str] | None:
+    """从娃娃画像抽取轻融入兴趣池（WF-3）：受控分类叶子 + 自由文本。
+
+    返回扁平字符串列表（如 ["恐龙", "太空", "养蚕"]），空则 None。
+    注：自由文本（free_text）经生成 _SYSTEM 年龄/内容约束兜底；显式安全闸门见 WF-6。
+    """
+    if child is None or not child.interests:
+        return None
+    cat = child.interests.get("categories") or []
+    pool = [c for c in cat if isinstance(c, str)]
+    free = child.interests.get("free_text")
+    if isinstance(free, str) and free.strip():
+        pool.append(free.strip())
+    return pool or None
+
+
 def _parent_owns_task(*, task: Task | None, parent: User) -> Task:
     if task is None or task.parent_id != parent.id:
         raise AppErrorException(ErrCode.TASK_NOT_FOUND, "任务不存在")
@@ -123,13 +139,23 @@ def _require_draft(task: Task) -> None:
 
 def _generate_task_questions_for_specs(
     specs: list[TaskSpec] | list[dict],
+    *,
+    interests: list[str] | None = None,
+    focus_interests: list[str] | None = None,
 ) -> list[TaskQuestion]:
     """调用 QuestionGenerator 产草稿 TaskQuestion（R-Q1=c：不写 Question 表）。
 
     specs 可以是 TaskSpec 对象（来自请求体的 Pydantic）或 dict（来自 Task.specs 持久化）。
+
+    兴趣注入（WF-3/WF-4）：
+    - `interests`：轻融入兴趣池（娃娃画像 categories），整卷统一下传。
+    - `focus_interests`：兴趣题模式聚焦主题（list）；非空时按题轮询均分（第 i 题取
+      focus_interests[i % n]），且此时不再轻融入兴趣池（避免双模式叠加）。
     """
     gen = QuestionGenerator(build_provider())
     out: list[TaskQuestion] = []
+    n_focus = len(focus_interests) if focus_interests else 0
+    idx = 0
     for sp in specs:
         if isinstance(sp, dict):
             subject = str(sp.get("subject", ""))
@@ -146,12 +172,17 @@ def _generate_task_questions_for_specs(
             difficulty = sp.difficulty
             count = sp.count
         for _ in range(max(0, count)):
+            # 兴趣题模式：轮询取一个聚焦主题；否则轻融入兴趣池。
+            focus = focus_interests[idx % n_focus] if n_focus else None
+            idx += 1
             g = gen.generate(
                 subject=subject,
                 grade=grade,
                 knowledge_point=knowledge_point,
                 qtype=qtype,
                 difficulty=difficulty,
+                interests=interests if focus is None else None,
+                focus_interest=focus,
             )
             out.append(
                 TaskQuestion(
@@ -187,14 +218,22 @@ def batch_generate(
         raise AppErrorException(ErrCode.TASK_EMPTY_SPECS, "生成规格 specs 不能为空")
 
     child_id = payload.child_id
+    interests_pool: list[str] | None = None
     if child_id is not None:
         child = session.get(User, child_id)
         if child is None or child.parent_id != parent.id:
             raise AppErrorException(
                 ErrCode.TASK_CHILD_NOT_OWNED, "该娃娃不属于你的账号"
             )
+        interests_pool = _extract_interests_pool(child)
 
-    draft_questions = _generate_task_questions_for_specs(payload.specs)
+    # 兴趣题模式（WF-4）：显式聚焦主题直接来自请求；否则后端自动轻融入画像。
+    focus_interests = payload.focus_interest
+    draft_questions = _generate_task_questions_for_specs(
+        payload.specs,
+        interests=interests_pool,
+        focus_interests=focus_interests,
+    )
     specs_dicts = [s.model_dump() for s in payload.specs]
     task = batch_generate_task(
         session=session,
@@ -203,6 +242,7 @@ def batch_generate(
         child_id=child_id,
         specs_dicts=specs_dicts,
         task_questions=draft_questions,
+        focus_interest=focus_interests,
     )
     task_questions = get_task_questions(session=session, task_id=task.id)
     return _task_to_resp(task, task_questions, include_answer=True)
@@ -405,12 +445,27 @@ def regenerate_one(
     if tq is None or tq.task_id != task.id:
         raise AppErrorException(ErrCode.TASK_QUESTION_NOT_FOUND, "题目不存在")
     gen = QuestionGenerator(build_provider())
+    # 单题重生成复现兴趣设定：沿用整卷聚焦主题的轮询分配（按当前题序），否则轻融入画像。
+    interests_pool = _extract_interests_pool(
+        session.get(User, task.child_id) if task.child_id else None
+    )
+    focus: str | None = None
+    focus_interests = task.focus_interest
+    if focus_interests:
+        tqs = get_task_questions(session, task.id)
+        try:
+            qi = next(k for k, t in enumerate(tqs) if t.id == tq.id)
+        except StopIteration:
+            qi = 0
+        focus = focus_interests[qi % len(focus_interests)]
     g = gen.generate(
         subject=tq.subject,
         grade=tq.grade,
         knowledge_point=tq.knowledge_point,
         qtype=tq.qtype,
         difficulty=tq.difficulty or "medium",
+        interests=interests_pool if focus is None else None,
+        focus_interest=focus,
     )
     new_q = Question(
         subject=g.subject, grade=g.grade, knowledge_point=g.knowledge_point,
@@ -441,7 +496,15 @@ def regenerate_all(
         raise AppErrorException(
             ErrCode.TASK_EMPTY_SPECS, "当前草稿无生成规格，无法整卷重生成，请返回出题页重新创建"
         )
-    new_tqs = _generate_task_questions_for_specs(specs)
+    # 整卷重生成复现兴趣设定（WF-3/WF-4）：沿用原娃娃画像轻融入 + 原聚焦主题。
+    child = session.get(User, task.child_id) if task.child_id else None
+    interests_pool = _extract_interests_pool(child)
+    focus_interests = task.focus_interest
+    new_tqs = _generate_task_questions_for_specs(
+        specs,
+        interests=interests_pool,
+        focus_interests=focus_interests,
+    )
     updated = regenerate_all_task_questions(
         session=session, task_id=task.id, new_task_questions=new_tqs
     )

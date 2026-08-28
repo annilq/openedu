@@ -12,12 +12,30 @@ class ChildrenRepositoryImpl implements ChildrenRepository {
     required String password,
     required String displayName,
     int? grade,
+    InterestsModel? interests,
   }) async {
     final data = await _dataSource.createChild(
       username: username,
       password: password,
       displayName: displayName,
       grade: grade,
+      interests: interests?.isEmpty ?? true ? null : interests!.toJson(),
+    );
+    return UserModel.fromJson(data);
+  }
+
+  @override
+  Future<UserModel> updateChild({
+    required String childId,
+    String? displayName,
+    int? grade,
+    InterestsModel? interests,
+  }) async {
+    final data = await _dataSource.updateChild(
+      childId: childId,
+      displayName: displayName,
+      grade: grade,
+      interests: interests?.isEmpty ?? true ? null : interests!.toJson(),
     );
     return UserModel.fromJson(data);
   }

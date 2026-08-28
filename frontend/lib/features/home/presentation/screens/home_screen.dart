@@ -4,8 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/widgets/desktop_shell.dart';
 import '../../../children/domain/providers/children_provider.dart';
-import '../../../children/presentation/providers/children_notifier.dart';
-import '../../../children/presentation/screens/add_child_screen.dart';
+import '../../../children/presentation/screens/child_form_screen.dart';
 import '../../../practice/presentation/screens/practice_screen.dart';
 import '../../../profile/presentation/screens/profile_screen.dart';
 import '../../../review/presentation/providers/review_notifier.dart';
@@ -42,6 +41,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   /// 草稿审核覆盖层：非 null 时覆盖侧栏导航展示 ParentTaskReviewScreen。
   TaskModel? _reviewingTask;
+
+  /// 编辑娃娃资料覆盖层（WF-5）：非 null 时展示 ChildFormScreen(edit)。
+  UserModel? _editingChild;
 
   @override
   void initState() {
@@ -106,21 +108,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     });
   }
 
-  void _onChildCreated(String newId) {
-    final state = ref.read(childrenNotifierProvider);
-    if (state is ChildrenLoaded) {
-      for (final c in state.children) {
-        if (c.id == newId) {
-          ref
-              .read(selectedChildProvider.notifier)
-              .select(c.id, c.grade ?? 2);
-          break;
-        }
-      }
+  /// ChildFormScreen 保存后的统一回调（创建 + 编辑共用）。
+  void _onChildFormSaved(UserModel saved) {
+    // 列表已在 notifier 内刷新；这里同步选中并回到首页/关闭编辑层。
+    final sel = ref.read(selectedChildProvider);
+    if (sel == null) {
+      ref.read(selectedChildProvider.notifier).select(saved.id, saved.grade ?? 2);
     }
     setState(() {
       _showProfile = false;
+      _editingChild = null;
       _parentNavIndex = 0;
+    });
+  }
+
+  void _onNavigateToEditChild(UserModel child) {
+    // 关闭选择器弹层由调用方处理；此处直接打开编辑覆盖层。
+    setState(() {
+      _showProfile = false;
+      _editingChild = child;
     });
   }
 
@@ -147,6 +153,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         },
       );
     }
+    // 编辑娃娃资料覆盖层（WF-5）：优先级次于审核层
+    final editing = _editingChild;
+    if (editing != null) {
+      return ChildFormScreen(
+        mode: ChildFormMode.edit,
+        child: editing,
+        onSaved: _onChildFormSaved,
+      );
+    }
     if (_showProfile) {
       return ProfileScreen(user: widget.user, onLogout: widget.onLogout);
     }
@@ -159,9 +174,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       2 => const ParentWrongQuestionsView(),
       3 => const ParentTutorLogsView(),
       4 => const ParentTutorQuotaView(),
-      5 => AddChildScreen(
-          showBack: false,
-          onCreated: _onChildCreated,
+      5 => ChildFormScreen(
+          mode: ChildFormMode.create,
+          onSaved: _onChildFormSaved,
         ),
       6 => ParentQuestionBankView(
           onNavigateToReview: _navigateToReview,
@@ -207,6 +222,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           },
           onProfileTap: _onProfileTap,
           onNavigateToAddChild: _onNavigateToAddChild,
+          onNavigateToEditChild: _onNavigateToEditChild,
         ),
         body: _buildParentView(),
       );

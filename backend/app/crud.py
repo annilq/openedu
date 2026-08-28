@@ -83,6 +83,30 @@ def list_children(*, session: Session, parent_id: uuid.UUID) -> list[User]:
     return list(session.exec(select(User).where(User.parent_id == parent_id)))
 
 
+def update_user(
+    *,
+    session: Session,
+    user: User,
+    display_name: str | None = None,
+    grade: int | None = None,
+    interests: dict | None = None,
+) -> User:
+    """编辑娃娃资料（WF-5）：仅局部更新昵称/年级/兴趣；账号密码等字段不在此处变动。
+
+    所有字段可选，仅传入非 None 的字段生效。
+    """
+    if display_name is not None:
+        user.display_name = display_name
+    if grade is not None:
+        user.grade = grade
+    if interests is not None:
+        user.interests = interests
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+    return user
+
+
 # ───────── 任务 / 题目 / 题库快照（ADR-0004） ─────────
 def create_task(*, session: Session, **kwargs) -> Task:
     task = Task(**kwargs)
@@ -127,12 +151,14 @@ def batch_generate_task(
     child_id: uuid.UUID | None,
     specs_dicts: list[dict],
     task_questions: list[TaskQuestion],
+    focus_interest: list[str] | None = None,
 ) -> Task:
     """批量建草稿 Task + 挂草稿项（R-Q1=c：不预写 Question，只写 TaskQuestion）。
 
     - `specs_dicts`：原始生成规格的 list[dict]，持久化到 Task.specs 以便整卷重生成。
     - `task_questions`：路由层已用 QuestionGenerator 生成的草稿项（未写 Question）。
       路由层不 commit 直接传进来，避免和 Task 事务拆分。
+    - `focus_interest`：兴趣题模式聚焦主题（WF-4），整卷共享，随草稿持久化。
     """
     task = Task(
         title=title,
@@ -140,6 +166,7 @@ def batch_generate_task(
         parent_id=parent_id,
         child_id=child_id,
         specs=specs_dicts or None,
+        focus_interest=focus_interest,
     )
     session.add(task)
     session.flush()  # 拿到 task.id

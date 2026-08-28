@@ -8,28 +8,37 @@ class MockProvider(LLMProvider):
     """无外部依赖的兜底实现：无需模型 key 即可跑通完整闭环。"""
 
     async def generate_question(
-        self, *, subject, grade, knowledge_point, qtype, difficulty
+        self, *, subject, grade, knowledge_point, qtype, difficulty,
+        interests: list[str] | None = None,
+        focus_interest: str | None = None,
     ) -> GeneratedQuestion:
         seed = int(hashlib.sha256(f"{subject}{grade}{knowledge_point}{qtype}".encode()).hexdigest(), 16)
         rng = random.Random(seed)
+        # 兴趣可见打标：零 key 闭环也能观察到兴趣生效。
+        if focus_interest:
+            flavor = f"（兴趣：{focus_interest}）"
+        elif interests:
+            flavor = f"（兴趣池：{','.join(interests)}）"
+        else:
+            flavor = ""
         if qtype == "choice":
             correct = rng.randint(0, 3)
             options = ["A", "B", "C", "D"]
             answer = options[correct]
-            stem = f"【{subject}】{knowledge_point} 的正确答案是什么？(难度 {difficulty})"
+            stem = f"【{subject}】{knowledge_point} 的正确答案是什么？(难度 {difficulty}){flavor}"
             explanation = f"根据{knowledge_point}的定义，正确答案是 {answer}。"
         elif qtype == "calc":
             a, b = rng.randint(1, 20), rng.randint(1, 20)
             answer = str(a + b)
-            stem = f"计算：{a} + {b} = ?"
+            stem = f"计算：{a} + {b} = ?{flavor}"
             explanation = f"{a} + {b} = {answer}。"
         elif qtype == "fill":
             answer = f"示例{grade}年级{knowledge_point}"
-            stem = f"请根据“{knowledge_point}”填空。"
+            stem = f"请根据“{knowledge_point}”填空。{flavor}"
             explanation = f"应填写：{answer}。"
         else:  # open
             answer = f"关于{knowledge_point}的要点说明。"
-            stem = f"请简述{knowledge_point}。"
+            stem = f"请简述{knowledge_point}。{flavor}"
             explanation = answer
         return GeneratedQuestion(
             subject=subject,

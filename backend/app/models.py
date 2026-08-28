@@ -26,10 +26,24 @@ class UserBase(SQLModel):
     role: str = Field(max_length=16, default="child")  # parent | child
     grade: int | None = Field(default=None)
     is_active: bool = True
+    # 兴趣画像（WF-1 定稿）：受控分类叶子 key 列表 + 自由文本。
+    # 取值形态 {categories: list[str], free_text: str|null}；空/未设 = None。
+    interests: dict | None = Field(default=None, sa_type=JSON)
 
 
 class UserCreate(UserBase):
     password: str = Field(min_length=4, max_length=128)
+
+
+class UserUpdate(SQLModel):
+    """家长编辑娃娃资料（WF-5）：仅昵称/年级/兴趣可改，账号密码锁定不编辑。
+
+    所有字段可选；仅传非空字段进行局部更新。
+    """
+
+    display_name: str | None = Field(default=None, max_length=64)
+    grade: int | None = Field(default=None)
+    interests: dict | None = Field(default=None, sa_type=JSON)
 
 
 class LoginRequest(SQLModel):
@@ -57,6 +71,8 @@ class User(UserBase, table=True):
 class TaskBase(SQLModel):
     title: str = Field(max_length=255)
     status: str = Field(max_length=16, default="draft")  # draft|ready|assigned|done
+    # 兴趣题模式：本卷聚焦的兴趣主题（WF-4），整卷共享、用于审阅打标与整卷重生成复现。
+    focus_interest: list[str] | None = Field(default=None, sa_type=JSON)
 
 
 class TaskCreate(SQLModel):
@@ -80,6 +96,8 @@ class TaskBatchCreate(SQLModel):
     title: str = Field(max_length=255)
     child_id: uuid.UUID | None = None  # 可空，支持"先成卷晚点派"
     specs: list[TaskSpec]
+    # 兴趣题模式（WF-4）：显式聚焦的兴趣主题列表；留空/缺省 = 后端自动轻融入娃娃画像。
+    focus_interest: list[str] | None = None
 
 
 class Task(TaskBase, table=True):

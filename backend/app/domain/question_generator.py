@@ -10,7 +10,15 @@ class QuestionGenerator:
         self.provider = provider
 
     def generate(
-        self, *, subject, grade, knowledge_point, qtype, difficulty
+        self,
+        *,
+        subject,
+        grade,
+        knowledge_point,
+        qtype,
+        difficulty,
+        interests: list[str] | None = None,
+        focus_interest: str | None = None,
     ) -> GeneratedQuestion:
         return asyncio.run(
             self.provider.generate_question(
@@ -19,5 +27,7 @@ class QuestionGenerator:
                 knowledge_point=knowledge_point,
                 qtype=qtype,
                 difficulty=difficulty,
+                interests=interests,
+                focus_interest=focus_interest,
             )
         )
