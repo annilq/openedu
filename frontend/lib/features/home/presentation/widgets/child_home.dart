@@ -290,14 +290,14 @@ class _TaskCard extends StatelessWidget {
                 task.questions.map((q) => q.subject).where((s) => s.isNotEmpty).toSet().toList();
             final firstQ =
                 task.questions.isNotEmpty ? task.questions.first : null;
-            final subjectLabel = subjects.length > 1
-                ? '多科（${subjects.length}）'
-                : (subjects.isNotEmpty ? subjects.first : '');
             return Wrap(
               spacing: AppSpacing.sm,
               runSpacing: AppSpacing.sm,
               children: [
-                if (subjectLabel.isNotEmpty) AppTags.normal(subjectLabel),
+                if (subjects.length > 1)
+                AppTags.normal('多科（${subjects.length}）')
+              else if (subjects.length == 1)
+                AppTags.subject(SubjectAccent.fromName(subjects.first)),
                 if (firstQ != null && firstQ.grade > 0)
                   AppTags.normal('${firstQ.grade}年级'),
                 if (subjects.length == 1 && firstQ != null && firstQ.knowledgePoint.isNotEmpty)

@@ -48,7 +48,8 @@ class PracticeQuestionView extends StatelessWidget {
                 runSpacing: AppSpacing.sm,
                 children: [
                   // ADR-0004：学科下沉到题，从当前题取字段。
-                  if (q.subject.isNotEmpty) AppTags.normal(q.subject),
+                  if (q.subject.isNotEmpty)
+                    AppTags.subject(SubjectAccent.fromName(q.subject)),
                   if (q.grade > 0) AppTags.normal('${q.grade}年级'),
                   if (q.knowledgePoint.isNotEmpty)
                     AppTags.info(q.knowledgePoint),

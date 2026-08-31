@@ -195,16 +195,36 @@ def test_mastery_forbidden_for_other_parent(client):
     assert r.status_code == 403
 
 
-def test_mastery_forbidden_for_child(client):
-    """娃娃 token 不能访问家长看板接口（403，require_parent）。"""
+def test_mastery_allowed_for_self_child(client):
+    """娃娃可以查看自己的掌握度（200），不再被 require_parent 拦截。"""
     r = register_parent(client, username="mk3_parent")
     ptoken = r.json()["access_token"]
     child = _create_child(client, ptoken, username="mk3_kid")
+    # 造一条作答记录，避免「无记录」歧义
+    task = _make_task(client, ptoken, child["id"], count=1)
     lr = login(client, "mk3_kid", "kid123456")
     ctoken = lr.json()["access_token"]
+    _answer(client, ctoken, task["id"], task["questions"][0]["question_id"], "__wrong__")
 
     r = client.get(
         f"/api/v1/tasks/children/{child['id']}/mastery",
+        headers=auth_headers(ctoken),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["child_id"] == child["id"]
+
+
+def test_mastery_forbidden_for_other_child(client):
+    """娃娃 token 不能查看别人的掌握度（403）。"""
+    p1 = register_parent(client, username="mk3a_parent")
+    _create_child(client, p1.json()["access_token"], username="mk3a_kid")
+    p2 = register_parent(client, username="mk3b_parent")
+    c2 = _create_child(client, p2.json()["access_token"], username="mk3b_kid")
+    lr = login(client, "mk3a_kid", "kid123456")
+    ctoken = lr.json()["access_token"]
+
+    r = client.get(
+        f"/api/v1/tasks/children/{c2['id']}/mastery",
         headers=auth_headers(ctoken),
     )
     assert r.status_code == 403

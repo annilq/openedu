@@ -5,8 +5,8 @@ import '../theme/app_theme.dart';
 
 /// 向侧栏子树广播收缩态 + 切换回调的 InheritedWidget。
 ///
-/// DesktopShell 在顶层注入；AppSidebar / AppSidebarItem / _SidebarBottom
-/// 通过 [of] 读取当前态并自适应。
+/// AdaptiveShell 在侧栏 / 收起轨态注入；AppSidebar / AppSidebarItem 通过 [of]
+/// 读取当前态并自适应（抽屉态无 scope，组件按展开态渲染）。
 class SidebarCollapseScope extends InheritedWidget {
   final bool collapsed;
   final VoidCallback onToggle;

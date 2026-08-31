@@ -210,7 +210,7 @@ class _ParentTaskReviewScreenState
       decoration: BoxDecoration(
         color: app.surface,
         borderRadius: BorderRadius.circular(AppRadius.card),
-        border: Border.all(color: app.outlineVariant.withValues(alpha: 0.6)),
+        border: Border.all(color: app.outline),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -230,7 +230,7 @@ class _ParentTaskReviewScreenState
                 padding: const EdgeInsets.symmetric(
                     horizontal: AppSpacing.md, vertical: AppSpacing.xs),
                 decoration: BoxDecoration(
-                  color: statusChip.$2.withValues(alpha: 0.85),
+                  color: statusChip.$2,
                   borderRadius: BorderRadius.circular(AppRadius.bubble),
                 ),
                 child: Text(
@@ -486,14 +486,7 @@ class _QuestionCardState extends ConsumerState<_QuestionCard> {
       decoration: BoxDecoration(
         color: app.surface,
         borderRadius: BorderRadius.circular(AppRadius.card),
-        border: Border.all(color: app.outlineVariant.withValues(alpha: 0.6)),
-        boxShadow: [
-          BoxShadow(
-            color: CupertinoColors.black.withValues(alpha: 0.03),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        border: Border.all(color: app.outline),
       ),
       padding: const EdgeInsets.all(AppSpacing.lg),
       child: Column(
@@ -626,7 +619,7 @@ class _QuestionCardState extends ConsumerState<_QuestionCard> {
               width: double.infinity,
               padding: const EdgeInsets.all(AppSpacing.md),
               decoration: BoxDecoration(
-                color: app.primaryContainer.withValues(alpha: 0.5),
+                color: app.primaryContainer,
                 borderRadius: BorderRadius.circular(AppRadius.bubble),
               ),
               child: Row(
@@ -818,7 +811,7 @@ class _QuestionCardState extends ConsumerState<_QuestionCard> {
   ShadDecoration _fieldDecoration(dynamic app) => ShadDecoration(
         color: app.surfaceContainerLow,
         border: ShadBorder.all(
-          color: app.outlineVariant.withValues(alpha: 0.8),
+          color: app.outline,
           width: 1,
           radius: BorderRadius.circular(AppRadius.bubble),
         ),
@@ -893,7 +886,7 @@ class _EmptyHint extends StatelessWidget {
       decoration: BoxDecoration(
         color: app.surface,
         borderRadius: BorderRadius.circular(AppRadius.card),
-        border: Border.all(color: app.outlineVariant.withValues(alpha: 0.6)),
+        border: Border.all(color: app.outline),
       ),
       child: Column(
         children: [

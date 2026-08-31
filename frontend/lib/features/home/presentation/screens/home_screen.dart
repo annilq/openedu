@@ -1,8 +1,10 @@
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
+import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/domain/models/models.dart';
-import '../../../../shared/widgets/desktop_shell.dart';
+import '../../../../shared/widgets/adaptive_shell.dart';
 import '../../../children/domain/providers/children_provider.dart';
 import '../../../children/presentation/screens/child_form_screen.dart';
 import '../../../practice/presentation/screens/practice_screen.dart';
@@ -15,14 +17,14 @@ import '../providers/home_notifier.dart';
 import '../providers/selected_child_provider.dart';
 import '../screens/parent_task_review_screen.dart';
 import '../widgets/child_home.dart';
-import '../widgets/child_sidebar.dart';
+import '../widgets/parent/parent_child_selector.dart';
 import '../widgets/parent/parent_overview_view.dart';
-import '../widgets/parent/parent_sidebar.dart';
 import '../widgets/parent/parent_task_form_view.dart';
 import '../widgets/parent/parent_tutor_logs_view.dart';
 import '../widgets/parent/parent_tutor_quota_view.dart';
 import '../widgets/parent/parent_question_bank_view.dart';
 import '../widgets/parent/parent_wrong_questions_view.dart';
+import 'child_mastery_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   final UserModel user;
@@ -202,38 +204,118 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         const ReviewScreen(showBack: false),
         const WrongQuestionsScreen(showBack: false),
         TutorChatScreen(user: widget.user, showBack: false),
+        ChildMasteryScreen(user: widget.user),
       ],
     );
   }
 
+  // 家长端导航目的地：与旧 ParentSidebar 同序（0-4 + 6 题库）。
+  // 审核覆盖层存在时先关层再切换（复用旧侧栏 onNavTap 行为）。
+  List<AdaptiveNavDestination> _parentDestinations(int activeIndex) => [
+    AdaptiveNavDestination(
+        icon: LucideIcons.layoutDashboard,
+        label: '概览',
+        active: activeIndex == 0,
+        onTap: () => _parentTap(0)),
+    AdaptiveNavDestination(
+        icon: LucideIcons.pencil,
+        label: '布置任务',
+        active: activeIndex == 1,
+        onTap: () => _parentTap(1)),
+    AdaptiveNavDestination(
+        icon: LucideIcons.bookOpen,
+        label: '错题本',
+        active: activeIndex == 2,
+        onTap: () => _parentTap(2)),
+    AdaptiveNavDestination(
+        icon: LucideIcons.sparkles,
+        label: 'AI 答疑记录',
+        active: activeIndex == 3,
+        onTap: () => _parentTap(3)),
+    AdaptiveNavDestination(
+        icon: LucideIcons.shieldCheck,
+        label: 'AI 管控',
+        active: activeIndex == 4,
+        onTap: () => _parentTap(4)),
+    AdaptiveNavDestination(
+        icon: LucideIcons.library,
+        label: '题库',
+        active: activeIndex == 6,
+        onTap: () => _parentTap(6)),
+  ];
+
+  void _parentTap(int index) {
+    // 审核页内点击导航不直接切，先返回首页
+    if (_reviewingTask != null) {
+      setState(() => _reviewingTask = null);
+    }
+    _onParentNavTap(index);
+  }
+
+  List<AdaptiveNavDestination> _childDestinations(int activeIndex) => [
+    AdaptiveNavDestination(
+        icon: LucideIcons.house,
+        label: '首页',
+        active: activeIndex == 0,
+        onTap: () => _onChildNavTap(0)),
+    AdaptiveNavDestination(
+        icon: LucideIcons.refreshCw,
+        label: '复习',
+        active: activeIndex == 1,
+        onTap: () => _onChildNavTap(1)),
+    AdaptiveNavDestination(
+        icon: LucideIcons.bookOpen,
+        label: '错题本',
+        active: activeIndex == 2,
+        onTap: () => _onChildNavTap(2)),
+    AdaptiveNavDestination(
+        icon: LucideIcons.sparkles,
+        label: 'AI 伴学',
+        active: activeIndex == 3,
+        onTap: () => _onChildNavTap(3)),
+    AdaptiveNavDestination(
+        icon: LucideIcons.target,
+        label: '掌握度',
+        active: activeIndex == 4,
+        onTap: () => _onChildNavTap(4)),
+  ];
+
+  AdaptiveNavDestination _profileDestination() => AdaptiveNavDestination(
+        icon: LucideIcons.userRound,
+        label: '我的',
+        active: _showProfile,
+        onTap: _onProfileTap,
+      );
+
   @override
   Widget build(BuildContext context) {
     if (widget.user.isParent) {
-      return DesktopShell(
-        sidebar: ParentSidebar(
-          user: widget.user,
-          selectedIndex: _reviewingTask != null ? 1 : _parentNavIndex,
-          onNavTap: (index) {
-            // 审核页内点击侧栏不直接切，先返回首页
-            if (_reviewingTask != null) {
-              setState(() => _reviewingTask = null);
-            }
-            _onParentNavTap(index);
-          },
-          onProfileTap: _onProfileTap,
+      final activeIndex = _reviewingTask != null ? 1 : _parentNavIndex;
+      return AdaptiveShell(
+        mode: AppUserMode.parent,
+        destinations: _parentDestinations(activeIndex),
+        profileDestination: _profileDestination(),
+        sidebarTop: ParentChildSelector(
           onNavigateToAddChild: _onNavigateToAddChild,
           onNavigateToEditChild: _onNavigateToEditChild,
+        ),
+        sidebarBottom: AdaptiveUserBlock(
+          user: widget.user,
+          onProfileTap: _onProfileTap,
+          subtitle: '家长账号',
         ),
         body: _buildParentView(),
       );
     }
 
-    return DesktopShell(
-      sidebar: ChildSidebar(
+    return AdaptiveShell(
+      mode: AppUserMode.child,
+      destinations: _childDestinations(_childNavIndex),
+      profileDestination: _profileDestination(),
+      sidebarBottom: AdaptiveUserBlock(
         user: widget.user,
-        selectedIndex: _childNavIndex,
-        onNavTap: _onChildNavTap,
         onProfileTap: _onProfileTap,
+        subtitle: '${widget.user.grade ?? '?'}年级',
       ),
       body: _buildChildView(),
     );

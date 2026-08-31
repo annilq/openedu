@@ -153,7 +153,7 @@ class _ParentQuestionBankViewState extends ConsumerState<ParentQuestionBankView>
                   decoration: BoxDecoration(
                     border: Border(
                       bottom: BorderSide(
-                        color: app.outlineVariant.withValues(alpha: 0.4),
+                        color: app.outline,
                       ),
                     ),
                   ),
@@ -351,7 +351,7 @@ class _ParentQuestionBankViewState extends ConsumerState<ParentQuestionBankView>
         color: app.surface,
         borderRadius: BorderRadius.circular(AppRadius.card),
         border: Border.all(
-          color: selected ? app.primary : app.outlineVariant.withValues(alpha: 0.6),
+          color: selected ? app.primary : app.outline,
         ),
       ),
       child: GestureDetector(

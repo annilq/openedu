@@ -22,7 +22,7 @@ class TutorWelcomeHint extends StatelessWidget {
               color: scheme.secondaryContainer,
               borderRadius: BorderRadius.circular(AppRadius.banner),
               border: Border.all(
-                  color: scheme.secondary.withValues(alpha: 0.2), width: 1),
+                  color: scheme.outline, width: 1),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -49,7 +49,7 @@ class TutorWelcomeHint extends StatelessWidget {
                 Text('只讲学习内容，其他问题不回答哦',
                     textAlign: TextAlign.center,
                     style: text.bodyMedium?.copyWith(
-                      color: scheme.onSecondaryContainer.withValues(alpha: 0.85),
+                      color: scheme.onSecondaryContainer,
                     )),
               ],
             ),

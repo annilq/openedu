@@ -22,6 +22,95 @@ ThemeMode appThemeModeToMaterial(AppThemeMode mode) => switch (mode) {
       AppThemeMode.dark => ThemeMode.dark,
     };
 
+/// 用户模式（双模式，ADR-0014）：家长工作台 / 娃娃学习台。
+///
+/// 独立于亮暗主题（[AppThemeMode]），控制字号阶梯与语气。
+/// 家长端 = 密排专业；娃娃端 = 更大字号 + 学科色 + 适度趣味。
+enum AppUserMode { parent, child }
+
+/// 学科色（ADR-0014 Subject Accent Tokens）。
+///
+/// 在中性 + 靛蓝基底上叠加，中饱和，**仅小面积使用**（学科标识 / 进度条 /
+/// 图标容器 / 小面积 chip）。`reserved` 为未来学科（科学 / 历史…）预留槽。
+enum SubjectKey { math, chinese, english, reserved }
+
+/// 学科色三件套：强调色 / 容器底 / 前景文字。
+class SubjectColors {
+  final Color accent;
+  final Color container;
+  final Color fg;
+  const SubjectColors(this.accent, this.container, this.fg);
+}
+
+/// 学科色令牌解析（亮 / 暗各一套，与 [AppColors] 同源管理）。
+class SubjectAccent {
+  const SubjectAccent._();
+
+  static const SubjectColors _lightMath =
+      SubjectColors(Color(0xFF4C7DE0), Color(0xFFE9F0FC), Color(0xFF2B5BB0));
+  static const SubjectColors _lightChinese =
+      SubjectColors(Color(0xFFD85A6E), Color(0xFFFCEBEE), Color(0xFFB23A4E));
+  static const SubjectColors _lightEnglish =
+      SubjectColors(Color(0xFF3FA67E), Color(0xFFE7F5EE), Color(0xFF2C7C5C));
+  static const SubjectColors _lightReserved =
+      SubjectColors(Color(0xFF8A8F98), Color(0xFFF1F1F0), Color(0xFF5C6068));
+
+  static const SubjectColors _darkMath =
+      SubjectColors(Color(0xFF7FA8F0), Color(0xFF1B2740), Color(0xFFA9C4F5));
+  static const SubjectColors _darkChinese =
+      SubjectColors(Color(0xFFE78FA0), Color(0xFF3A1F26), Color(0xFFF2B6C2));
+  static const SubjectColors _darkEnglish =
+      SubjectColors(Color(0xFF6FC4A2), Color(0xFF163026), Color(0xFFA7E0C6));
+  static const SubjectColors _darkReserved =
+      SubjectColors(Color(0xFF9CA3AF), Color(0xFF2A2A28), Color(0xFFC7CBD1));
+
+  /// 按学科 + 亮暗解析三件套。
+  static SubjectColors resolve(SubjectKey key, {required bool isDark}) {
+    switch (key) {
+      case SubjectKey.math:
+        return isDark ? _darkMath : _lightMath;
+      case SubjectKey.chinese:
+        return isDark ? _darkChinese : _lightChinese;
+      case SubjectKey.english:
+        return isDark ? _darkEnglish : _lightEnglish;
+      case SubjectKey.reserved:
+        return isDark ? _darkReserved : _lightReserved;
+    }
+  }
+
+  /// 按当前 context 的亮暗解析。
+  static SubjectColors forContext(SubjectKey key, BuildContext context) =>
+      resolve(key, isDark: AppTheme.isDarkOf(context));
+
+  /// 学科中文名。
+  static String label(SubjectKey key) => switch (key) {
+        SubjectKey.math => '数学',
+        SubjectKey.chinese => '语文',
+        SubjectKey.english => '英语',
+        SubjectKey.reserved => '其它',
+      };
+
+  /// 由领域字符串（如 '数学' / 'math'）映射到学科键，未知归 reserved。
+  static SubjectKey fromName(String? name) {
+    switch (name?.trim()) {
+      case '数学':
+      case 'math':
+      case 'Math':
+        return SubjectKey.math;
+      case '语文':
+      case 'chinese':
+      case 'Chinese':
+        return SubjectKey.chinese;
+      case '英语':
+      case 'english':
+      case 'English':
+        return SubjectKey.english;
+      default:
+        return SubjectKey.reserved;
+    }
+  }
+}
+
 /// Linear 风格主题（亮色 + 暗色 · 中性灰白 + 靛蓝强调）。
 ///
 /// 设计约定（见 .impeccable.md / ADR-0003）：
@@ -85,6 +174,7 @@ class AppTheme {
     // info 语义（靛蓝系）
     infoContainer: Color(0xFFEEF0FC),
     onInfoContainer: Color(0xFF4338CA),
+    scrim: Color(0x66000000),
   );
 
   /// 暗色令牌（暖中性深炭 + 靛蓝提亮）。
@@ -124,6 +214,7 @@ class AppTheme {
     outlineHover: Color(0xFF3D3D3A),
     infoContainer: Color(0xFF1A1A2E),
     onInfoContainer: Color(0xFF9BA0E8),
+    scrim: Color(0x66000000),
   );
 
   static bool isDarkOf(BuildContext context) {
@@ -135,12 +226,22 @@ class AppTheme {
     return isDark ? dark : light;
   }
 
-  static final AppText _lightText = AppText._build(light);
-  static final AppText _darkText = AppText._build(dark);
+  static final AppText _lightText = AppText._build(light, child: false);
+  static final AppText _darkText = AppText._build(dark, child: false);
+  static final AppText _lightTextChild = AppText._build(light, child: true);
+  static final AppText _darkTextChild = AppText._build(dark, child: true);
 
-  static AppText textOf(BuildContext context) {
+  /// 取当前用户模式的排版集合。
+  ///
+  /// 默认从 [UserModeScope] 读取（由 [userModeProvider] 驱动，全局自动重建）；
+  /// 也可显式传 [mode] 覆盖（如测试或部分布局固定用家长尺度）。
+  static AppText textOf(BuildContext context, {AppUserMode? mode}) {
     final isDark = CupertinoTheme.brightnessOf(context) == Brightness.dark;
-    return isDark ? _darkText : _lightText;
+    final m = mode ?? UserModeScope.of(context);
+    if (isDark) {
+      return m == AppUserMode.child ? _darkTextChild : _darkText;
+    }
+    return m == AppUserMode.child ? _lightTextChild : _lightText;
   }
 
   // ============ Cupertino 主题 ============
@@ -151,8 +252,8 @@ class AppTheme {
   static CupertinoThemeData cupertinoFor(bool isDark) =>
       _cupertino(isDark ? dark : light);
 
-  static ShadThemeData shadFor(bool isDark) =>
-      shadThemeData(isDark ? dark : light);
+  static ShadThemeData shadFor(bool isDark, [AppUserMode mode = AppUserMode.parent]) =>
+      shadThemeData(isDark ? dark : light, child: mode == AppUserMode.child);
 
   static CupertinoThemeData _cupertino(AppColors c) {
     return CupertinoThemeData(
@@ -174,7 +275,7 @@ class AppTheme {
 
   // ============ Shad Theme ============
 
-  static ShadThemeData shadThemeData(AppColors c) {
+  static ShadThemeData shadThemeData(AppColors c, {required bool child}) {
     final scheme = ShadColorScheme(
       background: c.surface,
       foreground: c.onSurface,
@@ -249,7 +350,7 @@ class AppTheme {
       brightness: c.brightness,
       colorScheme: scheme,
       radius: const BorderRadius.all(Radius.circular(AppRadius.sm)),
-      textTheme: _shadTextTheme(c),
+      textTheme: _shadTextTheme(c, child: child),
       disabledOpacity: 0.5,
       primaryButtonTheme: button(c.primary, c.onPrimary),
       secondaryButtonTheme: button(c.secondaryContainer, c.onSecondaryContainer),
@@ -329,8 +430,22 @@ class AppTheme {
     );
   }
 
-  /// 密排排版 → ShadTextTheme（15sp 基线）。
-  static ShadTextTheme _shadTextTheme(AppColors c) {
+  /// 排版 → ShadTextTheme。Child Mode 在 Parent 基础上整体放大一档（ADR-0014）。
+  static ShadTextTheme _shadTextTheme(AppColors c, {required bool child}) {
+    // Child Mode 字号映射（与 Dual-Mode Type Scale 表一致）。
+    double grow(double s) {
+      if (!child) return s;
+      if (s == 22) return 26;
+      if (s == 20) return 24;
+      if (s == 18) return 21;
+      if (s == 17) return 19;
+      if (s == 16) return 18;
+      if (s == 15) return 17;
+      if (s == 14) return 16;
+      if (s == 13) return 14;
+      return s + 2;
+    }
+
     TextStyle style({
       required double size,
       required FontWeight weight,
@@ -341,7 +456,7 @@ class AppTheme {
       return TextStyle(
         fontFamily: fontFamily,
         fontFamilyFallback: fontFamilyFallback,
-        fontSize: size,
+        fontSize: grow(size),
         fontWeight: weight,
         height: height,
         letterSpacing: spacing,
@@ -416,6 +531,7 @@ class AppColors {
   final Color outlineHover;
   final Color infoContainer;
   final Color onInfoContainer;
+  final Color scrim; // 模态遮罩（抽屉/弹层）：固定半透明黑，避免运行时 withValues 伪造
 
   const AppColors({
     required this.brightness,
@@ -453,6 +569,7 @@ class AppColors {
     required this.outlineHover,
     required this.infoContainer,
     required this.onInfoContainer,
+    required this.scrim,
   });
 
   /// 浮起表面（卡片/容器背景）。
@@ -502,12 +619,27 @@ class AppText {
     required this.labelSmall,
   });
 
-  factory AppText._build(AppColors c) {
+  factory AppText._build(AppColors c, {required bool child}) {
     const ff = AppTheme.fontFamily;
     const ffb = AppTheme.fontFamilyFallback;
     final base = c.onSurface;
     final muted = c.onSurfaceVariant;
     final onCta = c.onPrimary;
+
+    // Child Mode 字号映射（ADR-0014 Dual-Mode Type Scale）。
+    double cs(double s) {
+      if (!child) return s;
+      if (s == 22) return 26;
+      if (s == 20) return 24;
+      if (s == 18) return 21;
+      if (s == 17) return 19;
+      if (s == 16) return 18;
+      if (s == 15) return 17;
+      if (s == 14) return 16;
+      if (s == 13) return 14;
+      if (s == 12) return 13;
+      return s + 2;
+    }
 
     TextStyle textStyle({
       required double size,
@@ -519,7 +651,7 @@ class AppText {
       return TextStyle(
         fontFamily: ff,
         fontFamilyFallback: ffb,
-        fontSize: size,
+        fontSize: cs(size),
         fontWeight: weight,
         height: height,
         letterSpacing: spacing,
@@ -536,7 +668,7 @@ class AppText {
       titleLarge: textStyle(size: 16, weight: FontWeight.w600, height: 1.35, spacing: -0.1),
       titleMedium: textStyle(size: 15, weight: FontWeight.w600, height: 1.35),
       titleSmall: textStyle(size: 15, weight: FontWeight.w600, height: 1.35),
-      bodyLarge: textStyle(size: 15, weight: FontWeight.w400, height: 1.5),
+      bodyLarge: textStyle(size: 15, weight: FontWeight.w400, height: child ? 1.55 : 1.5),
       bodyMedium: textStyle(size: 14, weight: FontWeight.w400, height: 1.45),
       bodySmall: textStyle(size: 13, weight: FontWeight.w400, height: 1.45, spacing: 0.2, color: muted),
       labelLarge: textStyle(size: 14, weight: FontWeight.w600, height: 1.35, spacing: 0.2, color: onCta),
@@ -739,6 +871,15 @@ class AppTags {
         icon: icon,
         semantics: _TagSemantics.warning,
       );
+
+  /// 学科标签：用学科色（accent/container/fg）着色，仅小面积使用。
+  static Widget subject(SubjectKey key, {String? label, IconData? icon}) =>
+      _TagChip(
+        label: label ?? SubjectAccent.label(key),
+        icon: icon,
+        semantics: _TagSemantics.normal,
+        subject: key,
+      );
 }
 
 enum _TagSemantics { normal, info, ai, success, warning }
@@ -747,22 +888,32 @@ class _TagChip extends StatelessWidget {
   final String label;
   final IconData? icon;
   final _TagSemantics semantics;
+  final SubjectKey? subject;
   const _TagChip({
     required this.label,
-    required this.semantics,
+    this.semantics = _TagSemantics.normal,
     this.icon,
+    this.subject,
   });
 
   @override
   Widget build(BuildContext context) {
     final app = AppTheme.colorsOf(context);
-    final (bg, fg) = switch (semantics) {
-      _TagSemantics.normal => (app.surfaceContainerHigh, app.onSurface),
-      _TagSemantics.info => (app.infoContainer, app.onInfoContainer),
-      _TagSemantics.ai => (app.secondaryContainer, app.onSecondaryContainer),
-      _TagSemantics.success => (app.tertiaryContainer, app.onTertiaryContainer),
-      _TagSemantics.warning => (app.errorContainer, app.onErrorContainer),
-    };
+    late final Color bg;
+    late final Color fg;
+    if (subject != null) {
+      final sc = SubjectAccent.forContext(subject!, context);
+      bg = sc.container;
+      fg = sc.fg;
+    } else {
+      (bg, fg) = switch (semantics) {
+        _TagSemantics.normal => (app.surfaceContainerHigh, app.onSurface),
+        _TagSemantics.info => (app.infoContainer, app.onInfoContainer),
+        _TagSemantics.ai => (app.secondaryContainer, app.onSecondaryContainer),
+        _TagSemantics.success => (app.tertiaryContainer, app.onTertiaryContainer),
+        _TagSemantics.warning => (app.errorContainer, app.onErrorContainer),
+      };
+    }
 
     return ShadBadge.raw(
       variant: ShadBadgeVariant.primary,
@@ -991,4 +1142,30 @@ class AppMotion {
   static const Duration interaction = Duration(milliseconds: 120);
   static const Duration state = Duration(milliseconds: 200);
   static const Duration page = Duration(milliseconds: 300);
+}
+
+// =====================================================================
+// §用户模式作用域（双模式切换，ADR-0014）
+// =====================================================================
+
+/// 将当前 [AppUserMode] 注入 Widget 树。
+///
+/// [AppTheme.textOf] 通过它读取模式，从而所有 `Text(style: AppTheme.textOf(context)...)`
+/// 在模式切换时自动重建——无需逐个 widget 监听 [userModeProvider]。
+/// 未挂载时默认 [AppUserMode.parent]，避免脱离作用域调用崩溃。
+class UserModeScope extends InheritedWidget {
+  final AppUserMode mode;
+
+  const UserModeScope({
+    super.key,
+    required this.mode,
+    required super.child,
+  });
+
+  static AppUserMode of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<UserModeScope>()?.mode ??
+      AppUserMode.parent;
+
+  @override
+  bool updateShouldNotify(UserModeScope old) => old.mode != mode;
 }

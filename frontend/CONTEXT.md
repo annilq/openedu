@@ -32,6 +32,22 @@ _Avoid_: 统一 200ms easeOut（旧做法）
 桌面壳下所有可交互元素（侧栏项、卡片、按钮）的 hover 反馈——surface 变 surfaceHover、outline 变 outlineHover。用 MouseRegion 或 Shad hover 回调实现。
 _Avoid_: 无（旧做法完全没有 hover）
 
+**双模式（Dual-Mode，ADR-0014）**:
+Parent Mode（家长工作台，密排专业 15sp 基线）与 Child Mode（娃娃学习台，~17sp 基线、更圆角、学科色凸显、适度趣味动效）。两者共用 surface/spacing/radius 令牌，仅字号阶梯、语气与学科色权重分化。由 `AppUserMode`（parent/child）独立于主题明暗切换。
+_Avoid_: 为娃娃单独维护一套完全独立的颜色/组件库（应走令牌分化）
+
+**学科色（Subject Accent，ADR-0014）**:
+受控多色强调——数学=蓝 / 语文=玫瑰 / 英语=翠绿（中饱和，预留扩展槽）。仅用于学科标识、进度条、图标容器、小面积 chip；不作大面积背景。Parent Mode 数据可视化中低调使用，Child Mode 凸显。
+_Avoid_: 高饱和荧光色、大面积学科色铺底、把学科色当全局强调色（全局强调仍是 accent 靛蓝）
+
+**断点（Breakpoint，ADR-0014）**:
+compact(<700) / medium(700–1023) / expanded(≥1024) 三档；compact 收起侧栏为底部导航（Child）/抽屉（Parent）。
+_Avoid_: 写死 240 侧栏不自适应、用设备型号判断而非宽度
+
+**Celebrate 动效（ADR-0014）**:
+450ms easeOutBack 的徽章解锁/连击/打卡成功反馈，仅 Child Mode 启用；correct 题 scale-pop 120ms。
+_Avoid_: 在 Parent Mode 触发庆祝动效、游戏化过度
+
 ---
 
 ## AI 出题（多学科试卷 + 题库快照，ADR-0004）

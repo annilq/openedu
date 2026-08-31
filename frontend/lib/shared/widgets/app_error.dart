@@ -51,7 +51,7 @@ class AppError extends StatelessWidget {
               width: 88,
               height: 88,
               decoration: BoxDecoration(
-                color: app.errorContainer.withValues(alpha: 0.6),
+                color: app.errorContainer,
                 borderRadius: BorderRadius.circular(28),
               ),
               child: Icon(

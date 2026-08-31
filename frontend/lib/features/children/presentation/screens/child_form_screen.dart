@@ -227,7 +227,7 @@ class _LockedField extends StatelessWidget {
           decoration: BoxDecoration(
             color: app.surfaceContainerLow,
             borderRadius: BorderRadius.circular(AppRadius.bubble),
-            border: Border.all(color: app.outlineVariant.withValues(alpha: 0.8)),
+            border: Border.all(color: app.outline),
           ),
           child: Text(value, style: text.bodyLarge),
         ),

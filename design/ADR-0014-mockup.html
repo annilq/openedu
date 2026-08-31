@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>娃娃学习 · 设计重定向验证（ADR-0014）</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+  :root{
+    /* —— 中性基底（亮色） —— */
+    --surface:#FBFAFA; --surface-raised:#FFFFFF; --surface-sunken:#F4F4F2;
+    --outline:#ECECEA; --outline-hover:#D1D1CE;
+    --on-surface:#1D1B17; --on-surface-variant:#6B7280;
+    /* —— 全局强调（靛蓝） —— */
+    --accent:#5E6AD2; --on-accent:#FFFFFF;
+    /* —— CTA —— */
+    --cta:#1D1B17; --on-cta:#FFFFFF;
+    /* —— 语义色（降饱和） —— */
+    --pos:#EFF5EC; --pos-fg:#3B7A2D;
+    --warn:#FAF3E8; --warn-fg:#8A6D1F;
+    --err:#FCE8E6; --err-fg:#B91C1C;
+    --info:#EEF0FC; --info-fg:#4338CA;
+    /* —— 学科色（中饱和，ADR-0014） —— */
+    --math:#4C7DE0; --math-bg:#E9F0FC; --math-fg:#2B5BB0;
+    --chi:#D85A6E;  --chi-bg:#FCEBEE;  --chi-fg:#B23A4E;
+    --eng:#3FA67E;  --eng-bg:#E7F5EE;  --eng-fg:#2C7C5C;
+    /* —— 间距 / 圆角 —— */
+    --r-card:12px; --r-btn:10px; --r-chip:8px; --r-banner:16px;
+    --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:20px; --s6:24px; --s7:32px; --s8:40px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    font-family:'Inter',system-ui,-apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+    background:var(--surface); color:var(--on-surface);
+    -webkit-font-smoothing:antialiased; line-height:1.5;
+  }
+  .wrap{max-width:1180px;margin:0 auto;padding:var(--s7) var(--s6) 80px;}
+
+  /* —— 页头 —— */
+  .masthead{display:flex;flex-direction:column;gap:var(--s3);margin-bottom:var(--s7);}
+  .eyebrow{font-size:12px;font-weight:600;letter-spacing:.3px;color:var(--accent);text-transform:uppercase;}
+  h1{font-size:26px;font-weight:700;letter-spacing:-.6px;margin:0;}
+  .lede{font-size:15px;color:var(--on-surface-variant);max-width:760px;margin:0;}
+  .pillrow{display:flex;flex-wrap:wrap;gap:var(--s2);margin-top:var(--s2);}
+  .pill{font-size:12px;font-weight:600;padding:6px 11px;border-radius:999px;background:var(--info);color:var(--info-fg);}
+
+  /* —— 区块标题 —— */
+  .section{margin-top:var(--s8);}
+  .section h2{font-size:20px;font-weight:700;letter-spacing:-.4px;margin:0 0 var(--s2);}
+  .section .sub{font-size:14px;color:var(--on-surface-variant);margin:0 0 var(--s5);}
+
+  /* —— 设备对比栅格 —— */
+  .compare{display:grid;grid-template-columns:1fr 1fr;gap:var(--s6);}
+  @media(max-width:920px){.compare{grid-template-columns:1fr;}}
+
+  .mode-tag{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;
+    padding:4px 10px;border-radius:999px;margin-bottom:var(--s3);}
+  .mode-tag.parent{background:var(--surface-sunken);color:var(--on-surface);}
+  .mode-tag.child{background:var(--chi-bg);color:var(--chi-fg);}
+
+  /* —— 设备外框 —— */
+  .device{background:var(--surface-raised);border:1px solid var(--outline);border-radius:20px;
+    overflow:hidden;box-shadow:0 1px 0 var(--outline);}
+  .device .screen{display:flex;min-height:560px;}
+  .device .screen.child{background:var(--surface);}
+
+  /* —— 侧栏（expanded） —— */
+  .sidebar{width:220px;flex:0 0 220px;background:var(--surface-sunken);border-right:1px solid var(--outline);
+    padding:var(--s4) var(--s3);display:flex;flex-direction:column;gap:4px;}
+  .brand{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;padding:6px 8px 14px;}
+  .brand .dot{width:22px;height:22px;border-radius:7px;background:var(--accent);}
+  .nav-item{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:8px;font-size:14px;
+    color:var(--on-surface-variant);font-weight:500;}
+  .nav-item.active{background:var(--surface-raised);color:var(--on-surface);font-weight:600;
+    box-shadow:inset 0 0 0 1px var(--outline);}
+  .nav-item .ic{width:16px;height:16px;border-radius:4px;background:currentColor;opacity:.5;}
+  .nav-item.active .ic{background:var(--accent);opacity:1;}
+
+  /* —— 内容区 —— */
+  .content{flex:1;padding:var(--s5) var(--s6);overflow:auto;}
+  .content h3{font-size:17px;font-weight:700;margin:0 0 var(--s4);letter-spacing:-.2px;}
+  .content .child-h3{font-size:21px;font-weight:700;letter-spacing:-.3px;margin:0 0 var(--s4);}
+
+  /* 统计卡（Parent：1px 描边、无阴影） */
+  .stat-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:var(--s3);margin-bottom:var(--s6);}
+  .stat{border:1px solid var(--outline);border-radius:var(--r-card);padding:var(--s4);background:var(--surface-raised);}
+  .stat .icbox{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;
+    font-size:16px;margin-bottom:var(--s3);}
+  .stat .val{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.3px;}
+  .stat .lab{font-size:12px;color:var(--on-surface-variant);margin-top:2px;}
+
+  /* 掌握度条（Parent：靛蓝） */
+  .mastery{display:flex;flex-direction:column;gap:var(--s3);}
+  .mrow{display:flex;align-items:center;justify-content:space-between;font-size:14px;}
+  .bar{height:8px;border-radius:999px;background:var(--surface-sunken);overflow:hidden;margin-top:6px;}
+  .bar > i{display:block;height:100%;background:var(--accent);border-radius:999px;}
+
+  /* —— 娃娃端：横幅（更圆、学科色/暖） —— */
+  .banner{border-radius:var(--r-banner);padding:var(--s5);display:flex;align-items:center;gap:var(--s4);margin-bottom:var(--s4);}
+  .banner.tutor{background:var(--warn);}
+  .banner.review{background:var(--info);}
+  .banner .bic{width:52px;height:52px;border-radius:16px;display:flex;align-items:center;justify-content:center;
+    font-size:24px;flex:0 0 52px;}
+  .banner.tutor .bic{background:var(--accent);color:#fff;}
+  .banner.review .bic{background:var(--accent);color:#fff;}
+  .banner .bt{font-size:17px;font-weight:700;}
+  .banner .bs{font-size:14px;color:var(--on-surface-variant);}
+
+  /* 任务卡（Child：学科色 chip + 大圆角 + 大字） */
+  .task{border:1px solid var(--outline);border-radius:14px;padding:var(--s5);background:var(--surface-raised);margin-bottom:var(--s3);}
+  .task .tt{font-size:18px;font-weight:700;letter-spacing:-.2px;margin-bottom:var(--s3);}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:var(--s4);}
+  .chip{font-size:13px;font-weight:600;padding:5px 10px;border-radius:999px;}
+  .chip.math{background:var(--math-bg);color:var(--math-fg);}
+  .chip.chi{background:var(--chi-bg);color:var(--chi-fg);}
+  .chip.eng{background:var(--eng-bg);color:var(--eng-fg);}
+  .chip.neu{background:var(--surface-sunken);color:var(--on-surface-variant);}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:46px;width:100%;
+    background:var(--cta);color:var(--on-cta);border:0;border-radius:var(--r-btn);font-size:15px;font-weight:600;cursor:pointer;}
+
+  /* 底部导航（compact / Child） */
+  .bottombar{display:none;border-top:1px solid var(--outline);background:var(--surface-raised);
+    padding:8px 4px;justify-content:space-around;}
+  .bottombar .bi{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;color:var(--on-surface-variant);}
+  .bottombar .bi.active{color:var(--accent);font-weight:600;}
+  .bottombar .bi .bic{width:22px;height:22px;border-radius:7px;background:currentColor;opacity:.6;}
+  .bottombar .bi.active .bic{background:var(--accent);opacity:1;}
+
+  /* —— 响应式三档 —— */
+  .bps{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--s4);}
+  @media(max-width:820px){.bps{grid-template-columns:1fr;}}
+  .bp{border:1px solid var(--outline);border-radius:var(--r-card);padding:var(--s4);background:var(--surface-raised);}
+  .bp .tier{font-size:13px;font-weight:700;color:var(--accent);}
+  .bp .w{font-size:12px;color:var(--on-surface-variant);margin:2px 0 var(--s3);}
+  .bp .mini{height:120px;border-radius:10px;background:var(--surface-sunken);position:relative;overflow:hidden;border:1px solid var(--outline);}
+  .bp .mini .rail{position:absolute;top:0;bottom:0;left:0;width:30px;background:var(--surface-raised);border-right:1px solid var(--outline);}
+  .bp .mini .nav{position:absolute;left:0;right:0;bottom:0;height:34px;background:var(--surface-raised);border-top:1px solid var(--outline);display:flex;align-items:center;justify-content:space-around;}
+  .bp .mini .nav span{width:18px;height:18px;border-radius:6px;background:var(--on-surface-variant);opacity:.35;}
+  .bp .mini .drawer{position:absolute;top:0;bottom:34px;left:0;width:64%;background:var(--surface-raised);border-right:1px solid var(--outline);}
+
+  /* —— 学科色图例 —— */
+  .legend{display:flex;flex-wrap:wrap;gap:var(--s3);}
+  .leg{display:flex;align-items:center;gap:10px;border:1px solid var(--outline);border-radius:var(--r-card);
+    padding:var(--s3) var(--s4);background:var(--surface-raised);min-width:180px;}
+  .leg .sw{width:30px;height:30px;border-radius:9px;}
+  .leg .nm{font-size:14px;font-weight:600;}
+  .leg .ds{font-size:12px;color:var(--on-surface-variant);}
+
+  /* —— Celebrate —— */
+  .celebrate-stage{display:flex;align-items:center;gap:var(--s5);border:1px solid var(--outline);border-radius:var(--r-card);
+    padding:var(--s6);background:var(--surface-raised);}
+  .badge{width:72px;height:72px;border-radius:22px;background:var(--chi-bg);color:var(--chi-fg);
+    display:flex;align-items:center;justify-content:center;font-size:34px;}
+  .badge.pop{animation:pop .45s cubic-bezier(.34,1.56,.64,1);}
+  @keyframes pop{0%{transform:scale(.6);opacity:0;}60%{transform:scale(1.12);}100%{transform:scale(1);opacity:1;}}
+  .celebrate-stage .ct{font-size:16px;font-weight:600;}
+  .celebrate-stage .cs{font-size:14px;color:var(--on-surface-variant);margin:2px 0 var(--s3);}
+  .ghostbtn{height:40px;padding:0 16px;border-radius:var(--r-btn);border:1px solid var(--outline);background:var(--surface-raised);
+    font-size:14px;font-weight:600;cursor:pointer;color:var(--on-surface);}
+  .foot{margin-top:var(--s8);font-size:12px;color:var(--on-surface-variant);border-top:1px solid var(--outline);padding-top:var(--s4);}
+  code{background:var(--surface-sunken);padding:1px 6px;border-radius:6px;font-size:12px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="masthead">
+    <div class="eyebrow">Design Redirect · ADR-0014</div>
+    <h1>娃娃学习 · 现代化设计方向验证</h1>
+    <p class="lede">基于 <code>/grill-with-docs</code> 访谈确认的四个决策：双模式、学科色扩展、平板+窄屏自适应、适度趣味。
+      下方为可评审的视觉稿——直接对照当前实现，验证「布局 / 间距 / 色彩 / 响应式」是否解决你提到的体感问题。</p>
+    <div class="pillrow">
+      <span class="pill">双模式 Parent / Child</span>
+      <span class="pill">学科色（数学/语文/英语）</span>
+      <span class="pill">响应式 3 断点</span>
+      <span class="pill">celebrate 动效</span>
+      <span class="pill">令牌 100% 落地</span>
+    </div>
+  </header>
+
+  <!-- 双模式对比 -->
+  <section class="section">
+    <h2>① 双模式对比（同一套令牌，两种密度与语气）</h2>
+    <p class="sub">左侧家长工作台沿用密排专业系统；右侧娃娃学习台放大字号、用学科色与暖容器、底部导航。两者共用 surface / spacing / radius 令牌。</p>
+    <div class="compare">
+
+      <!-- Parent Mode -->
+      <div>
+        <span class="mode-tag parent">Parent Mode · 工作台</span>
+        <div class="device">
+          <div class="screen">
+            <aside class="sidebar">
+              <div class="brand"><span class="dot"></span>娃娃学习</div>
+              <div class="nav-item active"><span class="ic"></span>概览</div>
+              <div class="nav-item"><span class="ic"></span>任务布置</div>
+              <div class="nav-item"><span class="ic"></span>题库</div>
+              <div class="nav-item"><span class="ic"></span>错题本</div>
+              <div class="nav-item"><span class="ic"></span>AI 日志</div>
+              <div class="nav-item"><span class="ic"></span>管控</div>
+            </aside>
+            <div class="content">
+              <h3>学习进度 · 二年级 小云</h3>
+              <div class="stat-grid">
+                <div class="stat"><div class="icbox" style="background:var(--info);color:var(--info-fg)">∑</div><div class="val">128</div><div class="lab">总题数</div></div>
+                <div class="stat"><div class="icbox" style="background:var(--pos);color:var(--pos-fg)">✓</div><div class="val">112</div><div class="lab">答对</div></div>
+                <div class="stat"><div class="icbox" style="background:var(--pos);color:var(--pos-fg)">%</div><div class="val">87%</div><div class="lab">正确率</div></div>
+                <div class="stat"><div class="icbox" style="background:var(--warn);color:var(--warn-fg)">🔥</div><div class="val">12天</div><div class="lab">连续打卡</div></div>
+              </div>
+              <h3>知识点掌握度</h3>
+              <div class="mastery">
+                <div><div class="mrow"><span>数学 · 两位数加减</span><span>92分</span></div><div class="bar"><i style="width:92%"></i></div></div>
+                <div><div class="mrow"><span>语文 · 看拼音写汉字</span><span>78分</span></div><div class="bar"><i style="width:78%"></i></div></div>
+                <div><div class="mrow"><span>英语 · 单词拼写</span><span>64分</span></div><div class="bar"><i style="width:64%"></i></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Child Mode -->
+      <div>
+        <span class="mode-tag child">Child Mode · 学习台</span>
+        <div class="device">
+          <div class="screen child">
+            <div class="content" style="padding:var(--s5) var(--s4);">
+              <h3 class="child-h3">嗨 小云 👋 今天加油！</h3>
+              <div class="banner tutor"><div class="bic">✦</div><div style="flex:1"><div class="bt">问 AI 老师</div><div class="bs">遇到不懂的题，随时来问～</div></div><div class="btn" style="width:auto;padding:0 16px;height:40px;background:var(--accent)">去提问</div></div>
+              <div class="banner review"><div class="bic">↻</div><div style="flex:1"><div class="bt">复习错题</div><div class="bs">今天有 3 道题要复习</div></div><div class="btn" style="width:auto;padding:0 16px;height:40px">去复习</div></div>
+              <h3 class="child-h3">今日任务</h3>
+              <div class="task">
+                <div class="tt">周末练习 · 数学+语文</div>
+                <div class="chips"><span class="chip math">数学</span><span class="chip chi">语文</span><span class="chip neu">2年级</span><span class="chip neu">10题</span></div>
+                <button class="btn">开始做题 →</button>
+              </div>
+              <div class="task">
+                <div class="tt">英语单词打卡</div>
+                <div class="chips"><span class="chip eng">英语</span><span class="chip neu">2年级</span><span class="chip neu">8题</span></div>
+                <button class="btn">开始做题 →</button>
+              </div>
+            </div>
+          </div>
+          <div class="bottombar" style="display:flex">
+            <div class="bi active"><span class="bic"></span>首页</div>
+            <div class="bi"><span class="bic"></span>做题</div>
+            <div class="bi"><span class="bic"></span>复习</div>
+            <div class="bi"><span class="bic"></span>问问</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- 响应式 -->
+  <section class="section">
+    <h2>② 响应式断点（compact / medium / expanded）</h2>
+    <p class="sub">导航壳按宽度切换：手机/竖屏窄 → 底部导航或抽屉；iPad mini/Air → 可收起侧栏；iPad Pro/桌面 → 展开侧栏。不再写死 240。</p>
+    <div class="bps">
+      <div class="bp"><div class="tier">compact</div><div class="w">&lt; 700pt · 手机 / 竖屏窄</div>
+        <div class="mini"><div class="drawer"></div><div class="nav"><span></span><span></span><span></span><span></span></div></div>
+        <div style="font-size:12px;color:var(--on-surface-variant);margin-top:8px">侧栏→抽屉；娃娃端用底部导航</div></div>
+      <div class="bp"><div class="tier">medium</div><div class="w">700–1023pt · iPad mini / Air</div>
+        <div class="mini"><div class="rail"></div></div>
+        <div style="font-size:12px;color:var(--on-surface-variant);margin-top:8px">可收起侧栏（64 / 240）</div></div>
+      <div class="bp"><div class="tier">expanded</div><div class="w">≥ 1024pt · iPad Pro / 桌面</div>
+        <div class="mini"><div class="rail" style="width:64px;background:var(--surface-raised)"></div></div>
+        <div style="font-size:12px;color:var(--on-surface-variant);margin-top:8px">展开侧栏 + 居中 maxWidth 1080</div></div>
+    </div>
+  </section>
+
+  <!-- 学科色 -->
+  <section class="section">
+    <h2>③ 学科色系统（中饱和，仅小面积使用）</h2>
+    <p class="sub">在中性+靛蓝基底上叠加；只用于学科标识 / 进度条 / 图标容器 / chip，不作大面积背景。Parent 端数据可视化低调用，Child 端凸显。</p>
+    <div class="legend">
+      <div class="leg"><div class="sw" style="background:var(--math)"></div><div><div class="nm">数学</div><div class="ds">#4C7DE0 · 蓝</div></div></div>
+      <div class="leg"><div class="sw" style="background:var(--chi)"></div><div><div class="nm">语文</div><div class="ds">#D85A6E · 玫瑰</div></div></div>
+      <div class="leg"><div class="sw" style="background:var(--eng)"></div><div><div class="nm">英语</div><div class="ds">#3FA67E · 翠绿</div></div></div>
+      <div class="leg"><div class="sw" style="background:var(--accent)"></div><div><div class="nm">全局强调</div><div class="ds">#5E6AD2 · 靛蓝（selection/CTA）</div></div></div>
+    </div>
+  </section>
+
+  <!-- Celebrate -->
+  <section class="section">
+    <h2>④ 适度趣味动效（celebrate · 仅 Child Mode）</h2>
+    <p class="sub">450ms easeOutBack 的徽章解锁 / 连击 / 打卡成功反馈；correct 题 scale-pop。Parent 端不触发，保持专业克制。</p>
+    <div class="celebrate-stage">
+      <div class="badge" id="badge">🏅</div>
+      <div style="flex:1">
+        <div class="ct">打卡成功！连续 12 天 🔥</div>
+        <div class="cs">点一下试试徽章弹出的 celebrate 动效（仅娃娃端启用）</div>
+        <button class="ghostbtn" onclick="document.getElementById('badge').classList.remove('pop');void document.getElementById('badge').offsetWidth;document.getElementById('badge').classList.add('pop');">触发 celebrate</button>
+      </div>
+    </div>
+  </section>
+
+  <div class="foot">
+    本稿为 ADR-0014 设计方向的验证原型，令牌值来自 <code>frontend/.impeccable.md</code>。下一步：① 跑规范一致性审计（清除 13+ 处 <code>withValues(alpha:)</code> 与缺描边违反）；
+    ② 在 <code>app_theme.dart</code> 落地 Child Mode 字号阶梯 + 学科色 + <code>AppUserMode</code>；③ 把 <code>DesktopShell</code> 升级为 <code>AdaptiveShell</code>。
+  </div>
+
+</div>
+</body>
+</html>

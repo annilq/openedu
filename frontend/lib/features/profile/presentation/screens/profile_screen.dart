@@ -65,6 +65,8 @@ class ProfileScreen extends ConsumerWidget {
         const SectionTitle('外观'),
         const SizedBox(height: AppSpacing.sm),
         _ThemeModeSetting(),
+        const SizedBox(height: AppSpacing.md),
+        _UserModeSetting(),
 
         const SizedBox(height: AppSpacing.xxl),
 
@@ -261,6 +263,92 @@ class _ThemeModeSetting extends ConsumerWidget {
         pressedBackgroundColor: selected
             ? app.primary
             : app.surfaceContainerHighest,
+        onPressed: () => controller.setMode(value),
+        child: Text(
+          label,
+          style: text.labelSmall?.copyWith(
+            color: selected ? app.onPrimaryContainer : app.onSurfaceVariant,
+            fontWeight: FontWeight.w600,
+            height: 1.3,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 界面模式：家长模式 / 娃娃模式（持久化，ADR-0014 双模式）。
+class _UserModeSetting extends ConsumerWidget {
+  const _UserModeSetting();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final app = AppTheme.colorsOf(context);
+    final text = AppTheme.textOf(context);
+    final mode = ref.watch(userModeProvider);
+    final controller = ref.read(userModeProvider.notifier);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: app.surface,
+        borderRadius: BorderRadius.circular(AppRadius.card),
+        border: Border.all(color: app.outlineVariant, width: 1),
+      ),
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '界面模式',
+            style: text.bodyMedium?.copyWith(
+              color: app.onSurface,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Container(
+            decoration: BoxDecoration(
+              color: app.surfaceContainerHigh,
+              borderRadius: BorderRadius.circular(AppRadius.input),
+            ),
+            padding: const EdgeInsets.all(4),
+            child: Row(
+              children: [
+                _buildSegment(
+                    context, '家长模式', AppUserMode.parent, mode, controller),
+                _buildSegment(
+                    context, '娃娃模式', AppUserMode.child, mode, controller),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            '娃娃模式会放大字号、突出学科色，更适合低龄儿童使用',
+            style: text.bodySmall?.copyWith(color: app.onSurfaceVariant),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSegment(
+    BuildContext context,
+    String label,
+    AppUserMode value,
+    AppUserMode current,
+    UserModeController controller,
+  ) {
+    final app = AppTheme.colorsOf(context);
+    final text = AppTheme.textOf(context);
+    final selected = current == value;
+    return Expanded(
+      child: ShadButton.ghost(
+        height: 40,
+        backgroundColor: selected ? app.primaryContainer : const Color(0x00000000),
+        hoverBackgroundColor:
+            selected ? app.primaryContainer : app.surfaceContainerHighest,
+        pressedBackgroundColor:
+            selected ? app.primary : app.surfaceContainerHighest,
         onPressed: () => controller.setMode(value),
         child: Text(
           label,

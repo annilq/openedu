@@ -60,7 +60,7 @@ class _MessageBubble extends StatelessWidget {
           borderRadius: BorderRadius.circular(AppRadius.bubble),
           border: Border.all(
             color: isChild
-                ? scheme.primary.withValues(alpha: 0.35)
+                ? scheme.outline
                 : scheme.outline,
             width: 1,
           ),

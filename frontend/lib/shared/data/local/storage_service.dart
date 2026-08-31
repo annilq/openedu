@@ -8,6 +8,7 @@ class StorageService {
   static const _keyToken = 'auth_token';
   static const _keyUser = 'current_user';
   static const _keyThemeMode = 'theme_mode';
+  static const _keyUserMode = 'user_mode';
   static const _keySidebarCollapsed = 'sidebar_collapsed';
 
   late SharedPreferences _prefs;
@@ -32,6 +33,15 @@ class StorageService {
 
   Future<void> saveThemeMode(AppThemeMode mode) =>
       _prefs.setString(_keyThemeMode, mode.name);
+
+  /// 用户模式：家长工作台 / 娃娃学习台（双模式，ADR-0014）。
+  AppUserMode getUserMode() {
+    final raw = _prefs.getString(_keyUserMode);
+    return AppUserMode.values.asNameMap()[raw] ?? AppUserMode.parent;
+  }
+
+  Future<void> saveUserMode(AppUserMode mode) =>
+      _prefs.setString(_keyUserMode, mode.name);
 
   bool getSidebarCollapsed() =>
       _prefs.getBool(_keySidebarCollapsed) ?? false;

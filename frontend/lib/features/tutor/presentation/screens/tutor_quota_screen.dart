@@ -170,8 +170,7 @@ class _TutorQuotaScreenState extends ConsumerState<TutorQuotaScreen> {
                               Container(
                                 padding: const EdgeInsets.all(AppSpacing.md),
                                 decoration: BoxDecoration(
-                                  color: scheme.secondaryContainer
-                                      .withValues(alpha: 0.5),
+                                  color: scheme.secondaryContainer,
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                                 child: Row(

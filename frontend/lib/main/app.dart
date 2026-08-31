@@ -81,6 +81,7 @@ class _MyAppState extends ConsumerState<MyApp> {
   @override
   Widget build(BuildContext context) {
     final themeMode = ref.watch(themeModeProvider);
+    final userMode = ref.watch(userModeProvider);
     final systemBrightness =
         WidgetsBinding.instance.platformDispatcher.platformBrightness;
     final isDark = resolveBrightness(themeMode, systemBrightness) ==
@@ -94,8 +95,8 @@ class _MyAppState extends ConsumerState<MyApp> {
             : HomeScreen(user: _currentUser!, onLogout: _logout);
 
     return ShadApp.custom(
-      theme: AppTheme.shadFor(false),
-      darkTheme: AppTheme.shadFor(true),
+      theme: AppTheme.shadFor(false, userMode),
+      darkTheme: AppTheme.shadFor(true, userMode),
       themeMode: appThemeModeToMaterial(themeMode),
       appBuilder: (context) => CupertinoApp(
           title: '娃娃学习',
@@ -111,12 +112,16 @@ class _MyAppState extends ConsumerState<MyApp> {
           ],
           builder: (context, child) => ShadAppBuilder(
             backgroundColor: active.surfaceContainerLow,
-            child: MediaQuery(
-              data: MediaQuery.of(context).copyWith(
-                platformBrightness:
-                    isDark ? Brightness.dark : Brightness.light,
+            // UserModeScope 包裹整个导航子树，使全局 textOf 随双模式切换重建。
+            child: UserModeScope(
+              mode: userMode,
+              child: MediaQuery(
+                data: MediaQuery.of(context).copyWith(
+                  platformBrightness:
+                      isDark ? Brightness.dark : Brightness.light,
+                ),
+                child: child ?? const SizedBox.shrink(),
               ),
-              child: child ?? const SizedBox.shrink(),
             ),
           ),
           home: home,
