@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:typed_data';
+
 import 'package:dio/dio.dart';
 
 import '../../exceptions/app_exception.dart';
@@ -108,6 +111,29 @@ class DioNetworkService implements NetworkService {
     try {
       final r = await _dio.delete(path);
       return r.data;
+    } on DioException catch (e) {
+      _handleError(e);
+    }
+  }
+
+  @override
+  Stream<Uint8List> streamPost(String path,
+      {Map<String, dynamic>? body}) async* {
+    final options = RequestOptions(
+      path: path,
+      method: 'POST',
+      data: body,
+      headers: {'Accept': 'text/event-stream'},
+      responseType: ResponseType.stream,
+    );
+    // fetch 走拦截器链（Token 注入 + 错误统一），baseUrl 自动拼接。
+    final resp = await _dio.fetch<ResponseBody>(options);
+    final stream = resp.data?.stream;
+    if (stream == null) return;
+    try {
+      await for (final chunk in stream) {
+        yield chunk;
+      }
     } on DioException catch (e) {
       _handleError(e);
     }

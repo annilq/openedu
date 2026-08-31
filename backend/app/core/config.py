@@ -45,6 +45,16 @@ class Settings(BaseSettings):
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
     DEEPSEEK_MODEL: str = "deepseek-chat"
 
+    # —— 多模型接入（ADR-0015 / 票据 08）：Genkit 编排流式 flow ——
+    # 内置模型清单（env JSON）：[{id,label,provider,model_name,base_url?}]
+    #   provider ∈ {ollama, openai_compat}；base_url 缺省时 ollama 走 OLLAMA_BASE_URL。
+    # 家长自定义模型落 ModelConfig 表（见 models.py），管理员内置模型走此处声明。
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    DEFAULT_MODEL: str = ""  # 内置模型 id；为空时回退 LLM_PROVIDER 对应模型
+    BUILTIN_MODELS: str = "[]"  # JSON 字符串，解析见 app/ai/model_registry.py
+    MODEL_FALLBACK: str = "none"  # none | mock；仅 mock 时 provider 不可达静默回退 Mock
+    MODEL_APIKEY_SECRET: str = ""  # Fernet 密钥，用于加密 ModelConfig.api_key
+
     # —— 三期 AI 伴学答疑（F-304 每日上限）——
     # MVP 以「每日消息条数」计上限；时长上限（如累计分钟）为后续增强项。
     TUTOR_DAILY_LIMIT: int = 50

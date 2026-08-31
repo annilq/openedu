@@ -40,6 +40,17 @@
 - **学年 / School Year**：以 **9 月 1 日** 为界的学业年度；标识取起始秋季公历年份（如 2025-2026 学年记为 `2025`）。年级在每年 9 月新学年升级，**不在娃娃生日**。计算：`当前学年 = 今天.year if 今天.month >= 9 else 今天.year - 1`。
 - **入学年份 / Enrollment Year**：娃娃开始**一年级**的秋季公历年份，年级演进锚点（如 2023 年秋入学 → `2023`）。选它而非出生日期作锚点，避免"标准入学年龄 6 岁"假设与同年不同月娃娃的年级错位。
 
+## 流式与多模型（ADR-0015）
+- **SSE（Server-Sent Events）**：服务端单向推送的流式传输协议；本项目后端→前端 AI 输出统一走 SSE（`FastAPI StreamingResponse`），前端用 Dio/HttpClient 解析。
+- **GenUI / 生成式 UI（Generative UI）**：AI 在输出文本的同时生成可渲染的 UI 组件（如 CopilotKit 模式）。本项目的"轻量"实现为 SSE 推文本块 + 结构化事件、前端边收边渲染，**不采用** `genui` 的 CatalogItem/工具调用式真·GenUI（见 ADR-0015）。
+- **轻量流式渲染**：SSE 推 `token` 文本增量与结构化事件（`question` 等），前端增量渲染（答疑打字机、出题逐张题卡）；相对真·GenUI 更轻、更快落地。
+- **模型注册表（`GET /models`）**：后端暴露的可用模型清单，含内置模型（settings/env 声明）与当前家长自定义模型；仅家长可见。
+- **ModelConfig（模型配置）**：家长自定义模型的持久化记录（`label / provider / base_url / model_name / api_key`），按 `parent_id` 存库，仿 `TutorQuota`。
+- **Ollama**：本地开源 LLM 运行时，提供 OpenAI 兼容 API；本项目通过 `OLLAMA_BASE_URL`（默认 `http://localhost:11434`）由后端代理调用，实现零云成本/零外网延迟。
+- **流式事件信封**：SSE 事件契约，类型含 `token` / `question` / `safety_refusal` / `done` / `error`（详见 ADR-0015）。
+- **Genkit（Python 版）**：`genkit` + `genkit-fastapi` 可在 FastAPI 进程内运行 flow，挂载 `serve_flow` 路由，`Accept: text/event-stream` 即走 SSE，支持 `chunk_type` 字段级结构化流式（题卡逐字段浮现）；**与本项目 Python/FastAPI 栈兼容**（无 Node 依赖）。**v1 已采纳为流式编排引擎**（见 ADR-0015 决策 3）：`genkit` 仅 `import` 于 `app/ai/`，非流式真实调用仍走 `LangChainProvider`，框架 import 隔离延续 ADR-003。
+- **模型选择器（model picker）**：家长端选择/管理模型的 UI；娃娃继承家长默认模型，不在娃娃端暴露下拉。
+
 ## 外部框架（已明确不作为运行时）
 - **Pi（pi.dev）**：终端编码代理（coding agent），用作开发期编码助手。
 - **Eve（eve.dev）**：TypeScript durable agent 框架，因与 Python 后端割裂，不作为运行时。

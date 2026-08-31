@@ -61,17 +61,10 @@ class _TutorChatScreenState extends ConsumerState<TutorChatScreen> {
     );
     _questionCtrl.clear();
     setState(() => _sending = true);
-    await ref.read(tutorNotifierProvider.notifier).ask(req);
+    // v1 Genkit 流式答疑：逐 token 回传，防重入由 notifier 内部 _submitting 保证。
+    await ref.read(tutorNotifierProvider.notifier).askStream(req);
     if (!mounted) return;
     setState(() => _sending = false);
-    await Future<void>.delayed(const Duration(milliseconds: 120));
-    if (_scrollCtrl.hasClients) {
-      _scrollCtrl.animateTo(
-        _scrollCtrl.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOut,
-      );
-    }
   }
 
   @override
@@ -79,6 +72,31 @@ class _TutorChatScreenState extends ConsumerState<TutorChatScreen> {
     final state = ref.watch(tutorNotifierProvider);
     final scheme = AppTheme.colorsOf(context);
     final text = AppTheme.textOf(context);
+
+    // 流式产出时自动滚到底部（逐 token 更新）。
+    ref.listen<TutorState>(tutorNotifierProvider, (prev, next) {
+      if (next is TutorInitial) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_scrollCtrl.hasClients) {
+          _scrollCtrl.animateTo(
+            _scrollCtrl.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 160),
+            curve: Curves.easeOut,
+          );
+        }
+      });
+    });
+
+    final messages = switch (state) {
+      TutorInitial() => const <TutorMessage>[],
+      TutorLoading(:final messages) => messages,
+      TutorLoaded(:final messages) => messages,
+    };
+    final streaming = state is TutorLoading;
+    final lastAiEmpty = messages.isNotEmpty &&
+        messages.last.role == 'ai' &&
+        messages.last.text.isEmpty;
+    final showThinking = streaming && lastAiEmpty;
 
     return SizedBox.expand(
       child: ColoredBox(
@@ -128,20 +146,13 @@ class _TutorChatScreenState extends ConsumerState<TutorChatScreen> {
             const SizedBox(height: AppSpacing.sm),
             Container(height: 1, color: scheme.outline),
             Expanded(
-              child: switch (state) {
-                TutorInitial() => const TutorWelcomeHint(),
-                TutorLoading(:final messages) => TutorMessageList(
-                    messages: messages,
-                    scrollController: _scrollCtrl,
-                    thinking: true,
-                  ),
-                TutorLoaded(:final messages) => messages.isEmpty
-                    ? const TutorWelcomeHint()
-                    : TutorMessageList(
-                        messages: messages,
-                        scrollController: _scrollCtrl,
-                      ),
-              },
+              child: messages.isEmpty && !streaming
+                  ? const TutorWelcomeHint()
+                  : TutorMessageList(
+                      messages: messages,
+                      scrollController: _scrollCtrl,
+                      thinking: showThinking,
+                    ),
             ),
             TutorChatInputBar(
               questionController: _questionCtrl,

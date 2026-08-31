@@ -13,6 +13,7 @@ import '../../../review/presentation/providers/review_notifier.dart';
 import '../../../review/presentation/screens/review_screen.dart';
 import '../../../review/presentation/screens/wrong_questions_screen.dart';
 import '../../../tutor/presentation/screens/tutor_chat_screen.dart';
+import '../../../tutor/presentation/screens/parent_model_management_screen.dart';
 import '../providers/home_notifier.dart';
 import '../providers/selected_child_provider.dart';
 import '../screens/parent_task_review_screen.dart';
@@ -183,6 +184,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       6 => ParentQuestionBankView(
           onNavigateToReview: _navigateToReview,
         ),
+      7 => const ParentModelManagementScreen(),
       _ => const SizedBox(),
     };
   }
@@ -242,6 +244,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         label: '题库',
         active: activeIndex == 6,
         onTap: () => _parentTap(6)),
+    AdaptiveNavDestination(
+        icon: LucideIcons.cpu,
+        label: '模型管理',
+        active: activeIndex == 7,
+        onTap: () => _parentTap(7)),
   ];
 
   void _parentTap(int index) {

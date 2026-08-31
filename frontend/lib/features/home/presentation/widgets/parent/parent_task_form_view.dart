@@ -7,9 +7,11 @@ import '../../../../../shared/domain/models/models.dart';
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/widgets/app_inputs.dart';
 import '../../../../../shared/widgets/app_loading.dart';
+import '../../../../../shared/widgets/app_model_selector.dart';
 import '../../../../../shared/widgets/app_toast.dart';
 import '../../../../children/domain/providers/children_provider.dart';
 import '../../../../children/presentation/providers/children_notifier.dart';
+import '../../../../tutor/presentation/providers/models_notifier.dart';
 import '../../providers/home_notifier.dart';
 import '../../providers/selected_child_provider.dart';
 import '../../../../review/presentation/providers/review_notifier.dart';
@@ -87,6 +89,18 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
   bool _useInterestMode = false;
   final Set<String> _focusThemes = {};
 
+  // 多模型（票据 08）：出题时自选模型；null = 后端自动（默认/全局）。
+  String? _modelId;
+
+  @override
+  void initState() {
+    super.initState();
+    // 预拉取可选模型列表，供模型选择器展示（仅家长可见自定义模型）。
+    Future.microtask(
+      () => ref.read(modelsNotifierProvider.notifier).load(),
+    );
+  }
+
   @override
   void dispose() {
     for (final r in _rows) {
@@ -147,6 +161,34 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
           title: _titleCtrl.text,
           specs: specs,
           focusInterest: focus,
+          model: _modelId,
+        );
+  }
+
+  void _preview() {
+    final selected = ref.read(selectedChildProvider);
+    if (selected == null) {
+      AppToast.show(context, '请先在侧栏选择娃娃');
+      return;
+    }
+    final specs = _rows.map((r) => r.toSpec(selected.grade)).toList();
+    if (specs.any((s) => s.subject.isEmpty || s.knowledgePoint.isEmpty)) {
+      AppToast.show(context, '学科与知识点不能为空');
+      return;
+    }
+    if (specs.any((s) => s.count < 1)) {
+      AppToast.show(context, '每行题数至少为 1');
+      return;
+    }
+    final focus = _useInterestMode && _focusThemes.isNotEmpty
+        ? _focusThemes.toList()
+        : null;
+    ref.read(taskGenNotifierProvider.notifier).preview(
+          childId: selected.id,
+          title: _titleCtrl.text,
+          specs: specs,
+          focusInterest: focus,
+          model: _modelId,
         );
   }
 
@@ -223,12 +265,34 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
                       const SizedBox(height: AppSpacing.lg),
                       ...List.generate(_rows.length, _buildRow),
                       const SizedBox(height: AppSpacing.xl),
+                      AppModelSelector(
+                        selected: _modelId,
+                        onChanged: (v) => setState(() => _modelId = v),
+                      ),
+                      const SizedBox(height: AppSpacing.xl),
                       _buildInterestSection(),
                       const SizedBox(height: AppSpacing.xl),
-                      if (genState is TaskGenLoading)
+                      if (genState is TaskGenLoading ||
+                          (genState is TaskGenPreview && genState.streaming))
                         const AppLoading()
                       else
-                        AppPrimaryButton(label: '生成任务', onPressed: _generate),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: AppPrimaryButton(
+                                  label: '生成任务', onPressed: _generate),
+                            ),
+                            const SizedBox(width: AppSpacing.md),
+                            Expanded(
+                              child: CupertinoButton(
+                                onPressed: _preview,
+                                child: const Text('预览出题'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      const SizedBox(height: AppSpacing.lg),
+                      if (genState is TaskGenPreview) _buildPreview(genState),
                     ],
                   ),
                 ),
@@ -399,7 +463,43 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
 }
 
 
+  Widget _buildPreview(TaskGenPreview s) {
+    final text = AppTheme.textOf(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                '预览（${s.questions.length} 题'
+                '${s.streaming ? ' · 生成中…' : ' · 已完成'}）',
+                style: text.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+              ),
+            ),
+            if (!s.streaming)
+              CupertinoButton(
+                padding: EdgeInsets.zero,
+                onPressed: () =>
+                    ref.read(taskGenNotifierProvider.notifier).reset(),
+                child: const Text('收起'),
+              ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        ...s.questions.asMap().entries.map(
+              (e) => _PreviewCard(index: e.key + 1, q: e.value),
+            ),
+        if (!s.streaming && s.questions.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.lg),
+          AppPrimaryButton(label: '保存为任务', onPressed: _generate),
+        ],
+      ],
+    );
+  }
 }
+
+
 
 /// 兴趣出题主题芯片（WF-4）：点亮即把该主题加入 focus 轮询列表。
 /// 视觉风格对齐 [interest_picker.dart] 中的 [_LeafToggle]。
@@ -450,6 +550,95 @@ class _ThemeToggle extends StatelessWidget {
                 )),
           ],
         ),
+      ),
+    );
+  }
+}
+
+String _previewQtypeLabel(String qtype) => switch (qtype) {
+      'calc' => '计算',
+      'fill' => '填空',
+      'choice' => '选择',
+      'open' => '应用',
+      _ => qtype,
+    };
+
+String _previewDifficultyLabel(String d) => switch (d) {
+      'easy' => '简单',
+      'medium' => '中等',
+      'hard' => '困难',
+      _ => d,
+    };
+
+/// 流式预览题卡（票据 08）：对应后端 `question` 事件，逐张浮现。
+class _PreviewCard extends StatelessWidget {
+  final int index;
+  final QuestionPreview q;
+
+  const _PreviewCard({required this.index, required this.q});
+
+  @override
+  Widget build(BuildContext context) {
+    final app = AppTheme.colorsOf(context);
+    final text = AppTheme.textOf(context);
+    final options = q.options;
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppSpacing.md),
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      decoration: BoxDecoration(
+        color: app.surface,
+        borderRadius: BorderRadius.circular(AppRadius.bubble),
+        border: Border.all(color: app.outline),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.sm, vertical: 2),
+                decoration: BoxDecoration(
+                  color: app.primaryContainer,
+                  borderRadius: BorderRadius.circular(AppRadius.chip),
+                ),
+                child: Text('第 $index 题',
+                    style: text.labelSmall?.copyWith(
+                        color: app.onPrimaryContainer,
+                        fontWeight: FontWeight.w700)),
+              ),
+              const Spacer(),
+              Text(
+                '${q.subject} · ${q.grade}年级 · ${_previewQtypeLabel(q.qtype)} · ${_previewDifficultyLabel(q.difficulty)}',
+                style: text.labelSmall?.copyWith(color: app.onSurfaceVariant),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(q.stem, style: text.bodyMedium),
+          if (options != null && options.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.sm),
+            ...options.asMap().entries.map(
+                  (e) => Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Text(
+                      '${String.fromCharCode(65 + e.key)}. ${e.value}',
+                      style: text.bodySmall,
+                    ),
+                  ),
+                ),
+          ],
+          if (q.answer != null && q.answer!.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Text('答案：${q.answer}',
+                style: text.bodySmall?.copyWith(color: app.primary)),
+          ],
+          if (q.explanation.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.xs),
+            Text('解析：${q.explanation}',
+                style: text.bodySmall?.copyWith(color: app.onSurfaceVariant)),
+          ],
+        ],
       ),
     );
   }

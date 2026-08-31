@@ -100,3 +100,42 @@
   4. **适度趣味动效（Moderate Delight）**：保留 120/200/300ms 三级；新增 `celebrate` 级（~450ms）用于徽章解锁 / 连击 / 打卡成功，仅 Child Mode 启用；做题反馈清晰不喧宾。
 - **备选**：维持 ADR-0003 单一专业系统 / 全设备响应式（手机优先）/ 丰富游戏化（多邻国式）。
 - **后果**：正式承认代码里已存在的双轨（child_home 横幅本就更活泼）；需扩充令牌（Child Mode 字号阶梯、学科色、断点、celebrate 动效）并新增双模式切换与响应式壳；需一轮「规范一致性审计」修掉既有 `withValues(alpha:)` 与缺描边违反。**本 ADR 修订 ADR-0003 中『娃娃共用单一密排系统』的判定，改为双模式。**
+
+## ADR-0015 多模型接入（Ollama / 自定义）+ 流式响应 + 轻量 GenUI
+
+> 来源：`/grill-with-docs` 访谈收敛（模型优化 / 本地 Ollama / 流式 UI / GenUI / 前端模型选择器）。配套实现票据见 `wayfinder/tickets/08-多模型流式genui.md`。
+
+### 背景
+一期~三期已用 `MockProvider`（默认）+ `LangChainProvider`（真实模型）跑通全闭环，但存在三点诉求：①家用以**本地 Ollama** 跑模型可零云成本、零外网延迟、数据不出户；②答疑/出题希望**流式输出**改善体感（打字机 / 逐张题卡）；③前端要能**选择后端支持的模型**、出题时**自选或自定义模型**。用户要求参考 CopilotKit 式 GenUI，但前端是 Flutter，而 CopilotKit 无 Flutter SDK；候选官方方案为 Flutter `genui`（alpha，A2UI 原生走 WebSocket）与 Genkit（Flutter 端 `genkit/client.dart` 需接 Genkit flow 后端，而 **Genkit 的 Python 版 `genkit` + `genkit-fastapi` 可在 FastAPI 进程内直接挂 flow、`Accept: text/event-stream` 即 SSE、并支持 `chunk_type` 字段级结构化流式**，故与本项目 Python/FastAPI 栈**兼容**；已采纳为 v1 流式编排引擎（见决策 3 与备选）。
+
+### 决策（六条，均经访谈锁定）
+1. **后端统一代理（守安全）**：Flutter 一律只连 `/api/v1` 的 SSE 端点；Ollama 与自定义模型由后端调用。服务端始终注入 `_SYSTEM` 年龄锁并对娃娃可输入字段跑 `check_input`、对输出跑 `check_output`，**安全层永不绕过**（忠诚 ADR-008）。禁止前端直连任何模型。
+2. **轻量流式渲染（非真·catalog GenUI）**：SSE 推 `token` 文本块 + 结构化事件（`question` 等），前端边收边渲染（答疑气泡打字机、出题逐张题卡）。不引入 `genui` 的 CatalogItem/工具调用式生成式 UI——因其处 alpha、A2UI 原生 WebSocket 与本项目 SSE 偏好冲突、且需改造提示词与 schema 工程。保留未来对个别高价值场景（如"给个例题卡"）试点 catalog GenUI 的扩展点。
+3. **改用 Genkit Python 编排流式 flow（替代原「LangChainProvider 扩展」方案）**：流式 AI 输出（答疑逐字 + 出题逐张题卡）由 Genkit flow 编排，新增 `app/ai/`（**唯一允许 `import genkit` 的边界**，类比原 `LangChainProvider` 作为 langchain 适配层）承载：`Genkit` 实例、`serve_flow`/SSE 挂载、模型解析（Ollama / OpenAI-compat / 内置，按 `ModelConfig` + settings 把 `provider/model_name` 解析为 `ollama/{m}` / `openai/{m}`）与工具调用（T11 知识库检索作接地工具）。**ADR-003 延续**：业务/domain 代码仍只依赖 `LLMProvider` ABC 与非流式路径（`MockProvider` 供测试、`LangChainProvider` 供非流式真实调用），`genkit` 不被业务代码直接 import；流式端点由 API 层调用 `app/ai` 的 flow。
+4. **模型注册 = 配置驱动 + 家长自定义**：内置模型由 settings/env 声明并暴露 `GET /api/v1/models`（parent 可见）；家长自定义模型落 `ModelConfig` 表（仿 `TutorQuota`，按 `parent_id` 持久化：`label / provider('ollama'|'openai_compat') / base_url / model_name / api_key(加密)`）。**模型选择器仅家长可用**；娃娃继承家长默认模型，娃娃端不暴露下拉（避免娃娃自选未授权/不安全模型）。请求参数 `model`（id 或内置 id）可选，缺省走家长默认或全局 `DEFAULT_MODEL`。
+5. **流式安全 = 缓冲 + 整体校验后放行**：`/tutor/ask/stream` 先 `check_input` 拦越狱（命中即发 `safety_refusal` 不再调模型）；通过后后端**缓冲全量 token、跑整体 `check_output`**，通过才向娃娃放量，违规则整段替换为 `SAFE_REFUSAL`。儿童端绝不闪现违规片段。v1 接受"首字延迟=整段生成耗时"的代价；后续可叠加 chunk 级软过滤作增强层。
+6. **v1 流式端点范围**：`POST /api/v1/tutor/ask/stream`（答疑逐字）+ `POST /api/v1/tasks/generate/stream`（出题逐张题卡）。两处均前置现有 `require_role` + `check_quota` + `check_input`；`/tasks/generate/stream` 每生成一题经安全检查后再发 `question` 事件。
+
+### SSE 事件信封（契约）
+```
+event: token        data: {"text": "…"}          # 答疑文本增量
+event: question      data: {<QuestionModel JSON>}  # 一题完成（出题流）
+event: safety_refusal data: {"reason": "…"}       # 越狱/敏感被拦
+event: done          data: {"usage": {"seconds": N}}  # 流结束 + 用量（供 quota 累计）
+event: error         data: {"message": "…"}        # 500/502 友好文案
+```
+前端用 Dio/HttpClient 解析 SSE，`Riverpod` notifier 追加 token → 气泡打字机；`question` 事件入列表 → 题卡逐张浮现。
+
+### 备选
+- **前端直连 Ollama**：延迟更低，但绕过 ADR-008 安全层，否决。
+- **Genkit（Python 版）— 已采纳为流式编排引擎**：经用户复核，Genkit 的 Python 版 `genkit`+`genkit-fastapi` 可在 FastAPI 进程内跑 flow（无 Node 依赖）、内置 SSE、`chunk_type` 字段级结构化流式，与本项目栈兼容，故 v1 改由它编排流式 flow；为避免"引入第二套框架破坏 ADR-003"，**非流式**真实调用仍走既有 `LangChainProvider`，二者通过 `LLMProvider` ABC 统一，框架 import 各自隔离（`langchain` 仅在 `LangChainProvider`、`genkit` 仅在 `app/ai/`）。
+- **`genui` catalog 真·GenUI**：最贴近 CopilotKit，但 alpha + WebSocket 协议 + 提示词/schema 工程重，v1 否决、留作扩展点。
+- **新增直连 HTTP provider 绕过 LangChain**：流式性能略好，但偏离 ADR-003 框架抽象，否决。
+
+### 后果
+- 本地 Ollama 可零云成本/零外网跑模型；流式首字即显（答疑）与逐张题卡（出题）显著提升低龄体感（即用户所言"模型优化"的体感收益）。
+- 流式编排改由 Genkit 承担：`chunk_type` 字段级结构化流式天然适配"出题逐张题卡"，工具调用一等公民使 T11 知识库检索可作接地工具，且自带 Dev UI 追踪；`serve_flow` 直接挂 FastAPI 路由、原生 SSE。
+- 框架 import 隔离延续 ADR-003：`genkit` 仅存在于 `app/ai/`，业务/domain 仍只依赖 `LLMProvider` ABC 与非流式路径（`MockProvider`/`LangChainProvider`）；模型可插拔（ADR-003/004）延续。
+- 安全防线在流式下仍由后端独占，儿童内容防护不降级。
+- 代价：①v1 答疑首字有整段生成延迟（本地 Ollama 通常可接受）；②需新增 `ModelConfig` 表与加密存储（api_key 用 Fernet，密钥取 settings）；③`genui` 真·GenUI 暂未采用，若后续要 CopilotKit 式交互需另立票；④需引入 SSE 客户端与事件解析（前端新增 ~1 个网络层 + notifier 改造）。
+- 默认 Ollama 地址 `OLLAMA_BASE_URL`（默认 `http://localhost:11434`）；provider 调用失败返回 502 友好文案，**不静默回退 MockProvider**（除非显式 `MODEL_FALLBACK=mock`）。

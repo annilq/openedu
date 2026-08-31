@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/data/remote/network_service.dart';
+import '../../../../shared/data/remote/sse_client.dart';
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/domain/providers/core_providers.dart';
 import '../../../../shared/exceptions/app_exception.dart';
@@ -80,6 +81,83 @@ class TutorNotifier extends StateNotifier<TutorState> {
       ]);
     } catch (e) {
       // 出错也保留历史气泡，并附一条错误提示
+      state = TutorLoaded([
+        ...history,
+        TutorMessage(role: 'child', text: req.question),
+        const TutorMessage(role: 'ai', text: '⚠️ 网络异常，请稍后重试'),
+      ]);
+    } finally {
+      _submitting = false;
+    }
+  }
+
+  /// 流式答疑（v1 Genkit 编排，ADR-0015 信封）。
+  /// 通过 SSE 客户端订阅 `/stream/tutor/ask`，逐 token 累加到 AI 气泡；
+  /// 安全兜底（safety_refusal）/ 业务错误（error）以气泡保留；done 落定对话。
+  Future<void> askStream(TutorAskReq req) async {
+    if (_submitting) return;
+    _submitting = true;
+
+    // 历史气泡 + 新娃娃问 + 占位 AI 气泡（流式填充）。
+    final history = switch (state) {
+      TutorLoaded(:final messages) || TutorLoading(:final messages) =>
+        List<TutorMessage>.from(messages),
+      _ => <TutorMessage>[],
+    };
+    final base = <TutorMessage>[
+      ...history,
+      TutorMessage(role: 'child', text: req.question),
+      const TutorMessage(role: 'ai', text: ''),
+    ];
+    state = TutorLoading(List.from(base));
+
+    List<TutorMessage> currentMessages() => switch (state) {
+          TutorLoaded(:final messages) || TutorLoading(:final messages) =>
+            List<TutorMessage>.from(messages),
+          _ => List<TutorMessage>.from(base),
+        };
+
+    try {
+      streamLoop:
+      await for (final ev in SseClient(_network).stream(
+        '/stream/tutor/ask',
+        body: req.toJson(),
+      )) {
+        final messages = currentMessages();
+        switch (ev.event) {
+          case 'token':
+            final t = (ev.data['text'] as String?) ?? '';
+            if (messages.isNotEmpty && messages.last.role == 'ai') {
+              messages[messages.length - 1] =
+                  TutorMessage(role: 'ai', text: messages.last.text + t);
+            } else {
+              messages.add(TutorMessage(role: 'ai', text: t));
+            }
+          case 'safety_refusal':
+            final msg = (ev.data['reason'] as String?) ??
+                '这个问题我暂时不能回答哦，换个问题试试？';
+            messages[messages.length - 1] =
+                TutorMessage(role: 'ai', text: '🛡️ $msg', blocked: true);
+          case 'error':
+            final msg = (ev.data['message'] as String?) ?? '出错了，请稍后再试';
+            messages[messages.length - 1] =
+                TutorMessage(role: 'ai', text: '⚠️ $msg');
+            state = TutorLoaded(messages);
+            break streamLoop;
+          case 'done':
+            state = TutorLoaded(messages);
+            break streamLoop;
+        }
+        state = TutorLoading(messages);
+      }
+    } on AppException catch (e) {
+      // 配额 / 学科范围等服务端业务错误（含非 2xx 由 Dio 转来）。
+      state = TutorLoaded([
+        ...history,
+        TutorMessage(role: 'child', text: req.question),
+        TutorMessage(role: 'ai', text: '⏳ ${e.message}'),
+      ]);
+    } catch (e) {
       state = TutorLoaded([
         ...history,
         TutorMessage(role: 'child', text: req.question),

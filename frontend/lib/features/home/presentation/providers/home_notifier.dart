@@ -1,7 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/data/remote/network_service.dart';
+import '../../../../shared/data/remote/sse_client.dart';
 import '../../../../shared/domain/models/models.dart';
+import '../../../../shared/exceptions/app_exception.dart';
 import '../../../../shared/domain/providers/core_providers.dart';
 
 // —— 家长端：生成任务 ——
@@ -18,6 +20,11 @@ class TaskGenError extends TaskGenState {
   final String message;
   const TaskGenError(this.message);
 }
+class TaskGenPreview extends TaskGenState {
+  final List<QuestionPreview> questions;
+  final bool streaming;
+  const TaskGenPreview(this.questions, {this.streaming = false});
+}
 
 class TaskGenNotifier extends StateNotifier<TaskGenState> {
   final NetworkService _network;
@@ -28,6 +35,7 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
     required String title,
     required List<TaskSpecModel> specs,
     List<String>? focusInterest,
+    String? model,
   }) async {
     state = const TaskGenLoading();
     try {
@@ -38,11 +46,61 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
       };
       // 兴趣题模式（WF-4）：显式聚焦主题放请求顶层；缺省=后端自动轻融入画像。
       if (focusInterest != null) body['focus_interest'] = focusInterest;
+      // 多模型（票据 08）：家长可选模型；null = 后端自动（默认/全局）。
+      if (model != null) body['model'] = model;
       final data = await _network.post('/tasks/batch-generate', body: body);
       // R3：生成后保持 draft 态，把确认/派发动作交给草稿审核页。
       state = TaskGenSuccess(TaskModel.fromJson(data));
     } catch (e) {
       state = TaskGenError(e.toString());
+    }
+  }
+
+  /// 流式预览出题（票据 08）：题卡逐张浮现，不落库。
+  /// 完成后返回 [TaskGenPreview]，由 UI 展示题卡并提供「保存为任务」入口
+  /// （保存走 [generate]，复用原有草稿审核流）。事件处理对齐后端 SSE 信封。
+  Future<void> preview({
+    required String childId,
+    required String title,
+    required List<TaskSpecModel> specs,
+    List<String>? focusInterest,
+    String? model,
+  }) async {
+    final body = <String, dynamic>{
+      'child_id': childId,
+      'title': title,
+      'specs': specs.map((s) => s.toJson()).toList(),
+    };
+    if (focusInterest != null) body['focus_interest'] = focusInterest;
+    if (model != null) body['model'] = model;
+
+    final questions = <QuestionPreview>[];
+    state = const TaskGenPreview([], streaming: true);
+    try {
+      streamLoop:
+      await for (final ev
+          in SseClient(_network).stream('/stream/tasks/generate', body: body)) {
+        switch (ev.event) {
+          case 'question':
+            questions.add(QuestionPreview.fromJson(ev.data));
+            state = TaskGenPreview(List.from(questions), streaming: true);
+          case 'safety_refusal':
+            final msg = ev.data['reason'] as String? ?? '内容安全拦截';
+            state = TaskGenError('🛡️ $msg');
+            break streamLoop;
+          case 'error':
+            final msg = ev.data['message'] as String? ?? '出错了，请稍后再试';
+            state = TaskGenError('⚠️ $msg');
+            break streamLoop;
+          case 'done':
+            state = TaskGenPreview(List.from(questions), streaming: false);
+            break streamLoop;
+        }
+      }
+    } on AppException catch (e) {
+      state = TaskGenError('⏳ ${e.message}');
+    } catch (e) {
+      state = TaskGenError('⚠️ 网络异常，请稍后重试');
     }
   }
 

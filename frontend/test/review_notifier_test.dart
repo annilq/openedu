@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:kids_learn/features/review/presentation/providers/review_notifier.dart';
@@ -32,6 +34,10 @@ class FakeNetwork implements NetworkService {
 
   @override
   Future<dynamic> delete(String path) async => null;
+
+  @override
+  Stream<Uint8List> streamPost(String path, {Map<String, dynamic>? body}) =>
+      const Stream<Uint8List>.empty();
 }
 
 Map<String, dynamic> _reviewItemJson(String wrongId, {int stage = 1}) => {

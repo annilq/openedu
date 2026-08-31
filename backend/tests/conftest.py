@@ -16,6 +16,7 @@ from app.main import app  # noqa: E402
 from app.models import (  # noqa: E402
     AnswerRecord,
     Checkin,
+    ModelConfig,
     Question,
     Task,
     TutorLog,
@@ -38,6 +39,7 @@ def db() -> Generator[Session]:
             AnswerRecord,
             Checkin,
             WrongQuestion,
+            ModelConfig,
             Question,
             Task,
             User,

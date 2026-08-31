@@ -170,6 +170,44 @@ class QuestionModel {
   }
 }
 
+/// 流式出题预览卡（票据 08）：对应后端 `/stream/tasks/generate` 的 `question` 事件
+/// （snake_case，无 id）。仅用于预览展示，不落库；确认后走 batch-generate 持久化。
+class QuestionPreview {
+  final String subject;
+  final int grade;
+  final String stem;
+  final List<String>? options;
+  final String qtype;
+  final String knowledgePoint;
+  final String explanation;
+  final String? answer;
+  final String difficulty;
+
+  const QuestionPreview({
+    this.subject = '',
+    this.grade = 0,
+    this.stem = '',
+    this.options,
+    this.qtype = 'open',
+    this.knowledgePoint = '',
+    this.explanation = '',
+    this.answer,
+    this.difficulty = 'medium',
+  });
+
+  factory QuestionPreview.fromJson(Map<String, dynamic> json) => QuestionPreview(
+        subject: json['subject'] as String? ?? '',
+        grade: json['grade'] as int? ?? 0,
+        stem: json['stem'] as String? ?? '',
+        options: (json['options'] as List?)?.map((e) => e.toString()).toList(),
+        qtype: json['qtype'] as String? ?? 'open',
+        knowledgePoint: json['knowledge_point'] as String? ?? '',
+        explanation: json['explanation'] as String? ?? '',
+        answer: json['answer'] as String?,
+        difficulty: json['difficulty'] as String? ?? 'medium',
+      );
+}
+
 /// 多学科一卷批量生成的一条规格（ADR-0004 D4）。
 class TaskSpecModel {
   final String subject;
@@ -599,6 +637,8 @@ class TutorAskReq {
   final String knowledgePoint;
   final String? context;
   final String question;
+  /// 可选模型 id（内置字符串 id 或家长自定义 UUID）。null = 后端自动（默认/全局）。
+  final String? model;
 
   TutorAskReq({
     required this.subject,
@@ -606,6 +646,7 @@ class TutorAskReq {
     required this.knowledgePoint,
     this.context,
     required this.question,
+    this.model,
   });
 
   Map<String, dynamic> toJson() => {
@@ -614,6 +655,7 @@ class TutorAskReq {
         'knowledge_point': knowledgePoint,
         'context': context,
         'question': question,
+        if (model != null) 'model': model,
       };
 }
 
@@ -750,6 +792,58 @@ class TutorUsageModel {
       minutesLimit: json['minutes_limit'] as int?,
       allowedSubjects: (json['allowed_subjects'] as List?)
           ?.map((e) => e as String)
+          .toList(),
+    );
+  }
+}
+
+// ───────── AI 模型（票据 08 多模型流式） ─────────
+/// 单个可选模型：内置（builtin=true，id 为字符串）或家长自定义（id 为 UUID 字符串）。
+class ModelInfo {
+  final String id;
+  final String label;
+  final String provider; // ollama | openai_compat
+  final String? baseUrl;
+  final String modelName;
+  final bool isBuiltin;
+  final bool isDefault;
+
+  const ModelInfo({
+    required this.id,
+    required this.label,
+    required this.provider,
+    this.baseUrl,
+    required this.modelName,
+    this.isBuiltin = false,
+    this.isDefault = false,
+  });
+
+  factory ModelInfo.fromJson(Map<String, dynamic> json, {bool builtin = false}) {
+    return ModelInfo(
+      id: json['id'].toString(),
+      label: json['label'] as String,
+      provider: json['provider'] as String,
+      baseUrl: json['base_url'] as String?,
+      modelName: json['model_name'] as String,
+      isBuiltin: builtin,
+      isDefault: json['is_default'] as bool? ?? false,
+    );
+  }
+}
+
+class ModelListResp {
+  final List<ModelInfo> builtin;
+  final List<ModelInfo> custom;
+
+  const ModelListResp({this.builtin = const [], this.custom = const []});
+
+  factory ModelListResp.fromJson(Map<String, dynamic> json) {
+    return ModelListResp(
+      builtin: (json['builtin'] as List? ?? [])
+          .map((e) => ModelInfo.fromJson(e as Map<String, dynamic>, builtin: true))
+          .toList(),
+      custom: (json['custom'] as List? ?? [])
+          .map((e) => ModelInfo.fromJson(e as Map<String, dynamic>))
           .toList(),
     );
   }

@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -29,6 +31,10 @@ class _SilentNetwork implements NetworkService {
 
   @override
   Future<dynamic> delete(String path) async => null;
+
+  @override
+  Stream<Uint8List> streamPost(String path, {Map<String, dynamic>? body}) =>
+      const Stream<Uint8List>.empty();
 }
 
 void main() {

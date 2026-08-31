@@ -8,6 +8,7 @@
 - 后端：FastAPI + SQLModel + SQLite/Postgres，依赖用 `uv`（`cd backend && uv sync`、`uv run pytest`）。无 Alembic，迁移在 `app/core/db.py:run_migrations` 手写 ALTER TABLE，需同时兼容 sqlite `TEXT` 与 postgres `JSON` 并做列存在性检查保证幂等。
 - 前端：Flutter + Riverpod + shadcn_ui + cupertino_ui（`cd frontend && flutter analyze`、`flutter test`）。
 - LLM 抽象在 `app/domain/provider.py`（`LLMProvider.generate_question`），实现有 `MockProvider`（打标式假数据）与 `LangChainProvider`；业务只依赖接口。
+- **多模型接入（ADR-0015 / 票据 08）**：v1 流式用 **Genkit Python**（`genkit`+`genkit-fastapi`+`genkit_ollama`+`genkit_openai`）在 FastAPI 进程内编排 flow，`genkit` 仅 import 于 `app/ai/`（ADR-003 隔离）。`resolve_engine(model_ref,...)` 解析优先级：家长 `ModelConfig` 表 → 内置 `BUILTIN_MODELS`(env JSON) → 全局 `LLM_PROVIDER` → 否则 None（端点回退 `MockProvider`）。**Genkit 插件构造签名坑**：`genkit_ollama.Ollama` 用 `server_address=`（不是 `base_url`）；`genkit_openai.OpenAI(**openai_params)` 透传 kwargs（api_key/base_url）。`resolve_engine` 对内置 id（如 "local-llama"）务必先 `_as_uuid()` 校验再 `session.get(ModelConfig, id)`，否则非 UUID 字符串触发 UUID 列 `.hex` 报错。家长 `ModelConfig.api_key` 用 `app/core/crypto.py` 的 Fernet 加密。
 
 ## Flutter / shadcn_ui 约定（踩坑沉淀）
 - `LucideIcons` **不是**来自 `lucide_flutter`，而是由 `package:shadcn_ui/shadcn_ui.dart` 再导出；任何用到 `LucideIcons` 的 dart 文件必须 import `shadcn_ui`（`app_theme.dart` 正是因已 import 它才可用）。

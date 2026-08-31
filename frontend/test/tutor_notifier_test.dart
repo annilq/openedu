@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
@@ -41,6 +42,10 @@ class FakeNetwork implements NetworkService {
 
   @override
   Future<dynamic> delete(String path) async => null;
+
+  @override
+  Stream<Uint8List> streamPost(String path, {Map<String, dynamic>? body}) =>
+      const Stream<Uint8List>.empty();
 }
 
 void main() {
@@ -433,6 +438,10 @@ class _ThrowingNetwork implements NetworkService {
 
   @override
   Future<dynamic> delete(String path) async => null;
+
+  @override
+  Stream<Uint8List> streamPost(String path, {Map<String, dynamic>? body}) =>
+      const Stream<Uint8List>.empty();
 }
 
 /// post 抛业务异常（如 429 上限）的假网络：验证提示文案透出。
@@ -453,6 +462,10 @@ class _BusinessErrorNetwork implements NetworkService {
 
   @override
   Future<dynamic> delete(String path) async => null;
+
+  @override
+  Stream<Uint8List> streamPost(String path, {Map<String, dynamic>? body}) =>
+      const Stream<Uint8List>.empty();
 }
 
 /// 支持 GET 预置响应 + PUT 记录/预置响应的假网络（quota/usage 用）。
@@ -486,4 +499,8 @@ class FakePutNetwork implements NetworkService {
 
   @override
   Future<dynamic> delete(String path) async => null;
+
+  @override
+  Stream<Uint8List> streamPost(String path, {Map<String, dynamic>? body}) =>
+      const Stream<Uint8List>.empty();
 }

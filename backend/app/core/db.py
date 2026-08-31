@@ -1,6 +1,5 @@
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
-
 from sqlmodel import SQLModel, create_engine
 
 from app.core.config import settings
@@ -74,6 +73,22 @@ def run_migrations() -> None:
             conn.execute(
                 text("ALTER TABLE task ADD COLUMN IF NOT EXISTS focus_interest JSON")
             )
+
+        # —— model_config（家长自定义模型，ADR-0015）——
+        conn.execute(
+            text(
+                "CREATE TABLE IF NOT EXISTS model_config ("
+                " id VARCHAR(36) PRIMARY KEY,"
+                " parent_id VARCHAR(36),"
+                " label VARCHAR(64),"
+                " provider VARCHAR(32),"
+                " base_url VARCHAR(512),"
+                " model_name VARCHAR(128),"
+                " api_key_enc VARCHAR(1024),"
+                " is_default BOOLEAN"
+                ")"
+            )
+        )
 
 
 def init_db() -> None:

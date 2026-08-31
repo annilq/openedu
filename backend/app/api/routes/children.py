@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException, status
 from uuid import UUID
+
+from fastapi import APIRouter, HTTPException, status
 
 from app.api.deps import CurrentParent, SessionDep
 from app.crud import create_user, get_user_by_username, list_children, update_user
-from app.models import UserCreate, UserPublic, UserUpdate, UsersPublic
+from app.models import User, UserCreate, UserPublic, UsersPublic, UserUpdate
 
 router = APIRouter(prefix="/children", tags=["children"])
 

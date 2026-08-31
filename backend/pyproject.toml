@@ -16,6 +16,11 @@ dependencies = [
     # 可插拔 LLM：OpenAI 兼容端点覆盖国产模型（混元/通义/DeepSeek 等），
     # 换厂商只需改 base_url/model（ADR-003 / T03）
     "langchain-openai>=0.2.0,<1.0.0",
+    "genkit>=0.10.0",
+    "genkit-fastapi>=0.10.0",
+    "genkit-openai>=0.10.0",
+    "genkit-ollama>=0.10.0",
+    "cryptography>=50.0.1",
 ]
 
 [dependency-groups]

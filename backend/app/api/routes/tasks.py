@@ -18,7 +18,6 @@ from app.crud import (
     create_task_from_bank,
     discard_draft_task,
     get_child_tasks_today,
-    get_draft_tasks,
     get_progress,
     get_task,
     get_task_question,
@@ -583,7 +582,7 @@ def assign(
         raise AppErrorException(
             ErrCode.TASK_CHILD_NOT_OWNED, "该娃娃不属于你的账号"
         )
-    task = _parent_owns_task(task=get_task(session=session, task_id=task_id), parent=parent)
+    _parent_owns_task(task=get_task(session=session, task_id=task_id), parent=parent)
     updated = assign_task(session=session, task_id=task_id, child_id=child_id)
     if updated is None:
         raise AppErrorException(
