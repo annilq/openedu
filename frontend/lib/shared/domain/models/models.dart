@@ -798,6 +798,43 @@ class TutorUsageModel {
 }
 
 // ───────── AI 模型（票据 08 多模型流式） ─────────
+/// 内置服务商预设（GET /models/providers）：用于「添加模型」时自动带出
+/// base_url 与模型名建议，简化家长手动输入。
+class ModelProviderPreset {
+  final String key; // deepseek / openai / ollama ...
+  final String label;
+  final String provider; // ollama | openai_compat
+  final String? baseUrl;
+  final List<String> models; // 该服务商常见模型名建议
+  final String? apiKeyHint;
+  final String? docUrl;
+
+  const ModelProviderPreset({
+    required this.key,
+    required this.label,
+    required this.provider,
+    this.baseUrl,
+    this.models = const [],
+    this.apiKeyHint,
+    this.docUrl,
+  });
+
+  factory ModelProviderPreset.fromJson(Map<String, dynamic> json) {
+    return ModelProviderPreset(
+      key: json['key'] as String,
+      label: json['label'] as String,
+      provider: json['provider'] as String,
+      baseUrl: json['base_url'] as String?,
+      models: (json['models'] as List?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const <String>[],
+      apiKeyHint: json['api_key_hint'] as String?,
+      docUrl: json['doc_url'] as String?,
+    );
+  }
+}
+
 /// 单个可选模型：内置（builtin=true，id 为字符串）或家长自定义（id 为 UUID 字符串）。
 class ModelInfo {
   final String id;

@@ -102,12 +102,14 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
         return SidebarCollapseScope(
           collapsed: railCollapsed,
           onToggle: isExpanded ? () {} : _toggleCollapsed,
-          child: Row(
-            children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 280),
-                curve: Curves.easeOutCubic,
-                width: railWidth,
+        child: Row(
+          // 内容页贴顶自然布局，绝不垂直居中（避免内容少的页面上下留白「局中」）。
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 280),
+              curve: Curves.easeOutCubic,
+              width: railWidth,
                 decoration: BoxDecoration(
                   color: scheme.surfaceContainerHigh,
                   border: Border(
@@ -132,7 +134,7 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
               ),
               Expanded(
                 child: Container(
-                  color: scheme.surfaceContainerLow,
+                  color: scheme.surface,
                   child: widget.body,
                 ),
               ),
@@ -152,7 +154,7 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
       children: [
         Expanded(
           child: Container(
-            color: scheme.surfaceContainerLow,
+            color: scheme.surface,
             child: widget.body,
           ),
         ),
@@ -189,7 +191,7 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
             _CompactTopBar(onMenu: () => _setDrawer(true)),
             Expanded(
               child: Container(
-                color: scheme.surfaceContainerLow,
+                color: scheme.surface,
                 child: widget.body,
               ),
             ),

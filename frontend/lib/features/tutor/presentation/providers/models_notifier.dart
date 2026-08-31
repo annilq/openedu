@@ -7,6 +7,8 @@ import '../../../../shared/exceptions/app_exception.dart';
 
 // ───────── AI 模型管理（票据 08，仅家长） ─────────
 /// 新增 / 更新模型请求体。provider 仅允许 ollama / openai_compat。
+/// [providerPreset] 为内置服务商预设 key（如 deepseek），后端据此自动补全
+/// provider / base_url；显式传入的 provider / baseUrl 优先。
 class ModelCreateReq {
   final String label;
   final String provider;
@@ -14,6 +16,7 @@ class ModelCreateReq {
   final String modelName;
   final String? apiKey;
   final bool isDefault;
+  final String? providerPreset;
 
   const ModelCreateReq({
     required this.label,
@@ -22,6 +25,7 @@ class ModelCreateReq {
     required this.modelName,
     this.apiKey,
     this.isDefault = false,
+    this.providerPreset,
   });
 
   Map<String, dynamic> toJson() => {
@@ -31,6 +35,7 @@ class ModelCreateReq {
         'model_name': modelName,
         'api_key': apiKey,
         'is_default': isDefault,
+        if (providerPreset != null) 'provider_preset': providerPreset,
       };
 }
 
@@ -41,6 +46,7 @@ class ModelUpdateReq {
   final String? modelName;
   final String? apiKey;
   final bool? isDefault;
+  final String? providerPreset;
 
   const ModelUpdateReq({
     this.label,
@@ -49,6 +55,7 @@ class ModelUpdateReq {
     this.modelName,
     this.apiKey,
     this.isDefault,
+    this.providerPreset,
   });
 
   Map<String, dynamic> toJson() => {
@@ -58,6 +65,7 @@ class ModelUpdateReq {
         if (modelName != null) 'model_name': modelName,
         if (apiKey != null) 'api_key': apiKey,
         if (isDefault != null) 'is_default': isDefault,
+        if (providerPreset != null) 'provider_preset': providerPreset,
       };
 }
 
@@ -75,7 +83,8 @@ class ModelsLoading extends ModelsState {
 
 class ModelsLoaded extends ModelsState {
   final ModelListResp resp;
-  const ModelsLoaded(this.resp);
+  final List<ModelProviderPreset> providers;
+  const ModelsLoaded(this.resp, this.providers);
 }
 
 class ModelsError extends ModelsState {
@@ -90,8 +99,15 @@ class ModelsNotifier extends StateNotifier<ModelsState> {
   Future<void> load() async {
     if (state is! ModelsLoading) state = const ModelsLoading();
     try {
-      final data = await _network.get('/models');
-      state = ModelsLoaded(ModelListResp.fromJson(data as Map<String, dynamic>));
+      final results = await Future.wait([
+        _network.get('/models'),
+        _network.get('/models/providers'),
+      ]);
+      final resp = ModelListResp.fromJson(results[0] as Map<String, dynamic>);
+      final providers = (results[1] as List)
+          .map((e) => ModelProviderPreset.fromJson(e as Map<String, dynamic>))
+          .toList();
+      state = ModelsLoaded(resp, providers);
     } catch (e) {
       state = ModelsError(e.toString());
     }

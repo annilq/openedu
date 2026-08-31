@@ -64,7 +64,9 @@ class ParentWrongQuestionsView extends ConsumerWidget {
 
   Widget _emptyState(BuildContext context) {
     final scheme = AppTheme.colorsOf(context);
-    return Center(
+    // 仅水平居中、垂直贴顶：避免卡片在内容区上下居中（「局中」观感）。
+    return Align(
+      alignment: Alignment.topCenter,
       child: AppCard(
         padding: const EdgeInsets.all(AppSpacing.xl3),
         child: Row(

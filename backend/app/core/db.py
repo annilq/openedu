@@ -74,6 +74,18 @@ def run_migrations() -> None:
                 text("ALTER TABLE task ADD COLUMN IF NOT EXISTS focus_interest JSON")
             )
 
+        # —— task.model（出题所选模型引用，ADR-0015/票据 08）——
+        if is_sqlite:
+            task_cols = [
+                r[1] for r in conn.execute(text("PRAGMA table_info(task)")).fetchall()
+            ]
+            if "model" not in task_cols:
+                conn.execute(text("ALTER TABLE task ADD COLUMN model VARCHAR(255)"))
+        else:
+            conn.execute(
+                text("ALTER TABLE task ADD COLUMN IF NOT EXISTS model VARCHAR(255)")
+            )
+
         # —— model_config（家长自定义模型，ADR-0015）——
         conn.execute(
             text(

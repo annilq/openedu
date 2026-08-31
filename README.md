@@ -79,6 +79,25 @@ uv run fastapi dev            # 开发模式，热重载，地址 http://localho
 
 健康检查：`curl http://localhost:8000/api/v1/health`
 
+#### 平板 / 真机联调（重要）
+
+本地 `fastapi dev` / `uvicorn --reload` **默认只绑定 `127.0.0.1`**。当 App 跑在真机、平板或模拟器上时，`127.0.0.1` 指向的是**设备自身**而非你的电脑，会导致登录/请求报「请求失败 (-1)」且服务端无任何日志（请求根本没进来）。
+
+联调时后端必须放开监听地址，并用电脑**局域网 IP**（不是 `127.0.0.1` / `localhost`）：
+
+```bash
+cd backend
+# 放开监听 + 局域网可访问；热重载仍可用
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+# 前端（另开终端），API_BASE 填电脑局域网 IP：
+cd frontend
+flutter run --dart-define=API_BASE=http://<电脑局域网IP>:8000
+```
+
+> 查电脑局域网 IP：`ifconfig | grep "inet "`（忽略 127.0.0.1）。Docker 方式（`docker compose up`）已默认 `--host 0.0.0.0`，无需此步。
+> 若仍连不上：先 `curl http://<电脑局域网IP>:8000/api/v1/health` 确认后端可达；检查防火墙是否放行 8000。
+
 ### 方式 B：Docker 一键（PostgreSQL）
 
 ```bash
@@ -138,7 +157,11 @@ LLM_API_KEY=你的key
 ## 前端 Flutter
 
 1. 安装 Flutter SDK（Dart >= 3.5）；用平板或模拟器。
-2. 配置后端地址：默认 `http://127.0.0.1:8000`（见 [app_config.dart](file:///Users/yunqi/Documents/develop/openedu/frontend/lib/configs/app_config.dart)）。真机/平板联调时改为电脑局域网 IP：
+2. 配置后端地址：默认 `http://127.0.0.1:8000`（见 [app_config.dart](file:///Users/yunqi/Documents/develop/openedu/frontend/lib/configs/app_config.dart)）。
+
+   ⚠️ **真机/平板/模拟器联调时**，必须同时满足两点，否则会报「请求失败 (-1)」且服务端无日志：
+   - 后端用 `--host 0.0.0.0` 启动（见上方「平板 / 真机联调」）；
+   - `API_BASE` 填**电脑局域网 IP**（不是 `127.0.0.1`，那是设备自己）。
 
 ```bash
 cd frontend

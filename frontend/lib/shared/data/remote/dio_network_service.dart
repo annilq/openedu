@@ -44,7 +44,7 @@ class DioNetworkService implements NetworkService {
     if (statusCode == 401) {
       throw UnauthorizedException();
     }
-    final parsed = _extractError(e.response);
+    final parsed = _extractError(e);
     throw HttpException(
       parsed.message,
       statusCode: statusCode,
@@ -52,7 +52,8 @@ class DioNetworkService implements NetworkService {
     );
   }
 
-  _ParsedError _extractError(Response? response) {
+  _ParsedError _extractError(DioException e) {
+    final response = e.response;
     final data = response?.data;
     final code = data is Map ? data['code']?.toString() : null;
     final message = data is Map ? data['message']?.toString() : null;
@@ -69,10 +70,36 @@ class DioNetworkService implements NetworkService {
         return _ParsedError(code: code, message: msg);
       }
     }
+    // 响应为空：连接层失败（超时 / 连接被拒 / 域名解析 / 证书），把 Dio 真实原因透出，
+    // 避免「请求失败 (-1)」死局——此时请求根本没到后端，需在客户端排查网络/地址。
+    if (response == null) {
+      return _ParsedError(code: code, message: _describeConnectionFailure(e));
+    }
     return _ParsedError(
       code: code,
-      message: '请求失败 (${response?.statusCode ?? '-1'})',
+      message: '请求失败 (${response.statusCode})',
     );
+  }
+
+  /// 把连接层失败翻译成可读文案，并附上底层 OS 错误与目标地址，方便定位「-1 无日志」类问题。
+  String _describeConnectionFailure(DioException e) {
+    final underlying = e.error?.toString().replaceAll('\n', ' ').trim();
+    final detail =
+        underlying != null && underlying.isNotEmpty ? '（$underlying）' : '';
+    switch (e.type) {
+      case DioExceptionType.connectionTimeout:
+      case DioExceptionType.sendTimeout:
+      case DioExceptionType.receiveTimeout:
+        return '请求超时（${e.type.name}），请确认网络与后端状态';
+      case DioExceptionType.connectionError:
+        return '无法连接服务器$detail，请确认后端已启动且地址可达：${AppConfig.apiBaseUrl}';
+      case DioExceptionType.badCertificate:
+        return 'SSL 证书错误，无法建立安全连接';
+      case DioExceptionType.cancel:
+        return '请求已取消';
+      default:
+        return '请求失败（无响应$detail）';
+    }
   }
 
   @override

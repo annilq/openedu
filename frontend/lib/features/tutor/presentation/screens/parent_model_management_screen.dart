@@ -31,11 +31,14 @@ class _ParentModelManagementScreenState
   }
 
   void _openForm(BuildContext context, ModelInfo? initial) {
+    final s = ref.read(modelsNotifierProvider);
+    final providers = s is ModelsLoaded ? s.providers : const <ModelProviderPreset>[];
     showShadDialog(
       context: context,
       barrierColor: const Color(0x99000000),
       builder: (_) => ModelFormDialog(
         initial: initial,
+        presets: providers,
         onDone: () => AppToast.show(context, '已保存'),
       ),
     );

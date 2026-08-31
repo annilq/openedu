@@ -25,6 +25,65 @@ def test_list_models_empty(client):
     assert body["custom"] == []
 
 
+def test_list_provider_presets(client):
+    h = _parent(client, "prov")
+    r = client.get("/api/v1/models/providers", headers=h)
+    assert r.status_code == 200
+    body = r.json()
+    assert isinstance(body, list) and len(body) >= 2
+    keys = {p["key"] for p in body}
+    assert "deepseek" in keys and "openai" in keys
+    # 每个预设都带默认 base_url 与模型名建议
+    ds = next(p for p in body if p["key"] == "deepseek")
+    assert ds["base_url"] == "https://api.deepseek.com"
+    assert "deepseek-v4-flash" in ds["models"]
+
+
+def test_create_with_provider_preset(client, db: Session):
+    h = _parent(client, "preset")
+    # 只选服务商预设 + 模型名 + key，不手写 provider/base_url
+    r = client.post(
+        "/api/v1/models",
+        headers=h,
+        json={
+            "label": "我的 DeepSeek",
+            "provider_preset": "deepseek",
+            "model_name": "deepseek-v4-flash",
+            "api_key": "sk-test",
+            "is_default": True,
+        },
+    )
+    assert r.status_code == 201, r.text
+    body = r.json()
+    # 自动补全 provider 与 base_url
+    assert body["provider"] == "openai_compat"
+    assert body["base_url"] == "https://api.deepseek.com"
+    assert body["model_name"] == "deepseek-v4-flash"
+    assert body["is_default"] is True
+    # 落库校验
+    mc = db.get(ModelConfig, uuid.UUID(body["id"]))
+    assert mc is not None
+    assert mc.provider == "openai_compat"
+    assert mc.base_url == "https://api.deepseek.com"
+    assert mc.api_key_enc != "sk-test"
+
+
+def test_create_with_unknown_preset(client):
+    h = _parent(client, "badpreset")
+    r = client.post(
+        "/api/v1/models",
+        headers=h,
+        json={
+            "label": "X",
+            "provider_preset": "no-such-provider",
+            "model_name": "gpt-4o",
+        },
+    )
+    assert r.status_code in (400, 422)
+    assert "服务商预设" in r.text
+
+
+
 def test_create_and_encryption(client, db: Session):
     h = _parent(client, "enc")
     payload = {

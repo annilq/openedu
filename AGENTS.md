@@ -19,6 +19,7 @@ Flutter（Riverpod + cupertino_ui）平板 / 桌面 App + Python（FastAPI / SQL
 |---|---|
 | 安装依赖 | `uv sync` |
 | 启动开发服 | `uv run fastapi dev`（或 `uv run uvicorn app.main:app --reload`） |
+| 启动开发服（平板/真机联调） | `uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload`（前端须用电脑局域网 IP 作 `API_BASE`，`127.0.0.1` 指向设备自身会导致「请求失败 (-1)」且无服务端日志） |
 | 测试 | `uv run pytest` |
 | Lint | `uv run ruff check .` |
 | 真实模型 smoke（需 key） | `LLM_PROVIDER=deepseek RUN_LLM_SMOKE=1 uv run pytest tests/domain/test_llm_smoke.py -m smoke -v` |
@@ -30,6 +31,24 @@ Flutter（Riverpod + cupertino_ui）平板 / 桌面 App + Python（FastAPI / SQL
 | 取依赖 | `flutter pub get` |
 | Lint 门禁（零警告） | `flutter analyze` |
 | 测试 | `flutter test` |
+
+### macOS 联调网络权限（重新生成项目后会丢失）
+
+`flutter create --platforms=macos .` 或重新生成 macOS 项目，会把 `macos/Runner/*.entitlements` 与 `Info.plist` **刷回默认值**，从而抹掉网络权限，症状为「题库 / 模型管理等需联网的页面报接口错误，但后端零访问日志」（请求在 App 内被系统层拦截）。
+
+需保证两项（已被 `frontend/scripts/patch_macos_network.py` 幂等修复）：
+
+- `DebugProfile.entitlements` / `Release.entitlements` 含 `com.apple.security.network.client = true`（App Sandbox 出站网络）。
+- `Info.plist` 含 `NSAppTransportSecurity.NSAllowsLocalNetworking = true`（本项目后端是明文 HTTP `http://127.0.0.1:8000`，ATS 默认会拦截）。
+
+**每次重新生成 macOS 项目后必须执行一次：**
+
+```bash
+python3 frontend/scripts/patch_macos_network.py
+# 然后重新构建：flutter build macos --debug   （或 flutter run -d macos）
+```
+
+> 注意：前端默认 `API_BASE` 为 `http://127.0.0.1:8000`（见 `lib/configs/app_config.dart`，可用 `--dart-define=API_BASE=...` 覆盖）。在 macOS 桌面端 `127.0.0.1` 即本机，无需改；仅真机/平板联调才需换成电脑局域网 IP（否则 `127.0.0.1` 指向设备自身，出现「请求失败 (-1)」）。
 
 ## 全局硬约束
 

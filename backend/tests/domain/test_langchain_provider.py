@@ -75,14 +75,14 @@ def test_deepseek_preset_uses_deepseek_settings(monkeypatch):
     """LLM_PROVIDER=deepseek 时 _build_model 从 DEEPSEEK_* 取值（快捷预设）。"""
     monkeypatch.setattr(settings, "LLM_PROVIDER", "deepseek")
     monkeypatch.setattr(settings, "DEEPSEEK_BASE_URL", "https://api.deepseek.com")
-    monkeypatch.setattr(settings, "DEEPSEEK_MODEL", "deepseek-chat")
+    monkeypatch.setattr(settings, "DEEPSEEK_MODEL", "deepseek-v4-flash")
     monkeypatch.setattr(settings, "DEEPSEEK_API_KEY", "sk-deepseek")
     provider = LangChainProvider()
     fake, mock_patch = _run_with("{}")
     with mock_patch as mock_cls:
         provider._build_model()
     assert mock_cls.call_args.kwargs["base_url"] == "https://api.deepseek.com"
-    assert mock_cls.call_args.kwargs["model"] == "deepseek-chat"
+    assert mock_cls.call_args.kwargs["model"] == "deepseek-v4-flash"
     assert mock_cls.call_args.kwargs["api_key"] == "sk-deepseek"
     assert mock_cls.call_args.kwargs["temperature"] == settings.LLM_TEMPERATURE
 

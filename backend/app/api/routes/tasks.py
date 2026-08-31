@@ -1,9 +1,12 @@
+import asyncio
 from datetime import date
 from uuid import UUID
 
 from fastapi import APIRouter, Query, status
 from sqlmodel import select
 
+from app.ai import generate_question as genkit_generate_question
+from app.ai import resolve_engine
 from app.api.deps import CurrentChild, CurrentParent, CurrentUser, SessionDep
 from app.core.errors import AppErrorException, ErrCode
 from app.crud import (
@@ -31,6 +34,7 @@ from app.crud import (
     upsert_wrong_question,
 )
 from app.domain import Grader, QuestionGenerator, build_provider
+from app.domain.provider import GeneratedQuestion
 from app.models import (
     AnswerResult,
     AnswerSubmit,
@@ -136,22 +140,79 @@ def _require_draft(task: Task) -> None:
         )
 
 
+def _gen_question(
+    engine,
+    *,
+    subject: str,
+    grade: int,
+    knowledge_point: str,
+    qtype: str,
+    difficulty: str,
+    interests: list[str] | None = None,
+    focus_interest: str | None = None,
+) -> GeneratedQuestion:
+    """出题单题：有真实引擎（如 ollama）走 Genkit，否则回退 build_provider（mock/langchain）。
+
+    engine 为 resolve_engine 解析结果（None = 无真实引擎）。Genkit 路径复用流式同款
+    prompt 与安全闸门；若真实模型不可用或产出不安全，回退 MockProvider，保证题量完整
+    且不落库违规内容。
+    """
+    if engine is None:
+        return QuestionGenerator(build_provider()).generate(
+            subject=subject,
+            grade=grade,
+            knowledge_point=knowledge_point,
+            qtype=qtype,
+            difficulty=difficulty,
+            interests=interests,
+            focus_interest=focus_interest,
+        )
+    try:
+        g = asyncio.run(
+            genkit_generate_question(
+                engine,
+                subject=subject,
+                grade=grade,
+                knowledge_point=knowledge_point,
+                qtype=qtype,
+                difficulty=difficulty,
+                interests=interests,
+                focus_interest=focus_interest,
+            )
+        )
+    except Exception:
+        g = None
+    if g is None:
+        # 真实模型不可用 / 产出不安全 → 回退 MockProvider。
+        return QuestionGenerator(build_provider()).generate(
+            subject=subject,
+            grade=grade,
+            knowledge_point=knowledge_point,
+            qtype=qtype,
+            difficulty=difficulty,
+            interests=interests,
+            focus_interest=focus_interest,
+        )
+    return g
+
+
 def _generate_task_questions_for_specs(
     specs: list[TaskSpec] | list[dict],
     *,
     interests: list[str] | None = None,
     focus_interests: list[str] | None = None,
+    engine=None,
 ) -> list[TaskQuestion]:
-    """调用 QuestionGenerator 产草稿 TaskQuestion（R-Q1=c：不写 Question 表）。
+    """调用出题引擎产草稿 TaskQuestion（R-Q1=c：不写 Question 表）。
 
     specs 可以是 TaskSpec 对象（来自请求体的 Pydantic）或 dict（来自 Task.specs 持久化）。
+    engine 为 resolve_engine 解析结果（None = 无真实引擎，回退 mock/langchain）。
 
     兴趣注入（WF-3/WF-4）：
     - `interests`：轻融入兴趣池（娃娃画像 categories），整卷统一下传。
     - `focus_interests`：兴趣题模式聚焦主题（list）；非空时按题轮询均分（第 i 题取
       focus_interests[i % n]），且此时不再轻融入兴趣池（避免双模式叠加）。
     """
-    gen = QuestionGenerator(build_provider())
     out: list[TaskQuestion] = []
     n_focus = len(focus_interests) if focus_interests else 0
     idx = 0
@@ -174,7 +235,8 @@ def _generate_task_questions_for_specs(
             # 兴趣题模式：轮询取一个聚焦主题；否则轻融入兴趣池。
             focus = focus_interests[idx % n_focus] if n_focus else None
             idx += 1
-            g = gen.generate(
+            g = _gen_question(
+                engine,
                 subject=subject,
                 grade=grade,
                 knowledge_point=knowledge_point,
@@ -228,10 +290,14 @@ def batch_generate(
 
     # 兴趣题模式（WF-4）：显式聚焦主题直接来自请求；否则后端自动轻融入画像。
     focus_interests = payload.focus_interest
+    # 多模型（票据 08）：把家长所选模型（内置 id / ModelConfig id）解析为真实引擎；
+    # 解析不到（含缺省）则走 build_provider 回退（mock/langchain）。
+    engine = resolve_engine(payload.model, parent_id=parent.id, session=session)
     draft_questions = _generate_task_questions_for_specs(
         payload.specs,
         interests=interests_pool,
         focus_interests=focus_interests,
+        engine=engine,
     )
     specs_dicts = [s.model_dump() for s in payload.specs]
     task = batch_generate_task(
@@ -242,6 +308,7 @@ def batch_generate(
         specs_dicts=specs_dicts,
         task_questions=draft_questions,
         focus_interest=focus_interests,
+        model=payload.model,
     )
     task_questions = get_task_questions(session=session, task_id=task.id)
     return _task_to_resp(task, task_questions, include_answer=True)
@@ -443,7 +510,8 @@ def regenerate_one(
     tq = get_task_question(session=session, tq_id=tq_id)
     if tq is None or tq.task_id != task.id:
         raise AppErrorException(ErrCode.TASK_QUESTION_NOT_FOUND, "题目不存在")
-    gen = QuestionGenerator(build_provider())
+    # 沿用本任务所选模型（无则回退 mock/langchain）；与整卷重生成保持一致。
+    engine = resolve_engine(task.model, parent_id=parent.id, session=session)
     # 单题重生成复现兴趣设定：沿用整卷聚焦主题的轮询分配（按当前题序），否则轻融入画像。
     interests_pool = _extract_interests_pool(
         session.get(User, task.child_id) if task.child_id else None
@@ -457,7 +525,8 @@ def regenerate_one(
         except StopIteration:
             qi = 0
         focus = focus_interests[qi % len(focus_interests)]
-    g = gen.generate(
+    g = _gen_question(
+        engine,
         subject=tq.subject,
         grade=tq.grade,
         knowledge_point=tq.knowledge_point,
@@ -499,10 +568,13 @@ def regenerate_all(
     child = session.get(User, task.child_id) if task.child_id else None
     interests_pool = _extract_interests_pool(child)
     focus_interests = task.focus_interest
+    # 沿用本任务所选模型（无则回退 mock/langchain）。
+    engine = resolve_engine(task.model, parent_id=parent.id, session=session)
     new_tqs = _generate_task_questions_for_specs(
         specs,
         interests=interests_pool,
         focus_interests=focus_interests,
+        engine=engine,
     )
     updated = regenerate_all_task_questions(
         session=session, task_id=task.id, new_task_questions=new_tqs

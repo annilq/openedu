@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     # DeepSeek 快捷配置：LLM_PROVIDER=deepseek 时读取，无需填 LLM_*
     DEEPSEEK_API_KEY: str = ""
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
-    DEEPSEEK_MODEL: str = "deepseek-chat"
+    DEEPSEEK_MODEL: str = "deepseek-v4-flash"
 
     # —— 多模型接入（ADR-0015 / 票据 08）：Genkit 编排流式 flow ——
     # 内置模型清单（env JSON）：[{id,label,provider,model_name,base_url?}]

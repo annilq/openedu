@@ -220,81 +220,91 @@ class _ParentQuestionBankViewState extends ConsumerState<ParentQuestionBankView>
       }
     });
 
-    return Column(
-      children: [
-        _buildToolbar(app),
-        Expanded(child: _buildBody(state, app)),
-        if (_selectedIds.isNotEmpty)
-          _buildActionBar(app, busy),
-      ],
-    );
-  }
-
-  Widget _buildToolbar(dynamic app) {
-    return Container(
+    // 与概览 / 布置任务 / 错题本等家长页完全一致的页面骨架：
+    // 整页 SingleChildScrollView + 居中约束 maxWidth 1080 + SectionTitle + 内容置于 AppCard。
+    return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(
-          AppSpacing.xl2, AppSpacing.md, AppSpacing.xl2, AppSpacing.md),
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: app.outline)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('题库', style: AppTheme.textOf(context).headlineSmall),
-          const SizedBox(height: AppSpacing.md),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                _gradeChip(-1, '全部'),
-                for (var i = 1; i <= 9; i++) _gradeChip(i, '$i年级'),
-              ],
-            ),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Wrap(
-            spacing: AppSpacing.sm,
-            runSpacing: AppSpacing.sm,
-            crossAxisAlignment: WrapCrossAlignment.center,
+          AppSpacing.xl2, AppSpacing.md, AppSpacing.xl2, AppSpacing.xl4),
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1080),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              SizedBox(
-                width: 160,
-                child: AppPickerField<String>(
-                  label: '学科',
-                  values: ['', ..._subjects],
-                  labels: ['全部学科', ..._subjects],
-                  value: _selectedSubject,
-                  onChanged: (v) => setState(() {
-                    _selectedSubject = v;
-                    _reload();
-                  }),
-                ),
-              ),
-              SizedBox(
-                width: 160,
-                child: AppPickerField<String>(
-                  label: '题型',
-                  values: ['all', ..._qtypes],
-                  labels: ['全部题型', ..._qtypeLabels],
-                  value: _selectedQtype,
-                  onChanged: (v) => setState(() {
-                    _selectedQtype = v;
-                    _reload();
-                  }),
-                ),
-              ),
-              SizedBox(
-                width: 200,
-                child: AppTextField(
-                  label: '关键词',
-                  controller: _keywordCtrl,
-                  onChanged: _onKeywordChanged,
+              const SectionTitle('题库'),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+                child: AppCard(
+                  padding: const EdgeInsets.all(AppSpacing.xl),
+                  child: _buildCardContent(state, app, busy),
                 ),
               ),
             ],
           ),
-        ],
+        ),
       ),
+    );
+  }
+
+  /// 筛选区（学科 / 题型 / 年级 / 关键词）。放在卡片顶部，随页面一起滚动，
+  /// 与「错题本」等页面「SectionTitle + AppCard(内嵌内容)」的结构保持一致。
+  Widget _buildFilters(dynamic app) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              _gradeChip(-1, '全部'),
+              for (var i = 1; i <= 9; i++) _gradeChip(i, '$i年级'),
+            ],
+          ),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        Wrap(
+          spacing: AppSpacing.sm,
+          runSpacing: AppSpacing.sm,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            SizedBox(
+              width: 160,
+              child: AppPickerField<String>(
+                label: '学科',
+                values: ['', ..._subjects],
+                labels: ['全部学科', ..._subjects],
+                value: _selectedSubject,
+                onChanged: (v) => setState(() {
+                  _selectedSubject = v;
+                  _reload();
+                }),
+              ),
+            ),
+            SizedBox(
+              width: 160,
+              child: AppPickerField<String>(
+                label: '题型',
+                values: ['all', ..._qtypes],
+                labels: ['全部题型', ..._qtypeLabels],
+                value: _selectedQtype,
+                onChanged: (v) => setState(() {
+                  _selectedQtype = v;
+                  _reload();
+                }),
+              ),
+            ),
+            SizedBox(
+              width: 200,
+              child: AppTextField(
+                label: '关键词',
+                controller: _keywordCtrl,
+                onChanged: _onKeywordChanged,
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 
@@ -321,7 +331,27 @@ class _ParentQuestionBankViewState extends ConsumerState<ParentQuestionBankView>
     );
   }
 
-  Widget _buildBody(BankState state, dynamic app) {
+  /// 卡片内容：筛选区 + 分隔 + 题列表 +（选中时）操作区。
+  Widget _buildCardContent(BankState state, dynamic app, bool busy) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildFilters(app),
+        const SizedBox(height: AppSpacing.md),
+        Container(height: 1, color: app.outline),
+        const SizedBox(height: AppSpacing.md),
+        _buildListArea(state, app),
+        if (_selectedIds.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.md),
+          Container(height: 1, color: app.outline),
+          const SizedBox(height: AppSpacing.md),
+          _buildActionFooter(app, busy),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildListArea(BankState state, dynamic app) {
     if (state is BankLoading || state is BankIdle) {
       return const AppLoading();
     }
@@ -335,11 +365,9 @@ class _ParentQuestionBankViewState extends ConsumerState<ParentQuestionBankView>
     if (data.items.isEmpty) {
       return _EmptyHint(onReload: _reload);
     }
-    return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(
-          AppSpacing.xl2, AppSpacing.md, AppSpacing.xl2, AppSpacing.xl2),
-      itemCount: data.items.length,
-      itemBuilder: (_, i) => _buildItem(data.items[i], app),
+    // 与错题本一致：单页滚动 + Column 平铺题卡（不再内嵌独立 ListView）。
+    return Column(
+      children: data.items.map((q) => _buildItem(q, app)).toList(),
     );
   }
 
@@ -348,7 +376,8 @@ class _ParentQuestionBankViewState extends ConsumerState<ParentQuestionBankView>
     return Container(
       margin: const EdgeInsets.only(bottom: AppSpacing.sm),
       decoration: BoxDecoration(
-        color: app.surface,
+        // 与卡片底色一致，仅以 1px 描边区分行（选中态描边转为 primary）。
+        color: app.surfaceContainerLow,
         borderRadius: BorderRadius.circular(AppRadius.card),
         border: Border.all(
           color: selected ? app.primary : app.outline,
@@ -416,29 +445,24 @@ class _ParentQuestionBankViewState extends ConsumerState<ParentQuestionBankView>
     );
   }
 
-  Widget _buildActionBar(dynamic app, bool busy) {
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        border: Border(top: BorderSide(color: app.outline)),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: ShadButton(
-              onPressed: busy ? null : _generate,
-              leading: const Icon(LucideIcons.filePlus, size: 16),
-              child: Text('用这些题生成任务 (${_selectedIds.length})'),
-            ),
+  /// 选中题目后出现的操作区（卡片底部，随页面滚动）。
+  Widget _buildActionFooter(dynamic app, bool busy) {
+    return Row(
+      children: [
+        Expanded(
+          child: ShadButton(
+            onPressed: busy ? null : _generate,
+            leading: const Icon(LucideIcons.filePlus, size: 16),
+            child: Text('用这些题生成任务 (${_selectedIds.length})'),
           ),
-          const SizedBox(width: AppSpacing.sm),
-          ShadButton.outline(
-            onPressed: busy ? null : _addToDraft,
-            leading: const Icon(LucideIcons.folderPlus, size: 16),
-            child: const Text('加入已有草稿'),
-          ),
-        ],
-      ),
+        ),
+        const SizedBox(width: AppSpacing.sm),
+        ShadButton.outline(
+          onPressed: busy ? null : _addToDraft,
+          leading: const Icon(LucideIcons.folderPlus, size: 16),
+          child: const Text('加入已有草稿'),
+        ),
+      ],
     );
   }
 }
@@ -450,23 +474,19 @@ class _EmptyHint extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final app = AppTheme.colorsOf(context);
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(AppSpacing.xl3),
-      child: Column(
-        children: [
-          Icon(LucideIcons.library, size: 48, color: app.onSurfaceVariant),
-          const SizedBox(height: AppSpacing.md),
-          Text('题库还是空的', style: AppTheme.textOf(context).titleMedium),
-          const SizedBox(height: AppSpacing.xs),
-          Text('去「布置任务」生成题目并加入题库，这里就会积累你的专属题集',
-              style: AppTheme.textOf(context)
-                  .bodyMedium
-                  ?.copyWith(color: app.onSurfaceVariant)),
-          const SizedBox(height: AppSpacing.lg),
-          ShadButton(onPressed: onReload, child: const Text('刷新')),
-        ],
-      ),
+    return Column(
+      children: [
+        Icon(LucideIcons.library, size: 48, color: app.onSurfaceVariant),
+        const SizedBox(height: AppSpacing.md),
+        Text('题库还是空的', style: AppTheme.textOf(context).titleMedium),
+        const SizedBox(height: AppSpacing.xs),
+        Text('去「布置任务」生成题目并加入题库，这里就会积累你的专属题集',
+            style: AppTheme.textOf(context)
+                .bodyMedium
+                ?.copyWith(color: app.onSurfaceVariant)),
+        const SizedBox(height: AppSpacing.lg),
+        ShadButton(onPressed: onReload, child: const Text('刷新')),
+      ],
     );
   }
 }

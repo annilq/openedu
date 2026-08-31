@@ -7,7 +7,12 @@
 from __future__ import annotations
 
 from app.ai.engine import EngineResolution, list_builtin_models, resolve_engine
-from app.ai.flows import QuestionSchema, generate_questions_stream, tutor_stream
+from app.ai.flows import (
+    QuestionSchema,
+    generate_question,
+    generate_questions_stream,
+    tutor_stream,
+)
 
 __all__ = [
     "resolve_engine",
@@ -15,5 +20,6 @@ __all__ = [
     "EngineResolution",
     "tutor_stream",
     "generate_questions_stream",
+    "generate_question",
     "QuestionSchema",
 ]
