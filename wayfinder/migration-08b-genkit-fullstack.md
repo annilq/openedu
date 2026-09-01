@@ -64,7 +64,7 @@
 ### Phase 0 — 文档与 ADR（本次交付，不碰代码）
 - [x] 本文档。
 - [x] 修订 ADR-0015（决策 2 改为「端到端 Genkit 协议」；备选/后果同步；SSE 信封段标注退役）。
-- 待 Phase 4 后更新：`技术架构_后端.md`、`技术架构_Flutter.md`、术语表、ticket 08 勾选。
+- 待 Phase 4 后更新：`../docs/architecture/技术架构_后端.md`、`../docs/architecture/技术架构_Flutter.md`、术语表、ticket 08 勾选。
 
 ### Phase 1 — 后端：flow 化 + 原生暴露（含 mock 分支）
 - 改动文件：
@@ -97,8 +97,8 @@
 - 门禁达成：后端 **124 passed / 3 skipped**；`ruff` 零警告；前端 analyze 0、test 全绿（待本地复核）。
 
 ### Phase 4 — 文档更新 ✅（2026-08-31 完成）
-- `技术架构_后端.md`：§架构图、§3 技术栈（Agent 编排 LangChain→Genkit）、§5 领域层（LLMProvider/MockProvider/LangChainProvider → GenkitProvider + flow mock 分支）、§6.2 安全（langchain_provider→GenkitProvider）、§8 配置（LLM_PROVIDER 改 genkit 语义）、§9/§10 已知债（LangChain 引用清理）、本地开发（MockProvider → mock flow 分支）——**全部已更新**。
-- `技术架构_Flutter.md`：§7.1 网络层（新增 Genkit client 段，标注 AI flow 经 genkit client、REST 仍 Dio）、§11 特性表（tutor / task gen 改用 genkit client）——**已更新**。
+- `../docs/architecture/技术架构_后端.md`：§架构图、§3 技术栈（Agent 编排 LangChain→Genkit）、§5 领域层（LLMProvider/MockProvider/LangChainProvider → GenkitProvider + flow mock 分支）、§6.2 安全（langchain_provider→GenkitProvider）、§8 配置（LLM_PROVIDER 改 genkit 语义）、§9/§10 已知债（LangChain 引用清理）、本地开发（MockProvider → mock flow 分支）——**全部已更新**。
+- `../docs/architecture/技术架构_Flutter.md`：§7.1 网络层（新增 Genkit client 段，标注 AI flow 经 genkit client、REST 仍 Dio）、§11 特性表（tutor / task gen 改用 genkit client）——**已更新**。
 - 术语表：补 `Genkit flow` / `defineRemoteAction` / `serve_flow` 词条；标注自定义 SSE 信封退役、LangChain 移入「已退役」——**已更新**。
 - `wayfinder/tickets/08-多模型流式genui.md`：顶部加 08b 完成横幅、④非流式改 GenkitProvider、门禁数更新为 124 passed / 3 skipped——**已更新**。
 
@@ -118,4 +118,4 @@
 - [ ] 前端 `flutter test` 全绿（⚠️ 同上，待用户本地复核；Phase 2 保留的 `tutor_notifier_test.dart` 7 例非流式测试已适配新构造）。
 - [ ] 真实模型（ollama）经 `defineRemoteAction` 跑通答疑 + 出题预览（gated smoke，待用户起 ollama 或填 key 后 `RUN_LLM_SMOKE=1`）。
 - [ ] 安全走查：越狱/违规两场景均被 flow 内闸门拦截（Phase 3 走查）。
-- [x] `技术架构_后端.md` / `技术架构_Flutter.md` / 术语表 / ticket 08 已更新（Phase 4 ✅）。
+- [x] `../docs/architecture/技术架构_后端.md` / `../docs/architecture/技术架构_Flutter.md` / 术语表 / ticket 08 已更新（Phase 4 ✅）。

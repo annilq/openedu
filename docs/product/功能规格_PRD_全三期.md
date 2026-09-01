@@ -2,7 +2,7 @@
 
 > 项目：娃娃学习 App（小学二年级 / 四年级起步，规划至初中）
 > 形态：平板原生 App（Flutter）+ Python/LangChain 后端 + PostgreSQL
-> 配套：`技术架构_后端.md`、`技术架构_Flutter.md`、`娃娃学习App_ADR.md`、`娃娃学习App_术语表.md`
+> 配套：`../architecture/技术架构_后端.md`、`../architecture/技术架构_Flutter.md`、`../decisions/娃娃学习App_ADR.md`、`../decisions/娃娃学习App_术语表.md`
 > 需求描写遵循 **EARS 原则**（Ubiquitous / Event-driven / Unwanted / State-driven / Optional）。
 
 ---
@@ -242,6 +242,6 @@
 
 # 术语与引用
 
-- 术语见 `娃娃学习App_术语表.md`：Provider、MockProvider、LangChainProvider、QuestionGenerator、Grader、知识库/RAG、遗忘曲线、内容安全层等。
-- 架构约束见 `技术架构_后端.md` §5.4（扩展点）、`技术架构_Flutter.md` §13。
-- 决策依据见 `娃娃学习App_ADR.md`（ADR-003 不在 LangChain 上重复封装；ADR-008/009 安全；ADR-012 版权🔴）。
+- 术语见 `../decisions/娃娃学习App_术语表.md`：Provider、MockProvider、LangChainProvider、QuestionGenerator、Grader、知识库/RAG、遗忘曲线、内容安全层等。
+- 架构约束见 `../architecture/技术架构_后端.md` §5.4（扩展点）、`../architecture/技术架构_Flutter.md` §13。
+- 决策依据见 `../decisions/娃娃学习App_ADR.md`（ADR-003 不在 LangChain 上重复封装；ADR-008/009 安全；ADR-012 版权🔴）。

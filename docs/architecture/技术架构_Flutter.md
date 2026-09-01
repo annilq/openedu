@@ -1,7 +1,7 @@
 # Flutter 技术架构文档
 
 > 适用项目：娃娃学习 App（平板优先，iOS/安卓双端一套代码）
-> 配套文档：`技术架构_后端.md`、`功能规格_PRD_全三期.md`、`娃娃学习App_ADR.md`
+> 配套文档：`技术架构_后端.md`、`../product/功能规格_PRD_全三期.md`、`../decisions/娃娃学习App_ADR.md`
 > 架构基线：参考 [`flutter-clean-architecture-riverpod`](https://github.com/Uuttssaavv/flutter-clean-architecture-riverpod) —— Clean Architecture + Riverpod。
 
 ---

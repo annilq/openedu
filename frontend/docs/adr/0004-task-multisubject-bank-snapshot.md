@@ -117,4 +117,4 @@ ADR-0004 决策 #2 确立 `Question` 表即题库层（可跨 Task 复用），�
 - 家长端侧边栏 index 6 新增「题库」入口 → `ParentQuestionBankView`：年级 segment（全部 / 1~9 年级）+ 学科/题型筛选 + 关键词（300ms 防抖）+ 多选 + 底部双动作（「用这些题生成任务」→ 选项 A；「加入已有草稿」→ 选项 B 草稿选择器）。成功后复用 `ParentTaskReviewScreen`（specs 为空时隐藏「整卷重生成」）。
 
 ### 关联文档
-- 详细方案见 `实施文档_题库复用闭环_后端.md` / `实施文档_题库复用闭环_前端.md`。
+- 详细方案见 `../../../docs/architecture/实施文档_题库复用闭环_后端.md` / `../../../docs/architecture/实施文档_题库复用闭环_前端.md`。

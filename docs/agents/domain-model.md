@@ -1,6 +1,6 @@
 # 领域模型 / 术语 / 错误码 — 娃娃学习 App
 
-> 业务词汇的权威定义在 `frontend/CONTEXT.md`（设计系统语境）与 `娃娃学习App_术语表.md`。本页摘抄代理最常踩坑的部分。
+> 业务词汇的权威定义在 `frontend/CONTEXT.md`（设计系统语境）与 `../decisions/娃娃学习App_术语表.md`。本页摘抄代理最常踩坑的部分。
 
 ## 核心实体（ADR-0004）
 
@@ -23,7 +23,7 @@
 
 ## API 契约速查
 
-- 基址 `/api/v1`；Bearer JWT。完整路径表见 `技术架构_后端.md` §7 与 `README.md` 的 API 速览。
+- 基址 `/api/v1`；Bearer JWT。完整路径表见 `../architecture/技术架构_后端.md` §7 与 `README.md` 的 API 速览。
 - 关键端点：`POST /auth/register|login`、`POST /children`、`POST /tasks/batch-generate`、`GET /tasks/today`、`POST /tasks/{id}/answer`、`POST /tasks/{id}/checkin`、`GET /review/due`、`POST /tutor/ask`、`GET /tutor/logs|quota|usage`、`GET /questions`（题库浏览）、`POST /tasks/from-bank`、`POST /tasks/{id}/questions/from-bank`。
 
 ## 掌握度 / 安全 / 管控（口径摘要）

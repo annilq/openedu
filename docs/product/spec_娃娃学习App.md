@@ -1,7 +1,7 @@
 # Spec: 娃娃学习 App（小学→初中，平板优先）
 
 > 形态：Flutter 原生平板 App + Python/LangChain 后端 + PostgreSQL
-> 配套权威文档（细化见彼）：`娃娃学习App_ADR.md`、`技术架构_后端.md`、`技术架构_Flutter.md`、`功能规格_PRD_全三期.md`、`娃娃学习App_术语表.md`
+> 配套权威文档（细化见彼）：`../decisions/娃娃学习App_ADR.md`、`../architecture/技术架构_后端.md`、`../architecture/技术架构_Flutter.md`、`功能规格_PRD_全三期.md`、`../decisions/娃娃学习App_术语表.md`
 > 本 spec 为**面向 agent 实现**的合并视图，遵循 to-spec 模板。
 
 ---

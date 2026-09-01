@@ -62,8 +62,8 @@ python3 frontend/scripts/patch_macos_network.py
 
 ### 后端 / Python
 - 后端约定（SQLModel / cuuid / 配置 / 隔离 / 错误码 / 迁移 / 测试） → [docs/agents/backend.md](docs/agents/backend.md)
-- 后端架构（**事实源**，已修正 §5.1 async / §6 Task 状态两处过期描述） → [技术架构_后端.md](技术架构_后端.md)
-- 业务功能与架构分析（与上文有重叠，互补阅读；**架构判断以《技术架构_后端.md》为准**） → [项目分析_架构规范与业务功能.md](项目分析_架构规范与业务功能.md)
+- 后端架构（**事实源**，已修正 §5.1 async / §6 Task 状态两处过期描述） → [docs/architecture/技术架构_后端.md](docs/architecture/技术架构_后端.md)
+- 业务功能与架构分析（与上文有重叠，互补阅读；**架构判断以《技术架构_后端.md》为准**） → [docs/architecture/项目分析_架构规范与业务功能.md](docs/architecture/项目分析_架构规范与业务功能.md)
 
 ### 前端 / Flutter
 - 前端约定（Clean Arch / App* 组件 / 导航 / 令牌） → [docs/agents/frontend.md](docs/agents/frontend.md)
@@ -76,6 +76,7 @@ python3 frontend/scripts/patch_macos_network.py
 - 领域模型与术语 / 错误码 → [docs/agents/domain-model.md](docs/agents/domain-model.md)
 - 变更纪律 / Git 流程 → [docs/agents/git-workflow.md](docs/agents/git-workflow.md)
 - 待清理 / 待删除项清单 → [docs/agents/cleanup-flags.md](docs/agents/cleanup-flags.md)
+- 项目文档已按 `ai.md` 的 AI-Native 结构归一化到 `docs/` 的 `product/`、`requirements/`、`architecture/`、`decisions/` 四类（ux/database 暂未建：设计稿在 `design/`、库建模规范在 `docs/agents/backend.md` 与 `wayfinder/`）；新增文档按此六类归位。详见 `docs/decisions/娃娃学习App_ADR.md`（ADR-0018）。
 
 ### 开发规范 Skill 导航（编码代理可调用）
 - `/impeccable`：前端设计评审 / 审计 / 打磨，基于 `frontend/.impeccable.md` 的设计系统令牌。

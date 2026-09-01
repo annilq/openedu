@@ -22,7 +22,7 @@ FastAPI 后端（backend/app）
 SQLite（本地零依赖，默认） / PostgreSQL（Docker / 云）
 ```
 
-核心原则（见 `娃娃学习App_ADR.md`）：
+核心原则（见 `docs/decisions/娃娃学习App_ADR.md`）：
 - **不在 LangChain 之上重复封装 provider**，只在"框架层"自封领域接口，业务不绑框架。
 - **模型先不定**：`LLM_PROVIDER=mock|langchain|deepseek` 切换，国产模型填 `LLM_BASE_URL`(OpenAI 兼容) 即可接入。
 

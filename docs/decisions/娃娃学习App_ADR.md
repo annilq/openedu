@@ -103,20 +103,20 @@
 
 ## ADR-0015 多模型接入（Ollama / 自定义）+ 流式响应 + 轻量 GenUI
 
-> 来源：`/grill-with-docs` 访谈收敛（模型优化 / 本地 Ollama / 流式 UI / GenUI / 前端模型选择器）。配套实现票据见 `wayfinder/tickets/08-多模型流式genui.md`。
+> 来源：`/grill-with-docs` 访谈收敛（模型优化 / 本地 Ollama / 流式 UI / GenUI / 前端模型选择器）。配套实现票据见 `../../wayfinder/tickets/08-多模型流式genui.md`。
 
 ### 背景
 一期~三期已用 `MockProvider`（默认）+ `LangChainProvider`（真实模型）跑通全闭环，但存在三点诉求：①家用以**本地 Ollama** 跑模型可零云成本、零外网延迟、数据不出户；②答疑/出题希望**流式输出**改善体感（打字机 / 逐张题卡）；③前端要能**选择后端支持的模型**、出题时**自选或自定义模型**。用户要求参考 CopilotKit 式 GenUI，但前端是 Flutter，而 CopilotKit 无 Flutter SDK；候选官方方案为 Flutter `genui`（alpha，A2UI 原生走 WebSocket）与 Genkit（Flutter 端 `genkit/client.dart` 需接 Genkit flow 后端，而 **Genkit 的 Python 版 `genkit` + `genkit-fastapi` 可在 FastAPI 进程内直接挂 flow、`Accept: text/event-stream` 即 SSE、并支持 `chunk_type` 字段级结构化流式**，故与本项目 Python/FastAPI 栈**兼容**；已采纳为 v1 流式编排引擎（见决策 3 与备选）。
 
 ### 决策（六条，均经访谈锁定）
 1. **后端统一代理（守安全）**：Flutter 一律只连 `/api/v1` 的 SSE 端点；Ollama 与自定义模型由后端调用。服务端始终注入 `_SYSTEM` 年龄锁并对娃娃可输入字段跑 `check_input`、对输出跑 `check_output`，**安全层永不绕过**（忠诚 ADR-008）。禁止前端直连任何模型。
-2. **端到端 Genkit 协议（前后端统一，单栈）**：后端把 AI 能力暴露为原生 Genkit flow（经 `genkit-fastapi` 的 `serve_flow`，返回 Genkit 原生 typed structured streaming SSE）；前端改用官方 `package:genkit/client.dart` 的 `defineRemoteAction` 直连这些 flow，**不再维护自定义 SSE 信封**。单一技术栈（后端 flow + 前端 genkit client）避免双协议/双客户端/双测试的长期维护成本（见迁移文档 `wayfinder/migration-08b-genkit-fullstack.md`）。GenUI catalog 仍作为按需扩展点保留，本决策仅确定「协议统一」，不强制 catalog 式生成式 UI。
+2. **端到端 Genkit 协议（前后端统一，单栈）**：后端把 AI 能力暴露为原生 Genkit flow（经 `genkit-fastapi` 的 `serve_flow`，返回 Genkit 原生 typed structured streaming SSE）；前端改用官方 `package:genkit/client.dart` 的 `defineRemoteAction` 直连这些 flow，**不再维护自定义 SSE 信封**。单一技术栈（后端 flow + 前端 genkit client）避免双协议/双客户端/双测试的长期维护成本（见迁移文档 `../../wayfinder/migration-08b-genkit-fullstack.md`）。GenUI catalog 仍作为按需扩展点保留，本决策仅确定「协议统一」，不强制 catalog 式生成式 UI。
 3. **改用 Genkit Python 编排流式 flow（替代原「LangChainProvider 扩展」方案）**：流式 AI 输出（答疑逐字 + 出题逐张题卡）由 Genkit flow 编排，新增 `app/ai/`（**唯一允许 `import genkit` 的边界**，类比原 `LangChainProvider` 作为 langchain 适配层）承载：`Genkit` 实例、`serve_flow`/SSE 挂载、模型解析（Ollama / OpenAI-compat / 内置，按 `ModelConfig` + settings 把 `provider/model_name` 解析为 `ollama/{m}` / `openai/{m}`）与工具调用（T11 知识库检索作接地工具）。**ADR-003 延续**：业务/domain 代码仍只依赖 `LLMProvider` ABC 与非流式路径（`MockProvider` 供测试、`LangChainProvider` 供非流式真实调用），`genkit` 不被业务代码直接 import；流式端点由 API 层调用 `app/ai` 的 flow。
 4. **模型注册 = 配置驱动 + 家长自定义**：内置模型由 settings/env 声明并暴露 `GET /api/v1/models`（parent 可见）；家长自定义模型落 `ModelConfig` 表（仿 `TutorQuota`，按 `parent_id` 持久化：`label / provider('ollama'|'openai_compat') / base_url / model_name / api_key(加密)`）。**模型选择器仅家长可用**；娃娃继承家长默认模型，娃娃端不暴露下拉（避免娃娃自选未授权/不安全模型）。请求参数 `model`（id 或内置 id）可选，缺省走家长默认或全局 `DEFAULT_MODEL`。
 5. **流式安全 = 缓冲 + 整体校验后放行**：`/tutor/ask/stream` 先 `check_input` 拦越狱（命中即发 `safety_refusal` 不再调模型）；通过后后端**缓冲全量 token、跑整体 `check_output`**，通过才向娃娃放量，违规则整段替换为 `SAFE_REFUSAL`。儿童端绝不闪现违规片段。v1 接受"首字延迟=整段生成耗时"的代价；后续可叠加 chunk 级软过滤作增强层。
 6. **v1 流式端点范围**：`POST /api/v1/tutor/ask/stream`（答疑逐字）+ `POST /api/v1/tasks/generate/stream`（出题逐张题卡）。两处均前置现有 `require_role` + `check_quota` + `check_input`；`/tasks/generate/stream` 每生成一题经安全检查后再发 `question` 事件。
 
-### SSE 事件信封（契约）【退役中 → 见迁移文档 `wayfinder/migration-08b-genkit-fullstack.md`】
+### SSE 事件信封（契约）【退役中 → 见迁移文档 `../../wayfinder/migration-08b-genkit-fullstack.md`】
 > 2026-09-01 决策：前后端统一 Genkit 协议，前端改用 `package:genkit/client.dart` 的 `defineRemoteAction` 直连后端原生 flow，本自定义信封将随 `app/api/routes/stream.py` 退役。下方仅作迁移期对照。
 ```
 event: token        data: {"text": "…"}          # 答疑文本增量
@@ -129,7 +129,7 @@ event: error         data: {"message": "…"}        # 500/502 友好文案
 
 ### 备选
 - **前端直连 Ollama**：延迟更低，但绕过 ADR-008 安全层，否决。
-- **Genkit（Python 版）— 已采纳为统一 AI 栈**：经用户复核并 2026-09-01 拍板「前后端统一 Genkit 协议」，Genkit 的 Python 版 `genkit`+`genkit-fastapi` 在 FastAPI 进程内跑 flow（无 Node 依赖）、内置 SSE、`chunk_type` 字段级结构化流式，与本项目栈兼容；**前端同步采用 `package:genkit/client.dart` 的 `defineRemoteAction` 直连后端 flow**，前后端单一 Genkit 协议。原「非流式真实调用走 LangChainProvider 以避免第二套框架」的折中已被推翻——统一后 `LangChainProvider` 退役，非流式真实调用也走 Genkit OpenAI 插件，彻底单栈（详见迁移文档 `wayfinder/migration-08b-genkit-fullstack.md`）。
+- **Genkit（Python 版）— 已采纳为统一 AI 栈**：经用户复核并 2026-09-01 拍板「前后端统一 Genkit 协议」，Genkit 的 Python 版 `genkit`+`genkit-fastapi` 在 FastAPI 进程内跑 flow（无 Node 依赖）、内置 SSE、`chunk_type` 字段级结构化流式，与本项目栈兼容；**前端同步采用 `package:genkit/client.dart` 的 `defineRemoteAction` 直连后端 flow**，前后端单一 Genkit 协议。原「非流式真实调用走 LangChainProvider 以避免第二套框架」的折中已被推翻——统一后 `LangChainProvider` 退役，非流式真实调用也走 Genkit OpenAI 插件，彻底单栈（详见迁移文档 `../../wayfinder/migration-08b-genkit-fullstack.md`）。
 - **`genui` catalog 真·GenUI**：最贴近 CopilotKit，但 alpha + WebSocket 协议 + 提示词/schema 工程重，v1 否决、留作扩展点。
 - **新增直连 HTTP provider 绕过 LangChain**：流式性能略好，但偏离 ADR-003 框架抽象，否决。
 
@@ -143,7 +143,7 @@ event: error         data: {"message": "…"}        # 500/502 友好文案
 
 ## ADR-0016 合并「生成任务」与「预览出题」为统一「出题」流程（先出题 → 手动同步到任务/题库）
 
-> 来源：`/grill-with-docs` 访谈收敛（合并入口 / 先出题后同步 / 题库同步粒度 / 任务落库态 / 题任务关系）。配套实现票据见 `wayfinder/tickets/`（待立）。
+> 来源：`/grill-with-docs` 访谈收敛（合并入口 / 先出题后同步 / 题库同步粒度 / 任务落库态 / 题任务关系）。配套实现票据见 `../../wayfinder/tickets/`（待立）。
 
 ### 背景
 家长端当前有两个并列入口，底层却共用同一套能力：
@@ -302,3 +302,27 @@ CARD{q_index:0,question} ──────▶  题卡浮现 → 上方推理区
 - 安全：推理文本不落库、不进 `check_output` 复核链（仅成品题卡过 ADR-008 闸门），不降低现有防线。
 - **实现状态：✅ 已落地（2026-09-01）**。后端 `flows.py`/`engine.py` 发信封 chunk（`STEP`/`REASONING`/`CARD`）+ `supports_reasoning`；`QuestionOut`/`QuestionSchema` 增 `reasoning`；前端 `models.dart` 增 `TaskGenChunk` 密封类与 `QuestionPreview.reasoning`，`genkit_ai_client.dart` 改 chunk 泛型，`home_notifier.dart` 按 `q_index` 累积推理并在 CARD 到达后折叠，`parent_task_form_view.dart` 新增 `_PreviewGenerating`（内联打字机推理）+ `_PreviewCard` 右上角 info icon（`_showReasoningSheet` 弹出 `reasoning`）+ 共享 `ReasoningTypewriterWidget`。流式回归测试 `test_generate_stream.py::test_generate_stream_emits_envelope` 断言每题 `STEP`/`REASONING`/`CARD` 齐全且 reasoning 非空；后端 pytest 全绿（133 passed/3 skipped），前端 `lib/` 改动 `flutter analyze` 零警告。
 - 工作量：后端流式回归测试已随实现补齐（mock 推理 chunk 断言）。
+
+## ADR-0018 文档目录结构对齐 ai.md（根目录散落文档归一化）
+
+> 来源：`/grill-with-docs` 访谈收敛（依据 `ai.md` 的 AI-Native 项目结构）。分类映射见下方。
+
+### 背景
+项目根目录散落 15 个 `.md`（产品方案 / PRD / spec / T08~T13 任务文档 / 技术架构 / 实施文档 / ADR / 术语表），与 `ai.md` 推荐的 `docs/` 六类结构（product / requirements / ux / architecture / database / decisions）不符；`AGENTS.md` 作为项目协议入口，文档应按类型归类以提升跨 Agent 可读性。同时 `design/`、`wayfinder/`、`docs/agents/` 已有独立定位且被 `AGENTS.md` 大量引用。
+
+### 决策（五条，经访谈锁定）
+1. **仅迁移根目录散落文档**，归入 `docs/` 下 4 个有内容的英文分类目录：`product/`（3：产品方案 / PRD / spec）、`requirements/`（5：T08~T13 任务文档）、`architecture/`（5：技术架构_Flutter / 技术架构_后端 / 项目分析_架构规范与业务功能 / 实施文档_题库复用闭环_前端 / 实施文档_题库复用闭环_后端）、`decisions/`（2：ADR 合集 + 术语表/glossary）。
+2. **`design/`、`wayfinder/`、`docs/agents/` 保留不动**（异常内容保留独立文件夹，Q3 确认）；它们分别承担设计稿 / 工单流转 / 代理指引角色，强行拆并需重写 `AGENTS.md` 大量链接，成本与风险高。
+3. **`ux/`、`database/` 本次不创建**：设计稿（landing / 原型 / mockup）仍在 `design/`（承担 ux 角色），数据库建模规范在 `docs/agents/backend.md` 与 `wayfinder/02-数据建模与迁移.md`（承担 database 角色）；待出现专属内容再建目录。
+4. **目录用英文命名**（`product/requirements/...`）以对齐 `ai.md`；文档文件名保持中文原样，避免额外链接断裂。
+5. **迁移用 `git mv` 保留历史**，并用脚本按各文件所在目录重算相对路径，**同步修正所有引用链接**（`AGENTS.md`、`README.md`、`docs/agents/*`、`frontend/docs/adr/0004`、被迁文档之间的互相引用、`wayfinder/` 迁移文档），确保无死链。
+
+### 备选
+- **全量重组**（连 `docs/agents/`、`design/`、`wayfinder/` 一并拆并到六类）：否决，因 `AGENTS.md` 大量引用 `docs/agents/`，全量重写成本高、易引入死链；分阶段更稳。
+- **根目录文档重命名为英文**：否决，偏离中文文档习惯且制造更多链接改动。
+
+### 后果
+- 根目录文档收敛，只剩 `AGENTS.md` / `README.md` / `ai.md`（方法论输入）与代码目录。
+- `docs/` 分类清晰、跨 Agent 可读；本 ADR 锁定的归类成为新增文档的归位约定。
+- 全部相对链接有效（脚本校验 + 人工复核 `wayfinder/` 路径）。
+- 后续若有 ux / database 专属内容，直接新建对应目录并补 `AGENTS.md` 索引。

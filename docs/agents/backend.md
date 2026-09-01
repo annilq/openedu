@@ -17,7 +17,7 @@ api/routes/ + api/deps   →  domain/ (抽象+工厂+纯函数)  →  models.py(
 
 - 业务（`api/`、`domain/`）**从不直接 import langchain**；厂商适配只在 `LangChainProvider` 内。
 - 换模型 = 改 `LLM_PROVIDER` / `LLM_BASE_URL` / `LLM_MODEL` / `DEEPSEEK_*`，业务零改动。
-- **LLMProvider 方法均为 `async`**（`generate_question` / `grade_open` / `tutor` 声明 `async def`，内部 `await model.ainvoke(...)`）。web 层是同步路由，业务层用 `asyncio.run()` 在独立线程调用 provider，避免事件循环冲突。（已与代码核对；`技术架构_后端.md` §5.1 的旧「同步」描述已修正。）
+- **LLMProvider 方法均为 `async`**（`generate_question` / `grade_open` / `tutor` 声明 `async def`，内部 `await model.ainvoke(...)`）。web 层是同步路由，业务层用 `asyncio.run()` 在独立线程调用 provider，避免事件循环冲突。（已与代码核对；`../architecture/技术架构_后端.md` §5.1 的旧「同步」描述已修正。）
 
 ## 数据建模约定
 
@@ -50,6 +50,6 @@ api/routes/ + api/deps   →  domain/ (抽象+工厂+纯函数)  →  models.py(
 
 ## 相关资源（架构文档导航）
 
-- 后端架构（**事实源**） → [../../技术架构_后端.md](../../技术架构_后端.md)（已修正 §5.1 async / §6 Task 状态两处过期描述）。
-- 业务功能与架构分析（与上文重叠，互补阅读） → [../../项目分析_架构规范与业务功能.md](../../项目分析_架构规范与业务功能.md)。
+- 后端架构（**事实源**） → [../architecture/技术架构_后端.md](../architecture/技术架构_后端.md)（已修正 §5.1 async / §6 Task 状态两处过期描述）。
+- 业务功能与架构分析（与上文重叠，互补阅读） → [../architecture/项目分析_架构规范与业务功能.md](../architecture/项目分析_架构规范与业务功能.md)。
 - 设计评审 skill：`/impeccable` 偏前端设计；后端暂无专用编码 skill，本文件即事实源。
