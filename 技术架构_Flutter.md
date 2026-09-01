@@ -166,6 +166,15 @@ final practiceNotifierProvider =
   - **错误拦截器**：统一解析后端 `{detail: "..."}`，转 `HttpException`，UI 经 `exception_handler_mixin` 展示 `AppError`。
 - **API Base URL**：`app_configs.dart` 按环境区分；平板联调时改 `kApiBase` 为电脑局域网 IP（对应后端 `CORS_ORIGINS`）。
 
+### 7.1 AI flow 客户端（Genkit Dart client，迁移 08b）
+
+后端 AI 能力（答疑 `/api/v1/ai/tutor/ask`、出题预览 `/api/v1/ai/tasks/generate`）统一暴露为**原生 Genkit action 端点**（后端 `genkit-fastapi` 的 `serve_flow`）。前端不再自研 SSE 解析，改用官方 `package:genkit/client.dart`：
+
+- **封装**：`shared/data/remote/genkit_ai_client.dart` 的 `GenkitAiClient` 持两个 `defineRemoteAction`（`/ai/tutor/ask`、`/ai/tasks/generate`），`fromResponse` / `fromStreamChunk` 映射 `TutorReply` / `QuestionPreview`。
+- **Bearer 注入**：Dart 原生 `http.Client` 不经 Dio 拦截器，故每次 `call` / `stream` 经 `headers: {'Authorization': 'Bearer $token'}`（token 来自 `StorageService.getToken()`）注入——与后端 `handle_genkit_request` 兼容。
+- **REST 仍用 Dio**：`NetworkService` 的 REST（登录、任务 CRUD、非流式 `ask` / `batch-generate`、模型管理）维持 Dio + 拦截器不变；**仅 AI 流式**走 genkit client。
+- **退役**：`shared/data/remote/sse_client.dart` 与自定义 SSE 信封（`token` / `question` / `safety_refusal` / `done` / `error`）已于 08b 删除，前端流式解析统一收敛到 Genkit 原生协议（`data: {"message": <chunk>}` 逐帧 / 末帧 `data: {"result": <output>}`）。
+
 ---
 
 ## 8. 路由（auto_route）
@@ -209,7 +218,8 @@ final practiceNotifierProvider =
 | profile | `profileNotifier`（连续天数、徽章、设置） | `profile_screen` | 轻量激励展示 |
 | review (二期，T07 已落地) | `dueReviewNotifier`（待复习队列）/ `childWrongQuestionsProvider`（娃娃自查）/ `parentWrongQuestionsProvider`（家长含答案） | `review_screen` / `wrong_questions_screen` | 遗忘曲线复习作答 + 错题本；娃娃端答题不含答案（防作弊） |
 | home (二期，T07 扩展) | `masteryNotifier`（家长掌握度看板）/ `progressNotifier` | `parent_dashboard` 掌握度进度条 + 错题列表区块 + AI 答疑日志区块 | 家长查看孩子知识点掌握度与答疑记录 |
-| tutor (三期，T08/T10/T12 已落地) | `tutorNotifier`（对话：POST /tutor/ask，状态机 Idle→Loading→Loaded，业务错误透出文案）/ `tutorLogsNotifier`（家长日志：GET /tutor/logs）/ `tutorQuotaNotifier`（管控配置：GET·PUT /tutor/quota）/ `tutorUsageNotifier`（当日用量：GET /tutor/usage） | `tutor_chat_screen`（娃娃答疑页，Loading 态「思考中」占位 + 防重入 + 错误保留历史气泡）；`tutor_quota_screen`（家长设置：次数/时长上限 + 学科白名单） | AI 伴学答疑（F-302/F-304/F-305）+ 使用管控（T10 故事 23/26，enforcement 在后端） |
+| tutor (三期，T08/T10/T12 已落地) | `tutorNotifier`（对话：Genkit 流式 `GenkitAiClient.streamTutor` → `/api/v1/ai/tutor/ask`（原生 Genkit action，逐 token 打字机），状态机 Idle→Loading→Loaded，业务错误透出文案）/ `tutorLogsNotifier`（家长日志：GET /tutor/logs）/ `tutorQuotaNotifier`（管控配置：GET·PUT /tutor/quota）/ `tutorUsageNotifier`（当日用量：GET /tutor/usage） | `tutor_chat_screen`（娃娃答疑页，Loading 态「思考中」占位 + 防重入 + 错误保留历史气泡）；`tutor_quota_screen`（家长设置：次数/时长上限 + 学科白名单） | AI 伴学答疑（F-302/F-304/F-305）+ 使用管控（T10 故事 23/26，enforcement 在后端）；流式经 genkit client（08b 统一协议） |
+| task gen (三期，T08 出题预览) | `taskGenNotifier`（家长出题：`generate` 走 REST `/tasks/batch-generate` 落库；`preview` 走 `GenkitAiClient.streamTasks` → `/api/v1/ai/tasks/generate` 原生 Genkit action，逐 `QuestionPreview` 题卡浮现） | `parent_task_form_view`（含「预览出题」按钮 → `TaskGenPreview` 逐卡渲染；满意后「保存为任务」落库） | 家长按学科/年级/知识点批量出题；预览为流式 Genkit 协议，与答疑共用 `genkit` client（08b 统一） |
 
 ---
 

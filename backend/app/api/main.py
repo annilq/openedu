@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.routes import (
+    ai,
     auth,
     children,
     health,
@@ -8,7 +9,6 @@ from app.api.routes import (
     models,
     questions,
     review,
-    stream,
     tasks,
     tutor,
 )
@@ -22,5 +22,5 @@ api_router.include_router(mastery.router)
 api_router.include_router(tutor.router)
 api_router.include_router(questions.router)
 api_router.include_router(models.router)
-api_router.include_router(stream.router)
+api_router.include_router(ai.router)
 api_router.include_router(health.router)

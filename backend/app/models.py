@@ -102,6 +102,25 @@ class TaskBatchCreate(SQLModel):
     model: str | None = None
 
 
+class TaskFromGenerated(SQLModel):
+    """POST /tasks/from-generated 请求体。
+
+    流式出题（/ai/tasks/generate）逐题返回的题卡已在前端渲染；本端点把这些
+    「已生成且经安全闸门」的题卡一次性落库为 draft 任务，避免二次生成与超时。
+    `questions` 形态与 QuestionOut 对齐（snake_case：knowledge_point 等）。
+    """
+
+    title: str = Field(max_length=255)
+    child_id: uuid.UUID | None = None  # 可空，支持"先成卷晚点派"
+    specs: list[TaskSpec]  # 原始规格，持久化到 Task.specs 以便整卷重生成
+    # 兴趣题模式（WF-4）：显式聚焦的兴趣主题列表；与生成时保持一致。
+    focus_interest: list[str] | None = None
+    # 可选模型引用：内置 id / ModelConfig id；落库以便重生成沿用。
+    model: str | None = None
+    # 已流式生成、待落库的题卡（QuestionPreview.toJson 形态）。
+    questions: list[dict]
+
+
 class Task(TaskBase, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     parent_id: uuid.UUID = Field(foreign_key="user.id")

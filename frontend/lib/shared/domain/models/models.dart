@@ -206,6 +206,19 @@ class QuestionPreview {
         answer: json['answer'] as String?,
         difficulty: json['difficulty'] as String? ?? 'medium',
       );
+
+  /// 回传后端 /tasks/from-generated 落库（snake_case，与 QuestionOut 对齐）。
+  Map<String, dynamic> toJson() => {
+        'subject': subject,
+        'grade': grade,
+        'stem': stem,
+        'options': options,
+        'qtype': qtype,
+        'knowledge_point': knowledgePoint,
+        'explanation': explanation,
+        'answer': answer,
+        'difficulty': difficulty,
+      };
 }
 
 /// 多学科一卷批量生成的一条规格（ADR-0004 D4）。
@@ -671,6 +684,27 @@ class TutorAnswer {
       answer: json['answer'] as String,
       blocked: json['blocked'] as bool? ?? false,
       reason: json['reason'] as String?,
+    );
+  }
+}
+
+/// 伴学答疑的 Genkit flow 最终响应（后端 `tutor_ask` 的 `TutorReply`）。
+/// 经后端 `genkit_fastapi.handle_genkit_request` 以原生 action 端点返回，
+/// 信封内的 `result` 字段即此结构（ADR-0015 / 迁移 08b）。
+/// 注意：后端 `reason` 为 None 时会被 genkit `to_dict` 省略（线上缺省），
+/// `fromJson` 必须容忍缺失，不可断言存在。
+class TutorReply {
+  final String text;
+  final bool blocked;
+  final String? reason;
+
+  const TutorReply({this.text = '', this.blocked = false, this.reason});
+
+  factory TutorReply.fromJson(Map<String, dynamic> json) {
+    return TutorReply(
+      text: json['text'] as String? ?? '',
+      blocked: json['blocked'] as bool? ?? false,
+      reason: json['reason'] as String?, // 容忍缺省
     );
   }
 }

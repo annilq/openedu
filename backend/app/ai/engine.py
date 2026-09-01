@@ -98,7 +98,7 @@ def resolve_engine(
         mc_id = _as_uuid(model_ref)
         if mc_id is not None:
             mc = session.get(ModelConfig, mc_id)
-            if mc is not None and mc.parent_id == parent_id:
+            if mc is not None and str(mc.parent_id) == str(parent_id):
                 api_key = decrypt(mc.api_key_enc) if mc.api_key_enc else None
                 return _get_or_build(mc.provider, mc.base_url, api_key, mc.model_name)
 

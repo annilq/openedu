@@ -1,7 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:genkit/client.dart';
 
 import '../../../../shared/data/remote/network_service.dart';
-import '../../../../shared/data/remote/sse_client.dart';
+import '../../../../shared/data/remote/genkit_ai_client.dart';
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/domain/providers/core_providers.dart';
 import '../../../../shared/exceptions/app_exception.dart';
@@ -42,9 +43,10 @@ class TutorLoaded extends TutorState {
 
 class TutorNotifier extends StateNotifier<TutorState> {
   final NetworkService _network;
+  final GenkitAiClient _genkit;
   bool _submitting = false;
 
-  TutorNotifier(this._network) : super(const TutorInitial());
+  TutorNotifier(this._network, this._genkit) : super(const TutorInitial());
 
   /// 防重入：提交中忽略重复点击，避免连点重复消耗每日额度。
   Future<void> ask(TutorAskReq req) async {
@@ -91,9 +93,10 @@ class TutorNotifier extends StateNotifier<TutorState> {
     }
   }
 
-  /// 流式答疑（v1 Genkit 编排，ADR-0015 信封）。
-  /// 通过 SSE 客户端订阅 `/stream/tutor/ask`，逐 token 累加到 AI 气泡；
-  /// 安全兜底（safety_refusal）/ 业务错误（error）以气泡保留；done 落定对话。
+  /// 流式答疑（Genkit 全栈，ADR-0015）：直连后端 `/ai/tutor/ask` 原生 action 端点。
+  /// 经 [GenkitAiClient.streamTutor] 逐 token（String）累加到 AI 气泡；
+  /// 路由层（鉴权 / 配额 / 输入安全）的非 2xx 错误以 [GenkitException] 抛出，
+  /// 由 [friendlyGenkitError] 解析原始 FastAPI 错误体为友好文案。
   Future<void> askStream(TutorAskReq req) async {
     if (_submitting) return;
     _submitting = true;
@@ -104,58 +107,47 @@ class TutorNotifier extends StateNotifier<TutorState> {
         List<TutorMessage>.from(messages),
       _ => <TutorMessage>[],
     };
-    final base = <TutorMessage>[
+    state = TutorLoading([
       ...history,
       TutorMessage(role: 'child', text: req.question),
       const TutorMessage(role: 'ai', text: ''),
-    ];
-    state = TutorLoading(List.from(base));
+    ]);
 
     List<TutorMessage> currentMessages() => switch (state) {
           TutorLoaded(:final messages) || TutorLoading(:final messages) =>
             List<TutorMessage>.from(messages),
-          _ => List<TutorMessage>.from(base),
+          _ => <TutorMessage>[],
         };
 
     try {
-      streamLoop:
-      await for (final ev in SseClient(_network).stream(
-        '/stream/tutor/ask',
-        body: req.toJson(),
-      )) {
+      final stream = _genkit.streamTutor(req.toJson());
+      await for (final token in stream) {
         final messages = currentMessages();
-        switch (ev.event) {
-          case 'token':
-            final t = (ev.data['text'] as String?) ?? '';
-            if (messages.isNotEmpty && messages.last.role == 'ai') {
-              messages[messages.length - 1] =
-                  TutorMessage(role: 'ai', text: messages.last.text + t);
-            } else {
-              messages.add(TutorMessage(role: 'ai', text: t));
-            }
-          case 'safety_refusal':
-            final msg = (ev.data['reason'] as String?) ??
-                '这个问题我暂时不能回答哦，换个问题试试？';
-            messages[messages.length - 1] =
-                TutorMessage(role: 'ai', text: '🛡️ $msg', blocked: true);
-          case 'error':
-            final msg = (ev.data['message'] as String?) ?? '出错了，请稍后再试';
-            messages[messages.length - 1] =
-                TutorMessage(role: 'ai', text: '⚠️ $msg');
-            state = TutorLoaded(messages);
-            break streamLoop;
-          case 'done':
-            state = TutorLoaded(messages);
-            break streamLoop;
+        if (messages.isNotEmpty && messages.last.role == 'ai') {
+          messages[messages.length - 1] =
+              TutorMessage(role: 'ai', text: messages.last.text + token);
+        } else {
+          messages.add(TutorMessage(role: 'ai', text: token));
         }
         state = TutorLoading(messages);
       }
-    } on AppException catch (e) {
-      // 配额 / 学科范围等服务端业务错误（含非 2xx 由 Dio 转来）。
+      final reply = await stream.onResult;
+      final messages = currentMessages();
+      // 安全兜底：流式片段已是 SAFE_REFUSAL 文案，仅补 blocked 打标供 UI 区分。
+      if (messages.isNotEmpty && messages.last.role == 'ai') {
+        messages[messages.length - 1] = TutorMessage(
+          role: 'ai',
+          text: messages.last.text,
+          blocked: reply.blocked,
+        );
+      }
+      state = TutorLoaded(messages);
+    } on GenkitException catch (e) {
+      // 配额 / 学科范围 / 输入安全：路由层非 2xx，details 携带原始错误体。
       state = TutorLoaded([
         ...history,
         TutorMessage(role: 'child', text: req.question),
-        TutorMessage(role: 'ai', text: '⏳ ${e.message}'),
+        TutorMessage(role: 'ai', text: friendlyGenkitError(e)),
       ]);
     } catch (e) {
       state = TutorLoaded([
@@ -172,7 +164,8 @@ class TutorNotifier extends StateNotifier<TutorState> {
 final tutorNotifierProvider =
     StateNotifierProvider<TutorNotifier, TutorState>((ref) {
   final network = ref.watch(networkServiceProvider);
-  return TutorNotifier(network);
+  final genkit = ref.watch(genkitAiClientProvider);
+  return TutorNotifier(network, genkit);
 });
 
 // —— 家长端：AI 答疑日志 ——

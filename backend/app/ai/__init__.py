@@ -1,8 +1,8 @@
-"""app/ai —— Genkit 流式编排层（ADR-0015）。
+"""app/ai —— Genkit 流式编排层（ADR-0015 / 迁移 08b：统一 Genkit 全栈）。
 
-这是**唯一**允许 `import genkit` 的包（类比原 `LangChainProvider` 作为 langchain 适配层）。
-业务/domain 代码仍只依赖 `LLMProvider` ABC 与非流式路径（`MockProvider`/`LangChainProvider`），
-框架 import 隔离延续 ADR-003。
+这是**唯一**允许 `import genkit` 的包（迁移后 GenkitProvider 作为 Genkit 适配层也在此边界内调用）。
+业务/domain 代码统一经本包暴露的非流式入口（generate_question / grade_open / mock_question）
+与流式 flow（tutor_ask / tasks_generate），框架 import 隔离延续 ADR-003。
 """
 from __future__ import annotations
 
@@ -11,7 +11,11 @@ from app.ai.flows import (
     QuestionSchema,
     generate_question,
     generate_questions_stream,
+    grade_open,
     tutor_stream,
+)
+from app.ai.flows import (
+    _mock_question as mock_question,
 )
 
 __all__ = [
@@ -21,5 +25,7 @@ __all__ = [
     "tutor_stream",
     "generate_questions_stream",
     "generate_question",
+    "grade_open",
+    "mock_question",
     "QuestionSchema",
 ]

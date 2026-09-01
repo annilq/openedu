@@ -1,9 +1,4 @@
-import warnings
-
-from app.core.config import settings
 from app.domain.grader import Grader
-from app.domain.langchain_provider import LangChainProvider
-from app.domain.mock_provider import MockProvider
 from app.domain.provider import GeneratedQuestion, LLMProvider
 from app.domain.question_generator import QuestionGenerator
 from app.domain.quota import (
@@ -25,8 +20,6 @@ from app.domain.tutor import TutorService
 __all__ = [
     "LLMProvider",
     "GeneratedQuestion",
-    "MockProvider",
-    "LangChainProvider",
     "QuestionGenerator",
     "Grader",
     "TutorService",
@@ -45,15 +38,15 @@ __all__ = [
 
 
 def build_provider() -> LLMProvider:
-    """按配置选择出题引擎实现；mock 模式无需安装 langchain。
+    """统一单栈：返回 GenkitProvider（Genkit 编排 + flow 内 mock 分支）。
 
-    未知值（拼写错误等）回退 mock 并告警，保证服务始终可启动。
+    迁移 08b 后不再有 MockProvider / LangChainProvider 双栈分支——真实模型由
+    GenkitProvider 内部 resolve_engine 解析，解析不到时自动走 flow 内确定性 mock 分支，
+    保证服务始终可启动且零 key 闭环。
+
+    GenkitProvider 延迟导入，避免 `app.domain` 与 `app.ai` 在包初始化期的循环依赖
+    （app.ai.flows → app.crud → app.domain.*）。
     """
-    if settings.LLM_PROVIDER in ("langchain", "deepseek"):
-        return LangChainProvider()
-    if settings.LLM_PROVIDER != "mock":
-        warnings.warn(
-            f"未知 LLM_PROVIDER={settings.LLM_PROVIDER!r}，回退到 mock",
-            stacklevel=2,
-        )
-    return MockProvider()
+    from app.domain.genkit_provider import GenkitProvider
+
+    return GenkitProvider()

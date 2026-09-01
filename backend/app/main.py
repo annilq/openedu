@@ -1,14 +1,38 @@
+import json
 import logging
 import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+
+# ── 修复 genkit_fastapi ↔ genkit Dart 客户端「错误帧格式不一致」──
+# genkit_fastapi.handle_genkit_request 在流式异常时发出 `data: {"error": {...}}`，
+# 但 package:genkit/client.dart 仅识别 `error: {...}` 前缀的错误帧；`data:` 帧若
+# 既无 result 也无 message 键会被静默丢弃，导致流结束时报
+# "stream finished without a final result chunk"，真实错误被掩盖。
+# 这里把错误帧前缀改为 `error: `，使 Dart 端能解析并抛出真实错误文案。
+from genkit import GenkitError as _GenkitError
+from genkit_fastapi import handler as _gf_handler
 from starlette.middleware.cors import CORSMiddleware
 
 from app.api.main import api_router
 from app.core.config import settings
 from app.core.db import init_db
 from app.core.errors import register_error_handlers
+
+
+def _patched_format_stream_error(error: Exception) -> str:
+    ex = error.cause if isinstance(error, _GenkitError) else error
+    payload = (
+        _gf_handler.get_callable_json(ex)
+        if hasattr(_gf_handler, "get_callable_json")
+        else {"message": str(ex)}
+    )
+    return f"error: {json.dumps({'error': payload}, separators=_gf_handler.JSON_SEPARATORS)}\n\n"
+
+
+_gf_handler.format_stream_error = _patched_format_stream_error
+
 
 
 @asynccontextmanager

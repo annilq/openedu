@@ -110,13 +110,14 @@
 
 ### 决策（六条，均经访谈锁定）
 1. **后端统一代理（守安全）**：Flutter 一律只连 `/api/v1` 的 SSE 端点；Ollama 与自定义模型由后端调用。服务端始终注入 `_SYSTEM` 年龄锁并对娃娃可输入字段跑 `check_input`、对输出跑 `check_output`，**安全层永不绕过**（忠诚 ADR-008）。禁止前端直连任何模型。
-2. **轻量流式渲染（非真·catalog GenUI）**：SSE 推 `token` 文本块 + 结构化事件（`question` 等），前端边收边渲染（答疑气泡打字机、出题逐张题卡）。不引入 `genui` 的 CatalogItem/工具调用式生成式 UI——因其处 alpha、A2UI 原生 WebSocket 与本项目 SSE 偏好冲突、且需改造提示词与 schema 工程。保留未来对个别高价值场景（如"给个例题卡"）试点 catalog GenUI 的扩展点。
+2. **端到端 Genkit 协议（前后端统一，单栈）**：后端把 AI 能力暴露为原生 Genkit flow（经 `genkit-fastapi` 的 `serve_flow`，返回 Genkit 原生 typed structured streaming SSE）；前端改用官方 `package:genkit/client.dart` 的 `defineRemoteAction` 直连这些 flow，**不再维护自定义 SSE 信封**。单一技术栈（后端 flow + 前端 genkit client）避免双协议/双客户端/双测试的长期维护成本（见迁移文档 `wayfinder/migration-08b-genkit-fullstack.md`）。GenUI catalog 仍作为按需扩展点保留，本决策仅确定「协议统一」，不强制 catalog 式生成式 UI。
 3. **改用 Genkit Python 编排流式 flow（替代原「LangChainProvider 扩展」方案）**：流式 AI 输出（答疑逐字 + 出题逐张题卡）由 Genkit flow 编排，新增 `app/ai/`（**唯一允许 `import genkit` 的边界**，类比原 `LangChainProvider` 作为 langchain 适配层）承载：`Genkit` 实例、`serve_flow`/SSE 挂载、模型解析（Ollama / OpenAI-compat / 内置，按 `ModelConfig` + settings 把 `provider/model_name` 解析为 `ollama/{m}` / `openai/{m}`）与工具调用（T11 知识库检索作接地工具）。**ADR-003 延续**：业务/domain 代码仍只依赖 `LLMProvider` ABC 与非流式路径（`MockProvider` 供测试、`LangChainProvider` 供非流式真实调用），`genkit` 不被业务代码直接 import；流式端点由 API 层调用 `app/ai` 的 flow。
 4. **模型注册 = 配置驱动 + 家长自定义**：内置模型由 settings/env 声明并暴露 `GET /api/v1/models`（parent 可见）；家长自定义模型落 `ModelConfig` 表（仿 `TutorQuota`，按 `parent_id` 持久化：`label / provider('ollama'|'openai_compat') / base_url / model_name / api_key(加密)`）。**模型选择器仅家长可用**；娃娃继承家长默认模型，娃娃端不暴露下拉（避免娃娃自选未授权/不安全模型）。请求参数 `model`（id 或内置 id）可选，缺省走家长默认或全局 `DEFAULT_MODEL`。
 5. **流式安全 = 缓冲 + 整体校验后放行**：`/tutor/ask/stream` 先 `check_input` 拦越狱（命中即发 `safety_refusal` 不再调模型）；通过后后端**缓冲全量 token、跑整体 `check_output`**，通过才向娃娃放量，违规则整段替换为 `SAFE_REFUSAL`。儿童端绝不闪现违规片段。v1 接受"首字延迟=整段生成耗时"的代价；后续可叠加 chunk 级软过滤作增强层。
 6. **v1 流式端点范围**：`POST /api/v1/tutor/ask/stream`（答疑逐字）+ `POST /api/v1/tasks/generate/stream`（出题逐张题卡）。两处均前置现有 `require_role` + `check_quota` + `check_input`；`/tasks/generate/stream` 每生成一题经安全检查后再发 `question` 事件。
 
-### SSE 事件信封（契约）
+### SSE 事件信封（契约）【退役中 → 见迁移文档 `wayfinder/migration-08b-genkit-fullstack.md`】
+> 2026-09-01 决策：前后端统一 Genkit 协议，前端改用 `package:genkit/client.dart` 的 `defineRemoteAction` 直连后端原生 flow，本自定义信封将随 `app/api/routes/stream.py` 退役。下方仅作迁移期对照。
 ```
 event: token        data: {"text": "…"}          # 答疑文本增量
 event: question      data: {<QuestionModel JSON>}  # 一题完成（出题流）
@@ -124,18 +125,53 @@ event: safety_refusal data: {"reason": "…"}       # 越狱/敏感被拦
 event: done          data: {"usage": {"seconds": N}}  # 流结束 + 用量（供 quota 累计）
 event: error         data: {"message": "…"}        # 500/502 友好文案
 ```
-前端用 Dio/HttpClient 解析 SSE，`Riverpod` notifier 追加 token → 气泡打字机；`question` 事件入列表 → 题卡逐张浮现。
+（历史实现）前端用 Dio/HttpClient 解析 SSE，`Riverpod` notifier 追加 token → 气泡打字机；`question` 事件入列表 → 题卡逐张浮现。迁移后改为 Genkit 原生 typed structured streaming。
 
 ### 备选
 - **前端直连 Ollama**：延迟更低，但绕过 ADR-008 安全层，否决。
-- **Genkit（Python 版）— 已采纳为流式编排引擎**：经用户复核，Genkit 的 Python 版 `genkit`+`genkit-fastapi` 可在 FastAPI 进程内跑 flow（无 Node 依赖）、内置 SSE、`chunk_type` 字段级结构化流式，与本项目栈兼容，故 v1 改由它编排流式 flow；为避免"引入第二套框架破坏 ADR-003"，**非流式**真实调用仍走既有 `LangChainProvider`，二者通过 `LLMProvider` ABC 统一，框架 import 各自隔离（`langchain` 仅在 `LangChainProvider`、`genkit` 仅在 `app/ai/`）。
+- **Genkit（Python 版）— 已采纳为统一 AI 栈**：经用户复核并 2026-09-01 拍板「前后端统一 Genkit 协议」，Genkit 的 Python 版 `genkit`+`genkit-fastapi` 在 FastAPI 进程内跑 flow（无 Node 依赖）、内置 SSE、`chunk_type` 字段级结构化流式，与本项目栈兼容；**前端同步采用 `package:genkit/client.dart` 的 `defineRemoteAction` 直连后端 flow**，前后端单一 Genkit 协议。原「非流式真实调用走 LangChainProvider 以避免第二套框架」的折中已被推翻——统一后 `LangChainProvider` 退役，非流式真实调用也走 Genkit OpenAI 插件，彻底单栈（详见迁移文档 `wayfinder/migration-08b-genkit-fullstack.md`）。
 - **`genui` catalog 真·GenUI**：最贴近 CopilotKit，但 alpha + WebSocket 协议 + 提示词/schema 工程重，v1 否决、留作扩展点。
 - **新增直连 HTTP provider 绕过 LangChain**：流式性能略好，但偏离 ADR-003 框架抽象，否决。
 
 ### 后果
 - 本地 Ollama 可零云成本/零外网跑模型；流式首字即显（答疑）与逐张题卡（出题）显著提升低龄体感（即用户所言"模型优化"的体感收益）。
 - 流式编排改由 Genkit 承担：`chunk_type` 字段级结构化流式天然适配"出题逐张题卡"，工具调用一等公民使 T11 知识库检索可作接地工具，且自带 Dev UI 追踪；`serve_flow` 直接挂 FastAPI 路由、原生 SSE。
-- 框架 import 隔离延续 ADR-003：`genkit` 仅存在于 `app/ai/`，业务/domain 仍只依赖 `LLMProvider` ABC 与非流式路径（`MockProvider`/`LangChainProvider`）；模型可插拔（ADR-003/004）延续。
+- 框架 import 隔离延续 ADR-003：`genkit` 仅存在于 `app/ai/`（flow 层），业务/domain 仍只依赖 `LLMProvider` ABC；前端改依赖 `genkit` Dart 客户端（`package:genkit/client.dart`）直连 flow，**前后端单一 Genkit 协议**。`MockProvider` 独立类退役、改为 flow 内 mock 分支；`LangChainProvider` 退役、非流式真实调用并入 Genkit。模型可插拔（ADR-003/004）延续。安全防线在流式下仍由后端 flow 独占（ADR-008 不降级）。
 - 安全防线在流式下仍由后端独占，儿童内容防护不降级。
 - 代价：①v1 答疑首字有整段生成延迟（本地 Ollama 通常可接受）；②需新增 `ModelConfig` 表与加密存储（api_key 用 Fernet，密钥取 settings）；③`genui` 真·GenUI 暂未采用，若后续要 CopilotKit 式交互需另立票；④需引入 SSE 客户端与事件解析（前端新增 ~1 个网络层 + notifier 改造）。
 - 默认 Ollama 地址 `OLLAMA_BASE_URL`（默认 `http://localhost:11434`）；provider 调用失败返回 502 友好文案，**不静默回退 MockProvider**（除非显式 `MODEL_FALLBACK=mock`）。
+
+## ADR-0016 合并「生成任务」与「预览出题」为统一「出题」流程（先出题 → 手动同步到任务/题库）
+
+> 来源：`/grill-with-docs` 访谈收敛（合并入口 / 先出题后同步 / 题库同步粒度 / 任务落库态 / 题任务关系）。配套实现票据见 `wayfinder/tickets/`（待立）。
+
+### 背景
+家长端当前有两个并列入口，底层却共用同一套能力：
+- **「生成任务」**：流式渲染题卡后立即 `POST /tasks/from-generated` 自动落库为 `draft` 任务（延续 R3）。
+- **「预览出题」**：流式渲染题卡但**不落库**，需手动点「保存为任务」才落库。
+
+两者都是同一个 Genkit flow `tasksGenerate`（`POST /api/v1/ai/tasks/generate`，ADR-0015）的流式消费 + 同一个落库端点 `POST /tasks/from-generated`，仅"流结束后是否自动落库"不同。这造成两套心智——一个静默建草稿、一个不建——与家长的真实心理（"先看 AI 出什么题，再决定拿去派发还是留着好题"）一致性差；且「生成任务」会误产家长并不想要的草稿。
+
+另一处缺口：当前草稿题 `TaskQuestion.question_id = None`（R-Q1=c），**不入题库**，AI 生成的好题在任务用完即弃，无法沉淀为可复用题源；家长期望的"挑好题留存"尚非主流程。
+
+### 决策（六条，经 /grill-with-docs 访谈锁定）
+1. **统一入口为单一「出题」按钮**：删除「生成任务」「预览出题」两个并列按钮，合并为「出题」。点击后按规格（学科/年级/知识点/题型/数量、兴趣聚焦、模型）流式产出题卡预览（逐张浮现，沿用 ADR-0015 协议）。
+2. **先出题、后显式同步（手动）**：预览态**不自动落库**。题卡下方提供两个独立动作——「存为任务」「加入题库」——均由家长主动触发，可独立或同时执行。消除"自动建草稿"的隐性行为。
+3. **题库同步粒度 = 逐题多选**：预览页每张题卡可勾选；「加入题库」只把勾选的题写入题库（新建 `Question` 行），未勾选的不入。实现"挑好题留存"。
+4. **任务落库态 = draft**：「存为任务」仍落库为 `draft`（延续 R3），进入草稿审核页再派发，不直派。
+5. **题任务关系 = 关联引用**：同一题既存任务又入题库时，任务题 `TaskQuestion.question_id` 指向刚建的题库 `Question`（DRY，题库为唯一真源）；仅存任务不入题库时维持 `question_id = None` 的快照（现有行为）。
+6. **复用既有端点、不新增出题编排**：「存为任务」复用 `POST /tasks/from-generated`（流式题卡 → draft 任务）；「加入题库」新增 `POST /questions/bank/bulk`（批量把勾选题卡建为 `Question`，需经 `check_output` 安全闸门，延续 ADR-008）。两动作均消费同一批已流式题卡，避免二次生成。
+
+### 备选
+- **整卷一次性入题库**：实现最简，但会混入不理想题 → 否决（选逐题多选）。
+- **「生成任务」改 ready/assigned 直派**：跳过审核，失去 R3 把关 → 否决（维持 draft）。
+- **任务题独立副本**（入题库时再拷一份）：简单但题库与任务双真源会漂移 → 否决（选关联引用）。
+- **两按钮改名保留**：改动小但入口仍两个、心智仍分裂 → 否决（选单一「出题」）。
+
+### 后果
+- 家长心智统一：先出题、后决定去向（派发 or 留存），符合自然决策顺序；消除「生成任务」误产草稿。
+- 题库首次成为一等公民：好题可沉淀复用，后续「从题库建任务」`from-bank` 直接消费。
+- 关联引用使题库为唯一真源，编辑题库可联动任务；级联删除需显式处理（被引用题库题禁止删，或任务题 `question_id` 置 NULL）。
+- 实现影响：前端入口合并（删两按钮、加「出题」+ 预览多选 + 两动作）、`home_notifier` 状态机微调（预览态新增 `selectedForBank` 集合）；后端新增 `POST /questions/bank/bulk`、复用 `from-generated`；**流式渲染代码（Genkit flow、SSE 协议）不变**。
+- 安全：入题库题仍过 `check_output`（生成时已校验，落库前再确认），不降低 ADR-008 防线。
+- 向后兼容：`from-bank`、`from-generated` 端点保留；仅前端入口重排，旧草稿任务数据不受影响。

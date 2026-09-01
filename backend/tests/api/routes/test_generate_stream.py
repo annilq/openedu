@@ -1,7 +1,10 @@
-"""出题流式端点测试（ADR-0015 / 票据 08）：mock 模式下逐题 question 事件 + done。"""
+"""出题流式端点测试（迁移 08b / 统一 Genkit 全栈）：mock 模式下逐题 message 块 + result 末帧。
+
+请求体须用 Genkit action 信封 `{"data": {...}}`；流式响应用 client.stream 读取完整 SSE。
+"""
 from __future__ import annotations
 
-from tests.utils.sse import parse_sse
+from tests.utils.sse import parse_genkit_sse
 from tests.utils.user import auth_headers, login, register_parent
 
 
@@ -13,35 +16,46 @@ def _parent_token(client, username):
 def test_generate_stream_emits_questions(client):
     ptoken = _parent_token(client, "gs_parent")
     h = auth_headers(ptoken)
-    r = client.post(
-        "/api/v1/stream/tasks/generate",
-        headers=h,
+    with client.stream(
+        "POST",
+        "/api/v1/ai/tasks/generate",
+        headers={**h, "Accept": "text/event-stream"},
         json={
-            "title": "测试卷",
-            "specs": [
-                {"subject": "数学", "grade": 2, "knowledge_point": "加法", "qtype": "calc", "difficulty": "easy", "count": 2},
-                {"subject": "语文", "grade": 3, "knowledge_point": "拼音", "qtype": "choice", "difficulty": "medium", "count": 1},
-            ],
+            "data": {
+                "specs": [
+                    {"subject": "数学", "grade": 2, "knowledge_point": "加法", "qtype": "calc", "difficulty": "easy", "count": 2},
+                    {"subject": "语文", "grade": 3, "knowledge_point": "拼音", "qtype": "choice", "difficulty": "medium", "count": 1},
+                ],
+            }
         },
-    )
-    assert r.status_code == 200
-    events = parse_sse(r.text)
-    types = [e for e, _ in events]
-    questions = [d for e, d in events if e == "question"]
-    assert len(questions) == 3  # 2 + 1
-    assert types[-1] == "done"
-    # 每题含必要字段
-    for q in questions:
+    ) as r:
+        assert r.status_code == 200, r.status_code
+        text = "".join(r.iter_text())
+    chunks, result = parse_genkit_sse(text)
+    # 每题一张卡（2 + 1）
+    assert len(chunks) == 3
+    # 末帧整卷
+    assert result is not None and len(result) == 3
+    for q in chunks:
         assert q["subject"] and q["stem"] and "answer" in q
 
 
-def test_generate_stream_empty_specs_rejected(client):
+def test_generate_stream_invalid_spec_rejected(client):
     ptoken = _parent_token(client, "gs2_parent")
     h = auth_headers(ptoken)
-    r = client.post(
-        "/api/v1/stream/tasks/generate",
-        headers=h,
-        json={"title": "空", "specs": []},
-    )
-    # 校验失败（422）直接返回，不走 SSE
-    assert r.status_code == 422
+    with client.stream(
+        "POST",
+        "/api/v1/ai/tasks/generate",
+        headers={**h, "Accept": "text/event-stream"},
+        # 缺 grade/knowledge_point/qtype → 输入 schema 校验失败（genkit 把校验错误作为
+        # 流式 error 帧透传，故 HTTP 200 但 parse_genkit_sse 抛错；或直接 4xx）。
+        json={"data": {"specs": [{"subject": "数学"}]}},
+    ) as r:
+        text = "".join(r.iter_text())
+    if r.status_code == 200:
+        import pytest
+
+        with pytest.raises(AssertionError):
+            parse_genkit_sse(text)
+    else:
+        assert r.status_code in (400, 422)

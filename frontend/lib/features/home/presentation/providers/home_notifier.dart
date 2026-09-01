@@ -1,9 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:genkit/client.dart';
 
 import '../../../../shared/data/remote/network_service.dart';
-import '../../../../shared/data/remote/sse_client.dart';
+import '../../../../shared/data/remote/genkit_ai_client.dart';
 import '../../../../shared/domain/models/models.dart';
-import '../../../../shared/exceptions/app_exception.dart';
 import '../../../../shared/domain/providers/core_providers.dart';
 
 // —— 家长端：生成任务 ——
@@ -28,7 +28,8 @@ class TaskGenPreview extends TaskGenState {
 
 class TaskGenNotifier extends StateNotifier<TaskGenState> {
   final NetworkService _network;
-  TaskGenNotifier(this._network) : super(const TaskGenIdle());
+  final GenkitAiClient _genkit;
+  TaskGenNotifier(this._network, this._genkit) : super(const TaskGenIdle());
 
   Future<void> generate({
     required String childId,
@@ -37,28 +38,101 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
     List<String>? focusInterest,
     String? model,
   }) async {
-    state = const TaskGenLoading();
+    final body = _buildBody(
+      childId: childId,
+      title: title,
+      specs: specs,
+      focusInterest: focusInterest,
+      model: model,
+    );
+    final questions = <QuestionPreview>[];
+    // 流式渲染：先连 /ai/tasks/generate 逐题产出题卡（消除真实模型下整体超时），
+    // 流结束后再把已生成题卡落库为草稿任务（POST /tasks/from-generated）。
+    state = const TaskGenPreview([], streaming: true);
     try {
-      final body = <String, dynamic>{
-        'child_id': childId,
-        'title': title,
-        'specs': specs.map((s) => s.toJson()).toList(),
-      };
-      // 兴趣题模式（WF-4）：显式聚焦主题放请求顶层；缺省=后端自动轻融入画像。
-      if (focusInterest != null) body['focus_interest'] = focusInterest;
-      // 多模型（票据 08）：家长可选模型；null = 后端自动（默认/全局）。
-      if (model != null) body['model'] = model;
-      final data = await _network.post('/tasks/batch-generate', body: body);
-      // R3：生成后保持 draft 态，把确认/派发动作交给草稿审核页。
-      state = TaskGenSuccess(TaskModel.fromJson(data));
+      final stream = _genkit.streamTasks(body);
+      await for (final q in stream) {
+        questions.add(q);
+        state = TaskGenPreview(List.from(questions), streaming: true);
+      }
+      await stream.onResult; // 确认流已结束（末帧 result）
+      await _persist(questions, body);
+    } on GenkitException catch (e) {
+      state = TaskGenError(friendlyGenkitError(e));
     } catch (e) {
-      state = TaskGenError(e.toString());
+      state = TaskGenError('⚠️ 网络异常，请稍后重试');
     }
   }
 
-  /// 流式预览出题（票据 08）：题卡逐张浮现，不落库。
+  /// 预览后的「保存为任务」：直接落库已流式返回的题卡（不再二次生成）。
+  Future<void> savePreview({
+    required String childId,
+    required String title,
+    required List<TaskSpecModel> specs,
+    required List<QuestionPreview> questions,
+    List<String>? focusInterest,
+    String? model,
+  }) async {
+    if (questions.isEmpty) {
+      state = const TaskGenError('暂无可保存的题目');
+      return;
+    }
+    final body = _buildBody(
+      childId: childId,
+      title: title,
+      specs: specs,
+      focusInterest: focusInterest,
+      model: model,
+    );
+    // questions 由 _persist 统一注入落库请求体。
+    await _persist(questions, body);
+  }
+
+  /// 把已生成题卡 POST 到 /tasks/from-generated 落库为 draft 任务。
+  Future<void> _persist(
+    List<QuestionPreview> questions,
+    Map<String, dynamic> body,
+  ) async {
+    // 必填项 questions：把已流式题卡（QuestionPreview.toJson，snake_case）注入请求体。
+    // 之前 generate() 漏了这一步 → 后端 422（TaskFromGenerated.questions 必填）。
+    body['questions'] = questions.map((q) => q.toJson()).toList();
+    // 落库期间保持流式态：隐藏生成/预览按钮，题卡继续展示（带保存中提示）。
+    state = TaskGenPreview(List.from(questions), streaming: true);
+    try {
+      final data = await _network.post('/tasks/from-generated', body: body);
+      // R3：生成后保持 draft 态，把确认/派发动作交给草稿审核页。
+      state = TaskGenSuccess(TaskModel.fromJson(data));
+    } on GenkitException catch (e) {
+      state = TaskGenError(friendlyGenkitError(e));
+    } catch (e) {
+      state = TaskGenError('⚠️ 保存失败，请稍后重试');
+    }
+  }
+
+  Map<String, dynamic> _buildBody({
+    required String childId,
+    required String title,
+    required List<TaskSpecModel> specs,
+    List<String>? focusInterest,
+    String? model,
+  }) {
+    final body = <String, dynamic>{
+      'child_id': childId,
+      'title': title,
+      'specs': specs.map((s) => s.toJson()).toList(),
+    };
+    // 兴趣题模式（WF-4）：显式聚焦主题放请求顶层；缺省=后端自动轻融入画像。
+    if (focusInterest != null) body['focus_interest'] = focusInterest;
+    // 多模型（票据 08）：家长可选模型；null = 后端自动（默认/全局）。
+    if (model != null) body['model'] = model;
+    return body;
+  }
+
+  /// 流式预览出题（Genkit 全栈，ADR-0015）：直连后端 `/ai/tasks/generate` 原生
+  /// action 端点，题卡逐张浮现（每帧一道 [QuestionPreview]），不落库；
+  /// 路由层（归属校验 / 输入安全 / 配额）非 2xx 以 [GenkitException] 抛出。
   /// 完成后返回 [TaskGenPreview]，由 UI 展示题卡并提供「保存为任务」入口
-  /// （保存走 [generate]，复用原有草稿审核流）。事件处理对齐后端 SSE 信封。
+  /// （保存走 [generate]，复用原有草稿审核流）。
   Future<void> preview({
     required String childId,
     required String title,
@@ -77,28 +151,15 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
     final questions = <QuestionPreview>[];
     state = const TaskGenPreview([], streaming: true);
     try {
-      streamLoop:
-      await for (final ev
-          in SseClient(_network).stream('/stream/tasks/generate', body: body)) {
-        switch (ev.event) {
-          case 'question':
-            questions.add(QuestionPreview.fromJson(ev.data));
-            state = TaskGenPreview(List.from(questions), streaming: true);
-          case 'safety_refusal':
-            final msg = ev.data['reason'] as String? ?? '内容安全拦截';
-            state = TaskGenError('🛡️ $msg');
-            break streamLoop;
-          case 'error':
-            final msg = ev.data['message'] as String? ?? '出错了，请稍后再试';
-            state = TaskGenError('⚠️ $msg');
-            break streamLoop;
-          case 'done':
-            state = TaskGenPreview(List.from(questions), streaming: false);
-            break streamLoop;
-        }
+      final stream = _genkit.streamTasks(body);
+      await for (final q in stream) {
+        questions.add(q);
+        state = TaskGenPreview(List.from(questions), streaming: true);
       }
-    } on AppException catch (e) {
-      state = TaskGenError('⏳ ${e.message}');
+      final result = await stream.onResult;
+      state = TaskGenPreview(result, streaming: false);
+    } on GenkitException catch (e) {
+      state = TaskGenError(friendlyGenkitError(e));
     } catch (e) {
       state = TaskGenError('⚠️ 网络异常，请稍后重试');
     }
@@ -110,7 +171,8 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
 final taskGenNotifierProvider =
     StateNotifierProvider<TaskGenNotifier, TaskGenState>((ref) {
   final network = ref.watch(networkServiceProvider);
-  return TaskGenNotifier(network);
+  final genkit = ref.watch(genkitAiClientProvider);
+  return TaskGenNotifier(network, genkit);
 });
 
 // —— 娃娃端：今日任务 ——

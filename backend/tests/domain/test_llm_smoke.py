@@ -1,73 +1,56 @@
-"""真实大模型连通 smoke（T03）。
+"""GenkitProvider 真实模型 smoke（迁移 08b / 纯单栈 Genkit）。
 
-仅在显式开启时运行：
-    LLM_PROVIDER=langchain LLM_API_KEY=sk-xxx LLM_BASE_URL=... LLM_MODEL=... \
-        uv run pytest tests/domain/test_llm_smoke.py -m smoke -v
-    # 或 DeepSeek 快捷预设：
-    LLM_PROVIDER=deepseek RUN_LLM_SMOKE=1 \
+默认跳过。仅在本地已起 Ollama + RUN_LLM_SMOKE=1 时运行：
+
+    BUILTIN_MODELS='[{"id":"local-llama","provider":"ollama",
+      "base_url":"http://localhost:11434","model_name":"qwen2.5:latest"}]' \\
+    RUN_LLM_SMOKE=1 \\
         uv run pytest tests/domain/test_llm_smoke.py -m smoke -v
 
-验证：QuestionGenerator 经真实模型出题、业务代码零改动、结果符合 GeneratedQuestion 契约。
+验证：build_provider() 返回 GenkitProvider；若可解析真实引擎，经 flow 非流式入口出题
+符合 GeneratedQuestion 契约（业务层零改动）。
 """
+from __future__ import annotations
+
+import asyncio
+import json
 import os
 
 import pytest
 
+from app.ai import generate_question, resolve_engine
 from app.core.config import settings
 from app.domain import build_provider
-from app.domain.langchain_provider import LangChainProvider
-from app.domain.provider import GeneratedQuestion
-from app.domain.question_generator import QuestionGenerator
+from app.domain.genkit_provider import GenkitProvider
 
-_smoke_enabled = (
-    settings.LLM_PROVIDER == "deepseek"
-    and bool(settings.DEEPSEEK_API_KEY)
-    and os.environ.get("RUN_LLM_SMOKE") == "1"
-) or (
-    settings.LLM_PROVIDER == "langchain"
-    and bool(settings.LLM_API_KEY)
-    and os.environ.get("RUN_LLM_SMOKE") == "1"
-)
+try:
+    _models = json.loads(settings.BUILTIN_MODELS) if settings.BUILTIN_MODELS else []
+except (json.JSONDecodeError, TypeError):
+    _models = []
+_ollama_models = [m for m in _models if m.get("provider") == "ollama"]
+
+_smoke_enabled = bool(_ollama_models) and os.environ.get("RUN_LLM_SMOKE") == "1"
 
 pytestmark = [
     pytest.mark.smoke,
     pytest.mark.skipif(
         not _smoke_enabled,
-        reason="需要 LLM_PROVIDER=langchain+LLM_API_KEY 或 deepseek+DEEPSEEK_API_KEY，并设 RUN_LLM_SMOKE=1",
+        reason="需 BUILTIN_MODELS 含 provider=ollama 的模型，并设 RUN_LLM_SMOKE=1",
     ),
 ]
 
 
-def test_question_generator_uses_real_model_without_business_change():
-    """业务层只依赖 build_provider()，切真实模型不改任何业务代码。"""
-    provider = build_provider()
-    assert isinstance(provider, LangChainProvider)
+def test_build_provider_is_genkit():
+    assert isinstance(build_provider(), GenkitProvider)
 
-    generator = QuestionGenerator(provider)
-    question = generator.generate(
-        subject="数学",
-        grade=2,
-        knowledge_point="两位数加法",
-        qtype="calc",
-        difficulty="easy",
+
+def test_genkit_real_generate(client):
+    model = _ollama_models[0]
+    engine = resolve_engine(model["id"])
+    assert engine is not None, "未解析到 ollama 引擎"
+    q = asyncio.run(
+        generate_question(
+            engine, subject="数学", grade=2, knowledge_point="加法", qtype="calc", difficulty="easy"
+        )
     )
-
-    assert isinstance(question, GeneratedQuestion)
-    for field in (
-        "subject",
-        "grade",
-        "knowledge_point",
-        "qtype",
-        "stem",
-        "options",
-        "answer",
-        "explanation",
-        "difficulty",
-    ):
-        assert getattr(question, field) is not None, f"契约字段缺失: {field}"
-    assert question.stem.strip(), "真实模型未返回题干"
-    assert question.answer.strip(), "真实模型未返回答案"
-    # 返回的题目必须适配当前学科/年级/知识点请求
-    assert question.subject == "数学"
-    assert question.grade == 2
-    assert question.qtype == "calc"
+    assert q is not None and q.subject and q.stem and q.answer

@@ -3,9 +3,10 @@
 > 标签：`wayfinder:ticket`
 > 来源：`/grill-with-docs` 收敛（2026-08-31）；**v1 决策于 08-31 经用户复核由「LangChainProvider 扩展」改为「Genkit Python 编排流式 flow」**
 > 决策基线：**ADR-0015**（决策 3 已改为 Genkit 编排；ADR-003 框架 import 隔离延续）
+> **08b 全栈 Genkit（纯单栈）已于 2026-08-31 完成**：`LangChainProvider` / `MockProvider` 双栈整体退役、前端 `sse_client.dart` 与自定义 SSE 信封退役、前后端统一 `package:genkit/client.dart` 原生协议；详见 `wayfinder/migration-08b-genkit-fullstack.md`（Phase 1~4 全绿）。
 
 ## What to build
-在不降级儿童内容安全（ADR-008）的前提下：①新增 `app/ai/` Genkit 流式编排层（`tutor_ask` 与 `generate_questions` flow，内置 SSE + `chunk_type` 字段级结构化流式），按 `ModelConfig` + settings 解析 Ollama / OpenAI-compat / 内置模型；②新增 `ModelConfig` 表与 `GET /models` + 家长 CRUD，模型选择器仅家长可用；③为 `/tutor/ask` 与 `/tasks/generate` 增加 SSE 流式变体，前端边收边渲染（答疑打字机、出题逐张题卡）；④流式输出仍由后端独占做 `check_input`/`check_output`，儿童端绝不闪现违规片段。**非流式**真实调用仍走既有 `LangChainProvider`（ADR-003 框架隔离：`langchain` 仅在 `LangChainProvider`、`genkit` 仅在 `app/ai/`）。
+在不降级儿童内容安全（ADR-008）的前提下：①新增 `app/ai/` Genkit 流式编排层（`tutor_ask` 与 `generate_questions` flow，内置 SSE + `chunk_type` 字段级结构化流式），按 `ModelConfig` + settings 解析 Ollama / OpenAI-compat / 内置模型；②新增 `ModelConfig` 表与 `GET /models` + 家长 CRUD，模型选择器仅家长可用；③为 `/tutor/ask` 与 `/tasks/generate` 增加 SSE 流式变体，前端边收边渲染（答疑打字机、出题逐张题卡）；④流式输出仍由后端独占做 `check_input`/`check_output`，儿童端绝不闪现违规片段。**非流式**真实调用现统一走 `GenkitProvider`（迁移 08b 纯单栈，`LangChainProvider` 已整体退役，ADR-003 框架隔离：`genkit` 仅在 `app/ai/`）。
 
 ## 关键决策（详见 ADR-0015）
 - **后端统一代理**：Flutter 只连 `/api/v1` SSE，模型由后端调，安全层永不绕过。
@@ -36,7 +37,7 @@
 ## 测试
 - [x] 后端：`tests/ai/test_model_resolution.py`、`tests/api/routes/test_models.py`、`tests/api/routes/test_tutor_stream.py`、`tests/api/routes/test_generate_stream.py` 均已落地（前序会话 6 个失败已全修，`uv run pytest` 119 passed / 1 skipped、`ruff` 零警告）；新增 `tests/api/routes/test_generate_stream_smoke.py`（gated by `RUN_LLM_SMOKE`，需 `BUILTIN_MODELS` 含 `provider=ollama` 的模型）。
 - [x] 前端：新增 `test/sse_client_test.dart`（SSE 信封解析：多事件按空行切分 / CRLF 归一化 / 无尾空行仍解析）+ `test/tutor_notifier_ask_stream_test.dart`（`askStream` 状态机：token 累积→`TutorLoaded`、safety_refusal→🛡️ `blocked` 气泡、error→⚠️ 气泡）；`flutter test` 全绿 39 passed。
-- [x] 门禁：`uv run pytest` 全绿（119 passed / 2 skipped）、`ruff` 零警告；`flutter analyze` 0 问题；`flutter test` 全绿（39 passed）。
+- [x] 门禁（08b 纯单栈收尾后）：`uv run pytest` = **124 passed / 3 skipped**、`ruff` 零警告；前端 `sse_client.dart` 与旧 SSE 测试已退役，改用 `package:genkit/client.dart`（Phase 2 代码已完成，沙箱无 Flutter SDK、`flutter test` 待用户本地复核）。
 
 ## 风险 / 待决
 - 🔴 **api_key 加密**：`ModelConfig.api_key` 必须 Fernet 加密存储，密钥取 settings，严禁明文落库。

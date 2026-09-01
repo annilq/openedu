@@ -68,6 +68,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           task: task,
           onDone: () {
             Navigator.of(context).pop();
+            // 刷新今日任务
             ref.read(todayTasksNotifierProvider.notifier).load();
           },
         ),
@@ -328,4 +329,3 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 }
-

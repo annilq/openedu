@@ -6,6 +6,7 @@ import 'package:mocktail/mocktail.dart';
 
 import 'package:kids_learn/features/tutor/presentation/providers/tutor_notifier.dart';
 import 'package:kids_learn/shared/data/remote/network_service.dart';
+import 'package:kids_learn/shared/data/remote/genkit_ai_client.dart';
 import 'package:kids_learn/shared/domain/models/models.dart';
 import 'package:kids_learn/shared/exceptions/app_exception.dart';
 
@@ -48,11 +49,14 @@ class FakeNetwork implements NetworkService {
       const Stream<Uint8List>.empty();
 }
 
+/// 不触发 askStream 的测试用假 Genkit 客户端（未存根方法默认抛，但本文件不调用）。
+class _FakeGenkit extends Fake implements GenkitAiClient {}
+
 void main() {
   group('TutorNotifier', () {
     test('ask 发送正确 body 并拼接娃娃/AI 气泡', () async {
       final network = FakeNetwork(responses: {});
-      final notifier = TutorNotifier(network);
+      final notifier = TutorNotifier(network, _FakeGenkit());
 
       await notifier.ask(TutorAskReq(
         subject: '数学',
@@ -81,7 +85,7 @@ void main() {
 
     test('ask 接口异常时保留历史气泡并提示重试', () async {
       // post 抛错
-      final notifier = TutorNotifier(_ThrowingNetwork());
+      final notifier = TutorNotifier(_ThrowingNetwork(), _FakeGenkit());
 
       await notifier.ask(TutorAskReq(
         subject: '数学',
@@ -100,7 +104,7 @@ void main() {
 
     test('提交中重复点击被忽略（防重入）', () async {
       final network = FakeNetwork(responses: {});
-      final notifier = TutorNotifier(network);
+      final notifier = TutorNotifier(network, _FakeGenkit());
 
       // 第一次未 await 完成即第二次调用，应只产生一次请求
       final f1 = notifier.ask(TutorAskReq(
@@ -122,7 +126,7 @@ void main() {
     });
 
     test('服务端业务错误（429/403）透出提示文案', () async {
-      final notifier = TutorNotifier(_BusinessErrorNetwork());
+      final notifier = TutorNotifier(_BusinessErrorNetwork(), _FakeGenkit());
       await notifier.ask(TutorAskReq(
         subject: '英语',
         grade: 2,
@@ -269,7 +273,7 @@ void main() {
       final completer = Completer<dynamic>();
       when(() => network.post('/tutor/ask', body: any(named: 'body')))
           .thenAnswer((_) => completer.future);
-      final notifier = TutorNotifier(network);
+      final notifier = TutorNotifier(network, _FakeGenkit());
 
       expect(notifier.state, isA<TutorInitial>());
 
@@ -297,7 +301,7 @@ void main() {
           .thenThrow(HttpException(
               '今日 AI 答疑次数已达上限（50 次），明日再来哦～',
               statusCode: 429));
-      final notifier = TutorNotifier(network);
+      final notifier = TutorNotifier(network, _FakeGenkit());
 
       await notifier.ask(
           TutorAskReq(subject: '数学', grade: 2, knowledgePoint: '', question: 'hi'));
@@ -312,7 +316,7 @@ void main() {
       final completer = Completer<dynamic>();
       when(() => network.post('/tutor/ask', body: any(named: 'body')))
           .thenAnswer((_) => completer.future);
-      final notifier = TutorNotifier(network);
+      final notifier = TutorNotifier(network, _FakeGenkit());
 
       final f1 = notifier.ask(TutorAskReq(
           subject: '数学', grade: 2, knowledgePoint: '', question: '第一问'));

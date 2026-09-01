@@ -11,7 +11,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from app.domain.provider import GeneratedQuestion
-from tests.utils.user import auth_headers, login, register_parent
+from tests.utils.user import auth_headers, register_parent
 
 
 def _create_child(client, ptoken, username="kidm1"):
