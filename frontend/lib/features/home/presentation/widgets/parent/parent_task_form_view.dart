@@ -261,6 +261,7 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
                       AppTextField(label: '试卷标题', controller: _titleCtrl),
                       const SizedBox(height: AppSpacing.md),
                       Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
                           Expanded(
                             child: AppTextField(
@@ -270,12 +271,14 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
                             ),
                           ),
                           const SizedBox(width: AppSpacing.md),
-                          CupertinoButton(
+                          ShadButton.outline(
+                            height: 36,
                             onPressed: _evenSplit,
                             child: const Text('一键均分'),
                           ),
                           const SizedBox(width: AppSpacing.sm),
-                          CupertinoButton(
+                          ShadButton.outline(
+                            height: 36,
                             onPressed: _addRow,
                             child: const Text('+ 加学科'),
                           ),
@@ -490,7 +493,9 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
         ),
         const SizedBox(width: AppSpacing.md),
         Expanded(
-          child: CupertinoButton(
+          child: ShadButton.outline(
+            height: 44,
+            expands: true,
             onPressed: _preview,
             child: const Text('预览出题'),
           ),

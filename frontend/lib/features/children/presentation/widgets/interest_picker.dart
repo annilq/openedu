@@ -110,14 +110,14 @@ class _InterestPickerState extends State<InterestPicker> {
           '选择娃娃感兴趣的主题，AI 出题时会融入这些情境，让练习更有趣。',
           style: text.bodySmall?.copyWith(color: app.onSurfaceVariant),
         ),
-        const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AppSpacing.md),
         ...kInterestTaxonomy.entries.map((e) => _CategoryBlock(
               category: e.key,
               leaves: e.value,
               selected: _selected,
               onToggle: _toggle,
             )),
-        const SizedBox(height: AppSpacing.lg),
+        const SizedBox(height: AppSpacing.md),
         AppTextField(
           label: '其他爱好（可选，≤$_freeMax 字）',
           controller: _freeCtrl,

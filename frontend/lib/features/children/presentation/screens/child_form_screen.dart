@@ -176,14 +176,14 @@ class _ChildFormScreenState extends ConsumerState<ChildFormScreen> {
                       value: _grade,
                       onChanged: (v) => setState(() => _grade = v),
                     ),
-                    const SizedBox(height: AppSpacing.lg),
+                    const SizedBox(height: AppSpacing.md),
                     Container(height: 1, color: app.outline),
-                    const SizedBox(height: AppSpacing.lg),
+                    const SizedBox(height: AppSpacing.md),
                     InterestPicker(
                       initial: _interests,
                       onChanged: (v) => setState(() => _interests = v),
                     ),
-                    const SizedBox(height: AppSpacing.lg),
+                    const SizedBox(height: AppSpacing.md),
                     if (_error != null) ...[
                       Text(_error!, style: TextStyle(color: app.error)),
                       const SizedBox(height: AppSpacing.md),

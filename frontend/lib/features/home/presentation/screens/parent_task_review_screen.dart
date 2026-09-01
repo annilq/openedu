@@ -43,6 +43,18 @@ class _ParentTaskReviewScreenState
   Widget build(BuildContext context) {
     final state = ref.watch(parentTaskReviewProvider(widget.task));
     final app = AppTheme.colorsOf(context);
+    final content = switch (state) {
+      ReviewLoading() => const AppLoading(),
+      ReviewError(:final message) => AppError(
+          message: message,
+          onRetry: () {
+            ref
+                .read(parentTaskReviewProvider(widget.task).notifier)
+                .load(widget.task.id);
+          },
+        ),
+      ReviewLoaded(task: final task) => _buildBody(task),
+    };
     return CupertinoPageScaffold(
       backgroundColor: app.surfaceContainerLowest,
       navigationBar: CupertinoNavigationBar(
@@ -53,97 +65,120 @@ class _ParentTaskReviewScreenState
           child: const Icon(LucideIcons.arrowLeft, size: 22),
         ),
         middle: const Text('草稿审核'),
-        trailing: state is ReviewLoaded
-            ? _buildActionBar(state.task, app)
-            : null,
       ),
-      child: switch (state) {
-        ReviewLoading() => const AppLoading(),
-        ReviewError(:final message) =>
-          AppError(message: message, onRetry: () {
-            ref
-                .read(parentTaskReviewProvider(widget.task).notifier)
-                .load(widget.task.id);
-          }),
-        ReviewLoaded(task: final task) => _buildBody(task),
-      },
+      // 操作栏移出导航栏，改为与正文同边距（xl2）的固定头部，
+      // 统一按钮高度与风格，避免与页面内容不对齐、按钮大小参差。
+      child: state is ReviewLoaded
+          ? Column(
+              children: [
+                _buildActionBar(state.task, app),
+                Expanded(child: content),
+              ],
+            )
+          : content,
     );
   }
 
   // ============ 顶部操作栏 ============
 
-  Widget _buildActionBar(TaskModel task, dynamic app) {
+  /// 顶部操作栏：与正文同边距（xl2）的固定头部，统一所有按钮高度（40），
+  /// 主操作（锁定并派发 / 派发）用实心 primary，次操作描边，作废用 destructive。
+  Widget _buildActionBar(TaskModel task, AppColors app) {
+    final buttons = <Widget>[];
     if (task.isDraft) {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // 题库组卷任务 specs 为空，无 AI 生成规格，故不展示「整卷重生成」
-          if (task.specs.isNotEmpty)
-            ShadButton.outline(
-              onPressed: () => _onRegenerateAll(task.id),
-              leading: const Icon(LucideIcons.rotateCw, size: 16),
-              child: const Text('整卷重生成'),
-            ),
-          const SizedBox(width: AppSpacing.sm),
+      // 题库组卷任务 specs 为空，无 AI 生成规格，故不展示「整卷重生成」
+      if (task.specs.isNotEmpty) {
+        buttons.add(
           ShadButton.outline(
-            onPressed: task.promotedCount == task.questions.length
-                ? null
-                : () => _onPromoteAll(task.id),
-            leading: const Icon(LucideIcons.database, size: 16),
-            child: Text('一键加入题库 '
-                '(${task.promotedCount}/${task.questions.length})'),
+            height: 40,
+            onPressed: () => _onRegenerateAll(task.id),
+            leading: const Icon(LucideIcons.rotateCw, size: 16),
+            child: const Text('整卷重生成'),
           ),
-          const SizedBox(width: AppSpacing.sm),
-          ShadButton.destructive(
-            onPressed: () => _onDiscard(task.id),
-            leading: const Icon(LucideIcons.trash2, size: 16),
-            child: const Text('作废'),
-          ),
-          const SizedBox(width: AppSpacing.md),
-          ShadButton(
-            onPressed: task.questions.isEmpty ? null : () => _onConfirm(task),
-            size: ShadButtonSize.lg,
-            leading: const Icon(LucideIcons.lock, size: 18),
-            child: const Text('锁定并派发'),
-          ),
-        ],
+        );
+      }
+      buttons.add(
+        ShadButton.outline(
+          height: 40,
+          onPressed: task.promotedCount == task.questions.length
+              ? null
+              : () => _onPromoteAll(task.id),
+          leading: const Icon(LucideIcons.database, size: 16),
+          child: Text('一键加入题库 '
+              '(${task.promotedCount}/${task.questions.length})'),
+        ),
+      );
+      buttons.add(
+        ShadButton.destructive(
+          height: 40,
+          onPressed: () => _onDiscard(task.id),
+          leading: const Icon(LucideIcons.trash2, size: 16),
+          child: const Text('作废'),
+        ),
+      );
+      buttons.add(
+        ShadButton(
+          height: 40,
+          onPressed: task.questions.isEmpty ? null : () => _onConfirm(task),
+          leading: const Icon(LucideIcons.lock, size: 18),
+          child: const Text('锁定并派发'),
+        ),
+      );
+    } else if (task.isReady) {
+      buttons.add(
+        ShadButton(
+          height: 40,
+          onPressed: widget.defaultChildId != null
+              ? () => _onAssign(task, widget.defaultChildId!)
+              : () {
+                  AppToast.show(context, '请在首页选择娃娃后再派发');
+                },
+          leading: const Icon(LucideIcons.send, size: 18),
+          child: Text(widget.defaultChildId != null ? '派发任务' : '派发'),
+        ),
+      );
+    } else if (task.isAssigned) {
+      buttons.add(
+        ShadButton.secondary(
+          height: 40,
+          onPressed: widget.onNavigateToPractice == null
+              ? null
+              : () => widget.onNavigateToPractice!(task),
+          leading: const Icon(LucideIcons.eye, size: 18),
+          child: const Text('查看练习'),
+        ),
+      );
+    } else {
+      buttons.add(
+        ShadButton.secondary(
+          height: 40,
+          onPressed: widget.onBackToHome,
+          child: const Text('返回首页'),
+        ),
       );
     }
-    if (task.isReady) {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (widget.defaultChildId != null)
-            ShadButton(
-              onPressed: () => _onAssign(task, widget.defaultChildId!),
-              size: ShadButtonSize.lg,
-              leading: const Icon(LucideIcons.send, size: 18),
-              child: const Text('派发任务'),
-            )
-          else
-            ShadButton(
-              onPressed: () {
-                AppToast.show(context, '请在首页选择娃娃后再派发');
-              },
-              size: ShadButtonSize.lg,
-              leading: const Icon(LucideIcons.send, size: 18),
-              child: const Text('派发'),
+
+    return Container(
+      decoration: BoxDecoration(
+        color: app.surfaceContainerLowest,
+        border: Border(bottom: BorderSide(color: app.outline, width: 1)),
+      ),
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1080),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+                AppSpacing.xl2, AppSpacing.md, AppSpacing.xl2, AppSpacing.md),
+            child: Wrap(
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.sm,
+              alignment: WrapAlignment.end,
+              children: buttons,
             ),
-        ],
-      );
-    }
-    if (task.isAssigned) {
-      return ShadButton.secondary(
-        onPressed: widget.onNavigateToPractice == null
-            ? null
-            : () => widget.onNavigateToPractice!(task),
-        leading: const Icon(LucideIcons.eye, size: 18),
-        child: const Text('查看练习'),
-      );
-    }
-    return ShadButton.secondary(
-      onPressed: widget.onBackToHome,
-      child: const Text('返回首页'),
+          ),
+        ),
+      ),
     );
   }
 
