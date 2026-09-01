@@ -6,6 +6,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../../shared/domain/models/models.dart';
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/widgets/app_inputs.dart';
+import '../../../../../shared/widgets/reasoning_typewriter.dart';
 import '../../../../../shared/widgets/app_loading.dart';
 import '../../../../../shared/widgets/app_model_selector.dart';
 import '../../../../../shared/widgets/app_toast.dart';
@@ -465,13 +466,16 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
 }
 
 
-  /// 流式生成 / 落库期间的操作区：隐藏按钮；首张题卡到达前显示加载动画，
-  /// 之后仅展示题卡（题卡逐张浮现），不再重复 spinner。非忙碌态显示生成/预览按钮。
+  /// 流式生成 / 落库期间的操作区：隐藏按钮；首题 STEP 到达前（尚无题卡也无内联推理区）
+  /// 显示加载动画，之后仅展示题卡/生成中面板（题卡逐张浮现），不再重复 spinner。
+  /// 非忙碌态显示生成/预览按钮。
   Widget _buildActionArea(TaskGenState genState) {
     final busy = genState is TaskGenLoading ||
         (genState is TaskGenPreview && genState.streaming);
-    final showSpinner =
-        busy && (genState is TaskGenPreview ? genState.questions.isEmpty : true);
+    final showSpinner = busy &&
+        (genState is TaskGenPreview
+            ? (genState.questions.isEmpty && genState.liveIndex < 0)
+            : true);
     if (showSpinner) {
       return const AppLoading();
     }
@@ -519,6 +523,14 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
           ],
         ),
         const SizedBox(height: AppSpacing.sm),
+        // 生成中：当前题的内联推理区（题卡到达后折叠，见 _PreviewCard 的 info icon）。
+        if (s.streaming && s.liveIndex >= 0)
+          _PreviewGenerating(
+            index: s.liveIndex + 1,
+            label: s.liveLabel,
+            reasoning: s.liveReasoning,
+            streaming: s.streaming,
+          ),
         ...s.questions.asMap().entries.map(
               (e) => _PreviewCard(index: e.key + 1, q: e.value),
             ),
@@ -532,6 +544,96 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
 }
 
 
+
+/// 生成中面板（ADR-0017）：当前题的内联推理区，题卡到达后由 [_PreviewCard] 替代。
+/// 右上角不显示 info icon（推理尚在生成，无需展开）。
+class _PreviewGenerating extends StatelessWidget {
+  final int index;
+  final String label;
+  final String reasoning;
+  final bool streaming;
+
+  const _PreviewGenerating({
+    required this.index,
+    required this.label,
+    required this.reasoning,
+    required this.streaming,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final app = AppTheme.colorsOf(context);
+    final text = AppTheme.textOf(context);
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppSpacing.md),
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      decoration: BoxDecoration(
+        color: app.surface,
+        borderRadius: BorderRadius.circular(AppRadius.bubble),
+        border: Border.all(color: app.outline),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.sm, vertical: 2),
+                decoration: BoxDecoration(
+                  color: app.primaryContainer,
+                  borderRadius: BorderRadius.circular(AppRadius.chip),
+                ),
+                child: Text('第 $index 题 · 生成中',
+                    style: text.labelSmall?.copyWith(
+                        color: app.onPrimaryContainer,
+                        fontWeight: FontWeight.w700)),
+              ),
+              const Spacer(),
+              if (label.isNotEmpty)
+                Expanded(
+                  child: Text(
+                    label,
+                    style: text.labelSmall?.copyWith(color: app.onSurfaceVariant),
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.end,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          ReasoningTypewriterWidget(reasoning, streaming: streaming),
+        ],
+      ),
+    );
+  }
+}
+
+/// 弹出「AI 出题思路」面板（ADR-0017）：纯前端交互，展示该题 reasoning，不编辑、不落库。
+void _showReasoningSheet(BuildContext context, String reasoning) {
+  final text = AppTheme.textOf(context);
+  showCupertinoModalPopup(
+    context: context,
+    builder: (ctx) => CupertinoActionSheet(
+      title: const Text('AI 出题思路'),
+      message: SizedBox(
+        height: 240,
+        child: SingleChildScrollView(
+          child: Text(
+            reasoning,
+            style: text.bodyMedium,
+          ),
+        ),
+      ),
+      actions: [
+        CupertinoActionSheetAction(
+          onPressed: () => Navigator.of(ctx).pop(),
+          child: const Text('关闭'),
+        ),
+      ],
+    ),
+  );
+}
 
 /// 兴趣出题主题芯片（WF-4）：点亮即把该主题加入 focus 轮询列表。
 /// 视觉风格对齐 [interest_picker.dart] 中的 [_LeafToggle]。
@@ -644,6 +746,16 @@ class _PreviewCard extends StatelessWidget {
                 '${q.subject} · ${q.grade}年级 · ${_previewQtypeLabel(q.qtype)} · ${_previewDifficultyLabel(q.difficulty)}',
                 style: text.labelSmall?.copyWith(color: app.onSurfaceVariant),
               ),
+              // 出题推理：卡片右上角 info icon，点击展开「AI 出题思路」（ADR-0017）。
+              if (q.reasoning.isNotEmpty) ...[
+                const SizedBox(width: AppSpacing.sm),
+                CupertinoButton(
+                  padding: EdgeInsets.zero,
+                  onPressed: () => _showReasoningSheet(context, q.reasoning),
+                  child: Icon(LucideIcons.info,
+                      size: 18, color: app.onSurfaceVariant),
+                ),
+              ],
             ],
           ),
           const SizedBox(height: AppSpacing.sm),

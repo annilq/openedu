@@ -88,6 +88,8 @@ def _task_to_resp(
         status=task.status,
         specs=task.specs,
         questions=[_tq_to_resp(q, include_answer=include_answer) for q in questions],
+        child_id=task.child_id,
+        created_at=task.created_at,
     )
 
 
@@ -349,7 +351,9 @@ def create_from_bank(
         child_id=payload.child_id,
         question_ids=payload.question_ids,
     )
-    return _task_to_resp(task, get_task_questions(session, task.id), include_answer=True)
+    return _task_to_resp(
+        task, get_task_questions(session=session, task_id=task.id), include_answer=True
+    )
 
 
 @router.post("/from-generated", response_model=TaskResp, status_code=status.HTTP_201_CREATED)
@@ -425,7 +429,9 @@ def list_parent_tasks(
         stmt = stmt.where(Task.status == status_filter)
     tasks = session.exec(stmt.order_by(Task.created_at.desc())).all()
     return [
-        _task_to_resp(t, get_task_questions(session, t.id), include_answer=True)
+        _task_to_resp(
+            t, get_task_questions(session=session, task_id=t.id), include_answer=True
+        )
         for t in tasks
     ]
 
@@ -548,7 +554,11 @@ def add_from_bank(
     )
     if updated is None:
         raise AppErrorException(ErrCode.TASK_NOT_FOUND, "任务不存在")
-    return _task_to_resp(updated, get_task_questions(session, updated.id), include_answer=True)
+    return _task_to_resp(
+        updated,
+        get_task_questions(session=session, task_id=updated.id),
+        include_answer=True,
+    )
 def remove_one(
     *, session: SessionDep, parent: CurrentParent, task_id: UUID, tq_id: UUID
 ) -> None:
@@ -582,7 +592,7 @@ def regenerate_one(
     focus: str | None = None
     focus_interests = task.focus_interest
     if focus_interests:
-        tqs = get_task_questions(session, task.id)
+        tqs = get_task_questions(session=session, task_id=task.id)
         try:
             qi = next(k for k, t in enumerate(tqs) if t.id == tq.id)
         except StopIteration:

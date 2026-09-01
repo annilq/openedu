@@ -32,6 +32,27 @@ _ENGINE_CACHE: dict[tuple[str, str | None, str | None, str], Genkit] = {}
 class EngineResolution:
     genkit: Genkit
     model: str  # 形如 ollama/llama3 或 openai/gpt-4o-mini
+    # 是否具备原生思维链（DeepSeek-R1 / o-series / QwQ 等）：为真时出题流可读取
+    # 提供方的思维链 token 发 REASONING 增量（ADR-0017 升级路径）；否则走单次调用
+    # + 结构化 reasoning 字段打底，由前端打字机揭示。
+    supports_reasoning: bool = False
+
+
+# 原生思维链模型的名称启发式（小写子串匹配）。新增模型时在此补充。
+_REASONING_HINTS = (
+    "reason",
+    "r1",
+    "o1",
+    "o3",
+    "qwq",
+    "deepseek-reasoner",
+    "thinking",
+)
+
+
+def _supports_reasoning(model_name: str) -> bool:
+    n = (model_name or "").lower()
+    return any(hint in n for hint in _REASONING_HINTS)
 
 
 def _prefix(provider: str) -> str:
@@ -71,7 +92,11 @@ def _get_or_build(
     key = (provider, base_url, api_key, model_name)
     cached = _ENGINE_CACHE.get(key)
     if cached is not None:
-        return EngineResolution(genkit=cached, model=f"{_prefix(provider)}/{model_name}")
+        return EngineResolution(
+            genkit=cached,
+            model=f"{_prefix(provider)}/{model_name}",
+            supports_reasoning=_supports_reasoning(model_name),
+        )
     if provider == "ollama":
         ai = Genkit(
             plugins=[Ollama(server_address=base_url or settings.OLLAMA_BASE_URL)],
@@ -83,7 +108,11 @@ def _get_or_build(
             model=f"openai/{model_name}",
         )
     _ENGINE_CACHE[key] = ai
-    return EngineResolution(genkit=ai, model=f"{_prefix(provider)}/{model_name}")
+    return EngineResolution(
+        genkit=ai,
+        model=f"{_prefix(provider)}/{model_name}",
+        supports_reasoning=_supports_reasoning(model_name),
+    )
 
 
 def resolve_engine(

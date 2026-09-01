@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/widgets.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -131,6 +131,121 @@ class _ParentQuestionBankViewState extends ConsumerState<ParentQuestionBankView>
     );
   }
 
+  Future<void> _deleteSelected() async {
+    final ids = _selectedIds.toList();
+    if (ids.isEmpty) return;
+    final ok = await _showDeleteConfirm(ids.length);
+    if (ok != true) return;
+    await ref
+        .read(questionBankNotifierProvider.notifier)
+        .deleteQuestions(ids);
+  }
+
+  Future<bool?> _showDeleteConfirm(int count) {
+    return showShadDialog<bool>(
+      context: context,
+      builder: (ctx) => ShadDialog.alert(
+        title: const Text('删除题库题目'),
+        description: Text(
+          '确认删除选中的 $count 道题？已被任务引用的题将不会被删除。此操作不可撤销。',
+        ),
+        actions: [
+          ShadButton.ghost(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          ShadButton.destructive(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            leading: const Icon(LucideIcons.trash2, size: 16),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 闭环「用过 N 次 → 在哪里用」：弹出引用该题库题的任务列表。
+  Future<void> _showUsages(BankQuestionItem q) async {
+    List<QuestionUsageItem> usages;
+    try {
+      usages = await ref
+          .read(questionBankNotifierProvider.notifier)
+          .fetchQuestionUsages(q.id);
+    } catch (e) {
+      if (mounted) AppToast.error(context, '加载引用失败');
+      return;
+    }
+    if (!mounted) return;
+    final app = AppTheme.colorsOf(context);
+    final preview = q.stem.length > 16 ? '${q.stem.substring(0, 16)}…' : q.stem;
+    showCupertinoModalPopup(
+      context: context,
+      builder: (ctx) => CupertinoActionSheet(
+        title: Text('「$preview」被以下任务使用'),
+        message: usages.isEmpty
+            ? const Text('暂未在任何任务中使用')
+            : null,
+        actions: [
+          for (final u in usages)
+            CupertinoActionSheetAction(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                _openTask(u.taskId);
+              },
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      u.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.sm,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: app.secondaryContainer,
+                      borderRadius: BorderRadius.circular(AppRadius.sm),
+                    ),
+                    child: Text(
+                      _statusLabel(u.status),
+                      style: AppTheme.textOf(context).labelSmall?.copyWith(
+                        color: app.onSecondaryContainer,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Icon(LucideIcons.arrowUpRight,
+                      size: 14, color: app.onSurfaceVariant),
+                ],
+              ),
+            ),
+          CupertinoActionSheetAction(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 从引用列表跳转到对应任务的复核页（先拉完整任务再跳转）。
+  Future<void> _openTask(String taskId) async {
+    try {
+      final task = await ref
+          .read(questionBankNotifierProvider.notifier)
+          .fetchTaskById(taskId);
+      if (!mounted) return;
+      widget.onNavigateToReview(task);
+    } catch (e) {
+      if (mounted) AppToast.error(context, '打开任务失败');
+    }
+  }
+
   Future<String?> _showDraftPicker(List<TaskModel> drafts) {
     return showShadDialog<String?>(
       context: context,
@@ -212,6 +327,18 @@ class _ParentQuestionBankViewState extends ConsumerState<ParentQuestionBankView>
         WidgetsBinding.instance.addPostFrameCallback((_) {
           ref.read(questionBankNotifierProvider.notifier).reset();
           widget.onNavigateToReview(next.task);
+        });
+      } else if (next is BankDeleted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          final msg = next.skippedInUse > 0 || next.skippedForbidden > 0
+              ? '已删除 ${next.deleted} 题；'
+                  '${next.skippedInUse} 题已被任务引用未删'
+                  '${next.skippedForbidden > 0 ? '，${next.skippedForbidden} 题无权限' : ''}'
+              : '已删除 ${next.deleted} 题';
+          AppToast.show(context, msg);
+          _selectedIds.clear();
+          _reload();
         });
       } else if (next is BankActionError) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -352,23 +479,24 @@ class _ParentQuestionBankViewState extends ConsumerState<ParentQuestionBankView>
   }
 
   Widget _buildListArea(BankState state, dynamic app) {
-    if (state is BankLoading || state is BankIdle) {
-      return const AppLoading();
-    }
-    if (state is BankError) {
-      return AppError(message: state.message, onRetry: _reload);
-    }
-    if (state is BankActionLoading) {
-      return const AppLoading();
-    }
-    final data = (state as BankLoaded).data;
-    if (data.items.isEmpty) {
-      return _EmptyHint(onReload: _reload);
-    }
-    // 与错题本一致：单页滚动 + Column 平铺题卡（不再内嵌独立 ListView）。
-    return Column(
-      children: data.items.map((q) => _buildItem(q, app)).toList(),
-    );
+    // sealed 穷尽处理：加载/空闲/操作进行中/删除结果/操作成功/失败均先以加载占位，
+    // 删除后由 ref.listen 触发 _reload 回到 BankLoaded；避免对 BankLoaded 不安全强转
+    // 导致 type 'BankDeleted' is not a subtype of type 'BankLoaded' 崩溃。
+    return switch (state) {
+      BankLoading() ||
+      BankIdle() ||
+      BankActionLoading() ||
+      BankActionSuccess() ||
+      BankActionError() ||
+      BankDeleted() =>
+        const AppLoading(),
+      BankError(:final message) => AppError(message: message, onRetry: _reload),
+      BankLoaded(:final data) => data.items.isEmpty
+          ? _EmptyHint(onReload: _reload)
+          : Column(
+              children: data.items.map((q) => _buildItem(q, app)).toList(),
+            ),
+    };
   }
 
   Widget _buildItem(BankQuestionItem q, dynamic app) {
@@ -411,8 +539,7 @@ class _ParentQuestionBankViewState extends ConsumerState<ParentQuestionBankView>
                         _tag(app, q.knowledgePoint),
                         _tag(app, _qtypeLabel(q.qtype)),
                         if (q.usageCount > 0)
-                          _tag(app, '用过 ${q.usageCount} 次',
-                              tone: app.onSurfaceVariant),
+                          _usageTag(app, q),
                       ],
                     ),
                   ],
@@ -445,10 +572,43 @@ class _ParentQuestionBankViewState extends ConsumerState<ParentQuestionBankView>
     );
   }
 
+  /// 「用过 N 次」标签：可点击，弹出引用任务列表（闭环「用过 → 在哪里用」）。
+  Widget _usageTag(dynamic app, BankQuestionItem q) {
+    return GestureDetector(
+      onTap: () => _showUsages(q),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 2),
+        decoration: BoxDecoration(
+          color: app.secondaryContainer,
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(LucideIcons.link, size: 12, color: app.onSecondaryContainer),
+            const SizedBox(width: 4),
+            Text(
+              '用过 ${q.usageCount} 次',
+              style: AppTheme.textOf(context).labelSmall?.copyWith(
+                color: app.onSecondaryContainer,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   /// 选中题目后出现的操作区（卡片底部，随页面滚动）。
   Widget _buildActionFooter(dynamic app, bool busy) {
     return Row(
       children: [
+        ShadButton.outline(
+          onPressed: busy ? null : _deleteSelected,
+          leading: const Icon(LucideIcons.trash2, size: 16),
+          child: Text('删除选中 (${_selectedIds.length})'),
+        ),
+        const SizedBox(width: AppSpacing.sm),
         Expanded(
           child: ShadButton(
             onPressed: busy ? null : _generate,

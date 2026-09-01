@@ -62,4 +62,28 @@ class QuestionBankRemoteDataSource {
         .map((e) => TaskModel.fromJson(e as Map<String, dynamic>))
         .toList();
   }
+
+  /// 批量删除题库题：被任务引用的题后端已跳过（返回分组结果）。
+  Future<DeleteQuestionsResult> deleteQuestions(List<String> ids) async {
+    final data = await _network.delete(
+      '/questions',
+      body: {'ids': ids},
+    );
+    return DeleteQuestionsResult.fromJson(data as Map<String, dynamic>);
+  }
+
+  /// 反查某题库题被哪些任务引用（GET /questions/{id}/usages）。
+  /// 闭环「用过 N 次 → 在哪里用」。
+  Future<List<QuestionUsageItem>> getQuestionUsages(String questionId) async {
+    final data = await _network.get('/questions/$questionId/usages');
+    return (data as List)
+        .map((e) => QuestionUsageItem.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// 按 id 拉取完整任务（GET /tasks/{id}），供引用列表跳转复核页。
+  Future<TaskModel> getTaskById(String taskId) async {
+    final data = await _network.get('/tasks/$taskId');
+    return TaskModel.fromJson(data as Map<String, dynamic>);
+  }
 }

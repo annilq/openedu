@@ -23,7 +23,20 @@ class TaskGenError extends TaskGenState {
 class TaskGenPreview extends TaskGenState {
   final List<QuestionPreview> questions;
   final bool streaming;
-  const TaskGenPreview(this.questions, {this.streaming = false});
+  /// 生成中（内联推理区）状态：当前正在出的题序号（-1 表示无）；其进度标签与已累积的
+  /// 出题推理文本。某题 CARD 到达后该内联区折叠（liveIndex 归 -1），推理随卡落下供
+  /// 卡片右上角 info icon 展开（ADR-0017）。
+  final int liveIndex;
+  final String liveLabel;
+  final String liveReasoning;
+
+  const TaskGenPreview(
+    this.questions, {
+    this.streaming = false,
+    this.liveIndex = -1,
+    this.liveLabel = '',
+    this.liveReasoning = '',
+  });
 }
 
 class TaskGenNotifier extends StateNotifier<TaskGenState> {
@@ -46,14 +59,34 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
       model: model,
     );
     final questions = <QuestionPreview>[];
-    // 流式渲染：先连 /ai/tasks/generate 逐题产出题卡（消除真实模型下整体超时），
-    // 流结束后再把已生成题卡落库为草稿任务（POST /tasks/from-generated）。
+    var liveIndex = -1;
+    var liveLabel = '';
+    var liveReasoning = '';
+    // 流式渲染：先连 /ai/tasks/generate 逐题产出信封 chunk（ADR-0017：
+    // STEP → REASONING → CARD），流结束后再把已生成题卡落库为草稿任务。
     state = const TaskGenPreview([], streaming: true);
     try {
       final stream = _genkit.streamTasks(body);
-      await for (final q in stream) {
-        questions.add(q);
-        state = TaskGenPreview(List.from(questions), streaming: true);
+      await for (final chunk in stream) {
+        if (chunk is StepChunk) {
+          liveIndex = chunk.qIndex;
+          liveLabel = chunk.label;
+          liveReasoning = '';
+        } else if (chunk is ReasoningChunk) {
+          liveReasoning += chunk.delta;
+        } else if (chunk is CardChunk) {
+          questions.add(chunk.question);
+          liveIndex = -1;
+          liveLabel = '';
+          liveReasoning = '';
+        }
+        state = TaskGenPreview(
+          List.from(questions),
+          streaming: true,
+          liveIndex: liveIndex,
+          liveLabel: liveLabel,
+          liveReasoning: liveReasoning,
+        );
       }
       await stream.onResult; // 确认流已结束（末帧 result）
       await _persist(questions, body);
@@ -149,12 +182,32 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
     if (model != null) body['model'] = model;
 
     final questions = <QuestionPreview>[];
+    var liveIndex = -1;
+    var liveLabel = '';
+    var liveReasoning = '';
     state = const TaskGenPreview([], streaming: true);
     try {
       final stream = _genkit.streamTasks(body);
-      await for (final q in stream) {
-        questions.add(q);
-        state = TaskGenPreview(List.from(questions), streaming: true);
+      await for (final chunk in stream) {
+        if (chunk is StepChunk) {
+          liveIndex = chunk.qIndex;
+          liveLabel = chunk.label;
+          liveReasoning = '';
+        } else if (chunk is ReasoningChunk) {
+          liveReasoning += chunk.delta;
+        } else if (chunk is CardChunk) {
+          questions.add(chunk.question);
+          liveIndex = -1;
+          liveLabel = '';
+          liveReasoning = '';
+        }
+        state = TaskGenPreview(
+          List.from(questions),
+          streaming: true,
+          liveIndex: liveIndex,
+          liveLabel: liveLabel,
+          liveReasoning: liveReasoning,
+        );
       }
       final result = await stream.onResult;
       state = TaskGenPreview(result, streaming: false);

@@ -25,7 +25,7 @@ class GenkitAiClient {
   late final RemoteAction<Map<String, dynamic>, TutorReply, String, dynamic>
       _tutorAsk;
   late final RemoteAction<Map<String, dynamic>, List<QuestionPreview>,
-      QuestionPreview, dynamic> _tasksGenerate;
+      TaskGenChunk, dynamic> _tasksGenerate;
 
   GenkitAiClient(this._storage) {
     final base = AppConfig.apiBaseUrl;
@@ -36,11 +36,11 @@ class GenkitAiClient {
       fromStreamChunk: (d) => d as String,
     );
     _tasksGenerate = defineRemoteAction<Map<String, dynamic>,
-        List<QuestionPreview>, QuestionPreview, dynamic>(
+        List<QuestionPreview>, TaskGenChunk, dynamic>(
       url: '$base/ai/tasks/generate',
       fromResponse: (d) =>
           (d as List).map((e) => QuestionPreview.fromJson(e as Map<String, dynamic>)).toList(),
-      fromStreamChunk: (d) => QuestionPreview.fromJson(d as Map<String, dynamic>),
+      fromStreamChunk: (d) => TaskGenChunk.fromJson(d as Map<String, dynamic>),
     );
   }
 
@@ -61,8 +61,9 @@ class GenkitAiClient {
   Future<List<QuestionPreview>> generateTasks(Map<String, dynamic> input) =>
       _tasksGenerate.call(input: input, headers: _authHeaders());
 
-  /// 流式出题：逐题（[QuestionPreview]）产出，末帧 [ActionStream.onResult] 为题卡列表。
-  ActionStream<QuestionPreview, List<QuestionPreview>> streamTasks(
+  /// 流式出题：逐信封 chunk（[TaskGenChunk]：STEP/REASONING/CARD）产出，
+  /// 末帧 [ActionStream.onResult] 为题卡列表（[QuestionPreview]）。
+  ActionStream<TaskGenChunk, List<QuestionPreview>> streamTasks(
           Map<String, dynamic> input) =>
       _tasksGenerate.stream(input: input, headers: _authHeaders());
 }

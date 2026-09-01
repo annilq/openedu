@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "娃娃学习 App · 客户端与服务端架构",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "views": [
+      { "id": "request-path", "label": "请求主链路", "focus": ["parent-portal", "child-portal", "api-auth", "api-core", "db"], "note": "家长端与娃娃端经 HTTPS + JWT 访问服务端，鉴权通过后由业务 API 读写数据库。" },
+      { "id": "ai-path", "label": "AI 出题 / 批改链路", "focus": ["api-core", "llm-engine", "llm-provider"], "note": "业务 API 调用 LLM 编排层，由 GenkitProvider 解析引擎后对接 Mock 或 DeepSeek 等服务。" },
+      { "id": "client-view", "label": "客户端视角", "focus": ["parent-portal", "child-portal", "api-auth"], "note": "Flutter 平板/桌面 App 通过统一 API 客户端携带 Bearer JWT 访问服务端。" }
+    ]
+  },
+  "components": [
+    { "id": "parent-portal", "type": "frontend", "label": "家长端", "sublabel": "出题 · 模型管理 · 进度", "pos": [50, 120], "size": [160, 66] },
+    { "id": "child-portal", "type": "frontend", "label": "娃娃端", "sublabel": "答题 · AI 伴学", "pos": [50, 300], "size": [160, 66] },
+    { "id": "api-auth", "type": "security", "label": "鉴权中间件", "sublabel": "Bearer JWT", "pos": [390, 120], "size": [170, 66] },
+    { "id": "api-core", "type": "backend", "label": "业务 API", "sublabel": "SQLModel 领域层", "pos": [390, 300], "size": [170, 74] },
+    { "id": "llm-engine", "type": "backend", "label": "LLM 编排", "sublabel": "GenkitProvider", "pos": [390, 470], "size": [170, 66] },
+    { "id": "db", "type": "database", "label": "数据库", "sublabel": "SQLite / Postgres", "pos": [700, 120], "size": [160, 66] },
+    { "id": "llm-provider", "type": "external", "label": "LLM 服务", "sublabel": "Mock / DeepSeek", "pos": [700, 470], "size": [160, 66] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "客户端（Flutter · Riverpod + cupertino_ui）", "wraps": ["parent-portal", "child-portal"] },
+    { "kind": "region", "label": "服务端（FastAPI · /api/v1）", "wraps": ["api-auth", "api-core", "llm-engine"] }
+  ],
+  "connections": [
+    { "id": "parent-to-auth", "from": "parent-portal", "to": "api-auth", "label": "HTTPS + JWT" },
+    { "id": "child-to-auth", "from": "child-portal", "to": "api-auth", "label": "HTTPS + JWT" },
+    { "id": "auth-to-core", "from": "api-auth", "to": "api-core", "label": "鉴权通过" },
+    { "id": "core-to-db", "from": "api-core", "to": "db", "label": "SQL 读写" },
+    { "id": "core-to-llm", "from": "api-core", "to": "llm-engine", "label": "出题 / 批改" },
+    { "id": "llm-to-provider", "from": "llm-engine", "to": "llm-provider", "label": "generate" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "客户端", "items": ["Flutter 平板 / 桌面 App（Riverpod 状态管理、cupertino_ui 组件）", "统一 API 客户端通过 API_BASE 访问后端，携带 Bearer JWT", "家长端负责出题 / 模型管理 / 进度，娃娃端负责答题 / AI 伴学"] },
+    { "dot": "emerald", "title": "服务端", "items": ["FastAPI + SQLModel，统一接口前缀 /api/v1", "鉴权中间件校验 JWT，通过后进入业务 API", "LLMProvider 抽象（GenkitProvider 编排）屏蔽厂商差异"] },
+    { "dot": "amber", "title": "数据与模型", "items": ["SQLite / Postgres 持久化家庭、题目、作答与进度", "LLM_PROVIDER=mock 默认零 Key 跑通全闭环", "可接 DeepSeek 等真实模型，按 ModelConfig 解析引擎"] },
+    { "dot": "violet", "title": "外部依赖", "items": ["LLM 服务：Mock（开发）/ DeepSeek（生产）经 Genkit 接入", "儿童内容安全双层防护 + 教材版权门槛（上线前须解决）"] }
+  ]
+}

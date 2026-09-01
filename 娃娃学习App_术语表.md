@@ -62,6 +62,16 @@
 - **`POST /tasks/from-generated`**：流式题卡 → draft 任务的落库端点；被「存为任务」动作复用（ADR-0016 决策 6）。
 - **`POST /questions/bank/bulk`**：批量把勾选流式题卡建为题库 `Question` 的端点；需过 `check_output` 安全闸门（ADR-0016，待实现）。
 
+## 出题推理通道（ADR-0017）
+- **出题推理过程（Reasoning）**：模型「怎么设计这道题」的文字说明（情境选取、干扰项思路、难度控制）。合并自原 think+typing 概念——`thinking` 是内容、`typing` 是前端打字机动画（呈现方式，非数据类型）。
+- **REASONING chunk**：SSE 中承载出题推理增量的 chunk 类型（`type:"REASONING"`，含 `q_index` 与 `delta`）；与 `CARD`、`STEP` 并列，靠 `type` 字段多态分发（对齐 AG-UI `BaseEvent`）。
+- **STEP chunk**：每题进度锚点（`type:"STEP"`，`label` 如"正在为《数学》三年级「分数」出选择题"），对应 AG-UI `STEP_STARTED`。
+- **CARD chunk**：成品题卡 chunk（`type:"CARD"`，`question` 为 `QuestionOut`），与 ADR-0015/0016 题卡数据一致。
+- **信封（Envelope）**：SSE chunk 的统一封装——JSON 对象含 `type` 判别字段；取代原「裸 QuestionOut」chunk，传输帧（`message`/`result`/`error`）不变。
+- **supports_reasoning**：`EngineResolution` 新增布尔位，标记所选模型是否具备原生思维链（DeepSeek-R1 / o-series 等）；为真时后端实时读取思维链 token 发 `REASONING` 增量，否则走单次调用 + 客户端打字机打底。
+- **打字机揭示（Typewriter Reveal）**：前端把 `REASONING.delta` 逐字动画展示的效果；打底路径下整段推理到客户端后再动画揭示（零额外成本），reasoning 模型下与真·token 流同步。
+- **推理折叠（Reasoning Collapse）**：某题 `CARD` 到达后，该题内联推理区**默认隐藏**，推理文本随 `QuestionOut.reasoning` 落于卡片；卡片右上角常驻 **info icon**，点按以 popover / bottom-sheet 展开「AI 出题思路」面板，便于多题紧凑矩阵排布、按需查看单题推理（纯前端交互，不新增 SSE 字段）。
+
 ## 外部框架（已明确不作为运行时）
 - **Pi（pi.dev）**：终端编码代理（coding agent），用作开发期编码助手。
 - **Eve（eve.dev）**：TypeScript durable agent 框架，因与 Python 后端割裂，不作为运行时。

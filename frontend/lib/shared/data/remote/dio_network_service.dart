@@ -134,9 +134,9 @@ class DioNetworkService implements NetworkService {
   }
 
   @override
-  Future<dynamic> delete(String path) async {
+  Future<dynamic> delete(String path, {Map<String, dynamic>? body}) async {
     try {
-      final r = await _dio.delete(path);
+      final r = await _dio.delete(path, data: body);
       return r.data;
     } on DioException catch (e) {
       _handleError(e);

@@ -35,6 +35,13 @@ class BankActionError extends BankState {
   const BankActionError(this.message);
 }
 
+class BankDeleted extends BankState {
+  final int deleted;
+  final int skippedInUse;
+  final int skippedForbidden;
+  const BankDeleted(this.deleted, this.skippedInUse, this.skippedForbidden);
+}
+
 class QuestionBankNotifier extends StateNotifier<BankState> {
   final QuestionBankRemoteDataSource _ds;
   QuestionBankNotifier(this._ds) : super(const BankIdle());
@@ -65,6 +72,16 @@ class QuestionBankNotifier extends StateNotifier<BankState> {
     return await _ds.getDraftTasks();
   }
 
+  /// 反查某题库题被哪些任务引用（闭环「用过 N 次 → 在哪里用」）。
+  Future<List<QuestionUsageItem>> fetchQuestionUsages(String questionId) async {
+    return await _ds.getQuestionUsages(questionId);
+  }
+
+  /// 按 id 拉取完整任务，供引用列表跳转复核页。
+  Future<TaskModel> fetchTaskById(String taskId) async {
+    return await _ds.getTaskById(taskId);
+  }
+
   void reset() => state = const BankIdle();
 
   Future<void> createTaskFromBank({
@@ -93,6 +110,20 @@ class QuestionBankNotifier extends StateNotifier<BankState> {
     try {
       final task = await _ds.addToTaskFromBank(taskId: taskId, questionIds: ids);
       state = BankActionSuccess(task);
+    } catch (e) {
+      state = BankActionError(e.toString());
+    }
+  }
+
+  Future<void> deleteQuestions(List<String> ids) async {
+    state = const BankActionLoading();
+    try {
+      final res = await _ds.deleteQuestions(ids);
+      state = BankDeleted(
+        res.deleted.length,
+        res.skippedInUse.length,
+        res.skippedForbidden.length,
+      );
     } catch (e) {
       state = BankActionError(e.toString());
     }

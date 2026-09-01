@@ -274,6 +274,10 @@ class TaskResp(SQLModel):
     # 原始生成规格（整卷重生成可用；前端展示方便）
     specs: list[dict] | None = None
     questions: list[QuestionResp] = []
+    # 派发对象（列表/详情展示“对应娃娃”用）
+    child_id: uuid.UUID | None = None
+    # 创建时间（列表排序/展示用）
+    created_at: datetime | None = None
 
 
 # ───────── 题库复用闭环（GET /questions / POST /tasks/from-bank 等） ─────────
@@ -310,6 +314,31 @@ class TaskFromBankCreate(SQLModel):
 class BankQuestionsAdd(SQLModel):
     """选项 B：加入已有草稿任务。"""
     question_ids: list[uuid.UUID]
+
+
+class DeleteQuestionsReq(SQLModel):
+    """批量删除题库题：传待删 Question.id 列表。"""
+    ids: list[uuid.UUID]
+
+
+class DeleteQuestionsResult(SQLModel):
+    """批量删除结果：被任务引用的题不删，分组返回。"""
+    deleted: list[uuid.UUID] = []
+    skipped_in_use: list[uuid.UUID] = []  # 已被任务引用，跳过
+    skipped_forbidden: list[uuid.UUID] = []  # 不存在 / 非本家长所有，跳过
+
+
+class QuestionUsageItem(SQLModel):
+    """题库题被某任务引用的反查结果项。"""
+    task_id: uuid.UUID
+    title: str
+    status: str  # draft | ready | assigned | done
+    created_at: datetime | None = None
+
+
+class QuestionUsagesResp(SQLModel):
+    """题库题被哪些任务引用（owner 隔离）。闭环「用过 N 次 → 在哪里用」。"""
+    items: list[QuestionUsageItem] = []
 
 
 class TaskQuestionEdit(SQLModel):

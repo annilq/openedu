@@ -182,6 +182,8 @@ class QuestionPreview {
   final String explanation;
   final String? answer;
   final String difficulty;
+  /// 出题推理过程（ADR-0017）：仅预览态展示，不落库；旧服务端不下发时为空。
+  final String reasoning;
 
   const QuestionPreview({
     this.subject = '',
@@ -193,6 +195,7 @@ class QuestionPreview {
     this.explanation = '',
     this.answer,
     this.difficulty = 'medium',
+    this.reasoning = '',
   });
 
   factory QuestionPreview.fromJson(Map<String, dynamic> json) => QuestionPreview(
@@ -205,6 +208,7 @@ class QuestionPreview {
         explanation: json['explanation'] as String? ?? '',
         answer: json['answer'] as String?,
         difficulty: json['difficulty'] as String? ?? 'medium',
+        reasoning: json['reasoning'] as String? ?? '',
       );
 
   /// 回传后端 /tasks/from-generated 落库（snake_case，与 QuestionOut 对齐）。
@@ -218,7 +222,57 @@ class QuestionPreview {
         'explanation': explanation,
         'answer': answer,
         'difficulty': difficulty,
+        'reasoning': reasoning,
       };
+}
+
+/// 出题流式 chunk 信封（ADR-0017）：靠 `type` 多态分发，对齐 AG-UI `BaseEvent.type`。
+///
+/// - [StepChunk]：每题进度锚点（qIndex + label）。
+/// - [ReasoningChunk]：出题推理增量（qIndex + delta），前端打字机揭示；CARD 到达后默认折叠。
+/// - [CardChunk]：成品题卡（qIndex + question 为 [QuestionPreview]）。
+sealed class TaskGenChunk {
+  const TaskGenChunk();
+
+  factory TaskGenChunk.fromJson(Map<String, dynamic> json) {
+    switch (json['type']) {
+      case 'STEP':
+        return StepChunk(
+          (json['q_index'] as int?) ?? 0,
+          (json['label'] as String?) ?? '',
+        );
+      case 'REASONING':
+        return ReasoningChunk(
+          (json['q_index'] as int?) ?? 0,
+          (json['delta'] as String?) ?? '',
+        );
+      case 'CARD':
+        return CardChunk(
+          (json['q_index'] as int?) ?? 0,
+          QuestionPreview.fromJson(json['question'] as Map<String, dynamic>),
+        );
+      default:
+        throw FormatException('unknown TaskGenChunk type: ${json['type']}');
+    }
+  }
+}
+
+class StepChunk extends TaskGenChunk {
+  final int qIndex;
+  final String label;
+  const StepChunk(this.qIndex, this.label);
+}
+
+class ReasoningChunk extends TaskGenChunk {
+  final int qIndex;
+  final String delta;
+  const ReasoningChunk(this.qIndex, this.delta);
+}
+
+class CardChunk extends TaskGenChunk {
+  final int qIndex;
+  final QuestionPreview question;
+  const CardChunk(this.qIndex, this.question);
 }
 
 /// 多学科一卷批量生成的一条规格（ADR-0004 D4）。
@@ -274,6 +328,9 @@ class TaskModel {
   /// 派发对象（创建时可选预先绑定，锁定→派发时强制绑定）。
   final String? childId;
 
+  /// 创建时间（ISO8601 字符串，列表排序/展示用）。
+  final String? createdAt;
+
   /// 兴趣题模式聚焦主题（WF-4），整卷共享，用于审阅打标与整卷重生成复现。
   final List<String>? focusInterest;
 
@@ -293,6 +350,7 @@ class TaskModel {
     required this.questions,
     this.specs = const [],
     this.childId,
+    this.createdAt,
     this.focusInterest,
   });
 
@@ -303,6 +361,7 @@ class TaskModel {
     List<QuestionModel>? questions,
     List<TaskSpecModel>? specs,
     String? childId,
+    String? createdAt,
     List<String>? focusInterest,
   }) {
     return TaskModel(
@@ -312,6 +371,7 @@ class TaskModel {
       questions: questions ?? this.questions,
       specs: specs ?? this.specs,
       childId: childId ?? this.childId,
+      createdAt: createdAt ?? this.createdAt,
       focusInterest: focusInterest ?? this.focusInterest,
     );
   }
@@ -325,6 +385,7 @@ class TaskModel {
       title: json['title'] as String,
       status: json['status'] as String? ?? 'draft',
       childId: json['child_id'] as String?,
+      createdAt: json['created_at'] as String?,
       specs: specList,
       focusInterest: (json['focus_interest'] as List?)
           ?.map((e) => e.toString())
@@ -376,6 +437,57 @@ class BankQuestionItem {
         answer: json['answer'] as String?,
         explanation: json['explanation'] as String?,
         usageCount: (json['usage_count'] as int?) ?? 0,
+      );
+}
+
+/// 批量删除题库题的结果：deleted / skippedInUse / skippedForbidden 分别给出 id 列表。
+class DeleteQuestionsResult {
+  final List<String> deleted;
+  final List<String> skippedInUse;
+  final List<String> skippedForbidden;
+
+  const DeleteQuestionsResult({
+    this.deleted = const [],
+    this.skippedInUse = const [],
+    this.skippedForbidden = const [],
+  });
+
+  factory DeleteQuestionsResult.fromJson(Map<String, dynamic> json) =>
+      DeleteQuestionsResult(
+        deleted:
+            (json['deleted'] as List?)?.map((e) => e.toString()).toList() ?? const [],
+        skippedInUse: (json['skipped_in_use'] as List?)
+                ?.map((e) => e.toString())
+                .toList() ??
+            const [],
+        skippedForbidden: (json['skipped_forbidden'] as List?)
+                ?.map((e) => e.toString())
+                .toList() ??
+            const [],
+      );
+}
+
+/// 题库题被某任务引用的反查结果项（GET /questions/{id}/usages）。
+/// 闭环「用过 N 次 → 在哪里用」。
+class QuestionUsageItem {
+  final String taskId;
+  final String title;
+  final String status; // draft | ready | assigned | done
+  final String? createdAt;
+
+  const QuestionUsageItem({
+    required this.taskId,
+    required this.title,
+    required this.status,
+    this.createdAt,
+  });
+
+  factory QuestionUsageItem.fromJson(Map<String, dynamic> json) =>
+      QuestionUsageItem(
+        taskId: json['task_id'] as String,
+        title: json['title'] as String? ?? '',
+        status: json['status'] as String? ?? 'draft',
+        createdAt: json['created_at'] as String?,
       );
 }
 

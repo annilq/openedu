@@ -175,3 +175,130 @@ event: error         data: {"message": "…"}        # 500/502 友好文案
 - 实现影响：前端入口合并（删两按钮、加「出题」+ 预览多选 + 两动作）、`home_notifier` 状态机微调（预览态新增 `selectedForBank` 集合）；后端新增 `POST /questions/bank/bulk`、复用 `from-generated`；**流式渲染代码（Genkit flow、SSE 协议）不变**。
 - 安全：入题库题仍过 `check_output`（生成时已校验，落库前再确认），不降低 ADR-008 防线。
 - 向后兼容：`from-bank`、`from-generated` 端点保留；仅前端入口重排，旧草稿任务数据不受影响。
+
+## ADR-0017 出题推理过程流式通道（合并 thinking+typing 为 REASONING chunk，参考 AG-UI）
+
+> 来源：`/grill-with-docs` 访谈收敛（R6 后续）。修订 ADR-0016 中「流式渲染代码（Genkit flow、SSE 协议）不变」一句——本 ADR 正是 SSE chunk 信封的演进。
+
+### 背景
+R6 分析指出：当前 `tasks_generate` 走 `engine.genkit.generate_stream(..., output_schema=QuestionSchema)` 结构化输出，**后端每题只发 1 个 chunk（成品题卡）+ 末帧 result**，中间无任何 token 流。体验上「每生成一题都要干等，题卡整张弹出」，割裂感来自此处。用户期望在客户端**持续看到 AI 的出题推理过程**，并消除等待的空窗。
+
+访谈澄清并锁定两个概念（此前方案误拆为 think/typing/card 三个类型，已纠正）：
+- **`card`（题卡）** = 最终结构化题目（stem/options/answer/explanation），是数据，不变。
+- **`thinking`（出题推理）** = 模型「怎么设计这道题」的文字说明；**`typing`（打字机）** = 前端把这段推理文字**逐字揭示的动画效果**——它**不是数据类型**，而是 `reasoning` 通道的呈现方式。
+
+⇒ 合并后的产物 = **单一 `REASONING` 通道**，承载模型出题思路文字，前端用打字机动画渲染；`card` 仍是独立题卡数据。原 think+typing 二合一即指此。
+
+### 决策（八条）
+1. **单一推理通道 `REASONING`**：废弃「think / typing / card 三类型」拆法，SSE 只新增一种 chunk 类型 `REASONING`（增量 `delta`），与既有 `CARD` 并列；`typing` 是 `REASONING` 的客户端打字机动画，不进入协议。
+2. **信封沿用 AG-UI 多态 `type` 判别**：每个 chunk 是一个 JSON 对象，靠 `type` 字段分发（`REASONING` / `STEP` / `CARD`），对齐 AG-UI 的 `BaseEvent.type` 多态约定（见映射表）。这是对我们现有 Genkit `chunk_type=dict` 帧（`data: {"message": <chunk>}`）的最小扩展——chunk 由「裸 QuestionOut」变为「带 `type` 的信封」，传输层不变。
+3. **发射顺序（每道题）**：`STEP`（进度提示）→ `REASONING`×(0..N)（推理增量）→ `CARD`（成品题卡）。`STEP` 对应 AG-UI `STEP_STARTED`，给家长"正在为《数学》三年级「分数」出选择题"的进度锚点。`REASONING` 仅在**该题 CARD 到达前**作为题卡上方的内联流式区逐字揭示；CARD 到达后该内联区折叠（见决策 9），避免占据纵向空间。
+4. **末帧 `result` 不变**：流式结束帧仍为 `List[QuestionOut]`（题卡列表），与 ADR-0015/0016 契约一致；`REASONING` 纯属流式 UX，**不进 result 帧**，避免 `fromResponse`/`onResult` 改动面。
+5. **推理来源 = 混合**（访谈选定）：
+   - **打底（所有模型，含 mock）**：`QuestionSchema` 增 `reasoning: str` 字段，单次结构化调用即拿到整段推理；后端发**一个 `REASONING` chunk**（整段为 `delta`），**客户端打字机动画揭示**（零额外成本、模型无关）。
+   - **升级（reasoning 模型）**：当所选模型被 `resolve_engine` 标记为 `supports_reasoning`（如 DeepSeek-R1 / o-series，`engine.py` 新增布尔位），后端在结构化调用期间**实时读取提供方的思维链 token**（Genkit chunk 的 `reasoning`/provider 专用字段），边到边发 `REASONING` 增量——这才是真·服务端持续推流，填满等待空窗。
+6. **推理仅预览态、不落库**：`REASONING` 是生成期 UX artifact，**不入题库/任务表**，零 DB 迁移；刷新或落库后消失（符合「出题过程」的瞬时性质）。`QuestionPreview` 上的 `reasoning` 字段仅用于流结束后在预览态内存中兜底展示，不写入 `Question`/`TaskQuestion` ORM。
+7. **粒度 = 逐题**：每段推理用 `q_index` 与题卡关联；出题循环内每题重置 `REASONING` 缓冲，UI 在对应题卡上方展示「AI 怎么想的」。
+8. **mock 确定性推理**：`_mock_question` 增确定性 `reasoning` 文本（如"围绕知识点 X 设计 Y 题，难度 Z，干扰项按常见误区设置"），保证零 key 也演示流式推理。
+9. **CARD 到达后默认折叠 REASONING + 卡片 info icon 展开**：多题并排/矩阵排布时，内联推理区会让每张卡片纵向过长、难以一览。约定——某题 `CARD` 到达后，该题的实时推理区**默认折叠隐藏**，`REASONING` 文本以 `question.reasoning` 形式随题卡落于预览态内存；**每张题卡右上角常驻一个 info icon**，点击以 popover / bottom-sheet 展开「AI 出题思路」面板展示该题 `reasoning`（仅展示、不编辑、不落库）。这样多题以紧凑卡片矩阵呈现（生成时持续可见推理、成稿后一览无压），按需点开单题推理。info icon 是**纯前端交互**，不新增任何 SSE 字段（`reasoning` 已随 `CARD` 的 `QuestionOut` 下发，见决策 6）。
+
+### 数据结构
+
+**后端（Pydantic，`app/ai/flows.py` / `models.py`）**
+```python
+# 信封：靠 type 多态分发（对齐 AG-UI BaseEvent）
+class TaskGenReasoningChunk(BaseModel):
+    type: Literal["REASONING"] = "REASONING"
+    q_index: int
+    delta: str                      # 推理增量；打底路径整段一次性下发，客户端打字机揭示
+
+class TaskGenStepChunk(BaseModel):
+    type: Literal["STEP"] = "STEP"
+    q_index: int
+    label: str                      # "正在为《数学》三年级「分数」出选择题…"
+
+class TaskGenCardChunk(BaseModel):
+    type: Literal["CARD"] = "CARD"
+    q_index: int
+    question: dict                  # QuestionOut.model_dump()
+
+TaskGenChunk = TaskGenReasoningChunk | TaskGenStepChunk | TaskGenCardChunk
+
+# QuestionSchema / QuestionOut 增字段（打底路径承载整段推理）
+class QuestionOut(BaseModel):
+    ...
+    reasoning: str = ""             # 出题推理过程（仅预览展示，不落库）
+```
+发射：`ctx.send_chunk(chunk.model_dump())`（chunk_type=dict 不变）；`generate_questions_stream` 内部改为 yield 标记项 `(kind, payload)`，flow 映射为信封 chunk。
+
+**前端（Dart，`models.dart` / `genkit_ai_client.dart` / `home_notifier.dart`）**
+```dart
+sealed class TaskGenChunk {
+  const TaskGenChunk();
+  factory TaskGenChunk.fromJson(Map<String, dynamic> json) => switch (json['type']) {
+    'REASONING' => ReasoningChunk(json['q_index'] as int, json['delta'] as String),
+    'STEP'      => StepChunk(json['q_index'] as int, json['label'] as String),
+    'CARD'      => CardChunk(json['q_index'] as int,
+                             QuestionPreview.fromJson(json['question'] as Map<String, dynamic>)),
+    _ => throw FormatException('unknown chunk type: ${json['type']}'),
+  };
+}
+class ReasoningChunk extends TaskGenChunk { final int qIndex; final String delta; }
+class StepChunk extends TaskGenChunk { final int qIndex; final String label; }
+class CardChunk extends TaskGenChunk { final int qIndex; final QuestionPreview question; }
+
+// QuestionPreview 增可选字段（流结束兜底展示，向后兼容旧服务端）
+class QuestionPreview {
+  final String reasoning; // 默认 ''，旧 chunk 不含时忽略
+  ...
+}
+```
+客户端接线：`_tasksGenerate` 的 chunk 泛型由 `QuestionPreview` 改为 `TaskGenChunk`；`fromStreamChunk: (d) => TaskGenChunk.fromJson(d)`；`onResult` 仍为 `List<QuestionPreview>`（不变）。`home_notifier` 循环按 `q_index` 累积 `reasoningBuffers`：
+- **生成中**：`ReasoningTypewriterWidget` 在题卡上方内联区逐字揭示该题 `REASONING` 流（打字机）。
+- **CARD 到达后**：内联区折叠隐藏，`question.reasoning` 随卡落下；卡片右上角渲染 `CardReasoningInfoButton`（info icon），`onTap` 以 popover / `showModalBottomSheet` 展开「AI 出题思路」面板（只读 `question.reasoning`，不编辑、不落库）。多题以紧凑卡片矩阵排布，按需点开单题推理。
+```dart
+// 卡片右上角 info icon → 展开 question.reasoning（默认折叠，按需查看）
+class CardReasoningInfoButton extends StatelessWidget {
+  final QuestionPreview question;
+  // onTap: showModalBottomSheet / popover 展示 question.reasoning（标题 "AI 出题思路"）
+}
+```
+
+### AG-UI 事件映射（参考而非照搬）
+| 本方案 | AG-UI 事件 | 说明 |
+|---|---|---|
+| `STEP` chunk | `STEP_STARTED` | 每题进度锚点（AG-UI 用 `step_name`，我们用 `label`） |
+| `REASONING` 增量 | `REASONING_MESSAGE_CONTENT` / `REASONING_MESSAGE_CHUNK` | 出题思路逐片；AG-UI 另有 `REASONING_START`/`END` 我们用「CARD 到来即结束」隐含，不显式发 |
+| `CARD` chunk | `TEXT_MESSAGE_CONTENT`（结构化变体） | 成品题卡；AG-UI 此处是自由文本，我们替换为结构化题卡 |
+| 末帧 `result` | `RUN_FINISHED.result` | 题卡列表 |
+| 错误帧 | `RUN_ERROR` | 沿用现有 `error: {"message":...}` 帧（main.py monkeypatch） |
+
+> 不引入 AG-UI 的 `STATE_SNAPSHOT`/`TOOL_CALL_*`（出题流无共享状态机/工具调用），保持信封最小。
+
+### 发射时序（单题）
+```
+后端                                  前端
+STEP{q_index:0,label}  ────────▶  进度条："正在出题第1题"
+REASONING{delta:"围绕…"} ──────▶  题卡上方「AI 出题思路」内联区逐字揭示（生成中可见；
+                                  reasoning模型：token 边到边；
+                                  打底：整段到客户端后打字机动画）
+CARD{q_index:0,question} ──────▶  题卡浮现 → 上方推理区折叠隐藏(默认)；
+                                  卡片右上角出现 info icon，
+                                  点按 popover 展开 question.reasoning
+（下一道 q_index:1 重复；多题以紧凑卡片矩阵并排，每卡右上角常驻 info icon）
+… 全部完成 ─────────────────▶  result: [card0, card1, …]  → onResult(List<QuestionPreview>)
+```
+
+### 备选
+- **保留 think/typing 两个独立类型**：区分"思考内容"与"打字效果"。否决——typing 是动画非数据，拆出徒增协议复杂度（访谈已纠正）。
+- **每题 2 次调用真·流式（两阶段）**：推理真逐字。否决为默认——2x 成本/延迟；仅当 reasoning 模型原生支持时走升级路径（决策 5 已覆盖真流式诉求）。
+- **推理入库为题元数据**：否决（选决策 6 仅预览态），避免 DB 迁移与版权/安全复核面扩大。
+- **整次连续推理不按题切分**：否决（选决策 7 逐题），保留推理与题卡的对应关系。
+
+### 后果 / 实现影响
+- 体验：出题过程持续可见、等待空窗被推理流填补（reasoning 模型下为真流式），割裂感消除。
+- 协议：SSE chunk 由裸 `QuestionOut` 升级为带 `type` 的信封；**传输帧格式（`message`/`result`/`error`）、`chunk_type=dict`、末帧 result 形状均不变**，向后兼容旧前端（旧 `fromStreamChunk` 仅解析 `QuestionOut`，升级前不读 `type`）。
+- 代码改动面：`flows.py`（`generate_questions_stream` 改 yield 标记项 + `tasks_generate` 发信封）、`engine.py`（`EngineResolution.supports_reasoning`）、`models.py`/`QuestionOut`（`reasoning` 字段）、`models.dart`（`TaskGenChunk` 密封类 + `QuestionPreview.reasoning`）、`genkit_ai_client.dart`（chunk 泛型 + `fromStreamChunk`）、`home_notifier.dart`（按 `q_index` 累积推理 + 打字机态 + CARD 到达折叠）、预览 UI 新增 `ReasoningTypewriterWidget`（生成中内联揭示）与 `CardReasoningInfoButton`（卡片右上角 info icon，点按弹出该题 `reasoning`）。
+- 安全：推理文本不落库、不进 `check_output` 复核链（仅成品题卡过 ADR-008 闸门），不降低现有防线。
+- **实现状态：✅ 已落地（2026-09-01）**。后端 `flows.py`/`engine.py` 发信封 chunk（`STEP`/`REASONING`/`CARD`）+ `supports_reasoning`；`QuestionOut`/`QuestionSchema` 增 `reasoning`；前端 `models.dart` 增 `TaskGenChunk` 密封类与 `QuestionPreview.reasoning`，`genkit_ai_client.dart` 改 chunk 泛型，`home_notifier.dart` 按 `q_index` 累积推理并在 CARD 到达后折叠，`parent_task_form_view.dart` 新增 `_PreviewGenerating`（内联打字机推理）+ `_PreviewCard` 右上角 info icon（`_showReasoningSheet` 弹出 `reasoning`）+ 共享 `ReasoningTypewriterWidget`。流式回归测试 `test_generate_stream.py::test_generate_stream_emits_envelope` 断言每题 `STEP`/`REASONING`/`CARD` 齐全且 reasoning 非空；后端 pytest 全绿（133 passed/3 skipped），前端 `lib/` 改动 `flutter analyze` 零警告。
+- 工作量：后端流式回归测试已随实现补齐（mock 推理 chunk 断言）。

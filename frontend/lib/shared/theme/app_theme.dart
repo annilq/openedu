@@ -730,18 +730,23 @@ class AppCard extends StatelessWidget {
       shadows: const <BoxShadow>[],
       child: child,
     );
+    // NOTE: Do NOT wrap `card` in `ShadButton.ghost(width: double.infinity)`.
+    // That injects a `BoxConstraints(minWidth: ∞, maxWidth: ∞)` into the card,
+    // which shadcn's internal `ShadCard` structure
+    // (`Row(mainAxisSize: min) → Flexible → Column → Flexible → child`) then
+    // passes down as UNBOUNDED width. Any `Expanded`/`Flexible` inside the
+    // card content (e.g. the task-list card's `Row(Expanded)`) then throws
+    // "RenderFlex children have non-zero flex but incoming width constraints
+    // are unbounded". A bare `GestureDetector` is pass-through: it imposes no
+    // width constraint, so the card receives the parent's bounded width and
+    // still fills it via its own `Expanded` content. `GestureDetector` needs
+    // no `Material` ancestor, so it is safe under `ShadApp`.
     return Container(
       margin: margin,
       child: onTap != null
-          ? ShadButton.ghost(
-              width: double.infinity,
-              height: null,
-              padding: EdgeInsets.zero,
-              backgroundColor: const Color(0x00000000),
-              hoverBackgroundColor: const Color(0x00000000),
-              pressedBackgroundColor: const Color(0x00000000),
-              decoration: const ShadDecoration(border: null),
-              onPressed: onTap,
+          ? GestureDetector(
+              onTap: onTap,
+              behavior: HitTestBehavior.opaque,
               child: card,
             )
           : card,

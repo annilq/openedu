@@ -48,6 +48,7 @@ class ErrCode(str, Enum):
     TASK_NO_QUESTIONS = "TASK_20013"  # 锁定/派发前草稿没有题
     QUESTION_NOT_FOUND = "TASK_20014"  # 题库题不存在（from-bank 全部越权/缺失）
     QUESTION_ACCESS_DENIED = "TASK_20015"  # 部分题库题无权限（owner 隔离）
+    QUESTION_IN_USE = "TASK_20016"  # 题库题已被任务引用，禁止删除
 
     # Auth 30xxx
     AUTH_INVALID_TOKEN = "AUTH_30001"
@@ -82,6 +83,7 @@ _HTTP_DEFAULT_STATUS: dict[ErrCode, int] = {
     ErrCode.TASK_NO_QUESTIONS: status.HTTP_409_CONFLICT,
     ErrCode.QUESTION_NOT_FOUND: status.HTTP_404_NOT_FOUND,
     ErrCode.QUESTION_ACCESS_DENIED: status.HTTP_403_FORBIDDEN,
+    ErrCode.QUESTION_IN_USE: status.HTTP_409_CONFLICT,
     ErrCode.AUTH_INVALID_TOKEN: status.HTTP_403_FORBIDDEN,
     ErrCode.AUTH_INACTIVE_USER: status.HTTP_400_BAD_REQUEST,
     ErrCode.AUTH_BAD_CREDENTIALS: status.HTTP_401_UNAUTHORIZED,

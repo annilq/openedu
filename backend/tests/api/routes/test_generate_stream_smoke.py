@@ -68,8 +68,9 @@ def test_stream_generate_real_ollama(client):
     )
     assert r.status_code == 200, r.text
     chunks, result = parse_genkit_sse(r.text)
-    assert chunks or result, "未收到任何 SSE 事件"
-    questions = chunks or (result or [])
+    # 信封格式：从 CARD chunk 的 question 字段取题卡；无 CARD 时退回 result 末帧。
+    cards = [c["question"] for c in chunks if c.get("type") == "CARD"]
+    questions = cards or (result or [])
     assert questions, "真实引擎未产出任何题目"
     for q in questions:
         assert q.get("subject") and q.get("stem") and "answer" in q

@@ -24,6 +24,7 @@ import '../widgets/parent/parent_task_form_view.dart';
 import '../widgets/parent/parent_tutor_logs_view.dart';
 import '../widgets/parent/parent_tutor_quota_view.dart';
 import '../widgets/parent/parent_question_bank_view.dart';
+import '../widgets/parent/parent_tasks_view.dart';
 import '../widgets/parent/parent_wrong_questions_view.dart';
 import 'child_mastery_screen.dart';
 
@@ -170,7 +171,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       return ProfileScreen(user: widget.user, onLogout: widget.onLogout);
     }
     return switch (_parentNavIndex) {
-      0 => const ParentOverviewView(),
+      0 => ParentOverviewView(onNavigateToReview: _navigateToReview),
       // 生成成功后不直接跳 PracticeScreen，改跳 ParentTaskReviewScreen
       1 => ParentTaskFormView(
           onNavigateToReview: _navigateToReview,
@@ -186,6 +187,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           onNavigateToReview: _navigateToReview,
         ),
       7 => const ParentModelManagementScreen(),
+      8 => ParentTasksView(
+          onNavigateToReview: _navigateToReview,
+        ),
       _ => const SizedBox(),
     };
   }
@@ -220,6 +224,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         label: '概览',
         active: activeIndex == 0,
         onTap: () => _parentTap(0)),
+    AdaptiveNavDestination(
+        icon: LucideIcons.listTodo,
+        label: '任务',
+        active: activeIndex == 8,
+        onTap: () => _parentTap(8)),
     AdaptiveNavDestination(
         icon: LucideIcons.pencil,
         label: '布置任务',
@@ -298,7 +307,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     if (widget.user.isParent) {
-      final activeIndex = _reviewingTask != null ? 1 : _parentNavIndex;
+      // 复核覆盖层期间，侧栏高亮跟随来源页（_parentNavIndex 保持不变）。
+      final activeIndex = _parentNavIndex;
       return AdaptiveShell(
         mode: AppUserMode.parent,
         destinations: _parentDestinations(activeIndex),

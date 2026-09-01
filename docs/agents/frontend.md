@@ -22,6 +22,39 @@
 - 网络层：Dio + 双拦截器（Token 注入 `Authorization`、错误统一转 `HttpException`）；抽象为 `NetworkService`。
 - `lib/configs/app_config.dart` 的 `kApiBase` 切换后端地址（真机联调用 `--dart-define=API_BASE=http://<局域网IP>:8000`）。
 
+## Riverpod 反模式清单（门禁级）
+
+状态机为 `StateNotifierProvider` + sealed 状态（`Idle→Loading→Success/Error`）。下列反模式**直接违反架构约束，提交前必须清零**：
+
+### ❌ 反模式 #1：在 `build` 期间同步修改被 `watch` 的 provider（卡死 Loading）
+
+- **现象**：页面 / 区块永远转圈；多个页面共用同一 provider 时一起卡死。
+- **根因**：在 `build` 内直接 `ref.read(provider.notifier).load()` 会同步改写被本组件 `watch` 的 provider，触发重入重建循环 `Idle → load → Loading → rebuild → Idle …`，使共享 provider 永远停在 `Loading`。
+- **✗ 错误写法**：
+  ```dart
+  final s = ref.watch(parentTasksNotifierProvider);
+  if (s is ParentTasksIdle) {
+    ref.read(parentTasksNotifierProvider.notifier).load(); // build 内同步改状态
+  }
+  ```
+- **✓ 正确写法**（任选其一，均不在 build 内改状态）：
+  - 屏幕级首次加载：`initState` / `addPostFrameCallback` 内触发；
+  - 区块级「空闲时触发一次」：用 `ref.loadWhenIdle(provider, isIdle, load)`（`lib/shared/utils/load_once.dart` 一行封装，已内置「本帧绘制后 + 再判空闲」双重保护）；
+  - 用户操作 / 重试：按钮回调、`ref.listen` 副作用中触发。
+  ```dart
+  ref.loadWhenIdle(
+    parentTasksNotifierProvider,
+    (s) => s is ParentTasksIdle,
+    () => ref.read(parentTasksNotifierProvider.notifier).load(),
+  );
+  ```
+
+### ❌ 反模式 #2：把 `ref.read(provider.notifier)` 的副作用放进 `build` 主体
+
+任何会触发网络请求 / 改状态 / 注册监听的调用，都必须在 `initState`、生命周期回调或事件回调内，禁止出现在 `build` 直接执行路径中（原因同上）。
+
+> 自查：grep 每个 `*_view.dart` / `*_screen.dart` 的 `build` 方法体，确认没有 `load()` / `refresh()` / `notifier).xxxx()` 这类副作用调用。
+
 ## UI 组件与令牌
 
 - 一律使用 `lib/shared/theme/app_theme.dart` 导出的 **`App*` 语义组件**（`AppCard` / `AppPrimaryButton` / `AppTextField` / `AppPickerField` / `AppToast` / `AppSidebar` / `AppProgressBar` 等）。

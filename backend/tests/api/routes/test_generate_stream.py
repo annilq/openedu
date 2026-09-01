@@ -13,7 +13,8 @@ def _parent_token(client, username):
     return login(client, username, "pw123456").json()["access_token"]
 
 
-def test_generate_stream_emits_questions(client):
+def test_generate_stream_emits_envelope(client):
+    """出题流式：每题发出 STEP → REASONING → CARD 信封 chunk（ADR-0017），末帧 result 为整卷。"""
     ptoken = _parent_token(client, "gs_parent")
     h = auth_headers(ptoken)
     with client.stream(
@@ -32,11 +33,49 @@ def test_generate_stream_emits_questions(client):
         assert r.status_code == 200, r.status_code
         text = "".join(r.iter_text())
     chunks, result = parse_genkit_sse(text)
-    # 每题一张卡（2 + 1）
-    assert len(chunks) == 3
-    # 末帧整卷
+    # 信封类型断言
+    types = [c.get("type") for c in chunks]
+    assert types.count("STEP") == 3
+    assert types.count("REASONING") == 3
+    assert types.count("CARD") == 3
+    # 每道题推理非空（mock 确定性推理）
+    reasons = [c["delta"] for c in chunks if c.get("type") == "REASONING"]
+    assert all(r and isinstance(r, str) for r in reasons)
+    # 末帧整卷：3 张卡
     assert result is not None and len(result) == 3
-    for q in chunks:
+    # CARD chunk 的 question 字段才是题卡本体
+    cards = [c["question"] for c in chunks if c.get("type") == "CARD"]
+    assert len(cards) == 3
+    for q in cards:
+        assert q["subject"] and q["stem"] and "answer" in q
+        # reasoning 随卡下发，供前端卡片 info icon 展开
+        assert isinstance(q.get("reasoning"), str) and q["reasoning"]
+
+
+def test_generate_stream_emits_questions(client):
+    """向后兼容：末帧 result 仍是 QuestionOut 列表（题量 2 + 1 = 3）。"""
+    ptoken = _parent_token(client, "gs_parent2")
+    h = auth_headers(ptoken)
+    with client.stream(
+        "POST",
+        "/api/v1/ai/tasks/generate",
+        headers={**h, "Accept": "text/event-stream"},
+        json={
+            "data": {
+                "specs": [
+                    {"subject": "数学", "grade": 2, "knowledge_point": "加法", "qtype": "calc", "difficulty": "easy", "count": 2},
+                    {"subject": "语文", "grade": 3, "knowledge_point": "拼音", "qtype": "choice", "difficulty": "medium", "count": 1},
+                ],
+            }
+        },
+    ) as r:
+        assert r.status_code == 200, r.status_code
+        text = "".join(r.iter_text())
+    chunks, result = parse_genkit_sse(text)
+    cards = [c["question"] for c in chunks if c.get("type") == "CARD"]
+    assert len(cards) == 3
+    assert result is not None and len(result) == 3
+    for q in cards:
         assert q["subject"] and q["stem"] and "answer" in q
 
 

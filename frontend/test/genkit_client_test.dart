@@ -39,7 +39,7 @@ class _NoopNetwork implements NetworkService {
 class _FakeGenkit extends Fake implements GenkitAiClient {
   final List<String> tutorChunks;
   final TutorReply tutorResult;
-  final List<QuestionPreview> taskChunks;
+  final List<TaskGenChunk> taskChunks;
   final List<QuestionPreview> taskResult;
 
   Map<String, dynamic>? lastTutorInput;
@@ -63,10 +63,10 @@ class _FakeGenkit extends Fake implements GenkitAiClient {
   }
 
   @override
-  ActionStream<QuestionPreview, List<QuestionPreview>> streamTasks(
+  ActionStream<TaskGenChunk, List<QuestionPreview>> streamTasks(
       Map<String, dynamic> input) {
     lastTasksInput = input;
-    return ActionStream<QuestionPreview, List<QuestionPreview>>(
+    return ActionStream<TaskGenChunk, List<QuestionPreview>>(
       Future.value(taskResult),
       Stream.fromIterable(taskChunks),
     );
@@ -165,7 +165,10 @@ void main() {
       ];
       final notifier = TaskGenNotifier(
         _NoopNetwork(),
-        _FakeGenkit(taskChunks: cards, taskResult: cards),
+        _FakeGenkit(
+          taskChunks: cards.map((q) => CardChunk(0, q)).toList(),
+          taskResult: cards,
+        ),
       );
 
       await notifier.preview(
