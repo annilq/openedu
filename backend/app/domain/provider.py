@@ -29,6 +29,8 @@ class LLMProvider(ABC):
         difficulty,
         interests: list[str] | None = None,  # 轻融入：娃娃兴趣池（受控分类叶子 key）
         focus_interest: str | None = None,  # 兴趣题模式：聚焦的单个兴趣主题
+        rag_context: str | None = None,  # ADR-0021：知识库检索命中内容（对齐教材口径）
+        persona_hint: str | None = None,  # ADR-0021：学科 Persona 渲染文本（语气/适龄/约定）
     ) -> GeneratedQuestion: ...
 
     @abstractmethod

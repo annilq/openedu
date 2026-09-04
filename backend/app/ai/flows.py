@@ -142,6 +142,8 @@ def _build_question_prompt(
     difficulty: str,
     interests: list[str] | None,
     focus_interest: str | None,
+    rag_context: str | None = None,
+    persona_hint: str | None = None,
 ) -> str:
     if focus_interest:
         clause = (
@@ -160,6 +162,12 @@ def _build_question_prompt(
             f"请为{grade}年级《{subject}》的“{knowledge_point}”出一道{qtype}题，"
             f"难度{difficulty}。"
         )
+    # ADR-0021：学科 Persona 注入（语气/适龄/学科约定），让同业务跨学科表现一致且可控。
+    if persona_hint:
+        clause += f"\n\n{persona_hint}"
+    # ADR-0021：RAG 命中内容作为教材口径参考，对齐知识点（出题此前未接 RAG）。
+    if rag_context:
+        clause += f"\n\n参考教材口径（仅作对齐参考，不照搬）：\n{rag_context}"
     return (
         clause + '返回 JSON：'
         '{"stem": str, "options": list[str]|null, "answer": str, "explanation": str, '
@@ -268,6 +276,8 @@ async def generate_question(
     difficulty: str,
     interests: list[str] | None = None,
     focus_interest: str | None = None,
+    rag_context: str | None = None,
+    persona_hint: str | None = None,
 ) -> GeneratedQuestion | None:
     """非流式出题（落库路径）：复用流式同款 prompt + 安全闸门。
 
@@ -277,6 +287,7 @@ async def generate_question(
     prompt = _build_question_prompt(
         subject=subject, grade=grade, knowledge_point=knowledge_point, qtype=qtype,
         difficulty=difficulty, interests=interests, focus_interest=focus_interest,
+        rag_context=rag_context, persona_hint=persona_hint,
     )
     resp = await engine.genkit.generate(
         model=engine.model, system=_QUESTION_SYSTEM_PROMPT, prompt=prompt,

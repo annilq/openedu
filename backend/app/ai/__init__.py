@@ -28,4 +28,8 @@ __all__ = [
     "grade_open",
     "mock_question",
     "QuestionSchema",
+    "subagents",
 ]
+
+# ADR-0021：业务 SubAgent 包（导入即注册出题/伴学两个 SubAgent）。
+from app.ai import subagents  # noqa: E402,F401

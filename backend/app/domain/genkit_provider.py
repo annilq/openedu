@@ -31,6 +31,8 @@ class GenkitProvider(LLMProvider):
         difficulty,
         interests: list[str] | None = None,
         focus_interest: str | None = None,
+        rag_context: str | None = None,
+        persona_hint: str | None = None,
     ) -> GeneratedQuestion:
         engine = resolve_engine()
         if engine is not None:
@@ -43,6 +45,8 @@ class GenkitProvider(LLMProvider):
                 difficulty=difficulty,
                 interests=interests,
                 focus_interest=focus_interest,
+                rag_context=rag_context,
+                persona_hint=persona_hint,
             )
             if g is not None:
                 return g
