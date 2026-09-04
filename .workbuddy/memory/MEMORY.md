@@ -15,6 +15,13 @@
 - LLM 抽象在 `app/domain/provider.py`（`LLMProvider.generate_question`），08b 后统一为 `GenkitProvider(LLMProvider)`：内部 `resolve_engine` 解析真实引擎、解析不到走 `app/ai` flow 内 mock 分支；`MockProvider`/`LangChainProvider` 已整体退役，业务只依赖 `LLMProvider` 接口。
 - **多模型接入（ADR-0015 / 票据 08）**：v1 流式用 **Genkit Python**（`genkit`+`genkit-fastapi`+`genkit_ollama`+`genkit_openai`）在 FastAPI 进程内编排 flow，`genkit` 仅 import 于 `app/ai/`（ADR-003 隔离）。`resolve_engine(model_ref,...)` 解析优先级：家长 `ModelConfig` 表 → 内置 `BUILTIN_MODELS`(env JSON) → 全局 `LLM_PROVIDER` → 否则 None（走 `app/ai` flow 内 mock 分支）。**Genkit 插件构造签名坑**：`genkit_ollama.Ollama` 用 `server_address=`（不是 `base_url`）；`genkit_openai.OpenAI(**openai_params)` 透传 kwargs（api_key/base_url）。`resolve_engine` 对内置 id（如 "local-llama"）务必先 `_as_uuid()` 校验再 `session.get(ModelConfig, id)`，否则非 UUID 字符串触发 UUID 列 `.hex` 报错。家长 `ModelConfig.api_key` 用 `app/core/crypto.py` 的 Fernet 加密。
 
+## 选型结论：Genkit 不做编排层（2026-09-04 评估）
+- Genkit Python（锁定 0.10.0，PyPI 最新 0.11.0）**不适合当多 agent 编排框架**：无 supervisor/handoff 原语、无并发扇出、`define_agent` 的 model 定义期绑定与本项目 `resolve_engine` 运行时动态选模型冲突、mock 零 key 闭环会被 agent turn loop 破坏、0.x Beta 风险。
+- 正确分工：**编排层纯 Python**（`app/ai/subagents/` 的 `BaseSubAgent.handle` + `SubAgentRegistry` + `SubjectPersona`，沿用 ADR-0021）；Genkit 只当底座（generate/结构化输出、flow 流式、`genkit_fastapi` 端点、以及仅在需多轮会话/中断恢复/长任务入口用 `define_custom_agent` + `serve_agent` 白拿 session/abort/Dev UI trace）。
+- 硬约束：安全（check_input/check_output）与配额（quota）留在路由层与 flow 层，**不下沉到 tool/agent 内部**，否则 agent 自主循环绕过配额。
+- Genkit 0.10 已有能力备查：`ai.define_agent/define_custom_agent/define_prompt_agent`、`genkit.agent`（Session/SessionStore(InMemory,File)/Snapshot/DetachedTask）、`genkit_fastapi.serve_agent`、tools 支持任意 async 函数 + `Interrupt`/`restart_tool`、`_transports/_http.remote_agent`。
+- 升级 0.11 注意：`generate()` 模型已回复后不再抛异常，`resp.output` 可能 None（failed/blocked/aborted），`app/ai/flows.py` 的 try/except 回退 mock 逻辑须改为判 `output is None`。
+
 ## Flutter / shadcn_ui 约定（踩坑沉淀）
 - `LucideIcons` **不是**来自 `lucide_flutter`，而是由 `package:shadcn_ui/shadcn_ui.dart` 再导出；任何用到 `LucideIcons` 的 dart 文件必须 import `shadcn_ui`（`app_theme.dart` 正是因已 import 它才可用）。
 - 表单输入统一用 `AppTextField`（非 Flutter `TextField`）：其 label 是 `ShadInput` 的**兄弟** `Text`，输入框为 shadcn `ShadInput`（内部 `EditableText`）。
