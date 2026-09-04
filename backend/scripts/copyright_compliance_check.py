@@ -42,9 +42,8 @@ import re
 import sqlite3
 import sys
 import unicodedata
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from typing import Iterable
-
 
 # —— 文本归一化与相似度 ——
 
