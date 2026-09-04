@@ -17,8 +17,8 @@ from app.domain.tutor import TutorResult, TutorService
 class TutorSubAgent(BaseSubAgent):
     business = "tutor"
 
-    def __init__(self, *, provider, retriever=None) -> None:
-        super().__init__(provider=provider, retriever=retriever)
+    def __init__(self, *, provider, retriever=None, engine=None) -> None:
+        super().__init__(provider=provider, retriever=retriever, engine=engine)
         self.service = TutorService(provider=provider, retriever=retriever)
 
     def _effective_context(self, subject: str, base_context: str | None) -> str:

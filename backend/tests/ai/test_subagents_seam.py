@@ -18,7 +18,7 @@ from dataclasses import dataclass
 
 from app.ai.subagents import build_subagent, get_subagent_class, get_subject_persona
 from app.ai.subagents.base import SubAgentContext
-from app.ai.subagents.question_agent import QuestionSubAgent
+from app.ai.subagents.question_agent import QuestionSubAgent, expand_specs
 from app.ai.subagents.tutor_agent import TutorSubAgent
 
 
@@ -99,6 +99,39 @@ def test_question_subagent_rag_and_persona_threading():
     assert provider.last_gen_kwargs["subject"] == "数学"
     assert provider.last_gen_kwargs["knowledge_point"] == "分数的加减"
     assert isinstance(result, _FakeQuestion)
+
+
+def test_expand_specs_expands_count():
+    specs = [
+        {"subject": "数学", "grade": 3, "knowledge_point": "分数", "qtype": "choice", "count": 2},
+        {"subject": "语文", "grade": 3, "knowledge_point": "造句", "qtype": "fill", "difficulty": "easy"},
+    ]
+    items = expand_specs(specs)
+    # count=2 展开两题；缺省 count 按 1；顺序即 q_index
+    assert [it["subject"] for it in items] == ["数学", "数学", "语文"]
+    assert items[2]["difficulty"] == "easy"
+
+
+def test_question_subagent_stream_augments():
+    """流式路径：按 q_index 预计算 RAG + 学科 Persona（不触 genkit）。"""
+    retriever = _FakeRetriever()
+    agent = QuestionSubAgent(provider=_FakeProvider(), retriever=retriever)
+    specs = [
+        {"subject": "数学", "grade": 3, "knowledge_point": "分数的加减", "qtype": "choice", "count": 2},
+        {"subject": "英语", "grade": 4, "knowledge_point": "past tense", "qtype": "fill", "count": 1},
+    ]
+    rag_contexts, persona_hints = agent.build_augments(
+        specs, interests=None, focus_interests=["恐龙"]
+    )
+
+    # 三题（2+1）均拿到 persona，key 为 q_index
+    assert sorted(persona_hints) == [0, 1, 2]
+    assert "【学科人格：数学】" in persona_hints[0]
+    assert "【学科人格：数学】" in persona_hints[1]
+    assert "【学科人格：英语】" in persona_hints[2]
+    # 检索按题触发，命中内容进入 rag_context
+    assert len(retriever.calls) == 3
+    assert all("分数加减" in v for v in rag_contexts.values())
 
 
 def test_tutor_subagent_persona_injection():

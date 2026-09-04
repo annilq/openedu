@@ -31,10 +31,13 @@ class BaseSubAgent(ABC):
     # 业务键（注册表索引）：question / tutor / grader / diagnosis / planner / report …
     business: str = "base"
 
-    def __init__(self, *, provider, retriever=None) -> None:
+    def __init__(self, *, provider, retriever=None, engine=None) -> None:
         # provider: 业务层统一 LLM 抽象（LLMProvider）；retriever: 可选知识库检索。
+        # engine: 可选的显式引擎（路由带 session 解析出的 ModelConfig 自定义模型）；
+        #         为 None 时由 provider 自行解析，保证零破坏。
         self.provider = provider
         self.retriever = retriever
+        self.engine = engine
 
     @abstractmethod
     async def handle(self, intent: dict, ctx: SubAgentContext) -> Any:

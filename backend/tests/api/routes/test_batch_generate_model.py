@@ -3,8 +3,11 @@
 历史 bug：前端传了 model（如 ollama 内置 id），但 batch-generate 完全忽略，
 永远走全局 LLM_PROVIDER（默认 mock）。本测试用假引擎验证：
   1) resolve_engine 收到的正是前端所选 model；
-  2) 出题走 Genkit 路径（genkit_generate_question 被调用），而非静默回退 mock；
+  2) 出题走 Genkit 路径（flows.generate_question 被调用），而非静默回退 mock；
   3) 所选 model 随 Task 落库，供后续整卷/单题重生成沿用。
+
+ADR-0021：出题改经「出题 SubAgent」派发，非流式路径由 SubAgent.handle 调
+app.ai.flows.generate_question（惰性导入），故补丁点相应前移到 flows。
 """
 from __future__ import annotations
 
@@ -41,7 +44,7 @@ def test_batch_generate_honors_selected_model(client, monkeypatch):
         captured["model_ref"] = model_ref
         return SimpleNamespace(genkit=SimpleNamespace(model="ollama/llama3"), model="ollama/llama3")
 
-    async def fake_genkit_generate(engine, *, subject, grade, knowledge_point, qtype, difficulty, interests=None, focus_interest=None):
+    async def fake_genkit_generate(engine, *, subject, grade, knowledge_point, qtype, difficulty, interests=None, focus_interest=None, rag_context=None, persona_hint=None):
         captured["genkit_called"] = True
         return GeneratedQuestion(
             subject=subject,
@@ -56,7 +59,8 @@ def test_batch_generate_honors_selected_model(client, monkeypatch):
         )
 
     monkeypatch.setattr("app.api.routes.tasks.resolve_engine", fake_resolve)
-    monkeypatch.setattr("app.api.routes.tasks.genkit_generate_question", fake_genkit_generate)
+    # ADR-0021：出题经 SubAgent 派发，实际出题函数落在 app.ai.flows
+    monkeypatch.setattr("app.ai.flows.generate_question", fake_genkit_generate)
 
     r = client.post(
         "/api/v1/tasks/batch-generate",
@@ -97,7 +101,8 @@ def test_batch_generate_no_model_falls_back_to_mock(client, monkeypatch):
         return None
 
     monkeypatch.setattr("app.api.routes.tasks.resolve_engine", fake_resolve)
-    monkeypatch.setattr("app.api.routes.tasks.genkit_generate_question", fake_genkit_generate)
+    # ADR-0021：出题经 SubAgent 派发，实际出题函数落在 app.ai.flows
+    monkeypatch.setattr("app.ai.flows.generate_question", fake_genkit_generate)
 
     r = client.post(
         "/api/v1/tasks/batch-generate",

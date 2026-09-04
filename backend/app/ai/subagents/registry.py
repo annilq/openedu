@@ -33,17 +33,18 @@ def get_subagent_class(business: str) -> type[BaseSubAgent] | None:
 
 
 def build_subagent(
-    business: str, *, provider, retriever=None
+    business: str, *, provider, retriever=None, engine=None
 ) -> BaseSubAgent | None:
     """业务键 → SubAgent 实例；未知业务返回 None（调用方决定兜底）。
 
     路由层经此工厂取业务 agent，无需直接依赖具体 SubAgent 类（TutorService /
     GenkitProvider），实现「业务维度 = SubAgent」的解耦派发。
+    engine 为可选的显式引擎（带 session 解析出的自定义模型），为 None 时由 provider 自行解析。
     """
     agent_cls = _REGISTRY.get(business)
     if agent_cls is None:
         return None
-    return agent_cls(provider=provider, retriever=retriever)
+    return agent_cls(provider=provider, retriever=retriever, engine=engine)
 
 
 __all__ = [

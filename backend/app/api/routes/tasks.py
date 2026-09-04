@@ -5,8 +5,9 @@ from uuid import UUID
 from fastapi import APIRouter, Query, status
 from sqlmodel import select
 
-from app.ai import generate_question as genkit_generate_question
 from app.ai import mock_question, resolve_engine
+from app.ai.subagents import build_subagent
+from app.ai.subagents.base import SubAgentContext
 from app.api.deps import CurrentChild, CurrentParent, CurrentUser, SessionDep
 from app.core.errors import AppErrorException, ErrCode
 from app.crud import (
@@ -33,7 +34,7 @@ from app.crud import (
     update_task_question,
     upsert_wrong_question,
 )
-from app.domain import Grader, build_provider
+from app.domain import Grader, build_provider, build_retriever
 from app.domain.provider import GeneratedQuestion
 from app.models import (
     AnswerResult,
@@ -154,29 +155,44 @@ def _gen_question(
     interests: list[str] | None = None,
     focus_interest: str | None = None,
 ) -> GeneratedQuestion:
-    """出题单题：有真实引擎（如 ollama）走 Genkit flow 非流式入口，否则走 mock 分支。
+    """出题单题：经「出题」业务 SubAgent 派发（ADR-0021），内部接 RAG + 学科 Persona。
 
     统一单栈（迁移 08b）：MockProvider / LangChainProvider 已退役，mock 分支即 flow 内的
     _mock_question（确定性假数据）；真实模型产出不安全（check_output 未过）时同样回退 mock，
     保证题量完整且不落库违规内容。
+
+    engine 为 None（无真实引擎）时直接走确定性 mock，与历史行为一致，不重复解析引擎。
     """
     g = None
     if engine is not None:
-        try:
-            g = asyncio.run(
-                genkit_generate_question(
-                    engine,
-                    subject=subject,
-                    grade=grade,
-                    knowledge_point=knowledge_point,
-                    qtype=qtype,
-                    difficulty=difficulty,
-                    interests=interests,
-                    focus_interest=focus_interest,
+        agent = build_subagent(
+            "question",
+            provider=build_provider(),
+            retriever=build_retriever(),
+            engine=engine,
+        )
+        if agent is not None:
+            try:
+                g = asyncio.run(
+                    agent.handle(
+                        {
+                            "subject": subject,
+                            "grade": grade,
+                            "knowledge_point": knowledge_point,
+                            "qtype": qtype,
+                            "difficulty": difficulty,
+                            "interests": interests,
+                            "focus_interest": focus_interest,
+                        },
+                        SubAgentContext(
+                            subject=subject,
+                            grade=grade,
+                            knowledge_point=knowledge_point,
+                        ),
+                    )
                 )
-            )
-        except Exception:
-            g = None
+            except Exception:
+                g = None
     if g is None:
         q = mock_question(
             subject=subject,

@@ -20,6 +20,7 @@ from pydantic import BaseModel
 from sqlmodel import Session
 
 from app.ai.engine import EngineResolution, resolve_engine
+from app.ai.subagents.question_agent import expand_specs
 from app.core.db import engine as db_engine
 from app.crud import add_tutor_usage, create_tutor_log
 from app.domain.provider import GeneratedQuestion
@@ -460,87 +461,82 @@ async def generate_questions_stream(
     specs: list[Any],
     interests: list[str] | None = None,
     focus_interests: list[str] | None = None,
+    rag_contexts: dict[int, str] | None = None,
+    persona_hints: dict[int, str] | None = None,
 ) -> AsyncIterator[TaskGenChunk]:
     """出题流式：逐题产出信封 chunk（STEP → REASONING → CARD），题卡逐张浮现。
 
     每题经 check_output 通过后才发 CARD；REASONING 在 CARD 到达前作为内联推理区下发
     （reasoning 模型走 token 真流式，否则用结构化 `reasoning` 字段打底）。
+
+    ADR-0021：``rag_contexts`` / ``persona_hints`` 由出题 SubAgent 按 q_index 预计算后传入，
+    flow 只负责「按给定增强参数出题 + 安全闸门」，业务判断不在此处（不传则行为完全不变）。
     """
     n_focus = len(focus_interests) if focus_interests else 0
-    idx = 0
-    for sp in specs:
-        if isinstance(sp, dict):
-            subject = str(sp.get("subject", ""))
-            grade = int(sp.get("grade", 0))
-            knowledge_point = str(sp.get("knowledge_point", ""))
-            qtype = str(sp.get("qtype", ""))
-            difficulty = str(sp.get("difficulty", "medium"))
-            count = int(sp.get("count", 1))
-        else:
-            subject = sp.subject
-            grade = sp.grade
-            knowledge_point = sp.knowledge_point
-            qtype = sp.qtype
-            difficulty = sp.difficulty
-            count = sp.count
-        for _ in range(max(0, count)):
-            focus = focus_interests[idx % n_focus] if n_focus else None
-            q_index = idx
-            idx += 1
-            yield TaskGenStepChunk(
-                q_index=q_index,
-                label=_step_label(subject, grade, knowledge_point, qtype),
+    items = expand_specs(specs)
+    for q_index, it in enumerate(items):
+        subject = it["subject"]
+        grade = it["grade"]
+        knowledge_point = it["knowledge_point"]
+        qtype = it["qtype"]
+        difficulty = it["difficulty"]
+        focus = focus_interests[q_index % n_focus] if n_focus else None
+        yield TaskGenStepChunk(
+            q_index=q_index,
+            label=_step_label(subject, grade, knowledge_point, qtype),
+        )
+        prompt = _build_question_prompt(
+            subject=subject, grade=grade, knowledge_point=knowledge_point, qtype=qtype,
+            difficulty=difficulty, interests=interests, focus_interest=focus,
+            rag_context=(rag_contexts or {}).get(q_index),
+            persona_hint=(persona_hints or {}).get(q_index),
+        )
+        try:
+            sr = engine.genkit.generate_stream(
+                model=engine.model, system=_QUESTION_SYSTEM_PROMPT, prompt=prompt,
+                output_schema=QuestionSchema,
             )
-            prompt = _build_question_prompt(
-                subject=subject, grade=grade, knowledge_point=knowledge_point, qtype=qtype,
-                difficulty=difficulty, interests=interests, focus_interest=focus,
+            reasoning_parts: list[str] = []
+            async for chunk in sr.stream:
+                token = _extract_reasoning_token(chunk)
+                if token:
+                    reasoning_parts.append(token)
+                    yield TaskGenReasoningChunk(q_index=q_index, delta=token)
+            # 注意：Genkit 流式 .response 是 ModelResponse，结构化输出在 .output
+            # （QuestionSchema 实例），不在响应对象自身——直接 .stem 会 AttributeError。
+            result = await sr.response
+            parsed = result.output
+        except Exception:
+            # 真实引擎单题失败（网络/限流/解析异常）：回退确定性 mock 题，
+            # 保证流式不中断、末帧 result 仍正常发出，避免前端收到
+            # "stream finished without a final result chunk"。
+            q = _mock_question(
+                subject=subject, grade=grade, knowledge_point=knowledge_point,
+                qtype=qtype, difficulty=difficulty, interests=interests, focus_interest=focus,
             )
-            try:
-                sr = engine.genkit.generate_stream(
-                    model=engine.model, system=_QUESTION_SYSTEM_PROMPT, prompt=prompt,
-                    output_schema=QuestionSchema,
-                )
-                reasoning_parts: list[str] = []
-                async for chunk in sr.stream:
-                    token = _extract_reasoning_token(chunk)
-                    if token:
-                        reasoning_parts.append(token)
-                        yield TaskGenReasoningChunk(q_index=q_index, delta=token)
-                # 注意：Genkit 流式 .response 是 ModelResponse，结构化输出在 .output
-                # （QuestionSchema 实例），不在响应对象自身——直接 .stem 会 AttributeError。
-                result = await sr.response
-                parsed = result.output
-            except Exception:
-                # 真实引擎单题失败（网络/限流/解析异常）：回退确定性 mock 题，
-                # 保证流式不中断、末帧 result 仍正常发出，避免前端收到
-                # "stream finished without a final result chunk"。
-                q = _mock_question(
-                    subject=subject, grade=grade, knowledge_point=knowledge_point,
-                    qtype=qtype, difficulty=difficulty, interests=interests, focus_interest=focus,
-                )
-                if q.reasoning:
-                    yield TaskGenReasoningChunk(q_index=q_index, delta=q.reasoning)
-                yield TaskGenCardChunk(q_index=q_index, question=q.model_dump())
-                continue
-            # 打底：若未走 reasoning token 流（非推理模型），用结构化 reasoning 字段补一发。
-            if not reasoning_parts and parsed.reasoning:
-                yield TaskGenReasoningChunk(q_index=q_index, delta=parsed.reasoning)
-            verdict = check_output(f"{parsed.stem} {parsed.answer} {parsed.explanation}")
-            if not verdict.safe:
-                continue
-            out_q = QuestionOut(
-                subject=parsed.subject,
-                grade=parsed.grade,
-                knowledge_point=parsed.knowledge_point,
-                qtype=parsed.qtype,
-                stem=parsed.stem,
-                options=parsed.options,
-                answer=parsed.answer,
-                explanation=parsed.explanation,
-                difficulty=parsed.difficulty,
-                reasoning=parsed.reasoning,
-            )
-            yield TaskGenCardChunk(q_index=q_index, question=out_q.model_dump())
+            if q.reasoning:
+                yield TaskGenReasoningChunk(q_index=q_index, delta=q.reasoning)
+            yield TaskGenCardChunk(q_index=q_index, question=q.model_dump())
+            continue
+        # 打底：若未走 reasoning token 流（非推理模型），用结构化 reasoning 字段补一发。
+        if not reasoning_parts and parsed.reasoning:
+            yield TaskGenReasoningChunk(q_index=q_index, delta=parsed.reasoning)
+        verdict = check_output(f"{parsed.stem} {parsed.answer} {parsed.explanation}")
+        if not verdict.safe:
+            continue
+        out_q = QuestionOut(
+            subject=parsed.subject,
+            grade=parsed.grade,
+            knowledge_point=parsed.knowledge_point,
+            qtype=parsed.qtype,
+            stem=parsed.stem,
+            options=parsed.options,
+            answer=parsed.answer,
+            explanation=parsed.explanation,
+            difficulty=parsed.difficulty,
+            reasoning=parsed.reasoning,
+        )
+        yield TaskGenCardChunk(q_index=q_index, question=out_q.model_dump())
 
 
 # ───────────────────────── Genkit flow（前后端统一协议端点） ─────────────────────────
@@ -648,10 +644,30 @@ async def tasks_generate(input: TaskGenInput, ctx: ActionRunContext) -> list[dic
                 idx += 1
         return out
 
-    async for chunk in generate_questions_stream(
-        engine, specs=list(input.specs), interests=interests_pool, focus_interests=focus,
-    ):
-        # generate_questions_stream 已产出信封 chunk（STEP/REASONING/CARD）；
+    # ADR-0021：经注册表派发「出题」业务 SubAgent（预计算每题 RAG + 学科 Persona 后委托本 flow）。
+    from app.ai.subagents import build_subagent  # 惰性：避免 app.ai 包循环导入
+    from app.domain import build_provider
+
+    agent = build_subagent(
+        "question",
+        provider=build_provider(),
+        retriever=build_retriever(),
+        engine=engine,
+    )
+    stream_iter = (
+        agent.stream(
+            specs=list(input.specs),
+            interests=interests_pool,
+            focus_interests=focus,
+            engine=engine,
+        )
+        if agent is not None
+        else generate_questions_stream(
+            engine, specs=list(input.specs), interests=interests_pool, focus_interests=focus,
+        )
+    )
+    async for chunk in stream_iter:
+        # 已产出信封 chunk（STEP/REASONING/CARD）；
         # 仅把 CARD 的题卡收进末帧 result，REASONING/STEP 不进 result（纯流式 UX）。
         if isinstance(chunk, TaskGenCardChunk):
             out.append(chunk.question)
