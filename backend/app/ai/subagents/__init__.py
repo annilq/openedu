@@ -3,7 +3,7 @@
 导入本包即触发 registry 自动注册出题 / 伴学两个 SubAgent（首轮双 SubAgent 验证 seam）。
 """
 from app.ai.subagents.base import BaseSubAgent, SubAgentContext
-from app.ai.subagents.registry import get_subagent_class
+from app.ai.subagents.registry import build_subagent, get_subagent_class
 from app.ai.subagents.subject_personas import SubjectPersona, get_subject_persona
 
 __all__ = [
@@ -12,4 +12,5 @@ __all__ = [
     "SubjectPersona",
     "get_subject_persona",
     "get_subagent_class",
+    "build_subagent",
 ]

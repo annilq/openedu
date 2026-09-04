@@ -4,6 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status
 
+from app.ai.subagents import build_subagent
 from app.api.deps import CurrentChild, CurrentParent, SessionDep
 from app.core.config import settings
 from app.crud import (
@@ -17,7 +18,6 @@ from app.crud import (
 )
 from app.domain import (
     REASON_SUBJECT_SCOPE,
-    TutorService,
     build_provider,
     build_retriever,
     check_quota,
@@ -93,9 +93,12 @@ def ask(
             code = status.HTTP_403_FORBIDDEN
         raise HTTPException(status_code=code, detail=decision.message)
 
-    service = TutorService(build_provider(), build_retriever())
+    # ADR-0021：经注册表派发「伴学」业务 SubAgent（内部复用 TutorService + 学科 Persona 注入）。
+    agent = build_subagent("tutor", provider=build_provider(), retriever=build_retriever())
+    if agent is None:
+        raise HTTPException(status_code=501, detail="tutor subagent unavailable")
     started = time.perf_counter()
-    result = service.explain(
+    result = agent.explain(
         grade=payload.grade,
         subject=payload.subject,
         knowledge_point=payload.knowledge_point,

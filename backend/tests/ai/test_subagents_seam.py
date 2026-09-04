@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 
-from app.ai.subagents import get_subagent_class, get_subject_persona
+from app.ai.subagents import build_subagent, get_subagent_class, get_subject_persona
 from app.ai.subagents.base import SubAgentContext
 from app.ai.subagents.question_agent import QuestionSubAgent
 from app.ai.subagents.tutor_agent import TutorSubAgent
@@ -71,6 +71,14 @@ def test_registry_dispatch():
     assert get_subagent_class("diagnosis") is None  # 尚未实现
 
 
+def test_build_subagent_factory():
+    provider = _FakeProvider()
+    agent = build_subagent("tutor", provider=provider, retriever=None)
+    assert isinstance(agent, TutorSubAgent)
+    # 未知业务返回 None，路由据之兜底（如 501）
+    assert build_subagent("diagnosis", provider=provider) is None
+
+
 def test_question_subagent_rag_and_persona_threading():
     provider = _FakeProvider()
     retriever = _FakeRetriever()
@@ -97,17 +105,14 @@ def test_tutor_subagent_persona_injection():
     provider = _FakeProvider()
     agent = TutorSubAgent(provider=provider, retriever=None)
     persona = get_subject_persona("英语")
-    ctx = SubAgentContext(
-        subject="英语", grade=4, knowledge_point="past tense", question="什么是过去式？"
-    )
 
-    # 直接走真实 explain 路径（handle 即组合 context + explain），避免嵌套事件循环。
-    result = agent.service.explain(
-        grade=ctx.grade,
-        subject=ctx.subject,
-        knowledge_point=ctx.knowledge_point,
+    # 同步 explain 入口（FastAPI 路由直调，不经 asyncio.run，避免嵌套事件循环）。
+    result = agent.explain(
+        grade=4,
+        subject="英语",
+        knowledge_point="past tense",
         context=persona.render(),
-        question=ctx.question,
+        question="什么是过去式？",
     )
 
     # 伴学把学科 persona 注入讲解 context
