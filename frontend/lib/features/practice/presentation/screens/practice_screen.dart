@@ -9,8 +9,8 @@ import '../../../../shared/widgets/app_error.dart';
 import '../../../../shared/widgets/app_loading.dart';
 import '../../../../shared/widgets/app_top_bar.dart';
 import '../providers/practice_notifier.dart';
-import '../widgets/practice_done_view.dart';
 import '../widgets/practice_question_view.dart';
+import '../widgets/practice_review_view.dart';
 
 /// 做题页。v2 redesign：
 /// - 选项改卡片式（AppOptionTile），选中态用植物绿容器 + 2px 主色描边
@@ -64,7 +64,11 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
 
   QuestionModel? get _currentQuestion {
     final state = ref.read(practiceNotifierProvider);
-    return state is Practicing ? state.currentQuestion : null;
+    if (state is Practicing) return state.currentQuestion;
+    if (state is PracticeReview && state.correctingId != null) {
+      return state.correctingQuestion;
+    }
+    return null;
   }
 
   void _submit(String questionId) {
@@ -73,6 +77,17 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
     ref.read(practiceNotifierProvider.notifier).submitAnswer(questionId, answer);
     _answerController.clear();
     setState(() => _selectedOption = null);
+  }
+
+  /// 订正作答：复用练习批改，提交后弹结果并回到订正列表。
+  Future<void> _submitCorrection(String questionId) async {
+    final answer = _selectedOption ?? _answerController.text.trim();
+    if (answer.isEmpty) return;
+    final notifier = ref.read(practiceNotifierProvider.notifier);
+    final result = await notifier.submitCorrection(questionId, answer);
+    _answerController.clear();
+    setState(() => _selectedOption = null);
+    if (result != null && mounted) _showResult(context, result);
   }
 
   void _showResult(BuildContext context, AnswerResultModel result) {
@@ -152,6 +167,11 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
       }
     });
 
+    // 订正作答子页：独立顶栏 + 返回列表。
+    if (state is PracticeReview && state.correctingId != null) {
+      return _buildCorrecting(state);
+    }
+
     return SizedBox.expand(
       child: ColoredBox(
         color: scheme.surface,
@@ -200,10 +220,19 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
                     onSubmit: _preview ? () {} : () => _submit(state.currentQuestion.id),
                     onNext: _preview ? () => _goTo(state.currentIndex + 1) : null,
                   ),
-                PracticeDone() => PracticeDoneView(
-                    correct: state.correctCount,
-                    total: state.total,
-                    onCheckin: _checkin,
+                PracticeReview() => PracticeReviewView(
+                    task: state.task,
+                    results: state.results,
+                    onCorrect: (id) {
+                      setState(() {
+                        _selectedOption = null;
+                        _answerController.clear();
+                      });
+                      ref
+                          .read(practiceNotifierProvider.notifier)
+                          .startCorrection(id);
+                    },
+                    onCommit: _checkin,
                   ),
                 PracticeError() => AppError(
                     message: state.message,
@@ -212,6 +241,57 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
                         .startTask(widget.task),
                   ),
               },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 当场订正子页：独立顶栏（返回列表），复用 [PracticeQuestionView] 重新作答。
+  Widget _buildCorrecting(PracticeReview state) {
+    final scheme = AppTheme.colorsOf(context);
+    final q = state.correctingQuestion;
+    if (q == null) return const SizedBox.shrink();
+    return SizedBox.expand(
+      child: ColoredBox(
+        color: scheme.surface,
+        child: Column(
+          children: [
+            AppTopBar(
+              title: '订正',
+              leading: ShadButton.ghost(
+                width: 40,
+                height: 40,
+                padding: EdgeInsets.zero,
+                backgroundColor: const Color(0x00000000),
+                hoverBackgroundColor: scheme.surfaceSunken,
+                pressedBackgroundColor: scheme.surfaceRaised,
+                onPressed: () =>
+                    ref.read(practiceNotifierProvider.notifier).exitCorrection(),
+                child: Icon(
+                  LucideIcons.chevronLeft,
+                  color: scheme.onSurface,
+                  size: 24,
+                ),
+              ),
+            ),
+            Expanded(
+              child: PracticeQuestionView(
+                question: q,
+                task: state.task,
+                selectedOption: _selectedOption,
+                answerController: _answerController,
+                answerReady: _answerReady,
+                preview: false,
+                onOptionTap: (v) => setState(() {
+                  _selectedOption = v;
+                  _answerController.text = v;
+                }),
+                onAnswerChanged: () => setState(() {}),
+                onSubmit: () => _submitCorrection(q.id),
+                onNext: null,
+              ),
             ),
           ],
         ),

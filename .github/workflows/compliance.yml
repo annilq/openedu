@@ -1,0 +1,53 @@
+name: compliance-and-quality-gate
+
+# 教材版权合规门禁 + 后端质量门禁（ADR-0019 / ADR-0020）
+# 任何推到 main 或开 PR 都跑：后端 pytest → 版权合规检测。命中即 fail，阻断合并/发布。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install uv
+        run: pipx install uv
+
+      - name: Sync deps
+        run: uv sync
+
+      - name: Run backend tests
+        run: uv run pytest
+
+      - name: Copyright compliance gate (self-test)
+        # 骨架期：先验证门禁逻辑本身可运行（离线，不依赖外部语料）。
+        run: python scripts/copyright_compliance_check.py --self-test
+
+      # —— 真实门禁（上线前启用）——
+      # 1) 导出题库为 JSON（或由合规脚本直连 DB）：
+      #    uv run python -c "from app.core.db import engine; ..."  # 见各业务导出命令
+      # 2) 填充 backend/scripts/protected_corpus/ 为已授权/公版参照文本（严禁内置受版权原文）
+      # 3) 取消注释下方两步：
+      # - name: Export question bank
+      #   run: uv run python scripts/export_questions.py --out /tmp/content.json
+      # - name: Copyright compliance gate (real)
+      #   run: python scripts/copyright_compliance_check.py --json /tmp/content.json \
+      #          --protected scripts/protected_corpus --threshold 0.5 --report compliance.json
+      # - uses: actions/upload-artifact@v4
+      #   if: always()
+      #   with:
+      #     name: compliance-report
+      #     path: compliance.json

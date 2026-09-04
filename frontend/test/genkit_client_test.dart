@@ -3,7 +3,6 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:genkit/client.dart';
-import 'package:mocktail/mocktail.dart';
 
 import 'package:kids_learn/features/tutor/presentation/providers/tutor_notifier.dart';
 import 'package:kids_learn/features/home/presentation/providers/home_notifier.dart';
@@ -23,7 +22,7 @@ class _NoopNetwork implements NetworkService {
           {Map<String, dynamic>? query, Map<String, dynamic>? body}) async =>
       null;
   @override
-  Future<dynamic> delete(String path) async => null;
+  Future<dynamic> delete(String path, {Map<String, dynamic>? body}) async => null;
   @override
   Stream<Uint8List> streamPost(String path, {Map<String, dynamic>? body}) =>
       const Stream<Uint8List>.empty();
@@ -33,9 +32,10 @@ class _NoopNetwork implements NetworkService {
 /// （逐 chunk 推送 + 末帧 onResult），用于验证前端 askStream / preview 对
 /// Genkit 原生协议（08b 统一）的解析。
 ///
-/// 注：`ActionStream(onResult, Stream<S>)` 使用 `package:genkit/client.dart` 的
-/// 公共构造；若后续 genkit 版本调整构造签名，`flutter analyze` 会提示，按新版
-/// 调整此处即可（不影响被测业务逻辑的断言）。
+/// 注：`ActionStream<Chunk, Response>` 的构造签名为 `ActionStream(super.stream)`
+/// （仅收一个 `Stream<Chunk>` 位置参数），末帧 `Response` 经 `setResult()` 在流结束
+/// 后注入；`onResult` 为懒创建 completer，与 Genkit 原生 `defineRemoteAction().stream()`
+/// 行为一致。若后续 genkit 版本调整构造/注入方式，`flutter analyze` 会提示，按新版调整此处。
 class _FakeGenkit extends Fake implements GenkitAiClient {
   final List<String> tutorChunks;
   final TutorReply tutorResult;
@@ -56,20 +56,33 @@ class _FakeGenkit extends Fake implements GenkitAiClient {
   @override
   ActionStream<String, TutorReply> streamTutor(Map<String, dynamic> input) {
     lastTutorInput = input;
-    return ActionStream<String, TutorReply>(
-      Future.value(tutorResult),
-      Stream.fromIterable(tutorChunks),
+    final controller = StreamController<String>();
+    final stream = ActionStream<String, TutorReply>(controller.stream);
+    Stream.fromIterable(tutorChunks).listen(
+      controller.add,
+      onDone: () {
+        stream.setResult(tutorResult);
+        controller.close();
+      },
     );
+    return stream;
   }
 
   @override
   ActionStream<TaskGenChunk, List<QuestionPreview>> streamTasks(
       Map<String, dynamic> input) {
     lastTasksInput = input;
-    return ActionStream<TaskGenChunk, List<QuestionPreview>>(
-      Future.value(taskResult),
-      Stream.fromIterable(taskChunks),
+    final controller = StreamController<TaskGenChunk>();
+    final stream =
+        ActionStream<TaskGenChunk, List<QuestionPreview>>(controller.stream);
+    Stream.fromIterable(taskChunks).listen(
+      controller.add,
+      onDone: () {
+        stream.setResult(taskResult);
+        controller.close();
+      },
     );
+    return stream;
   }
 }
 

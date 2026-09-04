@@ -33,7 +33,7 @@ class FakeNetwork implements NetworkService {
       null;
 
   @override
-  Future<dynamic> delete(String path) async => null;
+  Future<dynamic> delete(String path, {Map<String, dynamic>? body}) async => null;
 
   @override
   Stream<Uint8List> streamPost(String path, {Map<String, dynamic>? body}) =>
