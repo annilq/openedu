@@ -1,9 +1,9 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/theme/app_theme.dart';
-import '../../../../shared/widgets/app_inputs.dart';
 import '../../../../shared/widgets/app_top_bar.dart';
 import '../providers/tutor_notifier.dart';
 import '../widgets/tutor_chat_input_bar.dart';
@@ -11,7 +11,7 @@ import '../widgets/tutor_message_list.dart';
 import '../widgets/tutor_welcome_hint.dart';
 
 /// 娃娃端 AI 伴学答疑页。v2 redesign：
-/// - 学科/年级选择统一使用自研组件（AppPickerField / 独立静态年级框）
+/// - 学科/年级选择合并为单行紧凑布局（标签内联 + 值，降低头部垂直占用）
 /// - 知识点输入框取消 isCollapsed，使用主题高度
 /// - 输入框取消自定义 OutlineInputBorder，复用全局主题
 /// - 气泡背景：孩子问 = 植物绿容器，AI 答 = 米色+1px 描边（区分）
@@ -108,34 +108,79 @@ class _TutorChatScreenState extends ConsumerState<TutorChatScreen> {
               padding: const EdgeInsets.fromLTRB(
                   AppSpacing.xl2, AppSpacing.md, AppSpacing.xl2, 0),
               child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Expanded(
-                    child: AppPickerField<String>(
-                      label: '学科',
-                      values: _subjects,
-                      labels: _subjects,
-                      value: _subject,
-                      onChanged: (v) => setState(() => _subject = v),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Text('学科', style: text.titleSmall),
+                        const SizedBox(width: AppSpacing.sm),
+                        Expanded(
+                          child: ShadSelect<String>(
+                            initialValue: _subject,
+                            onChanged: (v) {
+                              if (v != null) setState(() => _subject = v);
+                            },
+                            selectedOptionBuilder: (context, selected) => Text(
+                              selected,
+                              style: text.bodyMedium
+                                  ?.copyWith(color: scheme.onSurface),
+                            ),
+                            options: [
+                              for (final s in _subjects)
+                                ShadOption<String>(
+                                  value: s,
+                                  child: Text(
+                                    s,
+                                    style: text.bodyMedium
+                                        ?.copyWith(color: scheme.onSurface),
+                                  ),
+                                ),
+                            ],
+                            placeholder: Text(
+                              '请选择',
+                              style: text.bodyMedium
+                                  ?.copyWith(color: scheme.onSurfaceVariant),
+                            ),
+                            decoration: ShadDecoration(
+                              disableSecondaryBorder: true,
+                              color: scheme.surfaceRaised,
+                              border: ShadBorder.all(
+                                color: scheme.outline,
+                                width: 1,
+                                radius: BorderRadius.circular(AppRadius.input),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(width: AppSpacing.xl),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         Text('年级', style: text.titleSmall),
-                        const SizedBox(height: AppSpacing.sm),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 14),
-                          decoration: BoxDecoration(
-                            color: scheme.surfaceContainerLow,
-                            borderRadius:
-                                BorderRadius.circular(AppRadius.input),
-                            border: Border.all(color: scheme.outline, width: 1),
+                        const SizedBox(width: AppSpacing.sm),
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 12),
+                            decoration: BoxDecoration(
+                              color: scheme.surfaceContainerLow,
+                              borderRadius:
+                                  BorderRadius.circular(AppRadius.input),
+                              border:
+                                  Border.all(color: scheme.outline, width: 1),
+                            ),
+                            child: Text(
+                              '$_grade年级',
+                              style: text.bodyMedium
+                                  ?.copyWith(color: scheme.onSurface),
+                            ),
                           ),
-                          child: Text('$_grade年级', style: text.bodyLarge),
                         ),
                       ],
                     ),
