@@ -4,8 +4,10 @@
 
 **Blocked by:** 08 — IntentRouter + Tutor 领域服务
 
-**Status:** ready-for-agent
+**Status:** ✅ done
 
-- [ ] 家长可配置每日 AI 时长上限与内容范围（故事 23/26）
-- [ ] 超额或越界时请求被拒并提示
-- [ ] 限额与范围 enforcement 有单测
+- [x] 家长可配置每日 AI 时长上限与内容范围（故事 23/26）
+- [x] 超额或越界时请求被拒并提示
+- [x] 限额与范围 enforcement 有单测
+
+> 回填说明（2026-09-04）：后端 `domain/quota.py`（`check_quota`/`validate_quota_config`）+ `api/routes/tutor.py` 的 `GET/PUT /quota`、`GET /usage` 已实现；enforcement 单测随 pytest 全绿。原 `Status: ready-for-agent` 为空滞后标记，特此修正。

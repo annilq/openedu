@@ -50,6 +50,14 @@ class PracticeNotifier extends StateNotifier<PracticeState> {
     state = Practicing(task, 0, {});
   }
 
+  /// 仅本地翻页（家长只读预览用）：不调用后端、不写作答记录。
+  void goTo(int index) {
+    final current = state;
+    if (current is! Practicing) return;
+    if (index < 0 || index >= current.task.questions.length) return;
+    state = Practicing(current.task, index, current.results);
+  }
+
   Future<void> submitAnswer(String questionId, String answer) async {
     final current = state;
     if (current is! Practicing) return;

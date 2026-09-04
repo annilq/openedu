@@ -19,6 +19,13 @@
 | 011 | Pi / Eve 不作为运行时引擎 |
 | 012 | 🔴 教材版权合规硬门槛（对外分发前必须解决） |
 | 013 | 后端基线 = `fastapi/full-stack-fastapi-template` 二次裁剪（同步 SQLModel、pwdlib+pyjwt、丢弃 React/邮件/Traefik；API 前缀 `/api/v1`；Python 3.14） |
+| 0014 | 设计重定向：双模式（家长专业/娃娃活泼）+ 学科色 + 响应式断点 + 适度趣味动效（修订 ADR-0003 单模式） |
+| 0015 | 多模型接入（Ollama/自定义）+ 流式响应 + 轻量 GenUI：统一 Genkit 协议（前后端单栈），安全层不降级 |
+| 0016 | 合并「生成任务」与「预览出题」为统一「出题」流程（先出题→手动存为任务/加入题库） |
+| 0017 | 出题推理流式通道：合并 thinking+typing 为单一 `REASONING` chunk（AG-UI 式 `type` 信封），✅ 已落地 |
+| 0018 | 文档目录对齐 ai.md：根目录散落文档归一化到 `docs/` 四类（product/requirements/architecture/decisions） |
+| 0019 | 教材版权合规落地方案（上线前内容来源分层 + 公版优先 + 授权路径 + 检索隔离 + CI 检测门禁），操作化 ADR-0012 |
+| 0020 | 云部署生产化（无状态镜像 + 托管 PG + 密钥外置 + 边缘 TLS + CI/CD 质量门禁 + 可观测 + 跨设备同步方向） |
 
 ## 前端 ADR
 

@@ -18,6 +18,12 @@ class PracticeQuestionView extends StatelessWidget {
   final VoidCallback onAnswerChanged;
   final VoidCallback onSubmit;
 
+  /// 家长只读预览模式：隐藏提交，改为本地「下一题」翻页（不写作答记录）。
+  final bool preview;
+
+  /// 只读预览下的翻页回调（交互态为 null）。
+  final VoidCallback? onNext;
+
   const PracticeQuestionView({
     super.key,
     required this.question,
@@ -28,12 +34,17 @@ class PracticeQuestionView extends StatelessWidget {
     required this.onOptionTap,
     required this.onAnswerChanged,
     required this.onSubmit,
+    this.preview = false,
+    this.onNext,
   });
 
   @override
   Widget build(BuildContext context) {
     final scheme = AppTheme.colorsOf(context);
     final q = question;
+    final total = task.questions.length;
+    final currentIndex = task.questions.indexOf(q);
+    final isLast = currentIndex < 0 || currentIndex >= total - 1;
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(
           AppSpacing.xl2, AppSpacing.md, AppSpacing.xl2, AppSpacing.xl4),
@@ -82,13 +93,17 @@ class PracticeQuestionView extends StatelessWidget {
                 ),
               const SizedBox(height: AppSpacing.xl4),
               AppPrimaryButton(
-                label: '提交答案',
-                icon: LucideIcons.send,
-                onPressed: answerReady ? onSubmit : null,
+                label: preview
+                    ? (isLast ? '已是最后一题' : '下一题')
+                    : '提交答案',
+                icon: preview ? LucideIcons.arrowRight : LucideIcons.send,
+                onPressed: preview
+                    ? (isLast ? null : onNext)
+                    : (answerReady ? onSubmit : null),
                 height: 52,
                 fullWidth: false,
               ),
-              if (!answerReady)
+              if (!preview && !answerReady)
                 Padding(
                   padding: const EdgeInsets.only(top: AppSpacing.md),
                   child: Center(

@@ -15,6 +15,7 @@ import '../../../review/presentation/screens/wrong_questions_screen.dart';
 import '../../../tutor/presentation/screens/tutor_chat_screen.dart';
 import '../../../tutor/presentation/screens/parent_model_management_screen.dart';
 import '../providers/home_notifier.dart';
+import '../providers/parent_tasks_notifier.dart';
 import '../providers/selected_child_provider.dart';
 import '../screens/parent_task_review_screen.dart';
 import '../widgets/child_home.dart';
@@ -62,15 +63,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     });
   }
 
-  void _navigateToPractice(TaskModel task) {
+  void _navigateToPractice(TaskModel task, {bool preview = false}) {
     Navigator.of(context).push(
       CupertinoPageRoute(
         builder: (_) => PracticeScreen(
           task: task,
           onDone: () {
             Navigator.of(context).pop();
-            // 刷新今日任务
+            // 完成做题后统一刷新所有受影响的娃娃端数据：今日任务 / 待复习 /
+            // 错题本 / 掌握度。否则回到各页仍显示做题前的旧（空）快照。
             ref.read(todayTasksNotifierProvider.notifier).load();
+            ref.read(dueReviewNotifierProvider.notifier).load();
+            ref.read(childWrongQuestionsProvider.notifier).load();
+            ref.read(masteryNotifierProvider.notifier).load(widget.user.id);
           },
         ),
       ),
@@ -84,6 +89,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   void _backToHomeFromReview() {
     // 刷新家长侧概览（作废/派发后列表/进度可能变动）
+    ref.read(parentTasksNotifierProvider.notifier).load();
     final selected = ref.read(selectedChildProvider);
     if (selected != null) {
       ref.read(progressNotifierProvider.notifier).load(selected.id);
@@ -135,11 +141,35 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     });
   }
 
-  void _onChildNavTap(int index) {
+  /// 切换娃娃端 Tab：改变 IndexedStack 索引，并在该页「变为可见」时重新拉取最新数据。
+  ///
+  /// 关键修复：娃娃端所有 Tab 被同一 [IndexedStack] 常驻挂载，[initState] 只在 App
+  /// 启动那一刻跑一次（此时还没做过题 → 数据为空的旧快照）。切回 Tab 只翻转 index、
+  /// 不会重跑 initState，所以必须在这里显式触发对应 provider 的 load()。
+  void _switchChildTab(int index) {
+    if (index == _childNavIndex) return; // 已在该页，避免重复加载
     setState(() {
       _showProfile = false;
       _childNavIndex = index;
     });
+    _refreshChildTab(index);
+  }
+
+  /// 按 Tab 索引派发对应 provider 的刷新（与屏幕 initState 中的首次加载保持一致）。
+  void _refreshChildTab(int index) {
+    switch (index) {
+      case 0: // 首页：今日任务 + 待复习
+        ref.read(todayTasksNotifierProvider.notifier).load();
+        ref.read(dueReviewNotifierProvider.notifier).load();
+      case 1: // 复习队列
+        ref.read(dueReviewNotifierProvider.notifier).load();
+      case 2: // 错题本
+        ref.read(childWrongQuestionsProvider.notifier).load();
+      case 3: // AI 伴学：会话由 TutorChatScreen 自我管理，无需全局刷新
+        break;
+      case 4: // 学科掌握度
+        ref.read(masteryNotifierProvider.notifier).load(widget.user.id);
+    }
   }
 
   Widget _buildParentView() {
@@ -152,9 +182,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         defaultChildId: reviewing.childId ?? selected?.id,
         onBackToHome: _backToHomeFromReview,
         onNavigateToPractice: (task) {
-          // 派发完成后关审核层，并跳 PracticeScreen 预览
+          // 仅家长显式点「查看练习」时进入。默认进只读预览，
+          // 不直接进入可作答态，避免误代答/代打卡污染娃娃数据。
           setState(() => _reviewingTask = null);
-          _navigateToPractice(task);
+          _navigateToPractice(task, preview: true);
         },
       );
     }
@@ -204,9 +235,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ChildHome(
           user: widget.user,
           onNavigateToPractice: _navigateToPractice,
-          onNavigateToReview: () => setState(() => _childNavIndex = 1),
-          onNavigateToWrongQuestions: () => setState(() => _childNavIndex = 2),
-          onNavigateToTutor: () => setState(() => _childNavIndex = 3),
+          onNavigateToReview: () => _switchChildTab(1),
+          onNavigateToWrongQuestions: () => _switchChildTab(2),
+          onNavigateToTutor: () => _switchChildTab(3),
         ),
         const ReviewScreen(showBack: false),
         const WrongQuestionsScreen(showBack: false),
@@ -274,27 +305,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         icon: LucideIcons.house,
         label: '首页',
         active: activeIndex == 0,
-        onTap: () => _onChildNavTap(0)),
+        onTap: () => _switchChildTab(0)),
     AdaptiveNavDestination(
         icon: LucideIcons.refreshCw,
         label: '复习',
         active: activeIndex == 1,
-        onTap: () => _onChildNavTap(1)),
+        onTap: () => _switchChildTab(1)),
     AdaptiveNavDestination(
         icon: LucideIcons.bookOpen,
         label: '错题本',
         active: activeIndex == 2,
-        onTap: () => _onChildNavTap(2)),
+        onTap: () => _switchChildTab(2)),
     AdaptiveNavDestination(
         icon: LucideIcons.sparkles,
         label: 'AI 伴学',
         active: activeIndex == 3,
-        onTap: () => _onChildNavTap(3)),
+        onTap: () => _switchChildTab(3)),
     AdaptiveNavDestination(
         icon: LucideIcons.target,
         label: '掌握度',
         active: activeIndex == 4,
-        onTap: () => _onChildNavTap(4)),
+        onTap: () => _switchChildTab(4)),
   ];
 
   AdaptiveNavDestination _profileDestination() => AdaptiveNavDestination(

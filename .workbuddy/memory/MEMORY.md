@@ -1,7 +1,7 @@
 # MEMORY.md — 长期记忆
 
 ## 会话启动约定（每会话必做）
-- **每次发起新会话，第一步先读根目录 `AGENTS.md`**（`/Users/annilq/Documents/develop/openedu/AGENTS.md`），再处理用户请求。该文件是本项目对每个任务都适用的要点入口，含包管理器（uv / flutter 而非 npm）、每任务命令、全局硬约束、细分规范链接（后端/前端/通用）、macOS 联调网络权限等。读到即视为已加载，无需每次再向用户确认「要不要读」。
+- **每次发起新会话，第一步先读根目录 `AGENTS.md`**（`/Users/yunqi/Documents/develop/openedu/AGENTS.md`），再处理用户请求。该文件是本项目对每个任务都适用的要点入口，含包管理器（uv / flutter 而非 npm）、每任务命令、全局硬约束、细分规范链接（后端/前端/通用）、macOS 联调网络权限等。读到即视为已加载，无需每次再向用户确认「要不要读」。
 - 注意：即便系统在上下文里已注入 AGENTS.md 摘要，仍应显式 Read 一次根文件，确保拿到最新完整内容（链接/命令可能更新）。
 
 ## 项目位置
@@ -11,7 +11,7 @@
 ## 技术栈与验证命令
 - 后端：FastAPI + SQLModel + SQLite/Postgres，依赖用 `uv`（`cd backend && uv sync`、`uv run pytest`）。无 Alembic，迁移在 `app/core/db.py:run_migrations` 手写 ALTER TABLE，需同时兼容 sqlite `TEXT` 与 postgres `JSON` 并做列存在性检查保证幂等。
 - 前端：Flutter + Riverpod + shadcn_ui + cupertino_ui（`cd frontend && flutter analyze`、`flutter test`）。
-  - **Flutter SDK 不在默认 PATH**：非交互 shell 里 `flutter` 找不到，需用绝对路径 `/Users/annilq/Documents/fulttersdk/flutter/bin/flutter`（zshrc 里有但非登录 shell 未加载）。`flutter analyze` 已验证可正常跑通。
+  - **Flutter SDK 不在默认 PATH**：非交互 shell 里 `flutter` 找不到，需用绝对路径 `/Users/yunqi/Documents/flutter/bin/flutter`。`flutter analyze` 已验证可正常跑通。
 - LLM 抽象在 `app/domain/provider.py`（`LLMProvider.generate_question`），08b 后统一为 `GenkitProvider(LLMProvider)`：内部 `resolve_engine` 解析真实引擎、解析不到走 `app/ai` flow 内 mock 分支；`MockProvider`/`LangChainProvider` 已整体退役，业务只依赖 `LLMProvider` 接口。
 - **多模型接入（ADR-0015 / 票据 08）**：v1 流式用 **Genkit Python**（`genkit`+`genkit-fastapi`+`genkit_ollama`+`genkit_openai`）在 FastAPI 进程内编排 flow，`genkit` 仅 import 于 `app/ai/`（ADR-003 隔离）。`resolve_engine(model_ref,...)` 解析优先级：家长 `ModelConfig` 表 → 内置 `BUILTIN_MODELS`(env JSON) → 全局 `LLM_PROVIDER` → 否则 None（走 `app/ai` flow 内 mock 分支）。**Genkit 插件构造签名坑**：`genkit_ollama.Ollama` 用 `server_address=`（不是 `base_url`）；`genkit_openai.OpenAI(**openai_params)` 透传 kwargs（api_key/base_url）。`resolve_engine` 对内置 id（如 "local-llama"）务必先 `_as_uuid()` 校验再 `session.get(ModelConfig, id)`，否则非 UUID 字符串触发 UUID 列 `.hex` 报错。家长 `ModelConfig.api_key` 用 `app/core/crypto.py` 的 Fernet 加密。
 

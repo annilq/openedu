@@ -406,12 +406,14 @@ class _ParentTaskReviewScreenState
 
   Future<void> _onAssign(TaskModel task, String childId) async {
     try {
-      final assigned = await ref
+      await ref
           .read(parentTaskReviewProvider(widget.task).notifier)
           .assign(taskId: task.id, childId: childId);
       if (!mounted) return;
-      AppToast.show(context, '已派发给娃娃');
-      widget.onNavigateToPractice?.call(assigned);
+      // 方案 A：派发后回到家长工作台，不自动跳进娃娃做题页（避免误代答/代打卡）。
+      // 家长如需核对题目，可显式点「查看练习」进入代答/预览。
+      AppToast.show(context, '已派发，娃娃登录后即可在「今日任务」里练习');
+      widget.onBackToHome();
     } catch (e) {
       if (!mounted) return;
       AppToast.error(context, e);

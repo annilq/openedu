@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/theme/app_theme.dart';
@@ -19,7 +20,16 @@ class PracticeScreen extends ConsumerStatefulWidget {
   final TaskModel task;
   final VoidCallback? onDone;
 
-  const PracticeScreen({super.key, required this.task, this.onDone});
+  /// 家长只读预览模式：禁用提交/打卡，仅浏览题目；
+  /// 显式「以娃娃身份代答」才进入交互态写入娃娃作答记录。
+  final bool preview;
+
+  const PracticeScreen({
+    super.key,
+    required this.task,
+    this.onDone,
+    this.preview = false,
+  });
 
   @override
   ConsumerState<PracticeScreen> createState() => _PracticeScreenState();
@@ -28,10 +38,12 @@ class PracticeScreen extends ConsumerStatefulWidget {
 class _PracticeScreenState extends ConsumerState<PracticeScreen> {
   final _answerController = TextEditingController();
   String? _selectedOption;
+  late bool _preview;
 
   @override
   void initState() {
     super.initState();
+    _preview = widget.preview;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(practiceNotifierProvider.notifier).startTask(widget.task);
     });
@@ -85,6 +97,47 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
     widget.onDone?.call();
   }
 
+  /// 家长从只读预览切到真正作答：重置到第一题，此后提交/打卡将写入娃娃记录。
+  void _enterInteractive() {
+    setState(() => _preview = false);
+    _answerController.clear();
+    setState(() => _selectedOption = null);
+    ref.read(practiceNotifierProvider.notifier).startTask(widget.task);
+  }
+
+  /// 只读预览翻页：仅本地切换当前题，不调用后端、不写作答记录。
+  void _goTo(int index) {
+    ref.read(practiceNotifierProvider.notifier).goTo(index);
+  }
+
+  Widget _buildPreviewBanner(AppColors scheme) {
+    return Container(
+      color: scheme.tertiaryContainer,
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
+      child: Row(
+        children: [
+          Icon(LucideIcons.eye, size: 18, color: scheme.onTertiaryContainer),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Text(
+              '家长预览（只读）· 仅查看，不会写入娃娃作答记录',
+              style: AppTheme.textOf(context)
+                  .bodySmall
+                  ?.copyWith(color: scheme.onTertiaryContainer),
+            ),
+          ),
+          ShadButton(
+            height: 36,
+            onPressed: _enterInteractive,
+            leading: const Icon(LucideIcons.pencil, size: 16),
+            child: const Text('以娃娃身份代答'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = AppTheme.colorsOf(context);
@@ -128,6 +181,7 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
                     )
                   : null,
             ),
+            if (_preview) _buildPreviewBanner(scheme),
             Expanded(
               child: switch (state) {
                 PracticeIdle() => const AppLoading(message: '准备中...'),
@@ -137,12 +191,14 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
                     selectedOption: _selectedOption,
                     answerController: _answerController,
                     answerReady: _answerReady,
+                    preview: _preview,
                     onOptionTap: (v) => setState(() {
                       _selectedOption = v;
                       _answerController.text = v;
                     }),
                     onAnswerChanged: () => setState(() {}),
-                    onSubmit: () => _submit(state.currentQuestion.id),
+                    onSubmit: _preview ? () {} : () => _submit(state.currentQuestion.id),
+                    onNext: _preview ? () => _goTo(state.currentIndex + 1) : null,
                   ),
                 PracticeDone() => PracticeDoneView(
                     correct: state.correctCount,
