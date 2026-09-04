@@ -387,3 +387,40 @@ CARD{q_index:0,question} ──────▶  题卡浮现 → 上方推理区
 - 引入运维成本（监控/密钥轮换/证书续期）；需先清零 `flutter analyze` 既有错误以满足 CI 门禁。
 - 本地 Ollama 零云成本体验保留给 Tier-0 家用；对外版本默认走托管模型（数据出户需告知家长）。
 - 与既有决策一致：ADR-003（框架隔离）、ADR-008（安全不降级）、ADR-0015（Genkit 单栈）在云端不变。
+
+## ADR-0021 多 Agent 架构：业务 SubAgent + 学科 Persona 参数
+
+> 来源：三期 MVP 闭环已落地（出题 / 伴学 / 批改 / 复习 / 掌握度），进入「打磨完善」期。原 `LLMProvider` 仅 3 个扁平方法（出题/批改/伴学），无 orchestrator；`KnowledgeRetriever` 已实现但全代码库零调用（死代码）；`subject/grade` 已落在 `TaskSpec/Question/Task` 等模型却未用于 agent 选路。
+
+### 背景
+- 业务将不止「出题」一项：错题诊断归因、知识点讲解、个性化复习规划、家长学情报告等都可基于现有领域模型（WrongQuestion / review_scheduler / Mastery / TutorService / AI 日志）拓展为独立业务能力。
+- 若把「学科」当顶层路由键、为每个业务硬编码学科系统提示词，业务数 × 学科数 的 prompt 组合不可维护。
+- 用户诉求：需要「主 Agent 负责规划/派发 + 多个 SubAgent 各管具体业务」，而非单一大 prompt。
+- `tutor.py` 伴学已半接 RAG（命中知识库拼上下文）；出题仍是纯自由生成未接 RAG。
+
+### 决策（六条）
+1. **业务维度 = SubAgent（多 agent 在业务层）**：每个业务（出题 / 伴学 / 批改 / 诊断 / 规划 / 报告…）是一个独立 subagent，拥有自己的 system prompt + 工具 + 可选 RAG + 输出 schema，通过注册表按业务键派发。
+2. **学科维度 = Persona 参数（非顶层路由键）**：`SubjectPersona` 配置表按学科归一化（数学/语文/英语/科学…），产出「语气 / 适龄 / 学科约定」，作为**统一参数注入每个 subagent** 的 prompt，不单独成 agent。
+3. **轻主管（Light Orchestrator）**：业务意图由前端路由已知（出题页 / 伴学页本就分离），学科作 persona 参数注入；主管 Agent 只在需多步编排的业务内做规划（如伴学：诊断错因 → 讲知识点 → 顺手出巩固题 → 排进复习），不做每次 LLM 意图分类。
+4. **SubjectPersona 代码内静态配置**：落在 `app/ai/subject_personas.py`（枚举键字典），分层清晰、可单测、零 CRUD；改学科 = 改代码；接口预留未来迁 DB 表（家长/运营可编辑）。
+5. **首轮双 SubAgent 验证 seam**：第一轮同时落地「出题 SubAgent（接 RAG）+ 伴学 SubAgent（接 SubjectPersona）」，确立 subagent 注册表 + persona 注入范式，后续诊断/批改/规划直接套模板。
+6. **接口预留升级为完整 Supervisor**：每个 subagent 暴露统一契约 `handle(intent, ctx) -> result`；当前路由显式派发，未来若接「统一 AI 助手」对话入口，可在不改动 subagent 的前提下插入 LLM 意图分类层升级为完整 supervisor。
+
+### 备选
+- **单 Agent + 学科条件化（早前选项 A）**：业务少时省成本，但业务变多即退化为学科×业务 prompt 组合，否决（本次架构升级的核心动机）。
+- **学科即 SubAgent（每学科一个 agent）**：隔离强、可挂学科专属工具（数学公式求解器），但路由一致性 / token 成本 / 维护显著更高；K12 学科差异主要是 prompt 与知识库而非推理能力，否决（仅在出现结构性分歧时再拆）。
+- **完整 LLM Supervisor（每次意图分类）**：支持未来统一对话入口，但多一次 LLM 调用、需意图分类数据与评测、路由一致性更难；当前前端已分离业务意图，否决（已预留升级路径）。
+
+### 术语（Glossary）
+- **Orchestrator（主管 Agent）**：接收请求、做多步规划、派发到 subagent；本 ADR 中为「轻」形态（业务由路由已知，不做意图分类）。
+- **Business SubAgent（业务子代理）**：单一业务能力的 agent（出题 / 伴学 / 批改 / 诊断 / 规划 / 报告），独占 prompt + 工具 + 可选 RAG。
+- **SubjectPersona（学科人格）**：按学科归一化的「语气/适龄/学科约定」配置，作为参数注入所有 subagent，使同一业务跨学科表现一致且可控。
+- **Seam（接缝）**：subagent 注册表 + persona 注入的统一范式；「加业务 = 加一个 subagent，加学科 = 加一条配置」即此 seam 的体现。
+
+### 后果
+- **零组合爆炸**：加业务与加学科正交解耦；新增业务只写新 subagent，新增学科只加一行 persona 配置。
+- **出题接 RAG**：把死代码 `KnowledgeRetriever` 接进出题流，解决「纯自由生成、未对齐教材」痛点（呼应 ADR-009）。
+- **伴学按学科适配**：复用 `tutor.py` 已有 RAG，叠加 SubjectPersona 切换语气/深度/学科约定，统一为 subagent 形态。
+- **复用底座**：subagent 共用 `LLMProvider` / `resolve_engine` / `quota` / `safety` / `retriever`，不重复造轮子（与 ADR-003 框架隔离一致）。
+- **预留演进**：接口契约支持未来无痛升级为完整 LLM supervisor，不锁定当前轻形态。
+- **成本**：伴学多步规划会增加一次到数次 LLM 调用，须受 `quota` 约束（ADR-008）；其余业务单次调用，无额外开销。

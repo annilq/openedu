@@ -26,6 +26,7 @@
 | 0018 | 文档目录对齐 ai.md：根目录散落文档归一化到 `docs/` 四类（product/requirements/architecture/decisions） |
 | 0019 | 教材版权合规落地方案（上线前内容来源分层 + 公版优先 + 授权路径 + 检索隔离 + CI 检测门禁），操作化 ADR-0012 |
 | 0020 | 云部署生产化（无状态镜像 + 托管 PG + 密钥外置 + 边缘 TLS + CI/CD 质量门禁 + 可观测 + 跨设备同步方向） |
+| 0021 | 多 Agent 架构：业务 SubAgent（出题/伴学/批改/诊断/规划/报告）+ 学科 Persona 参数注入 + 轻主管派发；首轮双 SubAgent 验证 seam |
 
 ## 前端 ADR
 
