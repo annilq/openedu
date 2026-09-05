@@ -92,9 +92,8 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
       BuildContext context, AnswerResultModel result, ReviewItemModel item) {
     final scheme = AppTheme.colorsOf(context);
     final text = AppTheme.textOf(context);
-    final nextIn = result.correct
-        ? '下次 ${item.nextIntervalDays} 天后复习'
-        : '已重新计时，明天再来';
+    final nextIn =
+        result.correct ? '下次 ${item.nextIntervalDays} 天后复习' : '已重新计时，明天再来';
     AppAnswerResultDialog.show(
       context,
       correct: result.correct,
@@ -111,7 +110,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
               padding: const EdgeInsets.all(AppSpacing.md),
               decoration: BoxDecoration(
                 color: scheme.surfaceSunken,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(AppRadius.card),
               ),
               child: Text(result.explanation, style: text.bodyMedium),
             ),
@@ -122,9 +121,8 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
   }
 
   Widget _buildDoneView(BuildContext context) {
-    final accuracy = _totalCount > 0
-        ? (_correctCount / _totalCount * 100).round()
-        : 0;
+    final accuracy =
+        _totalCount > 0 ? (_correctCount / _totalCount * 100).round() : 0;
     return AppQuizResultCard(
       correct: _correctCount,
       total: _totalCount,
@@ -169,10 +167,8 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
                         child: Text(
                           '${_currentIndex + 1}/$_totalCount',
                           style: AppTheme.textOf(context).labelMedium?.copyWith(
-                                fontFeatures: const [
-                                  FontFeature.tabularFigures()
-                                ],
-                              ),
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
                         ),
                       ),
                     )
@@ -180,7 +176,8 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
             ),
             Expanded(
               child: switch (state) {
-                DueReviewInitial() || DueReviewLoading() =>
+                DueReviewInitial() ||
+                DueReviewLoading() =>
                   const AppLoading(message: '加载待复习...'),
                 DueReviewError() => AppError(
                     message: state.message,
@@ -192,8 +189,8 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
                     : (state.items.isEmpty
                         ? const ReviewEmptyView()
                         : ReviewQuestionView(
-                            item: state.items[_currentIndex
-                                .clamp(0, state.items.length - 1)],
+                            item: state.items[
+                                _currentIndex.clamp(0, state.items.length - 1)],
                             selectedOption: _selectedOption,
                             answerController: _answerController,
                             submitting: _submitting,

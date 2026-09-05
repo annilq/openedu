@@ -38,7 +38,9 @@ class _ParentTasksViewState extends ConsumerState<ParentTasksView> {
       case 2:
         return all.where((t) => t.status == 'done').toList();
       default:
-        return all.where((t) => t.status == 'draft' || t.status == 'ready').toList();
+        return all
+            .where((t) => t.status == 'draft' || t.status == 'ready')
+            .toList();
     }
   }
 
@@ -76,7 +78,7 @@ class _ParentTasksViewState extends ConsumerState<ParentTasksView> {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(
-              AppSpacing.xl2, AppSpacing.xl2, AppSpacing.xl2, AppSpacing.md),
+              AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, AppSpacing.md),
           child: _TabBar(
             tab: _tab,
             counts: counts,
@@ -87,8 +89,8 @@ class _ParentTasksViewState extends ConsumerState<ParentTasksView> {
           child: items.isEmpty
               ? _EmptyState(tab: _tabLabel(_tab))
               : ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(AppSpacing.xl2,
-                      AppSpacing.sm, AppSpacing.xl2, AppSpacing.xl4),
+                  padding: const EdgeInsets.fromLTRB(AppSpacing.lg,
+                      AppSpacing.sm, AppSpacing.lg, AppSpacing.xl2),
                   itemCount: items.length,
                   separatorBuilder: (_, __) =>
                       const SizedBox(height: AppSpacing.md),
@@ -109,8 +111,7 @@ class _TabBar extends StatelessWidget {
   final int tab;
   final List<int> counts;
   final void Function(int) onTap;
-  const _TabBar(
-      {required this.tab, required this.counts, required this.onTap});
+  const _TabBar({required this.tab, required this.counts, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -128,7 +129,8 @@ class _TabBar extends StatelessWidget {
                 child: Text('${labels[i]} ${counts[i]}'),
               );
         if (i < 2) {
-          return Expanded(child: Padding(
+          return Expanded(
+              child: Padding(
             padding: const EdgeInsets.only(right: AppSpacing.sm),
             child: btn,
           ));
@@ -144,8 +146,7 @@ class _TaskCard extends StatelessWidget {
   final TaskModel task;
   final String? childName;
   final VoidCallback onTap;
-  const _TaskCard(
-      {required this.task, this.childName, required this.onTap});
+  const _TaskCard({required this.task, this.childName, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -215,7 +216,7 @@ class _EmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final app = AppTheme.colorsOf(context);
-    return Center(
+    return Align(alignment: Alignment.topLeft,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

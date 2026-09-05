@@ -13,12 +13,17 @@ class AppTopBar extends StatelessWidget {
   final Widget? trailing;
   final bool showBack;
 
+  /// 自定义返回行为。覆盖层场景（未走 Navigator.push）必须提供，否则
+  /// 默认 [Navigator.maybePop] 因无可 pop 路由而失效。为 null 时走默认 pop。
+  final VoidCallback? onBack;
+
   const AppTopBar({
     super.key,
     required this.title,
     this.leading,
     this.trailing,
     this.showBack = false,
+    this.onBack,
   });
 
   @override
@@ -32,7 +37,8 @@ class AppTopBar extends StatelessWidget {
       backgroundColor: const Color(0x00000000),
       hoverBackgroundColor: app.surfaceSunken,
       pressedBackgroundColor: app.surfaceRaised,
-      onPressed: () => Navigator.of(context).maybePop(),
+      onPressed: () =>
+          onBack != null ? onBack!() : Navigator.of(context).maybePop(),
       child: Icon(
         LucideIcons.chevronLeft,
         color: app.onSurface,

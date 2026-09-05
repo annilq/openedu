@@ -47,7 +47,7 @@ class PracticeQuestionView extends StatelessWidget {
     final isLast = currentIndex < 0 || currentIndex >= total - 1;
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(
-          AppSpacing.xl2, AppSpacing.md, AppSpacing.xl2, AppSpacing.xl4),
+          AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xl2),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 820),
@@ -66,17 +66,18 @@ class PracticeQuestionView extends StatelessWidget {
                     AppTags.info(q.knowledgePoint),
                 ],
               ),
-              const SizedBox(height: AppSpacing.xl3),
+              const SizedBox(height: AppSpacing.xxl),
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.all(AppSpacing.xl2),
+                padding: const EdgeInsets.all(AppSpacing.xxl),
                 decoration: BoxDecoration(
                   color: scheme.surfaceRaised,
                   borderRadius: BorderRadius.circular(AppRadius.banner),
                 ),
-                child: Text(q.stem, style: AppTheme.textOf(context).titleMedium),
+                child:
+                    Text(q.stem, style: AppTheme.textOf(context).titleMedium),
               ),
-              const SizedBox(height: AppSpacing.xl3),
+              const SizedBox(height: AppSpacing.xxl),
               if (q.options != null && q.options!.isNotEmpty)
                 ...q.options!.asMap().entries.map((e) => AppOptionTile(
                       index: e.key,
@@ -91,11 +92,9 @@ class PracticeQuestionView extends StatelessWidget {
                   hintText: '在此填写...',
                   onChanged: (_) => onAnswerChanged(),
                 ),
-              const SizedBox(height: AppSpacing.xl4),
+              const SizedBox(height: AppSpacing.xl2),
               AppPrimaryButton(
-                label: preview
-                    ? (isLast ? '已是最后一题' : '下一题')
-                    : '提交答案',
+                label: preview ? (isLast ? '已是最后一题' : '下一题') : '提交答案',
                 icon: preview ? LucideIcons.arrowRight : LucideIcons.send,
                 onPressed: preview
                     ? (isLast ? null : onNext)

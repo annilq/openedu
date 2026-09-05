@@ -163,7 +163,7 @@ class AppTheme {
     surfaceContainerHighest: Color(0xFFEDEDF0), // = surfaceActive
     onSurfaceVariant: Color(0xFF6B7280),
     outline: Color(0xFFECECEA), // 极细描边
-    outlineVariant: Color(0xFFECECEA),
+    outlineVariant: Color(0xFFF2F2F0), // 更淡分隔档（低强调）
     inverseSurface: Color(0xFF1D1B17),
     onInverseSurface: Color(0xFFF5F5F4),
     // 新增：靛蓝强调 + hover
@@ -205,7 +205,7 @@ class AppTheme {
     surfaceContainerHighest: Color(0xFF2A2A28), // = surfaceActive
     onSurfaceVariant: Color(0xFF9CA3AF),
     outline: Color(0xFF2A2A28),
-    outlineVariant: Color(0xFF2A2A28),
+    outlineVariant: Color(0xFF242423), // 更淡分隔档（低强调）
     inverseSurface: Color(0xFFF5F5F4),
     onInverseSurface: Color(0xFF0F0F0E),
     accent: Color(0xFF7B82EA),
@@ -252,7 +252,8 @@ class AppTheme {
   static CupertinoThemeData cupertinoFor(bool isDark) =>
       _cupertino(isDark ? dark : light);
 
-  static ShadThemeData shadFor(bool isDark, [AppUserMode mode = AppUserMode.parent]) =>
+  static ShadThemeData shadFor(bool isDark,
+          [AppUserMode mode = AppUserMode.parent]) =>
       shadThemeData(isDark ? dark : light, child: mode == AppUserMode.child);
 
   static CupertinoThemeData _cupertino(AppColors c) {
@@ -353,7 +354,8 @@ class AppTheme {
       textTheme: _shadTextTheme(c, child: child),
       disabledOpacity: 0.5,
       primaryButtonTheme: button(c.primary, c.onPrimary),
-      secondaryButtonTheme: button(c.secondaryContainer, c.onSecondaryContainer),
+      secondaryButtonTheme:
+          button(c.secondaryContainer, c.onSecondaryContainer),
       destructiveButtonTheme: button(c.error, c.onError),
       outlineButtonTheme: ShadButtonTheme(
         backgroundColor: transparent,
@@ -400,7 +402,7 @@ class AppTheme {
       progressTheme: ShadProgressTheme(
         backgroundColor: c.surfaceContainerHighest,
         color: c.accent,
-        borderRadius: const BorderRadius.all(Radius.circular(4)),
+        borderRadius: const BorderRadius.all(Radius.circular(AppRadius.xs)),
         minHeight: 6,
       ),
       inputTheme: ShadInputTheme(
@@ -466,19 +468,30 @@ class AppTheme {
 
     return ShadTextTheme(
       family: fontFamily,
-      h1Large: style(size: 22, weight: FontWeight.w700, height: 1.2, spacing: -0.6),
+      h1Large:
+          style(size: 22, weight: FontWeight.w700, height: 1.2, spacing: -0.6),
       h1: style(size: 20, weight: FontWeight.w700, height: 1.2, spacing: -0.4),
       h2: style(size: 18, weight: FontWeight.w600, height: 1.25, spacing: -0.3),
       h3: style(size: 17, weight: FontWeight.w600, height: 1.3, spacing: -0.2),
       h4: style(size: 16, weight: FontWeight.w600, height: 1.3, spacing: -0.1),
       p: style(size: 15, weight: FontWeight.w400, height: 1.5),
-      blockquote: style(size: 15, weight: FontWeight.w400, height: 1.5, color: c.onSurfaceVariant),
+      blockquote: style(
+          size: 15,
+          weight: FontWeight.w400,
+          height: 1.5,
+          color: c.onSurfaceVariant),
       table: style(size: 14, weight: FontWeight.w600, height: 1.4),
       list: style(size: 15, weight: FontWeight.w400, height: 1.5),
       lead: style(size: 17, weight: FontWeight.w500, height: 1.4),
       large: style(size: 16, weight: FontWeight.w600, height: 1.4),
-      small: style(size: 13, weight: FontWeight.w500, height: 1.4, spacing: 0.2),
-      muted: style(size: 13, weight: FontWeight.w400, height: 1.45, spacing: 0.2, color: c.onSurfaceVariant),
+      small:
+          style(size: 13, weight: FontWeight.w500, height: 1.4, spacing: 0.2),
+      muted: style(
+          size: 13,
+          weight: FontWeight.w400,
+          height: 1.45,
+          spacing: 0.2,
+          color: c.onSurfaceVariant),
     );
   }
 }
@@ -660,20 +673,43 @@ class AppText {
     }
 
     return AppText(
-      displayLarge: textStyle(size: 22, weight: FontWeight.w700, height: 1.2, spacing: -0.6),
-      displayMedium: textStyle(size: 20, weight: FontWeight.w700, height: 1.2, spacing: -0.4),
-      headlineLarge: textStyle(size: 18, weight: FontWeight.w600, height: 1.25, spacing: -0.3),
-      headlineMedium: textStyle(size: 17, weight: FontWeight.w600, height: 1.3, spacing: -0.2),
-      headlineSmall: textStyle(size: 16, weight: FontWeight.w600, height: 1.3, spacing: -0.1),
-      titleLarge: textStyle(size: 16, weight: FontWeight.w600, height: 1.35, spacing: -0.1),
+      displayLarge: textStyle(
+          size: 22, weight: FontWeight.w700, height: 1.2, spacing: -0.6),
+      displayMedium: textStyle(
+          size: 20, weight: FontWeight.w700, height: 1.2, spacing: -0.4),
+      headlineLarge: textStyle(
+          size: 18, weight: FontWeight.w600, height: 1.25, spacing: -0.3),
+      headlineMedium: textStyle(
+          size: 17, weight: FontWeight.w600, height: 1.3, spacing: -0.2),
+      headlineSmall: textStyle(
+          size: 16, weight: FontWeight.w600, height: 1.3, spacing: -0.1),
+      titleLarge: textStyle(
+          size: 16, weight: FontWeight.w600, height: 1.35, spacing: -0.1),
       titleMedium: textStyle(size: 15, weight: FontWeight.w600, height: 1.35),
       titleSmall: textStyle(size: 15, weight: FontWeight.w600, height: 1.35),
-      bodyLarge: textStyle(size: 15, weight: FontWeight.w400, height: child ? 1.55 : 1.5),
+      bodyLarge: textStyle(
+          size: 15, weight: FontWeight.w400, height: child ? 1.55 : 1.5),
       bodyMedium: textStyle(size: 14, weight: FontWeight.w400, height: 1.45),
-      bodySmall: textStyle(size: 13, weight: FontWeight.w400, height: 1.45, spacing: 0.2, color: muted),
-      labelLarge: textStyle(size: 14, weight: FontWeight.w600, height: 1.35, spacing: 0.2, color: onCta),
-      labelMedium: textStyle(size: 13, weight: FontWeight.w600, height: 1.35, spacing: 0.3),
-      labelSmall: textStyle(size: 12, weight: FontWeight.w500, height: 1.35, spacing: 0.3, color: muted),
+      bodySmall: textStyle(
+          size: 13,
+          weight: FontWeight.w400,
+          height: 1.45,
+          spacing: 0.2,
+          color: muted),
+      labelLarge: textStyle(
+          size: 14,
+          weight: FontWeight.w600,
+          height: 1.35,
+          spacing: 0.2,
+          color: onCta),
+      labelMedium: textStyle(
+          size: 13, weight: FontWeight.w600, height: 1.35, spacing: 0.3),
+      labelSmall: textStyle(
+          size: 12,
+          weight: FontWeight.w500,
+          height: 1.35,
+          spacing: 0.3,
+          color: muted),
     );
   }
 }
@@ -915,7 +951,10 @@ class _TagChip extends StatelessWidget {
         _TagSemantics.normal => (app.surfaceContainerHigh, app.onSurface),
         _TagSemantics.info => (app.infoContainer, app.onInfoContainer),
         _TagSemantics.ai => (app.secondaryContainer, app.onSecondaryContainer),
-        _TagSemantics.success => (app.tertiaryContainer, app.onTertiaryContainer),
+        _TagSemantics.success => (
+            app.tertiaryContainer,
+            app.onTertiaryContainer
+          ),
         _TagSemantics.warning => (app.errorContainer, app.onErrorContainer),
       };
     }
@@ -985,7 +1024,10 @@ class _BadgePill extends StatelessWidget {
   Widget build(BuildContext context) {
     final app = AppTheme.colorsOf(context);
     final (bg, fg) = switch (semantics) {
-      _BadgeSemantics.success => (app.tertiaryContainer, app.onTertiaryContainer),
+      _BadgeSemantics.success => (
+          app.tertiaryContainer,
+          app.onTertiaryContainer
+        ),
       _BadgeSemantics.warning => (app.errorContainer, app.onErrorContainer),
       _BadgeSemantics.info => (app.infoContainer, app.onInfoContainer),
     };
@@ -1015,6 +1057,13 @@ class _BadgePill extends StatelessWidget {
 }
 
 /// 章节标题：左侧 3px 靛蓝色条 + 标题文字
+/// 规范章节节奏（统一间距事实源，ADR 设计系统约束）：
+/// - top  = [AppSpacing.xl2] (32)：相邻 section 之间的统一间隔（由标题自身承载，
+///   页面无需再手动加 SizedBox；首个标题也复用同一节奏）。
+/// - bottom = [AppSpacing.md] (12)：标题 → 内容的统一间隔。
+/// - 水平 0：标题左缘与全宽卡片（AppCard）左缘对齐；页面不要再给卡片套
+///   `Padding(horizontal: lg)`，否则会与标题错位 ~12px。
+/// 所有家长/设置页共用此节奏，确保跨页面 UI 一致。
 class SectionTitle extends StatelessWidget {
   final String text;
   final Widget? trailing;
@@ -1023,7 +1072,8 @@ class SectionTitle extends StatelessWidget {
     this.text, {
     super.key,
     this.trailing,
-    this.padding = const EdgeInsets.fromLTRB(4, 16, 4, 10),
+    this.padding =
+        const EdgeInsets.fromLTRB(0, AppSpacing.md, 0, AppSpacing.md),
   });
 
   @override
@@ -1073,6 +1123,14 @@ class AvatarSquircle extends StatelessWidget {
     this.bg,
     this.fg,
   }) : size = 40;
+
+  /// 紧凑预设：用于侧栏/顶栏的触发芯片（如切换娃娃按钮），比 [small] 更小。
+  const AvatarSquircle.xs({
+    super.key,
+    required this.name,
+    this.bg,
+    this.fg,
+  }) : size = 28;
 
   const AvatarSquircle.medium({
     super.key,
@@ -1130,16 +1188,22 @@ class AppSpacing {
   static const double xl5 = 56;
 }
 
-/// 圆角令牌（密排缩减）
+/// 圆角令牌（密排 / 简洁收敛）
+///
+/// 设计约束（单一事实源，全站通用组件共用）：
+/// - 采用 4 / 6 / 8 三档阶梯，避免「容器比内部控件更尖」的倒置。
+/// - 控件（chip / button / input）与卡片（card）统一 6，保证按钮落在卡片内时
+///   角半径一致、视觉内聚；大面（banner / bubble）略放至 8 维持体量。
+/// - 装饰性大圆角（头像 / 分数环 / 浮层）不在本表约束内，按场景取 28/32/999。
 class AppRadius {
-  static const double xs = 4;
-  static const double sm = 6;
-  static const double chip = 8;
-  static const double button = 10;
-  static const double input = 10;
-  static const double bubble = 12;
-  static const double card = 12;
-  static const double banner = 16;
+  static const double xs = 4; // 标记点 / 极小元素
+  static const double sm = 6; // 微缩元素
+  static const double chip = 6; // 标签 / 侧栏项
+  static const double button = 6; // 按钮
+  static const double input = 6; // 输入框
+  static const double card = 6; // 卡片容器
+  static const double bubble = 8; // 答案气泡 / 浮层小卡
+  static const double banner = 8; // 大面横幅
 }
 
 /// 转场时长令牌

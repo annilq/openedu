@@ -142,8 +142,9 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
       _rows.map((r) => r.toSpec(selected.grade)).toList();
 
   /// 兴趣题模式（WF-4）：开启且至少选一个主题才下传聚焦主题；否则 null = 后端自动轻融入。
-  List<String>? _currentFocus() =>
-      _useInterestMode && _focusThemes.isNotEmpty ? _focusThemes.toList() : null;
+  List<String>? _currentFocus() => _useInterestMode && _focusThemes.isNotEmpty
+      ? _focusThemes.toList()
+      : null;
 
   void _generate() {
     final selected = ref.read(selectedChildProvider);
@@ -242,65 +243,62 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(
-          AppSpacing.xl2, AppSpacing.md, AppSpacing.xl2, AppSpacing.xl4),
+          AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xl2),
       child: Align(
-        alignment: Alignment.topCenter,
+        alignment: Alignment.topLeft,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 1080),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const SectionTitle('布置练习任务'),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-                child: AppCard(
-                  padding: const EdgeInsets.all(AppSpacing.xl),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      AppTextField(label: '试卷标题', controller: _titleCtrl),
-                      const SizedBox(height: AppSpacing.md),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Expanded(
-                            child: AppTextField(
-                              label: '总题数',
-                              controller: _totalCtrl,
-                              keyboardType: TextInputType.number,
-                            ),
+              AppCard(
+                padding: const EdgeInsets.all(AppSpacing.xl),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    AppTextField(label: '试卷标题', controller: _titleCtrl),
+                    const SizedBox(height: AppSpacing.md),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Expanded(
+                          child: AppTextField(
+                            label: '总题数',
+                            controller: _totalCtrl,
+                            keyboardType: TextInputType.number,
                           ),
-                          const SizedBox(width: AppSpacing.md),
-                          ShadButton.outline(
-                            height: 36,
-                            onPressed: _evenSplit,
-                            child: const Text('一键均分'),
-                          ),
-                          const SizedBox(width: AppSpacing.sm),
-                          ShadButton.outline(
-                            height: 36,
-                            onPressed: _addRow,
-                            child: const Text('+ 加学科'),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: AppSpacing.lg),
-                      ...List.generate(_rows.length, _buildRow),
-                      const SizedBox(height: AppSpacing.xl),
-                      AppModelSelector(
-                        selected: _modelId,
-                        onChanged: (v) => setState(() => _modelId = v),
-                      ),
-                      const SizedBox(height: AppSpacing.xl),
-                      _buildInterestSection(),
-                      const SizedBox(height: AppSpacing.xl),
-                      // 流式生成 / 落库期间：隐藏按钮；首张题卡到达前显示加载动画，
-                      // 之后仅展示题卡（题卡逐张浮现），不重复显示 spinner。
-                      _buildActionArea(genState),
-                      const SizedBox(height: AppSpacing.lg),
-                      if (genState is TaskGenPreview) _buildPreview(genState),
-                    ],
-                  ),
+                        ),
+                        const SizedBox(width: AppSpacing.md),
+                        ShadButton.outline(
+                          height: 36,
+                          onPressed: _evenSplit,
+                          child: const Text('一键均分'),
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        ShadButton.outline(
+                          height: 36,
+                          onPressed: _addRow,
+                          child: const Text('+ 加学科'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                    ...List.generate(_rows.length, _buildRow),
+                    const SizedBox(height: AppSpacing.xl),
+                    AppModelSelector(
+                      selected: _modelId,
+                      onChanged: (v) => setState(() => _modelId = v),
+                    ),
+                    const SizedBox(height: AppSpacing.xl),
+                    _buildInterestSection(),
+                    const SizedBox(height: AppSpacing.xl),
+                    // 流式生成 / 落库期间：隐藏按钮；首张题卡到达前显示加载动画，
+                    // 之后仅展示题卡（题卡逐张浮现），不重复显示 spinner。
+                    _buildActionArea(genState),
+                    const SizedBox(height: AppSpacing.lg),
+                    if (genState is TaskGenPreview) _buildPreview(genState),
+                  ],
                 ),
               ),
             ],
@@ -322,7 +320,8 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
       for (final c in childState.children) {
         if (c.id == selected.id && c.interests != null) {
           themes = [...c.interests!.categories];
-          if (c.interests!.freeText != null && c.interests!.freeText!.isNotEmpty) {
+          if (c.interests!.freeText != null &&
+              c.interests!.freeText!.isNotEmpty) {
             themes.add(c.interests!.freeText!);
           }
           break;
@@ -337,7 +336,8 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
           children: [
             Expanded(
               child: Text('按兴趣出题',
-                  style: text.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+                  style:
+                      text.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
             ),
             ShadSwitch(
               value: _useInterestMode,
@@ -371,30 +371,30 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
               ),
             )
           else ...[
-              Wrap(
-                spacing: AppSpacing.sm,
-                runSpacing: AppSpacing.sm,
-                children: themes
-                    .map((t) => _ThemeToggle(
-                          label: t,
-                          selected: _focusThemes.contains(t),
-                          onTap: () => setState(() {
-                            if (_focusThemes.contains(t)) {
-                              _focusThemes.remove(t);
-                            } else {
-                              _focusThemes.add(t);
-                            }
-                          }),
-                        ))
-                    .toList(),
+            Wrap(
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.sm,
+              children: themes
+                  .map((t) => _ThemeToggle(
+                        label: t,
+                        selected: _focusThemes.contains(t),
+                        onTap: () => setState(() {
+                          if (_focusThemes.contains(t)) {
+                            _focusThemes.remove(t);
+                          } else {
+                            _focusThemes.add(t);
+                          }
+                        }),
+                      ))
+                  .toList(),
+            ),
+            if (_focusThemes.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: AppSpacing.sm),
+                child: Text('已选 ${_focusThemes.length} 个主题，题量将在所选主题间轮询均分',
+                    style: text.labelSmall?.copyWith(color: app.primary)),
               ),
-              if (_focusThemes.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: AppSpacing.sm),
-                  child: Text('已选 ${_focusThemes.length} 个主题，题量将在所选主题间轮询均分',
-                      style: text.labelSmall?.copyWith(color: app.primary)),
-                ),
-            ],
+          ],
         ],
       ],
     );
@@ -403,71 +403,70 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
   Widget _buildRow(int i) {
     final selected = ref.watch(selectedChildProvider);
     return Padding(
-        padding: const EdgeInsets.only(bottom: AppSpacing.md),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              flex: 2,
-              child: AppPickerField<String>(
-                label: '学科',
-                values: _kSubjects,
-                labels: _kSubjects,
-                value: _rows[i].subject,
-                onChanged: (v) => setState(() => _rows[i].subject = v),
-              ),
+      padding: const EdgeInsets.only(bottom: AppSpacing.md),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            flex: 2,
+            child: AppPickerField<String>(
+              label: '学科',
+              values: _kSubjects,
+              labels: _kSubjects,
+              value: _rows[i].subject,
+              onChanged: (v) => setState(() => _rows[i].subject = v),
             ),
-            const SizedBox(width: AppSpacing.md),
-            Expanded(
-              flex: 3,
-              child: AppTextField(
-                  label: '知识点', controller: _rows[i].knowledgePoint),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            flex: 3,
+            child:
+                AppTextField(label: '知识点', controller: _rows[i].knowledgePoint),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            flex: 2,
+            child: AppPickerField<String>(
+              label: '题型',
+              values: const ['calc', 'fill', 'choice', 'open'],
+              labels: const ['计算', '填空', '选择', '应用'],
+              value: _rows[i].qtype,
+              onChanged: (v) => setState(() => _rows[i].qtype = v),
             ),
-            const SizedBox(width: AppSpacing.md),
-            Expanded(
-              flex: 2,
-              child: AppPickerField<String>(
-                label: '题型',
-                values: const ['calc', 'fill', 'choice', 'open'],
-                labels: const ['计算', '填空', '选择', '应用'],
-                value: _rows[i].qtype,
-                onChanged: (v) => setState(() => _rows[i].qtype = v),
-              ),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            flex: 2,
+            child: AppTextField(
+              label: '题数',
+              controller: _rows[i].count,
+              keyboardType: TextInputType.number,
             ),
-            const SizedBox(width: AppSpacing.md),
-            Expanded(
-              flex: 2,
-              child: AppTextField(
-                label: '题数',
-                controller: _rows[i].count,
-                keyboardType: TextInputType.number,
-              ),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            flex: 2,
+            child: AppPickerField<int>(
+              label: '年级',
+              values: List.generate(9, (j) => j + 1),
+              labels: List.generate(9, (j) => '${j + 1}年级'),
+              // 未手动指定时显示当前选中娃娃年级（与生成逻辑一致）。
+              value: _rows[i].grade ?? selected?.grade ?? 2,
+              onChanged: (v) => setState(() => _rows[i].grade = v),
             ),
-            const SizedBox(width: AppSpacing.md),
-            Expanded(
-              flex: 2,
-              child: AppPickerField<int>(
-                label: '年级',
-                values: List.generate(9, (j) => j + 1),
-                labels: List.generate(9, (j) => '${j + 1}年级'),
-                // 未手动指定时显示当前选中娃娃年级（与生成逻辑一致）。
-                value: _rows[i].grade ?? selected?.grade ?? 2,
-                onChanged: (v) => setState(() => _rows[i].grade = v),
-              ),
+          ),
+          if (_rows.length > 1) ...[
+            const SizedBox(width: AppSpacing.sm),
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              onPressed: () => _removeRow(i),
+              child: const Icon(LucideIcons.x, size: 20),
             ),
-            if (_rows.length > 1) ...[
-              const SizedBox(width: AppSpacing.sm),
-              CupertinoButton(
-                padding: EdgeInsets.zero,
-                onPressed: () => _removeRow(i),
-                child: const Icon(LucideIcons.x, size: 20),
-              ),
-            ],
           ],
-        ),
-      );
-}
-
+        ],
+      ),
+    );
+  }
 
   /// 流式生成 / 落库期间的操作区：隐藏按钮；首题 STEP 到达前（尚无题卡也无内联推理区）
   /// 显示加载动画，之后仅展示题卡/生成中面板（题卡逐张浮现），不再重复 spinner。
@@ -548,8 +547,6 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
   }
 }
 
-
-
 /// 生成中面板（ADR-0017）：当前题的内联推理区，题卡到达后由 [_PreviewCard] 替代。
 /// 右上角不显示 info icon（推理尚在生成，无需展开）。
 class _PreviewGenerating extends StatelessWidget {
@@ -599,7 +596,8 @@ class _PreviewGenerating extends StatelessWidget {
                 Expanded(
                   child: Text(
                     label,
-                    style: text.labelSmall?.copyWith(color: app.onSurfaceVariant),
+                    style:
+                        text.labelSmall?.copyWith(color: app.onSurfaceVariant),
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.end,
                   ),
@@ -666,7 +664,8 @@ class _ThemeToggle extends StatelessWidget {
         padding: const EdgeInsets.symmetric(
             horizontal: AppSpacing.md, vertical: AppSpacing.sm),
         decoration: BoxDecoration(
-          color: selected ? scheme.primaryContainer : scheme.surfaceContainerHigh,
+          color:
+              selected ? scheme.primaryContainer : scheme.surfaceContainerHigh,
           borderRadius: BorderRadius.circular(AppRadius.chip),
           border: Border.all(
             color: selected ? scheme.primary : scheme.outline,
@@ -684,7 +683,8 @@ class _ThemeToggle extends StatelessWidget {
               ),
             Text(label,
                 style: text.labelMedium?.copyWith(
-                  color: selected ? scheme.onPrimaryContainer : scheme.onSurface,
+                  color:
+                      selected ? scheme.onPrimaryContainer : scheme.onSurface,
                   fontWeight: FontWeight.w600,
                 )),
           ],

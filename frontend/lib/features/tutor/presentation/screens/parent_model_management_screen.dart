@@ -32,7 +32,8 @@ class _ParentModelManagementScreenState
 
   void _openForm(BuildContext context, ModelInfo? initial) {
     final s = ref.read(modelsNotifierProvider);
-    final providers = s is ModelsLoaded ? s.providers : const <ModelProviderPreset>[];
+    final providers =
+        s is ModelsLoaded ? s.providers : const <ModelProviderPreset>[];
     showShadDialog(
       context: context,
       barrierColor: const Color(0x99000000),
@@ -71,9 +72,9 @@ class _ParentModelManagementScreenState
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(
-          AppSpacing.xl2, AppSpacing.md, AppSpacing.xl2, AppSpacing.xl4),
+          AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xl2),
       child: Align(
-        alignment: Alignment.topCenter,
+        alignment: Alignment.topLeft,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 1080),
           child: Column(
@@ -86,12 +87,13 @@ class _ParentModelManagementScreenState
                 style: text.bodySmall?.copyWith(color: app.onSurfaceVariant),
               ),
               const SizedBox(height: AppSpacing.xl),
-              Text('内置模型', style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
+              Text('内置模型',
+                  style:
+                      text.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
               const SizedBox(height: AppSpacing.md),
               if (state is ModelsLoaded) ...[
                 ...state.resp.builtin.map(_builtinCard),
-                if (state.resp.builtin.isEmpty)
-                  _emptyHint('暂无内置模型'),
+                if (state.resp.builtin.isEmpty) _emptyHint('暂无内置模型'),
               ] else if (state is ModelsLoading) ...[
                 const AppLoading(),
               ] else if (state is ModelsError) ...[
@@ -99,22 +101,16 @@ class _ParentModelManagementScreenState
               ] else ...[
                 _emptyHint('加载中…'),
               ],
-              const SizedBox(height: AppSpacing.xl2),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text('自定义模型',
-                        style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-                  ),
-                  AppPrimaryButton(
-                    label: '添加模型',
-                    icon: LucideIcons.plus,
-                    fullWidth: false,
-                    onPressed: () => _openForm(context, null),
-                  ),
-                ],
+              const SizedBox(height: AppSpacing.lg),
+              SectionTitle(
+                '自定义模型',
+                trailing: AppPrimaryButton(
+                  label: '添加模型',
+                  icon: LucideIcons.plus,
+                  fullWidth: false,
+                  onPressed: () => _openForm(context, null),
+                ),
               ),
-              const SizedBox(height: AppSpacing.md),
               if (state is ModelsLoaded) ...[
                 if (state.resp.custom.isEmpty)
                   _emptyHint('还没有自定义模型，点「添加模型」接入本地 Ollama 或 OpenAI 兼容服务')
@@ -144,10 +140,12 @@ class _ParentModelManagementScreenState
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(m.label,
-                      style: text.labelLarge?.copyWith(fontWeight: FontWeight.w600)),
+                      style: text.labelLarge
+                          ?.copyWith(fontWeight: FontWeight.w600)),
                   const SizedBox(height: 2),
                   Text('${m.modelName} · ${m.provider}',
-                      style: text.bodySmall?.copyWith(color: app.onSurfaceVariant)),
+                      style: text.bodySmall
+                          ?.copyWith(color: app.onSurfaceVariant)),
                 ],
               ),
             ),
@@ -176,7 +174,8 @@ class _ParentModelManagementScreenState
                   Row(
                     children: [
                       Text(m.label,
-                          style: text.labelLarge?.copyWith(fontWeight: FontWeight.w600)),
+                          style: text.labelLarge
+                              ?.copyWith(fontWeight: FontWeight.w600)),
                       if (m.isDefault) ...[
                         const SizedBox(width: AppSpacing.sm),
                         AppTags.success('默认'),
@@ -186,7 +185,8 @@ class _ParentModelManagementScreenState
                   const SizedBox(height: 2),
                   Text(
                       '${m.modelName} · ${m.provider}${m.baseUrl != null ? ' · ${m.baseUrl}' : ''}',
-                      style: text.bodySmall?.copyWith(color: app.onSurfaceVariant)),
+                      style: text.bodySmall
+                          ?.copyWith(color: app.onSurfaceVariant)),
                 ],
               ),
             ),

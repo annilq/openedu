@@ -35,7 +35,7 @@ class ReviewQuestionView extends StatelessWidget {
     final scheme = AppTheme.colorsOf(context);
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(
-          AppSpacing.xl2, AppSpacing.md, AppSpacing.xl2, AppSpacing.xl4),
+          AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xl2),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 820),
@@ -52,10 +52,10 @@ class ReviewQuestionView extends StatelessWidget {
                   AppTags.warning('错过 ${item.wrongCount} 次'),
                 ],
               ),
-              const SizedBox(height: AppSpacing.xl3),
+              const SizedBox(height: AppSpacing.xxl),
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.all(AppSpacing.xl2),
+                padding: const EdgeInsets.all(AppSpacing.xxl),
                 decoration: BoxDecoration(
                   color: scheme.surfaceRaised,
                   borderRadius: BorderRadius.circular(AppRadius.banner),
@@ -63,7 +63,7 @@ class ReviewQuestionView extends StatelessWidget {
                 child: Text(item.stem,
                     style: AppTheme.textOf(context).titleMedium),
               ),
-              const SizedBox(height: AppSpacing.xl3),
+              const SizedBox(height: AppSpacing.xxl),
               if (item.options != null && item.options!.isNotEmpty)
                 ...item.options!.asMap().entries.map((e) => AppOptionTile(
                       index: e.key,
@@ -80,7 +80,7 @@ class ReviewQuestionView extends StatelessWidget {
                   enabled: !submitting,
                   onChanged: (_) => onAnswerChanged(),
                 ),
-              const SizedBox(height: AppSpacing.xl4),
+              const SizedBox(height: AppSpacing.xl2),
               AppPrimaryButton(
                 label: '提交复习',
                 icon: LucideIcons.send,

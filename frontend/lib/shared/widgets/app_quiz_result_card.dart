@@ -66,11 +66,11 @@ class AppQuizResultCard extends StatelessWidget {
 
     Widget card = Center(
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(AppSpacing.xl3),
+        padding: const EdgeInsets.all(AppSpacing.xxl),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 520),
           child: Container(
-            padding: const EdgeInsets.all(AppSpacing.xl3),
+            padding: const EdgeInsets.all(AppSpacing.xxl),
             decoration: BoxDecoration(
               color: scheme.surfaceRaised,
               borderRadius: BorderRadius.circular(AppRadius.banner),
@@ -102,9 +102,7 @@ class AppQuizResultCard extends StatelessWidget {
                   child: SizedBox(
                     height: 12,
                     child: AppProgressBar(
-                      value: total > 0
-                          ? (correct / total).clamp(0.0, 1.0)
-                          : 0,
+                      value: total > 0 ? (correct / total).clamp(0.0, 1.0) : 0,
                       height: 12,
                       color: scheme.primary,
                       trackColor: scheme.surfaceSunken,

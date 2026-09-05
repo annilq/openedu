@@ -11,21 +11,21 @@ class TutorWelcomeHint extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = AppTheme.colorsOf(context);
     final text = AppTheme.textOf(context);
-    return Center(
+    return Align(alignment: Alignment.topLeft,
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(AppSpacing.xl3),
+        padding: const EdgeInsets.all(AppSpacing.xxl),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 440),
           child: Container(
-            padding: const EdgeInsets.all(AppSpacing.xl3),
+            padding: const EdgeInsets.all(AppSpacing.xxl),
             decoration: BoxDecoration(
               color: scheme.secondaryContainer,
               borderRadius: BorderRadius.circular(AppRadius.banner),
-              border: Border.all(
-                  color: scheme.outline, width: 1),
+              border: Border.all(color: scheme.outline, width: 1),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
                   width: 72,
@@ -41,13 +41,13 @@ class TutorWelcomeHint extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.xl),
                 Text('有问题就问 AI 老师吧',
-                    textAlign: TextAlign.center,
+                    textAlign: TextAlign.start,
                     style: text.titleLarge?.copyWith(
                       color: scheme.onSecondaryContainer,
                     )),
                 const SizedBox(height: AppSpacing.sm),
                 Text('只讲学习内容，其他问题不回答哦',
-                    textAlign: TextAlign.center,
+                    textAlign: TextAlign.start,
                     style: text.bodyMedium?.copyWith(
                       color: scheme.onSecondaryContainer,
                     )),

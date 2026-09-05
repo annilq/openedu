@@ -20,15 +20,14 @@ class MasteryBoard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = AppTheme.colorsOf(context);
     final state = ref.watch(masteryNotifierProvider);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-      child: switch (state) {
-        MasteryInitial() || MasteryLoading() =>
-          const AppLoading.skeletonInline(skeletonLines: 3),
-        MasteryError() => AppError(message: state.message),
-        MasteryLoaded() => state.mastery.items.isEmpty
+    return switch (state) {
+      MasteryInitial() ||
+      MasteryLoading() =>
+        const AppLoading.skeletonInline(skeletonLines: 3),
+      MasteryError() => AppError(message: state.message),
+      MasteryLoaded() => state.mastery.items.isEmpty
           ? AppCard(
-              padding: const EdgeInsets.all(AppSpacing.xl3),
+              padding: const EdgeInsets.all(AppSpacing.xxl),
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   final narrow = constraints.maxWidth < 220;
@@ -37,15 +36,16 @@ class MasteryBoard extends ConsumerWidget {
                     height: 52,
                     decoration: BoxDecoration(
                       color: scheme.tertiaryContainer,
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(AppRadius.card),
                     ),
                     alignment: Alignment.center,
                     child: Icon(LucideIcons.lightbulb,
                         size: 28, color: scheme.onTertiaryContainer),
                   );
                   final texts = Column(
-                    crossAxisAlignment:
-                        narrow ? CrossAxisAlignment.center : CrossAxisAlignment.start,
+                    crossAxisAlignment: narrow
+                        ? CrossAxisAlignment.center
+                        : CrossAxisAlignment.start,
                     children: [
                       Text(isChild ? '你还没有作答记录' : '还没有作答记录',
                           style: AppTheme.textOf(context).titleSmall),
@@ -113,14 +113,13 @@ class MasteryBoard extends ConsumerWidget {
                   ),
                   const SizedBox(height: AppSpacing.xl),
                   ...state.mastery.items.map((m) => Padding(
-                    padding: const EdgeInsets.only(bottom: AppSpacing.md),
-                    child: _MasteryBar(item: m),
-                  )),
+                        padding: const EdgeInsets.only(bottom: AppSpacing.md),
+                        child: _MasteryBar(item: m),
+                      )),
                 ],
               ),
             ),
-      },
-    );
+    };
   }
 }
 
@@ -173,11 +172,11 @@ class _MasteryBar extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text('${item.score.round()}分',
-                  style: AppTheme.textOf(context).bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: scheme.onSurface,
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                  )),
+                    style: AppTheme.textOf(context).bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: scheme.onSurface,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    )),
                 const SizedBox(width: AppSpacing.md),
                 _levelBadge(item.level),
               ],
@@ -210,8 +209,8 @@ class _MasteryBar extends StatelessWidget {
         const SizedBox(height: AppSpacing.xs),
         Text(
           item.activeWrong > 0
-            ? '正确率 ${(item.accuracy * 100).round()}% · 有 ${item.activeWrong} 题待复习'
-            : '正确率 ${(item.accuracy * 100).round()}% · 无待复习错题',
+              ? '正确率 ${(item.accuracy * 100).round()}% · 有 ${item.activeWrong} 题待复习'
+              : '正确率 ${(item.accuracy * 100).round()}% · 无待复习错题',
           style: AppTheme.textOf(context).bodySmall,
         ),
       ],

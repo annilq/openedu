@@ -102,6 +102,47 @@ def run_migrations() -> None:
             )
         )
 
+        # —— conversation / message（AI 运行可观测调试库，ADR-0022）——
+        # 新表走 CREATE TABLE IF NOT EXISTS：既有库启动期自动补齐，无需手写 ALTER。
+        # SQLite 用 TEXT 存 JSON，postgres 用 JSON（与项目其余 JSON 列约定一致）。
+        conn.execute(
+            text(
+                "CREATE TABLE IF NOT EXISTS conversation ("
+                " id VARCHAR(36) PRIMARY KEY,"
+                " kind VARCHAR(32),"
+                " parent_id VARCHAR(36),"
+                " child_id VARCHAR(36),"
+                " model VARCHAR(255),"
+                " title VARCHAR(255),"
+                " ref_task_id VARCHAR(36),"
+                " status VARCHAR(16),"
+                " created_at TIMESTAMP WITH TIME ZONE,"
+                " updated_at TIMESTAMP WITH TIME ZONE"
+                ")"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE TABLE IF NOT EXISTS message ("
+                " id VARCHAR(36) PRIMARY KEY,"
+                " conversation_id VARCHAR(36),"
+                " turn INTEGER,"
+                " role VARCHAR(16),"
+                " step VARCHAR(16),"
+                " content TEXT,"
+                " payload TEXT,"
+                " model VARCHAR(255),"
+                " input_safe BOOLEAN,"
+                " output_safe BOOLEAN,"
+                " blocked BOOLEAN,"
+                " block_reason VARCHAR(255),"
+                " latency_ms INTEGER,"
+                " usage TEXT,"
+                " created_at TIMESTAMP WITH TIME ZONE"
+                ")"
+            )
+        )
+
 
 def init_db() -> None:
     # 确保模型已注册后再建表（详见 SQLModel 关系初始化注意事项）

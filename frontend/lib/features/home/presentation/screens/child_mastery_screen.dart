@@ -29,9 +29,9 @@ class _ChildMasteryScreenState extends ConsumerState<ChildMasteryScreen> {
   Widget build(BuildContext context) {
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(
-          AppSpacing.xl2, AppSpacing.md, AppSpacing.xl2, AppSpacing.xl4),
+          AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xl2),
       child: Align(
-        alignment: Alignment.topCenter,
+        alignment: Alignment.topLeft,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 1080),
           child: Column(

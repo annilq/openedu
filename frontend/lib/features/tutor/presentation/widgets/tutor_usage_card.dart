@@ -26,7 +26,7 @@ class TutorUsageCard extends StatelessWidget {
                 height: 40,
                 decoration: BoxDecoration(
                   color: scheme.secondaryContainer,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(AppRadius.card),
                 ),
                 alignment: Alignment.center,
                 child: Icon(LucideIcons.barChart3,
@@ -49,8 +49,8 @@ class TutorUsageCard extends StatelessWidget {
                     fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
-              TutorUsageError(:final message) => Text(message,
-                  style: TextStyle(color: scheme.error)),
+              TutorUsageError(:final message) =>
+                Text(message, style: TextStyle(color: scheme.error)),
               _ => Text('今日用量加载中…', style: text.bodyMedium),
             },
           ),

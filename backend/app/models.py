@@ -568,5 +568,109 @@ class TokenPayload(SQLModel):
     sub: str | None = None
 
 
-class Message(SQLModel):
+# 通用响应体（原 `Message` 名已让给 conversation/message 调试库的 Message 表，见 ADR-0022）。
+class StatusMessage(SQLModel):
     message: str
+
+
+# ───────────────────────── AI 运行可观测：conversation + message（ADR-0022） ─────────────────────────
+# Conversation = 一次 Agent 运行（出题/批改/通用 agent 流）；Message = 运行内带 role+step 的一步。
+# 与 TutorLog 职责分离：TutorLog 管答疑合规（家长可见+每日上限），本调试库只覆盖多步 Agent 运行。
+class Conversation(SQLModel, table=True):
+    """一次 AI Agent 运行的容器（ADR-0022）。
+
+    - kind：运行类型（开放 str），question|grade|agent|...
+    - parent_id：owner 隔离（呼应题库闭环）；child_id：触发者（出题可为 null=家长）
+    - model：所用模型引用（内置 id / ModelConfig id）
+    - ref_task_id：关联生成的 Task，便于追溯出题结果
+    - status：running|done|error|blocked
+    """
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    kind: str = Field(max_length=32, index=True)
+    parent_id: uuid.UUID = Field(foreign_key="user.id", index=True)
+    child_id: uuid.UUID | None = Field(default=None, foreign_key="user.id")
+    model: str | None = Field(default=None, max_length=255)
+    title: str | None = Field(default=None, max_length=255)
+    ref_task_id: uuid.UUID | None = Field(default=None, foreign_key="task.id")
+    status: str = Field(default="running", max_length=16)
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+    updated_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
+class Message(SQLModel, table=True):
+    """Conversation 内带 role+step 的一步（ADR-0022）。
+
+    - role：system|user|assistant|tool（谁产生）
+    - step：input|retrieval|reasoning|generation|tool_call|output|error（运行到哪一步）
+    - content：人类可读文本；payload：结构化原始数据（题卡 dict/模型原始响应/检索块/工具参数）
+    - input_safe/output_safe/blocked：安全标记（ADR-008，调试也能定位被拦步骤）
+    - latency_ms / usage：可观测（耗时 / token：{prompt_tokens, completion_tokens}）
+    """
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    conversation_id: uuid.UUID = Field(foreign_key="conversation.id", index=True)
+    turn: int = Field(default=0)
+    role: str = Field(max_length=16)
+    step: str = Field(default="output", max_length=16)
+    content: str = Field(default="")
+    payload: dict | None = Field(default=None, sa_type=JSON)
+    model: str | None = Field(default=None, max_length=255)
+    input_safe: bool = True
+    output_safe: bool = True
+    blocked: bool = False
+    block_reason: str | None = Field(default=None, max_length=255)
+    latency_ms: int | None = Field(default=None)
+    usage: dict | None = Field(default=None, sa_type=JSON)
+    created_at: datetime | None = Field(
+        default_factory=get_datetime_utc,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )
+
+
+class ConversationResp(SQLModel):
+    """调试库只读：一条 AI 运行概要。"""
+
+    id: uuid.UUID
+    kind: str
+    parent_id: uuid.UUID
+    child_id: uuid.UUID | None = None
+    model: str | None = None
+    title: str | None = None
+    ref_task_id: uuid.UUID | None = None
+    status: str
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class MessageResp(SQLModel):
+    """调试库只读：运行内一步。"""
+
+    id: uuid.UUID
+    conversation_id: uuid.UUID
+    turn: int
+    role: str
+    step: str
+    content: str
+    payload: dict | None = None
+    model: str | None = None
+    input_safe: bool
+    output_safe: bool
+    blocked: bool
+    block_reason: str | None = None
+    latency_ms: int | None = None
+    usage: dict | None = None
+    created_at: datetime | None = None
+
+
+class ConversationDetailResp(SQLModel):
+    """调试库只读：一次 AI 运行 + 其全部步骤（回放用）。"""
+
+    conversation: ConversationResp
+    messages: list[MessageResp] = []

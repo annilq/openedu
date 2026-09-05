@@ -96,7 +96,7 @@
 - **决策**：
   1. **双模式（Dual-Mode）**：家长工作台（Parent Mode）沿用密排专业系统（15sp 基线、中性+靛蓝、1px 描边、克制动效）；娃娃学习台（Child Mode）独立密度与语气——更大字号基线（~17sp）、更圆角、学科色凸显、暖容器、适度趣味动效。两者共用同一套 surface/spacing/radius 令牌，仅在「字号阶梯 + 语气 + 学科色权重」上分化。
   2. **学科色扩展（Subject Accents）**：在中性+靛蓝基底上新增受控的多色强调——数学=蓝、语文=玫瑰、英语=翠绿，预留扩展槽。中饱和、**仅用于学科标识/进度条/图标容器，不用于大面积背景**；家长端在数据可视化中低调使用，娃娃端凸显。
-  3. **响应式断点（Breakpoints）**：`compact < 700` / `medium 700–1023` / `expanded ≥ 1024`。compact 收起侧栏为底部导航（娃娃）/抽屉（家长）；medium 侧栏可收起；expanded 展开侧栏 + 内容区。
+  3. **响应式断点（Breakpoints）**：`compact < 700` / `medium 700–1023` / `expanded ≥ 1024`。compact 收起侧栏为底部导航（娃娃）/抽屉（家长）；medium 与 expanded 侧栏均可收起（240 ↔ 64，收起状态经 [StorageService] 持久化，三档共用同一收起偏好）。
   4. **适度趣味动效（Moderate Delight）**：保留 120/200/300ms 三级；新增 `celebrate` 级（~450ms）用于徽章解锁 / 连击 / 打卡成功，仅 Child Mode 启用；做题反馈清晰不喧宾。
 - **备选**：维持 ADR-0003 单一专业系统 / 全设备响应式（手机优先）/ 丰富游戏化（多邻国式）。
 - **后果**：正式承认代码里已存在的双轨（child_home 横幅本就更活泼）；需扩充令牌（Child Mode 字号阶梯、学科色、断点、celebrate 动效）并新增双模式切换与响应式壳；需一轮「规范一致性审计」修掉既有 `withValues(alpha:)` 与缺描边违反。**本 ADR 修订 ADR-0003 中『娃娃共用单一密排系统』的判定，改为双模式。**
@@ -424,3 +424,40 @@ CARD{q_index:0,question} ──────▶  题卡浮现 → 上方推理区
 - **复用底座**：subagent 共用 `LLMProvider` / `resolve_engine` / `quota` / `safety` / `retriever`，不重复造轮子（与 ADR-003 框架隔离一致）。
 - **预留演进**：接口契约支持未来无痛升级为完整 LLM supervisor，不锁定当前轻形态。
 - **成本**：伴学多步规划会增加一次到数次 LLM 调用，须受 `quota` 约束（ADR-008）；其余业务单次调用，无额外开销。
+
+## ADR-0022 AI 运行可观测：conversation + message 调试库
+
+> 来源：三期 MVP 闭环已落地（出题 / 伴学 / 批改 / 复习 / 掌握度），进入「打磨完善」期。需在不出生产环境的前提下，完整回放一次 Agent 运行（系统提示 → 检索 → 推理 → 题卡/答案 → 工具调用），用于调试模型输出与定位 bad case。
+
+### 背景
+- 现有 `TutorLog` 只存「一问一答」（question + answer + 安全标记），且服务**家长可见合规**（ADR-008）：驱动家长端答疑日志页（`parent_tutor_logs_view.dart`）与每日提问次数上限（`count_tutor_today`）。它是扁平单行，无法还原 Agent 运行的多步结构。
+- 一次出题/批改本质是**多步 Agent 运行**：系统提示 → 学科 Persona 注入 → 知识库检索（RAG）→ 出题推理（reasoning）→ 结构化题卡/批改结果 → 可能的工具调用。调试要能按步骤回放，而不是只看首尾。
+- 用户诉求：新建 `message` 表记录 AI 返回的数据，且明确「本意是方便调试 Agent 输出」。
+- 主流对话存储范式（OpenAI Chat / Anthropic / LangChain chat memory）均为 `conversation`（一次会话/运行）+ `message`（带 `role` 的一步），本项目在此范式上补充业务关系。
+
+### 决策（六条）
+1. **两张表，不合并**：`conversation` = 一次 Agent 运行（运行类型 `kind`、归属 `parent_id`、触发者 `child_id`、所用模型、状态）；`message` = 运行内带 `role`+`step` 的一步。一张扁平表压扁中间过程，否决。
+2. **message 用 `role` + `step` 两列**：`role ∈ {system, user, assistant, tool}`（谁产生），`step ∈ {input, retrieval, reasoning, generation, tool_call, output, error}`（运行到哪一步）。调试可按 `step` 过滤还原全过程；`tool` 角色覆盖工具调用（参数/结果存 `payload`）。
+3. **content（TEXT）+ payload（JSON）双列**：`content` 存人类可读文本（家长/调试可读），`payload` 存结构化原始数据（题卡 dict / 模型原始响应 / 检索块 / 工具参数），兼顾可读与回放/复现。
+4. **与 `TutorLog` 边界清晰、不重复**：`TutorLog` 继续管答疑合规（家长可见 + 每日上限，已上线接 UI），`conversation/message` 只做 **Agent 运行调试库**（出题 / 批改 / 通用 agent 流）。答疑不写入调试库，避免双份存储。
+5. **业务关系补在 conversation 上**：`parent_id`（owner 隔离，呼应题库闭环）、`child_id`（触发者，出题可为 null=家长）、`model`（模型引用，内置 id / ModelConfig id）、`ref_task_id`（关联生成的 Task，便于追溯「这卷题为啥长这样」）、`status`（running/done/error/blocked）。`message` 经 `conversation_id` 归属，自身只带 `model`/`input_safe`/`output_safe`/`blocked`/`latency_ms`/`usage`（token）。
+6. **`kind` 用开放 str**：初始值 `question`(出题) / `grade`(批改) / `agent`(通用 agent 运行，含 subagent 流)；未来加 `summarize`/`explain` 直接加字符串值，无需迁移。不引数据库 ENUM（sqlite 无原生枚举、postgres ENUM 需迁移）。
+
+### 备选
+- **单一扁平 message 表（早期方案）**：实现快，但压扁多步过程，调试价值低，否决。
+- **conversation/message 取代 TutorLog（统一）**：单一数据源，但要改写家长答疑日志页 + 每日上限计数 + 落库路径，且答疑相对简单不值得进调试库；保留 TutorLog 更低风险，否决统一。
+- **数据库 ENUM 约束 kind/role/step**：类型安全，但加值需迁移、sqlite 体验差；开放 str 更灵活，否决。
+
+### 术语（Glossary）
+- **Conversation（AI 运行）**：一次 Agent 运行的容器；聚合其所有 message，携带运行类型/归属/模型/状态。
+- **Message（运行步骤）**：conversation 内带 `role` 与 `step` 的一步记录；`content` 可读文本 + `payload` 结构化原始数据。
+- **role（消息角色）**：`system`（系统提示）/ `user`（用户/前端输入）/ `assistant`（模型输出）/ `tool`（工具调用）。
+- **step（运行阶段）**：`input`（请求）/ `retrieval`（检索）/ `reasoning`（推理）/ `generation`（生成中）/ `tool_call`（工具调用）/ `output`（最终输出）/ `error`（异常）。
+- **Agent 运行调试库**：`conversation`+`message` 组成的、与 `TutorLog` 职责分离的 AI 可观测存储，用于回放与定位 bad case。
+
+### 后果
+- **可完整回放**：出题/批改一次运行的全过程可逐步还原，调试 Agent 输出从「盲猜」变「可查」。
+- **零重复**：答疑仍走 `TutorLog`，调试库只覆盖多步 Agent 运行，职责正交。
+- **低风险落地**：新建表由 `SQLModel.metadata.create_all` + `run_migrations` 的 `CREATE TABLE IF NOT EXISTS` 自动建表；落库用 try/except 包裹，调试日志失败绝不阻断主流程（同 `_log_tutor`）。
+- **可观测性**：`status`/`latency_ms`/`usage`(token)/`blocked` 使「哪步慢 / 哪个被安全拦截 / 花多少 token」可量化。
+- **成本**：每条 AI 运行多写若干 message 行；调试库建议后续接保留期/TTL（不在本期范围），避免无限膨胀。

@@ -164,12 +164,12 @@ class _ParentTaskReviewScreenState
         border: Border(bottom: BorderSide(color: app.outline, width: 1)),
       ),
       child: Align(
-        alignment: Alignment.topCenter,
+        alignment: Alignment.topLeft,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 1080),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(
-                AppSpacing.xl2, AppSpacing.md, AppSpacing.xl2, AppSpacing.md),
+                AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.md),
             child: Wrap(
               spacing: AppSpacing.sm,
               runSpacing: AppSpacing.sm,
@@ -190,9 +190,9 @@ class _ParentTaskReviewScreenState
     final promoted = task.promotedCount;
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(
-          AppSpacing.xl2, AppSpacing.md, AppSpacing.xl2, AppSpacing.xl4),
+          AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xl2),
       child: Align(
-        alignment: Alignment.topCenter,
+        alignment: Alignment.topLeft,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 1080),
           child: Column(
@@ -212,15 +212,12 @@ class _ParentTaskReviewScreenState
                       index: i + 1,
                       question: q,
                       isDraft: task.isDraft,
-                      onPromote: () =>
-                          _onPromoteOne(task.id, q.id),
+                      onPromote: () => _onPromoteOne(task.id, q.id),
                       onDelete: task.questions.length <= 1
                           ? null
                           : () => _onDelete(task.id, q.id),
-                      onRegenerate: () =>
-                          _onRegenerateOne(task.id, q.id),
-                      onEdit: (edits) =>
-                          _onEdit(task.id, q.id, edits),
+                      onRegenerate: () => _onRegenerateOne(task.id, q.id),
+                      onEdit: (edits) => _onEdit(task.id, q.id, edits),
                     ),
                   );
                 }),
@@ -292,12 +289,9 @@ class _ParentTaskReviewScreenState
                 label: '已入题库',
                 value: '$promoted / $total',
                 icon: LucideIcons.database,
-                tone: promoted == total
-                    ? app.primary
-                    : app.onSurfaceVariant,
+                tone: promoted == total ? app.primary : app.onSurfaceVariant,
               ),
-              if (task.specs.isNotEmpty)
-                _SpecsSummary(specs: task.specs),
+              if (task.specs.isNotEmpty) _SpecsSummary(specs: task.specs),
             ],
           ),
         ],
@@ -567,8 +561,7 @@ class _QuestionCardState extends ConsumerState<_QuestionCard> {
             color: app.surfaceContainerHigh,
             borderRadius: BorderRadius.circular(AppRadius.sm),
           ),
-          child: Text(q.subject,
-              style: AppTheme.textOf(context).labelSmall),
+          child: Text(q.subject, style: AppTheme.textOf(context).labelSmall),
         ),
         const SizedBox(width: AppSpacing.xs),
         Text(
@@ -619,8 +612,7 @@ class _QuestionCardState extends ConsumerState<_QuestionCard> {
             child: Column(
               children: q.options!.asMap().entries.map((e) {
                 final i = e.key;
-                final label =
-                    String.fromCharCode(65 + i); // A B C D ...
+                final label = String.fromCharCode(65 + i); // A B C D ...
                 return Padding(
                   padding: const EdgeInsets.only(bottom: AppSpacing.xs),
                   child: Row(
@@ -632,8 +624,7 @@ class _QuestionCardState extends ConsumerState<_QuestionCard> {
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
                           color: app.surfaceContainerHigh,
-                          borderRadius:
-                              BorderRadius.circular(AppRadius.sm),
+                          borderRadius: BorderRadius.circular(AppRadius.sm),
                         ),
                         child: Text(label,
                             style: AppTheme.textOf(context).labelMedium),
@@ -641,7 +632,8 @@ class _QuestionCardState extends ConsumerState<_QuestionCard> {
                       const SizedBox(width: AppSpacing.sm),
                       Expanded(
                           child: Text(e.value,
-                              style: AppTheme.textOf(context).bodyMedium
+                              style: AppTheme.textOf(context)
+                                  .bodyMedium
                                   ?.copyWith(height: 1.4))),
                     ],
                   ),
@@ -872,9 +864,7 @@ class _QuestionCardState extends ConsumerState<_QuestionCard> {
         ),
         ShadButton.outline(
           height: 36,
-          onPressed: _editing
-              ? null
-              : () => setState(() => _editing = true),
+          onPressed: _editing ? null : () => setState(() => _editing = true),
           leading: const Icon(LucideIcons.pencil, size: 16),
           child: Text(_editing ? '编辑中…' : '编辑题目'),
         ),
@@ -919,7 +909,7 @@ class _EmptyHint extends StatelessWidget {
     final app = AppTheme.colorsOf(context);
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(AppSpacing.xl3),
+      padding: const EdgeInsets.all(AppSpacing.xxl),
       decoration: BoxDecoration(
         color: app.surface,
         borderRadius: BorderRadius.circular(AppRadius.card),
@@ -929,11 +919,11 @@ class _EmptyHint extends StatelessWidget {
         children: [
           Icon(LucideIcons.inbox, size: 48, color: app.onSurfaceVariant),
           const SizedBox(height: AppSpacing.md),
-          Text('草稿暂未包含任何题目',
-              style: AppTheme.textOf(context).titleMedium),
+          Text('草稿暂未包含任何题目', style: AppTheme.textOf(context).titleMedium),
           const SizedBox(height: AppSpacing.xs),
           Text('点击「整卷重生成」按原规格重新出题',
-              style: AppTheme.textOf(context).bodyMedium
+              style: AppTheme.textOf(context)
+                  .bodyMedium
                   ?.copyWith(color: app.onSurfaceVariant)),
           const SizedBox(height: AppSpacing.lg),
           ShadButton(
@@ -980,7 +970,8 @@ class _Stat extends StatelessWidget {
               ),
               TextSpan(
                 text: label,
-                style: AppTheme.textOf(context).bodySmall
+                style: AppTheme.textOf(context)
+                    .bodySmall
                     ?.copyWith(color: app.onSurfaceVariant),
               ),
             ],

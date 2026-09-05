@@ -40,9 +40,9 @@ class ParentOverviewView extends ConsumerWidget {
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(
-          AppSpacing.xl2, AppSpacing.md, AppSpacing.xl2, AppSpacing.xl4),
+          AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xl2),
       child: Align(
-        alignment: Alignment.topCenter,
+        alignment: Alignment.topLeft,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 1080),
           child: Column(
@@ -50,10 +50,8 @@ class ParentOverviewView extends ConsumerWidget {
             children: [
               const SectionTitle('学习进度'),
               _buildProgress(context, ref),
-              const SizedBox(height: AppSpacing.xl3),
               const SectionTitle('最近任务'),
               _buildRecentTasks(context, ref, tasksState),
-              const SizedBox(height: AppSpacing.xl3),
               const SectionTitle('知识点掌握度'),
               _buildMastery(context),
             ],
@@ -65,25 +63,25 @@ class ParentOverviewView extends ConsumerWidget {
 
   Widget _emptyState(BuildContext context) {
     final scheme = AppTheme.colorsOf(context);
-    return Center(
+    return Align(alignment: Alignment.topLeft,
       child: AppCard(
-        padding: const EdgeInsets.all(AppSpacing.xl3),
+        padding: const EdgeInsets.all(AppSpacing.xl),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 52, height: 52,
+              width: 52,
+              height: 52,
               decoration: BoxDecoration(
                 color: scheme.primaryContainer,
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(AppRadius.card),
               ),
               alignment: Alignment.center,
               child: Icon(LucideIcons.layoutDashboard,
                   size: 28, color: scheme.onPrimaryContainer),
             ),
             const SizedBox(width: AppSpacing.xl),
-            Text('请先在侧栏选择娃娃',
-                style: AppTheme.textOf(context).bodyLarge),
+            Text('请先在侧栏选择娃娃', style: AppTheme.textOf(context).bodyLarge),
           ],
         ),
       ),
@@ -92,48 +90,54 @@ class ParentOverviewView extends ConsumerWidget {
 
   Widget _buildProgress(BuildContext context, WidgetRef ref) {
     final progState = ref.watch(progressNotifierProvider);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-      child: switch (progState) {
-        ProgressInitial() || ProgressLoading() =>
-          const AppLoading.skeletonInline(skeletonLines: 2),
-        ProgressError() => AppError(message: progState.message),
-        ProgressLoaded() => AppCard(
-            padding: const EdgeInsets.all(AppSpacing.xl),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final wide = constraints.maxWidth >= 560;
-                return Wrap(
-                  runSpacing: AppSpacing.xl2,
-                  spacing: AppSpacing.md,
-                  children: [
-                    _StatCard(label: '总题数',
-                        value: '${progState.progress.total}',
-                        wide: wide, icon: LucideIcons.listOrdered),
-                    _StatCard(label: '答对',
-                        value: '${progState.progress.correct}',
-                        wide: wide, icon: LucideIcons.checkCircle2),
-                    _StatCard(label: '正确率',
-                        value: '${(progState.progress.accuracy * 100).round()}%',
-                        wide: wide, icon: LucideIcons.barChart3,
-                        tone: _Tone.positive),
-                    _StatCard(label: '连续打卡',
-                        value: '${progState.progress.streakDays}天',
-                        wide: wide, icon: LucideIcons.flame,
-                        tone: _Tone.warm),
-                  ],
-                );
-              },
-            ),
+    return switch (progState) {
+      ProgressInitial() ||
+      ProgressLoading() =>
+        const AppLoading.skeletonInline(skeletonLines: 2),
+      ProgressError() => AppError(message: progState.message),
+      ProgressLoaded() => AppCard(
+          padding: const EdgeInsets.all(AppSpacing.xl),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final wide = constraints.maxWidth >= 560;
+              return Wrap(
+                runSpacing: AppSpacing.xl2,
+                spacing: AppSpacing.md,
+                children: [
+                  _StatCard(
+                      label: '总题数',
+                      value: '${progState.progress.total}',
+                      wide: wide,
+                      icon: LucideIcons.listOrdered),
+                  _StatCard(
+                      label: '答对',
+                      value: '${progState.progress.correct}',
+                      wide: wide,
+                      icon: LucideIcons.checkCircle2),
+                  _StatCard(
+                      label: '正确率',
+                      value: '${(progState.progress.accuracy * 100).round()}%',
+                      wide: wide,
+                      icon: LucideIcons.barChart3,
+                      tone: _Tone.positive),
+                  _StatCard(
+                      label: '连续打卡',
+                      value: '${progState.progress.streakDays}天',
+                      wide: wide,
+                      icon: LucideIcons.flame,
+                      tone: _Tone.warm),
+                ],
+              );
+            },
           ),
-      },
-    );
+        ),
+    };
   }
 
   Widget _buildMastery(BuildContext context) => const MasteryBoard();
 
-  Widget _buildRecentTasks(BuildContext context, WidgetRef ref,
-      ParentTasksState tasksState) {
+  Widget _buildRecentTasks(
+      BuildContext context, WidgetRef ref, ParentTasksState tasksState) {
     if (tasksState is ParentTasksLoading) {
       return const AppLoading.skeletonInline(skeletonLines: 2);
     }
@@ -262,8 +266,11 @@ class _StatCard extends StatelessWidget {
   final IconData icon;
   final _Tone tone;
   const _StatCard({
-    required this.label, required this.value, required this.wide,
-    required this.icon, this.tone = _Tone.neutral,
+    required this.label,
+    required this.value,
+    required this.wide,
+    required this.icon,
+    this.tone = _Tone.neutral,
   });
 
   @override
@@ -278,12 +285,15 @@ class _StatCard extends StatelessWidget {
     return Container(
       width: wide ? null : 160,
       constraints: wide
-        ? BoxConstraints(
-            minWidth: 140,
-            maxWidth: (MediaQuery.of(context).size.width -
-                AppSpacing.xl2 * 2 - AppSpacing.lg * 2 - AppSpacing.md * 3) / 4,
-          )
-        : null,
+          ? BoxConstraints(
+              minWidth: 140,
+              maxWidth: (MediaQuery.of(context).size.width -
+                      AppSpacing.xl2 * 2 -
+                      AppSpacing.lg * 2 -
+                      AppSpacing.md * 3) /
+                  4,
+            )
+          : null,
       padding: const EdgeInsets.all(AppSpacing.xl),
       decoration: BoxDecoration(
         color: scheme.surfaceRaised,
@@ -295,19 +305,21 @@ class _StatCard extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 36, height: 36,
+            width: 36,
+            height: 36,
             decoration: BoxDecoration(
-              color: bg, borderRadius: BorderRadius.circular(12),
+              color: bg,
+              borderRadius: BorderRadius.circular(AppRadius.card),
             ),
             alignment: Alignment.center,
             child: Icon(icon, size: 20, color: fg),
           ),
           const SizedBox(height: AppSpacing.md),
           Text(value,
-            style: AppTheme.textOf(context).headlineMedium?.copyWith(
-              color: scheme.onSurface,
-              fontFeatures: const [FontFeature.tabularFigures()],
-            )),
+              style: AppTheme.textOf(context).headlineMedium?.copyWith(
+                color: scheme.onSurface,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              )),
           const SizedBox(height: AppSpacing.xs),
           Text(label, style: AppTheme.textOf(context).bodySmall),
         ],
@@ -315,4 +327,3 @@ class _StatCard extends StatelessWidget {
     );
   }
 }
-

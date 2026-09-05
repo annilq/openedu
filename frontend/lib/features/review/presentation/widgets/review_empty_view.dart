@@ -10,19 +10,20 @@ class ReviewEmptyView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = AppTheme.colorsOf(context);
-    return Center(
+    return Align(alignment: Alignment.topLeft,
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(AppSpacing.xl3),
+        padding: const EdgeInsets.all(AppSpacing.xxl),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 440),
           child: Container(
-            padding: const EdgeInsets.all(AppSpacing.xl4),
+            padding: const EdgeInsets.all(AppSpacing.xxl),
             decoration: BoxDecoration(
               color: scheme.surfaceRaised,
               borderRadius: BorderRadius.circular(AppRadius.banner),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
                   width: 96,
@@ -37,11 +38,11 @@ class ReviewEmptyView extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.xl2),
                 Text('今天没有要复习的题',
-                    textAlign: TextAlign.center,
+                    textAlign: TextAlign.start,
                     style: AppTheme.textOf(context).headlineMedium),
                 const SizedBox(height: AppSpacing.sm),
                 Text('把错题复习掉，就能记得更牢～',
-                    textAlign: TextAlign.center,
+                    textAlign: TextAlign.start,
                     style: AppTheme.textOf(context).bodyMedium),
                 const SizedBox(height: AppSpacing.xl4),
                 AppPrimaryButton(

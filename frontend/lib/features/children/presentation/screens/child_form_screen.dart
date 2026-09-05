@@ -23,11 +23,16 @@ class ChildFormScreen extends ConsumerStatefulWidget {
   final UserModel? child; // edit 时传入
   final void Function(UserModel saved)? onSaved;
 
+  /// 覆盖层场景（如 home_screen 的编辑层/创建页，未走 Navigator.push）的返回行为。
+  /// 为 null 时由 [AppTopBar] 走默认 [Navigator.maybePop]。
+  final VoidCallback? onBack;
+
   const ChildFormScreen({
     super.key,
     required this.mode,
     this.child,
     this.onSaved,
+    this.onBack,
   });
 
   @override
@@ -143,10 +148,11 @@ class _ChildFormScreenState extends ConsumerState<ChildFormScreen> {
         color: app.surface,
         child: Column(
           children: [
-            AppTopBar(title: title, showBack: true),
+            AppTopBar(title: title, showBack: true, onBack: widget.onBack),
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.all(AppSpacing.xl3),
+                padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md,
+                    AppSpacing.lg, AppSpacing.xl2),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -168,7 +174,8 @@ class _ChildFormScreenState extends ConsumerState<ChildFormScreen> {
                       ),
                       const SizedBox(height: AppSpacing.lg),
                     ] else
-                      _LockedField(label: '登录账号（不可修改）', value: _usernameCtrl.text),
+                      _LockedField(
+                          label: '登录账号（不可修改）', value: _usernameCtrl.text),
                     AppPickerField<int>(
                       label: '年级',
                       values: List.generate(6, (i) => i + 1),

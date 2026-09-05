@@ -19,10 +19,19 @@ class TutorQuotaScreen extends ConsumerStatefulWidget {
   final String childId;
   final String childName;
 
+  /// 是否显示返回按钮。作为 [HomeScreen] 的「AI 管控」主页面直接渲染时传 false
+  /// （顶栏页面无上层可返回）；被 push 进入时默认 true。
+  final bool showBack;
+
+  /// 自定义返回行为（覆盖层场景必须提供）。为 null 时走默认 [Navigator.maybePop]。
+  final VoidCallback? onBack;
+
   const TutorQuotaScreen({
     super.key,
     required this.childId,
     required this.childName,
+    this.showBack = true,
+    this.onBack,
   });
 
   @override
@@ -83,8 +92,7 @@ class _TutorQuotaScreenState extends ConsumerState<TutorQuotaScreen> {
     final askText = _askLimitCtrl.text.trim();
     final minutesText = _minutesLimitCtrl.text.trim();
     final askLimit = askText.isEmpty ? null : int.tryParse(askText);
-    final minutesLimit =
-        minutesText.isEmpty ? null : int.tryParse(minutesText);
+    final minutesLimit = minutesText.isEmpty ? null : int.tryParse(minutesText);
     if ((askText.isNotEmpty && askLimit == null) ||
         (minutesText.isNotEmpty && minutesLimit == null)) {
       AppToast.show(context, '上限必须是数字（留空表示不限制）');
@@ -133,33 +141,32 @@ class _TutorQuotaScreenState extends ConsumerState<TutorQuotaScreen> {
           children: [
             AppTopBar(
               title: '${widget.childName} · AI 使用管控',
-              showBack: true,
+              showBack: widget.showBack,
+              onBack: widget.onBack,
             ),
             Expanded(
               child: switch (quotaState) {
-                TutorQuotaInitial() || TutorQuotaLoading() =>
+                TutorQuotaInitial() ||
+                TutorQuotaLoading() =>
                   const AppLoading(message: '加载设置...'),
                 TutorQuotaError() => AppError(
                     message: quotaState.message,
                     onRetry: () {
                       ref
-                          .read(
-                              tutorQuotaNotifierProvider(widget.childId).notifier)
+                          .read(tutorQuotaNotifierProvider(widget.childId)
+                              .notifier)
                           .load(childId: widget.childId);
                     },
                   ),
                 TutorQuotaLoaded() => ListView(
-                    padding: const EdgeInsets.fromLTRB(
-                        AppSpacing.xl2, AppSpacing.md, AppSpacing.xl2, AppSpacing.xl4),
+                    padding: const EdgeInsets.fromLTRB(AppSpacing.lg,
+                        AppSpacing.md, AppSpacing.lg, AppSpacing.xl2),
                     children: [
-                      Center(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 720),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               TutorUsageCard(usageState: usageState),
-                              const SizedBox(height: AppSpacing.xl3),
+                              const SizedBox(height: AppSpacing.xl2),
                               TutorQuotaForm(
                                 askLimitCtrl: _askLimitCtrl,
                                 minutesLimitCtrl: _minutesLimitCtrl,
@@ -171,7 +178,8 @@ class _TutorQuotaScreenState extends ConsumerState<TutorQuotaScreen> {
                                 padding: const EdgeInsets.all(AppSpacing.md),
                                 decoration: BoxDecoration(
                                   color: scheme.secondaryContainer,
-                                  borderRadius: BorderRadius.circular(12),
+                                  borderRadius:
+                                      BorderRadius.circular(AppRadius.card),
                                 ),
                                 child: Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -202,9 +210,7 @@ class _TutorQuotaScreenState extends ConsumerState<TutorQuotaScreen> {
                               ),
                             ],
                           ),
-                        ),
-                      ),
-                    ],
+                        ],
                   ),
               },
             ),

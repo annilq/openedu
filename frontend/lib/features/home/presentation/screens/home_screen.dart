@@ -6,6 +6,7 @@ import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/widgets/adaptive_shell.dart';
 import '../../../children/domain/providers/children_provider.dart';
+import '../../../children/presentation/providers/children_notifier.dart';
 import '../../../children/presentation/screens/child_form_screen.dart';
 import '../../../practice/presentation/screens/practice_screen.dart';
 import '../../../profile/presentation/screens/profile_screen.dart';
@@ -14,6 +15,7 @@ import '../../../review/presentation/screens/review_screen.dart';
 import '../../../review/presentation/screens/wrong_questions_screen.dart';
 import '../../../tutor/presentation/screens/tutor_chat_screen.dart';
 import '../../../tutor/presentation/screens/parent_model_management_screen.dart';
+import '../../../tutor/presentation/screens/tutor_quota_screen.dart';
 import '../providers/home_notifier.dart';
 import '../providers/parent_tasks_notifier.dart';
 import '../providers/selected_child_provider.dart';
@@ -23,7 +25,6 @@ import '../widgets/parent/parent_child_selector.dart';
 import '../widgets/parent/parent_overview_view.dart';
 import '../widgets/parent/parent_task_form_view.dart';
 import '../widgets/parent/parent_tutor_logs_view.dart';
-import '../widgets/parent/parent_tutor_quota_view.dart';
 import '../widgets/parent/parent_question_bank_view.dart';
 import '../widgets/parent/parent_tasks_view.dart';
 import '../widgets/parent/parent_wrong_questions_view.dart';
@@ -109,12 +110,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   void _onProfileTap() {
-    setState(() => _showProfile = true);
+    setState(() {
+      _showProfile = true;
+      _editingChild = null;
+    });
   }
 
   void _onNavigateToAddChild() {
     setState(() {
       _showProfile = false;
+      _editingChild = null;
       _parentNavIndex = 5;
     });
   }
@@ -196,6 +201,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         mode: ChildFormMode.edit,
         child: editing,
         onSaved: _onChildFormSaved,
+        onBack: () => setState(() => _editingChild = null),
       );
     }
     if (_showProfile) {
@@ -209,10 +215,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ),
       2 => const ParentWrongQuestionsView(),
       3 => const ParentTutorLogsView(),
-      4 => const ParentTutorQuotaView(),
+      4 => _buildAiControl(ref),
       5 => ChildFormScreen(
           mode: ChildFormMode.create,
           onSaved: _onChildFormSaved,
+          onBack: () => setState(() {
+            _editingChild = null;
+            _parentNavIndex = 0;
+          }),
         ),
       6 => ParentQuestionBankView(
           onNavigateToReview: _navigateToReview,
@@ -223,6 +233,55 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ),
       _ => const SizedBox(),
     };
+  }
+
+  /// 「AI 管控」主页面：直接渲染设置页（TutorQuotaScreen），避免先进介绍页再点
+  /// 设置按钮的二次跳转。未选中娃娃时给空状态提示。
+  Widget _buildAiControl(WidgetRef ref) {
+    final selected = ref.watch(selectedChildProvider);
+    if (selected == null) {
+      return _aiControlEmptyState(context);
+    }
+    final childrenState = ref.watch(childrenNotifierProvider);
+    String childName = selected.id;
+    if (childrenState is ChildrenLoaded) {
+      for (final c in childrenState.children) {
+        if (c.id == selected.id) childName = c.displayName;
+      }
+    }
+    return TutorQuotaScreen(
+      childId: selected.id,
+      childName: childName,
+      showBack: false,
+    );
+  }
+
+  Widget _aiControlEmptyState(BuildContext context) {
+    final scheme = AppTheme.colorsOf(context);
+    return Center(
+      child: AppCard(
+        padding: const EdgeInsets.all(AppSpacing.xxl),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: scheme.secondaryContainer,
+                borderRadius: BorderRadius.circular(AppRadius.card),
+              ),
+              alignment: Alignment.center,
+              child: Icon(LucideIcons.timer,
+                  size: 28, color: scheme.onSecondaryContainer),
+            ),
+            const SizedBox(width: AppSpacing.xl),
+            Text('请先在侧栏选择娃娃',
+                style: AppTheme.textOf(context).bodyLarge),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildChildView() {
@@ -293,9 +352,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   ];
 
   void _parentTap(int index) {
-    // 审核页内点击导航不直接切，先返回首页
-    if (_reviewingTask != null) {
-      setState(() => _reviewingTask = null);
+    // 任何侧栏导航都先关闭复核 / 编辑覆盖层。两者渲染优先级高于 _parentNavIndex，
+    // 不清掉会挡住页面切换（编辑层尤其明显：点左侧菜单页面不跟随切换）。
+    if (_reviewingTask != null || _editingChild != null) {
+      setState(() {
+        _reviewingTask = null;
+        _editingChild = null;
+      });
     }
     _onParentNavTap(index);
   }

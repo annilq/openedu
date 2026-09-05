@@ -28,6 +28,13 @@
 - **PostgreSQL**：关系型数据库，本项目持久化存储。
 - **Docker**：容器化运行环境，本地起步、预留云迁移。
 
+## AI 可观测性（conversation/message 调试库）
+- **Conversation（AI 运行）**：一次 Agent 运行的容器；聚合所有 message，携带运行类型 `kind`、归属 `parent_id`、触发者 `child_id`、所用模型、状态 `status`（ADR-0022）。
+- **Message（运行步骤）**：Conversation 内带 `role` 与 `step` 的一步记录；`content`(TEXT) 存人类可读文本，`payload`(JSON) 存结构化原始数据（题卡 dict / 模型原始响应 / 检索块 / 工具参数）。
+- **role（消息角色）**：`system`(系统提示) / `user`(用户或前端输入) / `assistant`(模型输出) / `tool`(工具调用)。
+- **step（运行阶段）**：`input`(请求) / `retrieval`(检索) / `reasoning`(推理) / `generation`(生成中) / `tool_call`(工具调用) / `output`(最终输出) / `error`(异常)。
+- **Agent 运行调试库**：`conversation`+`message` 组成、与 `TutorLog`(答疑合规) 职责分离的 AI 可观测存储，用于回放与定位 bad case（ADR-0022）。
+
 ## 产品机制
 - **Streak（连续打卡）**：连续完成每日任务的天数计数，轻量激励。
 - **徽章 / 积分**：学科成就与累计奖励，纯前端状态。

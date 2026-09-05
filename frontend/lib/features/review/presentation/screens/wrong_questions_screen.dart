@@ -21,7 +21,8 @@ class WrongQuestionsScreen extends ConsumerStatefulWidget {
   const WrongQuestionsScreen({super.key, this.showBack = true});
 
   @override
-  ConsumerState<WrongQuestionsScreen> createState() => _WrongQuestionsScreenState();
+  ConsumerState<WrongQuestionsScreen> createState() =>
+      _WrongQuestionsScreenState();
 }
 
 class _WrongQuestionsScreenState extends ConsumerState<WrongQuestionsScreen> {
@@ -67,23 +68,22 @@ class _WrongQuestionsScreenState extends ConsumerState<WrongQuestionsScreen> {
             ),
             Expanded(
               child: switch (state) {
-                WrongQuestionsInitial() || WrongQuestionsLoading() =>
+                WrongQuestionsInitial() ||
+                WrongQuestionsLoading() =>
                   const AppLoading(message: '加载错题...'),
                 WrongQuestionsError() => AppError(
                     message: state.message,
-                    onRetry: () => ref.read(childWrongQuestionsProvider.notifier).load(),
+                    onRetry: () =>
+                        ref.read(childWrongQuestionsProvider.notifier).load(),
                   ),
                 WrongQuestionsLoaded() => state.items.isEmpty
                     ? _buildEmptyView()
                     : ListView.builder(
                         padding: const EdgeInsets.fromLTRB(AppSpacing.lg,
-                            AppSpacing.md, AppSpacing.lg, AppSpacing.xl4),
+                            AppSpacing.md, AppSpacing.lg, AppSpacing.xl2),
                         itemCount: state.items.length,
-                        itemBuilder: (ctx, i) => Padding(
-                          padding: const EdgeInsets.symmetric(
-                              vertical: AppSpacing.xs),
-                          child: _WrongQuestionCard(item: state.items[i]),
-                        ),
+                        itemBuilder: (ctx, i) =>
+                            _WrongQuestionCard(item: state.items[i]),
                       ),
               },
             ),
@@ -95,13 +95,13 @@ class _WrongQuestionsScreenState extends ConsumerState<WrongQuestionsScreen> {
 
   Widget _buildEmptyView() {
     final scheme = AppTheme.colorsOf(context);
-    return Center(
+    return Align(alignment: Alignment.topLeft,
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(AppSpacing.xl3),
+        padding: const EdgeInsets.all(AppSpacing.xl2),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 440),
           child: Container(
-            padding: const EdgeInsets.all(AppSpacing.xl4),
+            padding: const EdgeInsets.all(AppSpacing.xxl),
             decoration: BoxDecoration(
               color: scheme.surfaceContainerLow,
               borderRadius: BorderRadius.circular(AppRadius.banner),
@@ -109,6 +109,7 @@ class _WrongQuestionsScreenState extends ConsumerState<WrongQuestionsScreen> {
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
                   width: 88,
@@ -123,11 +124,11 @@ class _WrongQuestionsScreenState extends ConsumerState<WrongQuestionsScreen> {
                 ),
                 const SizedBox(height: AppSpacing.xl2),
                 Text('还没有错题',
-                    textAlign: TextAlign.center,
+                    textAlign: TextAlign.start,
                     style: AppTheme.textOf(context).titleLarge),
                 const SizedBox(height: AppSpacing.xs),
                 Text('继续保持，做题仔细一点就不会错啦～',
-                    textAlign: TextAlign.center,
+                    textAlign: TextAlign.start,
                     style: AppTheme.textOf(context).bodyMedium),
               ],
             ),

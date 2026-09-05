@@ -116,15 +116,17 @@ class _ParentChildSelectorState extends ConsumerState<ParentChildSelector> {
         padding: const EdgeInsets.symmetric(
             horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
         decoration: BoxDecoration(
-          color: _triggerHovered ? scheme.surfaceHover : CupertinoColors.transparent,
+          color: _triggerHovered
+              ? scheme.surfaceHover
+              : CupertinoColors.transparent,
           borderRadius: BorderRadius.circular(AppRadius.button),
         ),
         child: Row(
           children: [
             if (hasChildren)
-              AvatarSquircle(name: name, size: 32)
+              AvatarSquircle.xs(name: name)
             else
-              Icon(LucideIcons.plusCircle, size: 22, color: scheme.accent),
+              Icon(LucideIcons.plusCircle, size: 20, color: scheme.accent),
             const SizedBox(width: AppSpacing.xs),
             Expanded(
               child: Text.rich(
@@ -133,16 +135,16 @@ class _ParentChildSelectorState extends ConsumerState<ParentChildSelector> {
                     TextSpan(
                       text: hasChildren ? name : '添加娃娃',
                       style: AppTheme.textOf(context).labelMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: scheme.onSurface,
-                      ),
+                            fontWeight: FontWeight.w600,
+                            color: scheme.onSurface,
+                          ),
                     ),
                     if (hasChildren && grade > 0)
                       TextSpan(
                         text: ' · $grade年级',
                         style: AppTheme.textOf(context).labelMedium?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
+                              color: scheme.onSurfaceVariant,
+                            ),
                       ),
                   ],
                 ),
@@ -177,7 +179,7 @@ class _ParentChildSelectorState extends ConsumerState<ParentChildSelector> {
       );
     }
     return Container(
-      width: 208,
+      width: 224,
       constraints: const BoxConstraints(maxHeight: 400),
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
       child: Column(
@@ -246,9 +248,9 @@ class _ChildOption extends StatelessWidget {
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         child: Container(
-          padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-          margin: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md, vertical: AppSpacing.xs),
+      margin: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
           decoration: BoxDecoration(
             color: active ? scheme.surfaceActive : CupertinoColors.transparent,
             borderRadius: BorderRadius.circular(AppRadius.chip),
@@ -256,26 +258,42 @@ class _ChildOption extends StatelessWidget {
           child: Row(
             children: [
               if (icon != null)
-                Icon(icon, size: 18,
+                Icon(icon,
+                    size: 18,
                     color: active ? scheme.accent : scheme.onSurfaceVariant)
               else
-                AvatarSquircle.small(name: name),
+                AvatarSquircle.xs(name: name),
               const SizedBox(width: AppSpacing.sm),
               Expanded(
-                child: Text(name,
-                    style: AppTheme.textOf(context).labelMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: active ? scheme.onSurface : scheme.onSurface,
-                    )),
+                child: Row(
+                  children: [
+                    Flexible(
+                      child: Text(name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTheme.textOf(context)
+                              .labelMedium
+                              ?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: scheme.onSurface,
+                              )),
+                    ),
+                    if (grade != null && grade! > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(left: AppSpacing.xs),
+                        child: Text('$grade年级',
+                            style: AppTheme.textOf(context)
+                                .labelSmall
+                                ?.copyWith(
+                                  color: scheme.onSurfaceVariant,
+                                )),
+                      ),
+                  ],
+                ),
               ),
-              if (grade != null && grade! > 0)
-                Text('$grade年级',
-                    style: AppTheme.textOf(context).labelSmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    )),
               if (onEdit != null)
                 Padding(
-                  padding: const EdgeInsets.only(left: AppSpacing.xs),
+                  padding: const EdgeInsets.only(left: AppSpacing.sm),
                   child: MouseRegion(
                     cursor: SystemMouseCursors.click,
                     child: GestureDetector(
@@ -287,8 +305,11 @@ class _ChildOption extends StatelessWidget {
                   ),
                 ),
               if (active)
-                Icon(LucideIcons.check,
-                    size: 16, color: scheme.accent),
+                Padding(
+                  padding: const EdgeInsets.only(left: AppSpacing.xs),
+                  child: Icon(LucideIcons.check,
+                      size: 16, color: scheme.accent),
+                ),
             ],
           ),
         ),

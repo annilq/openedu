@@ -44,7 +44,8 @@ class AppOptionTile extends StatelessWidget {
           decoration: BoxDecoration(
             color: selected ? scheme.primaryContainer : scheme.surfaceRaised,
             borderRadius: BorderRadius.circular(AppRadius.card),
-            border: selected ? Border.all(color: scheme.primary, width: 2) : null,
+            border:
+                selected ? Border.all(color: scheme.primary, width: 1.5) : null,
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -54,7 +55,7 @@ class AppOptionTile extends StatelessWidget {
                 height: 36,
                 decoration: BoxDecoration(
                   color: selected ? scheme.primary : scheme.surfaceSunken,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(AppRadius.card),
                 ),
                 alignment: Alignment.center,
                 child: Text(
@@ -73,7 +74,9 @@ class AppOptionTile extends StatelessWidget {
                     this.text,
                     style: text.titleMedium?.copyWith(
                       fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                      color: selected ? scheme.onPrimaryContainer : scheme.onSurface,
+                      color: selected
+                          ? scheme.onPrimaryContainer
+                          : scheme.onSurface,
                     ),
                   ),
                 ),

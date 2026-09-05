@@ -24,12 +24,20 @@ from app.api.deps import CurrentChild, CurrentParent, SessionDep
 from app.core.config import settings
 from app.crud import (
     count_tutor_today,
+    get_conversation_messages,
     get_tutor_quota,
     get_tutor_usage_today,
+    list_conversations,
 )
 from app.domain import REASON_SUBJECT_SCOPE, check_quota
 from app.domain.safety import check_input
-from app.models import User
+from app.models import (
+    Conversation,
+    ConversationDetailResp,
+    ConversationResp,
+    MessageResp,
+    User,
+)
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
@@ -126,3 +134,30 @@ async def tasks_generate_endpoint(
 
     context = {"parent_id": str(parent.id), "role": "parent"}
     return await handle_genkit_request(request, action=tasks_generate, context=context)
+
+
+# ───────── AI 运行可观测：只读调试接口（ADR-0022） ─────────
+# 仅供家长（owner）回放自家 Agent 运行，用于调试 Agent 输出与定位 bad case。
+# 与 TutorLog（答疑合规）分离；本接口只读，不写入。
+@router.get("/debug/conversations", response_model=list[ConversationResp])
+def debug_list_conversations(
+    *, session: SessionDep, parent: CurrentParent, kind: str | None = None, limit: int = 100
+) -> list[ConversationResp]:
+    """家长查看自家 AI 运行列表（出题/批改/agent），可按 kind 过滤，时间倒序。"""
+    rows = list_conversations(session=session, parent_id=parent.id, kind=kind, limit=limit)
+    return [ConversationResp(**r.model_dump()) for r in rows]
+
+
+@router.get("/debug/conversations/{conv_id}", response_model=ConversationDetailResp)
+def debug_get_conversation(
+    *, session: SessionDep, parent: CurrentParent, conv_id: UUID
+) -> ConversationDetailResp:
+    """家长查看一次 AI 运行的概要 + 全部步骤（按 turn 回放）。越权（非本家长）→ 403。"""
+    conv = session.get(Conversation, conv_id)
+    if conv is None or conv.parent_id != parent.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your conversation")
+    msgs = get_conversation_messages(session=session, conversation_id=conv_id)
+    return ConversationDetailResp(
+        conversation=ConversationResp(**conv.model_dump()),
+        messages=[MessageResp(**m.model_dump()) for m in msgs],
+    )

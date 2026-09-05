@@ -63,16 +63,14 @@ class ProfileScreen extends ConsumerWidget {
 
         // 外观：亮暗主题切换
         const SectionTitle('外观'),
-        const SizedBox(height: AppSpacing.sm),
         _ThemeModeSetting(),
         const SizedBox(height: AppSpacing.md),
         _UserModeSetting(),
 
-        const SizedBox(height: AppSpacing.xxl),
+        const SizedBox(height: AppSpacing.xl2),
 
         // Info card
         const SectionTitle('账号信息'),
-        const SizedBox(height: AppSpacing.sm),
         Container(
           decoration: BoxDecoration(
             color: app.surface,
@@ -107,7 +105,7 @@ class ProfileScreen extends ConsumerWidget {
           ),
         ),
 
-        SizedBox(height: AppSpacing.xxl),
+        SizedBox(height: AppSpacing.lg),
 
         // Logout
         SizedBox(
@@ -122,8 +120,7 @@ class ProfileScreen extends ConsumerWidget {
                 context,
                 title: Text('退出登录',
                     style: text.titleMedium?.copyWith(color: app.onSurface)),
-                content: Text('确定要退出当前账号吗？',
-                    style: text.bodyMedium),
+                content: Text('确定要退出当前账号吗？', style: text.bodyMedium),
                 cancelLabel: '取消',
                 confirmLabel: '确定退出',
                 destructive: true,
@@ -236,7 +233,8 @@ class _ThemeModeSetting extends ConsumerWidget {
           children: [
             _buildSegment(context, '亮色', AppThemeMode.light, mode, controller),
             _buildSegment(context, '暗色', AppThemeMode.dark, mode, controller),
-            _buildSegment(context, '跟随系统', AppThemeMode.system, mode, controller),
+            _buildSegment(
+                context, '跟随系统', AppThemeMode.system, mode, controller),
           ],
         ),
       ),
@@ -256,13 +254,12 @@ class _ThemeModeSetting extends ConsumerWidget {
     return Expanded(
       child: ShadButton.ghost(
         height: 40,
-        backgroundColor: selected ? app.primaryContainer : const Color(0x00000000),
-        hoverBackgroundColor: selected
-            ? app.primaryContainer
-            : app.surfaceContainerHighest,
-        pressedBackgroundColor: selected
-            ? app.primary
-            : app.surfaceContainerHighest,
+        backgroundColor:
+            selected ? app.primaryContainer : const Color(0x00000000),
+        hoverBackgroundColor:
+            selected ? app.primaryContainer : app.surfaceContainerHighest,
+        pressedBackgroundColor:
+            selected ? app.primary : app.surfaceContainerHighest,
         onPressed: () => controller.setMode(value),
         child: Text(
           label,
@@ -344,7 +341,8 @@ class _UserModeSetting extends ConsumerWidget {
     return Expanded(
       child: ShadButton.ghost(
         height: 40,
-        backgroundColor: selected ? app.primaryContainer : const Color(0x00000000),
+        backgroundColor:
+            selected ? app.primaryContainer : const Color(0x00000000),
         hoverBackgroundColor:
             selected ? app.primaryContainer : app.surfaceContainerHighest,
         pressedBackgroundColor:

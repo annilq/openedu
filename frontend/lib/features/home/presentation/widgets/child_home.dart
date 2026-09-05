@@ -59,17 +59,21 @@ class ChildHome extends ConsumerWidget {
                   duration: const Duration(milliseconds: 420),
                   child: _TutorBanner(onTutor: onNavigateToTutor),
                 ),
-                const SectionTitle('今日任务'),
+                const SectionTitle('今日任务',
+                    padding: EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md,
+                        AppSpacing.lg, AppSpacing.md)),
                 ...switch (state) {
-                  TodayTasksInitial() || TodayTasksLoading() =>
-                  const [AppLoading.skeletonInline(skeletonLines: 2)],
+                  TodayTasksInitial() || TodayTasksLoading() => const [
+                      AppLoading.skeletonInline(skeletonLines: 2)
+                    ],
                   TodayTasksError() => [
                       Padding(
                         padding: const EdgeInsets.all(AppSpacing.lg),
                         child: AppError(
                           message: state.message,
-                          onRetry: () =>
-                              ref.read(todayTasksNotifierProvider.notifier).load(),
+                          onRetry: () => ref
+                              .read(todayTasksNotifierProvider.notifier)
+                              .load(),
                         ),
                       ),
                     ],
@@ -82,6 +86,7 @@ class ChildHome extends ConsumerWidget {
                                 right: AppSpacing.xl2),
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Container(
                                   width: 88,
@@ -92,16 +97,16 @@ class ChildHome extends ConsumerWidget {
                                   ),
                                   alignment: Alignment.center,
                                   child: Icon(CupertinoIcons.sun_max,
-                                      size: 44,
-                                      color: app.onTertiaryContainer),
+                                      size: 44, color: app.onTertiaryContainer),
                                 ),
                                 const SizedBox(height: AppSpacing.xl2),
                                 Text('今天还没有任务哦',
-                                    textAlign: TextAlign.center,
-                                    style: AppTheme.textOf(context).titleMedium),
+                                    textAlign: TextAlign.start,
+                                    style:
+                                        AppTheme.textOf(context).titleMedium),
                                 const SizedBox(height: AppSpacing.sm),
                                 Text('等爸爸妈妈布置吧～',
-                                    textAlign: TextAlign.center,
+                                    textAlign: TextAlign.start,
                                     style: AppTheme.textOf(context).bodyMedium),
                               ],
                             ),
@@ -165,10 +170,10 @@ class _ReviewBanner extends StatelessWidget {
                 height: 56,
                 decoration: BoxDecoration(
                   color: app.primary.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(18),
+                  borderRadius: BorderRadius.circular(AppRadius.bubble),
                 ),
-                child: Icon(CupertinoIcons.refresh,
-                    size: 32, color: app.primary),
+                child:
+                    Icon(CupertinoIcons.refresh, size: 32, color: app.primary),
               ),
               const SizedBox(width: AppSpacing.xl),
               Expanded(
@@ -181,11 +186,10 @@ class _ReviewBanner extends StatelessWidget {
                             fontWeight: FontWeight.w700)),
                     const SizedBox(height: AppSpacing.xs),
                     Text(
-                      dueCount > 0
-                          ? '今天有 $dueCount 道题要复习'
-                          : '今天没有要复习的题',
+                      dueCount > 0 ? '今天有 $dueCount 道题要复习' : '今天没有要复习的题',
                       style: AppTheme.textOf(context).bodyMedium?.copyWith(
-                          color: app.onPrimaryContainer.withValues(alpha: 0.88)),
+                          color:
+                              app.onPrimaryContainer.withValues(alpha: 0.88)),
                     ),
                   ],
                 ),
@@ -201,8 +205,8 @@ class _ReviewBanner extends StatelessWidget {
               CupertinoButton.filled(
                 padding: const EdgeInsets.symmetric(
                     horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
-                borderRadius: const BorderRadius.all(
-                    Radius.circular(AppRadius.button)),
+                borderRadius:
+                    const BorderRadius.all(Radius.circular(AppRadius.button)),
                 onPressed: onReview,
                 child: const Text('去复习'),
               ),
@@ -243,7 +247,7 @@ class _TutorBanner extends StatelessWidget {
                 height: 56,
                 decoration: BoxDecoration(
                   color: app.secondary.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(18),
+                  borderRadius: BorderRadius.circular(AppRadius.bubble),
                 ),
                 child: Icon(CupertinoIcons.sparkles,
                     size: 32, color: app.secondary),
@@ -269,8 +273,8 @@ class _TutorBanner extends StatelessWidget {
                 // AI 区主按钮沿用植物绿主色，保持单强调色一致性
                 padding: const EdgeInsets.symmetric(
                     horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
-                borderRadius: const BorderRadius.all(
-                    Radius.circular(AppRadius.button)),
+                borderRadius:
+                    const BorderRadius.all(Radius.circular(AppRadius.button)),
                 onPressed: onTutor,
                 child: const Text('去提问'),
               ),
@@ -314,7 +318,8 @@ class _TaskCard extends StatelessWidget {
           Builder(
             builder: (context) {
               // 学科/年级/知识点已下沉到题（ADR-0004），从首题取展示值。
-              final q0 = task.questions.isNotEmpty ? task.questions.first : null;
+              final q0 =
+                  task.questions.isNotEmpty ? task.questions.first : null;
               return Wrap(
                 spacing: AppSpacing.sm,
                 runSpacing: AppSpacing.sm,

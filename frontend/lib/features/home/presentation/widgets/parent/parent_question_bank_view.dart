@@ -25,9 +25,19 @@ class ParentQuestionBankView extends ConsumerStatefulWidget {
       _ParentQuestionBankViewState();
 }
 
-class _ParentQuestionBankViewState extends ConsumerState<ParentQuestionBankView> {
+class _ParentQuestionBankViewState
+    extends ConsumerState<ParentQuestionBankView> {
   static const List<String> _subjects = [
-    '数学', '语文', '英语', '科学', '道法', '历史', '地理', '生物', '物理', '化学'
+    '数学',
+    '语文',
+    '英语',
+    '科学',
+    '道法',
+    '历史',
+    '地理',
+    '生物',
+    '物理',
+    '化学'
   ];
   static const List<String> _qtypes = ['calc', 'fill', 'choice', 'open'];
   static const List<String> _qtypeLabels = ['计算', '填空', '选择', '应用'];
@@ -58,11 +68,13 @@ class _ParentQuestionBankViewState extends ConsumerState<ParentQuestionBankView>
 
   void _reload() {
     ref.read(questionBankNotifierProvider.notifier).load(
-      gradeSegment: _gradeSegment,
-      subject: _selectedSubject.isEmpty ? null : _selectedSubject,
-      qtype: _selectedQtype == 'all' ? null : _selectedQtype,
-      keyword: _keywordCtrl.text.trim().isEmpty ? null : _keywordCtrl.text.trim(),
-    );
+          gradeSegment: _gradeSegment,
+          subject: _selectedSubject.isEmpty ? null : _selectedSubject,
+          qtype: _selectedQtype == 'all' ? null : _selectedQtype,
+          keyword: _keywordCtrl.text.trim().isEmpty
+              ? null
+              : _keywordCtrl.text.trim(),
+        );
   }
 
   void _onKeywordChanged(String v) {
@@ -70,8 +82,9 @@ class _ParentQuestionBankViewState extends ConsumerState<ParentQuestionBankView>
     _debounce = Timer(const Duration(milliseconds: 300), _reload);
   }
 
-  void _toggle(String id) =>
-      setState(() => _selectedIds.contains(id) ? _selectedIds.remove(id) : _selectedIds.add(id));
+  void _toggle(String id) => setState(() => _selectedIds.contains(id)
+      ? _selectedIds.remove(id)
+      : _selectedIds.add(id));
 
   Future<void> _generate() async {
     final selected = ref.read(selectedChildProvider);
@@ -84,10 +97,11 @@ class _ParentQuestionBankViewState extends ConsumerState<ParentQuestionBankView>
     final ok = await _showCreateDialog();
     if (ok != true) return;
     await ref.read(questionBankNotifierProvider.notifier).createTaskFromBank(
-      title: _titleCtrl.text.trim().isEmpty ? '题库组卷' : _titleCtrl.text.trim(),
-      childId: selected.id,
-      ids: ids,
-    );
+          title:
+              _titleCtrl.text.trim().isEmpty ? '题库组卷' : _titleCtrl.text.trim(),
+          childId: selected.id,
+          ids: ids,
+        );
   }
 
   Future<bool?> _showCreateDialog() {
@@ -126,9 +140,9 @@ class _ParentQuestionBankViewState extends ConsumerState<ParentQuestionBankView>
     final picked = await _showDraftPicker(drafts);
     if (picked == null) return;
     await ref.read(questionBankNotifierProvider.notifier).addToTaskFromBank(
-      taskId: picked,
-      ids: ids,
-    );
+          taskId: picked,
+          ids: ids,
+        );
   }
 
   Future<void> _deleteSelected() async {
@@ -136,9 +150,7 @@ class _ParentQuestionBankViewState extends ConsumerState<ParentQuestionBankView>
     if (ids.isEmpty) return;
     final ok = await _showDeleteConfirm(ids.length);
     if (ok != true) return;
-    await ref
-        .read(questionBankNotifierProvider.notifier)
-        .deleteQuestions(ids);
+    await ref.read(questionBankNotifierProvider.notifier).deleteQuestions(ids);
   }
 
   Future<bool?> _showDeleteConfirm(int count) {
@@ -182,9 +194,7 @@ class _ParentQuestionBankViewState extends ConsumerState<ParentQuestionBankView>
       context: context,
       builder: (ctx) => CupertinoActionSheet(
         title: Text('「$preview」被以下任务使用'),
-        message: usages.isEmpty
-            ? const Text('暂未在任何任务中使用')
-            : null,
+        message: usages.isEmpty ? const Text('暂未在任何任务中使用') : null,
         actions: [
           for (final u in usages)
             CupertinoActionSheetAction(
@@ -214,8 +224,8 @@ class _ParentQuestionBankViewState extends ConsumerState<ParentQuestionBankView>
                     child: Text(
                       _statusLabel(u.status),
                       style: AppTheme.textOf(context).labelSmall?.copyWith(
-                        color: app.onSecondaryContainer,
-                      ),
+                            color: app.onSecondaryContainer,
+                          ),
                     ),
                   ),
                   const SizedBox(width: 4),
@@ -351,21 +361,18 @@ class _ParentQuestionBankViewState extends ConsumerState<ParentQuestionBankView>
     // 整页 SingleChildScrollView + 居中约束 maxWidth 1080 + SectionTitle + 内容置于 AppCard。
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(
-          AppSpacing.xl2, AppSpacing.md, AppSpacing.xl2, AppSpacing.xl4),
+          AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xl2),
       child: Align(
-        alignment: Alignment.topCenter,
+        alignment: Alignment.topLeft,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 1080),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const SectionTitle('题库'),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-                child: AppCard(
-                  padding: const EdgeInsets.all(AppSpacing.xl),
-                  child: _buildCardContent(state, app, busy),
-                ),
+              AppCard(
+                padding: const EdgeInsets.all(AppSpacing.xl),
+                child: _buildCardContent(state, app, busy),
               ),
             ],
           ),
@@ -538,8 +545,7 @@ class _ParentQuestionBankViewState extends ConsumerState<ParentQuestionBankView>
                         _tag(app, '${q.grade}年级'),
                         _tag(app, q.knowledgePoint),
                         _tag(app, _qtypeLabel(q.qtype)),
-                        if (q.usageCount > 0)
-                          _usageTag(app, q),
+                        if (q.usageCount > 0) _usageTag(app, q),
                       ],
                     ),
                   ],
@@ -558,7 +564,8 @@ class _ParentQuestionBankViewState extends ConsumerState<ParentQuestionBankView>
 
   Widget _tag(dynamic app, String text, {Color? tone}) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 2),
+      padding:
+          const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 2),
       decoration: BoxDecoration(
         color: app.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(AppRadius.sm),
@@ -566,8 +573,8 @@ class _ParentQuestionBankViewState extends ConsumerState<ParentQuestionBankView>
       child: Text(
         text,
         style: AppTheme.textOf(context).labelSmall?.copyWith(
-          color: tone ?? app.onSurfaceVariant,
-        ),
+              color: tone ?? app.onSurfaceVariant,
+            ),
       ),
     );
   }
@@ -577,7 +584,8 @@ class _ParentQuestionBankViewState extends ConsumerState<ParentQuestionBankView>
     return GestureDetector(
       onTap: () => _showUsages(q),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 2),
+        padding:
+            const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 2),
         decoration: BoxDecoration(
           color: app.secondaryContainer,
           borderRadius: BorderRadius.circular(AppRadius.sm),
@@ -590,8 +598,8 @@ class _ParentQuestionBankViewState extends ConsumerState<ParentQuestionBankView>
             Text(
               '用过 ${q.usageCount} 次',
               style: AppTheme.textOf(context).labelSmall?.copyWith(
-                color: app.onSecondaryContainer,
-              ),
+                    color: app.onSecondaryContainer,
+                  ),
             ),
           ],
         ),

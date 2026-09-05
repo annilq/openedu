@@ -27,7 +27,7 @@ class AppAnswerResultDialog {
       height: 36,
       decoration: BoxDecoration(
         color: correct ? scheme.tertiaryContainer : scheme.errorContainer,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppRadius.card),
       ),
       alignment: Alignment.center,
       child: Icon(

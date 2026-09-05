@@ -13,12 +13,14 @@ from __future__ import annotations
 
 import hashlib
 import random
+import uuid
 from typing import Any, AsyncIterator, Literal
 
 from genkit import ActionRunContext, Genkit
 from pydantic import BaseModel
 from sqlmodel import Session
 
+from app.ai import debug_log
 from app.ai.engine import EngineResolution, resolve_engine
 from app.ai.subagents.question_agent import expand_specs
 from app.core.db import engine as db_engine
@@ -332,24 +334,49 @@ async def grade_open(
     student_answer: str,
     *,
     engine: EngineResolution | None = None,
+    parent_id: uuid.UUID | None = None,
+    child_id: uuid.UUID | None = None,
 ) -> dict:
     """开放题批改（非流式路径）：有真实引擎走 Genkit，否则确定性 mock 启发式。
 
     统一单栈后替代原 LangChainProvider.grade_open；question 为 ORM Question
     （含 .stem/.knowledge_point/.explanation）。mock 分支按知识点关键词包含判定，
     保证零 key 也能批改（沿用原 MockProvider.grade_open 语义）。
+
+    parent_id/child_id 仅用于 ADR-0022 调试落库：由调用方（批改入口）传入；
+    缺省 None 时调试会话不创建（安全 no-op），不破坏既有调用链。
     """
     if engine is None:
         engine = resolve_engine()
+    # ADR-0022：批改运行调试会话（parent_id 缺失自动 no-op）。
+    conv_id = debug_log.start_agent_run(
+        kind="grade",
+        parent_id=parent_id,
+        child_id=child_id,
+        model=engine.model if engine is not None else "mock",
+        title="批改",
+    )
+    debug_log.log_agent_message(
+        conv_id,
+        role="user",
+        step="input",
+        content=f"题目：{getattr(question, 'stem', '')}\n学生作答：{student_answer}",
+    )
     if engine is None:
         correct = bool(student_answer) and any(
             kw in (student_answer or "") for kw in (question.knowledge_point,)
         )
-        return {
+        result = {
             "correct": correct,
             "score": 1.0 if correct else 0.0,
             "explanation": question.explanation or "已收到作答。",
         }
+        debug_log.log_agent_message(
+            conv_id, role="assistant", step="output",
+            content=result["explanation"], payload=result, model="mock",
+        )
+        debug_log.finish_agent_run(conv_id, "done")
+        return result
     prompt = (
         f"题目：{question.stem}\n学生作答：{student_answer}\n"
         '请批改并返回 JSON：{"correct": bool, "score": float, "explanation": str}'
@@ -359,12 +386,19 @@ async def grade_open(
         output_schema=GradeSchema,
     )
     raw = resp.output
-    return {
+    result = {
         "correct": bool(_schema_field(raw, "correct", False)),
         "score": float(_schema_field(raw, "score", 0.0)),
         "explanation": _schema_field(raw, "explanation", "")
         or (question.explanation or ""),
     }
+    debug_log.log_agent_message(
+        conv_id, role="assistant", step="output",
+        content=result["explanation"], payload=result,
+        model=engine.model if engine is not None else None,
+    )
+    debug_log.finish_agent_run(conv_id, "done")
+    return result
 
 
 def _chunk_text(chunk: Any) -> str:
@@ -613,6 +647,17 @@ async def tasks_generate(input: TaskGenInput, ctx: ActionRunContext) -> list[dic
     engine = None
     with Session(db_engine) as s:
         engine = resolve_engine(input.model, parent_id=parent_id, session=s)
+    # ADR-0022：启动一次出题运行的调试会话（失败自动 no-op，不阻断流式）。
+    conv_id = debug_log.start_agent_run(
+        kind="question",
+        parent_id=parent_id,
+        child_id=child_id,
+        model=engine.model if engine is not None else "mock",
+        title="出题",
+    )
+    debug_log.log_agent_message(
+        conv_id, role="system", step="input", content=_QUESTION_SYSTEM_PROMPT
+    )
     focus = input.focus_interest or []
     out: list[dict] = []
 
@@ -624,6 +669,25 @@ async def tasks_generate(input: TaskGenInput, ctx: ActionRunContext) -> list[dic
                 q = _mock_question(
                     subject=sp.subject, grade=sp.grade, knowledge_point=sp.knowledge_point,
                     qtype=sp.qtype, difficulty=sp.difficulty, interests=interests_pool, focus_interest=f,
+                )
+                # ADR-0022：记录该题为一步（请求 prompt + 题卡），便于回放出题运行。
+                debug_log.log_agent_message(
+                    conv_id,
+                    role="user",
+                    step="input",
+                    content=_build_question_prompt(
+                        subject=sp.subject, grade=sp.grade, knowledge_point=sp.knowledge_point,
+                        qtype=sp.qtype, difficulty=sp.difficulty, interests=interests_pool, focus_interest=f,
+                    ),
+                    model="mock",
+                )
+                debug_log.log_agent_message(
+                    conv_id,
+                    role="assistant",
+                    step="output",
+                    content=q.stem,
+                    payload=q.model_dump(),
+                    model="mock",
                 )
                 # 信封 chunk：STEP → REASONING → CARD（对齐 ADR-0017）。
                 # 信封 chunk：STEP → REASONING → CARD（对齐 ADR-0017）。
@@ -642,6 +706,7 @@ async def tasks_generate(input: TaskGenInput, ctx: ActionRunContext) -> list[dic
                 )
                 out.append(q.model_dump())
                 idx += 1
+        debug_log.finish_agent_run(conv_id, "done")
         return out
 
     # ADR-0021：经注册表派发「出题」业务 SubAgent（预计算每题 RAG + 学科 Persona 后委托本 flow）。
@@ -671,7 +736,17 @@ async def tasks_generate(input: TaskGenInput, ctx: ActionRunContext) -> list[dic
         # 仅把 CARD 的题卡收进末帧 result，REASONING/STEP 不进 result（纯流式 UX）。
         if isinstance(chunk, TaskGenCardChunk):
             out.append(chunk.question)
+            # ADR-0022：每道成品题卡记一步（assistant/output），按 turn 自然追加。
+            debug_log.log_agent_message(
+                conv_id,
+                role="assistant",
+                step="output",
+                content=chunk.question.get("stem", ""),
+                payload=chunk.question,
+                model=engine.model if engine is not None else None,
+            )
         ctx.send_chunk(chunk.model_dump())
+    debug_log.finish_agent_run(conv_id, "done")
     return out
 
 

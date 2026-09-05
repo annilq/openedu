@@ -27,8 +27,7 @@ class AdaptiveNavDestination {
 
 /// 响应式导航壳（ADR-0014）：按 [LayoutBuilder] 宽度在三档断点间切换布局。
 ///
-/// - expanded (≥1024)：展开侧栏 240 + 内容。
-/// - medium (700–1023)：可收起图标轨 64/240。
+/// - medium / expanded (≥700)：侧栏 240 ↔ 64 可收起，状态经 [StorageService] 持久化。
 /// - compact (<700)：娃娃端底部导航；家长端顶部汉堡 + 左抽屉。
 ///
 /// 侧栏/轨态复用 [AppSidebar] + [AppSidebarItem]；紧凑态自绘（不使用 Material 的
@@ -44,7 +43,6 @@ class AdaptiveShell extends ConsumerStatefulWidget {
   static const double expandedWidth = 240;
   static const double collapsedWidth = 64;
   static const double compactThreshold = 700;
-  static const double expandedThreshold = 1024;
 
   const AdaptiveShell({
     super.key,
@@ -83,7 +81,6 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
       builder: (context, constraints) {
         final width = constraints.maxWidth;
         final isCompact = width < AdaptiveShell.compactThreshold;
-        final isExpanded = width >= AdaptiveShell.expandedThreshold;
 
         if (isCompact) {
           return widget.mode == AppUserMode.child
@@ -91,17 +88,13 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
               : _buildCompactDrawer(context);
         }
 
-        // 中 / 大屏：侧栏（expanded 固定 240；medium 可收起 64/240）
-        final railCollapsed = !isExpanded && _collapsed;
-        final railWidth = isExpanded
-            ? AdaptiveShell.expandedWidth
-            : (railCollapsed
-                ? AdaptiveShell.collapsedWidth
-                : AdaptiveShell.expandedWidth);
+        // 中 / 大屏：侧栏 240 ↔ 64 可收起；收起偏好对所有非紧凑宽度生效并持久化。
+        final railWidth =
+            _collapsed ? AdaptiveShell.collapsedWidth : AdaptiveShell.expandedWidth;
         final scheme = AppTheme.colorsOf(context);
         return SidebarCollapseScope(
-          collapsed: railCollapsed,
-          onToggle: isExpanded ? () {} : _toggleCollapsed,
+          collapsed: _collapsed,
+          onToggle: _toggleCollapsed,
         child: Row(
           // 内容页贴顶自然布局，绝不垂直居中（避免内容少的页面上下留白「局中」）。
           crossAxisAlignment: CrossAxisAlignment.start,
