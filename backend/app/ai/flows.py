@@ -136,7 +136,7 @@ _QUESTION_SYSTEM_PROMPT = (
 )
 
 
-def _build_question_prompt(
+def _build_question_clause(
     *,
     subject: str,
     grade: int,
@@ -145,9 +145,9 @@ def _build_question_prompt(
     difficulty: str,
     interests: list[str] | None,
     focus_interest: str | None,
-    rag_context: str | None = None,
-    persona_hint: str | None = None,
 ) -> str:
+    """出题语境内核（情境/难度/兴趣包装）：被「出题 prompt」与「推理 prompt」共用，
+    保证两阶段口径一致（ADR-0021：RAG / 学科 Persona 在调用方注入）。"""
     if focus_interest:
         clause = (
             f"请围绕主题“{focus_interest}”为{grade}年级《{subject}》的“{knowledge_point}”"
@@ -165,12 +165,35 @@ def _build_question_prompt(
             f"请为{grade}年级《{subject}》的“{knowledge_point}”出一道{qtype}题，"
             f"难度{difficulty}。"
         )
+    return clause
+
+
+def _build_question_prompt(
+    *,
+    subject: str,
+    grade: int,
+    knowledge_point: str,
+    qtype: str,
+    difficulty: str,
+    interests: list[str] | None,
+    focus_interest: str | None,
+    rag_context: str | None = None,
+    persona_hint: str | None = None,
+    reasoning_hint: str | None = None,
+) -> str:
     # ADR-0021：学科 Persona 注入（语气/适龄/学科约定），让同业务跨学科表现一致且可控。
+    clause = _build_question_clause(
+        subject=subject, grade=grade, knowledge_point=knowledge_point,
+        qtype=qtype, difficulty=difficulty, interests=interests, focus_interest=focus_interest,
+    )
     if persona_hint:
         clause += f"\n\n{persona_hint}"
     # ADR-0021：RAG 命中内容作为教材口径参考，对齐知识点（出题此前未接 RAG）。
     if rag_context:
         clause += f"\n\n参考教材口径（仅作对齐参考，不照搬）：\n{rag_context}"
+    # 把第一阶段流式产出的推理回灌，保证题卡与展示的「思路」一致（避免两阶段口径漂移）。
+    if reasoning_hint:
+        clause += f"\n\n（出题思路参考：{reasoning_hint}）"
     return (
         clause + '返回 JSON：'
         '{"stem": str, "options": list[str]|null, "answer": str, "explanation": str, '
@@ -178,6 +201,74 @@ def _build_question_prompt(
         '（reasoning 为本题的出题推理过程：简述情境选取、干扰项/答案设计思路、难度控制，'
         '约 1-3 句；纯学习相关）'
     )
+
+
+def _build_stream_prompt(
+    *,
+    subject: str,
+    grade: int,
+    knowledge_point: str,
+    qtype: str,
+    difficulty: str,
+    interests: list[str] | None,
+    focus_interest: str | None,
+    rag_context: str | None = None,
+    persona_hint: str | None = None,
+) -> str:
+    """单调用流式 prompt（ADR-0017 修订）：同一文本流里先后产出「推理」与「题卡 JSON」。
+
+    模型先以 <reasoning>…</reasoning> 写出出题思路（后端逐 token 下发 REASONING，客户端
+    实时可见，消除 5s 静默 + 推理闪现），随后输出 JSON 题卡。整段只需一次模型调用，
+    成本较「推理 + 出题」两阶段减半。JSON 只含可变字段，subject/grade/知识点/题型/难度
+    由调用方按 spec 回填，降低模型出错面。
+    """
+    clause = _build_question_clause(
+        subject=subject, grade=grade, knowledge_point=knowledge_point,
+        qtype=qtype, difficulty=difficulty, interests=interests, focus_interest=focus_interest,
+    )
+    if persona_hint:
+        clause += f"\n\n{persona_hint}"
+    if rag_context:
+        clause += f"\n\n参考教材口径（仅作对齐参考，不照搬）：\n{rag_context}"
+    return (
+        clause + "\n\n"
+        "请严格按以下两步顺序输出，两步之间不要加任何其他说明文字：\n"
+        "1) 先用 1-3 句纯文本写出你的出题思路（情境如何选取、干扰项/答案如何设计、难度如何把控，"
+        "纯学习相关），并用 <reasoning> 和 </reasoning> 包裹。\n"
+        "2) 紧接着另起一行，只输出这道题的 JSON（不要 markdown 代码块围栏、不要任何额外文字），"
+        '字段为：{"stem": str, "options": list[str]|null, "answer": str, '
+        '"explanation": str, "reasoning": str}\n'
+        "（reasoning 字段与上面的出题思路保持一致即可）"
+    )
+
+
+def _parse_question_json(text: str) -> dict | None:
+    """从模型流式输出中宽容解析题卡 JSON：去 markdown 围栏、截取首个 {...}。
+
+    返回 dict；解析失败（含空/非 JSON）返回 None，由调用方回退 mock。
+    """
+    import json as _json
+    import re as _re
+
+    if not text:
+        return None
+    s = text.strip()
+    # 去 ```json ... ``` 围栏
+    m = _re.search(r"```(?:json)?\s*(.*?)```", s, _re.DOTALL)
+    if m:
+        s = m.group(1).strip()
+    start = s.find("{")
+    end = s.rfind("}")
+    if start == -1 or end == -1 or end < start:
+        return None
+    s = s[start : end + 1]
+    try:
+        obj = _json.loads(s)
+    except Exception:
+        return None
+    if not isinstance(obj, dict):
+        return None
+    return obj
 
 
 def _schema_field(obj: Any, name: str, default: Any = None) -> Any:
@@ -470,25 +561,6 @@ async def tutor_stream(
     yield text
 
 
-def _extract_reasoning_token(chunk: Any) -> str | None:
-    """尽力从 Genkit 流式 chunk 中提取思维链 token（reasoning 模型升级路径，ADR-0017）。
-
-    不同提供方位置不一：有的在顶层 `reasoning`，有的在 `output`/`delta` 嵌套里。
-    取不到（绝大多数非推理模型）返回 None，由调用方回退到结构化 `reasoning` 字段打底。
-    """
-    if chunk is None:
-        return None
-    top = getattr(chunk, "reasoning", None)
-    if isinstance(top, str) and top:
-        return top
-    out = getattr(chunk, "output", None)
-    if isinstance(out, dict):
-        r = out.get("reasoning")
-        if isinstance(r, str) and r:
-            return r
-    return None
-
-
 async def generate_questions_stream(
     engine: EngineResolution,
     *,
@@ -500,8 +572,10 @@ async def generate_questions_stream(
 ) -> AsyncIterator[TaskGenChunk]:
     """出题流式：逐题产出信封 chunk（STEP → REASONING → CARD），题卡逐张浮现。
 
-    每题经 check_output 通过后才发 CARD；REASONING 在 CARD 到达前作为内联推理区下发
-    （reasoning 模型走 token 真流式，否则用结构化 `reasoning` 字段打底）。
+    每题**单次** generate_stream 调用：同一文本流里先 <reasoning>…</reasoning>（逐 token
+    下发 REASONING，模型思考时客户端即可看到出题思路，消除结构化生成的 5s 静默 + 推理闪现），
+    随后 JSON 题卡（完成即增量解析、解析成功才发 CARD）。无需「推理/出题」两次模型调用。
+    每题都经 check_output 通过后才发 CARD。
 
     ADR-0021：``rag_contexts`` / ``persona_hints`` 由出题 SubAgent 按 q_index 预计算后传入，
     flow 只负责「按给定增强参数出题 + 安全闸门」，业务判断不在此处（不传则行为完全不变）。
@@ -519,27 +593,84 @@ async def generate_questions_stream(
             q_index=q_index,
             label=_step_label(subject, grade, knowledge_point, qtype),
         )
-        prompt = _build_question_prompt(
-            subject=subject, grade=grade, knowledge_point=knowledge_point, qtype=qtype,
-            difficulty=difficulty, interests=interests, focus_interest=focus,
-            rag_context=(rag_contexts or {}).get(q_index),
-            persona_hint=(persona_hints or {}).get(q_index),
-        )
+        rag_ctx = (rag_contexts or {}).get(q_index)
+        persona_hint = (persona_hints or {}).get(q_index)
         try:
-            sr = engine.genkit.generate_stream(
-                model=engine.model, system=_QUESTION_SYSTEM_PROMPT, prompt=prompt,
-                output_schema=QuestionSchema,
+            # 单次 generate_stream 调用：同一文本流里先 <reasoning>…</reasoning>（实时下发），
+            # 随后 JSON 题卡（完成即解析下发）。无需「推理/出题」两次调用，成本减半。
+            stream_prompt = _build_stream_prompt(
+                subject=subject, grade=grade, knowledge_point=knowledge_point,
+                qtype=qtype, difficulty=difficulty, interests=interests,
+                focus_interest=focus, rag_context=rag_ctx, persona_hint=persona_hint,
             )
+            sresp = engine.genkit.generate_stream(
+                model=engine.model, system=_QUESTION_SYSTEM_PROMPT, prompt=stream_prompt,
+            )
+            buf = ""
             reasoning_parts: list[str] = []
-            async for chunk in sr.stream:
-                token = _extract_reasoning_token(chunk)
-                if token:
-                    reasoning_parts.append(token)
-                    yield TaskGenReasoningChunk(q_index=q_index, delta=token)
-            # 注意：Genkit 流式 .response 是 ModelResponse，结构化输出在 .output
-            # （QuestionSchema 实例），不在响应对象自身——直接 .stem 会 AttributeError。
-            result = await sr.response
-            parsed = result.output
+            json_buf = ""
+            phase: Literal["reasoning", "json"] = "reasoning"
+            open_seen = False
+            emitted = 0
+            async for schunk in sresp.stream:
+                t = _chunk_text(schunk)
+                if not t:
+                    continue
+                buf += t
+                if phase == "reasoning":
+                    if not open_seen:
+                        oi = buf.find("<reasoning>")
+                        oj_pre = buf.find("{")
+                        if oi == -1 and oj_pre == -1:
+                            continue  # 等待开标签或 JSON 起始
+                        if oi != -1 and (oj_pre == -1 or oi < oj_pre):
+                            # 正常：先出现 <reasoning> 开标签。
+                            open_seen = True
+                            emitted = oi + len("<reasoning>")
+                        else:
+                            # 模型未用标签直接输出 JSON：{ 之前的文本当作推理。
+                            if oj_pre > 0:
+                                delta = buf[:oj_pre]
+                                reasoning_parts.append(delta)
+                                yield TaskGenReasoningChunk(q_index=q_index, delta=delta)
+                            phase = "json"
+                            json_buf = buf[oj_pre:]
+                            continue
+                    ci = buf.find("</reasoning>", emitted)
+                    oj = buf.find("{", emitted)
+                    if ci != -1 and (oj == -1 or ci < oj):
+                        # 推理段结束：发出残余推理，进入出题段。
+                        if ci > emitted:
+                            delta = buf[emitted:ci]
+                            reasoning_parts.append(delta)
+                            yield TaskGenReasoningChunk(q_index=q_index, delta=delta)
+                        phase = "json"
+                        json_buf = buf[ci + len("</reasoning>"):]
+                    elif oj != -1:
+                        # 模型未用标签直接出 JSON：{ 之前当作推理。
+                        if oj > emitted:
+                            delta = buf[emitted:oj]
+                            reasoning_parts.append(delta)
+                            yield TaskGenReasoningChunk(q_index=q_index, delta=delta)
+                        phase = "json"
+                        json_buf = buf[oj:]
+                    else:
+                        # 仍在推理段：发出「安全前缀」（保留末尾可能的部分标签）。
+                        safe = buf.rfind("<", emitted)
+                        if safe == -1:
+                            safe = len(buf)
+                        if safe > emitted:
+                            delta = buf[emitted:safe]
+                            reasoning_parts.append(delta)
+                            yield TaskGenReasoningChunk(q_index=q_index, delta=delta)
+                            emitted = safe
+                else:
+                    json_buf += t
+            await sresp.response
+            parsed = _parse_question_json(json_buf)
+            if parsed is None:
+                raise ValueError("无法从模型输出解析出题目 JSON")
+            reasoning_text = "".join(reasoning_parts).strip()
         except Exception:
             # 真实引擎单题失败（网络/限流/解析异常）：回退确定性 mock 题，
             # 保证流式不中断、末帧 result 仍正常发出，避免前端收到
@@ -552,23 +683,23 @@ async def generate_questions_stream(
                 yield TaskGenReasoningChunk(q_index=q_index, delta=q.reasoning)
             yield TaskGenCardChunk(q_index=q_index, question=q.model_dump())
             continue
-        # 打底：若未走 reasoning token 流（非推理模型），用结构化 reasoning 字段补一发。
-        if not reasoning_parts and parsed.reasoning:
-            yield TaskGenReasoningChunk(q_index=q_index, delta=parsed.reasoning)
-        verdict = check_output(f"{parsed.stem} {parsed.answer} {parsed.explanation}")
+        verdict = check_output(
+            f"{parsed.get('stem', '')} {parsed.get('answer', '')} {parsed.get('explanation', '')}"
+        )
         if not verdict.safe:
             continue
+        reasoning_text = reasoning_text or (parsed.get("reasoning") or "")
         out_q = QuestionOut(
-            subject=parsed.subject,
-            grade=parsed.grade,
-            knowledge_point=parsed.knowledge_point,
-            qtype=parsed.qtype,
-            stem=parsed.stem,
-            options=parsed.options,
-            answer=parsed.answer,
-            explanation=parsed.explanation,
-            difficulty=parsed.difficulty,
-            reasoning=parsed.reasoning,
+            subject=subject,  # spec 回填（模型只需出可变字段，降低出错面）
+            grade=grade,
+            knowledge_point=knowledge_point,
+            qtype=qtype,
+            difficulty=difficulty,
+            stem=parsed.get("stem") or "",
+            options=parsed.get("options"),
+            answer=parsed.get("answer") or "",
+            explanation=parsed.get("explanation") or "",
+            reasoning=reasoning_text,
         )
         yield TaskGenCardChunk(q_index=q_index, question=out_q.model_dump())
 

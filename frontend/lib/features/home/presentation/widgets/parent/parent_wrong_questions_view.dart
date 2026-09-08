@@ -37,7 +37,7 @@ class ParentWrongQuestionsView extends ConsumerWidget {
                 WrongQuestionsError() => AppError(message: state.message),
                 WrongQuestionsLoaded() => state.items.isEmpty
                     ? AppCard(
-                        padding: const EdgeInsets.all(AppSpacing.xl),
+                        padding: const EdgeInsets.all(AppSpacing.xxl),
                         child: Align(alignment: Alignment.topLeft,
                           child: Text('暂无错题，继续保持～',
                               style: AppTheme.textOf(context).bodyLarge),
@@ -47,7 +47,7 @@ class ParentWrongQuestionsView extends ConsumerWidget {
                         children: [
                           for (final item in state.items)
                             AppCard(
-                              padding: const EdgeInsets.all(AppSpacing.xl),
+                              padding: const EdgeInsets.all(AppSpacing.xxl),
                               margin: const EdgeInsets.symmetric(
                                   vertical: AppSpacing.sm),
                               child: _ParentWrongCard(item: item),
@@ -68,7 +68,7 @@ class ParentWrongQuestionsView extends ConsumerWidget {
     return Align(
       alignment: Alignment.topLeft,
       child: AppCard(
-        padding: const EdgeInsets.all(AppSpacing.xl),
+        padding: const EdgeInsets.all(AppSpacing.xxl),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [

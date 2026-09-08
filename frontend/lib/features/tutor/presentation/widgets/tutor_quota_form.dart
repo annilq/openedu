@@ -25,7 +25,7 @@ class TutorQuotaForm extends StatelessWidget {
   Widget build(BuildContext context) {
     final text = AppTheme.textOf(context);
     return AppCard(
-      padding: const EdgeInsets.all(AppSpacing.xl),
+      padding: const EdgeInsets.all(AppSpacing.xxl),
       margin: const EdgeInsets.symmetric(vertical: 6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

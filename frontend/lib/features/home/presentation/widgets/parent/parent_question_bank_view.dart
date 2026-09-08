@@ -371,7 +371,7 @@ class _ParentQuestionBankViewState
             children: [
               const SectionTitle('题库'),
               AppCard(
-                padding: const EdgeInsets.all(AppSpacing.xl),
+                padding: const EdgeInsets.all(AppSpacing.xxl),
                 child: _buildCardContent(state, app, busy),
               ),
             ],

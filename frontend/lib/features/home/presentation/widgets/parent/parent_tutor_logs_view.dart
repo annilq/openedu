@@ -44,7 +44,7 @@ class ParentTutorLogsView extends ConsumerWidget {
                         ),
                       )
                     : AppCard(
-                        padding: const EdgeInsets.all(AppSpacing.xl),
+                        padding: const EdgeInsets.all(AppSpacing.xxl),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: state.logs

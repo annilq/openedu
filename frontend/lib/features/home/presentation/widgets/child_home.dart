@@ -157,7 +157,7 @@ class _ReviewBanner extends StatelessWidget {
           borderRadius: BorderRadius.circular(AppRadius.banner),
           // 顶部极细的"植物绿高光"纹理：避免完全扁平
           border: Border.all(
-            color: app.primary.withValues(alpha: 0.18),
+            color: app.outlineVariant,
             width: 1,
           ),
         ),
@@ -169,7 +169,7 @@ class _ReviewBanner extends StatelessWidget {
                 width: 56,
                 height: 56,
                 decoration: BoxDecoration(
-                  color: app.primary.withValues(alpha: 0.12),
+                  color: app.surfaceContainerLow,
                   borderRadius: BorderRadius.circular(AppRadius.bubble),
                 ),
                 child:
@@ -189,7 +189,7 @@ class _ReviewBanner extends StatelessWidget {
                       dueCount > 0 ? '今天有 $dueCount 道题要复习' : '今天没有要复习的题',
                       style: AppTheme.textOf(context).bodyMedium?.copyWith(
                           color:
-                              app.onPrimaryContainer.withValues(alpha: 0.88)),
+                              app.onPrimaryContainer),
                     ),
                   ],
                 ),
@@ -234,7 +234,7 @@ class _TutorBanner extends StatelessWidget {
           color: app.secondaryContainer,
           borderRadius: BorderRadius.circular(AppRadius.banner),
           border: Border.all(
-            color: app.secondary.withValues(alpha: 0.18),
+            color: app.outlineVariant,
             width: 1,
           ),
         ),
@@ -246,7 +246,7 @@ class _TutorBanner extends StatelessWidget {
                 width: 56,
                 height: 56,
                 decoration: BoxDecoration(
-                  color: app.secondary.withValues(alpha: 0.12),
+                  color: app.surfaceContainerLow,
                   borderRadius: BorderRadius.circular(AppRadius.bubble),
                 ),
                 child: Icon(CupertinoIcons.sparkles,
@@ -265,7 +265,7 @@ class _TutorBanner extends StatelessWidget {
                     Text('遇到不懂的题，随时来问～',
                         style: AppTheme.textOf(context).bodyMedium?.copyWith(
                             color: app.onSecondaryContainer
-                                .withValues(alpha: 0.88))),
+                                )),
                   ],
                 ),
               ),
@@ -299,7 +299,7 @@ class _TaskCard extends StatelessWidget {
     final isDone = task.status == 'done';
 
     return AppCard(
-      padding: const EdgeInsets.all(AppSpacing.xl),
+      padding: const EdgeInsets.all(AppSpacing.xxl),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

@@ -253,7 +253,7 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
             children: [
               const SectionTitle('布置练习任务'),
               AppCard(
-                padding: const EdgeInsets.all(AppSpacing.xl),
+                padding: const EdgeInsets.all(AppSpacing.xxl),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -786,6 +786,32 @@ class _PreviewCard extends StatelessWidget {
             const SizedBox(height: AppSpacing.xs),
             Text('解析：${q.explanation}',
                 style: text.bodySmall?.copyWith(color: app.onSurfaceVariant)),
+          ],
+          // 出题思路：题卡落定后持久可见（不再只藏在右上角 info icon / 生成期一闪而过），
+          // 让「生成中」闪现的推理在卡片上也能看清（ADR-0017 落地）。
+          if (q.reasoning.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(AppSpacing.md),
+              decoration: BoxDecoration(
+                color: app.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(AppRadius.chip),
+                border: Border.all(color: app.outline),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('出题思路',
+                      style: text.labelSmall?.copyWith(
+                          color: app.primary, fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 4),
+                  Text(q.reasoning,
+                      style: text.bodySmall?.copyWith(
+                          color: app.onSurfaceVariant)),
+                ],
+              ),
+            ),
           ],
         ],
       ),

@@ -396,7 +396,7 @@ class AppTheme {
         backgroundColor: c.surfaceContainerLow,
         border: ShadBorder.all(color: c.outline, width: 1),
         radius: const BorderRadius.all(Radius.circular(AppRadius.card)),
-        padding: const EdgeInsets.all(AppSpacing.xl),
+        padding: const EdgeInsets.all(AppSpacing.xxl),
         shadows: const <BoxShadow>[],
       ),
       progressTheme: ShadProgressTheme(
@@ -434,19 +434,8 @@ class AppTheme {
 
   /// 排版 → ShadTextTheme。Child Mode 在 Parent 基础上整体放大一档（ADR-0014）。
   static ShadTextTheme _shadTextTheme(AppColors c, {required bool child}) {
-    // Child Mode 字号映射（与 Dual-Mode Type Scale 表一致）。
-    double grow(double s) {
-      if (!child) return s;
-      if (s == 22) return 26;
-      if (s == 20) return 24;
-      if (s == 18) return 21;
-      if (s == 17) return 19;
-      if (s == 16) return 18;
-      if (s == 15) return 17;
-      if (s == 14) return 16;
-      if (s == 13) return 14;
-      return s + 2;
-    }
+    // Child Mode 字号映射（与 Dual-Mode Type Scale 表一致，复用 _childScale）。
+    double grow(double s) => child ? _childScale(s) : s;
 
     TextStyle style({
       required double size,
@@ -482,7 +471,7 @@ class AppTheme {
           color: c.onSurfaceVariant),
       table: style(size: 14, weight: FontWeight.w600, height: 1.4),
       list: style(size: 15, weight: FontWeight.w400, height: 1.5),
-      lead: style(size: 17, weight: FontWeight.w500, height: 1.4),
+      lead: style(size: 17, weight: FontWeight.w600, height: 1.4),
       large: style(size: 16, weight: FontWeight.w600, height: 1.4),
       small:
           style(size: 13, weight: FontWeight.w500, height: 1.4, spacing: 0.2),
@@ -599,6 +588,21 @@ class AppColors {
 // §排版令牌（密排 15sp 基线）
 // =====================================================================
 
+/// Child Mode 字号放大映射（ADR-0014 Dual-Mode Type Scale）。
+/// [AppText] 与 [AppTheme._shadTextTheme] 共用，消除双排版表漂移。
+double _childScale(double s) {
+  if (s == 22) return 26;
+  if (s == 20) return 24;
+  if (s == 18) return 21;
+  if (s == 17) return 19;
+  if (s == 16) return 18;
+  if (s == 15) return 17;
+  if (s == 14) return 16;
+  if (s == 13) return 14;
+  if (s == 12) return 13;
+  return s + 2;
+}
+
 class AppText {
   final TextStyle? displayLarge;
   final TextStyle? displayMedium;
@@ -639,20 +643,8 @@ class AppText {
     final muted = c.onSurfaceVariant;
     final onCta = c.onPrimary;
 
-    // Child Mode 字号映射（ADR-0014 Dual-Mode Type Scale）。
-    double cs(double s) {
-      if (!child) return s;
-      if (s == 22) return 26;
-      if (s == 20) return 24;
-      if (s == 18) return 21;
-      if (s == 17) return 19;
-      if (s == 16) return 18;
-      if (s == 15) return 17;
-      if (s == 14) return 16;
-      if (s == 13) return 14;
-      if (s == 12) return 13;
-      return s + 2;
-    }
+    // Child Mode 字号映射（与 Dual-Mode Type Scale 表一致，复用 _childScale）。
+    double cs(double s) => child ? _childScale(s) : s;
 
     TextStyle textStyle({
       required double size,
@@ -731,7 +723,7 @@ class AppCard extends StatelessWidget {
   const AppCard({
     super.key,
     required this.child,
-    this.padding = const EdgeInsets.all(16),
+    this.padding = const EdgeInsets.all(AppSpacing.xxl),
     this.margin = const EdgeInsets.symmetric(vertical: 4),
     this.color,
     this.radius,
@@ -881,6 +873,82 @@ class AppProgressBar extends StatelessWidget {
 // §语义化组件
 // =====================================================================
 
+/// 由背景色推导可读前景色（hover 填实语义色时用：亮底用黑字、暗底用白字）。
+Color _onColorOf(Color bg) =>
+    bg.computeLuminance() > 0.5 ? const Color(0xFF000000) : const Color(0xFFFFFFFF);
+
+/// Hover 感知的语义 pill：常态与 hover 态各自持有 (bg, fg) 配对，
+/// 保证背景变化时前景同步切换，文字始终可读且整体协调。
+///
+/// 设计背景：shadcn 的 [ShadBadge] 仅支持单一 [foregroundColor]，hover 时
+/// 背景切到 [hoverBackgroundColor] 而文字颜色不变；本 App 的 badge 主题未设
+/// [hoverBackgroundColor]，导致 hover 背景变透明、文字残留容器前景色而不可读。
+/// 这里自管 hover 状态，同时切换 bg/fg，彻底解决「背景变、字不变、看不清」。
+class _HoverPill extends StatelessWidget {
+  final Color bg;
+  final Color fg;
+  final Color hoverBg;
+  final Color hoverFg;
+  final ShapeBorder shape;
+  final EdgeInsetsGeometry padding;
+  final double iconSize;
+  final double gap;
+  final IconData? icon;
+  final String label;
+
+  const _HoverPill({
+    required this.bg,
+    required this.fg,
+    required this.hoverBg,
+    required this.hoverFg,
+    required this.shape,
+    required this.padding,
+    this.iconSize = 13,
+    this.gap = 5,
+    this.icon,
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hovered = ValueNotifier(false);
+    return MouseRegion(
+      cursor: SystemMouseCursors.basic,
+      onEnter: (_) => hovered.value = true,
+      onExit: (_) => hovered.value = false,
+      child: ValueListenableBuilder<bool>(
+        valueListenable: hovered,
+        builder: (ctx, h, _) {
+          final b = h ? hoverBg : bg;
+          final f = h ? hoverFg : fg;
+          return Container(
+            decoration: ShapeDecoration(shape: shape, color: b),
+            padding: padding,
+            child: IconTheme(
+              data: IconThemeData(color: f, size: iconSize),
+              child: DefaultTextStyle(
+                style: (AppTheme.textOf(context).labelSmall ??
+                        const TextStyle())
+                    .copyWith(color: f, fontWeight: FontWeight.w600),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (icon != null) ...[
+                      Icon(icon, size: iconSize),
+                      SizedBox(width: gap),
+                    ],
+                    Text(label),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
 /// 语义 Chip/Pill：降饱和底色 + 对应前景色。
 class AppTags {
   static Widget normal(String label, {IconData? icon}) => _TagChip(
@@ -942,47 +1010,63 @@ class _TagChip extends StatelessWidget {
     final app = AppTheme.colorsOf(context);
     late final Color bg;
     late final Color fg;
+    late final Color hoverBg;
+    late final Color hoverFg;
     if (subject != null) {
       final sc = SubjectAccent.forContext(subject!, context);
       bg = sc.container;
       fg = sc.fg;
+      // 学科 hover：填实学科色（accent），前景按亮度反色保证可读。
+      hoverBg = sc.accent;
+      hoverFg = _onColorOf(sc.accent);
     } else {
-      (bg, fg) = switch (semantics) {
-        _TagSemantics.normal => (app.surfaceContainerHigh, app.onSurface),
-        _TagSemantics.info => (app.infoContainer, app.onInfoContainer),
-        _TagSemantics.ai => (app.secondaryContainer, app.onSecondaryContainer),
+      (bg, fg, hoverBg, hoverFg) = switch (semantics) {
+        _TagSemantics.normal => (
+            app.surfaceContainerHigh,
+            app.onSurface,
+            app.surfaceContainerHighest,
+            app.onSurface
+          ),
+        _TagSemantics.info => (
+            app.infoContainer,
+            app.onInfoContainer,
+            app.accent,
+            app.onAccent
+          ),
+        _TagSemantics.ai => (
+            app.secondaryContainer,
+            app.onSecondaryContainer,
+            app.secondary,
+            app.onSecondary
+          ),
         _TagSemantics.success => (
             app.tertiaryContainer,
-            app.onTertiaryContainer
+            app.onTertiaryContainer,
+            app.tertiary,
+            app.onTertiary
           ),
-        _TagSemantics.warning => (app.errorContainer, app.onErrorContainer),
+        _TagSemantics.warning => (
+            app.errorContainer,
+            app.onErrorContainer,
+            app.error,
+            app.onError
+          ),
       };
     }
 
-    return ShadBadge.raw(
-      variant: ShadBadgeVariant.primary,
-      backgroundColor: bg,
-      foregroundColor: fg,
+    return _HoverPill(
+      bg: bg,
+      fg: fg,
+      hoverBg: hoverBg,
+      hoverFg: hoverFg,
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.all(Radius.circular(AppRadius.chip)),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (icon != null) ...[
-            Icon(icon, size: 13, color: fg),
-            const SizedBox(width: 5),
-          ],
-          Text(
-            label,
-            style: AppTheme.textOf(context).labelSmall?.copyWith(
-                  color: fg,
-                  fontWeight: FontWeight.w600,
-                ),
-          ),
-        ],
-      ),
+      iconSize: 13,
+      gap: 5,
+      icon: icon,
+      label: label,
     );
   }
 }
@@ -1023,43 +1107,46 @@ class _BadgePill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final app = AppTheme.colorsOf(context);
-    final (bg, fg) = switch (semantics) {
+    final (bg, fg, hoverBg, hoverFg) = switch (semantics) {
       _BadgeSemantics.success => (
           app.tertiaryContainer,
-          app.onTertiaryContainer
+          app.onTertiaryContainer,
+          app.tertiary,
+          app.onTertiary
         ),
-      _BadgeSemantics.warning => (app.errorContainer, app.onErrorContainer),
-      _BadgeSemantics.info => (app.infoContainer, app.onInfoContainer),
+      _BadgeSemantics.warning => (
+          app.errorContainer,
+          app.onErrorContainer,
+          app.error,
+          app.onError
+        ),
+      _BadgeSemantics.info => (
+          app.infoContainer,
+          app.onInfoContainer,
+          app.accent,
+          app.onAccent
+        ),
     };
 
-    return ShadBadge.raw(
-      variant: ShadBadgeVariant.primary,
-      backgroundColor: bg,
-      foregroundColor: fg,
+    return _HoverPill(
+      bg: bg,
+      fg: fg,
+      hoverBg: hoverBg,
+      hoverFg: hoverFg,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       shape: const StadiumBorder(),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 12, color: fg),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: AppTheme.textOf(context).labelSmall?.copyWith(
-                  color: fg,
-                  fontWeight: FontWeight.w600,
-                ),
-          ),
-        ],
-      ),
+      iconSize: 12,
+      gap: 4,
+      icon: icon,
+      label: label,
     );
   }
 }
 
 /// 章节标题：左侧 3px 靛蓝色条 + 标题文字
 /// 规范章节节奏（统一间距事实源，ADR 设计系统约束）：
-/// - top  = [AppSpacing.xl2] (32)：相邻 section 之间的统一间隔（由标题自身承载，
-///   页面无需再手动加 SizedBox；首个标题也复用同一节奏）。
+/// - top    = [AppSpacing.md] (12)：标题上沿留白；相邻 section 靠「上标题 bottom(12)
+///   + 下标题 top(12)」叠加成 24px 统一间隔，页面无需再手动加 SizedBox。
 /// - bottom = [AppSpacing.md] (12)：标题 → 内容的统一间隔。
 /// - 水平 0：标题左缘与全宽卡片（AppCard）左缘对齐；页面不要再给卡片套
 ///   `Padding(horizontal: lg)`，否则会与标题错位 ~12px。
@@ -1173,7 +1260,7 @@ class AvatarSquircle extends StatelessWidget {
   }
 }
 
-/// 间距令牌（8 倍网格，密排缩减）
+/// 间距令牌（4 基准模数刻度：xs=4 为步长；密排缩减，非 8 倍网格）
 class AppSpacing {
   static const double xs2 = 2;
   static const double xs = 4;
