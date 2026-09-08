@@ -357,7 +357,7 @@ async def grade_open(
         title="批改",
     )
     debug_log.log_agent_message(
-        conv_id,
+        conversation_id=conv_id,
         role="user",
         step="input",
         content=f"题目：{getattr(question, 'stem', '')}\n学生作答：{student_answer}",
@@ -372,10 +372,10 @@ async def grade_open(
             "explanation": question.explanation or "已收到作答。",
         }
         debug_log.log_agent_message(
-            conv_id, role="assistant", step="output",
+            conversation_id=conv_id, role="assistant", step="output",
             content=result["explanation"], payload=result, model="mock",
         )
-        debug_log.finish_agent_run(conv_id, "done")
+        debug_log.finish_agent_run(conversation_id=conv_id, status="done")
         return result
     prompt = (
         f"题目：{question.stem}\n学生作答：{student_answer}\n"
@@ -393,11 +393,11 @@ async def grade_open(
         or (question.explanation or ""),
     }
     debug_log.log_agent_message(
-        conv_id, role="assistant", step="output",
+        conversation_id=conv_id, role="assistant", step="output",
         content=result["explanation"], payload=result,
         model=engine.model if engine is not None else None,
     )
-    debug_log.finish_agent_run(conv_id, "done")
+    debug_log.finish_agent_run(conversation_id=conv_id, status="done")
     return result
 
 
@@ -656,7 +656,8 @@ async def tasks_generate(input: TaskGenInput, ctx: ActionRunContext) -> list[dic
         title="出题",
     )
     debug_log.log_agent_message(
-        conv_id, role="system", step="input", content=_QUESTION_SYSTEM_PROMPT
+        conversation_id=conv_id, role="system", step="input",
+        content=_QUESTION_SYSTEM_PROMPT,
     )
     focus = input.focus_interest or []
     out: list[dict] = []
@@ -672,7 +673,7 @@ async def tasks_generate(input: TaskGenInput, ctx: ActionRunContext) -> list[dic
                 )
                 # ADR-0022：记录该题为一步（请求 prompt + 题卡），便于回放出题运行。
                 debug_log.log_agent_message(
-                    conv_id,
+                    conversation_id=conv_id,
                     role="user",
                     step="input",
                     content=_build_question_prompt(
@@ -682,7 +683,7 @@ async def tasks_generate(input: TaskGenInput, ctx: ActionRunContext) -> list[dic
                     model="mock",
                 )
                 debug_log.log_agent_message(
-                    conv_id,
+                    conversation_id=conv_id,
                     role="assistant",
                     step="output",
                     content=q.stem,
@@ -706,7 +707,7 @@ async def tasks_generate(input: TaskGenInput, ctx: ActionRunContext) -> list[dic
                 )
                 out.append(q.model_dump())
                 idx += 1
-        debug_log.finish_agent_run(conv_id, "done")
+        debug_log.finish_agent_run(conversation_id=conv_id, status="done")
         return out
 
     # ADR-0021：经注册表派发「出题」业务 SubAgent（预计算每题 RAG + 学科 Persona 后委托本 flow）。
@@ -738,7 +739,7 @@ async def tasks_generate(input: TaskGenInput, ctx: ActionRunContext) -> list[dic
             out.append(chunk.question)
             # ADR-0022：每道成品题卡记一步（assistant/output），按 turn 自然追加。
             debug_log.log_agent_message(
-                conv_id,
+                conversation_id=conv_id,
                 role="assistant",
                 step="output",
                 content=chunk.question.get("stem", ""),
@@ -746,7 +747,7 @@ async def tasks_generate(input: TaskGenInput, ctx: ActionRunContext) -> list[dic
                 model=engine.model if engine is not None else None,
             )
         ctx.send_chunk(chunk.model_dump())
-    debug_log.finish_agent_run(conv_id, "done")
+    debug_log.finish_agent_run(conversation_id=conv_id, status="done")
     return out
 
 
