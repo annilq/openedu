@@ -6,6 +6,6 @@
 from __future__ import annotations
 
 from app.ai.runtime.manifest import SubAgentManifest, discover_subagent_manifests
-from app.ai.runtime.runtime import AgentRuntime
+from app.ai.runtime.runtime import AgentRuntime, RouteDecision
 
-__all__ = ["AgentRuntime", "SubAgentManifest", "discover_subagent_manifests"]
+__all__ = ["AgentRuntime", "RouteDecision", "SubAgentManifest", "discover_subagent_manifests"]

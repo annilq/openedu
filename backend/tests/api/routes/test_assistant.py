@@ -126,14 +126,19 @@ def test_parent_question_generation_emits_data_events(client):
 
 
 def test_child_role_awareness_forces_tutor(client):
-    """娃娃端意图被强制收敛到伴学（出题/查任务意图不会触发非伴学生成，ADR-0026）。"""
+    """娃娃端意图被强制收敛到伴学（出题/查任务意图不会触发非伴学生成，ADR-0026）。
+
+    决策已显式化：不再经 THINKING(extra.business) 隐式透传（见 #2），
+    而是路由 THINKING 帧标记 ``routing: True``，且 Conversation.kind 由决策写入。
+    """
     _ptoken, _child, ctoken = _setup(client, "as6_parent", "as6_kid")
     status, events = _stream(client, ctoken, "帮我出 2 道数学题")
     assert status == 200, events
-    # 路由 THINKING 帧的 business 必为 tutor
-    routed = [e for e in events if e["eventType"] == "THINKING" and e.get("extra", {}).get("business")]
+    # 路由 THINKING 帧标记 routing=True（决策显式化后不再经 extra.business 透传）
+    routed = [e for e in events if e["eventType"] == "THINKING" and e.get("extra", {}).get("routing")]
     assert routed, "应产生路由 THINKING 帧"
-    assert routed[-1]["extra"]["business"] == "tutor"
-    # 不应出现 question 题卡
+    # 娃娃端被角色可见集强制收敛到伴学答疑（tutor），而非出题/任务
+    assert any("伴学答疑" in e.get("text", "") for e in routed)
+    # 不应出现 question 题卡（证明没有路由到出题 subagent）
     question_cards = [e for e in events if e["eventType"] == "DATA" and e.get("data", {}).get("type") == "question"]
     assert question_cards == []

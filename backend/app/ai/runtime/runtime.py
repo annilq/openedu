@@ -9,10 +9,13 @@
    TOOL_RESULT / DATA / ASSISTANT_MESSAGE / DONE），由端点以 SSE 推送。
 5. 会话持久化交给端点（复用 Conversation/Message，ADR-0022 升级为助手会话，supersede）。
 
-本类无状态；每次请求经 ``run`` 产出事件，端点负责鉴权/配额/落库。
+本类无状态；每次请求经 ``run`` 产出「路由决策 + 事件流」二元组，端点负责鉴权/配额/落库。
+路由决策以 ``RouteDecision`` 结构化对象显式返回（business / name / subject），不再经
+THINKING 帧的 ``extra`` 隐式透传，消除端点对事件信封的隐式契约依赖（见 #2）。
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import AsyncIterator
 from uuid import UUID
 
@@ -33,6 +36,21 @@ from app.domain import build_provider, build_retriever
 from app.domain.safety import check_input
 
 
+@dataclass
+class RouteDecision:
+    """一次路由的结构化决策，由 ``run``/``decide`` 显式返回供端点消费。
+
+    - ``business``：路由到的业务键；``None`` 表示输入被安全闸门拦截（不路由）。
+    - ``name``：业务可读名（来自 manifest.name）。
+    - ``subject``：仅 tutor 域解析的学科（child 恒为 tutor）；端点配额与 TutorLog 复用，
+      避免端点二次调用 ``detect_subject``（见 #3）。
+    """
+
+    business: str | None
+    name: str | None
+    subject: str | None = None
+
+
 class AgentRuntime:
     def __init__(self, manifests: dict[str, SubAgentManifest]) -> None:
         self._manifests = manifests
@@ -51,6 +69,47 @@ class AgentRuntime:
         m = self._manifests.get(business)
         return m.name if m else business
 
+    # ── 路由决策（纯计算，不流式、不构建依赖） ──
+    async def decide(
+        self,
+        message: str,
+        *,
+        role: str,
+        child_id: UUID | None = None,
+        parent_id: UUID | None = None,
+        session: Session | None = None,
+    ) -> RouteDecision:
+        """解析路由决策：角色可见性 → 安全闸门 → 混合路由 → subject。
+
+        不产出任何事件帧，也不构建 provider/retriever/engine，便于端点在进入流式前
+        做预航班（配额判定）并显式拿到 ``business`` / ``subject``，消除 ``extra`` 隐式契约。
+        """
+        visible = self.visible_businesses(role)
+
+        # 娃娃端输入安全（首层防御；TutorService 内部还有第二层）
+        if role == "child" and not check_input(message).safe:
+            return RouteDecision(business=None, name=None, subject=None)
+
+        business = await classify(message, available=visible, manifests=self._manifests)
+
+        # 角色可见性是唯一真相源：classify(available=visible) 只会在 visible 内决策，
+        # 无需 child→tutor 的二次硬覆盖（原先那行双源真相、永不适用的死代码已删除）。
+        # 防御性兜底：若 classify 越界（理论不发生），回退可见集首个，绝不落到 child 不可见业务。
+        if business not in visible:
+            business = visible[0] if visible else "tutor"
+
+        name = self.name_of(business)
+        # subject 仅 tutor 域解析（child 恒为 tutor）；一次计算，端点配额与 TutorLog 复用
+        subject = self._detect_subject(message) if business == "tutor" else None
+        return RouteDecision(business=business, name=name, subject=subject)
+
+    @staticmethod
+    def _detect_subject(message: str) -> str:
+        # 惰性导入以打破 app.ai.subagents ↔ app.ai.runtime 的循环依赖。
+        from app.ai.subagents.tutor import detect_subject
+
+        return detect_subject(message)
+
     # ── 运行 ──
     async def run(
         self,
@@ -64,76 +123,75 @@ class AgentRuntime:
         session_id: str | None = None,
         history: list[dict] | None = None,
         focus_interest: list[str] | None = None,
-    ) -> AsyncIterator[AssistantEvent]:
-        """产出一次对话的完整 AG-UI 事件流。
+        decision: RouteDecision | None = None,
+    ) -> tuple[RouteDecision, AsyncIterator[AssistantEvent]]:
+        """返回 ``(路由决策, 事件流)``。
 
-        - 对娃娃端先做输入安全校验（ADR-008 防御层）。
-        - 路由 → 加载 SubAgent → 委托其 run 产出业务事件。
-        - 路由决策以 THINKING 帧（extra.business）透出，供端点写 Conversation.kind。
+        - 决策由 ``decide`` 计算（端点可预航班复用，避免重复路由）。
+        - 事件流惰性产出：RUN_STARTED / USER_MESSAGE / 路由 THINKING / 业务帧 / DONE。
+        - 依赖（provider/retriever/engine）延迟到路由确定后、流体内构建，避免对非出题
+          业务（如 tutor）做无用的 RAG/LLM 初始化（见 #4）。
         """
+        if decision is None:
+            decision = await self.decide(
+                message, role=role, child_id=child_id, parent_id=parent_id, session=session
+            )
+
         # 惰性导入以打破 app.ai.subagents ↔ app.ai.runtime 的循环依赖。
         from app.ai.subagents import SubAgentContext, build_subagent
         from app.ai.subagents.base import BaseSubAgent
 
-        visible = self.visible_businesses(role)
+        async def _stream() -> AsyncIterator[AssistantEvent]:
+            yield run_started()
+            yield user_message(message)
 
-        yield run_started()
-        yield user_message(message)
+            # routing 标记：前端据此把「路由状态」与「业务推理增量」区分开，
+            # 否则这句会被当成出题思路拼进内联推理区。
+            yield thinking("正在理解你的需求，并选择最合适的助手…", extra={"routing": True})
 
-        # 娃娃端输入安全（首层防御；TutorService 内部还有第二层）
-        if role == "child" and not check_input(message).safe:
-            yield error("输入含不适当内容，已拒绝。", code="INPUT_UNSAFE")
-            yield done(session_id)
-            return
+            # 输入被安全闸门拦截：直接 ERROR + DONE，不路由到任何 subagent。
+            if decision.business is None:
+                yield error("输入含不适当内容，已拒绝。", code="INPUT_UNSAFE")
+                yield done(session_id)
+                return
 
-        # routing 标记：前端据此把「路由状态」与「业务推理增量」区分开，
-        # 否则这句会被当成出题思路拼进内联推理区。
-        yield thinking("正在理解你的需求，并选择最合适的助手…", extra={"routing": True})
+            name = decision.name or decision.business
+            yield thinking(f"已选择助手：{name}", extra={"routing": True})
 
-        business = await classify(
-            message, available=visible, manifests=self._manifests
-        )
+            # 依赖延迟构建：仅路由确定且 subagent 存在后初始化（见 #4）。
+            provider = build_provider()
+            retriever = build_retriever()
+            # child 经 parent_id 解析引擎（继承家长 ModelConfig / 全局默认），
+            # 不再要求客户端显式带 model（原三元条件使 child 永不拿到引擎，见 #5）。
+            engine = (
+                resolve_engine(model, parent_id=parent_id, session=session)
+                if parent_id is not None
+                else None
+            )
+            agent: BaseSubAgent | None = build_subagent(
+                decision.business, provider=provider, retriever=retriever, engine=engine
+            )
+            if agent is None:
+                yield error(f"未找到可用的助手：{decision.business}", code="NO_AGENT")
+                yield done(session_id)
+                return
 
-        # 双保险：娃娃端绝不允许路由到出题/查询（仅伴学）
-        if role == "child" and business != "tutor":
-            business = "tutor"
+            ctx = SubAgentContext(
+                role=role,
+                child_id=child_id,
+                parent_id=parent_id,
+                model=model,
+                question=message,
+                focus_interest=focus_interest,
+                history=history,
+            )
 
-        name = self.name_of(business)
-        yield thinking(
-            f"已选择助手：{name}",
-            extra={"business": business, "name": name, "routing": True},
-        )
+            try:
+                async for ev in agent.run(message, ctx, session=session):
+                    yield ev
+            except Exception as exc:  # noqa: BLE001 — 单 subagent 异常不应让整条流崩
+                yield error(f"助手执行出错：{exc}", code="AGENT_ERROR")
+            finally:
+                yield done(session_id)
 
-        # 构建 SubAgent（复用既有 provider/retriever；engine 解析真实模型）
-        provider = build_provider()
-        retriever = build_retriever()
-        engine = (
-            resolve_engine(model, parent_id=parent_id, session=session)
-            if model and parent_id is not None
-            else None
-        )
-        agent: BaseSubAgent | None = build_subagent(
-            business, provider=provider, retriever=retriever, engine=engine
-        )
-        if agent is None:
-            yield error(f"未找到可用的助手：{business}", code="NO_AGENT")
-            yield done(session_id)
-            return
-
-        ctx = SubAgentContext(
-            role=role,
-            child_id=child_id,
-            parent_id=parent_id,
-            model=model,
-            question=message,
-            focus_interest=focus_interest,
-            history=history,
-        )
-
-        try:
-            async for ev in agent.run(message, ctx, session=session):
-                yield ev
-        except Exception as exc:  # noqa: BLE001 — 单 subagent 异常不应让整条流崩
-            yield error(f"助手执行出错：{exc}", code="AGENT_ERROR")
-        finally:
-            yield done(session_id)
+        return decision, _stream()

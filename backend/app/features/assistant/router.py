@@ -19,16 +19,14 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from sqlmodel import Field, Session, SQLModel
 
-from app.ai.runtime import AgentRuntime
+from app.ai.runtime import AgentRuntime, RouteDecision
 from app.ai.runtime.protocol import (
     EVENT_ASSISTANT_MESSAGE,
     EVENT_DATA,
     EVENT_ERROR,
-    EVENT_THINKING,
     EVENT_TOOL_CALL,
     EVENT_TOOL_RESULT,
 )
-from app.ai.subagents.tutor import detect_subject
 from app.core.config import settings
 from app.core.deps import CallerDep, SessionDep
 from app.core.errors import AppErrorException, ErrCode
@@ -106,16 +104,25 @@ async def assistant_chat(req: AssistantChatReq, caller: CallerDep, session: Sess
     if role == "child":
         child_id = caller.user.id
         parent_id = caller.user.parent_id
-        # 使用配额（伴学答疑计入每日上限）
-        decision = _child_quota_decision(session, child_id, detect_subject(message))
-        if not decision.allowed:
-            code = ErrCode.TUTOR_QUOTA_EXCEEDED
-            if decision.code == REASON_SUBJECT_SCOPE:
-                code = ErrCode.TUTOR_SUBJECT_FORBIDDEN
-            raise AppErrorException(code, decision.message)
     else:  # parent
         parent_id = caller.user.id
         child_id = None
+
+    # 预路由：解析 business + subject（不流式），供配额判定与落库复用，
+    # 消除端点对 THINKING(extra.business) 隐式契约与对 detect_subject 的重复调用（见 #2/#3）。
+    runtime = _get_runtime()
+    decision: RouteDecision = await runtime.decide(
+        message, role=role, child_id=child_id, parent_id=parent_id, session=session
+    )
+
+    if role == "child":
+        # 使用配额（伴学答疑计入每日上限）；subject 取自路由决策，仅算一次
+        quota_decision = _child_quota_decision(session, child_id, decision.subject or "")
+        if not quota_decision.allowed:
+            code = ErrCode.TUTOR_QUOTA_EXCEEDED
+            if quota_decision.code == REASON_SUBJECT_SCOPE:
+                code = ErrCode.TUTOR_SUBJECT_FORBIDDEN
+            raise AppErrorException(code, quota_decision.message)
 
     # ── 会话持久化（复用 Conversation/Message，ADR-0026 多轮） ──
     # 优先按 session_id 续接已有会话并载入历史；否则新建。
@@ -153,7 +160,7 @@ async def assistant_chat(req: AssistantChatReq, caller: CallerDep, session: Sess
         conv_id = uuid4()
         conversation = Conversation(
             id=conv_id,
-            kind="agent",  # run 内 THINKING(routing) 帧会更新为具体 business
+            kind=decision.business or "agent",  # 路由决策显式给出，不再依赖 THINKING(extra)
             parent_id=parent_id,
             child_id=child_id,
             model=req.model,
@@ -167,44 +174,45 @@ async def assistant_chat(req: AssistantChatReq, caller: CallerDep, session: Sess
         # 无 session_id：兼容客户端自带历史（兜底）
         history = req.history
 
-    runtime = _get_runtime()
-
     async def event_stream() -> AsyncIterator[str]:
         final_text = ""
         cards: list[dict] = []
         tool_msgs: list[Message] = []
         conv_status = "done"
         turn = 1
-        routed_business: str | None = None
         blocked_flag = False
 
+        # 复用预航班决策（decision），避免重复路由；run 返回 (决策, 事件流)。
+        # 仅取流；返回的 decision 与入参同一对象，沿用外层 decision 即可（避免闭包内重名遮蔽触发 F823）。
+        _, stream = await runtime.run(
+            message,
+            role=role,
+            child_id=child_id,
+            parent_id=parent_id,
+            session=session,
+            model=req.model,
+            session_id=str(conv_id),
+            history=history,
+            focus_interest=[req.focus_interest] if req.focus_interest else None,
+            decision=decision,
+        )
+        # 路由步落库：用结构化决策，去掉 THINKING(extra.business) 隐式契约
+        if decision.business is not None:
+            session.add(
+                Message(
+                    conversation_id=conv_id,
+                    turn=turn,
+                    role="system",
+                    step="routing",
+                    content=decision.name or decision.business,
+                )
+            )
+            turn += 1
+
         try:
-            async for ev in runtime.run(
-                message,
-                role=role,
-                child_id=child_id,
-                parent_id=parent_id,
-                session=session,
-                model=req.model,
-                session_id=str(conv_id),
-                history=history,
-                focus_interest=[req.focus_interest] if req.focus_interest else None,
-            ):
+            async for ev in stream:
                 # 持久化（边流边记）
-                if ev.eventType == EVENT_THINKING and ev.extra.get("business"):
-                    conversation.kind = ev.extra["business"]
-                    routed_business = ev.extra["business"]
-                    session.add(
-                        Message(
-                            conversation_id=conv_id,
-                            turn=turn,
-                            role="system",
-                            step="routing",
-                            content=ev.extra.get("name", ev.extra["business"]),
-                        )
-                    )
-                    turn += 1
-                elif ev.eventType == EVENT_TOOL_CALL:
+                if ev.eventType == EVENT_TOOL_CALL:
                     tool_msgs.append(
                         Message(
                             conversation_id=conv_id,
@@ -259,14 +267,13 @@ async def assistant_chat(req: AssistantChatReq, caller: CallerDep, session: Sess
             conversation.status = conv_status
 
             # ADR-008：娃娃端伴学交互落 TutorLog（家长可见 + 每日上限计数，F-304/305）
-            if role == "child" and routed_business == "tutor":
+            if role == "child" and decision.business == "tutor":
                 try:
-                    _subject = detect_subject(message)
                     create_tutor_log(
                         session=session,
                         child_id=child_id,
                         grade=caller.user.grade or 0,
-                        subject=_subject or "",
+                        subject=decision.subject or "",
                         knowledge_point="",
                         question=message,
                         answer=final_text,
