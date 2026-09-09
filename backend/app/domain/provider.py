@@ -68,6 +68,7 @@ class LLMProvider(ABC):
         focus_interest: str | None = None,  # 兴趣题模式：聚焦的单个兴趣主题
         rag_context: str | None = None,  # ADR-0021：知识库检索命中内容（对齐教材口径）
         persona_hint: str | None = None,  # ADR-0021：学科 Persona 渲染文本（语气/适龄/约定）
+        history: list[dict] | None = None,  # 多轮对话历史（ADR-0026 服务端会话）
     ) -> GeneratedQuestion: ...
 
     async def generate_question_stream(
@@ -82,6 +83,7 @@ class LLMProvider(ABC):
         focus_interest: str | None = None,
         rag_context: str | None = None,
         persona_hint: str | None = None,
+        history: list[dict] | None = None,
     ) -> AsyncIterator[QuestionStreamEvent]:
         """出题流式：逐段产出推理增量与成品题卡。
 
@@ -98,6 +100,7 @@ class LLMProvider(ABC):
             focus_interest=focus_interest,
             rag_context=rag_context,
             persona_hint=persona_hint,
+            history=history,
         )
         if q is not None:
             yield QuestionCard(question=q)
@@ -109,10 +112,12 @@ class LLMProvider(ABC):
 
     @abstractmethod
     async def tutor(
-        self, *, grade, subject, knowledge_point, context, question
+        self, *, grade, subject, knowledge_point, context, question,
+        history: list[dict] | None = None,
     ) -> str:
         """AI 伴学答疑（F-302）：针对娃娃的提问返回适龄、纯学习相关的讲解文本。
 
         实现应自行注入「仅适合对应年级、纯学习相关」的系统约束（见 domain/safety）。
+        ``history`` 为多轮对话历史（ADR-0026 服务端会话），实现应拼入上下文以衔接前轮。
         """
         ...

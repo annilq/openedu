@@ -20,6 +20,7 @@ from app.core.config import settings
 from app.core.deps import CurrentParent, SessionDep
 from app.db.models import User
 from app.domain import validate_quota_config
+from app.domain.quota import resolve_quota_limits
 from app.features.tutor.repository import (
     count_tutor_today,
     get_tutor_quota,
@@ -46,16 +47,13 @@ def _own_child(session, parent, child_id: UUID) -> User:
 
 
 def _effective_limits(quota) -> tuple[int | None, int | None, list[str] | None]:
-    """解析生效限额：未配置/None 的提问上限回退全局 TUTOR_DAILY_LIMIT。"""
-    ask_limit = settings.TUTOR_DAILY_LIMIT
-    minutes_limit = None
-    allowed_subjects = None
-    if quota is not None:
-        if quota.daily_ask_limit is not None:
-            ask_limit = quota.daily_ask_limit
-        minutes_limit = quota.daily_minutes_limit
-        allowed_subjects = quota.allowed_subjects
-    return ask_limit, minutes_limit, allowed_subjects
+    """解析生效限额：未配置/None 的提问上限回退全局 TUTOR_DAILY_LIMIT。
+
+    委托 ``domain.quota.resolve_quota_limits``，与 assistant/router._child_quota_decision
+    共用同一份合并逻辑（ADR-0027：共享逻辑进 domain，避免两处重复）。
+    """
+    limits = resolve_quota_limits(quota, default_ask_limit=settings.TUTOR_DAILY_LIMIT)
+    return limits.ask_limit, limits.minutes_limit, limits.allowed_subjects
 
 
 @router.get("/logs", response_model=list[TutorLogResp])

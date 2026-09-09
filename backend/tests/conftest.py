@@ -12,7 +12,6 @@ os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DB}"
 _TEST_DB.unlink(missing_ok=True)
 
 from app.core.db import engine, init_db  # noqa: E402
-from app.main import app  # noqa: E402
 from app.db.models import (  # noqa: E402
     AnswerRecord,
     Checkin,
@@ -25,6 +24,7 @@ from app.db.models import (  # noqa: E402
     User,
     WrongQuestion,
 )
+from app.main import app  # noqa: E402
 
 
 @pytest.fixture(scope="session", autouse=True)

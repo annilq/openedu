@@ -11,7 +11,7 @@
 
 ## 建议处理（待人工决定）
 
-- ⚠️ **冗余文档**：`../architecture/技术架构_后端.md` 与 `../architecture/项目分析_架构规范与业务功能.md` 高度重叠（同一套架构两套描述）。已在 AGENTS.md 同时建导航并标注「以《技术架构_后端.md》为架构事实源」；若后续仍想二选一可作索引 / 链接，避免将来再次分叉。
+- ✅ **冗余文档已合并（2026-09-09）**：`../architecture/技术架构_后端.md` 与已删除的 `../architecture/项目分析_架构规范与业务功能.md` 高度重叠。已将后者合并精简进《技术架构_后端.md》（业务功能 F-101~F-306、开发规范、技术债并入），并**校正至 2026-09-08 Feature-First 重构后的真实架构**（`app/features/<name>/`、`app/db/models/`、`/assistant/chat` 统一入口、genkit 仅作底层引擎；删除 `crud.py`/`api/routes/*`/`LangChainProvider`/`/tutor/ask` 等已不存在的旧结构）。《技术架构_后端.md》现为后端架构唯一事实源；AGENTS.md、architecture.md、backend.md、git-workflow.md 的引用同步更新。
 - ⚠️ **规划类目录不属于 AGENTS 规范**：
   - `.scratch/wawa-learning/issues/*` —— 议题草稿，应进 issue tracker，不在代理指引范围。
   - `wayfinder/` —— 独立规划 / 票据素材，不是编码约定。

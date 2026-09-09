@@ -63,7 +63,7 @@ class AgentRuntime:
         model: str | None = None,
         session_id: str | None = None,
         history: list[dict] | None = None,
-        focus_interest: str | None = None,
+        focus_interest: list[str] | None = None,
     ) -> AsyncIterator[AssistantEvent]:
         """产出一次对话的完整 AG-UI 事件流。
 
@@ -127,6 +127,7 @@ class AgentRuntime:
             model=model,
             question=message,
             focus_interest=focus_interest,
+            history=history,
         )
 
         try:

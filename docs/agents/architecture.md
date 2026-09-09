@@ -48,7 +48,6 @@
 - 内容安全：系统层年龄锁 prompt + `check_input` / `check_output` 确定性校验，命中返回 `SAFE_REFUSAL` 并记 `tutor_log.blocked`，**不向娃娃暴露拒绝原因**。
 - `TaskQuestion` 派发冻结：家长编辑草稿 / 题库不污染已派发任务。
 
-## 后端架构文档导航（两份，注意重叠）
+## 后端架构文档导航（唯一事实源）
 
-- **[../architecture/技术架构_后端.md](../architecture/技术架构_后端.md)** — 后端架构**事实源**。已修正 §5.1（provider 为 `async`，非同步）与 §6（Task 状态 `draft→ready→assigned→done`，非 `pending|done`）两处过期描述。
-- **[../architecture/项目分析_架构规范与业务功能.md](../architecture/项目分析_架构规范与业务功能.md)** — 业务功能 + 架构规范分析，与《技术架构_后端.md》高度重叠、互补阅读。**架构判断以《技术架构_后端.md》为准**；涉及具体业务功能细节再查本文。
+- **[../architecture/技术架构_后端.md](../architecture/技术架构_后端.md)** — 后端架构**唯一事实源**。由原《技术架构_后端.md》与《项目分析_架构规范与业务功能.md》合并精简而来（2026-09-09），已校正至 Feature-First 架构（ADR-0027）：`app/features/<name>/` 每能力一目录、ORM 表集中 `app/db/models/`、AI 统一入口 `/assistant/chat`。业务功能（F-101~F-306）、开发规范、技术债均并入该文。

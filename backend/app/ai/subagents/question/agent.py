@@ -223,6 +223,7 @@ class QuestionSubAgent(BaseSubAgent):
             focus_interest=intent.get("focus_interest"),
             rag_context=rag_context,
             persona_hint=persona_hint,
+            history=ctx.history,
         )
 
     async def run(self, message: str, ctx: SubAgentContext, *, session=None):
@@ -272,6 +273,7 @@ class QuestionSubAgent(BaseSubAgent):
                     focus_interest=focus,
                     rag_context=rag_context,
                     persona_hint=persona_hint,
+                    history=ctx.history,
                 )
             ):
                 data = frame.data

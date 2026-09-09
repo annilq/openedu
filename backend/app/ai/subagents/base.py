@@ -28,6 +28,9 @@ class SubAgentContext:
     # WF-4 兴趣题模式：显式聚焦主题列表（如「恐龙」「太空」），由出题 SubAgent 注入出题
     # prompt，让题目情境围绕该主题展开（ADR-0024 经 /assistant/chat 的 focus_interest 字段透传）。
     focus_interest: list[str] | None = None
+    # ADR-0026：服务端多轮——本会话已发生的对话历史（[{role, content}, ...]），
+    # 由 runtime 从 Conversation/Message 载入后注入，供 SubAgent 透传给 provider 拼入 prompt。
+    history: list[dict] | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 
 

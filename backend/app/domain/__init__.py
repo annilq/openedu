@@ -6,7 +6,9 @@ from app.domain.quota import (
     REASON_SUBJECT_SCOPE,
     REASON_TIME_LIMIT,
     SUBJECTS,
+    QuotaLimits,
     check_quota,
+    resolve_quota_limits,
     validate_quota_config,
 )
 from app.domain.retriever import (
@@ -27,6 +29,8 @@ __all__ = [
     "SUBJECTS",
     "check_quota",
     "validate_quota_config",
+    "resolve_quota_limits",
+    "QuotaLimits",
     "REASON_ASK_LIMIT",
     "REASON_TIME_LIMIT",
     "REASON_SUBJECT_SCOPE",

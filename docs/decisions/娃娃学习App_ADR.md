@@ -183,7 +183,7 @@ R6 分析：原出题流每题仅发 1 个成品题卡 chunk，无中间推理 t
 项目根目录散落 15 个 `.md`（产品方案 / PRD / spec / T08~T13 任务文档 / 技术架构 / 实施文档 / ADR / 术语表），与 `ai.md` 推荐的 `docs/` 六类结构（product / requirements / ux / architecture / database / decisions）不符；`AGENTS.md` 作为项目协议入口，文档应按类型归类以提升跨 Agent 可读性。同时 `design/`、`wayfinder/`、`docs/agents/` 已有独立定位且被 `AGENTS.md` 大量引用。
 
 ### 决策（五条，经访谈锁定）
-1. **仅迁移根目录散落文档**，归入 `docs/` 下 4 个有内容的英文分类目录：`product/`（3：产品方案 / PRD / spec）、`requirements/`（5：T08~T13 任务文档）、`architecture/`（5：技术架构_Flutter / 技术架构_后端 / 项目分析_架构规范与业务功能 / 实施文档_题库复用闭环_前端 / 实施文档_题库复用闭环_后端）、`decisions/`（2：ADR 合集 + 术语表/glossary）。
+1. **仅迁移根目录散落文档**，归入 `docs/` 下 4 个有内容的英文分类目录：`product/`（3：产品方案 / PRD / spec）、`requirements/`（5：T08~T13 任务文档）、`architecture/`（4：技术架构_Flutter / 技术架构_后端 / 实施文档_题库复用闭环_前端 / 实施文档_题库复用闭环_后端；原《项目分析_架构规范与业务功能》已于 2026-09-09 并入《技术架构_后端》）、`decisions/`（2：ADR 合集 + 术语表/glossary）。
 2. **`design/`、`wayfinder/`、`docs/agents/` 保留不动**（异常内容保留独立文件夹，Q3 确认）；它们分别承担设计稿 / 工单流转 / 代理指引角色，强行拆并需重写 `AGENTS.md` 大量链接，成本与风险高。
 3. **`ux/`、`database/` 本次不创建**：设计稿（landing / 原型 / mockup）仍在 `design/`（承担 ux 角色），数据库建模规范在 `docs/agents/backend.md` 与 `wayfinder/02-数据建模与迁移.md`（承担 database 角色）；待出现专属内容再建目录。
 4. **目录用英文命名**（`product/requirements/...`）以对齐 `ai.md`；文档文件名保持中文原样，避免额外链接断裂。

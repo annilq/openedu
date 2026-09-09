@@ -62,8 +62,7 @@ python3 frontend/scripts/patch_macos_network.py
 
 ### 后端 / Python
 - 后端约定（SQLModel / cuuid / 配置 / 隔离 / 错误码 / 迁移 / 测试） → [docs/agents/backend.md](docs/agents/backend.md)
-- 后端架构（**事实源**，已修正 §5.1 async / §6 Task 状态两处过期描述） → [docs/architecture/技术架构_后端.md](docs/architecture/技术架构_后端.md)
-- 业务功能与架构分析（与上文有重叠，互补阅读；**架构判断以《技术架构_后端.md》为准**） → [docs/architecture/项目分析_架构规范与业务功能.md](docs/architecture/项目分析_架构规范与业务功能.md)
+- 后端架构（**唯一事实源**，由《技术架构_后端.md》与《项目分析_架构规范》于 2026-09-09 合并精简而来；已校正至 Feature-First 架构） → [docs/architecture/技术架构_后端.md](docs/architecture/技术架构_后端.md)
 
 ### 前端 / Flutter
 - 前端约定（Clean Arch / App* 组件 / 导航 / 令牌） → [docs/agents/frontend.md](docs/agents/frontend.md)

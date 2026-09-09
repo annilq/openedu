@@ -13,9 +13,9 @@ TOOL_RESULT / DATA / ASSISTANT_MESSAGE / DONE）。
 from __future__ import annotations
 
 from typing import AsyncIterator
-from uuid import uuid4
+from uuid import UUID, uuid4
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from sqlmodel import Field, Session, SQLModel
 
@@ -31,8 +31,14 @@ from app.ai.runtime.protocol import (
 from app.ai.subagents.tutor import detect_subject
 from app.core.config import settings
 from app.core.deps import CallerDep, SessionDep
+from app.core.errors import AppErrorException, ErrCode
 from app.db.models import Conversation, Message
-from app.domain import REASON_SUBJECT_SCOPE, check_quota
+from app.domain import REASON_SUBJECT_SCOPE, check_quota, resolve_quota_limits
+from app.features.assistant.repository import (
+    get_conversation_by_id,
+    load_chat_history,
+    next_turn,
+)
 from app.features.tutor.repository import (
     count_tutor_today,
     create_tutor_log,
@@ -69,16 +75,13 @@ def _get_runtime() -> AgentRuntime:
 
 
 def _child_quota_decision(session: Session, child_id, subject: str):
-    """复用 T10 配额逻辑（F-305 合规前置）。"""
+    """复用 T10 配额逻辑（F-305 合规前置）。
+
+    生效限额（全局默认 + 每娃覆盖合并）委托 ``domain.quota.resolve_quota_limits``，
+    消除与 tutor/router._effective_limits 的重复逻辑（ADR-0027：共享逻辑进 domain）。
+    """
     quota = get_tutor_quota(session=session, child_id=child_id)
-    ask_limit: int | None = settings.TUTOR_DAILY_LIMIT
-    minutes_limit: int | None = None
-    allowed_subjects: list[str] | None = None
-    if quota is not None:
-        if quota.daily_ask_limit is not None:
-            ask_limit = quota.daily_ask_limit
-        minutes_limit = quota.daily_minutes_limit
-        allowed_subjects = quota.allowed_subjects
+    limits = resolve_quota_limits(quota, default_ask_limit=settings.TUTOR_DAILY_LIMIT)
     usage = get_tutor_usage_today(session=session, child_id=child_id)
     used_seconds = usage.used_seconds if usage is not None else 0
     used = count_tutor_today(session=session, child_id=child_id)
@@ -86,9 +89,9 @@ def _child_quota_decision(session: Session, child_id, subject: str):
         subject=subject,
         asks_today=used,
         used_seconds=used_seconds,
-        ask_limit=ask_limit,
-        minutes_limit=minutes_limit,
-        allowed_subjects=allowed_subjects,
+        ask_limit=limits.ask_limit,
+        minutes_limit=limits.minutes_limit,
+        allowed_subjects=limits.allowed_subjects,
     )
 
 
@@ -97,7 +100,7 @@ async def assistant_chat(req: AssistantChatReq, caller: CallerDep, session: Sess
     """悬浮助手对话：SSE 流式返回 AG-UI 事件。"""
     message = (req.message or "").strip()
     if not message:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="消息不能为空")
+        raise AppErrorException(ErrCode.CHAT_EMPTY_MESSAGE, "消息不能为空")
 
     role = caller.role
     if role == "child":
@@ -106,29 +109,63 @@ async def assistant_chat(req: AssistantChatReq, caller: CallerDep, session: Sess
         # 使用配额（伴学答疑计入每日上限）
         decision = _child_quota_decision(session, child_id, detect_subject(message))
         if not decision.allowed:
-            code = status.HTTP_429_TOO_MANY_REQUESTS
+            code = ErrCode.TUTOR_QUOTA_EXCEEDED
             if decision.code == REASON_SUBJECT_SCOPE:
-                code = status.HTTP_403_FORBIDDEN
-            raise HTTPException(status_code=code, detail=decision.message)
+                code = ErrCode.TUTOR_SUBJECT_FORBIDDEN
+            raise AppErrorException(code, decision.message)
     else:  # parent
         parent_id = caller.user.id
         child_id = None
 
-    # ── 会话持久化（复用 Conversation/Message，ADR-0026） ──
-    conv_id = uuid4()
-    conversation = Conversation(
-        id=conv_id,
-        kind="agent",  # run 内 THINKING(routing) 帧会更新为具体 business
-        parent_id=parent_id,
-        child_id=child_id,
-        model=req.model,
-        status="running",
-    )
-    session.add(conversation)
-    session.add(
-        Message(conversation_id=conv_id, turn=0, role="user", step="input", content=message)
-    )
-    session.commit()
+    # ── 会话持久化（复用 Conversation/Message，ADR-0026 多轮） ──
+    # 优先按 session_id 续接已有会话并载入历史；否则新建。
+    conversation: Conversation | None = None
+    conv_id: UUID | None = None
+    history: list[dict] | None = None
+
+    if req.session_id:
+        try:
+            existing = get_conversation_by_id(session, UUID(req.session_id))
+        except (ValueError, AttributeError):
+            existing = None
+        if (
+            existing is not None
+            and existing.parent_id == parent_id
+            and existing.child_id == child_id
+        ):
+            # 归属校验通过：续接该会话，载入历史拼入 prompt
+            conversation = existing
+            conv_id = existing.id
+            conversation.status = "running"
+            history = load_chat_history(session, conv_id)
+            session.add(
+                Message(
+                    conversation_id=conv_id,
+                    turn=next_turn(session, conv_id),
+                    role="user",
+                    step="input",
+                    content=message,
+                )
+            )
+            session.commit()
+
+    if conversation is None:
+        conv_id = uuid4()
+        conversation = Conversation(
+            id=conv_id,
+            kind="agent",  # run 内 THINKING(routing) 帧会更新为具体 business
+            parent_id=parent_id,
+            child_id=child_id,
+            model=req.model,
+            status="running",
+        )
+        session.add(conversation)
+        session.add(
+            Message(conversation_id=conv_id, turn=0, role="user", step="input", content=message)
+        )
+        session.commit()
+        # 无 session_id：兼容客户端自带历史（兜底）
+        history = req.history
 
     runtime = _get_runtime()
 
@@ -150,8 +187,8 @@ async def assistant_chat(req: AssistantChatReq, caller: CallerDep, session: Sess
                 session=session,
                 model=req.model,
                 session_id=str(conv_id),
-                history=req.history,
-                focus_interest=req.focus_interest,
+                history=history,
+                focus_interest=[req.focus_interest] if req.focus_interest else None,
             ):
                 # 持久化（边流边记）
                 if ev.eventType == EVENT_THINKING and ev.extra.get("business"):

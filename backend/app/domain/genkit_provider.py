@@ -58,6 +58,7 @@ class GenkitProvider(LLMProvider):
         focus_interest: str | None = None,
         rag_context: str | None = None,
         persona_hint: str | None = None,
+        history: list[dict] | None = None,
     ) -> GeneratedQuestion | None:
         engine = resolve_engine()
         if engine is None:
@@ -65,7 +66,7 @@ class GenkitProvider(LLMProvider):
         prompt = _build_question_prompt(
             subject=subject, grade=grade, knowledge_point=knowledge_point, qtype=qtype,
             difficulty=difficulty, interests=interests, focus_interest=focus_interest,
-            rag_context=rag_context, persona_hint=persona_hint,
+            rag_context=rag_context, persona_hint=persona_hint, history=history,
         )
         resp = await engine.genkit.generate(
             model=engine.model, system=_QUESTION_SYSTEM_PROMPT, prompt=prompt,
@@ -108,6 +109,7 @@ class GenkitProvider(LLMProvider):
         focus_interest: str | None = None,
         rag_context: str | None = None,
         persona_hint: str | None = None,
+        history: list[dict] | None = None,
     ) -> AsyncIterator[QuestionStreamEvent]:
         """出题真流式：委托 ``app.ai.generation.generate_question_stream``。
 
@@ -127,6 +129,7 @@ class GenkitProvider(LLMProvider):
             focus_interest=focus_interest,
             rag_context=rag_context,
             persona_hint=persona_hint,
+            history=history,
         ):
             yield ev
 
@@ -174,7 +177,8 @@ class GenkitProvider(LLMProvider):
         return result
 
     async def tutor(
-        self, *, grade, subject, knowledge_point, context, question
+        self, *, grade, subject, knowledge_point, context, question,
+        history: list[dict] | None = None,
     ) -> str | None:
         engine = resolve_engine()
         if engine is None:
@@ -187,6 +191,13 @@ class GenkitProvider(LLMProvider):
             "请用简洁、鼓励的语气，结合知识点给出适合该年级学生的分步讲解，必要时举例。"
             "只讲解学习相关内容，不要回答与学习无关的话题。"
         )
+        # ADR-0026：服务端多轮——把历史对话拼入 prompt，自然衔接前轮。
+        if history:
+            lines = "\n".join(
+                f"{'学生' if m.get('role') == 'user' else '老师'}: {m.get('content', '')}"
+                for m in history[-10:]
+            )
+            prompt += f"\n\n【对话历史】\n{lines}\n请结合以上历史，自然衔接作答。"
         sr = engine.genkit.generate_stream(
             model=engine.model, system=tutor_system_prompt(grade, subject), prompt=prompt,
         )

@@ -36,7 +36,7 @@ class _ParentModelManagementScreenState
         s is ModelsLoaded ? s.providers : const <ModelProviderPreset>[];
     showShadDialog(
       context: context,
-      barrierColor: const Color(0x99000000),
+      barrierColor: AppTheme.colorsOf(context).scrim,
       builder: (_) => ModelFormDialog(
         initial: initial,
         presets: providers,

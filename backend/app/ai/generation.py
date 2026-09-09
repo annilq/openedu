@@ -98,6 +98,7 @@ def _build_question_prompt(
     focus_interest: str | None,
     rag_context: str | None = None,
     persona_hint: str | None = None,
+    history: list[dict] | None = None,
 ) -> str:
     """出题 prompt（流式与落库**同一份**，模型产出受 ``QuestionSchema`` 约束）。"""
     clause = _build_question_clause(
@@ -109,6 +110,13 @@ def _build_question_prompt(
     # ADR-0021：RAG 命中内容作为教材口径参考，对齐知识点。
     if rag_context:
         clause += f"\n\n参考教材口径（仅作对齐参考，不照搬）：\n{rag_context}"
+    # ADR-0026：服务端多轮——把历史对话拼入 prompt，便于「再出两道类似的」。
+    if history:
+        lines = "\n".join(
+            f"{'用户' if m.get('role') == 'user' else '助手'}: {m.get('content', '')}"
+            for m in history[-6:]
+        )
+        clause += f"\n\n【前面已聊过的内容，供参考】\n{lines}"
     return (
         clause + "\n\n"
         "另外用 1-3 句写出你的出题思路（情境如何选取、干扰项/答案如何设计、难度如何把控，"
@@ -129,6 +137,7 @@ async def generate_question(
     focus_interest: str | None = None,
     rag_context: str | None = None,
     persona_hint: str | None = None,
+    history: list[dict] | None = None,
 ) -> GeneratedQuestion | None:
     """非流式出题（落库路径）：与流式共用 prompt + 安全闸门。
 
@@ -138,7 +147,7 @@ async def generate_question(
     prompt = _build_question_prompt(
         subject=subject, grade=grade, knowledge_point=knowledge_point, qtype=qtype,
         difficulty=difficulty, interests=interests, focus_interest=focus_interest,
-        rag_context=rag_context, persona_hint=persona_hint,
+        rag_context=rag_context, persona_hint=persona_hint, history=history,
     )
     resp = await engine.genkit.generate(
         model=engine.model, system=_QUESTION_SYSTEM_PROMPT, prompt=prompt,
@@ -182,6 +191,7 @@ async def generate_question_stream(
     focus_interest: str | None = None,
     rag_context: str | None = None,
     persona_hint: str | None = None,
+    history: list[dict] | None = None,
 ) -> AsyncIterator[QuestionStreamEvent]:
     """流式出题：解码 chunk → 解析器判定 → 产出语义事件。
 
@@ -195,7 +205,7 @@ async def generate_question_stream(
     prompt = _build_question_prompt(
         subject=subject, grade=grade, knowledge_point=knowledge_point, qtype=qtype,
         difficulty=difficulty, interests=interests, focus_interest=focus_interest,
-        rag_context=rag_context, persona_hint=persona_hint,
+        rag_context=rag_context, persona_hint=persona_hint, history=history,
     )
     sresp = engine.genkit.generate_stream(
         model=engine.model, system=_QUESTION_SYSTEM_PROMPT, prompt=prompt,

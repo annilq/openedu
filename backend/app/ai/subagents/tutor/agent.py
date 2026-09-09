@@ -46,6 +46,7 @@ class TutorSubAgent(BaseSubAgent):
         knowledge_point: str,
         context: str | None,
         question: str,
+        history: list[dict] | None = None,
     ) -> TutorResult:
         """同步讲解入口（保留，供需要同步调用的场景）。"""
         effective_context = self._effective_context(subject, context)
@@ -55,6 +56,7 @@ class TutorSubAgent(BaseSubAgent):
             knowledge_point=knowledge_point,
             context=effective_context,
             question=question,
+            history=history,
         )
 
     async def handle(self, intent: dict, ctx: SubAgentContext) -> TutorResult:
@@ -68,6 +70,7 @@ class TutorSubAgent(BaseSubAgent):
             knowledge_point=kp,
             context=ctx.context,
             question=question,
+            history=ctx.history,
         )
 
     async def run(self, message: str, ctx: SubAgentContext, *, session=None):
@@ -81,6 +84,7 @@ class TutorSubAgent(BaseSubAgent):
             knowledge_point="",
             context=self._effective_context(subject, ctx.context),
             question=message,
+            history=ctx.history,
         )
         yield tool_result("tutor_explain", {"blocked": result.blocked})
         yield assistant_message(result.answer, blocked=result.blocked)

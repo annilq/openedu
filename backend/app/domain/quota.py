@@ -10,7 +10,13 @@
 值域约定：上限为 0 表示「今日禁用 AI 答疑」，None 表示不启用该项管控。
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.db.models import TutorQuota
 
 # App 支持的学科（家长配置范围时的合法选项）
 SUBJECTS: tuple[str, ...] = ("数学", "语文", "英语")
@@ -26,6 +32,36 @@ class QuotaDecision:
     allowed: bool
     code: str | None = None
     message: str | None = None
+
+
+@dataclass(frozen=True)
+class QuotaLimits:
+    """某娃娃生效后的管控限额（合并全局默认与每娃覆盖后）。"""
+
+    ask_limit: int | None
+    minutes_limit: int | None
+    allowed_subjects: list[str] | None
+
+
+def resolve_quota_limits(
+    quota: "TutorQuota | None",
+    *,
+    default_ask_limit: int | None = None,
+) -> QuotaLimits:
+    """把（可能 None 的）TutorQuota 行合并为生效限额。
+
+    未配置某项时回退 ``default_ask_limit``（通常传全局 ``settings.TUTOR_DAILY_LIMIT``）。
+    消除各路由里重复的「全局默认 + 每娃 quota 合并」逻辑（ADR-0027：共享逻辑进 domain）。
+    """
+    ask_limit = default_ask_limit
+    minutes_limit = None
+    allowed_subjects = None
+    if quota is not None:
+        if quota.daily_ask_limit is not None:
+            ask_limit = quota.daily_ask_limit
+        minutes_limit = quota.daily_minutes_limit
+        allowed_subjects = quota.allowed_subjects
+    return QuotaLimits(ask_limit, minutes_limit, allowed_subjects)
 
 
 def check_quota(
@@ -96,7 +132,9 @@ def validate_quota_config(
 __all__ = [
     "SUBJECTS",
     "QuotaDecision",
+    "QuotaLimits",
     "check_quota",
+    "resolve_quota_limits",
     "validate_quota_config",
     "REASON_ASK_LIMIT",
     "REASON_TIME_LIMIT",

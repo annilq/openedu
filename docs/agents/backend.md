@@ -50,6 +50,5 @@ api/routes/ + api/deps   →  domain/ (抽象+工厂+纯函数)  →  models.py(
 
 ## 相关资源（架构文档导航）
 
-- 后端架构（**事实源**） → [../architecture/技术架构_后端.md](../architecture/技术架构_后端.md)（已修正 §5.1 async / §6 Task 状态两处过期描述）。
-- 业务功能与架构分析（与上文重叠，互补阅读） → [../architecture/项目分析_架构规范与业务功能.md](../architecture/项目分析_架构规范与业务功能.md)。
+- 后端架构（**唯一事实源**） → [../architecture/技术架构_后端.md](../architecture/技术架构_后端.md)（由原《技术架构_后端.md》与《项目分析_架构规范》合并精简，已校正至 Feature-First 架构）。
 - 设计评审 skill：`/impeccable` 偏前端设计；后端暂无专用编码 skill，本文件即事实源。

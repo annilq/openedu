@@ -39,6 +39,7 @@ class TutorService:
         knowledge_point: str,
         context: str | None,
         question: str,
+        history: list[dict] | None = None,
     ) -> TutorResult:
         # 1) 输入安全校验（越狱 / 非学习类主题）
         # 对所有娃娃可输入字段统一校验，避免越狱指令从知识点/上下文绕过年龄锁
@@ -83,6 +84,7 @@ class TutorService:
                 knowledge_point=knowledge_point,
                 context=effective_context,
                 question=question,
+                history=history,
             )
         )
 
@@ -123,6 +125,7 @@ class TutorService:
         knowledge_point: str,
         context: str | None,
         question: str,
+        history: list[dict] | None = None,
     ) -> TutorResult:
         """``explain`` 的异步版本（供 Agent Runtime 的 async 端点调用）。
 
@@ -163,6 +166,7 @@ class TutorService:
             knowledge_point=knowledge_point,
             context=effective_context,
             question=question,
+            history=history,
         )
 
         out = check_output(raw)
