@@ -1,12 +1,16 @@
-"""出题 / 答疑 / 批改的共享生成层（ADR-0015 修订 / 迁移 08b：统一 Genkit 全栈）。
+"""出题生成的共享脚手架 + 单一安全闸门（ADR-0023 收敛 / 迁移 08b：Genkit 全栈）。
 
-本模块只保留被各 SubAgent 复用的底层一次性生成能力（SSE 流式由 SubAgent 在事件层封装）：
+本模块只放**跨入口共用**的出题构造件，不登记任何 Genkit flow 端点：
 
-- 出题：``generate_question``（一次性结构化输出，落库 / 逐题 DATA 事件共用）。
-- 答疑：``_tutor_generate``（一次性讲解文本）。
-- 批改：``grade_open``（开放题批改）。
-- Mock 分支：``resolve_engine`` 返回 None（无 key / LLM_PROVIDER=mock）时走确定性假数据
-  （``_mock_question`` / ``_mock_tutor_text``），零外部依赖仍跑通闭环。
+- ``generate_question``：一次性结构化出题原语（落库重生成路径 + 出题 SubAgent 经
+  ``LLMProvider`` 复用，见 ``app/domain/genkit_provider.py``）。
+- 共享脚手架：题卡 schema（``QuestionOut`` / ``QuestionSchema`` / ``GradeSchema``）、
+  出题 prompt 构造（``_build_question_clause`` / ``_build_question_prompt``）、
+  JSON 宽容解析（``_parse_question_json`` / ``_schema_field``）、
+  装配 + 安全闸门（``_assemble_question``，统一经 ``check_output`` 校验）。
+
+答疑（``_tutor_generate``）与批改（``grade_open``）仅被 ``GenkitProvider`` 单一消费，
+已收敛进 ``app/domain/genkit_provider.py``，不在此处（避免共享内核里藏单消费者实现）。
 
 旧的 Genkit flow 端点（``/ai/tutor/ask``、``/ai/tasks/generate``）已废弃，全部收敛到
 ``POST /api/v1/assistant/chat``（ADR-0024）；Genkit 仅作为底层 LLM 引擎经 ``engine.genkit`` 调用，
@@ -14,20 +18,17 @@
 """
 from __future__ import annotations
 
-import hashlib
-import random
-import uuid
 from typing import Any
 
 from pydantic import BaseModel
 
-from app.ai import debug_log
-from app.ai.engine import EngineResolution, resolve_engine
+from app.ai.engine import EngineResolution
 from app.domain.provider import GeneratedQuestion
-from app.domain.safety import check_output, tutor_system_prompt
+from app.domain.safety import check_output
 
-# 本模块不再注册 Genkit flow（端点已废弃并收敛到 /assistant/chat）；
-# Genkit 仅作为底层 LLM 引擎，经 engine.genkit 调用。
+# 本模块不登记 Genkit flow（端点已废弃并收敛到 /assistant/chat）；
+# Genkit 仅作为底层 LLM 引擎，经 engine.genkit 调用（由 genkit_provider 触发）。
+
 
 class QuestionOut(BaseModel):
     """出题流式输出 schema（与 GeneratedQuestion / Question 字段对齐，前端 QuestionPreview 映射）。
@@ -210,88 +211,6 @@ def _assemble_question(
     )
 
 
-# ───────────────────────── Mock 分支（一次性模拟数据源，确定性） ─────────────────────────
-def _mock_seed(subject: str, grade: int, knowledge_point: str, qtype: str) -> random.Random:
-    seed = int(hashlib.sha256(f"{subject}{grade}{knowledge_point}{qtype}".encode()).hexdigest(), 16)
-    return random.Random(seed)
-
-
-def _mock_question(
-    *,
-    subject: str,
-    grade: int,
-    knowledge_point: str,
-    qtype: str,
-    difficulty: str,
-    interests: list[str] | None = None,
-    focus_interest: str | None = None,
-) -> QuestionOut:
-    rng = _mock_seed(subject, grade, knowledge_point, qtype)
-    if focus_interest:
-        flavor = f"（兴趣：{focus_interest}）"
-        focus_desc = f"围绕主题「{focus_interest}」"
-    elif interests:
-        flavor = f"（兴趣池：{', '.join(interests)}）"
-        focus_desc = f"结合兴趣（{', '.join(interests)}）"
-    else:
-        flavor = ""
-        focus_desc = "紧扣教材"
-    options: list[str] | None = None
-    if qtype == "choice":
-        correct = rng.randint(0, 3)
-        opts = ["A", "B", "C", "D"]
-        answer = opts[correct]
-        stem = f"【{subject}】{knowledge_point} 的正确答案是什么？(难度 {difficulty}){flavor}"
-        explanation = f"根据{knowledge_point}的定义，正确答案是 {answer}。"
-    elif qtype == "calc":
-        a, b = rng.randint(1, 20), rng.randint(1, 20)
-        answer = str(a + b)
-        stem = f"计算：{a} + {b} = ?{flavor}"
-        explanation = f"{a} + {b} = {answer}。"
-    elif qtype == "fill":
-        answer = f"示例{grade}年级{knowledge_point}"
-        stem = f"请根据“{knowledge_point}”填空。{flavor}"
-        explanation = f"应填写：{answer}。"
-    else:  # open
-        answer = f"关于{knowledge_point}的要点说明。"
-        stem = f"请简述{knowledge_point}。{flavor}"
-        explanation = answer
-    reasoning = (
-        f"针对{grade}年级《{subject}》「{knowledge_point}」设计一道{_qtype_label(qtype)}"
-        f"（难度{difficulty}）。情境选取：{focus_desc}，确保贴合学生生活经验；"
-        f"答案/干扰项按该年级常见误区设置，答案唯一且可验证；难度控制在 {difficulty}，"
-        f"符合课标要求。"
-    )
-    return QuestionOut(
-        subject=subject,
-        grade=grade,
-        knowledge_point=knowledge_point,
-        qtype=qtype,
-        stem=stem,
-        options=options,
-        answer=answer,
-        explanation=explanation,
-        difficulty=difficulty,
-        reasoning=reasoning,
-    )
-
-
-def _mock_tutor_text(
-    *,
-    grade: int,
-    subject: str,
-    knowledge_point: str,
-    context: str | None,
-    question: str,
-) -> str:
-    return (
-        f"【{subject} · {grade}年级】关于“{knowledge_point}”：\n"
-        f"你问的“{question}”，我们可以这样想——先回顾{knowledge_point}的定义，"
-        f"再一步步分析。举例来说，{knowledge_point}常出现在{subject}的基础练习里，"
-        f"多练几道就会啦！如果有具体题目，可以把题目发给我哦～"
-    )
-
-
 # ───────────────────────── 底层生成（复用既有引擎调用，被 flow 与落库路径共用） ─────────────────────────
 async def generate_question(
     engine: EngineResolution,
@@ -361,119 +280,3 @@ class GradeSchema(BaseModel):
     correct: bool
     score: float
     explanation: str
-
-
-async def grade_open(
-    question: Any,
-    student_answer: str,
-    *,
-    engine: EngineResolution | None = None,
-    parent_id: uuid.UUID | None = None,
-    child_id: uuid.UUID | None = None,
-) -> dict:
-    """开放题批改（非流式路径）：有真实引擎走 Genkit，否则确定性 mock 启发式。
-
-    统一单栈后替代原 LangChainProvider.grade_open；question 为 ORM Question
-    （含 .stem/.knowledge_point/.explanation）。mock 分支按知识点关键词包含判定，
-    保证零 key 也能批改（沿用原 MockProvider.grade_open 语义）。
-
-    parent_id/child_id 仅用于 ADR-0022 调试落库：由调用方（批改入口）传入；
-    缺省 None 时调试会话不创建（安全 no-op），不破坏既有调用链。
-    """
-    if engine is None:
-        engine = resolve_engine()
-    # ADR-0022：批改运行调试会话（parent_id 缺失自动 no-op）。
-    conv_id = debug_log.start_agent_run(
-        kind="grade",
-        parent_id=parent_id,
-        child_id=child_id,
-        model=engine.model if engine is not None else "mock",
-        title="批改",
-    )
-    debug_log.log_agent_message(
-        conversation_id=conv_id,
-        role="user",
-        step="input",
-        content=f"题目：{getattr(question, 'stem', '')}\n学生作答：{student_answer}",
-    )
-    if engine is None:
-        correct = bool(student_answer) and any(
-            kw in (student_answer or "") for kw in (question.knowledge_point,)
-        )
-        result = {
-            "correct": correct,
-            "score": 1.0 if correct else 0.0,
-            "explanation": question.explanation or "已收到作答。",
-        }
-        debug_log.log_agent_message(
-            conversation_id=conv_id, role="assistant", step="output",
-            content=result["explanation"], payload=result, model="mock",
-        )
-        debug_log.finish_agent_run(conversation_id=conv_id, status="done")
-        return result
-    prompt = (
-        f"题目：{question.stem}\n学生作答：{student_answer}\n"
-        '请批改并返回 JSON：{"correct": bool, "score": float, "explanation": str}'
-    )
-    resp = await engine.genkit.generate(
-        model=engine.model, system=_QUESTION_SYSTEM_PROMPT, prompt=prompt,
-        output_schema=GradeSchema,
-    )
-    raw = resp.output
-    result = {
-        "correct": bool(_schema_field(raw, "correct", False)),
-        "score": float(_schema_field(raw, "score", 0.0)),
-        "explanation": _schema_field(raw, "explanation", "")
-        or (question.explanation or ""),
-    }
-    debug_log.log_agent_message(
-        conversation_id=conv_id, role="assistant", step="output",
-        content=result["explanation"], payload=result,
-        model=engine.model if engine is not None else None,
-    )
-    debug_log.finish_agent_run(conversation_id=conv_id, status="done")
-    return result
-
-
-def _chunk_text(chunk: Any) -> str:
-    parts = getattr(chunk, "content", None) or []
-    out: list[str] = []
-    for part in parts:
-        text = getattr(getattr(part, "root", part), "text", None)
-        if text:
-            out.append(text)
-    return "".join(out)
-
-
-async def _tutor_generate(
-    engine: EngineResolution,
-    *,
-    grade: int,
-    subject: str,
-    knowledge_point: str,
-    context: str | None,
-    question: str,
-) -> str:
-    """答疑生成（不含知识库检索）：逐 token 产出讲解文本，整体拼接返回。
-
-    检索由调用方（flow / TutorService）在 context 中注入；本助手只负责模型生成，
-    供 GenkitProvider.tutor 等非流式入口复用，避免重复检索。
-    """
-    ctx = f"\n相关上下文：{context}" if context else ""
-    prompt = (
-        f"学生问：{question}\n"
-        f"所属知识点：{knowledge_point}{ctx}\n"
-        "请用简洁、鼓励的语气，结合知识点给出适合该年级学生的分步讲解，必要时举例。"
-        "只讲解学习相关内容，不要回答与学习无关的话题。"
-    )
-    sr = engine.genkit.generate_stream(
-        model=engine.model, system=tutor_system_prompt(grade, subject), prompt=prompt,
-    )
-    parts: list[str] = []
-    async for chunk in sr.stream:
-        text = _chunk_text(chunk)
-        if text:
-            parts.append(text)
-    await sr.response
-    return "".join(parts)
-

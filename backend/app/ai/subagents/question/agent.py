@@ -209,22 +209,6 @@ class QuestionSubAgent(BaseSubAgent):
             retriever=self.retriever,
         )
 
-        if self.engine is not None:
-            from app.ai import generate_question as genkit_generate_question
-
-            return await genkit_generate_question(
-                self.engine,
-                subject=subject,
-                grade=grade,
-                knowledge_point=kp,
-                qtype=qtype,
-                difficulty=difficulty,
-                interests=intent.get("interests"),
-                focus_interest=intent.get("focus_interest"),
-                rag_context=rag_context,
-                persona_hint=persona_hint,
-            )
-
         return await self.provider.generate_question(
             subject=subject,
             grade=grade,
@@ -267,31 +251,16 @@ class QuestionSubAgent(BaseSubAgent):
                 query=focus or item["knowledge_point"],
                 retriever=self.retriever,
             )
-            if self.engine is not None:
-                from app.ai import generate_question as genkit_generate_question
-
-                gq = await genkit_generate_question(
-                    self.engine,
-                    subject=item["subject"],
-                    grade=item["grade"],
-                    knowledge_point=item["knowledge_point"],
-                    qtype=item["qtype"],
-                    difficulty=item["difficulty"],
-                    focus_interest=focus,
-                    rag_context=rag_context,
-                    persona_hint=persona_hint,
-                )
-            else:
-                gq = await self.provider.generate_question(
-                    subject=item["subject"],
-                    grade=item["grade"],
-                    knowledge_point=item["knowledge_point"],
-                    qtype=item["qtype"],
-                    difficulty=item["difficulty"],
-                    focus_interest=focus,
-                    rag_context=rag_context,
-                    persona_hint=persona_hint,
-                )
+            gq = await self.provider.generate_question(
+                subject=item["subject"],
+                grade=item["grade"],
+                knowledge_point=item["knowledge_point"],
+                qtype=item["qtype"],
+                difficulty=item["difficulty"],
+                focus_interest=focus,
+                rag_context=rag_context,
+                persona_hint=persona_hint,
+            )
             if gq is None:
                 continue
             payload = asdict(gq)

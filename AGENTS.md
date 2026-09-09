@@ -53,7 +53,7 @@ python3 frontend/scripts/patch_macos_network.py
 ## 全局硬约束
 
 - API 统一前缀 `/api/v1`；鉴权 `Authorization: Bearer <JWT>`。
-- `LLM_PROVIDER=mock`（默认）无需任何 key 即可跑通全闭环（注册→加娃→出题→作答→批改→打卡→进度）。
+- `LLM_PROVIDER` 默认 `mock`（无引擎）：**不再**提供出题/答疑/批改的确定性 mock 兜底；需配置真实 LLM 引擎（`LLM_PROVIDER` + 对应 API key）才能跑通 AI 生成闭环（出题→答疑→批改）。注册→加娃→作答→打卡→进度不依赖 LLM，仍免 key。
 - 架构变更**先改文档与 ADR，再改代码**（见 [docs/agents/git-workflow.md](docs/agents/git-workflow.md)）。
 - 儿童内容安全双层防护 + 教材版权硬门槛（ADR-008 / ADR-012）——**对外分发 / 上线前必须解决版权**。
 - 业务代码（`api/`、`domain/`）**禁止直接 `import langchain`**；厂商适配只在 `LangChainProvider` 内，换模型 = 改配置。

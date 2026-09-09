@@ -37,9 +37,9 @@
 | 术语 | 含义 |
 |---|---|
 | **LLMProvider** | 业务层统一 LLM 抽象（ABC）；厂商适配只在 adapter 内，业务代码不直连厂商 SDK。 |
-| **resolve_engine** | 解析真实引擎：`家长 ModelConfig 表 → 内置 BUILTIN_MODELS → 全局 LLM_PROVIDER`；解析不到走 flow 内 mock 分支（零 key 闭环）。 |
-| **Genkit** | AI 编排底座（Python `genkit` + `genkit-fastapi`）；仅在 `app/ai/` 边界 `import genkit`。 |
-| **Flow（tutor_ask / tasks_generate）** | `app/ai/flows.py` 中的 Genkit 流式 flow；含 check_input/check_output 安全层。 |
+| **resolve_engine** | 解析真实引擎：`家长 ModelConfig 表 → 内置 BUILTIN_MODELS → 全局 LLM_PROVIDER`；解析不到（未配置 LLM_PROVIDER / 无 key）时出题/伴学返回 None、批改抛错，由上层降级（不再提供 mock 兜底）。 |
+| **Genkit** | 底层 LLM 引擎（Python `genkit`），仅经 `engine.genkit` 调用；`genkit-fastapi` 与原生 action 端点已退役（2026-09-08）。 |
+| **生成原语（generate_question）** | `app/ai/generation.py` 中的出题共享原语 + 单一安全闸门（`check_output`）；答疑/批改实现收敛于 `app/domain/genkit_provider.py`（`LLMProvider`）。原 Genkit flow（tutor_ask / tasks_generate）已退役（2026-09-08）。 |
 | **SubAgent** | `app/ai/subagents/<business>/` 下的业务智能体（question/tutor/tasks...），统一契约 `handle(intent, ctx)` / `run(message, ctx)`（ADR-0021）。 |
 | **AgentRuntime** | 统一发现/加载 SubAgent 并做混合意图路由（规则优先 + LLM 兜底）的运行时（ADR-0024）。 |
 | **manifest** | 每个 SubAgent 文件夹下的声明（business 键、roles 可见性、描述），供 AgentRuntime 发现。 |

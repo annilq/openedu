@@ -38,14 +38,14 @@ __all__ = [
 
 
 def build_provider() -> LLMProvider:
-    """统一单栈：返回 GenkitProvider（Genkit 编排 + flow 内 mock 分支）。
+    """统一单栈：返回 GenkitProvider（Genkit 仅作底层 LLM 引擎）。
 
-    迁移 08b 后不再有 MockProvider / LangChainProvider 双栈分支——真实模型由
-    GenkitProvider 内部 resolve_engine 解析，解析不到时自动走 flow 内确定性 mock 分支，
-    保证服务始终可启动且零 key 闭环。
+    迁移 08b 退役 LangChainProvider / MockProvider 双栈；真实模型由 GenkitProvider
+    内部 resolve_engine 解析，解析不到（未配置 LLM_PROVIDER / 无 key）时出题 / 伴学返回
+    None、批改抛错，由上层决定降级（不再提供确定性 mock 兜底，需真实引擎才能出题 / 答疑 / 批改）。
 
     GenkitProvider 延迟导入，避免 `app.domain` 与 `app.ai` 在包初始化期的循环依赖
-    （app.ai.flows → app.crud → app.domain.*）。
+    （app.ai.generation → app.domain.*）。
     """
     from app.domain.genkit_provider import GenkitProvider
 

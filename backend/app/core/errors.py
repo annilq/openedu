@@ -31,6 +31,7 @@ class ErrCode(str, Enum):
     NOT_FOUND = "SYS_10003"
     VALIDATION = "SYS_10004"
     INTERNAL = "SYS_10005"
+    LLM_UNAVAILABLE = "SYS_10006"  # 未配置 LLM 引擎（mock 兜底已移除，出题/答疑/批改需真实引擎）
 
     # Tasks 领域 20xxx
     TASK_NOT_FOUND = "TASK_20001"
@@ -68,6 +69,7 @@ _HTTP_DEFAULT_STATUS: dict[ErrCode, int] = {
     ErrCode.NOT_FOUND: status.HTTP_404_NOT_FOUND,
     ErrCode.VALIDATION: status.HTTP_422_UNPROCESSABLE_CONTENT,
     ErrCode.INTERNAL: status.HTTP_500_INTERNAL_SERVER_ERROR,
+    ErrCode.LLM_UNAVAILABLE: status.HTTP_500_INTERNAL_SERVER_ERROR,
     ErrCode.TASK_NOT_FOUND: status.HTTP_404_NOT_FOUND,
     ErrCode.TASK_NOT_OWNED: status.HTTP_403_FORBIDDEN,
     ErrCode.TASK_NOT_YOUR_CHILD: status.HTTP_403_FORBIDDEN,

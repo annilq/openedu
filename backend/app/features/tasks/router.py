@@ -5,7 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, Query, status
 from sqlmodel import select
 
-from app.ai import mock_question, resolve_engine
+from app.ai import resolve_engine
 from app.core.deps import CurrentChild, CurrentParent, CurrentUser, SessionDep
 from app.core.errors import AppErrorException, ErrCode
 from app.db.models import Question, Task, TaskQuestion, User, WrongQuestion
@@ -149,16 +149,16 @@ def _gen_question(
 ) -> GeneratedQuestion:
     """出题单题：统一走共享生成核心 app.ai.generate_question（ADR-0023 收敛）。
 
-    SSE 出题与该核心共用同一算法（prompt 构建 / check_output 安全闸门 / mock 兜底），
-    消除双实现漂移。真实引擎产出不安全（check_output 未过）时回退确定性 mock，
-    保证题量完整且不落库违规内容。engine 为 None（无真实引擎）时核心直接走 mock 分支。
+    SSE 出题与该核心共用同一算法（prompt 构建 / check_output 安全闸门），
+    消除双实现漂移。mock 兜底已移除：engine 为 None 或真实产出不安全（check_output 未过）
+    时生成失败，由上层以 LLM_UNAVAILABLE 报错，不再静默回退假数据。
     """
-    from app.ai import flows as _flows
+    from app.ai import generate_question as _gen_question
 
     g: GeneratedQuestion | None = None
     try:
         g = asyncio.run(
-            _flows.generate_question(
+            _gen_question(
                 engine,
                 subject=subject,
                 grade=grade,
@@ -172,25 +172,9 @@ def _gen_question(
     except Exception:
         g = None
     if g is None:
-        q = mock_question(
-            subject=subject,
-            grade=grade,
-            knowledge_point=knowledge_point,
-            qtype=qtype,
-            difficulty=difficulty,
-            interests=interests,
-            focus_interest=focus_interest,
-        )
-        return GeneratedQuestion(
-            subject=q.subject,
-            grade=q.grade,
-            knowledge_point=q.knowledge_point,
-            qtype=q.qtype,
-            stem=q.stem,
-            options=q.options,
-            answer=q.answer,
-            explanation=q.explanation,
-            difficulty=q.difficulty,
+        raise AppErrorException(
+            ErrCode.LLM_UNAVAILABLE,
+            "无可用 LLM 引擎或题目生成不安全，无法重生成（请配置 LLM_PROVIDER 与 API key）",
         )
     return g
 
@@ -205,7 +189,7 @@ def _generate_task_questions_for_specs(
     """调用出题引擎产草稿 TaskQuestion（R-Q1=c：不写 Question 表）。
 
     specs 可以是 TaskSpec 对象（来自请求体的 Pydantic）或 dict（来自 Task.specs 持久化）。
-    engine 为 resolve_engine 解析结果（None = 无真实引擎，回退 mock 分支）。
+    engine 为 resolve_engine 解析结果（None = 无真实引擎，出题核心将失败并抛 LLM_UNAVAILABLE）。
 
     兴趣注入（WF-3/WF-4）：
     - `interests`：轻融入兴趣池（娃娃画像 categories），整卷统一下传。
@@ -521,7 +505,7 @@ def regenerate_one(
     tq = get_task_question(session=session, tq_id=tq_id)
     if tq is None or tq.task_id != task.id:
         raise AppErrorException(ErrCode.TASK_QUESTION_NOT_FOUND, "题目不存在")
-    # 沿用本任务所选模型（无则回退 mock 分支）；与整卷重生成保持一致。
+    # 沿用本任务所选模型（无则出题核心失败并抛 LLM_UNAVAILABLE）；与整卷重生成保持一致。
     engine = resolve_engine(task.model, parent_id=parent.id, session=session)
     # 单题重生成复现兴趣设定：沿用整卷聚焦主题的轮询分配（按当前题序），否则轻融入画像。
     interests_pool = _extract_interests_pool(
@@ -579,7 +563,7 @@ def regenerate_all(
     child = session.get(User, task.child_id) if task.child_id else None
     interests_pool = _extract_interests_pool(child)
     focus_interests = task.focus_interest
-    # 沿用本任务所选模型（无则回退 mock 分支）。
+    # 沿用本任务所选模型（无则出题核心失败并抛 LLM_UNAVAILABLE）。
     engine = resolve_engine(task.model, parent_id=parent.id, session=session)
     new_tqs = _generate_task_questions_for_specs(
         specs,

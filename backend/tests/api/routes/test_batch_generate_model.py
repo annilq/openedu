@@ -3,16 +3,15 @@
 历史 bug（原 batch-generate）：前端传了 model（如 ollama 内置 id），但旧路径忽略，
 永远走全局 LLM_PROVIDER（默认 mock）。batch-generate 已删除，出题统一经
 `POST /tasks/from-generated`（落库预设题卡）→ `POST /tasks/{id}/regenerate`
-（按 Task.model 复用共享核心 flows.generate_question 重跑）。本测试用假引擎验证：
+（按 Task.model 复用共享核心 generation.generate_question 重跑）。本测试用假引擎验证：
   1) resolve_engine 收到的正是 Task 所选 model；
-  2) 重生成走 Genkit 路径（flows.generate_question 被调用），而非静默回退 mock；
+  2) 重生成走 Genkit 路径（generation.generate_question 被调用）；
   3) 所选 model 实际驱动出题（题面来自假 ollama 引擎）。
 """
 from __future__ import annotations
 
 from types import SimpleNamespace
 
-from app.ai.flows import _mock_question
 from app.domain.provider import GeneratedQuestion
 from tests.utils.user import auth_headers, register_parent
 
@@ -86,7 +85,7 @@ def test_regenerate_honors_selected_model(client, monkeypatch):
         )
 
     monkeypatch.setattr("app.features.tasks.router.resolve_engine", fake_resolve)
-    monkeypatch.setattr("app.ai.flows.generate_question", fake_genkit_generate)
+    monkeypatch.setattr("app.ai.generation.generate_question", fake_genkit_generate)
 
     r = client.post(f"/api/v1/tasks/{tid}/regenerate", headers=auth_headers(ptoken))
     assert r.status_code == 200, r.text
@@ -99,30 +98,3 @@ def test_regenerate_honors_selected_model(client, monkeypatch):
     assert body["questions"][0]["stem"] == "[ollama]数学-加法"
 
 
-def test_regenerate_no_model_falls_back_to_mock(client, monkeypatch):
-    """Task 不选模型：resolve_engine 收 None，走 mock 兜底，不调用 Genkit。"""
-    r = register_parent(client, username="mfix_parent_b")
-    ptoken = r.json()["access_token"]
-    cid = _create_child(client, ptoken, username="mfix_kid_b")["id"]
-    tid = _make_draft(client, ptoken, cid, model=None)
-
-    captured = {"model_ref": "UNSET", "mock_called": False}
-
-    def fake_resolve(model_ref=None, *, parent_id=None, session=None):
-        captured["model_ref"] = model_ref
-        return None  # 无真实引擎 → 回退
-
-    def fake_mock(*args, **kwargs):
-        captured["mock_called"] = True
-        return _mock_question(*args, **kwargs)
-
-    # 不补丁 generate_question：确认无引擎时不走 Genkit 路径，而是确定性 mock 兜底。
-    monkeypatch.setattr("app.features.tasks.router.resolve_engine", fake_resolve)
-    monkeypatch.setattr("app.features.tasks.router.mock_question", fake_mock)
-
-    r = client.post(f"/api/v1/tasks/{tid}/regenerate", headers=auth_headers(ptoken))
-    assert r.status_code == 200, r.text
-    assert captured["model_ref"] is None
-    assert captured["mock_called"] is True  # 无引擎 → 回退 mock，未走 Genkit
-    # mock 产出的题面应有 mock 模板特征（非空即可，这里只确认成功重生成并落库）
-    assert r.json()["questions"][0]["stem"]

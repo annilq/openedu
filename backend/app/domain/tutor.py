@@ -86,6 +86,16 @@ class TutorService:
             )
         )
 
+        # 3.5) 引擎不可用（mock 兜底已移除）：provider.tutor 返回 None，降级为兜底说明。
+        if raw is None:
+            return TutorResult(
+                answer="暂无可用的 AI 引擎，无法答疑（请配置 LLM_PROVIDER 与对应 API key）。",
+                input_safe=True,
+                output_safe=True,
+                blocked=True,
+                reason="llm_unavailable",
+            )
+
         # 4) 输出安全校验（敏感词）
         out = check_output(raw)
         if not out.safe:

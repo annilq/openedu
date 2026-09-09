@@ -1,21 +1,37 @@
 """GenkitProvider（迁移 08b：统一 Genkit 全栈）。
 
 替代原 MockProvider / LangChainProvider 的**纯单栈**实现：业务层（TutorService /
-Grader / QuestionGenerator 非流式路径）只依赖 `LLMProvider` ABC，本类把调用转发到
-`app/ai` 的 Genkit 编排（流式 flow 的非流式助手）。
+Grader / QuestionGenerator 非流式路径）只依赖 `LLMProvider` ABC，本类把出题 / 答疑 /
+批改的真实 Genkit 调用收敛于此（出题原语在 `app.ai.generation`，本类桥接 `app/ai` 边界）。
 
 - 真实引擎（resolve_engine 解析到）：出题 / 答疑 / 批改走 Genkit。
-- 无引擎（mock / LLM_PROVIDER=mock）：确定性 mock 分支（_mock_question / _mock_tutor_text /
-  关键词启发式批改），零外部依赖仍跑通闭环（原 MockProvider 逻辑已并入 flow）。
+- 无引擎（LLM_PROVIDER 未配置）：``generate_question`` / ``tutor`` 返回 None，
+  ``grade_open`` 抛 RuntimeError，由上层决定降级（不再提供确定性 mock 兜底）。
 """
 from __future__ import annotations
 
-from app.ai import generate_question as genkit_generate_question
-from app.ai import grade_open as genkit_grade_open
-from app.ai import mock_question as mock_question_flow
-from app.ai import resolve_engine
-from app.ai.flows import _mock_tutor_text, _tutor_generate
+from app.ai import debug_log, resolve_engine
+from app.ai.generation import (
+    _QUESTION_SYSTEM_PROMPT,
+    GradeSchema,
+    QuestionSchema,
+    _assemble_question,
+    _build_question_prompt,
+    _schema_field,
+)
 from app.domain.provider import GeneratedQuestion, LLMProvider
+from app.domain.safety import tutor_system_prompt
+
+
+def _chunk_text(chunk) -> str:
+    """抽取 Genkit 流式 chunk 的拼接文本（兼容 content/root.text 两种形态）。"""
+    parts = getattr(chunk, "content", None) or []
+    out: list[str] = []
+    for part in parts:
+        text = getattr(getattr(part, "root", part), "text", None)
+        if text:
+            out.append(text)
+    return "".join(out)
 
 
 class GenkitProvider(LLMProvider):
@@ -33,66 +49,106 @@ class GenkitProvider(LLMProvider):
         focus_interest: str | None = None,
         rag_context: str | None = None,
         persona_hint: str | None = None,
-    ) -> GeneratedQuestion:
+    ) -> GeneratedQuestion | None:
         engine = resolve_engine()
-        if engine is not None:
-            g = await genkit_generate_question(
-                engine,
-                subject=subject,
-                grade=grade,
-                knowledge_point=knowledge_point,
-                qtype=qtype,
-                difficulty=difficulty,
-                interests=interests,
-                focus_interest=focus_interest,
-                rag_context=rag_context,
-                persona_hint=persona_hint,
-            )
-            if g is not None:
-                return g
-        # 无真实引擎 / 真实产出不安全 → 确定性 mock 分支（保证题量完整且不落库违规内容）。
-        q = mock_question_flow(
+        if engine is None:
+            return None
+        prompt = _build_question_prompt(
+            subject=subject, grade=grade, knowledge_point=knowledge_point, qtype=qtype,
+            difficulty=difficulty, interests=interests, focus_interest=focus_interest,
+            rag_context=rag_context, persona_hint=persona_hint,
+        )
+        resp = await engine.genkit.generate(
+            model=engine.model, system=_QUESTION_SYSTEM_PROMPT, prompt=prompt,
+            output_schema=QuestionSchema,
+        )
+        raw = resp.output
+        out = _assemble_question(
+            raw={
+                "stem": _schema_field(raw, "stem") or "",
+                "options": _schema_field(raw, "options"),
+                "answer": _schema_field(raw, "answer") or "",
+                "explanation": _schema_field(raw, "explanation") or "",
+                "reasoning": _schema_field(raw, "reasoning") or "",
+            },
             subject=subject,
             grade=grade,
             knowledge_point=knowledge_point,
             qtype=qtype,
             difficulty=difficulty,
-            interests=interests,
-            focus_interest=focus_interest,
         )
+        if out is None:
+            return None
         return GeneratedQuestion(
-            subject=q.subject,
-            grade=q.grade,
-            knowledge_point=q.knowledge_point,
-            qtype=q.qtype,
-            stem=q.stem,
-            options=q.options,
-            answer=q.answer,
-            explanation=q.explanation,
-            difficulty=q.difficulty,
+            subject=out.subject, grade=out.grade, knowledge_point=out.knowledge_point,
+            qtype=out.qtype, stem=out.stem, options=out.options, answer=out.answer,
+            explanation=out.explanation, difficulty=out.difficulty,
         )
 
     async def grade_open(self, *, question, student_answer) -> dict:
-        return await genkit_grade_open(question, student_answer)
+        engine = resolve_engine()
+        if engine is None:
+            raise RuntimeError(
+                "未配置 LLM 引擎，无法批改（请设置 LLM_PROVIDER 与对应 API key）"
+            )
+        # ADR-0022：批改运行调试会话（parent_id 缺失自动 no-op）。
+        conv_id = debug_log.start_agent_run(
+            kind="grade",
+            parent_id=None,
+            child_id=None,
+            model=engine.model,
+            title="批改",
+        )
+        debug_log.log_agent_message(
+            conversation_id=conv_id,
+            role="user",
+            step="input",
+            content=f"题目：{getattr(question, 'stem', '')}\n学生作答：{student_answer}",
+        )
+        prompt = (
+            f"题目：{question.stem}\n学生作答：{student_answer}\n"
+            '请批改并返回 JSON：{"correct": bool, "score": float, "explanation": str}'
+        )
+        resp = await engine.genkit.generate(
+            model=engine.model, system=_QUESTION_SYSTEM_PROMPT, prompt=prompt,
+            output_schema=GradeSchema,
+        )
+        raw = resp.output
+        result = {
+            "correct": bool(_schema_field(raw, "correct", False)),
+            "score": float(_schema_field(raw, "score", 0.0)),
+            "explanation": _schema_field(raw, "explanation", "")
+            or (question.explanation or ""),
+        }
+        debug_log.log_agent_message(
+            conversation_id=conv_id, role="assistant", step="output",
+            content=result["explanation"], payload=result,
+            model=engine.model,
+        )
+        debug_log.finish_agent_run(conversation_id=conv_id, status="done")
+        return result
 
     async def tutor(
         self, *, grade, subject, knowledge_point, context, question
-    ) -> str:
+    ) -> str | None:
         engine = resolve_engine()
         if engine is None:
-            return _mock_tutor_text(
-                grade=grade,
-                subject=subject,
-                knowledge_point=knowledge_point,
-                context=context,
-                question=question,
-            )
+            return None
         # TutorService 已在 context 注入知识库检索结果，这里只做模型生成、不重复检索。
-        return await _tutor_generate(
-            engine,
-            grade=grade,
-            subject=subject,
-            knowledge_point=knowledge_point,
-            context=context or "",
-            question=question,
+        ctx = f"\n相关上下文：{context}" if context else ""
+        prompt = (
+            f"学生问：{question}\n"
+            f"所属知识点：{knowledge_point}{ctx}\n"
+            "请用简洁、鼓励的语气，结合知识点给出适合该年级学生的分步讲解，必要时举例。"
+            "只讲解学习相关内容，不要回答与学习无关的话题。"
         )
+        sr = engine.genkit.generate_stream(
+            model=engine.model, system=tutor_system_prompt(grade, subject), prompt=prompt,
+        )
+        parts: list[str] = []
+        async for chunk in sr.stream:
+            text = _chunk_text(chunk)
+            if text:
+                parts.append(text)
+        await sr.response
+        return "".join(parts)
