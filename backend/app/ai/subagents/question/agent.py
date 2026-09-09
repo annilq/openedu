@@ -14,12 +14,7 @@ USER_MESSAGE / 路由 THINKING / DONE 与持久化。
 from __future__ import annotations
 
 from app.ai.generation import step_label
-from app.ai.runtime.protocol import (
-    assistant_message,
-    step,
-    tool_call,
-    tool_result,
-)
+from app.ai.runtime.protocol import step
 from app.ai.runtime.translate import translate_stream
 from app.ai.subagents.base import BaseSubAgent, SubAgentContext
 from app.ai.subagents.subject_personas import get_subject_persona
@@ -230,17 +225,18 @@ class QuestionSubAgent(BaseSubAgent):
         """悬浮助手入口：自由文本 → 逐题（STEP 进度 + THINKING 推理 + DATA 题卡）。"""
         specs = parse_specs_from_text(message)
         if not specs:
-            yield assistant_message(
+            yield self._finish(
                 "请告诉我科目、年级和题型，例如：「帮我出 3 道三年级分数选择题」。"
             )
             return
 
         items = expand_specs(specs)
-        yield tool_call(
+        tc = self._tool(
             "generate_question",
             label="出题",
             args={"subject": items[0]["subject"], "count": len(items)},
         )
+        yield tc.call
 
         # WF-4 兴趣题模式：focus_interest 是主题列表，按题序轮转分配到单题（与旧 flow 行为一致）。
         focuses = ctx.focus_interest or []
@@ -281,12 +277,12 @@ class QuestionSubAgent(BaseSubAgent):
                     generated.append(data["result"])
                 yield frame
 
-        yield tool_result("generate_question", {"count": len(generated)})
+        yield tc.result({"count": len(generated)})
         if generated:
             subj = items[0]["subject"]
-            yield assistant_message(
+            yield self._finish(
                 f"已生成 {len(generated)} 道{subj}题，题卡中包含题目、选项与解析，"
                 f"可据此布置给孩子（保存为任务为后续能力）。"
             )
         else:
-            yield assistant_message("本次未能生成题目，请调整科目或年级后重试。")
+            yield self._finish("本次未能生成题目，请调整科目或年级后重试。")

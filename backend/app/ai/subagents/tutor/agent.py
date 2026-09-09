@@ -6,11 +6,6 @@
 """
 from __future__ import annotations
 
-from app.ai.runtime.protocol import (
-    assistant_message,
-    tool_call,
-    tool_result,
-)
 from app.ai.subagents.base import BaseSubAgent, SubAgentContext
 from app.ai.subagents.subject_personas import get_subject_persona
 from app.domain.quota import SUBJECTS
@@ -77,7 +72,8 @@ class TutorSubAgent(BaseSubAgent):
         """悬浮助手入口：自由文本 → 适龄讲解（ASSISTANT_MESSAGE）。"""
         subject = detect_subject(message) or (ctx.subject or "")
         grade = ctx.grade or 0
-        yield tool_call("tutor_explain", label="伴学答疑")
+        tc = self._tool("tutor_explain", label="伴学答疑")
+        yield tc.call
         result = await self.service.aexplain(
             grade=grade,
             subject=subject,
@@ -86,5 +82,5 @@ class TutorSubAgent(BaseSubAgent):
             question=message,
             history=ctx.history,
         )
-        yield tool_result("tutor_explain", {"blocked": result.blocked})
-        yield assistant_message(result.answer, blocked=result.blocked)
+        yield tc.result({"blocked": result.blocked})
+        yield self._finish(result.answer, blocked=result.blocked)

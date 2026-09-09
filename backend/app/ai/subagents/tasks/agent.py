@@ -5,12 +5,7 @@
 """
 from __future__ import annotations
 
-from app.ai.runtime.protocol import (
-    assistant_message,
-    data_event,
-    tool_call,
-    tool_result,
-)
+from app.ai.runtime.protocol import data_event
 from app.ai.subagents.base import BaseSubAgent, SubAgentContext
 from app.ai.tools import list_tasks
 
@@ -23,19 +18,20 @@ class TasksQuerySubAgent(BaseSubAgent):
 
     async def run(self, message: str, ctx: SubAgentContext, *, session=None):
         if session is None:
-            yield assistant_message("暂无可查询的会话上下文。")
+            yield self._finish("暂无可查询的会话上下文。")
             return
-        yield tool_call("list_tasks", label="查询任务题目")
+        tc = self._tool("list_tasks", label="查询任务题目")
+        yield tc.call
         rows = list_tasks(session, parent_id=ctx.parent_id)
-        yield tool_result("list_tasks", {"count": len(rows)})
+        yield tc.result({"count": len(rows)})
 
         if not rows:
-            yield assistant_message("你还没有草稿任务。可以说「帮我出 3 道三年级分数选择题」来生成。")
+            yield self._finish("你还没有草稿任务。可以说「帮我出 3 道三年级分数选择题」来生成。")
             return
 
         for row in rows:
             yield data_event("done", "task", row)
         total = sum(len(r["questions"]) for r in rows)
-        yield assistant_message(
+        yield self._finish(
             f"共 {len(rows)} 个草稿任务、{total} 道题。点击任务卡可查看题目与答案。"
         )

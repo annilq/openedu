@@ -10,6 +10,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.ai.runtime.protocol import assistant_message, tool_call, tool_result
+
 
 @dataclass
 class SubAgentContext:
@@ -34,6 +36,27 @@ class SubAgentContext:
     extra: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass
+class ToolCall:
+    """一次工具调用的事件对句柄（ADR：BaseSubAgent 深化）。
+
+    ``tool_call`` 与 ``tool_result`` 必须共用同一 ``tool`` 名且语义成对；
+    本句柄把名字收为单一来源，调用方不可能写出错位的帧：
+
+        tc = self._tool("tutor_explain", label="伴学答疑")
+        yield tc.call            # TOOL_CALL
+        result = await self.service.aexplain(...)
+        yield tc.result({"blocked": result.blocked})   # 同名 TOOL_RESULT
+    """
+
+    name: str
+    call: "object"  # AssistantEvent（TOOL_CALL）
+
+    def result(self, payload: Any) -> "object":
+        """产出与 call 同名的 TOOL_RESULT 帧。"""
+        return tool_result(self.name, payload)
+
+
 class BaseSubAgent(ABC):
     # 业务键（注册表索引）：question / tutor / grader / diagnosis / planner / report …
     business: str = "base"
@@ -45,6 +68,15 @@ class BaseSubAgent(ABC):
         self.provider = provider
         self.retriever = retriever
         self.engine = engine
+
+    # ── 协议助手：（深）把「tool_call/tool_result 同名成对」不变量收口到基类 ──
+    def _tool(self, name: str, *, label: str | None = None, args: dict | None = None) -> ToolCall:
+        """创建工具调用句柄：已构造 TOOL_CALL 帧，result() 产出同名 TOOL_RESULT。"""
+        return ToolCall(name=name, call=tool_call(name, label=label, args=args))
+
+    def _finish(self, text: str, *, blocked: bool | None = None) -> "object":
+        """收尾 ASSISTANT_MESSAGE 帧（各 subagent 统一收尾语义，便于未来集中增强）。"""
+        return assistant_message(text, blocked=blocked)
 
     @abstractmethod
     async def handle(self, intent: dict, ctx: SubAgentContext) -> Any:
