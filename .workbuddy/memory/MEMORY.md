@@ -1,34 +1,25 @@
-# MEMORY.md — 长期记忆
+# MEMORY.md — 长期记忆（已收敛）
 
-## 会话启动约定（每会话必做）
-- **每次发起新会话，第一步先读根目录 `AGENTS.md`**（`/Users/yunqi/Documents/develop/openedu/AGENTS.md`），再处理用户请求。该文件是本项目对每个任务都适用的要点入口，含包管理器（uv / flutter 而非 npm）、每任务命令、全局硬约束、细分规范链接（后端/前端/通用）、macOS 联调网络权限等。读到即视为已加载，无需每次再向用户确认「要不要读」。
-- 注意：即便系统在上下文里已注入 AGENTS.md 摘要，仍应显式 Read 一次根文件，确保拿到最新完整内容（链接/命令可能更新）。
+## 启动约定
+- 每会话第一步 Read 根 `AGENTS.md`（`/Users/yunqi/Documents/develop/openedu/AGENTS.md`），含包管理器（后端 uv / 前端 flutter）、每任务命令、硬约束、细分规范链接、macOS 联调网络权限。
 
 ## 项目位置
-- 娃娃学习App 项目根目录：`/Users/yunqi/Documents/develop/openedu`
-- 曾位于 `/Users/yunqi/WorkBuddy/2026-08-20-11-55-24`，2026-08-20 按用户要求整体迁移至 openedu（原目录仅剩空占位）。
+- 娃娃学习App：`/Users/yunqi/Documents/develop/openedu`（原 WorkBuddy 目录已弃）。
 
-## 技术栈与验证命令
-- 后端：FastAPI + SQLModel + SQLite/Postgres，依赖用 `uv`（`cd backend && uv sync`、`uv run pytest`）。无 Alembic，迁移在 `app/core/db.py:run_migrations` 手写 ALTER TABLE，需同时兼容 sqlite `TEXT` 与 postgres `JSON` 并做列存在性检查保证幂等。
-- 前端：Flutter + Riverpod + shadcn_ui + cupertino_ui（`cd frontend && flutter analyze`、`flutter test`）。
-  - **Flutter SDK 不在默认 PATH**：非交互 shell 里 `flutter` 找不到，需用绝对路径 `/Users/yunqi/Documents/flutter/bin/flutter`。`flutter analyze` 已验证可正常跑通。
-- LLM 抽象在 `app/domain/provider.py`（`LLMProvider.generate_question`），08b 后统一为 `GenkitProvider(LLMProvider)`：内部 `resolve_engine` 解析真实引擎、解析不到走 `app/ai` flow 内 mock 分支；`MockProvider`/`LangChainProvider` 已整体退役，业务只依赖 `LLMProvider` 接口。
-- **多模型接入（ADR-0015 / 票据 08）**：v1 流式用 **Genkit Python**（`genkit`+`genkit-fastapi`+`genkit_ollama`+`genkit_openai`）在 FastAPI 进程内编排 flow，`genkit` 仅 import 于 `app/ai/`（ADR-003 隔离）。`resolve_engine(model_ref,...)` 解析优先级：家长 `ModelConfig` 表 → 内置 `BUILTIN_MODELS`(env JSON) → 全局 `LLM_PROVIDER` → 否则 None（走 `app/ai` flow 内 mock 分支）。**Genkit 插件构造签名坑**：`genkit_ollama.Ollama` 用 `server_address=`（不是 `base_url`）；`genkit_openai.OpenAI(**openai_params)` 透传 kwargs（api_key/base_url）。`resolve_engine` 对内置 id（如 "local-llama"）务必先 `_as_uuid()` 校验再 `session.get(ModelConfig, id)`，否则非 UUID 字符串触发 UUID 列 `.hex` 报错。家长 `ModelConfig.api_key` 用 `app/core/crypto.py` 的 Fernet 加密。
+## 后端（FastAPI + SQLModel + uv）
+- 验证：`cd backend && uv sync` / `uv run pytest`。无 Alembic；迁移手写于 `app/core/db.py:run_migrations`（兼容 sqlite TEXT / postgres JSON，幂等）。
+- **Feature-First 架构（ADR-0027，2026-09-08 落地）**：每能力一个 `app/features/<name>/`（router+schemas+repository+service）；ORM 表集中 `app/db/models/`；共享内核 `app/domain/`（provider/safety/retriever/quota 等 AI 基础设施）+ `app/core/`（config/security/errors/db/deps），不拆；`app/ai`（Genkit flow）+ `app/ai/subagents`（ADR-0021/0024 编排）留共享内核。~**已删** `app/crud.py`/`app/api/routes/`；~`app/models.py` **保留为 re-export shim**（仅 `from app.db.models import ...` 兼容 13+ 处旧 `from app.models import X`，ORM 实体以 `app/db/models/` 为唯一注册源）；`app/api/deps.py` **保留**（`CallerDep`/各角色依赖）。依赖统一走 `app.core.deps`（CurrentUser/CurrentParent/CurrentChild/CallerDep/SessionDep）。`TutorLog` 落库只由 `app/features/assistant/router.py` 负责（带真实 grade），SubAgent/flow 不重复落。
+- **AI 助手统一入口（ADR-0024/0025/0026，2026-09-08 落地）**：所有 AI 功能（出题/伴学答疑/查任务/治理观测除外）统一走 `POST /api/v1/assistant/chat`（SSE，AG-UI 事件信封）。旧 `/ai/tutor/ask`、`/ai/tasks/generate`、`/tutor/ask` 已删除；`/tutor/{logs,quota,usage}` 与 `/ai/debug/conversations*` 属治理/观测，保留。运行时 `app/ai/runtime/`（protocol/intent_router/manifest/runtime）+ `app/ai/subagents/<business>/` 文件夹化 subagent（question/tutor/tasks，各含 manifest.py+agent.py+tools/+skills/）；意图路由 = manifest `triggers` 规则优先 + 启发式兜底。前端 `lib/features/assistant/`（SSE client + notifier + 悬浮按钮 + 对话弹窗）统一消费；首页出题（home_notifier）与伴学（tutor_notifier）均已改接 `/assistant/chat`。**genkit 已彻底退役**：前端 `genkit_ai_client.dart` 与 `pubspec.yaml` 的 `genkit` 依赖均于 2026-09-08 删除（`flutter pub get` 已清其传递依赖）；后端 `app/ai/flows.py` 的孤儿 genkit flow（tutor_ask/tasks_generate）已删，`genkit` 仅作底层 LLM 引擎经 `engine.genkit` 被 `app/domain` 调用，不经 `genkit_fastapi` 暴露原生 action。
+- LLM：`resolve_engine` 解析优先级 = 家长 `ModelConfig` 表 → `BUILTIN_MODELS`(env) → 全局 `LLM_PROVIDER` → None(走 flow 内 mock)；业务只依赖 `LLMProvider` 抽象。`genkit` 仅 import 于 `app/ai/`。Genkit 不做编排层（见评估注记）。
 
-## 选型结论：Genkit 不做编排层（2026-09-04 评估）
-- Genkit Python（锁定 0.10.0，PyPI 最新 0.11.0）**不适合当多 agent 编排框架**：无 supervisor/handoff 原语、无并发扇出、`define_agent` 的 model 定义期绑定与本项目 `resolve_engine` 运行时动态选模型冲突、mock 零 key 闭环会被 agent turn loop 破坏、0.x Beta 风险。
-- 正确分工：**编排层纯 Python**（`app/ai/subagents/` 的 `BaseSubAgent.handle` + `SubAgentRegistry` + `SubjectPersona`，沿用 ADR-0021）；Genkit 只当底座（generate/结构化输出、flow 流式、`genkit_fastapi` 端点、以及仅在需多轮会话/中断恢复/长任务入口用 `define_custom_agent` + `serve_agent` 白拿 session/abort/Dev UI trace）。
-- 硬约束：安全（check_input/check_output）与配额（quota）留在路由层与 flow 层，**不下沉到 tool/agent 内部**，否则 agent 自主循环绕过配额。
-- Genkit 0.10 已有能力备查：`ai.define_agent/define_custom_agent/define_prompt_agent`、`genkit.agent`（Session/SessionStore(InMemory,File)/Snapshot/DetachedTask）、`genkit_fastapi.serve_agent`、tools 支持任意 async 函数 + `Interrupt`/`restart_tool`、`_transports/_http.remote_agent`。
-- 升级 0.11 注意：`generate()` 模型已回复后不再抛异常，`resp.output` 可能 None（failed/blocked/aborted），`app/ai/flows.py` 的 try/except 回退 mock 逻辑须改为判 `output is None`。
-
-## Flutter / shadcn_ui 约定（踩坑沉淀）
-- `LucideIcons` **不是**来自 `lucide_flutter`，而是由 `package:shadcn_ui/shadcn_ui.dart` 再导出；任何用到 `LucideIcons` 的 dart 文件必须 import `shadcn_ui`（`app_theme.dart` 正是因已 import 它才可用）。
-- 表单输入统一用 `AppTextField`（非 Flutter `TextField`）：其 label 是 `ShadInput` 的**兄弟** `Text`，输入框为 shadcn `ShadInput`（内部 `EditableText`）。
-  - 测试里 `find.widgetWithText(TextField, label)` 恒匹配 0；应改用「包含该 label 的 `AppTextField`」作为 `tester.enterText` 目标（`showKeyboard` 在其后代中找 `EditableText`，`matchRoot: true`）。
-- 含 shadcn 组件（如 `ShadButton`）的 widget 测试需要 `ShadTheme` 祖先；`ShadApp` 基于 `WidgetsApp` 而非 `MaterialApp`，故用 `ShadApp.custom(appBuilder: (ctx) => MaterialApp(home: X))` 可同时满足 ShadTheme 与 Material。生产入口 `lib/main/app.dart` 同样是 `ShadApp.custom`（内层 CupertinoApp + ShadAppBuilder）。
-- **严禁使用 Material 的 Chip 家族控件**（`ChoiceChip` / `FilterChip` / `ActionChip` / `InputChip` / `RawChip`）。根因：App 入口是 `ShadApp`（基于 `WidgetsApp`），整棵树**没有 `Material` 祖先**，而 Chip 家族要求 `Material` 祖先，直接放入页面会抛 `No Material widget found`（典型报错栈：`ChoiceChip → Padding → Row → SingleChildScrollView`）。**替代方案（必须二选一）**：① 用 shadcn 的 `ShadButton`（选中态）/ `ShadButton.outline`（未选态）表达选择，本项目 `parent_question_bank_view.dart` 的 `_gradeChip` 即此写法；② 用共享组件 `shared/widgets/app_chip.dart` 的 `AppChip` / `AppChipRow`（已封装方案②，零 Material 依赖）。多选标签也可用 `AppTags` / `AppBadge`（`shared/theme/app_theme.dart`）。注意：`Switch` 同样需要 `Material` 祖先（内部为 `_MaterialSwitch`），本项目会抛 `No Material widget found`，须改用 shadcn 的 `ShadSwitch`（`parent_task_form_view.dart` 的「按兴趣出题」开关已踩此坑并改为 `ShadSwitch`）；同理 `Checkbox`/`Radio`/`Slider` 等 Material 控件也要求 `Material` 祖先，应改用 shadcn 对应件（`ShadCheckbox` 已在 `parent_question_bank_view.dart` 使用）。`IconButton` 不要求 `Material` 祖先，可正常使用（仅无 ripple）。涉及交互控件优先用 shadcn_ui 的 `Shad*` 系列。
-- **`AppCard(onTap:)` 不能用 `ShadButton.ghost(width: double.infinity)` 包裹**（2026-09-01 踩坑修复）。根因：`ShadButton.ghost(width: double.infinity)` 内部的 `ConstrainedBox(minWidth:∞, maxWidth:∞)` 会把**无限宽**约束灌进 `ShadCard`；而 shadcn `ShadCard` 内部固定为 `Container → Row(mainAxisSize: min) → Flexible → Column → Flexible → child`，该无限宽会一路透传到卡片内容。若卡片内容含 `Row(Expanded)`/`Flexible`（如 `parent_tasks_view._TaskCard` 的标题行），即抛 *"RenderFlex children have non-zero flex but incoming width constraints are unbounded"* 并连环 `RenderBox was not laid out` / `'child.hasSize'`。**正确写法**：`onTap != null` 时直接用 `GestureDetector(onTap:, behavior: HitTestBehavior.opaque, child: card)` 包裹（`GestureDetector` 是 pass-through，不注入宽度，且不需要 `Material` 祖先，安全用于 `ShadApp`），卡片内容拿到父级有界宽、仍靠自身 `Expanded` 撑满宽度。注意 `onTap == null` 分支（直接返回 `card`）从不注入无限宽，故非点击卡片不受影响。
-- 长表单页的提交按钮常落在默认测试视口（800×600）外，点击前需滚动；树中存在多个 `Scrollable` 时，`scrollUntilVisible` 必须显式传 `scrollable: find.byType(Scrollable).first`，否则抛 "Bad state: Too many elements"。
-- `flutter analyze` 应清零 unused_element / unused_import：改建页面后常残留旧回调或重复 import（如 provider 已定义在 `children_provider.dart` 就不必再 import `children_notifier.dart`）。
-- **做题完成后的「当场订正」不推进遗忘曲线**（2026-09-04 落地）。娃娃提交试卷→进入 `PracticeReview` 订正阶段：复用 `/tasks/{id}/answer` 就地判分覆盖结果，答错仍 `upsert_wrong_question` 重置计时器，答对**不**调 `mark_review_result`（不动 `review_stage`/`due_at`）。正式毕业只看遗忘曲线，避免「连刷毕业」。前端状态机：`PracticeReview{correctingId}` + `startCorrection/submitCorrection/exitCorrection`（`practice_notifier.dart`），UI 在 `practice_review_view.dart` + `practice_screen._buildCorrecting`。
+## 前端（Flutter + Riverpod + shadcn_ui + cupertino_ui）
+- 验证：`cd frontend && flutter pub get` / `flutter analyze`（零警告）/ `flutter test`。
+- **Flutter SDK 不在默认 PATH**：用绝对路径 `/Users/yunqi/Documents/flutter/bin/flutter`。`flutter test` 必须剥代理：`env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy /Users/yunqi/Documents/flutter/bin/flutter test`（否则 flutter_tester WebSocket 被本机代理拦截，全部测试加载失败，与代码无关）。
+- **shadcn_ui 硬约束（入口是 `ShadApp`=WidgetsApp，整树无 Material 祖先）**：
+  - 禁止 Material Chip 家族（`ChoiceChip`等）→ 用 `ShadButton`/`ShadButton.outline` 或 `shared/widgets/app_chip.dart` 的 `AppChip`。`Switch/Checkbox/Radio/Slider` 同理改 shadcn 件（`ShadSwitch` 等）。
+  - `AppCard(onTap:)` 用 `GestureDetector` 包裹，禁止 `ShadButton.ghost(width:double.infinity)`（无限宽撑爆卡片内容）。
+  - **shadcn `ShadInput` 文字垂直居中根因+修法（2026-09-08，已实测验证）**：shadcn 的 `EditableText` **不暴露 `textAlignVertical`**（全 0.56.3 源码无此参数），默认 `top` → 文字落在编辑盒**顶端**；盒子居中 ≠ 文字居中（compact 偏上 ~2.8px、child 模式偏上 ~8.7px）。`editableTextSize: Size(maxW, controlH-4)` 只钉盒高、**字形仍顶对齐**，不能解决。正确修法：单行输入加 `strutStyle: AppControl.inputStrut(context, style)`（`forceStrutHeight:true` + `height=(controlH-4)/fontSize` 把行高强制撑满编辑盒，Flutter 半行距使字形上下均分→居中）。多行输入（本就该顶对齐）/ 带大竖向 padding 的输入框（如聊天栏，盒子高、文字盒短而自然居中）**勿设** strut。裸 `ShadInput` 也走同款 `inputStrut`。全局约束 `minHeight(controlH)`（AppTextField 另用 `tightFor`），tight 32 盒子含边框+shadcn 内部预留使可编辑区 = controlH-4。
+  - 含 `ShadButton` 的 widget 测试需 `ShadTheme` 祖先（`ShadApp.custom(appBuilder: (c)=>MaterialApp(home:X))`）。
+  - 描边仅 `outline` 一档；主题映射单向走 `AppTheme.shadThemeData()`；品牌主色统一靛蓝（`AppColors.primary`/`onPrimary`）。
+  - `LucideIcons` 来自 `shadcn_ui` 再导出，用到须 import `shadcn_ui`。
+- 做题「当场订正」不推进遗忘曲线（2026-09-04）：订正复用 `/tasks/{id}/answer` 就地判分，答对不调 `mark_review_result`。

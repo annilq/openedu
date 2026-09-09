@@ -27,9 +27,9 @@ def test_full_closed_loop(client):
     child = _create_child(client, ptoken)
     cid = child["id"]
 
-    # 3) 家长多科一卷批量生成（draft 态，含答案，ADR-0004 D4）
+    # 3) 家长出题（单流：POST /tasks/from-generated 落库已确认题卡，ADR-0023）。
     gen = client.post(
-        "/api/v1/tasks/batch-generate",
+        "/api/v1/tasks/from-generated",
         headers=auth_headers(ptoken),
         json={
             "title": "二年级混合卷",
@@ -42,6 +42,30 @@ def test_full_closed_loop(client):
                     "qtype": "calc",
                     "difficulty": "easy",
                     "count": 2,
+                },
+            ],
+            "questions": [
+                {
+                    "subject": "数学",
+                    "grade": 2,
+                    "knowledge_point": "加法",
+                    "qtype": "calc",
+                    "difficulty": "easy",
+                    "stem": "1 + 1 = ?",
+                    "options": None,
+                    "answer": "2",
+                    "explanation": "1 加 1 等于 2。",
+                },
+                {
+                    "subject": "数学",
+                    "grade": 2,
+                    "knowledge_point": "加法",
+                    "qtype": "calc",
+                    "difficulty": "easy",
+                    "stem": "1 + 2 = ?",
+                    "options": None,
+                    "answer": "3",
+                    "explanation": "1 加 2 等于 3。",
                 },
             ],
         },

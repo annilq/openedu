@@ -1,14 +1,15 @@
-"""SubAgent 注册表（ADR-0021）：业务键 → SubAgent 类。
+"""SubAgent 注册表（ADR-0021 / 0024）。
 
-轻主管（路由显式派发）按业务键取 SubAgent；新增业务 = 注册一个新 SubAgent 类，
-无需改动其他业务或学科 persona 配置（正交解耦）。未来升级为完整 LLM supervisor 时，
-只新增「意图分类 → get_subagent_class(business)」一层，各 SubAgent 不动。
+业务键 → SubAgent 类。经文件夹化后，各 SubAgent 位于
+``app/ai/subagents/<business>/agent.py``，由 AgentRuntime 的文件夹发现统一加载；
+本注册表保留「业务键 → 类」的显式映射作为发现兜底（新增文件夹后在此登记一行即可）。
 """
 from __future__ import annotations
 
 from app.ai.subagents.base import BaseSubAgent
-from app.ai.subagents.question_agent import QuestionSubAgent
-from app.ai.subagents.tutor_agent import TutorSubAgent
+from app.ai.subagents.question import QuestionSubAgent
+from app.ai.subagents.tasks import TasksQuerySubAgent
+from app.ai.subagents.tutor import TutorSubAgent
 
 
 class SubAgentRegistry:
@@ -25,6 +26,7 @@ class SubAgentRegistry:
 _REGISTRY = SubAgentRegistry()
 _REGISTRY.register(QuestionSubAgent)
 _REGISTRY.register(TutorSubAgent)
+_REGISTRY.register(TasksQuerySubAgent)
 
 
 def get_subagent_class(business: str) -> type[BaseSubAgent] | None:
@@ -35,12 +37,7 @@ def get_subagent_class(business: str) -> type[BaseSubAgent] | None:
 def build_subagent(
     business: str, *, provider, retriever=None, engine=None
 ) -> BaseSubAgent | None:
-    """业务键 → SubAgent 实例；未知业务返回 None（调用方决定兜底）。
-
-    路由层经此工厂取业务 agent，无需直接依赖具体 SubAgent 类（TutorService /
-    GenkitProvider），实现「业务维度 = SubAgent」的解耦派发。
-    engine 为可选的显式引擎（带 session 解析出的自定义模型），为 None 时由 provider 自行解析。
-    """
+    """业务键 → SubAgent 实例；未知业务返回 None（调用方决定兜底）。"""
     agent_cls = _REGISTRY.get(business)
     if agent_cls is None:
         return None
@@ -53,4 +50,5 @@ __all__ = [
     "build_subagent",
     "QuestionSubAgent",
     "TutorSubAgent",
+    "TasksQuerySubAgent",
 ]

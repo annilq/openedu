@@ -1,13 +1,16 @@
-"""Genkit 流式 flow（ADR-0015 修订 / 迁移 08b：统一 Genkit 全栈）。
+"""出题 / 答疑 / 批改的共享生成层（ADR-0015 修订 / 迁移 08b：统一 Genkit 全栈）。
 
-- 答疑：文本逐字（先缓冲 → check_output 通过 → 分块释放，守 ADR-008 不闪现违规片段）。
-- 出题：逐题结构化产出（题卡逐张浮现），每题经 check_output 通过后才 send_chunk。
-- 前后端统一协议：flow 经 `genkit_fastapi.handle_genkit_request` 以原生 action 端点暴露，
-  前端用 `package:genkit/client.dart` 的 `defineRemoteAction` 直连（见迁移文档）。
-- Mock = flow 内「一次性模拟数据源」分支：resolve_engine 返回 None（无 key / LLM_PROVIDER=mock）
-  时直接产出确定性假数据，零外部依赖仍跑通闭环（原 MockProvider 逻辑已并入此处）。
+本模块只保留被各 SubAgent 复用的底层生成能力：
 
-安全层复用 domain/safety；genkit 仅在本文件（app/ai 边界）import。
+- 出题：``generate_question``（非流式落库路径）+ ``generate_questions_stream``（流式逐题产出）。
+- 答疑：``_tutor_generate`` / ``tutor_stream``（逐 token 讲解文本）。
+- 批改：``grade_open``（开放题批改）。
+- Mock 分支：``resolve_engine`` 返回 None（无 key / LLM_PROVIDER=mock）时走确定性假数据
+  （``_mock_question`` / ``_mock_tutor_text``），零外部依赖仍跑通闭环。
+
+旧的 Genkit flow 端点（``/ai/tutor/ask``、``/ai/tasks/generate``）已废弃，全部收敛到
+``POST /api/v1/assistant/chat``（ADR-0024）；Genkit 仅作为底层 LLM 引擎经 ``engine.genkit`` 调用，
+不再经 ``genkit_fastapi`` 暴露原生 action。
 """
 from __future__ import annotations
 
@@ -16,59 +19,17 @@ import random
 import uuid
 from typing import Any, AsyncIterator, Literal
 
-from genkit import ActionRunContext, Genkit
 from pydantic import BaseModel
-from sqlmodel import Session
 
 from app.ai import debug_log
 from app.ai.engine import EngineResolution, resolve_engine
-from app.ai.subagents.question_agent import expand_specs
-from app.core.db import engine as db_engine
-from app.crud import add_tutor_usage, create_tutor_log
+from app.ai.subagents.question import expand_specs
 from app.domain.provider import GeneratedQuestion
 from app.domain.retriever import build_retriever
-from app.domain.safety import (
-    SAFE_REFUSAL,
-    check_output,
-    tutor_system_prompt,
-)
-from app.models import User
+from app.domain.safety import check_output, tutor_system_prompt
 
-# 单一 flow 宿主实例：仅用于注册 / 暴露 flow；实际模型调用由 resolve_engine 拿到的引擎执行。
-# （Genkit flow 必须绑定在某个 Genkit 实例的 registry 上；宿主无需插件，生成走解析出的引擎。）
-ai = Genkit()
-
-# ───────────────────────── 输入 / 输出 schema（与前端点对齐） ─────────────────────────
-class TutorAskInput(BaseModel):
-    subject: str
-    grade: int
-    knowledge_point: str = ""
-    context: str | None = None
-    question: str
-    model: str | None = None
-
-
-class TutorReply(BaseModel):
-    text: str = ""
-    blocked: bool = False
-    reason: str | None = None
-
-
-class TaskSpecIn(BaseModel):
-    subject: str
-    grade: int
-    knowledge_point: str
-    qtype: str
-    difficulty: str = "medium"
-    count: int = 1
-
-
-class TaskGenInput(BaseModel):
-    child_id: str | None = None
-    specs: list[TaskSpecIn]
-    focus_interest: list[str] | None = None
-    model: str | None = None
-
+# 本模块不再注册 Genkit flow（端点已废弃并收敛到 /assistant/chat）；
+# Genkit 仅作为底层 LLM 引擎，经 engine.genkit 调用。
 
 class QuestionOut(BaseModel):
     """出题流式输出 schema（与 GeneratedQuestion / Question 字段对齐，前端 QuestionPreview 映射）。
@@ -277,6 +238,47 @@ def _schema_field(obj: Any, name: str, default: Any = None) -> Any:
     return getattr(obj, name, default)
 
 
+def _assemble_question(
+    *,
+    raw: dict,
+    subject: str,
+    grade: int,
+    knowledge_point: str,
+    qtype: str,
+    difficulty: str,
+    reasoning: str = "",
+) -> QuestionOut | None:
+    """共享装配 / 安全闸门：解析 dict → check_output → 类型化题卡。
+
+    ``generate_question``（一次性结构化输出）与 ``generate_questions_stream``
+    （流式文本 JSON 解析）共用同一「抽取字段 → 安全校验 → 构造题卡」逻辑，
+    消除两套口径漂移（ADR-0023 决策 4）。
+
+    ``raw`` 为模型产出（键：stem/options/answer/explanation/reasoning）；
+    ``check_output`` 未过返回 None，由各自调用方决定回退（落库路径回退 mock，
+    流式路径 skip 该题）。
+    """
+    stem = raw.get("stem") or ""
+    options = raw.get("options")
+    answer = raw.get("answer") or ""
+    explanation = raw.get("explanation") or ""
+    verdict = check_output(f"{stem} {answer} {explanation}")
+    if not verdict.safe:
+        return None
+    return QuestionOut(
+        subject=subject,
+        grade=grade,
+        knowledge_point=knowledge_point,
+        qtype=qtype,
+        difficulty=difficulty,
+        stem=stem,
+        options=options,
+        answer=answer,
+        explanation=explanation,
+        reasoning=reasoning or (raw.get("reasoning") or ""),
+    )
+
+
 # ───────────────────────── Mock 分支（一次性模拟数据源，确定性） ─────────────────────────
 def _mock_seed(subject: str, grade: int, knowledge_point: str, qtype: str) -> random.Random:
     seed = int(hashlib.sha256(f"{subject}{grade}{knowledge_point}{qtype}".encode()).hexdigest(), 16)
@@ -388,16 +390,26 @@ async def generate_question(
         output_schema=QuestionSchema,
     )
     raw = resp.output
-    stem = _schema_field(raw, "stem") or ""
-    options = _schema_field(raw, "options")
-    answer = _schema_field(raw, "answer") or ""
-    explanation = _schema_field(raw, "explanation") or ""
-    verdict = check_output(f"{stem} {answer} {explanation}")
-    if not verdict.safe:
+    out = _assemble_question(
+        raw={
+            "stem": _schema_field(raw, "stem") or "",
+            "options": _schema_field(raw, "options"),
+            "answer": _schema_field(raw, "answer") or "",
+            "explanation": _schema_field(raw, "explanation") or "",
+            "reasoning": _schema_field(raw, "reasoning") or "",
+        },
+        subject=subject,
+        grade=grade,
+        knowledge_point=knowledge_point,
+        qtype=qtype,
+        difficulty=difficulty,
+    )
+    if out is None:
         return None
     return GeneratedQuestion(
-        subject=subject, grade=grade, knowledge_point=knowledge_point, qtype=qtype,
-        stem=stem, options=options, answer=answer, explanation=explanation, difficulty=difficulty,
+        subject=out.subject, grade=out.grade, knowledge_point=out.knowledge_point,
+        qtype=out.qtype, stem=out.stem, options=out.options, answer=out.answer,
+        explanation=out.explanation, difficulty=out.difficulty,
     )
 
 
@@ -683,229 +695,16 @@ async def generate_questions_stream(
                 yield TaskGenReasoningChunk(q_index=q_index, delta=q.reasoning)
             yield TaskGenCardChunk(q_index=q_index, question=q.model_dump())
             continue
-        verdict = check_output(
-            f"{parsed.get('stem', '')} {parsed.get('answer', '')} {parsed.get('explanation', '')}"
-        )
-        if not verdict.safe:
-            continue
-        reasoning_text = reasoning_text or (parsed.get("reasoning") or "")
-        out_q = QuestionOut(
+        out_q = _assemble_question(
+            raw=parsed,
             subject=subject,  # spec 回填（模型只需出可变字段，降低出错面）
             grade=grade,
             knowledge_point=knowledge_point,
             qtype=qtype,
             difficulty=difficulty,
-            stem=parsed.get("stem") or "",
-            options=parsed.get("options"),
-            answer=parsed.get("answer") or "",
-            explanation=parsed.get("explanation") or "",
             reasoning=reasoning_text,
         )
+        if out_q is None:
+            continue
         yield TaskGenCardChunk(q_index=q_index, question=out_q.model_dump())
 
-
-# ───────────────────────── Genkit flow（前后端统一协议端点） ─────────────────────────
-def _release_text(ctx: ActionRunContext, text: str, *, chunk_size: int = 12) -> None:
-    """安全释放：check_output 已通过后，才分小块 send_chunk（打字机效果，违规片段从不外发）。"""
-    for i in range(0, max(len(text), 1), chunk_size):
-        ctx.send_chunk(text[i : i + chunk_size])
-
-
-@ai.flow(chunk_type=str)
-async def tutor_ask(input: TutorAskInput, ctx: ActionRunContext) -> TutorReply:
-    """娃娃答疑流式 flow：先生成并整体校验，再分块释放；mock 模式走模拟数据源。"""
-    auth = ctx.context or {}
-    child_id = auth.get("child_id")
-
-    # 与 tasks_generate 一致：带 session 解析模型，避免 ModelConfig 自定义模型回退 mock。
-    engine = None
-    with Session(db_engine) as s:
-        engine = resolve_engine(input.model, parent_id=auth.get("parent_id"), session=s)
-    if engine is None:
-        text = _mock_tutor_text(
-            grade=input.grade, subject=input.subject,
-            knowledge_point=input.knowledge_point, context=input.context, question=input.question,
-        )
-    else:
-        tokens: list[str] = []
-        async for tok in tutor_stream(
-            engine, grade=input.grade, subject=input.subject,
-            knowledge_point=input.knowledge_point, context=input.context, question=input.question,
-        ):
-            tokens.append(tok)
-        text = "".join(tokens)
-
-    # 输出安全：整体校验通过才放量；违规 → 整段替换为安全兜底。
-    if not check_output(text).safe:
-        _release_text(ctx, SAFE_REFUSAL)
-        _log_tutor(child_id, input, SAFE_REFUSAL, blocked=True)
-        return TutorReply(text=SAFE_REFUSAL, blocked=True, reason="输出含敏感内容")
-
-    _release_text(ctx, text)
-    _log_tutor(child_id, input, text, blocked=False)
-    return TutorReply(text=text, blocked=False)
-
-
-@ai.flow(chunk_type=dict)
-async def tasks_generate(input: TaskGenInput, ctx: ActionRunContext) -> list[dict]:
-    """家长出题流式 flow：逐题产出，题卡逐张浮现；mock 模式走模拟数据源。
-
-    流式块与末帧 result 均返回 JSON 原生 dict（QuestionOut.model_dump()），避免 Genkit
-    SSE 序列化器对 pydantic 模型做 json.dumps 失败；前端 fromStreamChunk/fromResponse
-    按 dict 解析为 QuestionPreview，契约不变。
-    """
-    auth = ctx.context or {}
-    parent_id = auth.get("parent_id")
-    child_id = input.child_id or auth.get("child_id")
-
-    # 兴趣池：按 child_id 加载娃娃画像（避免与 tasks.py 交叉 import）。
-    interests_pool: list[str] | None = None
-    if child_id is not None:
-        with Session(db_engine) as s:
-            child = s.get(User, _as_uuid(child_id))
-            if child is not None and child.interests:
-                # User.interests 为 dict：{"categories": [...], "free_text": str}
-                cat = child.interests.get("categories") or []
-                pool = [c for c in cat if isinstance(c, str)]
-                free = child.interests.get("free_text")
-                if isinstance(free, str) and free.strip():
-                    pool.append(free.strip())
-                interests_pool = pool or None
-
-    # 流式路径必须把 session 传给 resolve_engine，否则 ModelConfig 自定义模型分支
-    # （engine.py 第 1 步）因缺 session 被跳过，回退到全局 LLM_PROVIDER → mock；
-    # 同步 batch-generate 路径一直带 session，故二者行为曾不一致（预览返回 mock）。
-    engine = None
-    with Session(db_engine) as s:
-        engine = resolve_engine(input.model, parent_id=parent_id, session=s)
-    # ADR-0022：启动一次出题运行的调试会话（失败自动 no-op，不阻断流式）。
-    conv_id = debug_log.start_agent_run(
-        kind="question",
-        parent_id=parent_id,
-        child_id=child_id,
-        model=engine.model if engine is not None else "mock",
-        title="出题",
-    )
-    debug_log.log_agent_message(
-        conversation_id=conv_id, role="system", step="input",
-        content=_QUESTION_SYSTEM_PROMPT,
-    )
-    focus = input.focus_interest or []
-    out: list[dict] = []
-
-    if engine is None:
-        idx = 0
-        for sp in input.specs:
-            for _ in range(max(0, sp.count)):
-                f = focus[idx % len(focus)] if focus else None
-                q = _mock_question(
-                    subject=sp.subject, grade=sp.grade, knowledge_point=sp.knowledge_point,
-                    qtype=sp.qtype, difficulty=sp.difficulty, interests=interests_pool, focus_interest=f,
-                )
-                # ADR-0022：记录该题为一步（请求 prompt + 题卡），便于回放出题运行。
-                debug_log.log_agent_message(
-                    conversation_id=conv_id,
-                    role="user",
-                    step="input",
-                    content=_build_question_prompt(
-                        subject=sp.subject, grade=sp.grade, knowledge_point=sp.knowledge_point,
-                        qtype=sp.qtype, difficulty=sp.difficulty, interests=interests_pool, focus_interest=f,
-                    ),
-                    model="mock",
-                )
-                debug_log.log_agent_message(
-                    conversation_id=conv_id,
-                    role="assistant",
-                    step="output",
-                    content=q.stem,
-                    payload=q.model_dump(),
-                    model="mock",
-                )
-                # 信封 chunk：STEP → REASONING → CARD（对齐 ADR-0017）。
-                # 信封 chunk：STEP → REASONING → CARD（对齐 ADR-0017）。
-                ctx.send_chunk(
-                    TaskGenStepChunk(
-                        q_index=idx,
-                        label=_step_label(sp.subject, sp.grade, sp.knowledge_point, sp.qtype),
-                    ).model_dump()
-                )
-                if q.reasoning:
-                    ctx.send_chunk(
-                        TaskGenReasoningChunk(q_index=idx, delta=q.reasoning).model_dump()
-                    )
-                ctx.send_chunk(
-                    TaskGenCardChunk(q_index=idx, question=q.model_dump()).model_dump()
-                )
-                out.append(q.model_dump())
-                idx += 1
-        debug_log.finish_agent_run(conversation_id=conv_id, status="done")
-        return out
-
-    # ADR-0021：经注册表派发「出题」业务 SubAgent（预计算每题 RAG + 学科 Persona 后委托本 flow）。
-    from app.ai.subagents import build_subagent  # 惰性：避免 app.ai 包循环导入
-    from app.domain import build_provider
-
-    agent = build_subagent(
-        "question",
-        provider=build_provider(),
-        retriever=build_retriever(),
-        engine=engine,
-    )
-    stream_iter = (
-        agent.stream(
-            specs=list(input.specs),
-            interests=interests_pool,
-            focus_interests=focus,
-            engine=engine,
-        )
-        if agent is not None
-        else generate_questions_stream(
-            engine, specs=list(input.specs), interests=interests_pool, focus_interests=focus,
-        )
-    )
-    async for chunk in stream_iter:
-        # 已产出信封 chunk（STEP/REASONING/CARD）；
-        # 仅把 CARD 的题卡收进末帧 result，REASONING/STEP 不进 result（纯流式 UX）。
-        if isinstance(chunk, TaskGenCardChunk):
-            out.append(chunk.question)
-            # ADR-0022：每道成品题卡记一步（assistant/output），按 turn 自然追加。
-            debug_log.log_agent_message(
-                conversation_id=conv_id,
-                role="assistant",
-                step="output",
-                content=chunk.question.get("stem", ""),
-                payload=chunk.question,
-                model=engine.model if engine is not None else None,
-            )
-        ctx.send_chunk(chunk.model_dump())
-    debug_log.finish_agent_run(conversation_id=conv_id, status="done")
-    return out
-
-
-def _as_uuid(value: object) -> Any:
-    import uuid
-
-    try:
-        return uuid.UUID(str(value))
-    except (ValueError, TypeError, AttributeError):
-        return None
-
-
-def _log_tutor(child_id: Any, input: TutorAskInput, answer: str, *, blocked: bool) -> None:
-    """答疑用量 / 日志落库（flow 内，因流式在此结束）。"""
-    if child_id is None:
-        return
-    cid = _as_uuid(child_id)
-    if cid is None:
-        return
-    try:
-        with Session(db_engine) as s:
-            add_tutor_usage(session=s, child_id=cid, seconds=0)
-            create_tutor_log(
-                session=s, child_id=cid, grade=input.grade, subject=input.subject,
-                knowledge_point=input.knowledge_point, question=input.question,
-                answer=answer, input_safe=True, output_safe=not blocked, blocked=blocked,
-            )
-    except Exception:
-        # 日志失败不应打断流式响应
-        pass

@@ -66,11 +66,11 @@ class AppQuizResultCard extends StatelessWidget {
 
     Widget card = Center(
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(AppSpacing.xxl),
+        padding: const EdgeInsets.all(AppSpacing.md),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 520),
           child: Container(
-            padding: const EdgeInsets.all(AppSpacing.xxl),
+            padding: const EdgeInsets.all(AppSpacing.md),
             decoration: BoxDecoration(
               color: scheme.surfaceRaised,
               borderRadius: BorderRadius.circular(AppRadius.banner),

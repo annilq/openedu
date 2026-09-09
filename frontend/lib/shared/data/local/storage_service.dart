@@ -9,6 +9,7 @@ class StorageService {
   static const _keyUser = 'current_user';
   static const _keyThemeMode = 'theme_mode';
   static const _keyUserMode = 'user_mode';
+  static const _keyDensity = 'ui_density';
   static const _keySidebarCollapsed = 'sidebar_collapsed';
 
   late SharedPreferences _prefs;
@@ -42,6 +43,15 @@ class StorageService {
 
   Future<void> saveUserMode(AppUserMode mode) =>
       _prefs.setString(_keyUserMode, mode.name);
+
+  /// 控件密度（compact / normal），默认 [AppDensity.compact]（parent 32 / child 40）。
+  AppDensity getDensity() {
+    final raw = _prefs.getString(_keyDensity);
+    return AppDensity.values.asNameMap()[raw] ?? AppControl.defaultDensity;
+  }
+
+  Future<void> saveDensity(AppDensity density) =>
+      _prefs.setString(_keyDensity, density.name);
 
   bool getSidebarCollapsed() =>
       _prefs.getBool(_keySidebarCollapsed) ?? false;

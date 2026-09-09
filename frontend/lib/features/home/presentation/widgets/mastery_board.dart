@@ -27,7 +27,7 @@ class MasteryBoard extends ConsumerWidget {
       MasteryError() => AppError(message: state.message),
       MasteryLoaded() => state.mastery.items.isEmpty
           ? AppCard(
-              padding: const EdgeInsets.all(AppSpacing.xxl),
+              padding: const EdgeInsets.all(AppSpacing.md),
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   final narrow = constraints.maxWidth < 220;
@@ -76,7 +76,7 @@ class MasteryBoard extends ConsumerWidget {
               ),
             )
           : AppCard(
-              padding: const EdgeInsets.all(AppSpacing.xxl),
+              padding: const EdgeInsets.all(AppSpacing.md),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [

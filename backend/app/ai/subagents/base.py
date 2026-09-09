@@ -15,6 +15,7 @@ from typing import Any
 class SubAgentContext:
     """一次 SubAgent 调用的共享上下文。学科 persona 由 SubAgent 内部据 subject 取，无需外部传。"""
 
+    role: str = ""  # 调用者角色：parent | child（角色感知用，ADR-0026）
     subject: str = ""
     grade: int = 0
     knowledge_point: str = ""
@@ -24,6 +25,9 @@ class SubAgentContext:
     parent_id: object | None = None
     model: str | None = None
     allowed_subjects: list[str] | None = None
+    # WF-4 兴趣题模式：显式聚焦主题列表（如「恐龙」「太空」），由出题 SubAgent 注入出题
+    # prompt，让题目情境围绕该主题展开（ADR-0024 经 /assistant/chat 的 focus_interest 字段透传）。
+    focus_interest: list[str] | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 
 
@@ -42,4 +46,13 @@ class BaseSubAgent(ABC):
     @abstractmethod
     async def handle(self, intent: dict, ctx: SubAgentContext) -> Any:
         """处理一次业务请求，返回业务结果（类型由子类定义）。"""
+        ...
+
+    @abstractmethod
+    async def run(self, message: str, ctx: SubAgentContext, *, session=None) -> Any:
+        """悬浮助手入口：自由文本 → 异步产出 AG-UI 事件帧（AssistantEvent）。
+
+        ``session`` 为可选 DB 会话（查询类 subagent 用于落库/读取）。
+        返回类型约定为 AsyncIterator[AssistantEvent]；子类用 ``yield`` 产出事件。
+        """
         ...

@@ -13,7 +13,7 @@ False，导致 ModelConfig 永不命中 → 回退全局 LLM_PROVIDER=mock，预
 from sqlmodel import Session
 
 from app.ai.engine import resolve_engine
-from app.models import ModelConfig, User
+from app.db.models import ModelConfig, User
 
 
 def _make_parent(db: Session, idx: int) -> User:

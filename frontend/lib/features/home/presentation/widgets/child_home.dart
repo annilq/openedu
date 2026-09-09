@@ -68,7 +68,7 @@ class ChildHome extends ConsumerWidget {
                     ],
                   TodayTasksError() => [
                       Padding(
-                        padding: const EdgeInsets.all(AppSpacing.lg),
+                        padding: const EdgeInsets.all(AppSpacing.md),
                         child: AppError(
                           message: state.message,
                           onRetry: () => ref
@@ -157,7 +157,7 @@ class _ReviewBanner extends StatelessWidget {
           borderRadius: BorderRadius.circular(AppRadius.banner),
           // 顶部极细的"植物绿高光"纹理：避免完全扁平
           border: Border.all(
-            color: app.outlineVariant,
+            color: app.outline,
             width: 1,
           ),
         ),
@@ -234,7 +234,7 @@ class _TutorBanner extends StatelessWidget {
           color: app.secondaryContainer,
           borderRadius: BorderRadius.circular(AppRadius.banner),
           border: Border.all(
-            color: app.outlineVariant,
+            color: app.outline,
             width: 1,
           ),
         ),
@@ -299,7 +299,7 @@ class _TaskCard extends StatelessWidget {
     final isDone = task.status == 'done';
 
     return AppCard(
-      padding: const EdgeInsets.all(AppSpacing.xxl),
+      padding: const EdgeInsets.all(AppSpacing.md),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

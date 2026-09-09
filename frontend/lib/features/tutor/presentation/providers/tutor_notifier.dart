@@ -1,11 +1,12 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:genkit/client.dart';
 
 import '../../../../shared/data/remote/network_service.dart';
-import '../../../../shared/data/remote/genkit_ai_client.dart';
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/domain/providers/core_providers.dart';
 import '../../../../shared/exceptions/app_exception.dart';
+import '../../../assistant/data/assistant_api_client.dart';
+import '../../../assistant/domain/assistant_event.dart';
+import '../../../assistant/presentation/provider/assistant_notifier.dart';
 
 /// 一条对话气泡。
 class TutorMessage {
@@ -42,61 +43,21 @@ class TutorLoaded extends TutorState {
 }
 
 class TutorNotifier extends StateNotifier<TutorState> {
-  final NetworkService _network;
-  final GenkitAiClient _genkit;
+  final AssistantApiClient _assistant;
   bool _submitting = false;
 
-  TutorNotifier(this._network, this._genkit) : super(const TutorInitial());
+  TutorNotifier(this._assistant) : super(const TutorInitial());
 
   /// 防重入：提交中忽略重复点击，避免连点重复消耗每日额度。
   Future<void> ask(TutorAskReq req) async {
-    if (_submitting) return;
-    _submitting = true;
-
-    // 立即把娃娃的问题气泡加进去，给出即时反馈
-    // 注：TutorLoading 分支在防重入下实际不可达（Loading 期间 _submitting 恒 true，
-    // 第二次 ask 直接返回），保留作防御；历史列表从两态均可提取。
-    final history = switch (state) {
-      TutorLoaded(:final messages) || TutorLoading(:final messages) =>
-        List<TutorMessage>.from(messages),
-      _ => <TutorMessage>[],
-    };
-    state = TutorLoading([
-      ...history,
-      TutorMessage(role: 'child', text: req.question),
-    ]);
-
-    try {
-      final data = await _network.post('/tutor/ask', body: req.toJson());
-      final ans = TutorAnswer.fromJson(data as Map<String, dynamic>);
-      state = TutorLoaded([
-        ...history,
-        TutorMessage(role: 'child', text: req.question),
-        TutorMessage(role: 'ai', text: ans.answer, blocked: ans.blocked),
-      ]);
-    } on AppException catch (e) {
-      // 服务端业务错误（含 429 次数/时长上限、403 学科范围）：透出提示文案
-      state = TutorLoaded([
-        ...history,
-        TutorMessage(role: 'child', text: req.question),
-        TutorMessage(role: 'ai', text: '⏳ ${e.message}'),
-      ]);
-    } catch (e) {
-      // 出错也保留历史气泡，并附一条错误提示
-      state = TutorLoaded([
-        ...history,
-        TutorMessage(role: 'child', text: req.question),
-        const TutorMessage(role: 'ai', text: '⚠️ 网络异常，请稍后重试'),
-      ]);
-    } finally {
-      _submitting = false;
-    }
+    // 统一收敛到流式端点（SSE `/assistant/chat`），行为一致。
+    return askStream(req);
   }
 
-  /// 流式答疑（Genkit 全栈，ADR-0015）：直连后端 `/ai/tutor/ask` 原生 action 端点。
-  /// 经 [GenkitAiClient.streamTutor] 逐 token（String）累加到 AI 气泡；
-  /// 路由层（鉴权 / 配额 / 输入安全）的非 2xx 错误以 [GenkitException] 抛出，
-  /// 由 [friendlyGenkitError] 解析原始 FastAPI 错误体为友好文案。
+  /// 流式答疑（统一端点 `POST /assistant/chat`，ADR-0024）：
+  /// 经 [AssistantApiClient.streamChat] 逐帧产出 AG-UI 事件，把
+  /// `ASSISTANT_MESSAGE` 文本累加到 AI 气泡；路由层（鉴权 / 配额 / 输入安全）
+  /// 的非 2xx 错误以 [AppException] 抛出，由上层文案透出。
   Future<void> askStream(TutorAskReq req) async {
     if (_submitting) return;
     _submitting = true;
@@ -119,37 +80,39 @@ class TutorNotifier extends StateNotifier<TutorState> {
           _ => <TutorMessage>[],
         };
 
+    bool blocked = false;
     try {
-      final stream = _genkit.streamTutor(req.toJson());
-      await for (final token in stream) {
-        final messages = currentMessages();
-        if (messages.isNotEmpty && messages.last.role == 'ai') {
-          messages[messages.length - 1] =
-              TutorMessage(role: 'ai', text: messages.last.text + token);
-        } else {
-          messages.add(TutorMessage(role: 'ai', text: token));
+      final stream = _assistant.streamChat(AssistantChatReq(message: req.question));
+      await for (final ev in stream) {
+        if (ev.eventType == AssistantEventType.assistantMessage &&
+            ev.text != null) {
+          final messages = currentMessages();
+          if (messages.isNotEmpty && messages.last.role == 'ai') {
+            messages[messages.length - 1] =
+                TutorMessage(role: 'ai', text: messages.last.text + ev.text!);
+          } else {
+            messages.add(TutorMessage(role: 'ai', text: ev.text!));
+          }
+          state = TutorLoading(messages);
+        } else if (ev.eventType == AssistantEventType.error) {
+          blocked = ev.code == 'INPUT_UNSAFE';
         }
-        state = TutorLoading(messages);
       }
-      final reply = await stream.onResult;
       final messages = currentMessages();
-      // 安全兜底：流式片段已是 SAFE_REFUSAL 文案，仅补 blocked 打标供 UI 区分。
       if (messages.isNotEmpty && messages.last.role == 'ai') {
-        messages[messages.length - 1] = TutorMessage(
-          role: 'ai',
-          text: messages.last.text,
-          blocked: reply.blocked,
-        );
+        messages[messages.length - 1] =
+            TutorMessage(role: 'ai', text: messages.last.text, blocked: blocked);
       }
       state = TutorLoaded(messages);
-    } on GenkitException catch (e) {
-      // 配额 / 学科范围 / 输入安全：路由层非 2xx，details 携带原始错误体。
+    } on AppException catch (e) {
+      // 服务端业务错误（含 429 次数/时长上限、403 学科范围）：透出提示文案
       state = TutorLoaded([
         ...history,
         TutorMessage(role: 'child', text: req.question),
-        TutorMessage(role: 'ai', text: friendlyGenkitError(e)),
+        TutorMessage(role: 'ai', text: '⏳ ${e.message}'),
       ]);
     } catch (e) {
+      // 出错也保留历史气泡，并附一条错误提示
       state = TutorLoaded([
         ...history,
         TutorMessage(role: 'child', text: req.question),
@@ -163,9 +126,8 @@ class TutorNotifier extends StateNotifier<TutorState> {
 
 final tutorNotifierProvider =
     StateNotifierProvider<TutorNotifier, TutorState>((ref) {
-  final network = ref.watch(networkServiceProvider);
-  final genkit = ref.watch(genkitAiClientProvider);
-  return TutorNotifier(network, genkit);
+  final assistant = ref.watch(assistantApiClientProvider);
+  return TutorNotifier(assistant);
 });
 
 // —— 家长端：AI 答疑日志 ——

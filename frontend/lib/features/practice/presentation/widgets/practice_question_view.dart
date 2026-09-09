@@ -69,7 +69,7 @@ class PracticeQuestionView extends StatelessWidget {
               const SizedBox(height: AppSpacing.xxl),
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.all(AppSpacing.xxl),
+                padding: const EdgeInsets.all(AppSpacing.md),
                 decoration: BoxDecoration(
                   color: scheme.surfaceRaised,
                   borderRadius: BorderRadius.circular(AppRadius.banner),

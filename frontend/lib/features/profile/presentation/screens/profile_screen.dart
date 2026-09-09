@@ -76,7 +76,7 @@ class ProfileScreen extends ConsumerWidget {
             color: app.surface,
             borderRadius: BorderRadius.circular(AppRadius.card),
             border: Border.all(
-              color: app.outlineVariant,
+              color: app.outline,
               width: 1,
             ),
           ),
@@ -197,7 +197,7 @@ class _Divider extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
       child: Container(
         height: 1,
-        color: app.outlineVariant,
+        color: app.outline,
       ),
     );
   }
@@ -218,11 +218,11 @@ class _ThemeModeSetting extends ConsumerWidget {
         color: app.surface,
         borderRadius: BorderRadius.circular(AppRadius.card),
         border: Border.all(
-          color: app.outlineVariant,
+          color: app.outline,
           width: 1,
         ),
       ),
-      padding: const EdgeInsets.all(AppSpacing.lg),
+      padding: const EdgeInsets.all(AppSpacing.md),
       child: Container(
         decoration: BoxDecoration(
           color: app.surfaceContainerHigh,
@@ -289,9 +289,9 @@ class _UserModeSetting extends ConsumerWidget {
       decoration: BoxDecoration(
         color: app.surface,
         borderRadius: BorderRadius.circular(AppRadius.card),
-        border: Border.all(color: app.outlineVariant, width: 1),
+        border: Border.all(color: app.outline, width: 1),
       ),
-      padding: const EdgeInsets.all(AppSpacing.lg),
+      padding: const EdgeInsets.all(AppSpacing.md),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

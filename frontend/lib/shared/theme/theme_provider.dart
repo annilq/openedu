@@ -45,3 +45,33 @@ final userModeProvider =
   final storage = ref.watch(storageServiceProvider);
   return UserModeController(storage, storage.getUserMode());
 });
+
+/// 控件密度（compact / normal），持久化到本地存储。
+///
+/// **默认 [AppDensity.compact]**（parent 32 / child 40）。与亮暗、用户模式正交：
+/// 三者共同喂给 `AppTheme.shadFor(isDark, mode, density)`，决定 shadcn 主题里的
+/// 控件高度，让裸 `ShadButton` / `ShadInput` 与 `App*` 组件严格同高。
+///
+/// 读取：[ref.watch(densityProvider)]；写入：[ref.read(densityProvider.notifier)]。
+class DensityController extends StateNotifier<AppDensity> {
+  DensityController(this._storage, AppDensity initial) : super(initial);
+
+  final StorageService _storage;
+
+  Future<void> setDensity(AppDensity density) async {
+    state = density;
+    await _storage.saveDensity(density);
+  }
+
+  /// 在 compact / normal 之间切换。
+  Future<void> toggle() async =>
+      setDensity(state == AppDensity.compact
+          ? AppDensity.normal
+          : AppDensity.compact);
+}
+
+final densityProvider =
+    StateNotifierProvider<DensityController, AppDensity>((ref) {
+  final storage = ref.watch(storageServiceProvider);
+  return DensityController(storage, storage.getDensity());
+});

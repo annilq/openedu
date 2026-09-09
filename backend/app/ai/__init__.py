@@ -1,11 +1,17 @@
-"""app/ai —— Genkit 流式编排层（ADR-0015 / 迁移 08b：统一 Genkit 全栈）。
+"""app/ai —— AI 编排层（ADR-0015 修订 / 迁移 08b：统一 Genkit 全栈后收敛）。
 
-这是**唯一**允许 `import genkit` 的包（迁移后 GenkitProvider 作为 Genkit 适配层也在此边界内调用）。
-业务/domain 代码统一经本包暴露的非流式入口（generate_question / grade_open / mock_question）
-与流式 flow（tutor_ask / tasks_generate），框架 import 隔离延续 ADR-003。
+本包只暴露被各 SubAgent 复用的底层生成能力（非流式 / 流式），不再注册 Genkit flow 端点：
 
-为改善冷启动并让业务 SubAgent 包（app.ai.subagents）可在不加载 genkit 重型依赖的前提下被单测，
-本包采用惰性导入：只有真正访问 genkit 相关符号时才加载 flows / engine。
+- 出题：``generate_question``（落库路径）+ ``generate_questions_stream``（流式逐题产出）。
+- 答疑：``tutor_stream``（逐 token 讲解）。
+- 批改：``grade_open``（开放题批改）。
+- Mock：``mock_question``（确定性假数据，无 key 时闭环）。
+
+Genkit 仅作为底层 LLM 引擎经 ``engine.genkit`` 调用，不再经 ``genkit_fastapi`` 暴露原生 action；
+所有 AI 入口统一收敛到 ``POST /api/v1/assistant/chat``（ADR-0024）。
+
+本包采用惰性导入（``__getattr__``）：只有真正访问相关符号时才加载 flows / engine / subagents，
+避免重型依赖在仅需单测 SubAgent 时被强制加载。
 """
 
 from __future__ import annotations

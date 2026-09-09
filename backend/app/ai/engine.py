@@ -23,7 +23,7 @@ from sqlmodel import Session
 
 from app.core.config import settings
 from app.core.crypto import decrypt
-from app.models import ModelConfig
+from app.db.models import ModelConfig
 
 _ENGINE_CACHE: dict[tuple[str, str | None, str | None, str], Genkit] = {}
 

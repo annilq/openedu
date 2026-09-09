@@ -6,6 +6,7 @@ import 'package:flutter_localizations/flutter_localizations.dart'
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+import '../features/assistant/presentation/widgets/floating_assistant.dart';
 import '../features/authentication/presentation/screens/login_screen.dart';
 import '../features/home/presentation/screens/home_screen.dart';
 import '../services/auth_session/domain/providers/auth_session_provider.dart';
@@ -82,6 +83,9 @@ class _MyAppState extends ConsumerState<MyApp> {
   Widget build(BuildContext context) {
     final themeMode = ref.watch(themeModeProvider);
     final userMode = ref.watch(userModeProvider);
+    // 全局控件密度（默认 compact → parent 32 / child 40）。与亮暗、用户模式正交，
+    // 三者一起决定 shadcn 主题里的控件高度，保证裸 Shad* 与 App* 组件同高。
+    final density = ref.watch(densityProvider);
     final systemBrightness =
         WidgetsBinding.instance.platformDispatcher.platformBrightness;
     final isDark = resolveBrightness(themeMode, systemBrightness) ==
@@ -92,11 +96,13 @@ class _MyAppState extends ConsumerState<MyApp> {
         ? const _SplashScreen()
         : _currentUser == null
             ? LoginScreen(onLoginSuccess: _onLoginSuccess)
-            : HomeScreen(user: _currentUser!, onLogout: _logout);
+            : FloatingAssistant(
+                child: HomeScreen(user: _currentUser!, onLogout: _logout),
+              );
 
     return ShadApp.custom(
-      theme: AppTheme.shadFor(false, userMode),
-      darkTheme: AppTheme.shadFor(true, userMode),
+      theme: AppTheme.shadFor(false, userMode, density),
+      darkTheme: AppTheme.shadFor(true, userMode, density),
       themeMode: appThemeModeToMaterial(themeMode),
       appBuilder: (context) => CupertinoApp(
           title: '娃娃学习',
@@ -112,15 +118,19 @@ class _MyAppState extends ConsumerState<MyApp> {
           ],
           builder: (context, child) => ShadAppBuilder(
             backgroundColor: active.surfaceContainerLow,
-            // UserModeScope 包裹整个导航子树，使全局 textOf 随双模式切换重建。
+            // UserModeScope / DensityScope 包裹整个导航子树，使全局 textOf 与
+            // AppControl.heightOf 随双模式 / 密度切换重建（无需逐 widget 监听 provider）。
             child: UserModeScope(
               mode: userMode,
-              child: MediaQuery(
-                data: MediaQuery.of(context).copyWith(
-                  platformBrightness:
-                      isDark ? Brightness.dark : Brightness.light,
+              child: DensityScope(
+                density: density,
+                child: MediaQuery(
+                  data: MediaQuery.of(context).copyWith(
+                    platformBrightness:
+                        isDark ? Brightness.dark : Brightness.light,
+                  ),
+                  child: child ?? const SizedBox.shrink(),
                 ),
-                child: child ?? const SizedBox.shrink(),
               ),
             ),
           ),

@@ -253,7 +253,7 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
             children: [
               const SectionTitle('布置练习任务'),
               AppCard(
-                padding: const EdgeInsets.all(AppSpacing.xxl),
+                padding: const EdgeInsets.all(AppSpacing.md),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -271,13 +271,13 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
                         ),
                         const SizedBox(width: AppSpacing.md),
                         ShadButton.outline(
-                          height: 36,
+                          height: AppControl.heightOf(context),
                           onPressed: _evenSplit,
                           child: const Text('一键均分'),
                         ),
                         const SizedBox(width: AppSpacing.sm),
                         ShadButton.outline(
-                          height: 36,
+                          height: AppControl.heightOf(context),
                           onPressed: _addRow,
                           child: const Text('+ 加学科'),
                         ),
@@ -493,7 +493,7 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
         const SizedBox(width: AppSpacing.md),
         Expanded(
           child: ShadButton.outline(
-            height: 44,
+            height: AppControl.heightOf(context),
             expands: true,
             onPressed: _preview,
             child: const Text('预览出题'),
@@ -568,7 +568,7 @@ class _PreviewGenerating extends StatelessWidget {
     final text = AppTheme.textOf(context);
     return Container(
       margin: const EdgeInsets.only(bottom: AppSpacing.md),
-      padding: const EdgeInsets.all(AppSpacing.lg),
+      padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
         color: app.surface,
         borderRadius: BorderRadius.circular(AppRadius.bubble),
@@ -723,7 +723,7 @@ class _PreviewCard extends StatelessWidget {
     final options = q.options;
     return Container(
       margin: const EdgeInsets.only(bottom: AppSpacing.md),
-      padding: const EdgeInsets.all(AppSpacing.lg),
+      padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
         color: app.surface,
         borderRadius: BorderRadius.circular(AppRadius.bubble),

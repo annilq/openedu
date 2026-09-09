@@ -130,7 +130,7 @@ class _ParentModelManagementScreenState
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.md),
       child: AppCard(
-        padding: const EdgeInsets.all(AppSpacing.xxl),
+        padding: const EdgeInsets.all(AppSpacing.md),
         child: Row(
           children: [
             Icon(LucideIcons.sparkles, size: 18, color: app.accent),
@@ -162,7 +162,7 @@ class _ParentModelManagementScreenState
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.md),
       child: AppCard(
-        padding: const EdgeInsets.all(AppSpacing.xxl),
+        padding: const EdgeInsets.all(AppSpacing.md),
         child: Row(
           children: [
             Icon(LucideIcons.box, size: 18, color: app.accent),
@@ -222,7 +222,7 @@ class _ParentModelManagementScreenState
     final app = AppTheme.colorsOf(context);
     final text = AppTheme.textOf(context);
     return Container(
-      padding: const EdgeInsets.all(AppSpacing.lg),
+      padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
         color: app.surfaceContainerLow,
         borderRadius: BorderRadius.circular(AppRadius.card),

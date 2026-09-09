@@ -37,14 +37,14 @@ class ParentTutorLogsView extends ConsumerWidget {
                 TutorLogsError() => AppError(message: state.message),
                 TutorLogsLoaded() => state.logs.isEmpty
                     ? AppCard(
-                        padding: const EdgeInsets.all(AppSpacing.xxl),
+                        padding: const EdgeInsets.all(AppSpacing.md),
                         child: Align(alignment: Alignment.topLeft,
                           child: Text('这个娃娃还没有问过 AI 老师',
                               style: AppTheme.textOf(context).bodyLarge),
                         ),
                       )
                     : AppCard(
-                        padding: const EdgeInsets.all(AppSpacing.xxl),
+                        padding: const EdgeInsets.all(AppSpacing.md),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: state.logs
@@ -64,7 +64,7 @@ class ParentTutorLogsView extends ConsumerWidget {
     final scheme = AppTheme.colorsOf(context);
     return Align(alignment: Alignment.topLeft,
       child: AppCard(
-        padding: const EdgeInsets.all(AppSpacing.xxl),
+        padding: const EdgeInsets.all(AppSpacing.md),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -151,7 +151,7 @@ class _TutorLogCard extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.md),
           Container(
-              width: double.infinity, height: 1, color: scheme.outlineVariant),
+              width: double.infinity, height: 1, color: scheme.outline),
         ],
       ),
     );

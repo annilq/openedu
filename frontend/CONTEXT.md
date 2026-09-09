@@ -5,24 +5,28 @@
 ## Language
 
 **Accent（靛蓝强调色）**:
-用于 selection、focus、progress 填充、链接文字的单一强调色（`#5E6AD2` 亮 / `#7B82EA` 暗）。CTA 按钮不使用 accent，而用近黑底白字保持重量感。
-_Avoid_: primary（已废弃的暖绿角色名）、brandColor、themeColor
+用于 selection、focus、progress 填充、链接文字与 CTA 主按钮的单一品牌色（`#5E6AD2` 亮 / `#7B82EA` 暗）。`primary` 现已与 `accent` 合并为同一支靛蓝，CTA / 状态色 / 图标 / 选中态全站统一为靛蓝。
+_Avoid_: brandColor、themeColor（不要自造配色名；一律用 `AppColors` 令牌）
 
 **Surface 层次**:
 五级表面色阶：surface（内容区微暖白）/ surfaceRaised（卡片 `#FFFFFF`）/ surfaceHover（hover 态 `#F4F4F2`）/ surfaceSunken（侧栏/凹槽 `#F4F4F2`）/ surfaceActive（选中态药丸 `#EDEDF0`）。禁止手动 withValues(alpha:) 透明度变体。
 _Avoid_: backgroundColor、cardColor
 
 **Outline（描边）**:
-卡片/分隔线的 1px 极细描边（`#ECECEA` 亮 / `#2A2A28` 暗）。hover 时描边加深至 outlineHover（`#D1D1CE`）。Linear 风格——用描边分层，不用阴影。
-_Avoid_: border、divider、stroke
+唯一的线令牌：卡片 / 输入 / 按钮 / 徽章 / **分隔线**全部同一档 1px 极细描边（`#DEDDD8` 亮 / `#2F2F2C` 暗）。hover 时描边加深至 outlineHover（`#D1D1CE`）。Linear 风格——用描边分层，不用阴影。
+_Avoid_: border、divider、stroke；outlineVariant（已删除：分隔线不再另设更淡的一档）
 
 **密排字号阶梯（Dense Type Scale）**:
 正文 15sp 基线的统一字号体系，双端共用。Inter 主西文/数字 + HarmonyOS Sans SC CJK 回退。每个字号有对应 tracking（标题负、正文零、小字正）。行高按用途区分（标题 1.2 / 紧凑文字 1.35 / 阅读文字 1.5）。
 _Avoid_: 护眼大字、20sp 基线
 
 **语义色（Semantic Colors）**:
-降饱和的四档状态色底——positive（极淡绿 `#EFF5EC`）/ warning（极淡琥珀 `#FAF3E8`）/ error（极淡红 `#FCE8E6`）/ info（极淡靛蓝 `#EEF0FC`）。用于 badge/chip/icon 容器，不用于大面积背景。
-_Avoid_: primaryContainer/secondaryContainer/tertiaryContainer（旧暖绿体系角色名）
+降饱和的四档状态色底——positive（极淡绿 `#EFF5EC`）/ warning（极淡琥珀 `#FAF3E8`）/ error（极淡红 `#FCE8E6`）/ info（极淡靛蓝 `#EEF0FC`）。**AI 标记归 info**，不再单开与 warning 重复的琥珀档。用于 badge/chip/icon 容器，不用于大面积背景。四档各配 `…Fg` 前景色，代码里走 `app.semanticXxx(Fg)` 别名。
+_Avoid_: primaryContainer/secondaryContainer/tertiaryContainer（旧暖绿体系角色名）；用 error 容器表达 warning（曾犯：红底当警告）
+
+**Shadcn 映射契约（Theme Mapping）**:
+`AppColors`（设计系统令牌）是唯一事实源，`AppTheme.shadThemeData()` 单向映射到 shadcn `ShadThemeData`；页面不得自行覆盖配色。两处命名陷阱：① shadcn 的 `accent` 是「hover 高亮」语义（=我们的 `surfaceSunken`），**不是**设计系统的靛蓝 accent（靛蓝走 `ring`/`selection`/`custom['accent']`）；② `custom[...]` 用文档语义名，旧角色名仅兼容。完整对照见 `.impeccable.md` 的「Shadcn 映射契约」。
+_Avoid_: 直接改 ShadColorScheme 而不改 AppColors；在页面里 override shadcn 主题
 
 **转场分级（Motion Tiers）**:
 三档动画时长——交互态 120ms / 状态切换 200ms / 页面进入 300ms。交互态用 easeOut，页面进入用 easeInOut。loading→loaded 用 crossfade。

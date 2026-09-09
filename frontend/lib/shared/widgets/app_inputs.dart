@@ -61,6 +61,9 @@ class _AppTextFieldState extends State<AppTextField> {
     final hasError = widget.errorText != null;
     final borderColor = hasError ? app.error : app.outline;
     final focusedBorderColor = hasError ? app.error : app.accent;
+    final inputStyle = text.bodyLarge?.copyWith(
+      color: widget.enabled ? app.onSurface : app.onSurfaceVariant,
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -73,9 +76,11 @@ class _AppTextFieldState extends State<AppTextField> {
           enabled: widget.enabled,
           obscureText: _obscured,
           keyboardType: widget.keyboardType,
-          style: text.bodyLarge?.copyWith(
-            color: widget.enabled ? app.onSurface : app.onSurfaceVariant,
-          ),
+          style: inputStyle,
+          // shadcn 的 EditableText 默认 textAlignVertical=top，文字落在编辑盒顶端
+          // （compact 偏上 ~2.8px、child 模式偏上 ~8.7px）。用 forceStrutHeight 把
+          // 行高强制撑满编辑盒（controlH - 4），Flutter 半行距使字形上下均分 → 居中。
+          strutStyle: AppControl.inputStrut(context, inputStyle),
           placeholder: widget.hintText == null
               ? null
               : Text(
@@ -83,7 +88,9 @@ class _AppTextFieldState extends State<AppTextField> {
                   style: text.bodyLarge?.copyWith(color: app.onSurfaceVariant),
                 ),
           cursorColor: app.accent,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          // tight 约束钉死到控件高度，与按钮严格同高（零竖向 padding）。
+          constraints: AppControl.inputConstraintsOf(context),
+          padding: AppControl.inputPadding,
           leading: widget.prefixIcon == null
               ? null
               : Padding(
@@ -95,15 +102,23 @@ class _AppTextFieldState extends State<AppTextField> {
                   ),
                 ),
           trailing: widget.obscureText
-              ? ShadButton.ghost(
-                  width: 36,
-                  height: 36,
-                  padding: EdgeInsets.zero,
-                  onPressed: () => setState(() => _obscured = !_obscured),
-                  child: Icon(
-                    _obscured ? LucideIcons.eye : LucideIcons.eyeOff,
-                    color: app.onSurfaceVariant,
-                    size: 18,
+              ? SizedBox(
+                  // 眼睛切换按钮：用 heightSm（比 tight 32 的输入矮一档 = 28），
+                  // 直接钉死盒尺寸，避免 shadcn ShadButton 内部 padding / 尺寸膨胀
+                  // 把 28 顶成 32+ 撑爆 BoxyColumn。命中区用 GestureDetector 包裹
+                  // Icon（与 AppCard 同套路：无 Material 依赖、尺寸确定）。
+                  width: AppControl.heightSmOf(context),
+                  height: AppControl.heightSmOf(context),
+                  child: GestureDetector(
+                    onTap: () => setState(() => _obscured = !_obscured),
+                    behavior: HitTestBehavior.opaque,
+                    child: Center(
+                      child: Icon(
+                        _obscured ? LucideIcons.eye : LucideIcons.eyeOff,
+                        color: app.onSurfaceVariant,
+                        size: 18,
+                      ),
+                    ),
                   ),
                 )
               : null,
@@ -125,7 +140,7 @@ class _AppTextFieldState extends State<AppTextField> {
           ),
           onChanged: widget.onChanged,
           onSubmitted: widget.onSubmitted,
-        ),
+          ),
         if (hasError) ...[
           const SizedBox(height: AppSpacing.xs),
           Row(
@@ -182,39 +197,44 @@ class AppPickerField<T> extends StatelessWidget {
       children: [
         Text(label, style: text.titleSmall),
         const SizedBox(height: AppSpacing.sm),
-        ShadSelect<T>(
-          initialValue: value,
-          onChanged: (v) {
-            if (v != null) onChanged(v);
-          },
-          selectedOptionBuilder: (context, selected) {
-            final i = values.indexOf(selected);
-            return Text(
-              i >= 0 ? labels[i] : '',
-              style: text.bodyLarge?.copyWith(color: app.onSurface),
-            );
-          },
-          options: [
-            for (var i = 0; i < values.length; i++)
-              ShadOption<T>(
-                value: values[i],
-                child: Text(
-                  labels[i],
-                  style: text.bodyLarge?.copyWith(color: app.onSurface),
+        // ShadSelectTheme 没有 constraints/minHeight 字段，只能在外部钉高：
+        // 不钉的话下拉触发器高度由「文字行高 + padding」撑出，与按钮差 2~3px。
+        ConstrainedBox(
+          constraints: AppControl.inputConstraintsOf(context),
+          child: ShadSelect<T>(
+            initialValue: value,
+            onChanged: (v) {
+              if (v != null) onChanged(v);
+            },
+            selectedOptionBuilder: (context, selected) {
+              final i = values.indexOf(selected);
+              return Text(
+                i >= 0 ? labels[i] : '',
+                style: text.bodyLarge?.copyWith(color: app.onSurface),
+              );
+            },
+            options: [
+              for (var i = 0; i < values.length; i++)
+                ShadOption<T>(
+                  value: values[i],
+                  child: Text(
+                    labels[i],
+                    style: text.bodyLarge?.copyWith(color: app.onSurface),
+                  ),
                 ),
+            ],
+            placeholder: Text(
+              '请选择',
+              style: text.bodyLarge?.copyWith(color: app.onSurfaceVariant),
+            ),
+            decoration: ShadDecoration(
+              disableSecondaryBorder: true,
+              color: app.surfaceRaised,
+              border: ShadBorder.all(
+                color: borderColor,
+                width: 1,
+                radius: BorderRadius.circular(AppRadius.input),
               ),
-          ],
-          placeholder: Text(
-            '请选择',
-            style: text.bodyLarge?.copyWith(color: app.onSurfaceVariant),
-          ),
-          decoration: ShadDecoration(
-            disableSecondaryBorder: true,
-            color: app.surfaceRaised,
-            border: ShadBorder.all(
-              color: borderColor,
-              width: 1,
-              radius: BorderRadius.circular(AppRadius.input),
             ),
           ),
         ),

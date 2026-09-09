@@ -22,7 +22,7 @@ class AppDialog {
     final text = AppTheme.textOf(context);
     await showShadDialog(
       context: context,
-      barrierColor: const Color(0x99000000),
+      barrierColor: app.scrim,
       builder: (_) => ShadDialog(
         closeIcon: const SizedBox.shrink(),
         title: title,
@@ -53,7 +53,7 @@ class AppDialog {
     final text = AppTheme.textOf(context);
     return showShadDialog<bool>(
       context: context,
-      barrierColor: const Color(0x99000000),
+      barrierColor: app.scrim,
       builder: (_) => ShadDialog(
         closeIcon: const SizedBox.shrink(),
         title: title,

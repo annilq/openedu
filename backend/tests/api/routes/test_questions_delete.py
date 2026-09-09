@@ -13,7 +13,7 @@ from sqlmodel import Session as DBSession
 from sqlmodel import select
 
 from app.core.db import engine
-from app.models import Question, Task, TaskQuestion
+from app.db.models import Question, Task, TaskQuestion
 from tests.utils.user import auth_headers, register_parent
 
 

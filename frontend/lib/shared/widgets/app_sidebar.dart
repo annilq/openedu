@@ -203,7 +203,7 @@ class AppSidebarDivider extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
-      child: Container(height: 1, color: scheme.outlineVariant),
+      child: Container(height: 1, color: scheme.outline),
     );
   }
 }

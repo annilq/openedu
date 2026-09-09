@@ -101,7 +101,7 @@ class _WrongQuestionsScreenState extends ConsumerState<WrongQuestionsScreen> {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 440),
           child: Container(
-            padding: const EdgeInsets.all(AppSpacing.xxl),
+            padding: const EdgeInsets.all(AppSpacing.md),
             decoration: BoxDecoration(
               color: scheme.surfaceContainerLow,
               borderRadius: BorderRadius.circular(AppRadius.banner),
@@ -147,7 +147,7 @@ class _WrongQuestionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = AppTheme.colorsOf(context);
     return AppCard(
-      padding: const EdgeInsets.all(AppSpacing.xxl),
+      padding: const EdgeInsets.all(AppSpacing.md),
       margin: const EdgeInsets.symmetric(vertical: 6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

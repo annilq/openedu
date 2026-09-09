@@ -170,8 +170,9 @@ class QuestionModel {
   }
 }
 
-/// 流式出题预览卡（票据 08）：对应后端 `/stream/tasks/generate` 的 `question` 事件
-/// （snake_case，无 id）。仅用于预览展示，不落库；确认后走 batch-generate 持久化。
+/// 流式出题预览卡（票据 08）：对应统一端点 `/assistant/chat` 的 `DATA` 事件
+/// （type=question，result 字段为 snake_case 出题结果，无 id）。仅用于预览展示，
+/// 不落库；确认后走 `/tasks/from-generated` 持久化。
 class QuestionPreview {
   final String subject;
   final int grade;
@@ -224,55 +225,6 @@ class QuestionPreview {
         'difficulty': difficulty,
         'reasoning': reasoning,
       };
-}
-
-/// 出题流式 chunk 信封（ADR-0017）：靠 `type` 多态分发，对齐 AG-UI `BaseEvent.type`。
-///
-/// - [StepChunk]：每题进度锚点（qIndex + label）。
-/// - [ReasoningChunk]：出题推理增量（qIndex + delta），前端打字机揭示；CARD 到达后默认折叠。
-/// - [CardChunk]：成品题卡（qIndex + question 为 [QuestionPreview]）。
-sealed class TaskGenChunk {
-  const TaskGenChunk();
-
-  factory TaskGenChunk.fromJson(Map<String, dynamic> json) {
-    switch (json['type']) {
-      case 'STEP':
-        return StepChunk(
-          (json['q_index'] as int?) ?? 0,
-          (json['label'] as String?) ?? '',
-        );
-      case 'REASONING':
-        return ReasoningChunk(
-          (json['q_index'] as int?) ?? 0,
-          (json['delta'] as String?) ?? '',
-        );
-      case 'CARD':
-        return CardChunk(
-          (json['q_index'] as int?) ?? 0,
-          QuestionPreview.fromJson(json['question'] as Map<String, dynamic>),
-        );
-      default:
-        throw FormatException('unknown TaskGenChunk type: ${json['type']}');
-    }
-  }
-}
-
-class StepChunk extends TaskGenChunk {
-  final int qIndex;
-  final String label;
-  const StepChunk(this.qIndex, this.label);
-}
-
-class ReasoningChunk extends TaskGenChunk {
-  final int qIndex;
-  final String delta;
-  const ReasoningChunk(this.qIndex, this.delta);
-}
-
-class CardChunk extends TaskGenChunk {
-  final int qIndex;
-  final QuestionPreview question;
-  const CardChunk(this.qIndex, this.question);
 }
 
 /// 多学科一卷批量生成的一条规格（ADR-0004 D4）。
@@ -784,43 +736,6 @@ class TutorAskReq {
       };
 }
 
-class TutorAnswer {
-  final String answer;
-  final bool blocked;
-  final String? reason;
-
-  TutorAnswer({required this.answer, required this.blocked, this.reason});
-
-  factory TutorAnswer.fromJson(Map<String, dynamic> json) {
-    return TutorAnswer(
-      answer: json['answer'] as String,
-      blocked: json['blocked'] as bool? ?? false,
-      reason: json['reason'] as String?,
-    );
-  }
-}
-
-/// 伴学答疑的 Genkit flow 最终响应（后端 `tutor_ask` 的 `TutorReply`）。
-/// 经后端 `genkit_fastapi.handle_genkit_request` 以原生 action 端点返回，
-/// 信封内的 `result` 字段即此结构（ADR-0015 / 迁移 08b）。
-/// 注意：后端 `reason` 为 None 时会被 genkit `to_dict` 省略（线上缺省），
-/// `fromJson` 必须容忍缺失，不可断言存在。
-class TutorReply {
-  final String text;
-  final bool blocked;
-  final String? reason;
-
-  const TutorReply({this.text = '', this.blocked = false, this.reason});
-
-  factory TutorReply.fromJson(Map<String, dynamic> json) {
-    return TutorReply(
-      text: json['text'] as String? ?? '',
-      blocked: json['blocked'] as bool? ?? false,
-      reason: json['reason'] as String?, // 容忍缺省
-    );
-  }
-}
-
 class TutorLogModel {
   final String id;
   final int grade;
@@ -1031,3 +946,4 @@ class ModelListResp {
     );
   }
 }
+

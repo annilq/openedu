@@ -16,9 +16,9 @@ class AppToast {
   /// 普通提示。
   static void show(BuildContext context, String message) {
     final app = AppTheme.colorsOf(context);
-    final isDark = app.brightness == Brightness.dark;
-    final bg = isDark ? app.surfaceContainerHigh : const Color(0xFF2F2A24);
-    final fg = isDark ? app.onSurface : app.surfaceContainerLowest;
+    // 走 toast 令牌（此前亮色硬编码 0xFF2F2A24，违反「禁止硬编码十六进制」）。
+    final bg = app.toast;
+    final fg = app.onToast;
 
     ShadToaster.of(context).show(
       ShadToast(

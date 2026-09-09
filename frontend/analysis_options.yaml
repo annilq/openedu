@@ -33,6 +33,11 @@ linter:
   rules:
     # avoid_print: false  # Uncomment to disable the `avoid_print` rule
     # prefer_single_quotes: true  # Uncomment to enable the `prefer_single_quotes` rule
+    # 设计系统硬约束（详见 .impeccable.md）：
+    # - 禁止裸 Text()：一律走 AppTheme.textOf(context) / AppText 令牌；
+    #   analyzer 级强制需 custom_lint（dev_dependency + 一条 LintRule），待联网 pub get 后启用。
+    # - 禁止硬编码 Colors.* / 魔法十六进制：一律走 AppColors 令牌。
+    # - 排版单事实源：字号只改 AppText._typeScale 一处。
 
 # Additional information about this file can be found at
 # https://dart.dev/guides/language/analysis-options

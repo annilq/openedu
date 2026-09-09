@@ -59,6 +59,8 @@
 
 - 一律使用 `lib/shared/theme/app_theme.dart` 导出的 **`App*` 语义组件**（`AppCard` / `AppPrimaryButton` / `AppTextField` / `AppPickerField` / `AppToast` / `AppSidebar` / `AppProgressBar` 等）。
 - **禁止 `Colors.*` 硬编码**；间距 / 圆角 / 字号走 `AppSpacing` / `AppRadius` / `AppText` 令牌。
+- 语义色走 `AppColors` 的语义别名（`semanticPositive(Fg)` / `semanticWarning(Fg)` / `semanticError(Fg)` / `semanticInfo(Fg)` / `aiContainer`），禁止用 `primaryContainer` / `secondaryContainer` / `tertiaryContainer` 表达语义。
+- shadcn 配色**只能**由 `AppTheme.shadThemeData()` 从 `AppColors` 单向映射产生；页面不得 override `ShadColorScheme` / 组件主题。映射契约（含 `accent` 命名陷阱与 `custom` 键命名）见 `frontend/.impeccable.md` 的「Shadcn 映射契约」，新增令牌须同步 AppColors → `custom` → 文档表 → `lib/dev/theme_preview.dart` 四处。
 - 表现层已全面迁移至 **`cupertino_ui`**（`flutter/material.dart` 仅剩 `app_theme.dart` 的窄 `show ThemeMode` 导入，因 `ThemeMode` 无 Cupertino 等价物）；迁移契约见 `frontend/.migration_guide.md`，**不要引入新的 Material widget**。
 
 ## 导航

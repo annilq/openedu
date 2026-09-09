@@ -234,7 +234,7 @@ class _ParentTaskReviewScreenState
       'ready' => ('已锁定', app.primary, app.onPrimary),
       'assigned' => ('已派发', app.secondary, app.onSecondary),
       'done' => ('已完成', app.onSurface, app.surface),
-      _ => ('未知', app.outlineVariant, app.outline),
+      _ => ('未知', app.surfaceSunken, app.onSurface),
     } as (String, Color, Color);
 
     return Container(
@@ -519,7 +519,7 @@ class _QuestionCardState extends ConsumerState<_QuestionCard> {
         borderRadius: BorderRadius.circular(AppRadius.card),
         border: Border.all(color: app.outline),
       ),
-      padding: const EdgeInsets.all(AppSpacing.lg),
+      padding: const EdgeInsets.all(AppSpacing.md),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -730,6 +730,11 @@ class _QuestionCardState extends ConsumerState<_QuestionCard> {
                     child: ShadInput(
                       controller: _optionCtrls[i],
                       style: AppTheme.textOf(context).bodyMedium,
+                      // shadcn 的 EditableText 默认 textAlignVertical=top（文字偏上），
+                      // 用 forceStrutHeight 把行高撑满编辑盒（controlH - 4）使字形居中。
+                      strutStyle: AppControl.inputStrut(
+                          context, AppTheme.textOf(context).bodyMedium),
+                      constraints: AppControl.inputConstraintsOf(context),
                       decoration: _fieldDecoration(app),
                     ),
                   ),
@@ -774,6 +779,11 @@ class _QuestionCardState extends ConsumerState<_QuestionCard> {
         ShadInput(
           controller: _answerCtrl,
           style: AppTheme.textOf(context).bodyLarge,
+          // shadcn 的 EditableText 默认 textAlignVertical=top（文字偏上），
+          // 用 forceStrutHeight 把行高撑满编辑盒（controlH - 4）使字形居中。
+          strutStyle:
+              AppControl.inputStrut(context, AppTheme.textOf(context).bodyLarge),
+          constraints: AppControl.inputConstraintsOf(context),
           decoration: _fieldDecoration(app),
         ),
         const SizedBox(height: AppSpacing.lg),
@@ -909,7 +919,7 @@ class _EmptyHint extends StatelessWidget {
     final app = AppTheme.colorsOf(context);
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(AppSpacing.xxl),
+      padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
         color: app.surface,
         borderRadius: BorderRadius.circular(AppRadius.card),

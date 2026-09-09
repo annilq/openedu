@@ -65,7 +65,7 @@ class ParentOverviewView extends ConsumerWidget {
     final scheme = AppTheme.colorsOf(context);
     return Align(alignment: Alignment.topLeft,
       child: AppCard(
-        padding: const EdgeInsets.all(AppSpacing.xxl),
+        padding: const EdgeInsets.all(AppSpacing.md),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -96,7 +96,7 @@ class ParentOverviewView extends ConsumerWidget {
         const AppLoading.skeletonInline(skeletonLines: 2),
       ProgressError() => AppError(message: progState.message),
       ProgressLoaded() => AppCard(
-          padding: const EdgeInsets.all(AppSpacing.xxl),
+          padding: const EdgeInsets.all(AppSpacing.md),
           child: LayoutBuilder(
             builder: (context, constraints) {
               final wide = constraints.maxWidth >= 560;
@@ -294,7 +294,7 @@ class _StatCard extends StatelessWidget {
                   4,
             )
           : null,
-      padding: const EdgeInsets.all(AppSpacing.xxl),
+      padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
         color: scheme.surfaceRaised,
         borderRadius: BorderRadius.circular(AppRadius.card),

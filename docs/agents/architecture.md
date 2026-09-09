@@ -27,6 +27,9 @@
 | 0019 | 教材版权合规落地方案（上线前内容来源分层 + 公版优先 + 授权路径 + 检索隔离 + CI 检测门禁），操作化 ADR-0012 |
 | 0020 | 云部署生产化（无状态镜像 + 托管 PG + 密钥外置 + 边缘 TLS + CI/CD 质量门禁 + 可观测 + 跨设备同步方向） |
 | 0021 | 多 Agent 架构：业务 SubAgent（出题/伴学/批改/诊断/规划/报告）+ 学科 Persona 参数注入 + 轻主管派发；首轮双 SubAgent 验证 seam |
+| 0024 | Agent Runtime 架构：SubAgent 文件夹化（`app/ai/subagents/<business>/` + manifest）+ `AgentRuntime` 统一发现/加载 + 混合意图路由（规则优先 + LLM 兜底）+ SSE 端点 `POST /api/v1/assistant/chat`；不推翻 ADR-0021 契约 |
+| 0025 | 助手交互协议：AG-UI 式统一事件信封（`USER_MESSAGE`/`ASSISTANT_MESSAGE`/`THINKING`/`TOOL_CALL`/`TOOL_RESULT`/`STEP`/`CARD`/`ERROR`/`DONE`），扩展 ADR-0017 为通用聊天协议 |
+| 0026 | 双端角色感知派发（强化 ADR-008）+ 助手会话持久化（`AssistantSession`/`AssistantEvent`）；废除 `debug_log`，supersede ADR-0022 |
 
 ## 前端 ADR
 
@@ -36,6 +39,7 @@
 | 0002 | 默认中性灰白主题 + 桌面左右分栏壳（替换底部 Tab） |
 | 0003 | Linear 化重设计：密排 15sp + 靛蓝强调 + **删除暖绿**；家长专业体验 > 低龄友好 |
 | 0004 | Task 多学科 + 题库快照隔离（`draft→ready→assigned→done`；`Question`=题库层；`TaskQuestion`=派发快照） |
+| 0006 | 悬浮 AI 助手：全局悬浮按钮 + 对话框入口，`AssistantClient` SSE 调 `POST /api/v1/assistant/chat`，角色感知；复用 tutor 聊天组件 |
 
 ## 关键隔离（任何改动都要守住）
 

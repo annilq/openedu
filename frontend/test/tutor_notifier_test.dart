@@ -4,9 +4,10 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
+import 'package:kids_learn/features/assistant/data/assistant_api_client.dart';
+import 'package:kids_learn/features/assistant/domain/assistant_event.dart';
 import 'package:kids_learn/features/tutor/presentation/providers/tutor_notifier.dart';
 import 'package:kids_learn/shared/data/remote/network_service.dart';
-import 'package:kids_learn/shared/data/remote/genkit_ai_client.dart';
 import 'package:kids_learn/shared/domain/models/models.dart';
 import 'package:kids_learn/shared/exceptions/app_exception.dart';
 
@@ -49,14 +50,54 @@ class FakeNetwork implements NetworkService {
       const Stream<Uint8List>.empty();
 }
 
-/// 不触发 askStream 的测试用假 Genkit 客户端（未存根方法默认抛，但本文件不调用）。
-class _FakeGenkit extends Fake implements GenkitAiClient {}
+/// 假 AssistantApiClient：按预设逐帧产出 AG-UI 事件（统一 /assistant/chat 协议）。
+class _FakeAssistant extends Fake implements AssistantApiClient {
+  _FakeAssistant({this.events = const []});
+  final List<AssistantEvent> events;
+
+  @override
+  Stream<AssistantEvent> streamChat(AssistantChatReq req) =>
+      Stream.fromIterable(events);
+}
+
+/// 假 AssistantApiClient：在 done 完成前保持流挂起（测试防重入）。
+class _PendingAssistant extends Fake implements AssistantApiClient {
+  final Completer<void> done = Completer<void>();
+
+  @override
+  Stream<AssistantEvent> streamChat(AssistantChatReq req) async* {
+    await done.future;
+    yield AssistantEvent(
+      eventType: AssistantEventType.assistantMessage,
+      text: '先算个位，结果是 68。',
+    );
+  }
+}
+
+/// 假 AssistantApiClient：streamChat 直接抛 AppException（模拟非 2xx）。
+class _ThrowingAssistant extends Fake implements AssistantApiClient {
+  _ThrowingAssistant(this._error);
+  final AppException _error;
+
+  @override
+  Stream<AssistantEvent> streamChat(AssistantChatReq req) =>
+      Stream.error(_error);
+}
 
 void main() {
-  group('TutorNotifier', () {
-    test('ask 发送正确 body 并拼接娃娃/AI 气泡', () async {
-      final network = FakeNetwork(responses: {});
-      final notifier = TutorNotifier(network, _FakeGenkit());
+  group('TutorNotifier（统一 /assistant/chat 流式，ADR-0024）', () {
+    test('ask 流式 ASSISTANT_MESSAGE 累加到 AI 气泡', () async {
+      final assistant = _FakeAssistant(events: [
+        AssistantEvent(
+          eventType: AssistantEventType.assistantMessage,
+          text: '先算个位',
+        ),
+        AssistantEvent(
+          eventType: AssistantEventType.assistantMessage,
+          text: '，结果是 68。',
+        ),
+      ]);
+      final notifier = TutorNotifier(assistant);
 
       await notifier.ask(TutorAskReq(
         subject: '数学',
@@ -65,13 +106,6 @@ void main() {
         question: '23 + 45 怎么算',
       ));
 
-      // 请求体字段对齐后端契约（snake_case）
-      final body = network.postBodies.single;
-      expect(body['subject'], '数学');
-      expect(body['grade'], 2);
-      expect(body['knowledge_point'], '加法');
-      expect(body['question'], '23 + 45 怎么算');
-
       final state = notifier.state;
       expect(state, isA<TutorLoaded>());
       final loaded = state as TutorLoaded;
@@ -79,13 +113,14 @@ void main() {
       expect(loaded.messages[0].role, 'child');
       expect(loaded.messages[0].text, '23 + 45 怎么算');
       expect(loaded.messages[1].role, 'ai');
-      expect(loaded.messages[1].text, contains('68'));
+      expect(loaded.messages[1].text, '先算个位，结果是 68。');
       expect(loaded.messages[1].blocked, isFalse);
     });
 
     test('ask 接口异常时保留历史气泡并提示重试', () async {
-      // post 抛错
-      final notifier = TutorNotifier(_ThrowingNetwork(), _FakeGenkit());
+      final notifier = TutorNotifier(
+        _ThrowingAssistant(AppException('网络错误，请稍后重试')),
+      );
 
       await notifier.ask(TutorAskReq(
         subject: '数学',
@@ -94,19 +129,16 @@ void main() {
         question: '1+1',
       ));
 
-      // 出错不再丢失上下文：保留娃娃气泡 + 错误提示气泡
-      final state = notifier.state;
-      expect(state, isA<TutorLoaded>());
-      final loaded = state as TutorLoaded;
+      final loaded = notifier.state as TutorLoaded;
       expect(loaded.messages.length, 2);
-      expect(loaded.messages.last.text, contains('网络异常'));
+      expect(loaded.messages.last.text, contains('网络错误'));
     });
 
     test('提交中重复点击被忽略（防重入）', () async {
-      final network = FakeNetwork(responses: {});
-      final notifier = TutorNotifier(network, _FakeGenkit());
+      final assistant = _PendingAssistant();
+      final notifier = TutorNotifier(assistant);
 
-      // 第一次未 await 完成即第二次调用，应只产生一次请求
+      // 第一次未 await 完成即第二次调用，应只产生一次请求 / 一条娃娃气泡
       final f1 = notifier.ask(TutorAskReq(
         subject: '数学',
         grade: 2,
@@ -119,14 +151,46 @@ void main() {
         knowledgePoint: '加法',
         question: '第二问（应被忽略）',
       ));
+      expect(notifier.state, isA<TutorLoading>());
+
+      assistant.done.complete();
       await Future.wait([f1, f2]);
 
-      expect(network.postBodies.length, 1);
-      expect(network.postBodies.single['question'], '第一问');
+      final loaded = notifier.state as TutorLoaded;
+      expect(loaded.messages.where((m) => m.role == 'child').length, 1);
+      expect(loaded.messages.first.text, '第一问');
     });
 
-    test('服务端业务错误（429/403）透出提示文案', () async {
-      final notifier = TutorNotifier(_BusinessErrorNetwork(), _FakeGenkit());
+    test('INPUT_UNSAFE 错误标记 blocked', () async {
+      final assistant = _FakeAssistant(events: [
+        AssistantEvent(
+          eventType: AssistantEventType.error,
+          code: 'INPUT_UNSAFE',
+          message: '输入含不安全内容',
+        ),
+        AssistantEvent(
+          eventType: AssistantEventType.assistantMessage,
+          text: '这个问题我没法回答哦。',
+        ),
+      ]);
+      final notifier = TutorNotifier(assistant);
+
+      await notifier.ask(TutorAskReq(
+        subject: '科学',
+        grade: 3,
+        knowledgePoint: '',
+        question: '暴力相关内容',
+      ));
+
+      final loaded = notifier.state as TutorLoaded;
+      expect(loaded.messages.last.blocked, isTrue);
+    });
+
+    test('服务端业务错误（429）透出提示文案', () async {
+      final notifier = TutorNotifier(_ThrowingAssistant(
+        AppException('今日 AI 答疑次数已达上限（50 次），明日再来哦～',
+            statusCode: 429),
+      ));
       await notifier.ask(TutorAskReq(
         subject: '英语',
         grade: 2,
@@ -134,9 +198,9 @@ void main() {
         question: 'hi',
       ));
 
-      final state = notifier.state as TutorLoaded;
-      expect(state.messages.last.text, contains('明日再来'));
-      expect(state.messages.last.text, isNot(contains('网络异常')));
+      final loaded = notifier.state as TutorLoaded;
+      expect(loaded.messages.last.text, contains('上限'));
+      expect(loaded.messages.last.text, isNot(contains('网络异常')));
     });
   });
 
@@ -216,6 +280,7 @@ void main() {
       expect(error, isNull);
       final call = network.putCalls.single;
       expect(call.$1, '/tutor/quota');
+      // child_id 走 query 参数（非 body）
       expect(call.$2?['child_id'], 'c1');
       expect(call.$3?['daily_ask_limit'], 5);
       expect(call.$3?['daily_minutes_limit'], isNull);
@@ -264,75 +329,6 @@ void main() {
       expect(state.usage.usedSeconds, 127);
       expect(state.usage.askLimit, 9);
       expect(state.usage.minutesLimit, 30);
-    });
-  });
-
-  group('TutorNotifier 状态机（mocktail）', () {
-    test('Idle → Loading → Loaded（成功迁移）', () async {
-      final network = MockNetworkService();
-      final completer = Completer<dynamic>();
-      when(() => network.post('/tutor/ask', body: any(named: 'body')))
-          .thenAnswer((_) => completer.future);
-      final notifier = TutorNotifier(network, _FakeGenkit());
-
-      expect(notifier.state, isA<TutorInitial>());
-
-      final future = notifier.ask(TutorAskReq(
-          subject: '数学', grade: 2, knowledgePoint: '', question: '1+1'));
-      // 同步进入 Loading，娃娃气泡即时上屏
-      final loading = notifier.state as TutorLoading;
-      expect(loading.messages.length, 1);
-      expect(loading.messages.first.role, 'child');
-
-      completer.complete(
-          {'answer': '答案是 2', 'blocked': false, 'reason': null});
-      await future;
-
-      final loaded = notifier.state as TutorLoaded;
-      expect(loaded.messages.length, 2);
-      expect(loaded.messages.last.text, '答案是 2');
-      verify(() => network.post('/tutor/ask', body: any(named: 'body')))
-          .called(1);
-    });
-
-    test('Idle → Loading → Loaded（AppException 透出提示文案）', () async {
-      final network = MockNetworkService();
-      when(() => network.post('/tutor/ask', body: any(named: 'body')))
-          .thenThrow(HttpException(
-              '今日 AI 答疑次数已达上限（50 次），明日再来哦～',
-              statusCode: 429));
-      final notifier = TutorNotifier(network, _FakeGenkit());
-
-      await notifier.ask(
-          TutorAskReq(subject: '数学', grade: 2, knowledgePoint: '', question: 'hi'));
-
-      final loaded = notifier.state as TutorLoaded;
-      expect(loaded.messages.last.text, contains('上限'));
-      expect(loaded.messages.last.text, isNot(contains('网络异常')));
-    });
-
-    test('Loading 期间重复 ask 被忽略（防重入，仅一次请求）', () async {
-      final network = MockNetworkService();
-      final completer = Completer<dynamic>();
-      when(() => network.post('/tutor/ask', body: any(named: 'body')))
-          .thenAnswer((_) => completer.future);
-      final notifier = TutorNotifier(network, _FakeGenkit());
-
-      final f1 = notifier.ask(TutorAskReq(
-          subject: '数学', grade: 2, knowledgePoint: '', question: '第一问'));
-      final f2 = notifier.ask(TutorAskReq(
-          subject: '数学', grade: 2, knowledgePoint: '', question: '第二问'));
-
-      expect(notifier.state, isA<TutorLoading>());
-      completer.complete(
-          {'answer': 'ok', 'blocked': false, 'reason': null});
-      await Future.wait([f1, f2]);
-
-      final loaded = notifier.state as TutorLoaded;
-      // 只有第一问上屏、只发一次请求
-      expect(loaded.messages.where((m) => m.role == 'child').length, 1);
-      verify(() => network.post('/tutor/ask', body: any(named: 'body')))
-          .called(1);
     });
   });
 
@@ -433,30 +429,6 @@ class _ThrowingNetwork implements NetworkService {
   @override
   Future<dynamic> post(String path, {Map<String, dynamic>? body}) async {
     throw Exception('network error');
-  }
-
-  @override
-  Future<dynamic> put(String path,
-      {Map<String, dynamic>? query, Map<String, dynamic>? body}) async =>
-      null;
-
-  @override
-  Future<dynamic> delete(String path, {Map<String, dynamic>? body}) async => null;
-
-  @override
-  Stream<Uint8List> streamPost(String path, {Map<String, dynamic>? body}) =>
-      const Stream<Uint8List>.empty();
-}
-
-/// post 抛业务异常（如 429 上限）的假网络：验证提示文案透出。
-class _BusinessErrorNetwork implements NetworkService {
-  @override
-  Future<dynamic> get(String path, {Map<String, dynamic>? query}) async => null;
-
-  @override
-  Future<dynamic> post(String path, {Map<String, dynamic>? body}) async {
-    throw HttpException('今日 AI 答疑次数已达上限（50 次），明日再来哦～',
-        statusCode: 429);
   }
 
   @override

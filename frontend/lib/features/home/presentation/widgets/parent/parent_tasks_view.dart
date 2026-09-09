@@ -153,7 +153,7 @@ class _TaskCard extends StatelessWidget {
     final app = AppTheme.colorsOf(context);
     return AppCard(
       onTap: onTap,
-      padding: const EdgeInsets.all(AppSpacing.xxl),
+      padding: const EdgeInsets.all(AppSpacing.md),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

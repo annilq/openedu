@@ -16,7 +16,6 @@ dependencies:
   shared_preferences: ^2.2.0
   cupertino_ui: ^1.0.0
   shadcn_ui: ^0.56.1
-  genkit: ^0.15.1
 
 dev_dependencies:
   flutter_test:
@@ -28,6 +27,30 @@ flutter:
   uses-material-design: true
 
   fonts:
+    # Inter.ttf 是变量字体（含 fvar/gvar 字重轴）。必须按实际用到的字重档显式声明，
+    # 否则 Flutter 只注册 400 一档，w500/w600/w700 会被「合成加粗」(faux-bold)，
+    # 在 macOS/Retina 上表现为发虚、边缘发糙。显式声明后引擎直接取变量轴对应实例。
     - family: Inter
       fonts:
         - asset: assets/fonts/Inter.ttf
+          weight: 400
+        - asset: assets/fonts/Inter.ttf
+          weight: 500
+        - asset: assets/fonts/Inter.ttf
+          weight: 600
+        - asset: assets/fonts/Inter.ttf
+          weight: 700
+    # CJK 回退字体：Noto Sans SC（SIL OFL 授权，可自由内嵌/再分发）。
+    # 注意：设计规范原写 HarmonyOS Sans SC，但其授权限制再分发，不直接打包进 App；
+    # 若有授权文件可放 assets/fonts/ 并改下方 family 即可。变量字体同样按字重档声明，
+    # 与 Inter 一致，避免 CJK 粗体被合成加粗。
+    - family: Noto Sans SC
+      fonts:
+        - asset: assets/fonts/NotoSansSC.ttf
+          weight: 400
+        - asset: assets/fonts/NotoSansSC.ttf
+          weight: 500
+        - asset: assets/fonts/NotoSansSC.ttf
+          weight: 600
+        - asset: assets/fonts/NotoSansSC.ttf
+          weight: 700

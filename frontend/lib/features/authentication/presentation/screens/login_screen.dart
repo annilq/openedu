@@ -139,7 +139,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         color: app.surface,
                         borderRadius: BorderRadius.circular(AppRadius.card),
                         border: Border.all(
-                          color: app.outlineVariant,
+                          color: app.outline,
                           width: 1,
                         ),
                       ),

@@ -260,7 +260,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final scheme = AppTheme.colorsOf(context);
     return Center(
       child: AppCard(
-        padding: const EdgeInsets.all(AppSpacing.xxl),
+        padding: const EdgeInsets.all(AppSpacing.md),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [

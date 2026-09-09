@@ -12,11 +12,11 @@ class ReviewEmptyView extends StatelessWidget {
     final scheme = AppTheme.colorsOf(context);
     return Align(alignment: Alignment.topLeft,
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(AppSpacing.xxl),
+        padding: const EdgeInsets.all(AppSpacing.md),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 440),
           child: Container(
-            padding: const EdgeInsets.all(AppSpacing.xxl),
+            padding: const EdgeInsets.all(AppSpacing.md),
             decoration: BoxDecoration(
               color: scheme.surfaceRaised,
               borderRadius: BorderRadius.circular(AppRadius.banner),

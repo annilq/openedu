@@ -1,10 +1,12 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:genkit/client.dart';
 
 import '../../../../shared/data/remote/network_service.dart';
-import '../../../../shared/data/remote/genkit_ai_client.dart';
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/domain/providers/core_providers.dart';
+import '../../../../shared/exceptions/app_exception.dart';
+import '../../../assistant/data/assistant_api_client.dart';
+import '../../../assistant/domain/assistant_event.dart';
+import '../../../assistant/presentation/provider/assistant_notifier.dart';
 
 // —— 家长端：生成任务 ——
 sealed class TaskGenState {
@@ -41,8 +43,25 @@ class TaskGenPreview extends TaskGenState {
 
 class TaskGenNotifier extends StateNotifier<TaskGenState> {
   final NetworkService _network;
-  final GenkitAiClient _genkit;
-  TaskGenNotifier(this._network, this._genkit) : super(const TaskGenIdle());
+  final AssistantApiClient _assistant;
+  TaskGenNotifier(this._network, this._assistant) : super(const TaskGenIdle());
+
+  /// 把结构化 specs 拼为自然语言 prompt（方案 A）：交后端 question subagent 解析。
+  /// 用「，关于{知识点}」句式，使其自由文本解析能捕获 knowledge_point。
+  String _buildPrompt(List<TaskSpecModel> specs) {
+    const qtypeLabel = {
+      'choice': '选择题',
+      'fill': '填空题',
+      'calc': '计算题',
+      'open': '问答题',
+    };
+    final parts = specs.map((s) {
+      final label = qtypeLabel[s.qtype] ?? '题';
+      final kp = s.knowledgePoint.isNotEmpty ? '，关于${s.knowledgePoint}' : '';
+      return '${s.grade}年级${s.subject}$label${s.count}道$kp';
+    }).toList();
+    return '帮我出${parts.join('、')}';
+  }
 
   Future<void> generate({
     required String childId,
@@ -51,47 +70,66 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
     List<String>? focusInterest,
     String? model,
   }) async {
-    final body = _buildBody(
-      childId: childId,
-      title: title,
-      specs: specs,
-      focusInterest: focusInterest,
-      model: model,
-    );
     final questions = <QuestionPreview>[];
-    var liveIndex = -1;
     var liveLabel = '';
     var liveReasoning = '';
-    // 流式渲染：先连 /ai/tasks/generate 逐题产出信封 chunk（ADR-0017：
-    // STEP → REASONING → CARD），流结束后再把已生成题卡落库为草稿任务。
+    // 方案 A：结构化 specs → 自然语言 prompt，走统一 /assistant/chat 的 question
+    // subagent（AG-UI 事件协议，ADR-0025）；流结束后再把题卡落库为草稿任务。
     state = const TaskGenPreview([], streaming: true);
     try {
-      final stream = _genkit.streamTasks(body);
-      await for (final chunk in stream) {
-        if (chunk is StepChunk) {
-          liveIndex = chunk.qIndex;
-          liveLabel = chunk.label;
-          liveReasoning = '';
-        } else if (chunk is ReasoningChunk) {
-          liveReasoning += chunk.delta;
-        } else if (chunk is CardChunk) {
-          questions.add(chunk.question);
-          liveIndex = -1;
-          liveLabel = '';
-          liveReasoning = '';
+      final stream = _assistant.streamChat(
+        AssistantChatReq(
+          message: _buildPrompt(specs),
+          model: model,
+          focusInterest: focusInterest,
+        ),
+      );
+      await for (final ev in stream) {
+        switch (ev.eventType) {
+          case AssistantEventType.toolCall:
+            liveLabel = ev.label ?? '生成中';
+          case AssistantEventType.thinking:
+            // 路由帧（extra.business）跳过；其它推理增量累加为内联推理。
+            if (ev.extra == null || ev.extra!['business'] == null) {
+              liveReasoning += ev.text ?? '';
+            }
+          case AssistantEventType.data:
+            final type = ev.data?['type'];
+            if (type == 'question' && ev.data?['result'] is Map) {
+              questions.add(
+                QuestionPreview.fromJson(
+                  ev.data!['result'] as Map<String, dynamic>,
+                ),
+              );
+              liveLabel = '';
+            }
+          case AssistantEventType.toolResult:
+            liveLabel = '';
+          case AssistantEventType.error:
+            state = TaskGenError(ev.message ?? '生成失败');
+            return;
+          case AssistantEventType.done:
+            break;
         }
         state = TaskGenPreview(
           List.from(questions),
           streaming: true,
-          liveIndex: liveIndex,
           liveLabel: liveLabel,
           liveReasoning: liveReasoning,
         );
       }
-      await stream.onResult; // 确认流已结束（末帧 result）
-      await _persist(questions, body);
-    } on GenkitException catch (e) {
-      state = TaskGenError(friendlyGenkitError(e));
+      await _persist(
+        questions,
+        _buildBody(
+          childId: childId,
+          title: title,
+          specs: specs,
+          focusInterest: focusInterest,
+          model: model,
+        ),
+      );
+    } on AppException catch (e) {
+      state = TaskGenError(e.message);
     } catch (e) {
       state = TaskGenError('⚠️ 网络异常，请稍后重试');
     }
@@ -135,8 +173,8 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
       final data = await _network.post('/tasks/from-generated', body: body);
       // R3：生成后保持 draft 态，把确认/派发动作交给草稿审核页。
       state = TaskGenSuccess(TaskModel.fromJson(data));
-    } on GenkitException catch (e) {
-      state = TaskGenError(friendlyGenkitError(e));
+    } on AppException catch (e) {
+      state = TaskGenError(e.message);
     } catch (e) {
       state = TaskGenError('⚠️ 保存失败，请稍后重试');
     }
@@ -161,11 +199,10 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
     return body;
   }
 
-  /// 流式预览出题（Genkit 全栈，ADR-0015）：直连后端 `/ai/tasks/generate` 原生
-  /// action 端点，题卡逐张浮现（每帧一道 [QuestionPreview]），不落库；
-  /// 路由层（归属校验 / 输入安全 / 配额）非 2xx 以 [GenkitException] 抛出。
-  /// 完成后返回 [TaskGenPreview]，由 UI 展示题卡并提供「保存为任务」入口
-  /// （保存走 [generate]，复用原有草稿审核流）。
+  /// 流式预览出题（统一入口，ADR-0024）：经 [AssistantApiClient.streamChat] 走
+  /// `/assistant/chat` 的 question subagent，题卡逐张浮现（DATA 事件携带
+  /// [QuestionPreview]），不落库；路由层（归属校验 / 输入安全 / 配额）非 2xx 以
+  /// [AppException] 抛出。
   Future<void> preview({
     required String childId,
     required String title,
@@ -173,46 +210,54 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
     List<String>? focusInterest,
     String? model,
   }) async {
-    final body = <String, dynamic>{
-      'child_id': childId,
-      'title': title,
-      'specs': specs.map((s) => s.toJson()).toList(),
-    };
-    if (focusInterest != null) body['focus_interest'] = focusInterest;
-    if (model != null) body['model'] = model;
-
     final questions = <QuestionPreview>[];
-    var liveIndex = -1;
     var liveLabel = '';
     var liveReasoning = '';
     state = const TaskGenPreview([], streaming: true);
     try {
-      final stream = _genkit.streamTasks(body);
-      await for (final chunk in stream) {
-        if (chunk is StepChunk) {
-          liveIndex = chunk.qIndex;
-          liveLabel = chunk.label;
-          liveReasoning = '';
-        } else if (chunk is ReasoningChunk) {
-          liveReasoning += chunk.delta;
-        } else if (chunk is CardChunk) {
-          questions.add(chunk.question);
-          liveIndex = -1;
-          liveLabel = '';
-          liveReasoning = '';
+      final stream = _assistant.streamChat(
+        AssistantChatReq(
+          message: _buildPrompt(specs),
+          model: model,
+          focusInterest: focusInterest,
+        ),
+      );
+      await for (final ev in stream) {
+        switch (ev.eventType) {
+          case AssistantEventType.toolCall:
+            liveLabel = ev.label ?? '生成中';
+          case AssistantEventType.thinking:
+            if (ev.extra == null || ev.extra!['business'] == null) {
+              liveReasoning += ev.text ?? '';
+            }
+          case AssistantEventType.data:
+            final type = ev.data?['type'];
+            if (type == 'question' && ev.data?['result'] is Map) {
+              questions.add(
+                QuestionPreview.fromJson(
+                  ev.data!['result'] as Map<String, dynamic>,
+                ),
+              );
+              liveLabel = '';
+            }
+          case AssistantEventType.toolResult:
+            liveLabel = '';
+          case AssistantEventType.error:
+            state = TaskGenError(ev.message ?? '生成失败');
+            return;
+          case AssistantEventType.done:
+            break;
         }
         state = TaskGenPreview(
           List.from(questions),
           streaming: true,
-          liveIndex: liveIndex,
           liveLabel: liveLabel,
           liveReasoning: liveReasoning,
         );
       }
-      final result = await stream.onResult;
-      state = TaskGenPreview(result, streaming: false);
-    } on GenkitException catch (e) {
-      state = TaskGenError(friendlyGenkitError(e));
+      state = TaskGenPreview(questions, streaming: false);
+    } on AppException catch (e) {
+      state = TaskGenError(e.message);
     } catch (e) {
       state = TaskGenError('⚠️ 网络异常，请稍后重试');
     }
@@ -224,8 +269,8 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
 final taskGenNotifierProvider =
     StateNotifierProvider<TaskGenNotifier, TaskGenState>((ref) {
   final network = ref.watch(networkServiceProvider);
-  final genkit = ref.watch(genkitAiClientProvider);
-  return TaskGenNotifier(network, genkit);
+  final assistant = ref.watch(assistantApiClientProvider);
+  return TaskGenNotifier(network, assistant);
 });
 
 // —— 娃娃端：今日任务 ——

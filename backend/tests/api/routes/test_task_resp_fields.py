@@ -6,7 +6,7 @@ import uuid
 from sqlmodel import Session as DBSession
 
 from app.core.db import engine
-from app.models import Task
+from app.db.models import Task
 from tests.utils.user import auth_headers, register_parent
 
 TASK_URL = "/api/v1/tasks"

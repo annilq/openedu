@@ -83,7 +83,7 @@ class _SkeletonList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView.builder(
-      padding: const EdgeInsets.all(AppSpacing.lg),
+      padding: const EdgeInsets.all(AppSpacing.md),
       itemCount: lines,
       itemBuilder: (_, i) => Padding(
         padding: const EdgeInsets.only(bottom: AppSpacing.md),

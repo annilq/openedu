@@ -18,8 +18,8 @@ from dataclasses import dataclass
 
 from app.ai.subagents import build_subagent, get_subagent_class, get_subject_persona
 from app.ai.subagents.base import SubAgentContext
-from app.ai.subagents.question_agent import QuestionSubAgent, expand_specs
-from app.ai.subagents.tutor_agent import TutorSubAgent
+from app.ai.subagents.question.agent import QuestionSubAgent, expand_specs
+from app.ai.subagents.tutor.agent import TutorSubAgent
 
 
 @dataclass

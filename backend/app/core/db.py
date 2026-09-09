@@ -146,7 +146,7 @@ def run_migrations() -> None:
 
 def init_db() -> None:
     # 确保模型已注册后再建表（详见 SQLModel 关系初始化注意事项）
-    import app.models  # noqa: F401
+    import app.db.models  # noqa: F401  (feature-first: ORM 集中在 app.db.models)
 
     SQLModel.metadata.create_all(engine)
     run_migrations()

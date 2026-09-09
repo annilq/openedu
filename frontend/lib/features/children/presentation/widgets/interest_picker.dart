@@ -151,13 +151,18 @@ class _CategoryBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final app = AppTheme.colorsOf(context);
     final text = AppTheme.textOf(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.lg),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(category, style: text.labelLarge?.copyWith(fontWeight: FontWeight.w600)),
+          // 分类标题用 onSurface（而非 labelLarge 默认的 onPrimary 白字），
+          // 否则在浅色背景上白字与背景融合、完全看不见。
+          Text(category,
+              style: text.labelLarge
+                  ?.copyWith(fontWeight: FontWeight.w600, color: app.onSurface)),
           const SizedBox(height: AppSpacing.sm),
           Wrap(
             spacing: AppSpacing.sm,

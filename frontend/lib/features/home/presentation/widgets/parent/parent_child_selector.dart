@@ -165,7 +165,7 @@ class _ParentChildSelectorState extends ConsumerState<ParentChildSelector> {
       AppColors scheme, ChildrenState state, SelectedChild? selected) {
     if (state is! ChildrenLoaded) {
       return Padding(
-        padding: const EdgeInsets.all(AppSpacing.lg),
+        padding: const EdgeInsets.all(AppSpacing.md),
         child: Text('加载中...', style: AppTheme.textOf(context).bodyMedium),
       );
     }

@@ -22,23 +22,40 @@ def _create_child(client, ptoken, username="wq_kid"):
 
 
 def _make_task(client, ptoken, child_id, count=1):
-    # 批量生成 draft 草稿（ADR-0004 D4）
+    # 单流：以「已生成题卡」直接落库（POST /tasks/from-generated，唯一业务写库点，ADR-0023）。
+    specs = [
+        {
+            "subject": "数学",
+            "grade": 2,
+            "knowledge_point": "加法",
+            "qtype": "calc",
+            "difficulty": "easy",
+            "count": count,
+        },
+    ]
+    # 预设 count 道确定性题卡（answer 与序号一一对应，便于测试断言）。
+    questions = [
+        {
+            "subject": "数学",
+            "grade": 2,
+            "knowledge_point": "加法",
+            "qtype": "calc",
+            "difficulty": "easy",
+            "stem": f"加法练习 {i}",
+            "options": None,
+            "answer": f"ans{i}",
+            "explanation": f"第 {i} 题解析。",
+        }
+        for i in range(count)
+    ]
     r = client.post(
-        "/api/v1/tasks/batch-generate",
+        "/api/v1/tasks/from-generated",
         headers=auth_headers(ptoken),
         json={
             "title": "错题测试",
             "child_id": child_id,
-            "specs": [
-                {
-                    "subject": "数学",
-                    "grade": 2,
-                    "knowledge_point": "加法",
-                    "qtype": "calc",
-                    "difficulty": "easy",
-                    "count": count,
-                },
-            ],
+            "specs": specs,
+            "questions": questions,
         },
     )
     assert r.status_code == 201, r.text

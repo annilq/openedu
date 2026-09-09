@@ -83,3 +83,17 @@
 - **Pi（pi.dev）**：终端编码代理（coding agent），用作开发期编码助手。
 - **Eve（eve.dev）**：TypeScript durable agent 框架，因与 Python 后端割裂，不作为运行时。
 - **LangChain（已退役，08b）**：原 v1 前的 Python AI 编排运行时（含 `LangChainProvider` / `MockProvider` 双栈）；08b 统一为 Genkit 单栈后整体退役，**不再出现在运行时依赖中**。
+
+## Agent Runtime（悬浮 AI 助手 / 多 Agent 编排，ADR-0024~0026）
+- **AgentRuntime（代理运行时）**：后端新增编排层（`app/ai/runtime/`），负责发现并加载文件夹化 subagent、按意图路由、运行工具循环、产出 AG-UI 事件帧。是悬浮助手的服务端大脑（ADR-0024）。
+- **SubAgent（文件夹化业务代理）**：一个业务能力单元，以统一目录 `app/ai/subagents/<business>/` 组织（`agent.py` + `manifest.yaml` + `tools/` + `skills/`），由 AgentRuntime 统一加载；business 键（如 question/tutor）是其注册索引（ADR-0024）。
+- **manifest（subagent 清单）**：`manifest.yaml`，声明 business 键、name、description、`triggers`（意图关键词/示例）、`roles`（可见角色）、依赖的 tools/skills。runtime 据此发现与路由（ADR-0024/0026）。
+- **tool（可执行工具）**：subagent 运行时可调用的结构化 IO 函数（如 `generate_question`/`list_tasks`/`search_knowledge`）；runtime 工具循环调用（ADR-0024）。
+- **skill（技能资产）**：提示词/方法论资产（注入 system prompt，不可执行），如「出题 SOP」（ADR-0024）。
+- **shared_tool（共享工具）**：跨 subagent 复用的 tool，抽公共文件 `app/ai/tools/`，各 manifest 声明依赖引用（ADR-0024）。
+- **IntentRouter（意图路由）**：混合路由——manifest `triggers` 先规则匹配，未命中走轻量 LLM 分类输出 business key；是「识别用户意图并路由」的实装（ADR-0024）。
+- **AG-UI 统一事件信封**：助手与前端间的流式协议，`{"type": <EventType>}` 判别字段；事件含 `USER_MESSAGE` / `ASSISTANT_MESSAGE` / `THINKING` / `TOOL_CALL` / `TOOL_RESULT` / `STEP` / `CARD` / `ERROR` / `DONE`（ADR-0025；`STEP`/`CARD`/`THINKING` 复用 ADR-0017）。
+- **角色感知派发（role-aware dispatch）**：IntentRouter 按 `role` 过滤可见 subagent，孩子端仅暴露伴学答疑（ADR-0026，强化 ADR-008）。
+- **AssistantSession（助手会话）**：持久化聊天 + 调试会话（id/role/parent_id/child_id/model/status）；其 `AssistantEvent` 既是对话步骤也是调试轨迹，废除原 `debug_log`（ADR-0026，supersede ADR-0022）。
+- **AssistantEvent（助手会话步骤）**：session 内带 role/type/step 的一步（content + payload + 安全/延迟/usage 标记），沿用 ADR-0022 口径（ADR-0026）。
+- **悬浮 AI 助手（Floating Assistant）**：前端全局悬浮按钮 + 对话框入口，双端通用，调 `POST /api/v1/assistant/chat` 经 AgentRuntime 完成「意图识别 → 路由 → subagent 执行 → 事件流」全流程（前端 ADR-0006）。

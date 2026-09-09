@@ -6,7 +6,7 @@ import uuid
 from sqlmodel import Session
 
 from app.core.crypto import decrypt
-from app.models import ModelConfig
+from app.db.models import ModelConfig
 from tests.utils.user import auth_headers, login, register_parent
 
 

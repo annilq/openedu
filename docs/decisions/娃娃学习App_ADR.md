@@ -11,20 +11,21 @@
 - **后果**：一套代码出双端；UI 表现力足；需自行上架/分发；AI 调用必须经后端（前端不藏 key）。
 
 ## ADR-002 后端语言：Python
-- **背景**：AI 编排需成熟生态；LangChain 主力为 Python。
-- **决策**：后端用 Python。
-- **备选**：TypeScript/Node（与 Eve/Pi 同生态）、Python+TS 混合。
-- **后果**：与 LangChain 深度契合；Pi/Eve（TS）不作为运行时，留作开发助手。
+- **背景**：AI 编排需成熟 Python 生态，且后端须与前端（Flutter）解耦、独立部署。
+- **决策**：后端用 Python（FastAPI）。
+- **备选**：TypeScript/Node、Python+TS 混合。
+- **后果**：Python 生态成熟、与 Genkit 等 AI 框架契合（ADR-0015）；前端一律经后端 `/api/v1` 调用，不藏 key（ADR-001）。
 
-## ADR-003 AI 编排框架：LangChain + 自封领域接口
-- **背景**：希望"适配大部分大模型厂商的 provider"，且未来可换框架。
-- **决策**：运行时用 LangChain 做 agent 编排；**不在 LangChain 的 LLM provider 抽象之上重复封装**，改为在"agent 框架层"之上自封一层**领域服务接口**（QuestionGenerator / Grader / KnowledgeRetriever / IntentRouter）+ 框架 adapter。
-- **备选**：直接用 Eve（TS，Vercel AI SDK）、Pi（TS coding agent）、自写 BaseProvider。
-- **后果**：厂商适配交给框架（已支持 100+ 厂商），框架切换由 adapter 隔离；业务代码不绑定具体框架。避免重复造 provider 轮子，同时实现可插拔。
+## ADR-003 AI 编排：框架隔离 + 自封领域接口（Genkit 为底座）
+- **背景**：希望"适配大部分大模型厂商"且未来可换框架；业务代码不应绑定具体 AI 框架。
+- **决策**：运行时 AI 编排底座采用 **`LLMProvider` 抽象 + 可插拔引擎**；底层 LLM 引擎当前为 Genkit Python 版，但**仅经 `app/ai/engine.py`（`engine.genkit`）作为内部引擎调用，不再使用 `genkit-fastapi` 暴露原生 action 端点**（传输 / 编排层已迁至 `AgentRuntime` + 自建 SSE，见 ADR-0024/0025），详见 ADR-0015。在"agent 框架层"之上自封一层**领域服务接口**（`LLMProvider` ABC + 业务 SubAgent/flow）+ 框架 adapter。**业务/domain 代码只依赖 `LLMProvider` 抽象，绝不直接 `import genkit`**（唯一允许边界为 `app/ai/engine.py`）。
+- **备选**：直接把框架对象透传给业务层、为每个厂商手写 BaseProvider。
+- **后果**：厂商适配由框架/解析层隔离（`resolve_engine` 解析真实引擎，解析不到走 flow 内 mock 分支）；业务代码不绑定具体框架，换底座只需改 `app/ai/` adapter；模型可插拔延续（ADR-004）。
+- **历史注**：本 ADR 初版以 LangChain 为底座，后于 ADR-0015 评估并切换为 Genkit 单栈，LangChain 整体退役；抽象隔离原则不变。（**现状**：Genkit 已非「编排单栈」，自 2026-09-08 清理后仅余底层 LLM 引擎角色，`genkit-fastapi` 与原生 action 端点已移除，见 ADR-0024「Genkit 现状」。）
 
 ## ADR-004 LLM 模型：暂不定，provider 抽象可插拔
 - **背景**：国内平板直连、儿童内容合规、长期成本均需评估。
-- **决策**：模型先不绑定；通过 LangChain provider 抽象接入，国产模型走 OpenAI 兼容端点即可。
+- **决策**：模型先不绑定；通过 `LLMProvider` 抽象 + `resolve_engine` 接入（内置 `BUILTIN_MODELS` / 家长 `ModelConfig` 表 / 全局 `LLM_PROVIDER`），国产模型走 OpenAI 兼容端点即可。
 - **备选**：固定腾讯混元 / 智谱 GLM（国内稳定便宜合规）。
 - **后果**：一期可用免费/低成本模型验证；后期按质量与成本选型，无迁移成本。
 
@@ -64,11 +65,6 @@
 - **备选**：强游戏化（闯关/排行榜）、无激励。
 - **后果**：足够形成习惯且不喧宾夺主；排行榜等留待初中阶段。
 
-## ADR-011 Pi / Eve 不作为运行时引擎
-- **背景**：用户曾提及 Pi、Eve 等 agent 框架。
-- **决策**：Pi（终端 coding agent）与 Eve（TS agent 框架）与 Python 后端割裂，不作为应用运行时；Pi 可作开发期编码助手。运行时统一 LangChain。
-- **后果**：技术栈统一在一个 Python 服务内；减少异构运维。
-
 ## ADR-012 教材版权合规约束
 - **背景**：人教版等教材受版权保护。
 - **决策**：开发/自用阶段可使用；凡做成对外分发产品，**上线前必须取得教材版权授权或改用公版/自编内容**。
@@ -83,7 +79,7 @@
   - **丢弃模板的 React 前端**（我们前端是独立 Flutter App）、**丢弃邮箱体系**（无 SMTP/EMAIL/FIRST_SUPERUSER）、**丢弃 Traefik**（家用不需公网 HTTPS）。
   - **保留并采用**：`core/`（config/db/security/deps）、`api/`（deps/main/routes）、`crud.py`、`models.py`、`tests/conftest` 的 db 覆盖模式、pytest、`pyproject`（ruff/hatchling）、Dockerfile、docker-compose。
   - **API 统一前缀 `/api/v1`**；路由：`auth`(register/login, JSON) / `children` / `tasks`(generate/today/answer/checkin/progress) / `health`。
-  - **Python 锁定 3.14**（跟随模板；2026 年中模板已升 3.14，LangChain 等生态应已跟上）。
+  - **Python 锁定 3.14**（跟随模板）。
 - **备选**：仍用手写 async SQLAlchemy 方案；或仅「文档对齐」而不实际脚手架。
 - **后果**：获得生产级认证/测试/部署基线，二次开发收益大；代价是 ORM 由 async 变 sync（本期功能无影响，未来若有高并发实时需求再评估 async）；领域层（`domain/`）仍以「LLMProvider 抽象 + 工厂」保持可插拔，不破坏 ADR-003。
 
@@ -103,43 +99,20 @@
 
 ## ADR-0015 多模型接入（Ollama / 自定义）+ 流式响应 + 轻量 GenUI
 
-> 来源：`/grill-with-docs` 访谈收敛（模型优化 / 本地 Ollama / 流式 UI / GenUI / 前端模型选择器）。配套实现票据见 `../../wayfinder/tickets/08-多模型流式genui.md`。
+> **状态（2026-09-08 更新）**：本 ADR 已被 **ADR-0024 / ADR-0025 取代**——AI 传输层不再是 Genkit 单栈，而是自建 SSE 端点 `POST /api/v1/assistant/chat` + AG-UI 事件信封（见 ADR-0024/0025）；Genkit 仅余底层 LLM 引擎（`app/ai/engine.py`）。本 ADR 中仍成立的**意图**已并入下列现行 ADR，原 Genkit 协议细节全部作废：
+> - 后端统一代理、安全不降级 → ADR-008
+> - 模型可插拔 / 家长自定义 → ADR-004 / ADR-0024
+> - 流式安全缓冲校验 → ADR-008 + ADR-0025
+> - 流式端点范围 → ADR-0024（`/assistant/chat` 统一入口）
 
-### 背景
-一期~三期已用 `MockProvider`（默认）+ `LangChainProvider`（真实模型）跑通全闭环，但存在三点诉求：①家用以**本地 Ollama** 跑模型可零云成本、零外网延迟、数据不出户；②答疑/出题希望**流式输出**改善体感（打字机 / 逐张题卡）；③前端要能**选择后端支持的模型**、出题时**自选或自定义模型**。用户要求参考 CopilotKit 式 GenUI，但前端是 Flutter，而 CopilotKit 无 Flutter SDK；候选官方方案为 Flutter `genui`（alpha，A2UI 原生走 WebSocket）与 Genkit（Flutter 端 `genkit/client.dart` 需接 Genkit flow 后端，而 **Genkit 的 Python 版 `genkit` + `genkit-fastapi` 可在 FastAPI 进程内直接挂 flow、`Accept: text/event-stream` 即 SSE、并支持 `chunk_type` 字段级结构化流式**，故与本项目 Python/FastAPI 栈**兼容**；已采纳为 v1 流式编排引擎（见决策 3 与备选）。
-
-### 决策（六条，均经访谈锁定）
-1. **后端统一代理（守安全）**：Flutter 一律只连 `/api/v1` 的 SSE 端点；Ollama 与自定义模型由后端调用。服务端始终注入 `_SYSTEM` 年龄锁并对娃娃可输入字段跑 `check_input`、对输出跑 `check_output`，**安全层永不绕过**（忠诚 ADR-008）。禁止前端直连任何模型。
-2. **端到端 Genkit 协议（前后端统一，单栈）**：后端把 AI 能力暴露为原生 Genkit flow（经 `genkit-fastapi` 的 `serve_flow`，返回 Genkit 原生 typed structured streaming SSE）；前端改用官方 `package:genkit/client.dart` 的 `defineRemoteAction` 直连这些 flow，**不再维护自定义 SSE 信封**。单一技术栈（后端 flow + 前端 genkit client）避免双协议/双客户端/双测试的长期维护成本（见迁移文档 `../../wayfinder/migration-08b-genkit-fullstack.md`）。GenUI catalog 仍作为按需扩展点保留，本决策仅确定「协议统一」，不强制 catalog 式生成式 UI。
-3. **改用 Genkit Python 编排流式 flow（替代原「LangChainProvider 扩展」方案）**：流式 AI 输出（答疑逐字 + 出题逐张题卡）由 Genkit flow 编排，新增 `app/ai/`（**唯一允许 `import genkit` 的边界**，类比原 `LangChainProvider` 作为 langchain 适配层）承载：`Genkit` 实例、`serve_flow`/SSE 挂载、模型解析（Ollama / OpenAI-compat / 内置，按 `ModelConfig` + settings 把 `provider/model_name` 解析为 `ollama/{m}` / `openai/{m}`）与工具调用（T11 知识库检索作接地工具）。**ADR-003 延续**：业务/domain 代码仍只依赖 `LLMProvider` ABC 与非流式路径（`MockProvider` 供测试、`LangChainProvider` 供非流式真实调用），`genkit` 不被业务代码直接 import；流式端点由 API 层调用 `app/ai` 的 flow。
-4. **模型注册 = 配置驱动 + 家长自定义**：内置模型由 settings/env 声明并暴露 `GET /api/v1/models`（parent 可见）；家长自定义模型落 `ModelConfig` 表（仿 `TutorQuota`，按 `parent_id` 持久化：`label / provider('ollama'|'openai_compat') / base_url / model_name / api_key(加密)`）。**模型选择器仅家长可用**；娃娃继承家长默认模型，娃娃端不暴露下拉（避免娃娃自选未授权/不安全模型）。请求参数 `model`（id 或内置 id）可选，缺省走家长默认或全局 `DEFAULT_MODEL`。
-5. **流式安全 = 缓冲 + 整体校验后放行**：`/tutor/ask/stream` 先 `check_input` 拦越狱（命中即发 `safety_refusal` 不再调模型）；通过后后端**缓冲全量 token、跑整体 `check_output`**，通过才向娃娃放量，违规则整段替换为 `SAFE_REFUSAL`。儿童端绝不闪现违规片段。v1 接受"首字延迟=整段生成耗时"的代价；后续可叠加 chunk 级软过滤作增强层。
-6. **v1 流式端点范围**：`POST /api/v1/tutor/ask/stream`（答疑逐字）+ `POST /api/v1/tasks/generate/stream`（出题逐张题卡）。两处均前置现有 `require_role` + `check_quota` + `check_input`；`/tasks/generate/stream` 每生成一题经安全检查后再发 `question` 事件。
-
-### SSE 事件信封（契约）【退役中 → 见迁移文档 `../../wayfinder/migration-08b-genkit-fullstack.md`】
-> 2026-09-01 决策：前后端统一 Genkit 协议，前端改用 `package:genkit/client.dart` 的 `defineRemoteAction` 直连后端原生 flow，本自定义信封将随 `app/api/routes/stream.py` 退役。下方仅作迁移期对照。
-```
-event: token        data: {"text": "…"}          # 答疑文本增量
-event: question      data: {<QuestionModel JSON>}  # 一题完成（出题流）
-event: safety_refusal data: {"reason": "…"}       # 越狱/敏感被拦
-event: done          data: {"usage": {"seconds": N}}  # 流结束 + 用量（供 quota 累计）
-event: error         data: {"message": "…"}        # 500/502 友好文案
-```
-（历史实现）前端用 Dio/HttpClient 解析 SSE，`Riverpod` notifier 追加 token → 气泡打字机；`question` 事件入列表 → 题卡逐张浮现。迁移后改为 Genkit 原生 typed structured streaming。
-
-### 备选
-- **前端直连 Ollama**：延迟更低，但绕过 ADR-008 安全层，否决。
-- **Genkit（Python 版）— 已采纳为统一 AI 栈**：经用户复核并 2026-09-01 拍板「前后端统一 Genkit 协议」，Genkit 的 Python 版 `genkit`+`genkit-fastapi` 在 FastAPI 进程内跑 flow（无 Node 依赖）、内置 SSE、`chunk_type` 字段级结构化流式，与本项目栈兼容；**前端同步采用 `package:genkit/client.dart` 的 `defineRemoteAction` 直连后端 flow**，前后端单一 Genkit 协议。原「非流式真实调用走 LangChainProvider 以避免第二套框架」的折中已被推翻——统一后 `LangChainProvider` 退役，非流式真实调用也走 Genkit OpenAI 插件，彻底单栈（详见迁移文档 `../../wayfinder/migration-08b-genkit-fullstack.md`）。
-- **`genui` catalog 真·GenUI**：最贴近 CopilotKit，但 alpha + WebSocket 协议 + 提示词/schema 工程重，v1 否决、留作扩展点。
-- **新增直连 HTTP provider 绕过 LangChain**：流式性能略好，但偏离 ADR-003 框架抽象，否决。
-
-### 后果
-- 本地 Ollama 可零云成本/零外网跑模型；流式首字即显（答疑）与逐张题卡（出题）显著提升低龄体感（即用户所言"模型优化"的体感收益）。
-- 流式编排改由 Genkit 承担：`chunk_type` 字段级结构化流式天然适配"出题逐张题卡"，工具调用一等公民使 T11 知识库检索可作接地工具，且自带 Dev UI 追踪；`serve_flow` 直接挂 FastAPI 路由、原生 SSE。
-- 框架 import 隔离延续 ADR-003：`genkit` 仅存在于 `app/ai/`（flow 层），业务/domain 仍只依赖 `LLMProvider` ABC；前端改依赖 `genkit` Dart 客户端（`package:genkit/client.dart`）直连 flow，**前后端单一 Genkit 协议**。`MockProvider` 独立类退役、改为 flow 内 mock 分支；`LangChainProvider` 退役、非流式真实调用并入 Genkit。模型可插拔（ADR-003/004）延续。安全防线在流式下仍由后端 flow 独占（ADR-008 不降级）。
-- 安全防线在流式下仍由后端独占，儿童内容防护不降级。
-- 代价：①v1 答疑首字有整段生成延迟（本地 Ollama 通常可接受）；②需新增 `ModelConfig` 表与加密存储（api_key 用 Fernet，密钥取 settings）；③`genui` 真·GenUI 暂未采用，若后续要 CopilotKit 式交互需另立票；④需引入 SSE 客户端与事件解析（前端新增 ~1 个网络层 + notifier 改造）。
-- 默认 Ollama 地址 `OLLAMA_BASE_URL`（默认 `http://localhost:11434`）；provider 调用失败返回 502 友好文案，**不静默回退 MockProvider**（除非显式 `MODEL_FALLBACK=mock`）。
+- **背景（要点）**：家用以本地 Ollama 零云成本跑模型；答疑/出题要流式改善体感；前端要能选模型。用户曾参考 CopilotKit 式 GenUI，但终因 Flutter 端无 SDK 且 Genkit 单栈方案已被取代，本 ADR 不再作为实现依据。
+- **决策（仅存意图，实现见上述 ADR）**：
+  1. 后端统一代理守安全（Ollama/自定义模型由后端调用，前端不直连任何模型）。
+  2. 模型注册配置驱动 + 家长自定义（`ModelConfig` 表）；模型选择器仅家长可用。
+  3. 流式安全 = 缓冲全量 token + 整体 `check_output` 后放行，儿童端绝不闪现违规片段。
+  4. 统一流式端点 `POST /api/v1/assistant/chat`（取代原 `/tutor/ask/stream`、`/tasks/generate/stream`）。
+- **备选**：前端直连 Ollama（否决，绕过 ADR-008）；`genui` catalog 真·GenUI（v1 否决，留扩展点）。
+- **后果**：本地 Ollama 可零云成本跑模型；模型选择器仅家长可用；安全防线在流式下仍由后端独占（ADR-008）；`ModelConfig` 表与加密存储（Fernet）落地。
 
 ## ADR-0016 合并「生成任务」与「预览出题」为统一「出题」流程（先出题 → 手动同步到任务/题库）
 
@@ -150,12 +123,12 @@ event: error         data: {"message": "…"}        # 500/502 友好文案
 - **「生成任务」**：流式渲染题卡后立即 `POST /tasks/from-generated` 自动落库为 `draft` 任务（延续 R3）。
 - **「预览出题」**：流式渲染题卡但**不落库**，需手动点「保存为任务」才落库。
 
-两者都是同一个 Genkit flow `tasksGenerate`（`POST /api/v1/ai/tasks/generate`，ADR-0015）的流式消费 + 同一个落库端点 `POST /tasks/from-generated`，仅"流结束后是否自动落库"不同。这造成两套心智——一个静默建草稿、一个不建——与家长的真实心理（"先看 AI 出什么题，再决定拿去派发还是留着好题"）一致性差；且「生成任务」会误产家长并不想要的草稿。
+两者都消费同一套「出题流式预览 → `POST /tasks/from-generated` 落库 draft」能力（ADR-0015 已并入 ADR-0024/0025 的统一端点），仅"流结束后是否自动落库"不同。这造成两套心智——一个静默建草稿、一个不建——与家长的真实心理（"先看 AI 出什么题，再决定拿去派发还是留着好题"）一致性差；且「生成任务」会误产家长并不想要的草稿。
 
 另一处缺口：当前草稿题 `TaskQuestion.question_id = None`（R-Q1=c），**不入题库**，AI 生成的好题在任务用完即弃，无法沉淀为可复用题源；家长期望的"挑好题留存"尚非主流程。
 
 ### 决策（六条，经 /grill-with-docs 访谈锁定）
-1. **统一入口为单一「出题」按钮**：删除「生成任务」「预览出题」两个并列按钮，合并为「出题」。点击后按规格（学科/年级/知识点/题型/数量、兴趣聚焦、模型）流式产出题卡预览（逐张浮现，沿用 ADR-0015 协议）。
+1. **统一入口为单一「出题」按钮**：删除「生成任务」「预览出题」两个并列按钮，合并为「出题」。点击后按规格（学科/年级/知识点/题型/数量、兴趣聚焦、模型）流式产出题卡预览（逐张浮现，经 ADR-0024/0025 统一端点）。
 2. **先出题、后显式同步（手动）**：预览态**不自动落库**。题卡下方提供两个独立动作——「存为任务」「加入题库」——均由家长主动触发，可独立或同时执行。消除"自动建草稿"的隐性行为。
 3. **题库同步粒度 = 逐题多选**：预览页每张题卡可勾选；「加入题库」只把勾选的题写入题库（新建 `Question` 行），未勾选的不入。实现"挑好题留存"。
 4. **任务落库态 = draft**：「存为任务」仍落库为 `draft`（延续 R3），进入草稿审核页再派发，不直派。
@@ -172,136 +145,35 @@ event: error         data: {"message": "…"}        # 500/502 友好文案
 - 家长心智统一：先出题、后决定去向（派发 or 留存），符合自然决策顺序；消除「生成任务」误产草稿。
 - 题库首次成为一等公民：好题可沉淀复用，后续「从题库建任务」`from-bank` 直接消费。
 - 关联引用使题库为唯一真源，编辑题库可联动任务；级联删除需显式处理（被引用题库题禁止删，或任务题 `question_id` 置 NULL）。
-- 实现影响：前端入口合并（删两按钮、加「出题」+ 预览多选 + 两动作）、`home_notifier` 状态机微调（预览态新增 `selectedForBank` 集合）；后端新增 `POST /questions/bank/bulk`、复用 `from-generated`；**流式渲染代码（Genkit flow、SSE 协议）不变**。
+- 实现影响：前端入口合并（删两按钮、加「出题」+ 预览多选 + 两动作）、`home_notifier` 状态机微调（预览态新增 `selectedForBank` 集合）；后端新增 `POST /questions/bank/bulk`、复用 `from-generated`；**流式渲染经 ADR-0025 统一 AG-UI 事件信封**（见 ADR-0024/0025）。
 - 安全：入题库题仍过 `check_output`（生成时已校验，落库前再确认），不降低 ADR-008 防线。
 - 向后兼容：`from-bank`、`from-generated` 端点保留；仅前端入口重排，旧草稿任务数据不受影响。
 
-## ADR-0017 出题推理过程流式通道（合并 thinking+typing 为 REASONING chunk，参考 AG-UI）
+## ADR-0017 出题推理过程流式通道（合并 thinking+typing 为推理流，参考 AG-UI）
 
-> 来源：`/grill-with-docs` 访谈收敛（R6 后续）。修订 ADR-0016 中「流式渲染代码（Genkit flow、SSE 协议）不变」一句——本 ADR 正是 SSE chunk 信封的演进。
+> **状态（2026-09-08 更新）**：本 ADR 的 `REASONING`/`STEP`/`CARD` 信封已被 **ADR-0025 的 AG-UI 事件信封**（`THINKING`/`STEP`/`DATA` 等）广义化取代；传输层统一收敛到 `POST /api/v1/assistant/chat`（ADR-0024/0025）。出题实现现由 `app/ai/subagents/question` 编排，推理流经 AG-UI `THINKING`/`DATA` 事件下发。原信封协议细节（数据结构 / AG-UI 映射表 / 时序图）已作废。
 
 ### 背景
-R6 分析指出：当前 `tasks_generate` 走 `engine.genkit.generate_stream(..., output_schema=QuestionSchema)` 结构化输出，**后端每题只发 1 个 chunk（成品题卡）+ 末帧 result**，中间无任何 token 流。体验上「每生成一题都要干等，题卡整张弹出」，割裂感来自此处。用户期望在客户端**持续看到 AI 的出题推理过程**，并消除等待的空窗。
+R6 分析：原出题流每题仅发 1 个成品题卡 chunk，无中间推理 token 流，体验割裂。用户希望客户端**持续看到 AI 出题推理过程**、消除等待空窗。
 
-访谈澄清并锁定两个概念（此前方案误拆为 think/typing/card 三个类型，已纠正）：
-- **`card`（题卡）** = 最终结构化题目（stem/options/answer/explanation），是数据，不变。
-- **`thinking`（出题推理）** = 模型「怎么设计这道题」的文字说明；**`typing`（打字机）** = 前端把这段推理文字**逐字揭示的动画效果**——它**不是数据类型**，而是 `reasoning` 通道的呈现方式。
-
-⇒ 合并后的产物 = **单一 `REASONING` 通道**，承载模型出题思路文字，前端用打字机动画渲染；`card` 仍是独立题卡数据。原 think+typing 二合一即指此。
-
-### 决策（八条）
-1. **单一推理通道 `REASONING`**：废弃「think / typing / card 三类型」拆法，SSE 只新增一种 chunk 类型 `REASONING`（增量 `delta`），与既有 `CARD` 并列；`typing` 是 `REASONING` 的客户端打字机动画，不进入协议。
-2. **信封沿用 AG-UI 多态 `type` 判别**：每个 chunk 是一个 JSON 对象，靠 `type` 字段分发（`REASONING` / `STEP` / `CARD`），对齐 AG-UI 的 `BaseEvent.type` 多态约定（见映射表）。这是对我们现有 Genkit `chunk_type=dict` 帧（`data: {"message": <chunk>}`）的最小扩展——chunk 由「裸 QuestionOut」变为「带 `type` 的信封」，传输层不变。
-3. **发射顺序（每道题）**：`STEP`（进度提示）→ `REASONING`×(0..N)（推理增量）→ `CARD`（成品题卡）。`STEP` 对应 AG-UI `STEP_STARTED`，给家长"正在为《数学》三年级「分数」出选择题"的进度锚点。`REASONING` 仅在**该题 CARD 到达前**作为题卡上方的内联流式区逐字揭示；CARD 到达后该内联区折叠（见决策 9），避免占据纵向空间。
-4. **末帧 `result` 不变**：流式结束帧仍为 `List[QuestionOut]`（题卡列表），与 ADR-0015/0016 契约一致；`REASONING` 纯属流式 UX，**不进 result 帧**，避免 `fromResponse`/`onResult` 改动面。
-5. **推理来源 = 混合**（访谈选定）：
-   - **打底（所有模型，含 mock）**：`QuestionSchema` 增 `reasoning: str` 字段，单次结构化调用即拿到整段推理；后端发**一个 `REASONING` chunk**（整段为 `delta`），**客户端打字机动画揭示**（零额外成本、模型无关）。
-   - **升级（reasoning 模型）**：当所选模型被 `resolve_engine` 标记为 `supports_reasoning`（如 DeepSeek-R1 / o-series，`engine.py` 新增布尔位），后端在结构化调用期间**实时读取提供方的思维链 token**（Genkit chunk 的 `reasoning`/provider 专用字段），边到边发 `REASONING` 增量——这才是真·服务端持续推流，填满等待空窗。
-6. **推理仅预览态、不落库**：`REASONING` 是生成期 UX artifact，**不入题库/任务表**，零 DB 迁移；刷新或落库后消失（符合「出题过程」的瞬时性质）。`QuestionPreview` 上的 `reasoning` 字段仅用于流结束后在预览态内存中兜底展示，不写入 `Question`/`TaskQuestion` ORM。
-7. **粒度 = 逐题**：每段推理用 `q_index` 与题卡关联；出题循环内每题重置 `REASONING` 缓冲，UI 在对应题卡上方展示「AI 怎么想的」。
-8. **mock 确定性推理**：`_mock_question` 增确定性 `reasoning` 文本（如"围绕知识点 X 设计 Y 题，难度 Z，干扰项按常见误区设置"），保证零 key 也演示流式推理。
-9. **CARD 到达后默认折叠 REASONING + 卡片 info icon 展开**：多题并排/矩阵排布时，内联推理区会让每张卡片纵向过长、难以一览。约定——某题 `CARD` 到达后，该题的实时推理区**默认折叠隐藏**，`REASONING` 文本以 `question.reasoning` 形式随题卡落于预览态内存；**每张题卡右上角常驻一个 info icon**，点击以 popover / bottom-sheet 展开「AI 出题思路」面板展示该题 `reasoning`（仅展示、不编辑、不落库）。这样多题以紧凑卡片矩阵呈现（生成时持续可见推理、成稿后一览无压），按需点开单题推理。info icon 是**纯前端交互**，不新增任何 SSE 字段（`reasoning` 已随 `CARD` 的 `QuestionOut` 下发，见决策 6）。
-
-### 数据结构
-
-**后端（Pydantic，`app/ai/flows.py` / `models.py`）**
-```python
-# 信封：靠 type 多态分发（对齐 AG-UI BaseEvent）
-class TaskGenReasoningChunk(BaseModel):
-    type: Literal["REASONING"] = "REASONING"
-    q_index: int
-    delta: str                      # 推理增量；打底路径整段一次性下发，客户端打字机揭示
-
-class TaskGenStepChunk(BaseModel):
-    type: Literal["STEP"] = "STEP"
-    q_index: int
-    label: str                      # "正在为《数学》三年级「分数」出选择题…"
-
-class TaskGenCardChunk(BaseModel):
-    type: Literal["CARD"] = "CARD"
-    q_index: int
-    question: dict                  # QuestionOut.model_dump()
-
-TaskGenChunk = TaskGenReasoningChunk | TaskGenStepChunk | TaskGenCardChunk
-
-# QuestionSchema / QuestionOut 增字段（打底路径承载整段推理）
-class QuestionOut(BaseModel):
-    ...
-    reasoning: str = ""             # 出题推理过程（仅预览展示，不落库）
-```
-发射：`ctx.send_chunk(chunk.model_dump())`（chunk_type=dict 不变）；`generate_questions_stream` 内部改为 yield 标记项 `(kind, payload)`，flow 映射为信封 chunk。
-
-**前端（Dart，`models.dart` / `genkit_ai_client.dart` / `home_notifier.dart`）**
-```dart
-sealed class TaskGenChunk {
-  const TaskGenChunk();
-  factory TaskGenChunk.fromJson(Map<String, dynamic> json) => switch (json['type']) {
-    'REASONING' => ReasoningChunk(json['q_index'] as int, json['delta'] as String),
-    'STEP'      => StepChunk(json['q_index'] as int, json['label'] as String),
-    'CARD'      => CardChunk(json['q_index'] as int,
-                             QuestionPreview.fromJson(json['question'] as Map<String, dynamic>)),
-    _ => throw FormatException('unknown chunk type: ${json['type']}'),
-  };
-}
-class ReasoningChunk extends TaskGenChunk { final int qIndex; final String delta; }
-class StepChunk extends TaskGenChunk { final int qIndex; final String label; }
-class CardChunk extends TaskGenChunk { final int qIndex; final QuestionPreview question; }
-
-// QuestionPreview 增可选字段（流结束兜底展示，向后兼容旧服务端）
-class QuestionPreview {
-  final String reasoning; // 默认 ''，旧 chunk 不含时忽略
-  ...
-}
-```
-客户端接线：`_tasksGenerate` 的 chunk 泛型由 `QuestionPreview` 改为 `TaskGenChunk`；`fromStreamChunk: (d) => TaskGenChunk.fromJson(d)`；`onResult` 仍为 `List<QuestionPreview>`（不变）。`home_notifier` 循环按 `q_index` 累积 `reasoningBuffers`：
-- **生成中**：`ReasoningTypewriterWidget` 在题卡上方内联区逐字揭示该题 `REASONING` 流（打字机）。
-- **CARD 到达后**：内联区折叠隐藏，`question.reasoning` 随卡落下；卡片右上角渲染 `CardReasoningInfoButton`（info icon），`onTap` 以 popover / `showModalBottomSheet` 展开「AI 出题思路」面板（只读 `question.reasoning`，不编辑、不落库）。多题以紧凑卡片矩阵排布，按需点开单题推理。
-```dart
-// 卡片右上角 info icon → 展开 question.reasoning（默认折叠，按需查看）
-class CardReasoningInfoButton extends StatelessWidget {
-  final QuestionPreview question;
-  // onTap: showModalBottomSheet / popover 展示 question.reasoning（标题 "AI 出题思路"）
-}
-```
-
-### AG-UI 事件映射（参考而非照搬）
-| 本方案 | AG-UI 事件 | 说明 |
-|---|---|---|
-| `STEP` chunk | `STEP_STARTED` | 每题进度锚点（AG-UI 用 `step_name`，我们用 `label`） |
-| `REASONING` 增量 | `REASONING_MESSAGE_CONTENT` / `REASONING_MESSAGE_CHUNK` | 出题思路逐片；AG-UI 另有 `REASONING_START`/`END` 我们用「CARD 到来即结束」隐含，不显式发 |
-| `CARD` chunk | `TEXT_MESSAGE_CONTENT`（结构化变体） | 成品题卡；AG-UI 此处是自由文本，我们替换为结构化题卡 |
-| 末帧 `result` | `RUN_FINISHED.result` | 题卡列表 |
-| 错误帧 | `RUN_ERROR` | 沿用现有 `error: {"message":...}` 帧（main.py monkeypatch） |
-
-> 不引入 AG-UI 的 `STATE_SNAPSHOT`/`TOOL_CALL_*`（出题流无共享状态机/工具调用），保持信封最小。
-
-### 发射时序（单题）
-```
-后端                                  前端
-STEP{q_index:0,label}  ────────▶  进度条："正在出题第1题"
-REASONING{delta:"围绕…"} ──────▶  题卡上方「AI 出题思路」内联区逐字揭示（生成中可见；
-                                  reasoning模型：token 边到边；
-                                  打底：整段到客户端后打字机动画）
-CARD{q_index:0,question} ──────▶  题卡浮现 → 上方推理区折叠隐藏(默认)；
-                                  卡片右上角出现 info icon，
-                                  点按 popover 展开 question.reasoning
-（下一道 q_index:1 重复；多题以紧凑卡片矩阵并排，每卡右上角常驻 info icon）
-… 全部完成 ─────────────────▶  result: [card0, card1, …]  → onResult(List<QuestionPreview>)
-```
+### 决策（核心 UX 意图，协议见 ADR-0025）
+1. **单一推理通道**：模型「怎么设计这道题」的文字说明（reasoning）与「题卡」（最终结构化题目，数据）分离；前端将推理文字以打字机动画揭示——typing 是呈现方式，非数据类型。
+2. **逐题粒度**：每段推理与题卡按题关联，UI 在对应题卡上方展示「AI 怎么想的」。
+3. **CARD 到达后默认折叠推理 + 卡片 info icon 展开**：多题并排时内联推理区过长；约定题卡到达后内联区折叠，题卡右上角常驻 info icon，点按以弹层展开「AI 出题思路」（只读、不编辑、不落库）。
+4. **推理仅预览态、不落库**：推理是生成期 UX artifact，不入题库/任务表，零 DB 迁移。
+5. **混合推理来源**：打底（所有模型）= 结构化调用即拿整段推理，客户端打字机揭示；升级（reasoning 模型，如 DeepSeek-R1 / o-series）= 实时读取思维链 token 边到边推流。
+6. **mock 确定性推理**：零 key 也演示流式推理。
 
 ### 备选
-- **保留 think/typing 两个独立类型**：区分"思考内容"与"打字效果"。否决——typing 是动画非数据，拆出徒增协议复杂度（访谈已纠正）。
-- **每题 2 次调用真·流式（两阶段）**：推理真逐字。否决为默认——2x 成本/延迟；仅当 reasoning 模型原生支持时走升级路径（决策 5 已覆盖真流式诉求）。
-- **推理入库为题元数据**：否决（选决策 6 仅预览态），避免 DB 迁移与版权/安全复核面扩大。
-- **整次连续推理不按题切分**：否决（选决策 7 逐题），保留推理与题卡的对应关系。
+- 保留 think/typing 两个独立类型（否决，typing 是动画非数据）。
+- 每题 2 次调用真·流式（否决为默认，2x 成本；reasoning 模型原生支持时走升级路径）。
+- 推理入库为题元数据（否决，避免 DB 迁移与复核面扩大）。
 
 ### 后果 / 实现影响
-- 体验：出题过程持续可见、等待空窗被推理流填补（reasoning 模型下为真流式），割裂感消除。
-- 协议：SSE chunk 由裸 `QuestionOut` 升级为带 `type` 的信封；**传输帧格式（`message`/`result`/`error`）、`chunk_type=dict`、末帧 result 形状均不变**，向后兼容旧前端（旧 `fromStreamChunk` 仅解析 `QuestionOut`，升级前不读 `type`）。
-- 代码改动面：`flows.py`（`generate_questions_stream` 改 yield 标记项 + `tasks_generate` 发信封）、`engine.py`（`EngineResolution.supports_reasoning`）、`models.py`/`QuestionOut`（`reasoning` 字段）、`models.dart`（`TaskGenChunk` 密封类 + `QuestionPreview.reasoning`）、`genkit_ai_client.dart`（chunk 泛型 + `fromStreamChunk`）、`home_notifier.dart`（按 `q_index` 累积推理 + 打字机态 + CARD 到达折叠）、预览 UI 新增 `ReasoningTypewriterWidget`（生成中内联揭示）与 `CardReasoningInfoButton`（卡片右上角 info icon，点按弹出该题 `reasoning`）。
-- 安全：推理文本不落库、不进 `check_output` 复核链（仅成品题卡过 ADR-008 闸门），不降低现有防线。
-- **实现状态：✅ 已落地（2026-09-01）**。后端 `flows.py`/`engine.py` 发信封 chunk（`STEP`/`REASONING`/`CARD`）+ `supports_reasoning`；`QuestionOut`/`QuestionSchema` 增 `reasoning`；前端 `models.dart` 增 `TaskGenChunk` 密封类与 `QuestionPreview.reasoning`，`genkit_ai_client.dart` 改 chunk 泛型，`home_notifier.dart` 按 `q_index` 累积推理并在 CARD 到达后折叠，`parent_task_form_view.dart` 新增 `_PreviewGenerating`（内联打字机推理）+ `_PreviewCard` 右上角 info icon（`_showReasoningSheet` 弹出 `reasoning`）+ 共享 `ReasoningTypewriterWidget`。流式回归测试 `test_generate_stream.py::test_generate_stream_emits_envelope` 断言每题 `STEP`/`REASONING`/`CARD` 齐全且 reasoning 非空；后端 pytest 全绿（133 passed/3 skipped），前端 `lib/` 改动 `flutter analyze` 零警告。
-- 工作量：后端流式回归测试已随实现补齐（mock 推理 chunk 断言）。
+- 体验：出题过程持续可见、等待空窗被推理流填补（reasoning 模型下为真流式）。
+- 协议：经 ADR-0025 AG-UI 信封（`THINKING`/`STEP`/`DATA`）下发，向后兼容现行前端。
+- 安全：推理文本不落库、不进 `check_output` 复核链（仅成品题卡过 ADR-008 闸门）。
+- **实现状态：✅ 已落地**，推理流经 `app/ai/subagents/question` + `assistant_api_client.dart`（AG-UI SSE 客户端）消费 `THINKING`/`DATA` 事件。
 
 ## ADR-0018 文档目录结构对齐 ai.md（根目录散落文档归一化）
 
@@ -378,7 +250,7 @@ CARD{q_index:0,question} ──────▶  题卡浮现 → 上方推理区
 
 ### 备选
 - **继续纯本地 / 局域网**：无法对外分发，否决（与上线目标冲突）。
-- **Serverless（如云函数跑 FastAPI）**：冷启动 + Genkit 长流式适配成本高，v1 否决，留作演进。
+- **Serverless（如云函数跑 FastAPI）**：冷启动 + 长流式 SSE 适配成本高，v1 否决，留作演进。
 - **BaaS（Supabase 等）替换自研后端**：与现有 SQLModel/FastAPI 栈重复，否决。
 - **前端直连托管模型**：绕过 ADR-008 安全层，否决（须始终经后端 `/api/v1`）。
 
@@ -386,7 +258,7 @@ CARD{q_index:0,question} ──────▶  题卡浮现 → 上方推理区
 - 具备对外分发能力：HTTPS 后端 + 托管 PG + 密钥外置 + 自动构建部署。
 - 引入运维成本（监控/密钥轮换/证书续期）；需先清零 `flutter analyze` 既有错误以满足 CI 门禁。
 - 本地 Ollama 零云成本体验保留给 Tier-0 家用；对外版本默认走托管模型（数据出户需告知家长）。
-- 与既有决策一致：ADR-003（框架隔离）、ADR-008（安全不降级）、ADR-0015（Genkit 单栈）在云端不变。
+- 与既有决策一致：ADR-003（框架隔离）、ADR-008（安全不降级）、ADR-0024/0025（统一助手端点）在云端不变。
 
 ## ADR-0021 多 Agent 架构：业务 SubAgent + 学科 Persona 参数
 
@@ -425,39 +297,150 @@ CARD{q_index:0,question} ──────▶  题卡浮现 → 上方推理区
 - **预留演进**：接口契约支持未来无痛升级为完整 LLM supervisor，不锁定当前轻形态。
 - **成本**：伴学多步规划会增加一次到数次 LLM 调用，须受 `quota` 约束（ADR-008）；其余业务单次调用，无额外开销。
 
-## ADR-0022 AI 运行可观测：conversation + message 调试库
+## ADR-0022 AI 运行可观测：conversation + message 调试库（已废弃 → 见 ADR-0026）
+> **状态：已废弃**。本 ADR 的 `conversation`/`message` 调试库已被 **ADR-0026** 的 `AssistantSession`/`AssistantEvent` 取代（表重命名 + 会话持久化 + 废除 `debug_log`）。原文（背景 / 决策 / 术语 / 后果）已失效，决策理由见 ADR-0026。
 
-> 来源：三期 MVP 闭环已落地（出题 / 伴学 / 批改 / 复习 / 掌握度），进入「打磨完善」期。需在不出生产环境的前提下，完整回放一次 Agent 运行（系统提示 → 检索 → 推理 → 题卡/答案 → 工具调用），用于调试模型输出与定位 bad case。
+## ADR-0023 出题数据流单流收口（删 batch-generate 分叉 + 生成核心收敛 + debug_log 终态化）
+
+> 来源：`/codebase-design` 设计复盘 + 用户「数据流单一、不分叉」诉求。直接执行 **ADR-0016 决策 6**（"两动作均消费同一批已流式题卡，避免二次生成"）。
 
 ### 背景
-- 现有 `TutorLog` 只存「一问一答」（question + answer + 安全标记），且服务**家长可见合规**（ADR-008）：驱动家长端答疑日志页（`parent_tutor_logs_view.dart`）与每日提问次数上限（`count_tutor_today`）。它是扁平单行，无法还原 Agent 运行的多步结构。
-- 一次出题/批改本质是**多步 Agent 运行**：系统提示 → 学科 Persona 注入 → 知识库检索（RAG）→ 出题推理（reasoning）→ 结构化题卡/批改结果 → 可能的工具调用。调试要能按步骤回放，而不是只看首尾。
-- 用户诉求：新建 `message` 表记录 AI 返回的数据，且明确「本意是方便调试 Agent 输出」。
-- 主流对话存储范式（OpenAI Chat / Anthropic / LangChain chat memory）均为 `conversation`（一次会话/运行）+ `message`（带 `role` 的一步），本项目在此范式上补充业务关系。
+ADR-0016 已确立单流出题：点击出题 → `POST /ai/tasks/generate`（SSE 只读流）→ 前端实时预览 → 家长确认后 `POST /tasks/from-generated` 落库为 `draft`。**有且仅有 `from-generated` 一个业务写库点**。
 
-### 决策（六条）
-1. **两张表，不合并**：`conversation` = 一次 Agent 运行（运行类型 `kind`、归属 `parent_id`、触发者 `child_id`、所用模型、状态）；`message` = 运行内带 `role`+`step` 的一步。一张扁平表压扁中间过程，否决。
-2. **message 用 `role` + `step` 两列**：`role ∈ {system, user, assistant, tool}`（谁产生），`step ∈ {input, retrieval, reasoning, generation, tool_call, output, error}`（运行到哪一步）。调试可按 `step` 过滤还原全过程；`tool` 角色覆盖工具调用（参数/结果存 `payload`）。
-3. **content（TEXT）+ payload（JSON）双列**：`content` 存人类可读文本（家长/调试可读），`payload` 存结构化原始数据（题卡 dict / 模型原始响应 / 检索块 / 工具参数），兼顾可读与回放/复现。
-4. **与 `TutorLog` 边界清晰、不重复**：`TutorLog` 继续管答疑合规（家长可见 + 每日上限，已上线接 UI），`conversation/message` 只做 **Agent 运行调试库**（出题 / 批改 / 通用 agent 流）。答疑不写入调试库，避免双份存储。
-5. **业务关系补在 conversation 上**：`parent_id`（owner 隔离，呼应题库闭环）、`child_id`（触发者，出题可为 null=家长）、`model`（模型引用，内置 id / ModelConfig id）、`ref_task_id`（关联生成的 Task，便于追溯「这卷题为啥长这样」）、`status`（running/done/error/blocked）。`message` 经 `conversation_id` 归属，自身只带 `model`/`input_safe`/`output_safe`/`blocked`/`latency_ms`/`usage`（token）。
-6. **`kind` 用开放 str**：初始值 `question`(出题) / `grade`(批改) / `agent`(通用 agent 运行，含 subagent 流)；未来加 `summarize`/`explain` 直接加字符串值，无需迁移。不引数据库 ENUM（sqlite 无原生枚举、postgres ENUM 需迁移）。
+但后续回归出两条分叉，破坏单流：
+
+1. **`POST /tasks/batch-generate` 老分叉**：该端点走 `_generate_task_questions_for_specs` → `_gen_question`，**自己重新生成题 + 自己写 `TaskQuestion`**，完全绕过 SSE 预览与 `from-generated`。前端生成按钮虽已改用 `from-generated`，该路径仍是"用另一套调用链生成、落另一批题"的僵尸分叉；且被 6 个测试当作建草稿任务入口，掩盖了分叉。
+2. **`debug_log` 生成期并行写库**：ADR-0022 的 `debug_log` 在 出题生成流中逐条 `INSERT` `conversation`/`message`。这等于"agent 输出 → DB"出现了**第二个写入点**，与"数据流单一、不分叉"正面冲突（尽管它 fire-and-forget、不阻断主流程，属观察侧）。
+3. **两套出题实现漂移**：SSE 用 `flows.generate_questions_stream` + `_mock_question`；非流式/regenerate 经 `provider.generate_question` → `flows.generate_question`。两套 prompt 构建（`_build_stream_prompt` vs `_build_question_prompt`）与装配/安全逻辑各自一份，长期必漂移。
+
+### 决策（四条）
+1. **删除 `batch-generate` 分叉（含 `create_single_subject_task` 兼容端点）**：生成算法本就共享（`_gen_question` 内部也调 `provider.generate_question`），分叉只在"自生成 + 自写库"。删除后，业务写库点只剩 `from-generated`，单流闭合。
+2. **regenerate 路径接到共享生成核心**：`_gen_question` 重写为对 `app.ai.generate_question` 的薄封装（真实引擎走 `resolve_engine` 解析结果；产出不安全时回退确定性 mock，保证题量完整）。整卷/单题重生成与 SSE 共用同一算法，根除漂移。
+3. **`debug_log` 终态化（消息完整后落库）**：`start_agent_run` 仅在内存开缓冲区并返回 `conv_id`；`log_agent_message` 累积到内存；**`finish_agent_run` 一次性把 `conversation` + 全部 `message` 落库**。生成/流式期间零 DB 写，"agent 输出 → DB"不再有并行分叉，仅作为运行结束后的观察侧终端 sink。函数名不变，`flows.py` 调用点零改动。
+4. **抽取共享装配/安全 `_assemble_question`**：`generate_question`（一次性）与 `generate_questions_stream`（流式）共用同一"解析 dict → `check_output` → 类型化题"逻辑，mock 分支共用 `_mock_question`。两 adapter（流式 / 一次性）共存于单一核心之上，符合"两 adapter 即真实 seam"原则。
 
 ### 备选
-- **单一扁平 message 表（早期方案）**：实现快，但压扁多步过程，调试价值低，否决。
-- **conversation/message 取代 TutorLog（统一）**：单一数据源，但要改写家长答疑日志页 + 每日上限计数 + 落库路径，且答疑相对简单不值得进调试库；保留 TutorLog 更低风险，否决统一。
-- **数据库 ENUM 约束 kind/role/step**：类型安全，但加值需迁移、sqlite 体验差；开放 str 更灵活，否决。
-
-### 术语（Glossary）
-- **Conversation（AI 运行）**：一次 Agent 运行的容器；聚合其所有 message，携带运行类型/归属/模型/状态。
-- **Message（运行步骤）**：conversation 内带 `role` 与 `step` 的一步记录；`content` 可读文本 + `payload` 结构化原始数据。
-- **role（消息角色）**：`system`（系统提示）/ `user`（用户/前端输入）/ `assistant`（模型输出）/ `tool`（工具调用）。
-- **step（运行阶段）**：`input`（请求）/ `retrieval`（检索）/ `reasoning`（推理）/ `generation`（生成中）/ `tool_call`（工具调用）/ `output`（最终输出）/ `error`（异常）。
-- **Agent 运行调试库**：`conversation`+`message` 组成的、与 `TutorLog` 职责分离的 AI 可观测存储，用于回放与定位 bad case。
+- **保留 batch-generate 作薄适配层**：仍并行存在写库路径，与单流诉求冲突 → 否决。
+- **debug_log 完全移除**：失去回放能力 → 否决（保留为终态观察侧）。
+- **debug_log 仅留日志不写库**：最纯但 `/debug` 回放 UI 失效 → 否决（用户选终态落库，保留回放）。
 
 ### 后果
-- **可完整回放**：出题/批改一次运行的全过程可逐步还原，调试 Agent 输出从「盲猜」变「可查」。
-- **零重复**：答疑仍走 `TutorLog`，调试库只覆盖多步 Agent 运行，职责正交。
-- **低风险落地**：新建表由 `SQLModel.metadata.create_all` + `run_migrations` 的 `CREATE TABLE IF NOT EXISTS` 自动建表；落库用 try/except 包裹，调试日志失败绝不阻断主流程（同 `_log_tutor`）。
-- **可观测性**：`status`/`latency_ms`/`usage`(token)/`blocked` 使「哪步慢 / 哪个被安全拦截 / 花多少 token」可量化。
-- **成本**：每条 AI 运行多写若干 message 行；调试库建议后续接保留期/TTL（不在本期范围），避免无限膨胀。
+- **数据流单一闭合**：生成（只读 SSE）→ 确认（`from-generated` 唯一写库）→ 状态翻转（`/confirm`），无并行写库分叉。
+- **零漂移**：regenerate 与 SSE 共用 `generate_question` 核心；装配/安全逻辑单点。
+- **观察侧不污染主链**：debug 落库只在运行结束后发生，生成/流式性能与正确性不受其影响。
+- **测试迁移**：6 个依赖 `batch-generate` 建任务的测试改为经 `from-generated`（预置题卡）建草稿；`test_batch_generate_model` 改写为针对 `/regenerate` 走共享核心（选模型 → 经 `resolve_engine` 解析引擎）的回归测试，原意图保留。
+- **风险**：删除 `batch-generate` 是公开端点变更；前端已不使用，仅需清理 `models.dart`/`question_bank_remote_data_source.dart` 中残留的 `batch-generate` 注释。
+
+## ADR-0024 Agent Runtime 架构：文件夹化 SubAgent + 统一发现/加载 + 混合意图路由
+
+> 来源：用户需求「前端悬浮 AI 助手 + 后端 agent runtime（定义协议/事件类型、默认文件化加载 subagent、识别意图并路由）」+ grill-with-docs 设计拷问（2026-09-08）。承接 ADR-0021 的 seam，不推翻 `BaseSubAgent` 契约。
+
+### 背景
+- ADR-0021 已立 seam：`BaseSubAgent`（ABC，`handle(intent, ctx)`）+ `SubAgentRegistry`（business key → 类）+ 两个活体 subagent（question/tutor）+ 学科 Persona。但 subagent 是**纯 Python 类**，新增业务需改 registry 注册代码；缺「文件化组织 / tool / skill / 意图识别」层。
+- 悬浮助手要「一句话办多件事」：出题 / 查任务 / 伴学答疑 / 诊断。调用方不再预先知道 business，需 runtime 从自由文本识别意图并路由。
+- 用户明确：subagent 以**统一目录结构**组织（含 tool/skill/shared_tool），由主 agent **统一加载**；且要保留出题/伴学那 ~250 行重逻辑（不强行纯 YAML）。
+
+### 决策（六条）
+1. **SubAgent = 统一文件夹**：`app/ai/subagents/<business>/`，固定结构 = `agent.py`（BaseSubAgent 子类或 handler 入口）+ `manifest.yaml`（business 键、name、description、`triggers`、`roles`、依赖的 tools/skills）+ `tools/`（本 subagent 专用可执行函数）+ `skills/`（提示词/方法论资产）。现有扁平文件（question_agent.py / tutor_agent.py）折叠进对应文件夹（迁移）。
+2. **AgentRuntime 统一发现/加载**：新增 `app/ai/runtime/`，含 `discover_subagents()`（扫描 `subagents/` 目录 → 读 manifest → 实例化 handler → 注册进 `SubAgentRegistry`）；进程启动（或首请求）惰性加载。新增 subagent = 丢文件夹，零改 registry 代码。
+3. **tool / skill / shared_tool 三方语义**：tool=可执行函数（结构化 IO，runtime 工具循环调用，如 `generate_question`/`list_tasks`/`search_knowledge`）；skill=提示词/方法论资产（注入 system prompt，不可执行，如「出题 SOP」）；shared_tool=跨 subagent 复用 tool，抽公共文件 `app/ai/tools/`，各 manifest 声明依赖引用（用户确认：shared_tool 只是代码组织方式，非独立目录概念）。
+4. **混合意图路由（IntentRouter）**：manifest 声明 `triggers`（关键词/示例/正则）；runtime 先规则匹配（零延迟零成本，命中即路由），未命中走一次轻量 LLM 分类（把全部 subagent 的 name+description+triggers 作候选喂入，输出 business key + 抽取参数）。分类失败兜底 → 默认 `tutor`（伴学答疑）或安全拒答。
+5. **SSE 传输端点**：新增 `POST /api/v1/assistant/chat`（StreamingResponse, `text/event-stream`）。前端发一条 user message（含 role/session_id），后端 `AgentRuntime.run()` 异步产出 AG-UI 事件帧推送（见 ADR-0025）。不复用 genkit_fastapi（其 action 帧格式与自有信封不符，且意图路由+工具循环不在 genkit action 模型内）。
+6. **保持 ADR-0021 契约不动**：`BaseSubAgent.handle(intent, ctx)` 仍是执行契约；出题/伴学那 ~250 行逻辑留在各自 `agent.py` 的 handler 内，runtime 只负责发现、路由、工具循环、事件吐出，不吞算法。学科 Persona 退化为 question subagent 的 skill 资产或 runtime 共享注入。
+
+### 备选
+- **纯声明式（subagent=YAML，runtime 解释执行，无 Python 类）**：最文件化，但出题 ~250 行（JSON 分块解析/安全闸门/mock 回退/RAG）无法纯声明，安全闸门难嵌 → 否决（用户初选后澄清为「统一目录 + 统一加载」，非纯 YAML）。
+- **维持代码类 + 仅补工具目录**：改动最小，但「文件化组织」只是软约定，runtime 无法自动发现 → 否决。
+- **复用 genkit flow 做助手**：genkit action 帧与 AG-UI 信封需再适配，意图路由塞进 flow 绕 → 否决。（现状：该备选已落定为「不采用」——2026-09-08 清理中 Genkit flow 与原生 action 端点已从 `app/ai/flows.py` / `main.py` 彻底移除，Genkit 仅余底层 LLM 引擎角色，见下「Genkit 现状」。）
+
+### 后果
+- 新增 subagent 零代码注册（丢文件夹 + manifest）。
+- 意图识别泛化（自然语言「帮我出几道三年级分数的题」→ 路由 question）。
+- 与 ADR-0021 seam 兼容，出题/伴学零重写。
+- 成本：混合路由每轮最坏多一次 LLM 分类调用（规则命中则零）。
+- 迁移：扁平 `subagents/*.py` 折叠为 `subagents/<business>/` 文件夹；`subject_personas.py` 归位为共享 skill 或 runtime 注入。
+
+### 实现备注（2026-09-08 落地）
+- **端点收敛已完成（用户指令「所有 AI 功能统一经 `/api/v1/assistant/chat`」）**：
+  - 废除的生成类端点：`POST /api/v1/ai/tutor/ask`（原 Genkit flow）、`POST /api/v1/ai/tasks/generate`（原 Genkit flow）、`POST /api/v1/tutor/ask`（legacy subagent 路径）。三者的 Genkit flow 实现已从 `app/ai/flows.py` 删除；`app/features/ai/router.py` 现仅保留家长回放端点（见下），`app/features/tutor/router.py` 不再挂任何 AI 生成路由（仅 `/logs` `/quota` `/usage` 治理接口）；前端相关调用已全部改走统一端点。
+  - 统一入口实现于 `app/features/assistant/router.py`：`POST /api/v1/assistant/chat`（SSE），`AgentRuntime` 负责发现 / 路由 / 事件吐出 / 会话落库（复用 `Conversation`/`Message`，ADR-0026）。
+- **Genkit 现状（2026-09-08 清理后）**：Genkit 已从「编排 / 传输层」**完全退役**——`genkit_fastapi` 已移除，项目不再暴露任何 Genkit 原生 action 端点；意图路由与工具循环由 `AgentRuntime` 自管，不再依赖 genkit 的 action 模型。Genkit **仅**作为底层 LLM 引擎，经 `app/ai/engine.py`（`engine.genkit.generate[_stream]`）被各 SubAgent 间接调用；业务代码只依赖 `LLMProvider` 抽象，不直接 `import genkit`（唯一边界为 `app/ai/engine.py`）。ADR-0024 决策 5「不复用 genkit_fastapi」与备选「复用 genkit flow」均已落定为「不采用」。
+- **保留的端点（非 AI 生成，属治理 / 可观测，不并入生成流）**：
+  - `GET /api/v1/ai/debug/conversations[/id]`：家长回放自家 Agent 运行（读同一张 `Conversation`/`Message` 表）。
+  - `GET/PUT /api/v1/tutor/quota`、`GET /api/v1/tutor/logs`、`GET /api/v1/tutor/usage`：T10 家长管控 + ADR-008 家长可见日志（与 `AssistantSession` 职责正交，ADR-0026 决策 5）。
+- **实现偏差**：manifest 用 `manifest.py`（`MANIFEST` dict）替代原决策的 `manifest.yaml`——项目未引入 PyYAML 依赖，folder discovery 直接读 `manifest.py` 的 `MANIFEST`，零新增依赖。
+
+## ADR-0025 助手交互协议：AG-UI 式统一事件信封
+
+> 来源：同上。扩展 ADR-0017 的出题专用信封为通用聊天协议。
+
+### 背景
+- ADR-0017 定义出题流式信封 `STEP`/`REASONING`/`CARD`（AG-UI `type` 多态约定）。悬浮助手是通用对话，还需 user/assistant 文本、thinking、工具调用可视化、错误、结束。复用 `type` 判别字段，避免前端维护两套解析。
+
+### 决策（四条）
+1. **统一信封**：`{"eventType": <EventType>, ...payload}`。事件类型集合 = `USER_MESSAGE`(回显用户输入) / `ASSISTANT_MESSAGE`(文本 delta) / `THINKING`(推理 delta，ADR-0017 `REASONING` 的通用化) / `TOOL_CALL`(工具名+参数) / `TOOL_RESULT`(工具输出) / `STEP`(进度锚点，复用 ADR-0017) / `DATA`(已收集到的结构化数据如题卡，复用 ADR-0017) / `ERROR` / `DONE`。
+2. `STEP`/`DATA`/`THINKING` 与 ADR-0017 语义/字段一致，前端已有分发器可复用扩展。
+3. 前端单一 `fromChunk(eventType, payload)` 分发器；SSE 帧 `data: {eventType, ...}`（与现有 `message`/`result` 传输帧兼容，信封在 payload 内）。
+4. **安全**：输出经 `check_output` 通过后才发 `ASSISTANT_MESSAGE`/`DATA`；违规 → `ERROR`(或安全兜底文本) + `DONE`，不向娃娃暴露拒绝原因（ADR-008）。
+
+### 备选
+- **双协议并存**（聊天简单 SSE + 出题 ADR-0017 信封）：前端两套解析，对话内出题混流难 → 否决。
+- **纯文本流 + 末帧产物**：丢 thinking/工具可视化 → 否决。
+
+### 后果
+- 前端一个分发器覆盖所有 AI 交互（答疑/出题/助手）。
+- 与 ADR-0017 兼容，题卡浮现逻辑复用。
+
+## ADR-0026 双端角色感知派发 + 助手会话持久化（废除 debug_log，supersede ADR-0022）
+
+> 来源：用户决策「悬浮助手双端通用 + 角色感知」「保留会话并废除 debug_log，统一按助手会话 debug」。supersede ADR-0022。
+
+### 背景
+- ADR-008：娃娃端永远拿不到标准答案；双层防护。悬浮助手双端显示，必须按角色过滤可见 subagent（孩子端不暴露出题/查任务答案，只暴露伴学答疑）。
+- ADR-0022 建 `conversation`/`message` 调试库 + `debug_log` 模块（genkit flow 内调用）；ADR-0023 已将其「终态化」（`finish_agent_run` 一次性落库）。用户现要求废除 `debug_log`，统一以「助手会话」做 debug——一次会话既是对话记录，也是家长可见调试轨迹。
+
+### 决策（五条）
+1. **角色感知派发**：IntentRouter 按当前 `role`（parent/child）过滤 subagent 清单——child 仅可见 `tutor`（伴学答疑），parent 可见全部（question/tutor/查询任务/诊断等）。manifest 加 `roles: [parent, child]` 字段作过滤器。
+2. **AssistantSession 持久化**：新建 `AssistantSession`（id, role, parent_id, child_id, model, status, created_at）+ `AssistantEvent`（session_id, role, type/step, content, payload, input_safe, output_safe, blocked, latency_ms, usage, created_at）。聊天跨会话保留（家长可回看）。
+3. **废除 `debug_log`**：移除 `app/ai/debug_log.py` 及 `start_agent_run`/`log_agent_message`/`finish_agent_run` 全部调用点；调试记录改由 `AssistantSession`/`AssistantEvent` 承担——一次助手运行 = 一条 session + 其 events（含 input/retrieval/reasoning/generation/tool_call/output/error 步骤，沿用 ADR-0022 的 role/step 口径）。ADR-0022 的 `conversation`/`message` 表重命名为 `AssistantSession`/`AssistantEvent`（复用其 schema，不新建平行表）。
+4. **多轮上下文**：session 落库后后端直接按 `session_id` 读历史维持多轮；前端只需带 `session_id`，无需全量回传 history。
+5. **TutorLog 不动**：答疑合规计数（每日上限 + 家长日志页）仍走 `TutorLog`（已上线接 UI）；`AssistantSession` 仅做统一对话/调试记录，二者职责正交（同 ADR-0022 边界）。
+
+### 备选
+- **纯无状态（不保留会话）**：「再出两道类似的」丢上下文 → 否决。
+- **保留 debug_log 并行**：与「统一会话 debug」诉求冲突、双份存储 → 否决（用户明确废除）。
+- **助手会话取代 TutorLog**：需改写合规页 + 计数，范围大 → 否决（保持正交）。
+
+### 后果
+- 双端安全：孩子端不暴露出题/答案（ADR-008 强化）。
+- 单一调试面：助手运行回放 = 读 `AssistantSession` events，废除 `debug_log` 模块。
+- 跨会话对话：家长可回看助手历史。
+- 迁移：删 `debug_log` 调用点（flows.py 等）；新建/重命名 `AssistantSession`/`AssistantEvent` 表（SQLModel metadata + `run_migrations` `CREATE TABLE IF NOT EXISTS` 幂等）。
+
+## ADR-0027 后端包结构：Feature-First（模块化单体）
+
+> 来源：用户决策「将该项目 backend 改成 feature first 架构」。目标——每个业务能力自包含（路由 + schema + 仓储 + 服务同目录），消除分层巨型文件跨目录跳跃。
+
+### 背景
+- 原 backend 是「分层 + 半 feature」混合体：`app/api/routes/` 路由已按 feature 命名（auth/children/tasks/review/mastery/tutor/questions/models/assistant/ai/health），但 `app/models.py`（659 行 ORM + Pydantic 混杂）、`app/crud.py`（1274 行集中仓储）、`app/domain/`（10 个业务文件）是**集中单体**。`api/` 与 `domain/` 两层割裂，改一个能力要在 3+ 目录间跳。
+- `crud.py` 自身 `import app.domain.mastery / app.domain.review_scheduler`，`app/ai` 依赖 `app/domain`（provider/safety/retriever/quota + grader/tutor）——`domain/` 实质是**跨 feature 共享内核**，不能无脑拆散。
+- children 是 `User` 行（`role="child"`），无独立 `Child` 表；`Task→Child→User` 靠外键跨 feature 互引。
+
+### 决策（五条）
+1. **Feature 包自包含**：每个业务能力拥有 `app/features/<name>/`（`router.py` + `schemas.py` + `repository.py` + `service.py` 按需）。11 个 feature：`health / auth / children / questions / model_management / tasks / review / mastery / tutor / ai / assistant`。
+2. **ORM 表集中**：SQLModel 表统一在 `app/db/models/`（按表拆文件：`user/task/question/model_config/progress/tutor/conversation` + `base`）。模块化单体标准做法——避免 feature 间循环导入（跨 feature 外键只指向 `app.db.models`，不指向具体 feature）。
+3. **共享内核保留**：`app/domain/`（provider/safety/retriever/quota 等 AI 基础设施，被 4+ feature 与 `app/ai` 共用）与 `app/core/`（config/security/errors/db/deps）不拆；`app/ai`（Genkit 仅作底层 LLM 引擎，经 `engine.genkit` 调用）+ `app/ai/subagents`（ADR-0024/0021 编排）是跨 feature 的 AI runtime，留在 `app/ai` 不在 feature 包内。
+4. **依赖收敛**：所有 feature router 从 `app.core.deps` 取 `CurrentUser / CurrentParent / CurrentChild / CallerDep / SessionDep`；原 `app.api.deps` 删除，升格为 `app/core/deps`。`app/api/main.py` 仅 `include_router` 各 feature router，不再有 `app/api/routes/`。
+5. **删除集中文件**：删 `app/models.py`、`app/crud.py`；其 ORM 落 `app/db/models`、Pydantic schema 落各 feature `schemas.py`、仓储落各 feature `repository.py`。
+
+### 备选
+- **ORM 按 feature 拆表**：否决——`Task→Child→User` 跨 feature 外键会逼出延迟导入/字符串外键，循环依赖风险高。
+- **domain 完全拆进 feature service**：部分采纳——feature 专属逻辑随 feature 走；但被多 feature 共用的 AI 内核（provider/safety/retriever/quota）留 `app/domain`，否则要造重复定义或破坏 `app/ai`。
+- **一次性全量 vs 增量试点**：执行采用「保留共享内核的前提下逐 feature 包落地」——既非全量重写也非单点试点，靠 `pytest` 全程绿作安全网。
+
+### 后果
+- feature 自包含：新增/修改某能力主要动一个目录；两个巨型文件（models.py/crud.py）消除。
+- 跨 feature 唯一真理源收敛为 `app/db/models`（ORM）+ `app/domain`（共享业务/AI 内核）+ `app/core`（横切）。
+- 迁移落点：11 个 feature 包；tests + `app/ai` 的 import 全部 repoint 到 `app.db.models` / `app.features.*`；`pytest` 120 passed / 3 skipped。
+- 日志归属澄清：`TutorLog`/`TutorUsage` 落库**只由悬浮助手端点**（`app/features/assistant/router.py` 的 `event_stream` finally，带真实 `grade`）负责，SubAgent/`tutor_ask` flow 不重复落——避免双写导致 `count_tutor_today` 偏多（每日上限误判）。
+- 风险：feature 间复用（如 `review` 调 `tasks` 的 `create_answer_record`、`assistant` 调 `tutor`/`ai` repository）需显式跨包 import，依赖方向要单向（子 feature 不反向依赖父 feature 的 router）。

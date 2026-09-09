@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 from sqlmodel import Session, select
 
 from app.core.db import engine
-from app.models import AnswerRecord, WrongQuestion
+from app.db.models import AnswerRecord, WrongQuestion
 from tests.utils.user import auth_headers, login, register_parent
 
 
@@ -30,9 +30,10 @@ def _create_child(client, ptoken, username="rv_kid"):
 
 
 def _make_task(client, ptoken, child_id):
-    # 批量生成 draft 草稿（ADR-0004 D4）
+    # 单流：以「已生成题卡」直接落库（POST /tasks/from-generated，唯一业务写库点，ADR-0023）。
+    # 不再走已删除的 batch-generate（生成期自写库分叉）。
     r = client.post(
-        "/api/v1/tasks/batch-generate",
+        "/api/v1/tasks/from-generated",
         headers=auth_headers(ptoken),
         json={
             "title": "复习测试",
@@ -45,6 +46,19 @@ def _make_task(client, ptoken, child_id):
                     "qtype": "calc",
                     "difficulty": "easy",
                     "count": 1,
+                },
+            ],
+            "questions": [
+                {
+                    "subject": "数学",
+                    "grade": 2,
+                    "knowledge_point": "加法",
+                    "qtype": "calc",
+                    "difficulty": "easy",
+                    "stem": "1 + 1 = ?",
+                    "options": None,
+                    "answer": "2",
+                    "explanation": "1 加 1 等于 2。",
                 },
             ],
         },

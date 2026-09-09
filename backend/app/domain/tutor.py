@@ -105,5 +105,73 @@ class TutorService:
             reason=None,
         )
 
+    async def aexplain(
+        self,
+        *,
+        grade: int,
+        subject: str,
+        knowledge_point: str,
+        context: str | None,
+        question: str,
+    ) -> TutorResult:
+        """``explain`` 的异步版本（供 Agent Runtime 的 async 端点调用）。
+
+        同步版 ``explain`` 内部用 ``asyncio.run`` 驱动 provider，在 FastAPI 异步上下文
+        （StreamingResponse 生成器）里调用会抛 ``RuntimeError``。本方法直接 ``await``
+        provider，行为与 ``explain`` 完全一致（输入/输出安全 + 知识库检索）。
+        """
+        combined = "\n".join(p for p in (question, knowledge_point, context) if p)
+        inp = check_input(combined)
+        if not inp.safe:
+            return TutorResult(
+                answer=SAFE_REFUSAL,
+                input_safe=False,
+                output_safe=True,
+                blocked=True,
+                reason=inp.reason,
+            )
+
+        effective_context = context
+        if self.retriever is not None:
+            chunks = self.retriever.retrieve(
+                subject=subject,
+                grade=grade,
+                knowledge_point=knowledge_point,
+                query=question,
+            )
+            if chunks:
+                kb = "\n".join(f"- {c.content}" for c in chunks)
+                effective_context = (
+                    f"{context}\n\n【知识库】\n{kb}".strip()
+                    if context
+                    else f"【知识库】\n{kb}"
+                )
+
+        raw = await self.provider.tutor(
+            grade=grade,
+            subject=subject,
+            knowledge_point=knowledge_point,
+            context=effective_context,
+            question=question,
+        )
+
+        out = check_output(raw)
+        if not out.safe:
+            return TutorResult(
+                answer=SAFE_REFUSAL,
+                input_safe=True,
+                output_safe=False,
+                blocked=True,
+                reason=out.reason,
+            )
+
+        return TutorResult(
+            answer=raw,
+            input_safe=True,
+            output_safe=True,
+            blocked=False,
+            reason=None,
+        )
+
 
 __all__ = ["TutorService", "TutorResult"]
