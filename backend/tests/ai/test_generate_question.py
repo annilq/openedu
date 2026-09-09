@@ -10,7 +10,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.ai.generation import QuestionSchema, generate_question
+from app.ai.generation import generate_question
+from app.ai.parsers.question import QuestionSchema
 from app.domain.provider import GeneratedQuestion
 from app.domain.safety import SafetyVerdict
 
@@ -66,7 +67,8 @@ def test_generate_question_returns_generated():
 def test_generate_question_unsafe_returns_none(monkeypatch):
     """真实模型产出不安全 → 返回 None，由路由层回退 MockProvider。"""
     monkeypatch.setattr(
-        "app.ai.generation.check_output", lambda text: SafetyVerdict(safe=False, reason="测试")
+        "app.ai.parsers.question.check_output",
+        lambda text: SafetyVerdict(safe=False, reason="测试"),
     )
     engine = _fake_engine()
     g = asyncio.run(

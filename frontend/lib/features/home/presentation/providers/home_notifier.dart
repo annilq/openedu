@@ -73,6 +73,12 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
     final questions = <QuestionPreview>[];
     var liveLabel = '';
     var liveReasoning = '';
+    // 当前正在生成的题序号（-1 = 无）。STEP 帧到达时置为下一题序号，题卡 DATA 帧
+    // 到达后归 -1（内联区折叠，推理随卡落到题卡的 info icon）。
+    var liveIndex = -1;
+    // 0 题兜底文案：捕获后端 ASSISTANT_MESSAGE（出题 subagent count=0 时下发
+    // 「本次未能生成题目，请调整科目或年级后重试。」），流结束 0 题时回显。
+    var lastMessage = '';
     // 方案 A：结构化 specs → 自然语言 prompt，走统一 /assistant/chat 的 question
     // subagent（AG-UI 事件协议，ADR-0025）；流结束后再把题卡落库为草稿任务。
     state = const TaskGenPreview([], streaming: true);
@@ -88,11 +94,23 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
         switch (ev.eventType) {
           case AssistantEventType.toolCall:
             liveLabel = ev.label ?? '生成中';
+          case AssistantEventType.step:
+            // 新题开始：展开内联区（序号 = 下一题），清空上一题残留的推理文本。
+            liveIndex = questions.length;
+            liveLabel = ev.label ?? '生成中';
+            liveReasoning = '';
           case AssistantEventType.thinking:
-            // 路由帧（extra.business）跳过；其它推理增量累加为内联推理。
-            if (ev.extra == null || ev.extra!['business'] == null) {
+            // 路由帧（extra.business / extra.routing）跳过：那是「正在选择助手…」
+            // 这类编排状态，不是出题思路，拼进推理区会污染展示。
+            final extra = ev.extra;
+            final isRouting = extra != null &&
+                (extra['business'] != null || extra['routing'] == true);
+            if (!isRouting) {
               liveReasoning += ev.text ?? '';
             }
+          case AssistantEventType.assistantMessage:
+            // 出题 subagent 在 0 题时会下发「本次未能生成题目…」说明。
+            if (ev.text != null && ev.text!.isNotEmpty) lastMessage = ev.text!;
           case AssistantEventType.data:
             final type = ev.data?['type'];
             if (type == 'question' && ev.data?['result'] is Map) {
@@ -101,9 +119,13 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
                   ev.data!['result'] as Map<String, dynamic>,
                 ),
               );
+              // 题卡到达：折叠内联区（推理已随卡落到 info icon）。
+              liveIndex = -1;
               liveLabel = '';
+              liveReasoning = '';
             }
           case AssistantEventType.toolResult:
+            liveIndex = -1;
             liveLabel = '';
           case AssistantEventType.error:
             state = TaskGenError(ev.message ?? '生成失败');
@@ -114,9 +136,20 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
         state = TaskGenPreview(
           List.from(questions),
           streaming: true,
+          liveIndex: liveIndex,
           liveLabel: liveLabel,
           liveReasoning: liveReasoning,
         );
+      }
+      // UX 修正：流结束若 0 题，直接回显后端说明并跳过必败的落库请求，
+      // 避免误触发后端 TASK_EMPTY_SPECS「请先生成题目再保存」。
+      if (questions.isEmpty) {
+        state = TaskGenError(
+          lastMessage.isNotEmpty
+              ? lastMessage
+              : '本次未能生成题目，请调整科目或年级后重试。',
+        );
+        return;
       }
       await _persist(
         questions,
@@ -133,30 +166,6 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
     } catch (e) {
       state = TaskGenError('⚠️ 网络异常，请稍后重试');
     }
-  }
-
-  /// 预览后的「保存为任务」：直接落库已流式返回的题卡（不再二次生成）。
-  Future<void> savePreview({
-    required String childId,
-    required String title,
-    required List<TaskSpecModel> specs,
-    required List<QuestionPreview> questions,
-    List<String>? focusInterest,
-    String? model,
-  }) async {
-    if (questions.isEmpty) {
-      state = const TaskGenError('暂无可保存的题目');
-      return;
-    }
-    final body = _buildBody(
-      childId: childId,
-      title: title,
-      specs: specs,
-      focusInterest: focusInterest,
-      model: model,
-    );
-    // questions 由 _persist 统一注入落库请求体。
-    await _persist(questions, body);
   }
 
   /// 把已生成题卡 POST 到 /tasks/from-generated 落库为 draft 任务。
@@ -197,70 +206,6 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
     // 多模型（票据 08）：家长可选模型；null = 后端自动（默认/全局）。
     if (model != null) body['model'] = model;
     return body;
-  }
-
-  /// 流式预览出题（统一入口，ADR-0024）：经 [AssistantApiClient.streamChat] 走
-  /// `/assistant/chat` 的 question subagent，题卡逐张浮现（DATA 事件携带
-  /// [QuestionPreview]），不落库；路由层（归属校验 / 输入安全 / 配额）非 2xx 以
-  /// [AppException] 抛出。
-  Future<void> preview({
-    required String childId,
-    required String title,
-    required List<TaskSpecModel> specs,
-    List<String>? focusInterest,
-    String? model,
-  }) async {
-    final questions = <QuestionPreview>[];
-    var liveLabel = '';
-    var liveReasoning = '';
-    state = const TaskGenPreview([], streaming: true);
-    try {
-      final stream = _assistant.streamChat(
-        AssistantChatReq(
-          message: _buildPrompt(specs),
-          model: model,
-          focusInterest: focusInterest,
-        ),
-      );
-      await for (final ev in stream) {
-        switch (ev.eventType) {
-          case AssistantEventType.toolCall:
-            liveLabel = ev.label ?? '生成中';
-          case AssistantEventType.thinking:
-            if (ev.extra == null || ev.extra!['business'] == null) {
-              liveReasoning += ev.text ?? '';
-            }
-          case AssistantEventType.data:
-            final type = ev.data?['type'];
-            if (type == 'question' && ev.data?['result'] is Map) {
-              questions.add(
-                QuestionPreview.fromJson(
-                  ev.data!['result'] as Map<String, dynamic>,
-                ),
-              );
-              liveLabel = '';
-            }
-          case AssistantEventType.toolResult:
-            liveLabel = '';
-          case AssistantEventType.error:
-            state = TaskGenError(ev.message ?? '生成失败');
-            return;
-          case AssistantEventType.done:
-            break;
-        }
-        state = TaskGenPreview(
-          List.from(questions),
-          streaming: true,
-          liveLabel: liveLabel,
-          liveReasoning: liveReasoning,
-        );
-      }
-      state = TaskGenPreview(questions, streaming: false);
-    } on AppException catch (e) {
-      state = TaskGenError(e.message);
-    } catch (e) {
-      state = TaskGenError('⚠️ 网络异常，请稍后重试');
-    }
   }
 
   void reset() => state = const TaskGenIdle();

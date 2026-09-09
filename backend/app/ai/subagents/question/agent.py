@@ -1,22 +1,26 @@
 """出题 SubAgent（ADR-0024 / 文件夹化）：RAG + 学科 Persona 注入。
 
 位于 ``app/ai/subagents/question/``，与本文件夹 ``manifest.py`` 一同被 AgentRuntime
-发现并加载。统一契约：``run(message, ctx)`` 异步产出 AG-UI 事件帧（TOOL_CALL / CARD /
-ASSISTANT_MESSAGE），由 runtime 负责 USER_MESSAGE / THINKING / DONE 与持久化。
+发现并加载。统一契约：``run(message, ctx)`` 异步产出 AG-UI 事件帧（TOOL_CALL / STEP /
+THINKING / DATA / TOOL_RESULT / ASSISTANT_MESSAGE），由 runtime 负责
+USER_MESSAGE / 路由 THINKING / DONE 与持久化。
+
+出题走**单调用流式**：每题先发 STEP 进度锚点，再把模型推理逐 token 转为 THINKING
+增量，JSON 解析 + 安全闸门通过后发 DATA 题卡（ADR-0017 升级）。
 
 出题逻辑（expand_specs / build_question_context）沿用 ADR-0021，零破坏；
 新增自由文本解析 ``parse_specs_from_text`` 支撑「悬浮助手一句话出题」。
 """
 from __future__ import annotations
 
-from dataclasses import asdict
-
+from app.ai.generation import step_label
 from app.ai.runtime.protocol import (
     assistant_message,
-    data_event,
+    step,
     tool_call,
     tool_result,
 )
+from app.ai.runtime.translate import translate_stream
 from app.ai.subagents.base import BaseSubAgent, SubAgentContext
 from app.ai.subagents.subject_personas import get_subject_persona
 from app.domain.quota import SUBJECTS
@@ -222,7 +226,7 @@ class QuestionSubAgent(BaseSubAgent):
         )
 
     async def run(self, message: str, ctx: SubAgentContext, *, session=None):
-        """悬浮助手入口：自由文本 → 逐题 DATA 事件。"""
+        """悬浮助手入口：自由文本 → 逐题（STEP 进度 + THINKING 推理 + DATA 题卡）。"""
         specs = parse_specs_from_text(message)
         if not specs:
             yield assistant_message(
@@ -251,21 +255,29 @@ class QuestionSubAgent(BaseSubAgent):
                 query=focus or item["knowledge_point"],
                 retriever=self.retriever,
             )
-            gq = await self.provider.generate_question(
-                subject=item["subject"],
-                grade=item["grade"],
-                knowledge_point=item["knowledge_point"],
-                qtype=item["qtype"],
-                difficulty=item["difficulty"],
-                focus_interest=focus,
-                rag_context=rag_context,
-                persona_hint=persona_hint,
+            # STEP：先给进度锚点（前端据此展开该内联区，消除静默等待）
+            yield step(
+                step_label(
+                    item["subject"], item["grade"], item["knowledge_point"], item["qtype"]
+                )
             )
-            if gq is None:
-                continue
-            payload = asdict(gq)
-            generated.append(payload)
-            yield data_event("done", "question", payload)
+            # 流式：语义事件经 Translate 层转帧（推理增量聚合 → 题卡 → 失败明示）。
+            async for frame in translate_stream(
+                self.provider.generate_question_stream(
+                    subject=item["subject"],
+                    grade=item["grade"],
+                    knowledge_point=item["knowledge_point"],
+                    qtype=item["qtype"],
+                    difficulty=item["difficulty"],
+                    focus_interest=focus,
+                    rag_context=rag_context,
+                    persona_hint=persona_hint,
+                )
+            ):
+                data = frame.data
+                if data is not None and data.get("type") == "question":
+                    generated.append(data["result"])
+                yield frame
 
         yield tool_result("generate_question", {"count": len(generated)})
         if generated:

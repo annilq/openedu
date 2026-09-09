@@ -6,20 +6,29 @@ Grader / QuestionGenerator 非流式路径）只依赖 `LLMProvider` ABC，本�
 
 - 真实引擎（resolve_engine 解析到）：出题 / 答疑 / 批改走 Genkit。
 - 无引擎（LLM_PROVIDER 未配置）：``generate_question`` / ``tutor`` 返回 None，
-  ``grade_open`` 抛 RuntimeError，由上层决定降级（不再提供确定性 mock 兜底）。
+  ``grade_open`` 抛 RuntimeError，``generate_question_stream`` 空迭代（0 题），
+  由上层决定降级（不再提供确定性 mock 兜底）。
 """
 from __future__ import annotations
+
+from collections.abc import AsyncIterator
 
 from app.ai import debug_log, resolve_engine
 from app.ai.generation import (
     _QUESTION_SYSTEM_PROMPT,
     GradeSchema,
-    QuestionSchema,
-    _assemble_question,
     _build_question_prompt,
-    _schema_field,
 )
-from app.domain.provider import GeneratedQuestion, LLMProvider
+from app.ai.generation import (
+    generate_question_stream as genkit_generate_question_stream,
+)
+from app.ai.parsers.question import (
+    QuestionSchema,
+    QuestionSpec,
+    assemble_question,
+    schema_field,
+)
+from app.domain.provider import GeneratedQuestion, LLMProvider, QuestionStreamEvent
 from app.domain.safety import tutor_system_prompt
 
 
@@ -63,19 +72,21 @@ class GenkitProvider(LLMProvider):
             output_schema=QuestionSchema,
         )
         raw = resp.output
-        out = _assemble_question(
+        out = assemble_question(
             raw={
-                "stem": _schema_field(raw, "stem") or "",
-                "options": _schema_field(raw, "options"),
-                "answer": _schema_field(raw, "answer") or "",
-                "explanation": _schema_field(raw, "explanation") or "",
-                "reasoning": _schema_field(raw, "reasoning") or "",
+                "stem": schema_field(raw, "stem") or "",
+                "options": schema_field(raw, "options"),
+                "answer": schema_field(raw, "answer") or "",
+                "explanation": schema_field(raw, "explanation") or "",
+                "reasoning": schema_field(raw, "reasoning") or "",
             },
-            subject=subject,
-            grade=grade,
-            knowledge_point=knowledge_point,
-            qtype=qtype,
-            difficulty=difficulty,
+            spec=QuestionSpec(
+                subject=subject,
+                grade=grade,
+                knowledge_point=knowledge_point,
+                qtype=qtype,
+                difficulty=difficulty,
+            ),
         )
         if out is None:
             return None
@@ -84,6 +95,40 @@ class GenkitProvider(LLMProvider):
             qtype=out.qtype, stem=out.stem, options=out.options, answer=out.answer,
             explanation=out.explanation, difficulty=out.difficulty,
         )
+
+    async def generate_question_stream(
+        self,
+        *,
+        subject,
+        grade,
+        knowledge_point,
+        qtype,
+        difficulty,
+        interests: list[str] | None = None,
+        focus_interest: str | None = None,
+        rag_context: str | None = None,
+        persona_hint: str | None = None,
+    ) -> AsyncIterator[QuestionStreamEvent]:
+        """出题真流式：委托 ``app.ai.generation.generate_question_stream``。
+
+        无引擎时直接结束迭代（调用方按 0 题处理），不再提供确定性 mock 兜底。
+        """
+        engine = resolve_engine()
+        if engine is None:
+            return
+        async for ev in genkit_generate_question_stream(
+            engine,
+            subject=subject,
+            grade=grade,
+            knowledge_point=knowledge_point,
+            qtype=qtype,
+            difficulty=difficulty,
+            interests=interests,
+            focus_interest=focus_interest,
+            rag_context=rag_context,
+            persona_hint=persona_hint,
+        ):
+            yield ev
 
     async def grade_open(self, *, question, student_answer) -> dict:
         engine = resolve_engine()
@@ -115,9 +160,9 @@ class GenkitProvider(LLMProvider):
         )
         raw = resp.output
         result = {
-            "correct": bool(_schema_field(raw, "correct", False)),
-            "score": float(_schema_field(raw, "score", 0.0)),
-            "explanation": _schema_field(raw, "explanation", "")
+            "correct": bool(schema_field(raw, "correct", False)),
+            "score": float(schema_field(raw, "score", 0.0)),
+            "explanation": schema_field(raw, "explanation", "")
             or (question.explanation or ""),
         }
         debug_log.log_agent_message(

@@ -444,3 +444,79 @@ ADR-0016 已确立单流出题：点击出题 → `POST /ai/tasks/generate`（SS
 - 迁移落点：11 个 feature 包；tests + `app/ai` 的 import 全部 repoint 到 `app.db.models` / `app.features.*`；`pytest` 120 passed / 3 skipped。
 - 日志归属澄清：`TutorLog`/`TutorUsage` 落库**只由悬浮助手端点**（`app/features/assistant/router.py` 的 `event_stream` finally，带真实 `grade`）负责，SubAgent/`tutor_ask` flow 不重复落——避免双写导致 `count_tutor_today` 偏多（每日上限误判）。
 - 风险：feature 间复用（如 `review` 调 `tasks` 的 `create_answer_record`、`assistant` 调 `tutor`/`ai` repository）需显式跨包 import，依赖方向要单向（子 feature 不反向依赖父 feature 的 router）。
+
+## ADR-0028 出题改为单调用真流式（推理增量 + 题卡）
+
+> 来源：用户反馈「点生成任务时客户端没有实时渲染 LLM 返回的 stream text，只渲染了题目卡片」。
+
+### 背景
+- 出题链路此前是**假流式**：`QuestionSubAgent.run()` 每题 `await provider.generate_question()`（底层 `genkit.generate` + `output_schema` 结构化输出，一次性等完整 JSON），全部生成完才 `yield data_event(...)`。整题生成期间**零帧**下发，前端只能干等。
+- 全项目 `thinking()` 只在 `runtime.py` 的路由阶段 yield 两次，`step()` 与 `_step_label()` 定义了却零调用 → 前端 `liveReasoning` 恒空、`liveIndex` 恒 -1，`_PreviewGenerating` 的渲染条件 `liveIndex >= 0` 永不成立。
+- 传输层是清白的：`DioNetworkService.streamPost` 用 `ResponseType.stream` + `Options.compose` 拼 baseUrl，SSE 确实逐帧到达。
+- 历史包袱：ADR-0017 设想的 `generate_questions_stream`（STEP/REASONING/CARD 增量）从未接进 subagent，作为零调用死代码被清理；清理消除了「两种实现」假象，但真流式能力从未落地。
+
+### 决策（四条）
+1. **单调用流式出题**：新增 `app/ai/generation.py:generate_question_stream`，一次模型调用内先用 `<reasoning>…</reasoning>` 写思路、再输出 JSON 题卡。成本较「推理 + 出题」两阶段减半，且共用 `_build_question_clause` 保证口径一致（ADR-0023 单一生成核心）。
+2. **引擎层语义 schema，不新增传输协议**：`app/domain/provider.py` 定义 `ReasoningDelta` / `QuestionCard` / `QuestionStreamEvent`（`AsyncIterator[QuestionStreamEvent]`）。SSE 侧**继续复用 ADR-0025 的 AG-UI 信封**——SubAgent 负责把引擎事件翻译成 `STEP / THINKING / DATA` 帧。加新语义只需加一个类型，不动 SSE 协议。
+3. **原生思维链优先**：Genkit 0.10 Python 的 chunk 是 `content: list[Part]`，`ReasoningPart(reasoning=…)` 与 `TextPart(text=…)` 由类型区分；`genkit_openai` 已把 OpenAI 兼容的 `reasoning_content`（DeepSeek-R1 / o-series）映射为 `ReasoningPart`。所以**不需要**解析文本猜「这段是不是思考」——原生思维链直接下发，普通模型走 `<reasoning>` 标签兜底，不写标签时 `{` 之前的文本也当推理。
+4. **前端修死条件**：`home_notifier` 在 `STEP` 帧到达时把 `liveIndex` 置为下一题序号（并清空上一题推理）、`DATA` 帧到达时归 -1（推理随卡落到题卡 info icon），`TaskGenPreview` 首次真正带上 `liveIndex`。
+
+### 备选
+- **新增一层「固定 SSE 协议」封装（chunk_type 思路）**：否决——Genkit 的 `chunk_type` / `ctx.send_chunk` 是 **Genkit flow over genkit-fastapi** 的机制，而本项目 Genkit 已从编排/传输层退役（ADR-0024），传输协议由 AG-UI 信封承担。再套一层只会多一个协议要维护。
+- **两阶段（先流式出思路，再结构化出题）**：否决——两次模型调用、成本翻倍，且需要把第一阶段推理回灌第二阶段（`_build_question_prompt.reasoning_hint` 就是为此留的口子，已不再需要）。
+- **最小修（只发 STEP 进度，不出推理）**：否决——`ReasoningTypewriterWidget` 与 ADR-0017 的推理面板已存在，只发进度等于让它们继续当摆设。
+
+### 后果
+- 出题首帧到达时间从「整题生成完（10s+）」降到亚秒级；实测真实 deepseek：472 个非路由 THINKING 增量帧、2 个 STEP、2 张题卡。
+- 题卡 `DATA.result` 新增 `reasoning` 字段（此前为 `GeneratedQuestion` 直出，无此字段）→ 题卡右上角 info icon 可展开「AI 出题思路」。
+- 路由帧污染修复：`runtime.py` 首帧 thinking 补 `extra={"routing": True}`，前端同时按 `extra.business` / `extra.routing` 过滤，避免「正在理解你的需求…」被拼进出题思路。
+- `LLMProvider` 新增非抽象 `generate_question_stream`，默认退化为「一次性生成 → 单张题卡」，使不支持流式的实现也能接上同一条调用链；`GenkitProvider` 覆写为真流式，无引擎时空迭代（0 题，无 mock 兜底）。
+- 单测：`tests/ai/test_generate_question_stream.py`（9 例，含 `<reasoning>` 标签 / 原生 ReasoningPart / 不写标签 / 安全闸门 / 任意切分点鲁棒性）、`tests/ai/test_question_subagent_stream.py`（4 例，断言 STEP→THINKING→DATA 顺序与帧数）。
+
+## ADR-0029 出题解析与转换层四管分层（Decode → Demux → Parse → Translate）
+
+> 来源：ADR-0028 落地「真流式」后，下一步「解析器只判定、不猜测；语义层与传输层彻底分离」的重构。
+
+### 背景
+ADR-0028 让出题真流式落地（472 个非路由 THINKING 帧、2 个 STEP、2 张题卡），但落地时发现 `generate_question_stream` 一个 async generator 同时干了 4 件事，且严重耦合 prompt 协议：
+- 构造 prompt（隐含约定模型按 `<reasoning>…</reasoning>` 输出）
+- 解码 genkit chunk
+- 跑字符串状态机（6 个可变局部变量）
+- 解析 JSON、过安全闸门
+- 翻译成 AG-UI 帧（`isinstance` 内联 dispatch）
+
+更严重的两条隐患：
+- **协议分散两端**：prompt 在 `_build_stream_prompt`（142 行）、解析器在 200 行外的手写状态机（379 行）。改 prompt 忘了改解析 → 静默失效。
+- **解析层为 prompt 兜底**：3 条猜测分支（模型不写标签 → `{` 之前的当推理；标签未闭合 → 中途切 JSON；尾部可能截断的 `<` → `buf.rfind("<", emitted)` 留一手）全部写在了「解码层」补偿「模型不听话」。该问题是 prompt 规范的锅，不是协议层的责任。
+
+### 决策（四层管道，每层一个职责）
+1. **Decode（第 1 层，`app/ai/segment.py`）**：genkit chunk → `Segment(kind, text)`。全项目**唯一** `import genkit` 的地方。换 LLM 框架只改这一个文件。
+2. **Demux（第 2 层）**：根据 `Segment.kind` 分流。`REASONING` 通道（原生思维链）**直通**，不进状态机；`TEXT` 通道交给 Parse。这层只几行，分流逻辑与 Decode 合一。
+3. **Parse（第 3 层，`app/ai/parsers/question.py`）**：文本流 → `QuestionStreamEvent`。契约（`QuestionSchema` 即 `output_schema`）与解析器（`SchemaQuestionParser`）在**同一个文件**，改 schema 必看见解析器，杜绝漂移。解析器是**同步 push 状态机**（`feed(seg)` / `finish(output)`），无 async、无引擎依赖，可直接用字符串喂入单测；新增解析策略（增量 JSON 抽取等）实现同一 `QuestionStreamParser` Protocol 即可替换。
+4. **Translate（第 4 层，`app/ai/runtime/translate.py`）**：语义事件 → AG-UI 帧。SubAgent 不再内联 `isinstance` 分发，只写 `async for frame in translate_stream(stream): yield frame`。此处同时做**思维链帧聚合**（每 16 字符攒批），帧数降一个量级而打字机观感不变。
+
+### 失败显式化
+解析失败 / 安全闸门未过 / 模型无结构化产出 → 统一发 `QuestionFailed(reason=…)` 显式事件，由 Translate 层转 `status=error` 的 STEP 帧，前端可见「这题为什么没出来」。**解析层不做任何宽容兜底**——容错是 prompt 规范的职责，不是协议层的。
+
+### 安全闸门扩展
+`assemble_question` 拆成两层判定：题面（`stem/answer/explanation`）未过闸 → 整题作废（返回 `QuestionFailed`）；推理单独过闸 → 不安全时**只丢推理**，题卡照发（推理是可选的透明度信息，不该因为它的措辞而丢掉一道好题）。此前所有 THINKING 帧裸发到孩子屏幕，**绕过任何安全校验**——这是 ADR-0028 之前最该修的洞。
+
+### 备选
+- **保留 `<reasoning>` 标签流 + 2 状态机解析器**：被 ADR-0029 否决。状态多、未闭合分支、尾部 `<` hack 都对应 prompt 规范，靠解析层 hack 是治标。要换格式就换个干净的协议。
+- **注册表式 Translate**：被否决。事件类型 5 个以内，`match` 够用，抽象多一层反而模糊。
+- **解析层做宽容兜底**：被否决。从历史 ADR-0023 教训——容错放在解析层会导致行为漂移、测试变重；显式失败事件让上层（runtime/UI）能区分「是该重试还是该给提示」。
+
+### 后果
+- `flows.py` 内的 prompt 协议与解析器在同一个文件（`parsers/question.py`），改 schema 必看见解析器；不再有「改了 prompt 忘了改解析」的漂移空间。
+- 解析器是同步 push 状态机，单测从「起假引擎喂完整流」降级到「字符串 `feed(s[:i]) for i in range(len(s))`」级别的单元测试——任意切分点鲁棒性可以参数化验证（见 `test_reasoning_deltas_robust_to_any_chunk_boundary[1, 3, 17, 1000]`）。
+- 帧聚合：实测 deepseek-v4-flash 端到端从 472 个 THINKING 帧降到 53 个（每 16 字符攒批），帧数-1 量级、观感不变。
+- `QuestionCard.reasoning` 字段稳定下发（也走安全闸门，不安全则被丢弃），前端 `parent_task_form_view` 的题卡 info icon 始终能拿到推理。
+- `LLMProvider.generate_question_stream` 默认退化为「一次性生成 → 单张题卡」（无推理增量），使不支持流式的实现也能接上同一调用链；`GenkitProvider` 覆写为真流式，无引擎时空迭代（0 题，无 mock 兜底）。
+
+### 在线格式选「原生思维链 + `output_schema`」的代价
+线上模型 `deepseek-v4-flash`（`config.py:46`）不在 `engine.py:_REASONING_HINTS` 列出的支持列表里，因此**实测中所有推理帧都来自 TEXT 通道经 `output_schema` 的 `reasoning` 字段一次性到达**，原生思维链通道（`ReasoningPart`）在本环境是死代码。换模型到 `deepseek-reasoner / qwq / o-series` 后，原生通道会自动启用——`genkit_openai/models/model.py:339` 已把 OpenAI 兼容的 `reasoning_content` 映射为 `ReasoningPart`，这一侧无需任何代码改动。
+
+### 验证
+- `ruff check app/ai app/domain app/features/tasks` 全过
+- `tests/ai` 38 例全过（含流式原语、解析器鲁棒性、SubAgent 帧类型统计、Translate 帧聚合与未知类型报错、落库路径回归）
+- e2e：路由 THINKING 2 帧、非路由 THINKING 53 帧、STEP 2 帧、DATA 2 帧、首个推理帧 1.99s（重构前整题生成完才下发 10s+）

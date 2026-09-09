@@ -86,7 +86,9 @@ class AgentRuntime:
             yield done(session_id)
             return
 
-        yield thinking("正在理解你的需求，并选择最合适的助手…")
+        # routing 标记：前端据此把「路由状态」与「业务推理增量」区分开，
+        # 否则这句会被当成出题思路拼进内联推理区。
+        yield thinking("正在理解你的需求，并选择最合适的助手…", extra={"routing": True})
 
         business = await classify(
             message, available=visible, manifests=self._manifests
@@ -97,7 +99,10 @@ class AgentRuntime:
             business = "tutor"
 
         name = self.name_of(business)
-        yield thinking(f"已选择助手：{name}", extra={"business": business, "name": name, "routing": True})
+        yield thinking(
+            f"已选择助手：{name}",
+            extra={"business": business, "name": name, "routing": True},
+        )
 
         # 构建 SubAgent（复用既有 provider/retriever；engine 解析真实模型）
         provider = build_provider()

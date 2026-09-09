@@ -100,6 +100,22 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
     Future.microtask(
       () => ref.read(modelsNotifierProvider.notifier).load(),
     );
+    // 隐藏「默认」选项后必须显式选模型：模型列表加载完成后，若尚未选择则回落到
+    // 家长设为默认的模型（否则取列表首项），保证出题请求带有效 model 而非 null。
+    ref.listenManual(modelsNotifierProvider, (prev, next) {
+      if (next is! ModelsLoaded || _modelId != null) return;
+      final all = [...next.resp.builtin, ...next.resp.custom];
+      if (all.isEmpty) return;
+      String? defaultId;
+      for (final m in all) {
+        if (m.isDefault) {
+          defaultId = m.id;
+          break;
+        }
+      }
+      defaultId ??= all.first.id;
+      setState(() => _modelId = defaultId);
+    });
   }
 
   @override
@@ -166,47 +182,6 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
           childId: selected.id,
           title: _titleCtrl.text,
           specs: specs,
-          focusInterest: _currentFocus(),
-          model: _modelId,
-        );
-  }
-
-  void _preview() {
-    final selected = ref.read(selectedChildProvider);
-    if (selected == null) {
-      AppToast.show(context, '请先在侧栏选择娃娃');
-      return;
-    }
-    final specs = _currentSpecs(selected);
-    if (specs.any((s) => s.subject.isEmpty || s.knowledgePoint.isEmpty)) {
-      AppToast.show(context, '学科与知识点不能为空');
-      return;
-    }
-    if (specs.any((s) => s.count < 1)) {
-      AppToast.show(context, '每行题数至少为 1');
-      return;
-    }
-    ref.read(taskGenNotifierProvider.notifier).preview(
-          childId: selected.id,
-          title: _titleCtrl.text,
-          specs: specs,
-          focusInterest: _currentFocus(),
-          model: _modelId,
-        );
-  }
-
-  /// 预览后「保存为任务」：直接落库已流式返回的题卡（不再二次生成）。
-  void _savePreview(TaskGenPreview s) {
-    final selected = ref.read(selectedChildProvider);
-    if (selected == null) {
-      AppToast.show(context, '请先在侧栏选择娃娃');
-      return;
-    }
-    ref.read(taskGenNotifierProvider.notifier).savePreview(
-          childId: selected.id,
-          title: _titleCtrl.text,
-          specs: _currentSpecs(selected),
-          questions: s.questions,
           focusInterest: _currentFocus(),
           model: _modelId,
         );
@@ -289,6 +264,7 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
                     AppModelSelector(
                       selected: _modelId,
                       onChanged: (v) => setState(() => _modelId = v),
+                      showDefaultOption: false,
                     ),
                     const SizedBox(height: AppSpacing.xl),
                     _buildInterestSection(),
@@ -470,7 +446,7 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
 
   /// 流式生成 / 落库期间的操作区：隐藏按钮；首题 STEP 到达前（尚无题卡也无内联推理区）
   /// 显示加载动画，之后仅展示题卡/生成中面板（题卡逐张浮现），不再重复 spinner。
-  /// 非忙碌态显示生成/预览按钮。
+  /// 非忙碌态显示「生成任务」按钮。
   Widget _buildActionArea(TaskGenState genState) {
     final busy = genState is TaskGenLoading ||
         (genState is TaskGenPreview && genState.streaming);
@@ -490,15 +466,6 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
         Expanded(
           child: AppPrimaryButton(label: '生成任务', onPressed: _generate),
         ),
-        const SizedBox(width: AppSpacing.md),
-        Expanded(
-          child: ShadButton.outline(
-            height: AppControl.heightOf(context),
-            expands: true,
-            onPressed: _preview,
-            child: const Text('预览出题'),
-          ),
-        ),
       ],
     );
   }
@@ -517,13 +484,6 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
                 style: text.titleSmall?.copyWith(fontWeight: FontWeight.w700),
               ),
             ),
-            if (!s.streaming)
-              CupertinoButton(
-                padding: EdgeInsets.zero,
-                onPressed: () =>
-                    ref.read(taskGenNotifierProvider.notifier).reset(),
-                child: const Text('收起'),
-              ),
           ],
         ),
         const SizedBox(height: AppSpacing.sm),
@@ -538,10 +498,6 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
         ...s.questions.asMap().entries.map(
               (e) => _PreviewCard(index: e.key + 1, q: e.value),
             ),
-        if (!s.streaming && s.questions.isNotEmpty) ...[
-          const SizedBox(height: AppSpacing.lg),
-          AppPrimaryButton(label: '保存为任务', onPressed: () => _savePreview(s)),
-        ],
       ],
     );
   }
@@ -605,7 +561,17 @@ class _PreviewGenerating extends StatelessWidget {
             ],
           ),
           const SizedBox(height: AppSpacing.sm),
-          ReasoningTypewriterWidget(reasoning, streaming: streaming),
+          // 首个推理增量到达前给占位文案，避免内联区出现一段空白。
+          if (reasoning.isEmpty)
+            Text(
+              '正在构思出题思路…',
+              style: text.bodySmall?.copyWith(
+                color: app.onSurfaceVariant,
+                fontStyle: FontStyle.italic,
+              ),
+            )
+          else
+            ReasoningTypewriterWidget(reasoning, streaming: streaming),
         ],
       ),
     );

@@ -146,15 +146,21 @@ class DioNetworkService implements NetworkService {
   @override
   Stream<Uint8List> streamPost(String path,
       {Map<String, dynamic>? body}) async* {
-    final options = RequestOptions(
-      path: path,
+    // 必须先用 base options compose，把实例的 baseUrl（host）拼进请求选项。
+    // Dio 的便捷方法（post/get/request）内部都会调 compose(_dio.options, path, ...)，
+    // 而 fetch() 本身不会合并 baseUrl。手写 RequestOptions 直接 fetch 会得到
+    // 只有相对路径 "/assistant/chat" 的 URI → 报 "no host specified in uri"。
+    // 这也是「生成任务」接口独挂、其它接口正常」的根因：只有它走 streamPost。
+    final options = Options(
       method: 'POST',
-      data: body,
       headers: {'Accept': 'text/event-stream'},
       responseType: ResponseType.stream,
-    );
-    // fetch 走拦截器链（Token 注入 + 错误统一），baseUrl 自动拼接。
-    final resp = await _dio.fetch<ResponseBody>(options);
+    ).compose(_dio.options, path, data: body);
+    // fetch 走拦截器链（Token 注入 + 错误统一）。
+    // 注意：非 2xx（含 401 过期 / 5xx / 连接失败）会在 fetch 阶段就抛 DioException，
+    // 必须在此处捕获并转 AppException，否则原始 DioException 会逃离本方法，
+    // 被上层裸 catch 误报为「网络异常」且丢失真实错误文案。
+    final resp = await _safeFetch(options);
     final stream = resp.data?.stream;
     if (stream == null) return;
     try {
@@ -163,6 +169,18 @@ class DioNetworkService implements NetworkService {
       }
     } on DioException catch (e) {
       _handleError(e);
+    }
+  }
+
+  /// 统一捕获 fetch 阶段异常：连接/超时/非 2xx 都转成 AppException。
+  ///
+  /// 原 [streamPost] 直接在正文 `await _dio.fetch`，该调用抛出的 DioException 不在
+  /// 内层 try/catch 范围内，会作为原始异常逃离方法，被上层 `catch (e)` 误判为「网络异常」。
+  Future<Response<ResponseBody>> _safeFetch(RequestOptions options) async {
+    try {
+      return await _dio.fetch<ResponseBody>(options);
+    } on DioException catch (e) {
+      _handleError(e); // Never：统一转 AppException 后抛出
     }
   }
 }
