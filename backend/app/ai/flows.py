@@ -1,9 +1,9 @@
 """出题 / 答疑 / 批改的共享生成层（ADR-0015 修订 / 迁移 08b：统一 Genkit 全栈）。
 
-本模块只保留被各 SubAgent 复用的底层生成能力：
+本模块只保留被各 SubAgent 复用的底层一次性生成能力（SSE 流式由 SubAgent 在事件层封装）：
 
-- 出题：``generate_question``（非流式落库路径）+ ``generate_questions_stream``（流式逐题产出）。
-- 答疑：``_tutor_generate`` / ``tutor_stream``（逐 token 讲解文本）。
+- 出题：``generate_question``（一次性结构化输出，落库 / 逐题 DATA 事件共用）。
+- 答疑：``_tutor_generate``（一次性讲解文本）。
 - 批改：``grade_open``（开放题批改）。
 - Mock 分支：``resolve_engine`` 返回 None（无 key / LLM_PROVIDER=mock）时走确定性假数据
   （``_mock_question`` / ``_mock_tutor_text``），零外部依赖仍跑通闭环。
@@ -17,15 +17,13 @@ from __future__ import annotations
 import hashlib
 import random
 import uuid
-from typing import Any, AsyncIterator, Literal
+from typing import Any
 
 from pydantic import BaseModel
 
 from app.ai import debug_log
 from app.ai.engine import EngineResolution, resolve_engine
-from app.ai.subagents.question import expand_specs
 from app.domain.provider import GeneratedQuestion
-from app.domain.retriever import build_retriever
 from app.domain.safety import check_output, tutor_system_prompt
 
 # 本模块不再注册 Genkit flow（端点已废弃并收敛到 /assistant/chat）；
@@ -47,33 +45,6 @@ class QuestionOut(BaseModel):
     explanation: str
     difficulty: str
     reasoning: str = ""
-
-
-# ───────────────────────── 出题流式 chunk 信封（ADR-0017） ─────────────────────────
-# 对齐 AG-UI 的 BaseEvent.type 多态约定：每个 chunk 是一个带 `type` 判别字段的 JSON 对象，
-# 取代原「裸 QuestionOut」chunk。传输帧（message/result/error）不变。
-# - STEP：每题进度锚点
-# - REASONING：出题推理增量（打底路径整段一次性下发，前端打字机揭示；reasoning 模型走 token 真流式）
-# - CARD：成品题卡（QuestionOut.model_dump()）
-class TaskGenStepChunk(BaseModel):
-    type: Literal["STEP"] = "STEP"
-    q_index: int
-    label: str  # "正在为《数学》三年级「分数」出选择题…"
-
-
-class TaskGenReasoningChunk(BaseModel):
-    type: Literal["REASONING"] = "REASONING"
-    q_index: int
-    delta: str  # 推理增量
-
-
-class TaskGenCardChunk(BaseModel):
-    type: Literal["CARD"] = "CARD"
-    q_index: int
-    question: dict  # QuestionOut.model_dump()
-
-
-TaskGenChunk = TaskGenStepChunk | TaskGenReasoningChunk | TaskGenCardChunk
 
 
 def _qtype_label(qtype: str) -> str:
@@ -164,45 +135,6 @@ def _build_question_prompt(
     )
 
 
-def _build_stream_prompt(
-    *,
-    subject: str,
-    grade: int,
-    knowledge_point: str,
-    qtype: str,
-    difficulty: str,
-    interests: list[str] | None,
-    focus_interest: str | None,
-    rag_context: str | None = None,
-    persona_hint: str | None = None,
-) -> str:
-    """单调用流式 prompt（ADR-0017 修订）：同一文本流里先后产出「推理」与「题卡 JSON」。
-
-    模型先以 <reasoning>…</reasoning> 写出出题思路（后端逐 token 下发 REASONING，客户端
-    实时可见，消除 5s 静默 + 推理闪现），随后输出 JSON 题卡。整段只需一次模型调用，
-    成本较「推理 + 出题」两阶段减半。JSON 只含可变字段，subject/grade/知识点/题型/难度
-    由调用方按 spec 回填，降低模型出错面。
-    """
-    clause = _build_question_clause(
-        subject=subject, grade=grade, knowledge_point=knowledge_point,
-        qtype=qtype, difficulty=difficulty, interests=interests, focus_interest=focus_interest,
-    )
-    if persona_hint:
-        clause += f"\n\n{persona_hint}"
-    if rag_context:
-        clause += f"\n\n参考教材口径（仅作对齐参考，不照搬）：\n{rag_context}"
-    return (
-        clause + "\n\n"
-        "请严格按以下两步顺序输出，两步之间不要加任何其他说明文字：\n"
-        "1) 先用 1-3 句纯文本写出你的出题思路（情境如何选取、干扰项/答案如何设计、难度如何把控，"
-        "纯学习相关），并用 <reasoning> 和 </reasoning> 包裹。\n"
-        "2) 紧接着另起一行，只输出这道题的 JSON（不要 markdown 代码块围栏、不要任何额外文字），"
-        '字段为：{"stem": str, "options": list[str]|null, "answer": str, '
-        '"explanation": str, "reasoning": str}\n'
-        "（reasoning 字段与上面的出题思路保持一致即可）"
-    )
-
-
 def _parse_question_json(text: str) -> dict | None:
     """从模型流式输出中宽容解析题卡 JSON：去 markdown 围栏、截取首个 {...}。
 
@@ -250,9 +182,8 @@ def _assemble_question(
 ) -> QuestionOut | None:
     """共享装配 / 安全闸门：解析 dict → check_output → 类型化题卡。
 
-    ``generate_question``（一次性结构化输出）与 ``generate_questions_stream``
-    （流式文本 JSON 解析）共用同一「抽取字段 → 安全校验 → 构造题卡」逻辑，
-    消除两套口径漂移（ADR-0023 决策 4）。
+    ``generate_question``（落库 / 逐题 DATA 事件共用）经此装配与安全检查，
+    产出不安全时由各自调用方回退（落库路径回退 mock）。
 
     ``raw`` 为模型产出（键：stem/options/answer/explanation/reasoning）；
     ``check_output`` 未过返回 None，由各自调用方决定回退（落库路径回退 mock，
@@ -545,166 +476,4 @@ async def _tutor_generate(
             parts.append(text)
     await sr.response
     return "".join(parts)
-
-
-async def tutor_stream(
-    engine: EngineResolution,
-    *,
-    grade: int,
-    subject: str,
-    knowledge_point: str,
-    context: str | None,
-    question: str,
-) -> AsyncIterator[str]:
-    """答疑流式：先做知识库检索注入 context，再逐 token 产出讲解文本。"""
-    retriever = build_retriever()
-    ctx = f"\n相关上下文：{context}" if context else ""
-    if retriever is not None:
-        chunks = retriever.retrieve(
-            subject=subject, grade=grade, knowledge_point=knowledge_point, query=question
-        )
-        if chunks:
-            kb = "\n".join(f"- {c.content}" for c in chunks)
-            ctx = f"{ctx}\n\n【知识库】\n{kb}".strip()
-    text = await _tutor_generate(
-        engine, grade=grade, subject=subject,
-        knowledge_point=knowledge_point, context=ctx, question=question,
-    )
-    yield text
-
-
-async def generate_questions_stream(
-    engine: EngineResolution,
-    *,
-    specs: list[Any],
-    interests: list[str] | None = None,
-    focus_interests: list[str] | None = None,
-    rag_contexts: dict[int, str] | None = None,
-    persona_hints: dict[int, str] | None = None,
-) -> AsyncIterator[TaskGenChunk]:
-    """出题流式：逐题产出信封 chunk（STEP → REASONING → CARD），题卡逐张浮现。
-
-    每题**单次** generate_stream 调用：同一文本流里先 <reasoning>…</reasoning>（逐 token
-    下发 REASONING，模型思考时客户端即可看到出题思路，消除结构化生成的 5s 静默 + 推理闪现），
-    随后 JSON 题卡（完成即增量解析、解析成功才发 CARD）。无需「推理/出题」两次模型调用。
-    每题都经 check_output 通过后才发 CARD。
-
-    ADR-0021：``rag_contexts`` / ``persona_hints`` 由出题 SubAgent 按 q_index 预计算后传入，
-    flow 只负责「按给定增强参数出题 + 安全闸门」，业务判断不在此处（不传则行为完全不变）。
-    """
-    n_focus = len(focus_interests) if focus_interests else 0
-    items = expand_specs(specs)
-    for q_index, it in enumerate(items):
-        subject = it["subject"]
-        grade = it["grade"]
-        knowledge_point = it["knowledge_point"]
-        qtype = it["qtype"]
-        difficulty = it["difficulty"]
-        focus = focus_interests[q_index % n_focus] if n_focus else None
-        yield TaskGenStepChunk(
-            q_index=q_index,
-            label=_step_label(subject, grade, knowledge_point, qtype),
-        )
-        rag_ctx = (rag_contexts or {}).get(q_index)
-        persona_hint = (persona_hints or {}).get(q_index)
-        try:
-            # 单次 generate_stream 调用：同一文本流里先 <reasoning>…</reasoning>（实时下发），
-            # 随后 JSON 题卡（完成即解析下发）。无需「推理/出题」两次调用，成本减半。
-            stream_prompt = _build_stream_prompt(
-                subject=subject, grade=grade, knowledge_point=knowledge_point,
-                qtype=qtype, difficulty=difficulty, interests=interests,
-                focus_interest=focus, rag_context=rag_ctx, persona_hint=persona_hint,
-            )
-            sresp = engine.genkit.generate_stream(
-                model=engine.model, system=_QUESTION_SYSTEM_PROMPT, prompt=stream_prompt,
-            )
-            buf = ""
-            reasoning_parts: list[str] = []
-            json_buf = ""
-            phase: Literal["reasoning", "json"] = "reasoning"
-            open_seen = False
-            emitted = 0
-            async for schunk in sresp.stream:
-                t = _chunk_text(schunk)
-                if not t:
-                    continue
-                buf += t
-                if phase == "reasoning":
-                    if not open_seen:
-                        oi = buf.find("<reasoning>")
-                        oj_pre = buf.find("{")
-                        if oi == -1 and oj_pre == -1:
-                            continue  # 等待开标签或 JSON 起始
-                        if oi != -1 and (oj_pre == -1 or oi < oj_pre):
-                            # 正常：先出现 <reasoning> 开标签。
-                            open_seen = True
-                            emitted = oi + len("<reasoning>")
-                        else:
-                            # 模型未用标签直接输出 JSON：{ 之前的文本当作推理。
-                            if oj_pre > 0:
-                                delta = buf[:oj_pre]
-                                reasoning_parts.append(delta)
-                                yield TaskGenReasoningChunk(q_index=q_index, delta=delta)
-                            phase = "json"
-                            json_buf = buf[oj_pre:]
-                            continue
-                    ci = buf.find("</reasoning>", emitted)
-                    oj = buf.find("{", emitted)
-                    if ci != -1 and (oj == -1 or ci < oj):
-                        # 推理段结束：发出残余推理，进入出题段。
-                        if ci > emitted:
-                            delta = buf[emitted:ci]
-                            reasoning_parts.append(delta)
-                            yield TaskGenReasoningChunk(q_index=q_index, delta=delta)
-                        phase = "json"
-                        json_buf = buf[ci + len("</reasoning>"):]
-                    elif oj != -1:
-                        # 模型未用标签直接出 JSON：{ 之前当作推理。
-                        if oj > emitted:
-                            delta = buf[emitted:oj]
-                            reasoning_parts.append(delta)
-                            yield TaskGenReasoningChunk(q_index=q_index, delta=delta)
-                        phase = "json"
-                        json_buf = buf[oj:]
-                    else:
-                        # 仍在推理段：发出「安全前缀」（保留末尾可能的部分标签）。
-                        safe = buf.rfind("<", emitted)
-                        if safe == -1:
-                            safe = len(buf)
-                        if safe > emitted:
-                            delta = buf[emitted:safe]
-                            reasoning_parts.append(delta)
-                            yield TaskGenReasoningChunk(q_index=q_index, delta=delta)
-                            emitted = safe
-                else:
-                    json_buf += t
-            await sresp.response
-            parsed = _parse_question_json(json_buf)
-            if parsed is None:
-                raise ValueError("无法从模型输出解析出题目 JSON")
-            reasoning_text = "".join(reasoning_parts).strip()
-        except Exception:
-            # 真实引擎单题失败（网络/限流/解析异常）：回退确定性 mock 题，
-            # 保证流式不中断、末帧 result 仍正常发出，避免前端收到
-            # "stream finished without a final result chunk"。
-            q = _mock_question(
-                subject=subject, grade=grade, knowledge_point=knowledge_point,
-                qtype=qtype, difficulty=difficulty, interests=interests, focus_interest=focus,
-            )
-            if q.reasoning:
-                yield TaskGenReasoningChunk(q_index=q_index, delta=q.reasoning)
-            yield TaskGenCardChunk(q_index=q_index, question=q.model_dump())
-            continue
-        out_q = _assemble_question(
-            raw=parsed,
-            subject=subject,  # spec 回填（模型只需出可变字段，降低出错面）
-            grade=grade,
-            knowledge_point=knowledge_point,
-            qtype=qtype,
-            difficulty=difficulty,
-            reasoning=reasoning_text,
-        )
-        if out_q is None:
-            continue
-        yield TaskGenCardChunk(q_index=q_index, question=out_q.model_dump())
 

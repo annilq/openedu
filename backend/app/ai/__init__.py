@@ -1,9 +1,9 @@
 """app/ai —— AI 编排层（ADR-0015 修订 / 迁移 08b：统一 Genkit 全栈后收敛）。
 
-本包只暴露被各 SubAgent 复用的底层生成能力（非流式 / 流式），不再注册 Genkit flow 端点：
+本包只暴露被各 SubAgent 复用的底层一次性生成能力（SSE 流式由 SubAgent 在事件层封装），不再注册 Genkit flow 端点：
 
-- 出题：``generate_question``（落库路径）+ ``generate_questions_stream``（流式逐题产出）。
-- 答疑：``tutor_stream``（逐 token 讲解）。
+- 出题：``generate_question``（一次性结构化输出）。
+- 答疑：``_tutor_generate``（一次性讲解文本）。
 - 批改：``grade_open``（开放题批改）。
 - Mock：``mock_question``（确定性假数据，无 key 时闭环）。
 
@@ -32,9 +32,7 @@ def __getattr__(name: str) -> Any:
         return flows._mock_question
     if name in {
         "generate_question",
-        "generate_questions_stream",
         "grade_open",
-        "tutor_stream",
         "QuestionSchema",
     }:
         from app.ai import flows
@@ -55,8 +53,6 @@ __all__ = [
     "resolve_engine",
     "list_builtin_models",
     "EngineResolution",
-    "tutor_stream",
-    "generate_questions_stream",
     "generate_question",
     "grade_open",
     "mock_question",
