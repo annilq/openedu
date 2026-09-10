@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, AsyncIterator
 
+from agent_core.ports import RuntimeDeps
 from agent_core.protocol import (
     AssistantEvent,
     done,
@@ -30,7 +31,6 @@ from agent_core.registry import (
     discover_subagent_manifests,
 )
 from agent_core.router import classify as _classify
-from agent_core.seams import RuntimeDeps
 from agent_core.subagent import BaseSubAgent, SubAgentContext, run_with_tools
 
 

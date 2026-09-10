@@ -34,6 +34,8 @@
 | 0028 | 出题改为单调用真流式（推理增量 + 题卡），取代「先整题后打字机」 |
 | 0029 | 出题解析与转换四管分层（Decode → Demux → Parse → Translate），解析器只判定不兜底 |
 | 0030 | 助手运行时抽象收口：引擎单一解析链（删 `BaseSubAgent.engine` 死参数）+ SubAgent 发现即注册（删 registry 手工登记）+ `skills` 真注入 prompt + 删除未接线的 LLM 分类插槽 |
+| 0031 | Agent 抽象层抽取为通用框架 `agent_core`（独立可安装包 + 真实 tool loop + 协议信封自有），升级 ADR-0003 |
+| 0032 | `agent_core` 分层边界与命名收敛（ports-and-adapters）：`seams.py`→`ports.py`；genkit 走 `adapters/`（**不进内核**）；出题业务归 `app/ai/subagents/question/`；删除死代码 `debug_log.py` |
 
 ## 前端 ADR
 

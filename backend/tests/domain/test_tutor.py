@@ -2,7 +2,7 @@
 
 用 FakeProvider 隔离真实模型，验证编排：输入拦截 → 检索注入 → 调用 → 输出拦截。
 """
-from agent_core.seams import TextDelta
+from agent_core.ports import TextDelta
 from app.domain.provider import EducationLLMProvider
 from app.domain.retriever import KnowledgeChunk
 from app.domain.safety import SAFE_REFUSAL

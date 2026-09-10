@@ -1,92 +1,17 @@
-"""Repository layer for the AI observability (debug) feature."""
+"""Repository layer for the AI observability (debug) feature.
+
+**只读回放**：家长查看自家 AI 运行（``Conversation`` / ``Message``），供
+``/ai/debug/conversations`` 端点消费。
+
+写入侧不在此模块：会话/消息的落库已收敛到 ``app.features.assistant``（ADR-0026 废除
+``debug_log``，其写入函数于 ADR-0032 清理为死代码后删除）。
+"""
 
 import uuid
-from datetime import UTC, datetime
 
-from sqlmodel import Session, func, select
+from sqlmodel import Session, select
 
 from app.db.models import Conversation, Message
-
-
-def create_conversation(
-    *,
-    session: Session,
-    kind: str,
-    parent_id: uuid.UUID,
-    child_id: uuid.UUID | None = None,
-    model: str | None = None,
-    title: str | None = None,
-    ref_task_id: uuid.UUID | None = None,
-    status: str = "running",
-) -> Conversation:
-    conv = Conversation(
-        kind=kind,
-        parent_id=parent_id,
-        child_id=child_id,
-        model=model,
-        title=title,
-        ref_task_id=ref_task_id,
-        status=status,
-    )
-    session.add(conv)
-    session.commit()
-    session.refresh(conv)
-    return conv
-
-
-def add_message(
-    *,
-    session: Session,
-    conversation_id: uuid.UUID,
-    role: str,
-    step: str = "output",
-    content: str = "",
-    payload: dict | None = None,
-    model: str | None = None,
-    input_safe: bool = True,
-    output_safe: bool = True,
-    blocked: bool = False,
-    block_reason: str | None = None,
-    latency_ms: int | None = None,
-    usage: dict | None = None,
-    turn: int | None = None,
-) -> Message:
-    if turn is None:
-        # 同 conversation 内自增序号（并发下近似即可，仅排序展示用）。
-        n = session.exec(
-            select(func.count(Message.id)).where(Message.conversation_id == conversation_id)
-        ).one()
-        turn = n
-    msg = Message(
-        conversation_id=conversation_id,
-        turn=turn,
-        role=role,
-        step=step,
-        content=content,
-        payload=payload,
-        model=model,
-        input_safe=input_safe,
-        output_safe=output_safe,
-        blocked=blocked,
-        block_reason=block_reason,
-        latency_ms=latency_ms,
-        usage=usage,
-    )
-    session.add(msg)
-    session.commit()
-    session.refresh(msg)
-    return msg
-
-
-def finish_conversation(
-    *, session: Session, conversation_id: uuid.UUID, status: str = "done"
-) -> None:
-    conv = session.get(Conversation, conversation_id)
-    if conv is not None:
-        conv.status = status
-        conv.updated_at = datetime.now(UTC)
-        session.add(conv)
-        session.commit()
 
 
 def list_conversations(

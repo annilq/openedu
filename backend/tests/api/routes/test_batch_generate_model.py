@@ -3,9 +3,9 @@
 历史 bug（原 batch-generate）：前端传了 model（如 ollama 内置 id），但旧路径忽略，
 永远走全局 LLM_PROVIDER（默认 mock）。batch-generate 已删除，出题统一经
 `POST /tasks/from-generated`（落库预设题卡）→ `POST /tasks/{id}/regenerate`
-（按 Task.model 复用共享核心 generation.generate_question 重跑）。本测试用假引擎验证：
+（按 Task.model 复用共享出题管线 ``question.pipeline.generate_question`` 重跑）。本测试用假 provider 验证：
   1) resolve_engine 收到的正是 Task 所选 model；
-  2) 重生成走 Genkit 路径（generation.generate_question 被调用）；
+  2) 重生成走 Genkit 路径（pipeline.generate_question 被调用）；
   3) 所选 model 实际驱动出题（题面来自假 ollama 引擎）。
 """
 from __future__ import annotations
@@ -70,7 +70,10 @@ def test_regenerate_honors_selected_model(client, monkeypatch):
         captured["model_ref"] = model_ref
         return SimpleNamespace(genkit=SimpleNamespace(model="ollama/llama3"), model="ollama/llama3")
 
-    async def fake_genkit_generate(engine, *, subject, grade, knowledge_point, qtype, difficulty, interests=None, focus_interest=None, rag_context=None, persona_hint=None):
+    async def fake_generate_question(
+        provider, *, subject, grade, knowledge_point, qtype, difficulty,
+        interests=None, focus_interest=None, rag_context=None, persona_hint=None,
+    ):
         captured["genkit_called"] = True
         return GeneratedQuestion(
             subject=subject,
@@ -85,7 +88,9 @@ def test_regenerate_honors_selected_model(client, monkeypatch):
         )
 
     monkeypatch.setattr("app.features.tasks.router.resolve_engine", fake_resolve)
-    monkeypatch.setattr("app.ai.generation.generate_question", fake_genkit_generate)
+    monkeypatch.setattr(
+        "app.ai.subagents.question.pipeline.generate_question", fake_generate_question
+    )
 
     r = client.post(f"/api/v1/tasks/{tid}/regenerate", headers=auth_headers(ptoken))
     assert r.status_code == 200, r.text

@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import asdict
 
+from agent_core.ports import LLMProvider, StructuredDone, TextDelta
 from agent_core.protocol import (
     EVENT_ASSISTANT_MESSAGE,
     EVENT_DATA,
@@ -20,7 +21,6 @@ from agent_core.protocol import (
     EVENT_TOOL_CALL,
     EVENT_TOOL_RESULT,
 )
-from agent_core.seams import LLMProvider, StructuredDone, TextDelta
 from agent_core.subagent import SubAgentContext
 from app.ai.subagents.question.agent import QuestionSubAgent
 from app.domain.provider import GeneratedQuestion

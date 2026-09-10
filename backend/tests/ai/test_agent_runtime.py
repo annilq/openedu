@@ -14,9 +14,9 @@ from __future__ import annotations
 
 import asyncio
 
+from agent_core.ports import RuntimeDeps
 from agent_core.protocol import EVENT_DONE, EVENT_ERROR, EVENT_THINKING
 from agent_core.runtime import AgentRuntime
-from agent_core.seams import RuntimeDeps
 from agent_core.subagent import SubAgentContext
 from app.domain.safety import ChildSafety
 from tests.utils.fake_provider import FakeLLMProvider

@@ -1,4 +1,4 @@
-"""Genkit 引擎解析（ADR-0015）：把「模型引用」解析为可用的 Genkit 实例 + model 字符串。
+"""引擎解析（ADR-0015）：把「模型引用」解析为可用的引擎 + model 字符串。
 
 解析优先级：
   1. 显式 ModelConfig id（家长自定义，需 parent_id + session，越权返回 None）
@@ -6,8 +6,9 @@
   3. 全局 LLM_PROVIDER（deepseek / langchain）→ 对应端点
   mock 模式或无法解析 → 返回 None，由端点回退 MockProvider。
 
-实例按 (provider, base_url, api_key, model_name) 缓存，避免重复构建。
-genkit 仅在本文件 import。
+本模块只做**配置解析**（读 ModelConfig 表 / 解密密钥 / 读 settings → 中性参数），
+真正的 Genkit 实例构造在 ``agent_core.adapters.genkit.build_genkit_engine``
+（全工程唯一 ``import genkit`` 处）——app 层不再直接依赖 genkit SDK。
 """
 from __future__ import annotations
 
@@ -16,21 +17,17 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
-from genkit import Genkit
-from genkit_ollama import Ollama
-from genkit_openai import OpenAI
 from sqlmodel import Session
 
+from agent_core.adapters.genkit import build_genkit_engine
 from app.core.config import settings
 from app.core.crypto import decrypt
 from app.db.models import ModelConfig
 
-_ENGINE_CACHE: dict[tuple[str, str | None, str | None, str], Genkit] = {}
-
 
 @dataclass
 class EngineResolution:
-    genkit: Genkit
+    genkit: Any  # Genkit 实例（由 agent_core 适配器构造；本层不 import genkit）
     model: str  # 形如 ollama/llama3 或 openai/gpt-4o-mini
     # 是否具备原生思维链（DeepSeek-R1 / o-series / QwQ 等）：为真时出题流可读取
     # 提供方的思维链 token 发 REASONING 增量（ADR-0017 升级路径）；否则走单次调用
@@ -53,10 +50,6 @@ _REASONING_HINTS = (
 def _supports_reasoning(model_name: str) -> bool:
     n = (model_name or "").lower()
     return any(hint in n for hint in _REASONING_HINTS)
-
-
-def _prefix(provider: str) -> str:
-    return "ollama" if provider == "ollama" else "openai"
 
 
 def _as_uuid(value: object) -> uuid.UUID | None:
@@ -89,28 +82,18 @@ def _get_or_build(
     api_key: str | None,
     model_name: str,
 ) -> EngineResolution:
-    key = (provider, base_url, api_key, model_name)
-    cached = _ENGINE_CACHE.get(key)
-    if cached is not None:
-        return EngineResolution(
-            genkit=cached,
-            model=f"{_prefix(provider)}/{model_name}",
-            supports_reasoning=_supports_reasoning(model_name),
-        )
+    """把中性参数交给适配器工厂构造引擎（构造与缓存都在 ``agent_core`` 适配器内）。"""
     if provider == "ollama":
-        ai = Genkit(
-            plugins=[Ollama(server_address=base_url or settings.OLLAMA_BASE_URL)],
-            model=f"ollama/{model_name}",
-        )
-    else:  # openai_compat
-        ai = Genkit(
-            plugins=[OpenAI(api_key=api_key or "none", base_url=base_url)],
-            model=f"openai/{model_name}",
-        )
-    _ENGINE_CACHE[key] = ai
+        base_url = base_url or settings.OLLAMA_BASE_URL
+    engine = build_genkit_engine(
+        provider=provider,
+        model_name=model_name,
+        base_url=base_url,
+        api_key=api_key,
+    )
     return EngineResolution(
-        genkit=ai,
-        model=f"{_prefix(provider)}/{model_name}",
+        genkit=engine.genkit,
+        model=engine.model,
         supports_reasoning=_supports_reasoning(model_name),
     )
 
@@ -121,7 +104,7 @@ def resolve_engine(
     parent_id: object | None = None,
     session: Session | None = None,
 ) -> EngineResolution | None:
-    """解析模型引用 → Genkit 引擎；mock/不可解析返回 None。"""
+    """解析模型引用 → 引擎；mock/不可解析返回 None。"""
     # 1) 家长自定义 ModelConfig（仅 model_ref 为合法 UUID 时才查表，避免内置 id 触发 .hex 崩溃）
     if model_ref and session is not None and parent_id is not None:
         mc_id = _as_uuid(model_ref)

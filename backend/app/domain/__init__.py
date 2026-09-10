@@ -56,7 +56,7 @@ def build_provider(engine: "EngineResolution | None" = None) -> EducationLLMProv
     请求级 model）。传入则全程使用该引擎，``None`` 时回退全局解析。
 
     GenkitProvider 延迟导入，避免 `app.domain` 与 `app.ai` 在包初始化期的循环依赖
-    （app.ai.generation → app.domain.*）。
+    （app.ai.engine / app.ai.subagents.* → app.domain.*）。
     """
     from app.domain.genkit_provider import GenkitProvider
 

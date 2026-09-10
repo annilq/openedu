@@ -9,14 +9,18 @@ USER_MESSAGE / 路由 THINKING / DONE 与持久化。
 增量，JSON 解析 + 安全闸门通过后发 DATA 题卡（ADR-0017 升级）。
 
 本 subagent 是 ``agent_core`` 的「首个接入方」之一：只依赖 agent_core 的
-``BaseSubAgent`` / ``SubAgentContext`` 与通用 ``LLMProvider.stream``，教育特有的
-prompt 组装（``app.ai.generation``）与解析（``parsers/question``）在本模块内完成。
+``BaseSubAgent`` / ``SubAgentContext`` 与通用 ``LLMProvider.stream``；出题特有的
+prompt 组装与解析就地在子包内完成（``pipeline.py`` / ``parsers.py``，ADR-0032 Q3）。
 """
 from __future__ import annotations
 
 from agent_core.protocol import step
 from agent_core.subagent import BaseSubAgent, SubAgentContext
-from app.ai.generation import build_question_prompts, step_label, stream_question
+from app.ai.subagents.question.pipeline import (
+    build_question_prompts,
+    step_label,
+    stream_question,
+)
 from app.ai.subagents.question.translate import translate_stream
 from app.ai.subagents.subject_personas import get_subject_persona
 from app.domain.quota import SUBJECTS

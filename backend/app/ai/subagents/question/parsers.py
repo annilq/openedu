@@ -2,8 +2,7 @@
 
 **契约与解析器同源**：``QuestionSchema`` 既是发给模型的 ``output_schema``（约束解码，
 模型必须产出合法 JSON），也是解析器读字段的依据。二者在同一个文件里，改 schema
-不可能会忘记改解析——此前 prompt 在 ``_build_stream_prompt``、解析在
-``generate_question_stream`` 隔 200 行手写状态机揣摩，正是这种漂移的温床。
+不可能会忘记改解析——此前 prompt 与解析隔 200 行手写状态机揣摩，正是这种漂移的温床。
 
 **解析层只判定，不猜测**：模型不听话（产出为 None / 安全闸门未过）统一走
 ``QuestionFailed`` 显式事件，由上层决定重试或提示，解析器不做任何宽容兜底。
@@ -11,15 +10,18 @@
 ``SchemaQuestionParser`` 是同步 push 状态机（``feed`` / ``finish``），无 async、
 无引擎依赖，可直接用字符串喂入单测。若日后要换成「增量 JSON 抽取」以在纯文本
 模型上拿到逐 token 推理，只需新增一个同协议（``feed``/``finish``）的解析器替换即可。
+
+本模块属**出题业务**（ADR-0032 Q3：原 ``app/ai/parsers/question.py`` 归位到 question
+子包）；字段读取工具 ``schema_field`` 与批改共用，故下沉至 ``app.domain.structured``。
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Protocol
 
 from pydantic import BaseModel
 
-from app.ai.segment import Segment, SegmentKind
+from agent_core.adapters.genkit import Segment, SegmentKind
 from app.domain.provider import (
     GeneratedQuestion,
     QuestionCard,
@@ -28,6 +30,7 @@ from app.domain.provider import (
     ReasoningDelta,
 )
 from app.domain.safety import check_output
+from app.domain.structured import schema_field
 
 
 def qtype_label(qtype: str) -> str:
@@ -67,13 +70,6 @@ class QuestionSchema(BaseModel):
     explanation: str
     difficulty: str
     reasoning: str = ""
-
-
-def schema_field(obj: Any, name: str, default: Any = None) -> Any:
-    """读模型产出字段（兼容 dict 与 pydantic 对象）。"""
-    if isinstance(obj, dict):
-        return obj.get(name, default)
-    return getattr(obj, name, default)
 
 
 @dataclass(frozen=True)

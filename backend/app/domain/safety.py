@@ -11,7 +11,7 @@
 
 from dataclasses import dataclass
 
-from agent_core.seams import Safety, SafetyResult
+from agent_core.ports import Safety, SafetyResult
 
 # —— 输入侧：越狱 / 指令注入意图 ——
 _JAILBREAK_HINTS = (

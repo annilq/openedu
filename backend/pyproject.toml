@@ -34,7 +34,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["app"]
+# agent_core 随 app 一同打包（ADR-0032）：内核与集成层同发一个 wheel，
+# 不单独发布；若日后需独立分发，再为 agent_core 单独建 pyproject/独立仓。
+packages = ["app", "agent_core"]
 
 [tool.ruff]
 target-version = "py314"

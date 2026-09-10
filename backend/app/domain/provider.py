@@ -1,6 +1,6 @@
-"""教育域 LLM 抽象（agent_core.seams.LLMProvider 的教育扩展）。
+"""教育域 LLM 抽象（agent_core.ports.LLMProvider 的教育扩展）。
 
-ADR-0031：通用消息级 ``LLMProvider`` 已上移到 ``agent_core.seams``；本文件只保留
+ADR-0031：通用消息级 ``LLMProvider`` 已上移到 ``agent_core.ports``；本文件只保留
 **教育专有**的扩展与结构体：
 
 - ``EducationLLMProvider``：在通用 ``LLMProvider`` 之上，追加教育特有的 ``tutor`` /
@@ -15,7 +15,7 @@ from abc import abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from agent_core.seams import LLMProvider
+from agent_core.ports import LLMProvider
 
 if TYPE_CHECKING:
     pass

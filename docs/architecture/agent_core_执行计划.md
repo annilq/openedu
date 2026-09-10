@@ -3,6 +3,11 @@
 > 配套：ADR-0031（Agent 抽象层抽取为通用框架 `agent_core`）。
 > 模式：一步到位大重写（用户决策）。本计划只描述「做什么 / 改哪些文件」，不在此阶段改代码。
 > 原则：教育业务**零断流**——抽前冻结契约、契约测试守护、抽完一次性切换 + 全量回归（见「前置」与「回滚」）。
+>
+> ⚠️ **部分条目已被 ADR-0032 取代（2026-09-10）**：本计划中「`agent_core` 独立包 + `pyproject.toml` + 发内部 PyPI」
+> 一条**已废**——现决定 `agent_core` **随 app wheel 一起打包、不单独发布**（`backend/pyproject.toml`
+> `packages=["app","agent_core"]`，且已删 `backend/agent_core/pyproject.toml`）。
+> 另：`app/ai/segment.py` 已迁 `agent_core/adapters/genkit.py`、`app/ai/generation.py` 已删。**以 ADR-0031 / ADR-0032 正文为准。**
 
 ---
 

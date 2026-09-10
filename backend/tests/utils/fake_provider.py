@@ -18,7 +18,7 @@
 """
 from __future__ import annotations
 
-from agent_core.seams import StructuredDone, TextDelta, ToolCall
+from agent_core.ports import StructuredDone, TextDelta, ToolCall
 from app.domain.provider import EducationLLMProvider
 
 # 固定讲解文本（须与安全词表无交集，保证 check_output 放行）。

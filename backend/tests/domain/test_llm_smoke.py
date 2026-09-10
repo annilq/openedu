@@ -48,9 +48,15 @@ def test_genkit_real_generate(client):
     model = _ollama_models[0]
     engine = resolve_engine(model["id"])
     assert engine is not None, "未解析到 ollama 引擎"
+    provider = build_provider(engine=engine)
     q = asyncio.run(
         generate_question(
-            engine, subject="数学", grade=2, knowledge_point="加法", qtype="calc", difficulty="easy"
+            provider,
+            subject="数学",
+            grade=2,
+            knowledge_point="加法",
+            qtype="calc",
+            difficulty="easy",
         )
     )
     assert q is not None and q.subject and q.stem and q.answer

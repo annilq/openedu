@@ -1,7 +1,21 @@
 import asyncio
 import re
 
+from pydantic import BaseModel
+
 from app.domain.provider import EducationLLMProvider
+
+
+class GradeSchema(BaseModel):
+    """开放题批改的线上契约（``output_schema`` 约束解码）。
+
+    属**批改**而非出题：放置于批改领域（原寄居在 ``app.ai.generation`` 出题模块，
+    ADR-0032 Q3 归位）。
+    """
+
+    correct: bool
+    score: float
+    explanation: str
 
 
 class Grader:

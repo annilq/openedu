@@ -15,12 +15,12 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 
+from agent_core.ports import StructuredDone, TextDelta
 from agent_core.registry import (
     build_subagent,
     discover_subagent_manifests,
     get_subagent_class,
 )
-from agent_core.seams import StructuredDone, TextDelta
 from agent_core.subagent import SubAgentContext
 from app.ai.subagents import get_subject_persona
 from app.ai.subagents.question.agent import QuestionSubAgent, expand_specs

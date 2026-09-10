@@ -14,18 +14,18 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator
 
-from agent_core.protocol import (
-    assistant_message,
-    thinking,
-    tool_call,
-    tool_result,
-)
-from agent_core.seams import (
+from agent_core.ports import (
     LLMProvider,
     Retriever,
     StructuredDone,
     TextDelta,
     ToolCall,
+)
+from agent_core.protocol import (
+    assistant_message,
+    thinking,
+    tool_call,
+    tool_result,
 )
 from agent_core.tools import ToolRegistry, ToolSpec
 

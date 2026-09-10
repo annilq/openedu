@@ -624,3 +624,106 @@ my_biz_backend/
 - ADR-0024 / 0025 / 0026（统一入口 / 事件信封 / 角色感知）
 - ADR-0030（发现即注册 / 去硬编码 / 删 LLM 分类插槽）
 
+## ADR-0032 `agent_core` 分层边界与命名收敛（ports-and-adapters 落位）
+
+> 来源：用户在 ADR-0031 落地后追问四个边界问题（Q1 subagents 位置 / Q2 `ai` 下通用方法能否上提 /
+> Q3 `generation.py`·`parsers/question.py` 业务耦合 / Q4 是否把 genkit 集成进 `agent_core`），
+> 并追问文件组织与命名的业内共识。配套详文：`docs/architecture/agent_core_结构与命名规范.md`。
+
+### 背景
+1. ADR-0031 抽出独立包 `agent_core`（内核 + 协议 + 端口 + 编排）后，`app/ai` 的职责边界在代码里**未被明文表达**：
+   哪些属内核、哪些属引擎适配、哪些属业务集成，只能靠读码推断。
+2. 四个待澄清点：
+   - **Q1**：`subagents` 是应用层业务 agent，是否该与 `app` 同层（提到 `backend/`）？
+   - **Q2**：`app/ai` 下的通用方法（`segment` / `debug_log` / `model_catalog` / `engine`）能否上提 `agent_core`？
+   - **Q3**：`app/ai/generation.py` 与 `app/ai/parsers/question.py` 与业务模型深度耦合，能否抽象？
+   - **Q4**：把 genkit 集成进 `agent_core`，是否就能把 `ai` 的通用功能上提、让抽象层更简单清晰、基座更稳定？
+3. 另需统一命名口径：`seams`、`contrib` 等词对使用者不够直观，需对齐业内共识（六边形架构）。
+4. 查证事实（推翻若干初判）：
+   - `app/ai/segment.py` **不 import genkit**（duck-typing 读 chunk 字段），已引擎无关，可直接上提；
+   - `app/ai/generation.py` 不只服务出题——其 `GradeSchema` 同时被**批改**（`domain/genkit_provider.py`）消费；
+   - `app/ai/debug_log.py` 的写入函数**全后端零调用方**（其 docstring 引用的 `flows.py` 已删），是死代码。
+
+### 决策
+1. **名称口径对齐六边形架构（ports-and-adapters）**：
+   - `agent_core/seams.py` → **`agent_core/ports.py`**（「端口」；与 `adapters` 成对；"seam" 是测试词汇，非框架词汇）。
+   - 第一方引擎集成命名为 **`agent_core/adapters/`**（六边形「适配器」），弃用早前的 `contrib` 提法（`contrib` 只表达"附带"，不表达角色）。
+   - 保留（已符共识）：`protocol` / `runtime` / `router` / `registry` / `tools` / `errors` / `subagents/`。
+2. **Q1（落点）**：`subagents` 是**本应用专属**业务 agent（重度 `import app.domain/features/core`），
+   **不提为 `backend/subagents/`**——那会误发"与 `agent_core` 一般可复用"的信号，且仍反向依赖 `app.*`，纯改名不省事。
+   正确粒度为 `app/ai/subagents/`（仍在 `app` 内、与 `ai` 同级）。命名**保持 `subagents`**：它们 subclass
+   `agent_core.subagent.BaseSubAgent`，是内核的 subagent，不是独立 agent。
+3. **Q2（不上提）**：`app/ai` 在 ADR-0031 后已是**教育集成层**，无真正可上提的通用件：
+   - `segment.py` 已引擎无关 → **上提**到 `agent_core/adapters/genkit.py`（它服务适配器，属适配层）；
+   - `debug_log.py` 是 DB 实现（绑 `app.core.db` + 本应用 schema）→ **删除**（见 5.）；
+   - `model_catalog.py` 是产品配置（支持哪些厂商）→ 留 app；
+   - `engine.py` 最 app 耦合（读 ModelConfig 表、解密密钥）→ 留 app，只把 SDK 构造委托适配器。
+   **原则：`agent_core` 只放端口抽象，实现留 app；不搬文件。**
+4. **Q3（按归属拆分，非整搬）**：`generation.py` / `parsers/question.py` 拆为：
+   - 出题专属 → `app/ai/subagents/question/{pipeline.py, parsers.py}`；
+   - `GradeSchema` → `app/domain/grader.py`（批改契约，非出题）；
+   - 跨业务共享件 → `app/domain/prompts.py`（`EDU_SYSTEM_PROMPT`）+ `app/domain/structured.py`（`schema_field`/`coerce_dict`）；
+   - 废弃 engine 版 `_generate_question(_stream)`，出题统一走 `LLMProvider`；删除 `app/ai/generation.py` 与 `app/ai/parsers/`。
+5. **Q4（否决 genkit 进内核）**：genkit **不进 `agent_core`**。理由：
+   - 它解锁不了"通用功能上提"（真正通用的 `segment.py` 本就引擎无关）；
+   - 会让引擎易变性搬进基座——切引擎 = 改基座，违背"基座稳定"；
+   - 会强制所有外部方案吃 genkit，与"外部拓展稳定"方向相反。
+   正确机制：**内核保持引擎无关，genkit 作为挂在端口上的适配器**（`agent_core/adapters/genkit.py`，
+   genkit SDK 的**唯一落点**，工厂内延迟导入 → 未装 genkit 仍可导入内核与适配器）。
+6. **删除死代码 `app/ai/debug_log.py`**（原计划仅是改名 `observability.py`）：
+   三个写入函数零调用方、职责已由 `app.features.assistant` 承担（ADR-0026 废除 `debug_log`）；
+   对死代码改名无收益，故删除。`app/ai/__init__.py` docstring 同步清理。
+7. **固化两条分层不变量**（须持续守护）：
+   - `agent_core` 内**零 `app.*` 依赖**；
+   - 全后端 `import genkit` **仅出现在 `agent_core/adapters/genkit.py` 的工厂函数体内**（延迟导入）。
+8. **打包关系定为「`agent_core` 随 app wheel 一起打包」**（不单独发布）：
+   `backend/pyproject.toml` 的 `[tool.hatch.build.targets.wheel]` → `packages = ["app", "agent_core"]`；
+   同时**删除 `backend/agent_core/pyproject.toml`**（一个产物只留一份构建定义，避免"看起来是独立可发布包"的误导）。
+   **本决策取代 ADR-0031 执行计划第 7 步的「发布 `agent_core` 到内部 PyPI」**——内核与集成层同发一个 wheel。
+9. **清理 `app/features/ai/repository.py` 的写入侧死代码**：删除 `create_conversation` / `add_message` / `finish_conversation`
+   （唯一调用方是已删的 `debug_log.py`），保留只读的 `list_conversations` / `get_conversation_messages`（`/ai/debug/conversations` 在用）。
+
+### 落地结果（五阶段，全部完成）
+1. `seams.py` → `ports.py`（纯改名，13 处 import；含 `__init__` 再导出同步）。
+2. 建 `agent_core/adapters/genkit.py`：迁入 `segment.py` 的 `Segment`/`SegmentKind`/`decode_stream`，
+   并把 `GenkitProvider.stream` 的纯 genkit 分支提为 `GenkitLLMProvider`；`app/domain/genkit_provider.py` 改为委托（教育扩展 `tutor`/`grade_open` 留 app）。
+3. 适配器新增工厂 `build_genkit_engine`（构造 `Genkit(plugins=[...])` + provider 前缀归一 + 实例缓存）；
+   `app/ai/engine.py` 瘦身为纯配置解析（删 `from genkit import ...` 三行），`EngineResolution` 形状不变。
+4. Q3 拆分落地（见决策 4）；`app/ai` 顶层不再含任何教育出题内容。
+5. 删除 `debug_log.py`（见决策 6）。
+6. `agent_core` 随 app wheel 打包（见决策 8）+ 清理 `features/ai/repository.py` 写入侧死代码（见决策 9）。
+
+### 备选（已否决）
+- **genkit 集成进 `agent_core`**：把引擎易变性烤进基座、强制外部方案吃 genkit。否决（见决策 5）。
+- **`subagents` 提到 `backend/` 层**：误导性 + 无实际解耦收益。否决。
+- **`contrib` 命名**：语义弱于 `adapters`。否决。
+- **`debug_log.py` 改名保命**：对零调用方死代码无收益。否决（改为删除）。
+- **Q3 整文件搬入 `subagents`**：会把批改契约（`GradeSchema`）错带到出题侧。否决（按归属拆）。
+
+### 后果
+- 正向：三层职责（内核 / 适配器 / 集成）命名与目录一一对应，外部工程师可只凭目录读懂依赖方向；
+  切引擎仍只动适配器一处、内核纹丝不动；外部方案可自由实现 `LLMProvider` 接入；死代码清零。
+- 负向/风险：
+  - 拆分面较大（涉 `generation.py` 删除、`parsers` 迁移、多个调用方与测试改签名）；配套：分五阶段小步落地，
+    每阶段 `ruff check .` + 全量 `pytest` 把关（最终 **166 passed / 2 skipped**）。
+  - 两类不变量是"靠纪律"而非"靠机制"守护，须补 AST/结构级断言测试防漂移（当前已覆盖 engine 无 genkit import、
+    适配器仅函数内 import）。
+
+### 验证
+- `uv run ruff check .` 全过；`uv run pytest` → **166 passed / 2 skipped / 0 failed**。
+- 结构不变量（grep/AST 实证）：`agent_core` 零 `app.*`；全后端 `import genkit` 仅适配器工厂内 3 行；
+  无 `app.ai.generation` / `app.ai.parsers` / `app.ai.segment` / `app.ai.debug_log` 残留引用。
+- 打包实证：`uv build --wheel` → `app-0.1.0-py3-none-any.whl` 内含 `agent_core/` **11 个文件**（`app/` 97 个），
+  **未误带 `pyproject.toml`**；隔离 venv `pip install --no-deps <wheel>` 后
+  `import agent_core` / `agent_core.ports` / `agent_core.adapters.genkit` 均成功，且 `--no-deps` 下未引入
+  genkit 等第三方（印证内核零依赖 + 适配器延迟导入的不变量在打包产物中依然成立）。
+
+### 遗留（另议，非阻断）
+- 若日后需将 `agent_core` **独立分发**（供其它业务子项目 `pip install`），需另建独立仓 / pyproject + 版本策略；
+  本 ADR 决定不单独发布（见决策 8），**以本 ADR 为准**（取代 ADR-0031 执行计划第 7 步）。
+- （前端，属 ADR-0031 遗留）`frontend/lib/features/assistant/domain/assistant_event.dart` 加 `extra` 扩展位（协议已留 `extra`）——未动。
+
+### 关联
+- ADR-0003（框架隔离 + 自封领域接口）/ ADR-0031（抽 `agent_core`，本 ADR 收敛其边界与命名）
+- ADR-0021 / 0024 / 0025 / 0026 / 0027 / 0029 / 0030（SubAgent 契约 / 统一入口 / 信封 / 会话 / Feature-First / 解析分层 / 收口）
+

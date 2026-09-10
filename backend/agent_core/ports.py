@@ -1,8 +1,8 @@
-"""agent_core 抽象 seam（业务无关的框架契约）。
+"""agent_core 端口（ports）——业务无关的框架契约（六边形架构的「端口」）。
 
 本模块是 agent_core 的「接口真相源」：任何业务工程接入时，只需实现这些抽象基类
 （LLMProvider / Retriever / Safety）并注入 ``AgentRuntime``，即可复用整套路由 / 注册 /
-统一事件流 / 工具循环。
+统一事件流 / 工具循环。具体实现（如 genkit）作为「适配器」置于 ``agent_core/adapters/``。
 
 **零业务依赖**：不 import 任何 app.* 符号，可独立发布为内部 PyPI 包。
 """

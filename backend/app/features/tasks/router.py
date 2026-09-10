@@ -147,19 +147,24 @@ def _gen_question(
     interests: list[str] | None = None,
     focus_interest: str | None = None,
 ) -> GeneratedQuestion:
-    """出题单题：统一走共享生成核心 app.ai.generate_question（ADR-0023 收敛）。
+    """出题单题：统一走共享出题管线 ``app.ai.subagents.question.pipeline.generate_question``
+    （ADR-0023 收敛 / ADR-0032：只依赖 ``LLMProvider``，不再直连 genkit 引擎）。
 
     SSE 出题与该核心共用同一算法（prompt 构建 / check_output 安全闸门），
     消除双实现漂移。mock 兜底已移除：engine 为 None 或真实产出不安全（check_output 未过）
     时生成失败，由上层以 LLM_UNAVAILABLE 报错，不再静默回退假数据。
     """
-    from app.ai import generate_question as _gen_question
+    from app.ai.subagents.question.pipeline import (
+        generate_question as _generate_question,
+    )
+    from app.domain import build_provider
 
     g: GeneratedQuestion | None = None
     try:
+        provider = build_provider(engine=engine)
         g = asyncio.run(
-            _gen_question(
-                engine,
+            _generate_question(
+                provider,
                 subject=subject,
                 grade=grade,
                 knowledge_point=knowledge_point,

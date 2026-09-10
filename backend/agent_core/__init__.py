@@ -8,6 +8,18 @@
 from __future__ import annotations
 
 from agent_core.errors import AgentError, ToolExecutionError
+from agent_core.ports import (
+    Chunk,
+    LLMProvider,
+    Retriever,
+    RuntimeDeps,
+    Safety,
+    SafetyResult,
+    StreamEvent,
+    StructuredDone,
+    TextDelta,
+    ToolCall,
+)
 from agent_core.protocol import (
     AssistantEvent,
     data_event,
@@ -24,18 +36,6 @@ from agent_core.registry import (
 )
 from agent_core.router import classify
 from agent_core.runtime import AgentRuntime, RouteDecision
-from agent_core.seams import (
-    Chunk,
-    LLMProvider,
-    Retriever,
-    RuntimeDeps,
-    Safety,
-    SafetyResult,
-    StreamEvent,
-    StructuredDone,
-    TextDelta,
-    ToolCall,
-)
 from agent_core.subagent import (
     BaseSubAgent,
     SubAgentContext,

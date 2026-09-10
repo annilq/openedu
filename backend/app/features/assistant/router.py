@@ -22,6 +22,7 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from sqlmodel import Field, Session, SQLModel
 
+from agent_core.ports import RuntimeDeps
 from agent_core.protocol import (
     EVENT_ASSISTANT_MESSAGE,
     EVENT_DATA,
@@ -31,7 +32,6 @@ from agent_core.protocol import (
     AssistantEvent,
 )
 from agent_core.runtime import AgentRuntime
-from agent_core.seams import RuntimeDeps
 from agent_core.subagent import SubAgentContext
 from app.ai.engine import resolve_engine
 from app.ai.subagents.tutor.agent import detect_subject
