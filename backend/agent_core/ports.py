@@ -62,6 +62,25 @@ class LLMProvider(ABC):
         - ``schema`` 给定 → 约束解码，产出 ``TextDelta``（推理）+ 末帧 ``StructuredDone(data=解析字典)``。
         - ``tools`` 给定 → 模型可回 ``ToolCall``；runtime 执行后回灌并再请求。
         - 两者皆无 → 纯文本，逐段 ``TextDelta``，无 ``StructuredDone``。
+
+        ``history`` 为多轮上下文，**必须被实现真正消费**（不消费会导致工具回灌丢失 →
+        模型反复重调同一工具 → 死循环）。元素形态：
+
+        - ``{"role": "user" | "assistant", "content": str}`` —— 普通对话轮次；
+        - ``{"role": "assistant", "content": str, "tool_calls": [{"name": str, "args": dict,
+          "ref": str}]}`` —— **模型发起的工具请求轮**。``ref`` 是工具调用的关联 id
+          （引擎侧 ``tool_call_id``），必须与其后的工具结果条目同值；实现方据此构造
+          ToolRequest part，**不得**把工具请求当成普通助手文本；
+        - ``{"role": "tool", "name": str, "ref": str, "content": str}`` —— **工具结果回灌**
+          （``content`` 为结果 JSON 文本；``ref`` 须与上一条 assistant 条目中对应调用的
+          ``ref`` 相同）。实现方须据此构造引擎侧 ToolResponse part，而非当成普通用户消息。
+
+        ``role == "assistant"`` 且带 ``tool_calls`` 的条目与其后的 ``tool`` 条目**必须成对
+        出现**：多数函数调用协议（OpenAI / Anthropic 等）都要求工具结果回应前一条助手的
+        工具请求，缺一侧会被端点直接拒绝。
+
+        工具调用不受支持时（注册失败 / 无法解析 tool request / 引擎无此能力）**必须抛**
+        ``ToolUnsupportedError``，不得静默降级为纯文本（ADR-0033）。
         """
         ...
 

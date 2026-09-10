@@ -731,3 +731,384 @@ my_biz_backend/
 - ADR-0003（框架隔离 + 自封领域接口）/ ADR-0031（抽 `agent_core`，本 ADR 收敛其边界与命名）
 - ADR-0021 / 0024 / 0025 / 0026 / 0027 / 0029 / 0030（SubAgent 契约 / 统一入口 / 信封 / 会话 / Feature-First / 解析分层 / 收口）
 
+
+---
+
+## ADR-0033 业务查询 Tools：原生 function calling + `query` 学情查询 SubAgent
+
+> 来源：用户提出「根据业务功能为业务 subagent 添加 tool 支持对业务的查询，方便通过 `/assistant/chat` 查询功能」。
+> 经一轮 grill 会话逐项收敛（11 个主决策 + 4 个未决项），本 ADR 记录结论与执行计划。**先立文档，再动代码。**
+
+### 背景
+
+1. **真 tool loop 是死代码**：三个生产 subagent（`question` / `tutor` / `tasks`）全部 `tools=[]`，走的是
+   `run()` 内手搓 `TOOL_CALL` / `TOOL_RESULT` 帧的路径；`agent_core.subagent.run_with_tools` 零生产消费方。
+   `app/ai/tools/list_tasks` 只是普通函数，由 `tasks/agent.py` 直接 import 调用。
+2. **查证事实（genkit 0.10.0 源码，非推断）**：
+   - `generate_stream(tools=...)` 形参为 `Sequence[str | Tool]`。适配器当前传
+     `{name, description, parameters}` 字典 → **类型非法**，是它只能降级纯文本的直接原因。
+   - `GenkitLLMProvider.stream(tools=...)` 分支**只 yield `TextDelta`，从不 yield `ToolCall`**，
+     且 `except Exception: pass` 后静默降级——模型拿不到工具结果就会编造业务数据。
+   - **`history` 形参被适配器完全忽略**（从不传给 genkit）。`run_with_tools` 的工具回灌正是靠 history，
+     故真跑起来：模型调工具 → 回灌丢失 → 模型重调 → `while True` **无轮次上限** → 无限烧 token。
+     `FakeLLMProvider` 因自行判了 `if history` 而未暴露此洞。
+   - `_ai/_generate.py:825`：`if turn_options.return_tool_requests or len(tool_requests) == 0: return`
+     → **`return_tool_requests=True` 可让 genkit 不执行工具**，把 `ToolRequest` 原样返回调用方。
+   - `define_tool(registry, func, name, description, *, input_schema)`：`func` 必须是 async 函数，
+     `input_schema` 可为 JSON-schema dict。**实现修正**：实际选用其姊妹 API
+     `genkit.tool(func, name=…, description=…, input_schema=…)`——它构造的是**不注册**的临时 Tool，
+     由 `register_tools` 在调用期挂到子 registry（`register_tools` 源码明确支持「只传入、从不注册」
+     的动态工具），比 `define_tool` 更适合「占位、用后即弃」语义，且无需自建 registry。
+   - 工具请求落点：`response.message.content[i].root.tool_request.{name, input, ref}`。
+3. **业务可查面**（扫 `app/features` 路由）：家长任务列表 / 今日任务 / 错题本（家长视角与娃娃视角各一）/
+   学习进度 / 知识点掌握度 / 待复习队列 / 孩子列表。娃娃端已存在 `/tasks/today`、`/review/due`、
+   `/tasks/wrong-questions`，说明「我今天有什么作业 / 我该复习什么」是真实场景。
+4. **前端只渲染 DATA 帧**：`assistant_notifier._apply` 仅 `case AssistantEventType.data` 走 `_attachCard`
+   （要求 `data['result']` 为 Map）；`TOOL_CALL` / `TOOL_RESULT` 注释为「暂不单独渲染」。
+   落库侧 `assistant/router.py` 已把 TOOL_CALL/TOOL_RESULT 写入 `Message` 表（回放不受影响）。
+5. **业务逻辑散在 router**：`features/mastery/router.py` 把越权校验 + 聚合 + `compute_mastery_score` +
+   `mastery_level` + 组装 `MasteryResp` 共 35 行写在路由函数里；`features/tasks/router.py` 内含
+   `_tq_to_resp` / `_wq_to_resp` 等私有转换。全部 feature 中仅 `auth` 有 `service.py`。
+6. **角色来源可信**：`core/deps.py::get_current_user` 用 PyJWT 验签解 `sub` → 查 `User` → `user.role`；
+   `/assistant/chat` 用 `CallerDep`，并写入 `SubAgentContext.role` 与 `ctx.extra{parent_id, child_id, grade}`。
+   工具读 `ctx.role` 即读服务端解出的可信值，客户端无法伪造。
+
+### 决策
+
+**A. 机制与执行权**
+
+1. **选型走 L2 原生 function calling**（不是规则选型、也不是「模型填 JSON 表」的伪 tool call）。
+   工具请求由模型经协议字段发出，runtime 执行后回灌。
+2. **执行权归 `agent_core` runtime**：适配器用 `return_tool_requests=True`，把每个 `ToolSpec` 经
+   `define_tool` 注册为 genkit **占位 Tool**（仅 `name` / `description` / `input_schema` 参与协议，
+   函数体永不执行，仅抛 `RuntimeError` 防误用）；收到 `tool_request` 译为 `ToolCall` → runtime 执行
+   `handler` → 结果译为 genkit `ToolResponse` part 回灌。内核保住执行权，工具可单测、事件帧完整。
+3. **适配器必须补消息映射层**：`[{role, content}]` ↔ genkit `Message` / `Part`（含 `ToolRequestPart` /
+   `ToolResponsePart`），并 **真正把 `history` 传下去**。这是消除死循环的前提。
+4. **删除适配器的静默降级**：Tool 注册失败 / ToolCall 解析失败直接抛，runtime 捕获后
+   `yield error(code="TOOL_UNSUPPORTED")`。**宁可显式报错，也不让模型在无数据时编造业务结论。**
+5. **`run_with_tools` 加轮次上限**：`BaseSubAgent.max_turns = 3` 类属性（subagent 可覆写），
+   超限同样走 `ERROR`。理由：查询场景通常 1–2 跳（先 `list_children` 拿 id，再查明细）。
+
+**B. 承载形态与权限**
+
+6. **新建 `query` 学情查询 SubAgent，吸收并删除 `tasks`**：
+   `business="query"` / `name="学情查询"` / `roles=["parent", "child"]` / `priority=12`
+   （高于 `question` 的 0 与 `tutor` 的 -10，接住原 `tasks` 为抢「任务题目」而设的 priority 10）。
+   原 `list_tasks` 降为其中一个 tool。理由：只读查询是同一类意图，散在多个 subagent 会让路由权重互相打架。
+   代价：`conversation.kind` 由 `tasks` 变 `query`（历史数据不迁移）。
+7. **第一批 7 个只读工具**：孩子列表 / 家长任务 / 今日任务 / 错题本 / 待复习 / 学习进度 / 掌握度。
+   **题库检索不做**（管理向，与对话查询弱相关，且工具数过多会摊薄模型选型准确率）。
+8. **孩子定位统一**：每个工具接可选 `child_id`（uuid）与 `child_name`（`display_name` 模糊）；
+   二者都不传 → 家长=名下全部孩子，娃娃=恒为自己。解析逻辑收口到共享 `resolve_child(session, ctx, ...)`，
+   各工具不得重复实现。
+9. **双端可见，工具内部按 role 裁剪**：不引入 `ToolSpec.roles`（避免把权限模型塞进内核），
+   改为所有工具返回全量、出参统一过 **`project_for_role(payload, role)`**（错题去 `answer` /
+   `explanation`，跨娃数据按 `child_id` 收窄）。**机制化兜底**：契约测试遍历全部工具跑一遍 child 视角，
+   断言输出不含任何答案类字段——漏判即红，不靠 review 纪律（ADR-008 是硬门槛）。
+10. **执行模型**：handler 里复用 runtime 传下的 request `session` **同步直调**（与现有
+    `assistant_chat` 在 async 端点内同步 `commit` 一致）。SQLModel Session **非线程安全**，
+    明确**禁止** `to_thread` 复用同一 session；约定「工具内不做并发查询」。查询为 ms 级本地库，阻塞可忽略。
+
+**C. 呈现、复用与工程约定**
+
+11. **呈现契约双轨**：`TOOL_RESULT` 存原始载荷（模型上下文 + 落库回放），同时在 tool loop 内经新增的
+    **工具结果渲染 hook**（`BaseSubAgent.render_tool_result(name, result)`，默认不产帧，subagent 可覆写）
+    补发 `DATA` 帧给前端渲染卡片。**前端零改动**，任务卡/错题卡照旧。
+12. **代码组织**：7 个工具放 `app/ai/subagents/query/tools/`（一工具一模块 + `registry.py` 汇总），
+    共享件 `resolve_child` / `project_for_role` 放同目录 `_shared.py`；将来被 `tutor` / `question`
+    复用时再按 ADR-0024 的 shared_tool 语义上提到 `app/ai/tools/`。
+13. **抽 service 层，router 与 tool 共用**：把 `mastery` / `tasks` 中散在路由的业务逻辑下沉到
+    `app/features/<feature>/service.py`（越权校验 + 聚合 + 组装），router 退化为薄适配（校验 → 调 service →
+    序列化），tool 直接调 service。**单一真相源，杜绝第二份聚合逻辑漂移。**
+14. **补 `skills/query_sop.md`**，与 `question_sop` / `tutor_sop` 对齐（含「查不到就说查不到，不许估算」约束）。
+15. **升级 `FakeLLMProvider` 为可控多轮 tool loop**（当前靠 `if history` 一刀切，无法表达「调 A 再调 B」），
+    并扩展 `tests/ai/test_layering_invariants.py` 断言新不变量（例如：`query/tools` 不得 import
+    `features/*/router`）。
+
+**未决项结论（用户确认按提议执行）**
+
+- `query` 的 `priority = 12`；娃娃端可见性不额外限制（靠 `project_for_role` 兜底）。
+- `max_turns` 落 `BaseSubAgent` 类属性，默认 3。
+- `skills/query_sop.md` 与另两个 SOP 同形态。
+- `FakeLLMProvider` 与 layering invariant 测试同步升级。
+
+### 执行计划（分阶段，每阶段 `ruff check .` + 全量 `pytest` 把关）
+
+1. **内核 ✅ 已完成（2026-09-10）**：`BaseSubAgent.max_turns = 3` + `render_tool_result` hook；
+   `run_with_tools` 加轮次上限（`TOOL_TURN_LIMIT`）、硬失败（`TOOL_UNSUPPORTED`）、同轮多工具全执行、
+   回灌契约改为 `{"role": "tool", "name": …, "content": <JSON>}`（`default=str` 兜非 JSON 原生类型）；
+   `agent_core/errors.py` 新增 `ToolUnsupportedError`；`ports.py` 补 `history` 契约与「不支持必须抛」约束。
+   新增 `tests/ai/test_tool_loop_bounds.py`（**16 个用例**）。
+2. **适配器 ✅ 已完成（2026-09-10）**：`agent_core/adapters/genkit.py` 新增工具路径
+   （`_build_tools` / `_build_messages` / `_extract_tool_calls` / `_response_text` / `_stream_with_tools`）：
+   ① 中性工具声明 → `genkit.tool(...)` **占位 Tool**（仅 `name`/`description`/`input_schema` 参与协议，
+   函数体 `_placeholder_tool` 永不执行）；② 中性 history ↔ genkit `Message`/`Part`（含
+   `ToolRequestPart` / `ToolResponsePart`，缺 `ref` 时 FIFO 兜底配对）；③ `return_tool_requests=True`
+   + `messages=` 随请求下发；④ 响应 `tool_request` → 中性 `ToolCall`（入参 JSON 文本解析为 dict）；
+   ⑤ **删除静默降级**，任何失败抛 `ToolUnsupportedError`；⑥ 未流式 provider 的末帧正文兜底下发
+   （已流过则不重复）。内核 `ports.py` 的 history 契约同步补 `tool_calls` / `ref` 成对条目；
+   `subagent.run_with_tools` 每轮先入 `{"role":"assistant","tool_calls":[…]}` 再入工具结果。
+   新增 `tests/ai/test_genkit_adapter_tools.py`（**25 个用例**；该文件不 import genkit——沿用
+   `test_genkit_adapter.py` 的鸭子类型替身约定，同时保住「genkit 唯一落点」不变量）。
+   （`import genkit` 仍只在适配器、且只在函数体内——ADR-0032 不变量未破。）
+3. **业务层下沉 ✅ 已完成（2026-09-10）**：新建 4 个 service 文件，均是「读 + 组装 + 裁剪」，
+   **写路径（草稿生成 / 状态流转 / 复习作答）不动**：
+   - `features/children/service.py`：`require_owned_child`（收口原先散在 3 个 router 的
+     `child.parent_id != parent.id` 同形判断，错误码/文案可覆写以保持既有响应体逐字不变）+
+     `list_children_of`（孩子列表读取口径，工具不得跨 feature 直连 `auth` 仓储）。
+   - `features/tasks/service.py`：三个序列化器（`question_to_resp` / `task_to_resp` /
+     `wrong_question_to_resp`，`include_answer` 开关即娃娃端防作弊开关）+ 纯读取用例
+     （`list_parent_tasks` / `list_today_tasks` / `list_wrong_questions` / `child_progress`）
+     + 家长视角复合用例（`list_owned_child_wrong_questions` / `owned_child_progress`＝鉴权 + 读取）。
+   - `features/mastery/service.py`：`build_mastery`（纯聚合）+ `get_mastery_for_user`（双角色鉴权，
+     错误码/文案与旧路由逐字一致）。
+   - `features/review/service.py`：`review_item_to_resp` + `list_due_reviews`（待复习队列）。
+   - `features/tasks/repository.py` 新增 `list_tasks_by_parent`（`get_draft_tasks` 的泛化）。
+   - 三个 router 退化为薄适配：`tasks/router.py` −134 行、`mastery/router.py` −65 行、
+     `review/router.py` −26 行；**路由路径、状态码、响应模型、错误码与文案全部未变**。
+   - 新增分层不变量（`tests/ai/test_layering_invariants.py` 5、6 两条）：feature service
+     **不得 import 任何 router**（依赖方向 router → service）、**不得 import `fastapi`**
+     （查询工具在 SSE 请求内直调 service，不经 ASGI）。
+4. **工具层 ✅ 已完成（2026-09-10）**：新建 `app/ai/subagents/query/tools/`，一工具一模块 + `registry.py`
+   汇总出 `QUERY_TOOLS`（7 个 `ToolSpec`，顺序即下发顺序，定位类 `list_children` 在前）：
+   `list_children` / `list_parent_tasks` / `list_today_tasks` / `list_wrong_questions` /
+   `list_due_reviews` / `get_progress` / `get_mastery`。共享件 `_shared.py`：
+   - `resolve_children`（决策 8）：娃娃恒为自己、**忽略入参**（杜绝换 id 查别人）；家长按
+     `child_id` / `child_name` 定位，都不传＝名下全部；指定但不在名下 → 抛 `ToolArgumentError`。
+   - `project_for_role`（决策 9）：娃娃端**递归**剥掉 `ANSWER_FIELDS = {answer, explanation}`。
+   - 另有 `resolve_parent` / `dump` / `child_block` / `envelope` / `LOCATOR_PROPS`。
+   **实现补充（决策 8 细化）**：`list_parent_tasks` 在娃娃端**等价 `list_today_tasks`**——
+   娃娃没有「发布任务」概念，若走家长分支会经 `ctx.extra["parent_id"]`（＝其家长）拿到
+   **兄弟姐妹的全量任务**，属越权；该分支由契约测试钉死。
+   **统一出参信封**：`{children: [{id,name,grade,items,meta}], unassigned_items, total_children,
+   total_items}`——全部工具同构，模型易读、渲染 hook 可无特例展开。未派发草稿只在
+   **未指定目标娃娃**时进 `unassigned_items`（精确指定即剔除，防越权外溢）。
+   **异常归一**：工具层不需要 HTTP 信封语义，`require_owned_child` 抛的 `AppErrorException`
+   在 `_shared` 内转为 `ToolArgumentError`（只保留 message），避免业务异常类型从 REST 层
+   漏进内核调用栈；runtime 会把两者都转成 `{"error": …}` 回灌给模型。
+   契约测试 `tests/ai/test_query_tools_contract.py`（**16 例**）：工具形状（7 个 / 名称唯一 /
+   每个工具与参数都有 description / handler 是 `async (args, *, ctx, session)`）、
+   娃娃端无答案（**含家长视角对照组**，防「数据为空」假绿；另验证投影的递归性）、
+   越权（娃娃传兄弟 id 无效、家长传别家娃娃抛错、`child_name` 未命中抛错）、
+   信封同构、**全部工具只读**（调用前后关键表行数不变）、聚合口径抽查。
+   分层不变量扩至 **8 条**（新增 7「`query/tools` 不得 import router / repository」、
+   8「不得 import `fastapi`」），**已实测能捕获违规**（临时越界模块跑扫描即红）。
+5. **subagent ✅ 已完成（2026-09-10）**：新建 `app/ai/subagents/query/`（manifest / agent / render / tools / skills），
+   删除 `tasks/` 文件夹；校准 `triggers` 与 `question` 的边界（「任务题目」归 query，「出题」归 question）。
+6. **测试替身与门禁**：升级 `FakeLLMProvider` 为**可控多轮工具脚本**（跳数只按 `role == "tool"`
+   条目计，客户端自带历史不得吞掉首轮工具调用）；补 `tests/api/routes/test_assistant.py`
+   的查询端到端用例（走替身脚本，不接真模型——见既有「测试不得依赖真实模型」红线）。
+
+### 备选（已否决）
+
+- **L0 规则选型 / L1 结构化选型（模型填 JSON 表）**：泛化差或语义不正。选 L2。
+- **genkit 自执行工具链**：`run_with_tools` 形同废弃、事件帧捞不全，且需把业务 session 用闭包推进
+  内核适配器层，违反 ADR-0032 分层。否决。
+- **新建 `query` 但保留 `tasks` 并存**：触发词边界模糊（「我的任务」vs「娃的作业」），两处调权重。否决。
+- **把查询工具挂到 `tutor` 兜底**：伴学答疑与业务查询语义混淆，且孩子端会莫名获得查询能力。否决。
+- **`ToolSpec.roles` 白名单（内核级权限）**：语义更硬，但把业务角色模型塞进业务无关内核。
+  改为工具内部自判 + `project_for_role` + 契约测试。否决。
+- **工具直接调 repository 自行拼装**：聚合逻辑出现第二份，必漂移。改为抽 service（决策 13）。否决。
+- **工具走 HTTP 调自己的 REST 接口**：SSE 请求内再发 HTTP 回自身，单 worker 下有自我死锁风险。否决。
+- **`to_thread` 复用 request session**：SQLModel Session 非线程安全。否决。
+- **保留适配器静默降级**：失败时模型编造业务数据，比显式报错更危险。否决。
+- **`list_parent_tasks` 在娃娃端沿用家长语义**：娃娃会话的 `ctx.extra["parent_id"]` 是其家长，
+  该分支会把**兄弟姐妹的全量任务**返回给娃娃（越权）。改为娃娃端等价 `list_today_tasks`。否决。
+- **工具直接返回 Pydantic 响应模型**：`run_with_tools` 用 `json.dumps(..., default=str)` 落
+  history，模型对象会退化成 Python repr（单引号、不可再解析）。改为工具内 `dump()` 成 JSON 友好 dict。否决。
+
+### 后果
+
+- 正向：`/assistant/chat` 首次具备真实业务查询能力；工具执行权与可测性都在内核；
+  查询结果既可被模型引用也可前端渲染；业务聚合逻辑单点收敛；孩子端安全边界由测试守护而非口头约定。
+- 负向 / 风险：
+  - **依赖 genkit-python 的 tool 支持成熟度与模型侧 function calling 能力**（deepseek 支持；
+    若换模型需重新验证）。缓解：硬失败 + `TOOL_UNSUPPORTED` 显式报错，不做静默降级。
+  - 适配器承担了一套消息映射（中性 `history` ↔ genkit `Message`/`Part`），是本方案最重的单点工作量
+    （第 2 阶段已完成）；`Message` 表落库格式不受影响（仍存 TOOL_CALL/TOOL_RESULT 的 `payload`）。
+  - **`history` 契约已扩展**：工具回灌不再只有 `{"role":"tool",…}`，前面必须有一条
+    `{"role":"assistant","tool_calls":[…]}`（成对）。适配器缺 `ref` 时会 FIFO 兜底，但**运行时
+    必须成对写入**——这是 provider 侧 `tool_call_id` 配对要求，也是第 1 阶段契约的破坏性变更。
+  - `business` 键由 `tasks` 改 `query`，历史 `conversation.kind = "tasks"` 的记录不再对应业务键（不迁移）。
+  - 工具数 7 个可能影响选型准确率；若实测偏低，再按角色/场景分组下发 schema。
+
+### 验证
+
+**第 1 阶段（内核）已完成**：
+
+- `uv run ruff check .` → All checks passed。
+- `uv run pytest` → **187 passed / 2 skipped / 0 failed**（本阶段前基线 171 passed，新增 16 条）。
+- 新增 `tests/ai/test_tool_loop_bounds.py`（16 用例）覆盖：
+  - 轮次上限：`max_turns` 默认 3、可配置；模型永远要求调工具时**恰好请求 3 次**后
+    `ERROR(TOOL_TURN_LIMIT)`，且**不再请求模型**（替身对超额调用抛 AssertionError 拦截）。
+  - 硬失败：`ToolUnsupportedError` → `ERROR(TOOL_UNSUPPORTED)`，只请求 1 次、不重试，
+    且**流内不出现任何助手文本**（守住「不得静默降级、模型不得空编业务数据」）。
+  - 回灌契约：history 条目为 `{"role": "tool", "name": …, "content": <JSON>}`；
+    非 JSON 原生类型（UUID）不抛错；初始 history 被保留并追加。
+  - 同轮多工具：一轮内两个 `ToolCall` 全部执行、合并为一次回灌（provider 仅请求 2 次）。
+  - 异常隔离：未知工具 / handler 抛错 → `TOOL_RESULT` 携带 `error` 载荷，整条流不崩。
+  - 渲染 hook：`DATA` 帧必发在 `TOOL_RESULT` **之后**；基类默认返回空列表（不覆写 = 不出卡）。
+  - 兼容：`tools=[]` 时仍委托 `agent.run`，provider 零调用。
+- 回归：`tests/ai` 全绿（92 passed），既有分层不变量（`test_layering_invariants.py`）未破。
+
+**第 2 阶段（适配器）已完成**：
+
+- `uv run ruff check .` → All checks passed。
+- `uv run pytest` → **213 passed / 2 skipped / 0 failed**（第 1 阶段后 187；本级 +25 adapter +1 内核 ref 唯一性）。
+- 新增 `tests/ai/test_genkit_adapter_tools.py`（25 用例）覆盖：
+  - 工具声明：合法 `Tool`（**非 dict**，原缺陷根因）、非法声明硬失败、占位体永不执行。
+  - 消息映射：`user/model/tool` 三态 part 类型正确；`ref` 请求/结果**同值**（OpenAI 的
+    `tool_call_id` 配对要求）；带正文的助手轮与工具请求同处一条 Message；工具结果以
+    **JSON 文本**而非 Python repr 回传；缺 `ref` 时 FIFO 自动配对（含同轮多工具）；
+    非法条目硬失败。
+  - 请求构造：`return_tool_requests=True`、`tools` 为 Tool 对象、`messages` 按
+    `history → 当前提问` 顺序、`system` 独立；回灌后第二轮必带「model(tool_request) + tool」两条消息。
+  - 流式：正文与原生思维链都发 `TextDelta`；**流式工具请求分片不得当文本下发**；
+    未流式 provider 的末帧正文兜底下发且不重复。
+  - 响应解析：多工具请求全部下发；入参 JSON 文本 / 标量 / None / 非法 JSON 均可容忍；
+    缺 `message` 不崩。
+  - 硬失败：引擎报错抛 `ToolUnsupportedError`（**已吐部分文本也不得改当纯文本答完**）。
+  - 回归护栏：schema 路（出题）行为不变。
+- **真链路离线端到端验证**（自造 genkit model + `define_model`，零网络，一次性脚本，不入库）：
+  - 第一轮：模型侧 `request.tools == ["list_children"]`（占位 Tool 被解析为 `ToolDefinition` 下发）、
+    messages `[system, user]`；响应中的 `ToolRequestPart` 被译为
+    `ToolCall(name="list_children", args={"grade": 3})`；**占位体未被调用**。
+  - 第二轮（带工具回灌）：模型侧 messages `[system, user, model(ToolRequest ref=call_abc),
+    tool(ToolResponse ref=call_abc, output=<JSON 文本>), user(当前提问)]`——配对与顺序正确；
+    正文正常下发。
+- 既有断言同步更新：`test_genkit_adapter.py` 的「tools 降级纯文本」用例**反转为**硬失败断言
+  （原行为已被 ADR 明确否决）；`test_tool_loop_bounds.py` 回灌契约断言扩为
+  `assistant.tool_calls → tool` 成对（新增跨轮 ref 唯一性用例）。
+
+**第 3 阶段（业务层下沉）已完成**：
+
+- `uv run ruff check .` → All checks passed。
+- `uv run pytest` → **215 passed / 2 skipped / 0 failed**（第 2 阶段后 213；本级 +2 分层不变量）。
+  本阶段是**纯重构**，无新增业务用例——回归网是既有的 17 条只读路径 API 用例
+  （`test_mastery.py` 5 / `test_wrong_questions.py` 4 / `test_task_resp_fields.py` 1 /
+  `test_review.py` 7）与全量套件，全部保持绿。
+- 「REST 行为不变」的守护方式：**不新增测试，而是让既有断言照旧跑**——
+  `include_answer` 裁剪、403 越权（娃娃查他人掌握度 / 家长查他人娃娃错题与进度）、
+  错误码与消息文案均逐字沿用；`mastery` 的双角色分支（`TASK_NOT_OWNED` 文案
+  「这不是你的掌握度」、`TASK_NOT_YOUR_CHILD` 文案「这不是你家娃娃的掌握度」）原样下沉。
+- 新增两条分层不变量（`tests/ai/test_layering_invariants.py`）：
+  - 5：`app/features/*/service.py` 不得 import 任何 `router`（依赖方向 router → service，
+    反向即成环）；
+  - 6：`app/features/*/service.py` 不得 import `fastapi`（查询工具在 SSE 请求内直调 service，
+    不经 ASGI/依赖注入）。
+  - **两条均已实测可捕获违规**（对临时构造的越界模块跑 helper，`router` / `fastapi` 均被识别）。
+- 迁移后行数：`tasks/router.py` −134、`mastery/router.py` −65、`review/router.py` −26；
+  新增 `tasks/repository.py::list_tasks_by_parent`（`get_draft_tasks` 的泛化，不再在路由里内联 `select`）。
+
+**第 4 阶段（工具层）已完成**：
+
+- `uv run ruff check .` → All checks passed。
+- `uv run pytest` → **233 passed / 2 skipped / 0 failed**（第 3 阶段后 215；本级 +16 契约 +2 不变量）。
+  新增 `tests/ai/test_query_tools_contract.py`（**16 用例**）：
+  - **工具形状**：恰好 7 个、名称唯一、`schema.type == object` 且 `required == []`、工具与
+    每个参数都有非空 `description`（模型选型完全依赖它）、handler 为
+    `async (args, *, ctx, session)`。
+  - **娃娃端无答案**（ADR-008）：遍历全部工具跑 child 视角，断言输出中不出现
+    `{answer, explanation}`；**对照组**断言家长视角确实拿得到 `answer` 与解析正文
+    （证明上一条不是「数据为空」的假绿）；另单测 `project_for_role` 的递归性与
+    双角色行为（家长端不被「顺手」裁剪）。
+  - **越权**：娃娃传兄弟 `child_id` 无效（解析恒为自己，输出不含兄弟任务）；娃娃端每个
+    工具都不得出现兄弟娃娃/兄弟任务；家长传别家娃娃对**每个**工具都抛
+    `ToolArgumentError`；`child_name` 模糊命中多个、精确命中一个、未命中抛错。
+  - **角色默认范围**：家长不传定位参数＝名下全部娃娃；娃娃＝自己。
+  - **任务工具的娃娃端语义**：等价今日任务，不返回家长视角全量任务表、不含未派发草稿。
+  - **草稿归属**：未派发任务只在不指定娃娃时进 `unassigned_items`；精确指定时被剔除。
+  - **信封同构**：全部工具出参键集一致（`children` / `unassigned_items` / `total_*`），
+    每个 block 含 `{id,name,grade,items,meta}`。
+  - **只读**：全部工具跑完家长 + 娃娃两轮后，`User/Task/Question/WrongQuestion/
+    AnswerRecord/Checkin` 行数不变。
+  - **聚合抽查**：`get_progress` 的 `total/correct/accuracy` 与 `get_mastery` 的
+    `total_knowledge_points`/`active_wrong` 与真实作答一致。
+- **变异验证**（守卫必须真能红）：临时去掉 `list_wrong_questions` 的 `project_for_role`
+  → 契约测试精确报出 `list_wrong_questions 在娃娃视角泄漏字段：['answer', 'explanation']`，
+  恢复后转绿；临时放入一个 import `features.*.repository` + `fastapi` 的越界模块
+  → 新增的分层不变量 7、8 双双报出该文件路径。
+- 分层不变量扩至 **8 条**：新增 7（`query/tools` 不得 import `router` / `repository`——
+  只许经 feature service 取数）、8（不得 import `fastapi`）。
+
+**第 5 阶段（SubAgent）已完成（2026-09-10）**：
+
+- `uv run ruff check .` → All checks passed。
+- `uv run pytest` → **247 passed / 2 skipped / 0 failed**（第 4 阶段后 233；本级 +13 SubAgent 用例
+  +1 娃娃端可见性路由用例）。
+- 新建 `app/ai/subagents/query/`（`manifest.py` / `agent.py` / `render.py` / `tools/`（第 4 阶段）/ `skills/query_sop.md`）：
+  - `manifest.py`：`business="query"` / `name="学情查询"` / `roles=["parent","child"]` / `priority=12` /
+    `skills=["query_sop"]`；triggers 覆盖任务、作业、今日任务、错题本、待复习、掌握度、学情等查询语境；
+    hints 为兜底（任务/作业/错题/复习/掌握/进度/娃/孩子/表现/成绩/学得）。
+  - `agent.py`：`QuerySubAgent` 在 `__init__` 里 `self.tools = list(QUERY_TOOLS)`——**本项目首个真 opt-in
+    tool loop 的 subagent**；`initial_system` 拼「通用规则 + 角色提示 + SOP」，`initial_user` 透传用户消息；
+    `render_tool_result` 覆写为卡片投影（决策 11）；`run` 仅作「绕过 runtime 直调」的兜底，委托同一套
+    `run_with_tools`，不复制编排；`tools` 为空时**显式**报不可用（blocked），不静默退化成纯聊天。
+  - `render.py`：统一信封 → `{type, subject, stem}` 卡片；空结果、`error` 结果、超 5 条截断均有确定行为。
+  - `skills/query_sop.md`：与另两个 SOP 同形态，含「查不到就说查不到，不许估算」与只读边界。
+- **删除 `tasks/`**：`business` 键由 `tasks` 变 `query`（历史 `conversation.kind="tasks"` 不迁移）。
+- **删除 `app/ai/tools/`**：`list_tasks` 逻辑已并入 `list_parent_tasks` / `list_today_tasks` 工具，
+  `search_knowledge` 零调用方——包整体退役，并加入 `DEAD_MODULES` 不变量（重建即红）。
+- 校准 `question` 的 triggers 边界（注释 + 由 `priority` 机制保证）：「任务题目 / 我的任务 / 错题本」
+  一律归 query，「出题 / 来几道 / 生成题」才归 question。
+- 新增 `tests/ai/test_query_subagent.py`（**13 用例**）：清单与装配（含 `tasks` 已消失、7 工具齐备、
+  `max_turns=3`、SOP 真进 prompt）、路由边界 4 条（任务题目归 query、出题归 question、讲解不受影响、
+  娃娃端出题仍回 tutor）、卡片投影 3 条（形状/空/错误/截断、`DATA` 帧、基类默认不产帧的回归护栏）、
+  端到端 tool loop 3 条（`TOOL_CALL→TOOL_RESULT→DATA→ASSISTANT_MESSAGE` 齐备且 `DATA` 在 `TOOL_RESULT`
+  之后、**娃娃端帧里无答案 / 家长对照组有答案**、`tools` 空时显式报错）。
+- `tests/ai/test_agent_runtime.py`：`test_decide_parent_tasks` → `test_decide_parent_query`，
+  新增 `test_decide_child_query_visible`（ADR-0033 放宽 ADR-0026 的显式断言）。
+- `tests/ai/test_runtime_abstractions.py`：发现集合断言改为 `{tutor, question, query}` 且
+  **显式断言 `tasks` 已不存在**；新增 query SOP 真被读取的断言。
+- **变异验证**（守卫必须真能红）：
+  ① 去掉 `list_wrong_questions` 的 `project_for_role` → `test_child_frames_never_carry_answers_and_parent_control_does`
+  精确变红（帧层再守一道 ADR-008），恢复转绿；
+  ② `query` 的 `priority` 12 → −5 → `test_manifest_absorbs_tasks_and_declares_query` 与
+  `test_task_question_goes_to_query_not_question` 双红（证明「任务题目」靠优先级而非词表侥幸），恢复转绿。
+- 路由实测（12 条问句 × 角色）全部符合预期：「查看我的任务题目 / 我的错题本里有哪些题 / 今天有什么作业 /
+  小明最近错题多吗 / 今天要复习什么」→ query；「帮我出 3 道三年级分数选择题 / 来几道数学题练练」→ question；
+  「为什么天空是蓝色的？帮我讲解」「这道题我不会，能教教我吗」→ tutor；娃娃端「帮我出几道数学题」仍被
+  角色可见性强制回 tutor。
+
+**第 6 阶段（测试替身 + 端到端查询用例）已完成（2026-09-10）**：
+
+- `uv run ruff check .` → All checks passed。
+- `uv run pytest` → **256 passed / 2 skipped / 0 failed**（第 5 阶段后 247；本级 +9 = 替身契约 5 + 端点端到端 4）。
+- `tests/utils/fake_provider.py`：`FakeLLMProvider` 升级为**可控多轮工具脚本**：
+  - 新增 `tool_script` 构造参数与 `script(...)`/`reset()` 方法（测试可就地改写 fixture 交出的实例）；
+  - **跳数由 `history` 中 `role == "tool"` 条目数推断**（`_completed_hops`），取代旧的
+    `if history` 一刀切——旧实现会让 `/assistant/chat` 的客户端自带 `history`（全是
+    user/assistant 轮次）把首轮工具调用吃掉，使「多轮上下文 + 查询」静默退化成纯聊天；
+  - 新增可观测计数 `requests`（被请求次数）/ `calls`（实际发出的工具调用序列），
+    供断言「恰好 N 次请求」「跳序正确」；
+  - **不传脚本时行为与旧版一致**（第一跳取下发列表第一个工具）——既有用例零改动。
+- 新增 `tests/ai/test_fake_provider_tool_script.py`（5 例）：默认单跳、显式多跳按序取用并收尾、
+  客户端历史不吞首轮调用、跳数只认工具结果、`script()/reset()` 清计数。
+- 新增 `tests/api/routes/test_assistant.py` 查询端到端用例（4 例，真 DB + 脚本化替身）：
+  - 家长查错题：路由 THINKING 含「学情查询」→ `TOOL_CALL`/`TOOL_RESULT`/`DATA`/`ASSISTANT_MESSAGE`
+    顺序正确、无 `ERROR`；`TOOL_RESULT` 原始载荷含答案（对照组），`DATA` 卡仅 `{type,subject,stem}`
+    且不含答案；落库轨迹 `steps == [input, routing, tool_call, tool_result, output]`、
+    `conversation.kind == "query"`、`status == "done"`、输出 `payload.cards` 非空。
+  - 娃娃端查询：脚本**故意**带别人的 `child_id` → 越权入参被无视（payload 无「小红」）、
+    帧里无 `answer`/`explanation`、`conversation.child_id` 为自己；且**不落 TutorLog**
+    （`query` ≠ 伴学，T10 每日上限只计答疑）。
+  - 多跳：`list_children → list_today_tasks` 两跳真跑，`TOOL_CALL`/`TOOL_RESULT` 各 2 条、
+    `requests == 3`（两跳 + 一收尾）、不触 `TOOL_TURN_LIMIT`。
+  - 回归：带客户端 `history` 时首轮工具调用仍发出。
+- **变异验证**（守卫必须真能红，全部实测）：
+  ① `_completed_hops` 改回 `if history` 一刀切 → 5 条红（替身契约 3 + 端点 2），恢复转绿；
+  ② `QuerySubAgent.max_turns` 3 → 1 → 端点 3 条红（单跳用例也红：无收尾轮，只出
+  `TOOL_TURN_LIMIT`），恢复转绿；
+  ③ 去掉 `list_wrong_questions` 的 `project_for_role` → **精确 1 条**红
+  （`test_child_query_ignores_foreign_child_id_and_hides_answers`），恢复转绿。
+- 前端仍零改动（卡片契约沿用 `_CardTile` 的 `{type,subject,stem}`）。
+
+**待后续阶段验证**：真实模型 function calling 连通（需 key，走 `tests/domain/test_llm_smoke.py -m smoke`）——
+
+### 关联
+
+- ADR-0024（SubAgent 契约 + shared_tool）/ ADR-0026（角色感知派发，**本 ADR 放宽其「孩子端仅伴学」**）/
+  ADR-0025（事件信封）/ ADR-0027（Feature-First，service 层落位）/ ADR-0030（路由优先级）/
+  ADR-0031 / ADR-0032（`agent_core` 分层与命名）
+- ADR-0008（儿童内容安全，答案不进孩子端）

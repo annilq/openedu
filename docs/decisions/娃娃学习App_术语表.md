@@ -88,12 +88,12 @@
 - **AgentRuntime（代理运行时）**：后端新增编排层（`app/ai/runtime/`），负责发现并加载文件夹化 subagent、按意图路由、运行工具循环、产出 AG-UI 事件帧。是悬浮助手的服务端大脑（ADR-0024）。
 - **SubAgent（文件夹化业务代理）**：一个业务能力单元，以统一目录 `app/ai/subagents/<business>/` 组织（`agent.py` + `manifest.yaml` + `tools/` + `skills/`），由 AgentRuntime 统一加载；business 键（如 question/tutor）是其注册索引（ADR-0024）。
 - **manifest（subagent 清单）**：`manifest.yaml`，声明 business 键、name、description、`triggers`（意图关键词/示例）、`roles`（可见角色）、依赖的 tools/skills。runtime 据此发现与路由（ADR-0024/0026）。
-- **tool（可执行工具）**：subagent 运行时可调用的结构化 IO 函数（如 `generate_question`/`list_tasks`/`search_knowledge`）；runtime 工具循环调用（ADR-0024）。
+- **tool（可执行工具）**：subagent 运行时可调用的结构化 IO 函数（如 `generate_question`、`list_today_tasks`）；runtime 工具循环调用（ADR-0024；生产首批落地见 ADR-0033「业务查询」节）。原示例中的 `list_tasks` / `search_knowledge` 已于 ADR-0033 随 `app/ai/tools/` 退役。
 - **skill（技能资产）**：提示词/方法论资产（注入 system prompt，不可执行），如「出题 SOP」（ADR-0024）。
-- **shared_tool（共享工具）**：跨 subagent 复用的 tool，抽公共文件 `app/ai/tools/`，各 manifest 声明依赖引用（ADR-0024）。
+- **shared_tool（共享工具）**：跨 subagent 复用的 tool，抽公共文件 `app/ai/tools/`，各 manifest 声明依赖引用（ADR-0024）。**该目录已于 ADR-0033 删除**（`list_tasks` 并入 query 工具、`search_knowledge` 零调用方）；将来真有跨 subagent 复用时再按同一语义重建。
 - **IntentRouter（意图路由）**：混合路由——manifest `triggers` 先规则匹配，未命中走轻量 LLM 分类输出 business key；是「识别用户意图并路由」的实装（ADR-0024）。
 - **AG-UI 统一事件信封**：助手与前端间的流式协议，`{"type": <EventType>}` 判别字段；事件含 `USER_MESSAGE` / `ASSISTANT_MESSAGE` / `THINKING` / `TOOL_CALL` / `TOOL_RESULT` / `STEP` / `CARD` / `ERROR` / `DONE`（ADR-0025；`STEP`/`CARD`/`THINKING` 复用 ADR-0017）。
-- **角色感知派发（role-aware dispatch）**：IntentRouter 按 `role` 过滤可见 subagent，孩子端仅暴露伴学答疑（ADR-0026，强化 ADR-008）。
+- **角色感知派发（role-aware dispatch）**：IntentRouter 按 `role` 过滤可见 subagent；孩子端原为「仅伴学答疑」（ADR-0026），**ADR-0033 放宽为 tutor + query**——娃娃可查自己的学情，但查询工具侧恒查自己、出参经 `project_for_role` 去答案（ADR-008 仍不破）。
 - **AssistantSession（助手会话）**：持久化聊天 + 调试会话（id/role/parent_id/child_id/model/status）；其 `AssistantEvent` 既是对话步骤也是调试轨迹，废除原 `debug_log`（ADR-0026，supersede ADR-0022）。
 - **AssistantEvent（助手会话步骤）**：session 内带 role/type/step 的一步（content + payload + 安全/延迟/usage 标记），沿用 ADR-0022 口径（ADR-0026）。
 - **悬浮 AI 助手（Floating Assistant）**：前端全局悬浮按钮 + 对话框入口，双端通用，调 `POST /api/v1/assistant/chat` 经 AgentRuntime 完成「意图识别 → 路由 → subagent 执行 → 事件流」全流程（前端 ADR-0006）。
@@ -105,9 +105,84 @@
 - **seam（抽象接缝）**：`agent_core` 仅定义、不实现的抽象接口，由业务工程注入具体实现；含 `LLMProvider`（消息级）、`Retriever`、`Safety`、`Tool`。业务代码只依赖 seam，不依赖具体引擎。
 - **LLMProvider（消息级 seam）**：`stream(system, prompt, schema, history) -> AsyncIterator[TextDelta | StructuredDone]`；不再认识学科/年级等业务语义（取代原 `generate_question_stream(...)`）。
 - **ToolSpec（工具声明）**：`(name, description, schema, handler)`，subagent 声明后由 `AgentRuntime` 在 tool loop 中执行；`handler` 是普通可执行函数，区别于 ADR-0024 时代「仅声明、无调度器」的 `manifest.tools`。
-- **tool loop（工具循环）**：模型选型 → runtime 执行 `ToolSpec.handler` → 回灌 `tool_result` → 循环直到 `done`；subagent 通过是否声明 `tools` 决定走 loop（opt-in），一次性生成流可不声明。
+- **tool loop（工具循环）**：模型选型 → runtime 执行 `ToolSpec.handler` → 回灌 `tool_result` → 循环直到 `done`；subagent 通过是否声明 `tools` 决定走 loop（opt-in），一次性生成流可不声明。**执行权在 runtime（非引擎）**，受 `max_turns` 上限保护，工具不可用时硬失败 `TOOL_UNSUPPORTED`（ADR-0033）。
 - **BaseSubAgent（通用基类）**：`handle(intent, ctx)` + `run(message, ctx)` 统一契约；`SubAgentContext` 去掉教育专属字段（subject/grade/knowledge_point 等），仅保留 role/history/skills/extra 等通用字段。
 - **manifest（subagent 清单，沿用 ADR-0024）**：`manifest.py` 的 `MANIFEST` 字典声明 business 键、name、roles、triggers、hints、priority、tools、skills；runtime 据其发现与路由。
 - **registry（注册表）**：文件夹发现 `discover_subagent_manifests()`，扫到 `manifest.py` 同时用 `inspect` 取 `BaseSubAgent` 子类写入清单（发现即注册，ADR-0030）。
 - **router（路由）**：规则（`triggers`）+ 启发式（`hints`）默认实现，按 `priority` 降序匹配、priority 最低者兜底；暴露可插拔 `classify` 钩子（弱意图领域可接 LLM，约 5 行）。
 - **统一事件流 / AssistantEvent（信封，沿用 ADR-0025）**：`agent_core` 拥有的 AG-UI 式信封（RUN_STARTED / USER_MESSAGE / THINKING / ASSISTANT_MESSAGE / TOOL_CALL / TOOL_RESULT / STEP / DATA / ERROR / DONE / RUN_FINISHED）；`DATA.type`、`blocked` 等教育字段改为 `extra` 扩展。
+
+## 业务查询（ADR-0033）
+
+> 本节收录「为业务 SubAgent 添加查询工具、经 `/assistant/chat` 查询业务」所确立的词汇。
+
+- **query（学情查询 SubAgent）**：`business="query"` 的只读查询 SubAgent，双端可见（`roles: [parent, child]`），
+  `priority=12`；承载 7 个业务查询工具。**吸收并取代原 `tasks` SubAgent**（原 `list_tasks` 降为其中一个工具，ADR-0033）。
+- **业务查询工具（query tool）**：只读（不写库）、以 `ToolSpec` 登记、由 `agent_core` runtime 执行的查询能力；
+  首批 7 个：孩子列表 / 家长任务 / 今日任务 / 错题本 / 待复习 / 学习进度 / 掌握度（题库检索不在内）。
+  代码组织为 `app/ai/subagents/query/tools/` 下**一工具一模块**（模块内导出 `SPEC: ToolSpec`）
+  + `registry.py` 汇总为 `QUERY_TOOLS`（顺序即下发顺序，定位类 `list_children` 在最前）。
+  工具只许经 `features/<x>/service.py` 取数，不得 import `router` / `repository` / `fastapi`（分层不变量 7、8）。
+- **原生 function calling（L2）**：工具请求由模型经协议字段（而非关键词规则或「填 JSON 表」）发出，
+  runtime 执行后回灌的调度方式。区别于 L0 规则选型、L1 结构化选型（后两者均未采纳）。
+- **占位 Tool（placeholder tool）**：适配器用 `genkit.tool(...)` 为每个 `ToolSpec` 构造的**临时** genkit Tool
+  （不注册；由 `register_tools` 在调用期挂到子 registry），只携带 `name` / `description` / `input_schema`
+  参与协议；因 `return_tool_requests=True`，**其函数体（`_placeholder_tool`）永不执行**（体内仅抛错防误用）。
+  目的是让执行权留在 `agent_core` runtime，而非交给 genkit 内部循环。
+- **工具执行权**：指「谁真正运行 `ToolSpec.handler`」。本项目定为 **runtime 执行**（内核保住控制权、工具可单测、事件帧完整），
+  genkit 仅负责把模型的工具请求原样返回。
+- **工具调用关联 id（ref）**：工具调用与其结果的配对标识，即引擎侧 `tool_call_id`。由 runtime 在
+  `run_with_tools` 中 mint 并写入 history，**请求与结果必须同值**；适配器据此构造 genkit
+  `ToolRequestPart.ref` / `ToolResponsePart.ref`。缺 `ref` 时适配器按 FIFO 兜底配对。
+  缺失或错配会被 OpenAI 兼容端点直接拒绝（tool 消息必须回应前一条 assistant 的 `tool_calls`）。
+- **history 成对回灌契约**：`run_with_tools` 每轮先写
+  `{"role": "assistant", "content": str, "tool_calls": [{"name", "args", "ref"}]}`，再写对应的
+  `{"role": "tool", "name", "ref", "content": <JSON 文本>}`。**成对是硬要求**：这是 provider 侧
+  ToolRequest ↔ ToolResponse 配对的前提，也是第 1 阶段「只写 tool 条目」契约的破坏性扩展。
+- **max_turns（轮次上限）**：tool loop 的最大往返次数，`BaseSubAgent.max_turns` 类属性，默认 3，
+  超限走 `ERROR`。用于防止「回灌丢失 → 模型反复重调」的无限循环烧 token。
+- **TOOL_UNSUPPORTED**：错误码。模型/框架不支持工具调用、或 Tool 注册与 ToolCall 解析失败时的**硬失败**；
+  适配器**不做静默降级为纯文本**——宁可报错，也不让模型在无数据时编造业务结论。
+- **resolve_children（孩子定位器）**：共享解析函数（`query/tools/_shared.py`），把工具入参 `child_id`（uuid）
+  或 `child_name`（`display_name` 模糊）解析为目标 `User` **列表**；二者都不传时：家长=名下全部孩子，
+  娃娃=恒为自己。**娃娃视角忽略入参**（杜绝「换个 id 查别人」）；家长指定了但不在名下则抛
+  `ToolArgumentError`，**不静默返回空**（避免模型把「没这个娃」读成「这个娃没数据」）。各工具不得重复实现。
+- **project_for_role（出参投影）**：共享裁剪函数，按 `ctx.role` **递归**投影工具出参——娃娃视角剥掉
+  `ANSWER_FIELDS = {"answer", "explanation"}`，其他角色原样返回。工具一律**全量**出参
+  （错题恒 `include_answer=True`），裁剪只在此一处发生。**新加工具漏判由契约测试拦截**
+  （遍历全部工具跑 child 视角 + 家长视角对照组，断言娃娃端无答案字段、家长端确实有），
+  不靠 review 纪律（ADR-008）。
+- **查询工具出参信封（tool envelope）**：7 个查询工具的统一返回结构
+  `{children: [{id, name, grade, items, meta}], unassigned_items: [], total_children: int,
+  total_items: int}`。**同构**是刻意的：模型易读、渲染 hook 可无特例展开。
+  `items` 承载查询到的业务条目（进度/掌握度等单条聚合也放进单元素列表）；
+  `unassigned_items` 仅承载「不属于任何娃娃」的条目（如家长未派发的草稿任务），
+  且**只在未指定目标娃娃时出现**（精确指定即剔除，防越权外溢）。
+- **ToolArgumentError（工具入参错误）**：`query/tools/_shared.py` 定义的 `ValueError` 子类，
+  用于「入参不合法 / 目标不存在」。runtime 的 `run_with_tools` 捕获后回灌
+  `{"error": str(exc)}` 给模型，由模型据实告知用户（「查不到就说查不到，不许估算」），
+  而不是让整条流崩。`require_owned_child` 抛的 `AppErrorException` 在 `_shared` 内归一为此类型
+  ——工具层不需要 HTTP 信封语义（code/status），只保留 message。
+- **工具结果渲染 hook**：`BaseSubAgent.render_tool_result(name, result)`，默认不产帧；SubAgent 可覆写以把
+  工具结果补发为 `DATA` 帧。用于「`TOOL_RESULT` 存原始 + `DATA` 供前端渲染卡片」的双轨呈现契约（前端零改动）。
+- **卡片投影（render_cards）**：`app/ai/subagents/query/render.py`，把查询工具的统一信封折成前端既有
+  卡片形状 `{type, subject, stem}`（`_CardTile` 消费契约，`stem` 为空则不渲染），由
+  `QuerySubAgent.render_tool_result` 逐条发 `DATA` 帧（`data.type == "query"`）。只做**展示摘要**：
+  不二次裁剪角色（裁剪只在 `project_for_role`）、不吐原始 JSON（模型上下文另有 `TOOL_RESULT`）。
+  明细超过 5 条只列前 5 条 + 「…共 N 条」，避免刷屏与落库 payload 膨胀。
+- **query SOP（`query/skills/query_sop.md`）**：查询业务的提示词资产，与 `question_sop` / `tutor_sop` 同形态；
+  硬约束是「只依据工具数据作答、**查不到就说查不到**、不重复调同一工具、只读不外推」，
+  并明确娃娃端不得输出答案与解析（ADR-008）。
+- **feature service（业务服务层）**：`app/features/<feature>/service.py`，承载越权校验 + 聚合 + 组装；
+  REST 路由与查询工具**共用同一份**，杜绝第二份聚合逻辑漂移（ADR-0027 已有此位，`auth` 先行）。
+  已落地四份（ADR-0033 第 3 阶段）：`children`（`require_owned_child` 归属校验收口 +
+  `list_children_of`）/ `tasks`（序列化器 + 家长任务 / 今日任务 / 错题 / 进度，含家长视角复合用例）/
+  `mastery`（`build_mastery` 纯聚合 + `get_mastery_for_user` 双角色鉴权）/ `review`（待复习队列）。
+  **只含读路径**：草稿生成、状态流转、复习作答等写路径仍在 router。两条不变量由测试守护：
+  ① service 不得 import router（依赖方向 router → service）；② service 不得 import `fastapi`
+  （查询工具直调，不经 ASGI）。
+- **工具脚本（tool script，测试替身）**：`FakeLLMProvider` 的 `tool_script` 参数 / `script(...)` 方法，
+  声明「模型每一跳选哪个工具、带什么入参」的确定性替代（ADR-0033 第 6 阶段）。跳数**只按 history 中
+  `role == "tool"` 条目计**（`_completed_hops`），故客户端自带的多轮上下文不会吞掉首轮工具调用；
+  脚本用完后转收尾文本。不传脚本＝默认单跳（取下发列表第一个工具）。配套 `requests`（被请求次数）与
+  `calls`（实际发出的调用序列）供「恰好 N 次请求 / 跳序正确」类断言。

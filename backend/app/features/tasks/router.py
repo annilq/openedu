@@ -8,10 +8,11 @@ from sqlmodel import select
 from app.ai import resolve_engine
 from app.core.deps import CurrentChild, CurrentParent, CurrentUser, SessionDep
 from app.core.errors import AppErrorException, ErrCode
-from app.db.models import Question, Task, TaskQuestion, User, WrongQuestion
+from app.db.models import Question, Task, TaskQuestion, User
 from app.domain import Grader, build_provider
 from app.domain.provider import GeneratedQuestion
 from app.features.questions.schemas import BankQuestionsAdd, TaskFromBankCreate
+from app.features.tasks import service as tasks_service
 from app.features.tasks.repository import (
     _SENTINEL_NO_QUESTIONS,
     _SENTINEL_PROMOTE_REQUIRED,
@@ -23,12 +24,9 @@ from app.features.tasks.repository import (
     create_checkin,
     create_task_from_bank,
     discard_draft_task,
-    get_child_tasks_today,
-    get_progress,
     get_task,
     get_task_question,
     get_task_questions,
-    list_wrong_questions,
     promote_task_question,
     regenerate_all_task_questions,
     regenerate_one_task_question,
@@ -51,60 +49,14 @@ from app.features.tasks.schemas import (
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
+# 只读路径（今日任务 / 错题 / 进度 / 家长任务列表）的业务逻辑在
+# `app/features/tasks/service.py`——REST 与 ADR-0033 的查询工具共用同一份，
+# 本文件只做「鉴权 → 调 service → 返回」。写路径（草稿/生成/状态流转）仍在此。
+
 # ⚠️ 路由顺序：静态路径（/today、/wrong-questions、/children/*）必须放在
 # 带路径参数的路由（/{task_id}、/{task_id}/questions/...）前面，否则
 # FastAPI 会把 "/today" 当作 task_id="today" 命中 get_task_detail，
 # 走到 CurrentParent 依赖而娃娃 token 报 AUTH_30004（角色错）。
-
-
-def _tq_to_resp(tq: TaskQuestion, *, include_answer: bool) -> QuestionResp:
-    return QuestionResp(
-        id=tq.id,
-        question_id=tq.question_id,
-        subject=tq.subject,
-        grade=tq.grade,
-        stem=tq.stem,
-        options=tq.options,
-        qtype=tq.qtype,
-        knowledge_point=tq.knowledge_point,
-        explanation=tq.explanation or "",
-        answer=tq.answer if include_answer else None,
-    )
-
-
-def _task_to_resp(
-    task: Task, questions: list[TaskQuestion], *, include_answer: bool
-) -> TaskResp:
-    return TaskResp(
-        id=task.id,
-        title=task.title,
-        status=task.status,
-        specs=task.specs,
-        questions=[_tq_to_resp(q, include_answer=include_answer) for q in questions],
-        child_id=task.child_id,
-        created_at=task.created_at,
-    )
-
-
-def _wrong_to_resp(
-    wq: WrongQuestion, q: Question, *, include_answer: bool
-) -> WrongQuestionResp:
-    return WrongQuestionResp(
-        id=wq.id,
-        question_id=q.id,
-        subject=q.subject,
-        grade=q.grade,
-        knowledge_point=q.knowledge_point,
-        qtype=q.qtype,
-        stem=q.stem,
-        options=q.options,
-        answer=q.answer if include_answer else None,
-        explanation=q.explanation or "",
-        wrong_count=wq.wrong_count,
-        first_wrong_at=wq.first_wrong_at,
-        review_stage=wq.review_stage,
-        due_at=wq.due_at,
-    )
 
 
 def _extract_interests_pool(child: User | None) -> list[str] | None:
@@ -276,7 +228,7 @@ def create_from_bank(
         child_id=payload.child_id,
         question_ids=payload.question_ids,
     )
-    return _task_to_resp(
+    return tasks_service.task_to_resp(
         task, get_task_questions(session=session, task_id=task.id), include_answer=True
     )
 
@@ -338,7 +290,7 @@ def create_from_generated(
         model=payload.model,
     )
     task_questions = get_task_questions(session=session, task_id=task.id)
-    return _task_to_resp(task, task_questions, include_answer=True)
+    return tasks_service.task_to_resp(task, task_questions, include_answer=True)
 
 
 @router.get("", response_model=list[TaskResp])
@@ -349,16 +301,9 @@ def list_parent_tasks(
     status_filter: str | None = Query(None, alias="status"),
 ) -> list[TaskResp]:
     """家长任务列表（供选项 B 草稿选择器拉取 draft 列表）。"""
-    stmt = select(Task).where(Task.parent_id == parent.id)
-    if status_filter:
-        stmt = stmt.where(Task.status == status_filter)
-    tasks = session.exec(stmt.order_by(Task.created_at.desc())).all()
-    return [
-        _task_to_resp(
-            t, get_task_questions(session=session, task_id=t.id), include_answer=True
-        )
-        for t in tasks
-    ]
+    return tasks_service.list_parent_tasks(
+        session=session, parent_id=parent.id, status=status_filter
+    )
 
 
 # ───────────────────────── 静态路径：娃娃端今日任务 / 错题 / 家长错题 / 进度 ──
@@ -367,15 +312,7 @@ def list_parent_tasks(
 
 @router.get("/today", response_model=list[TaskResp])
 def today(*, session: SessionDep, child: CurrentChild) -> list[TaskResp]:
-    tasks = get_child_tasks_today(session=session, child_id=child.id)
-    return [
-        _task_to_resp(
-            t,
-            get_task_questions(session=session, task_id=t.id),
-            include_answer=False,
-        )
-        for t in tasks
-    ]
+    return tasks_service.list_today_tasks(session=session, child_id=child.id)
 
 
 @router.get("/wrong-questions", response_model=list[WrongQuestionResp])
@@ -383,8 +320,9 @@ def my_wrong_questions(
     *, session: SessionDep, child: CurrentChild
 ) -> list[WrongQuestionResp]:
     """娃娃自查错题本：不含答案（复习走 /review/*）。"""
-    rows = list_wrong_questions(session=session, child_id=child.id)
-    return [_wrong_to_resp(wq, q, include_answer=False) for wq, q in rows]
+    return tasks_service.list_wrong_questions(
+        session=session, child_id=child.id, include_answer=False
+    )
 
 
 @router.get("/children/{child_id}/wrong-questions", response_model=list[WrongQuestionResp])
@@ -392,31 +330,17 @@ def child_wrong_questions(
     *, session: SessionDep, parent: CurrentParent, child_id: UUID
 ) -> list[WrongQuestionResp]:
     """家长查某娃娃错题本（含答案/解析，供核查）。"""
-    child = session.get(User, child_id)
-    if child is None or child.parent_id != parent.id:
-        raise AppErrorException(ErrCode.TASK_NOT_YOUR_CHILD, "该娃娃不属于你的账号")
-    rows = list_wrong_questions(session=session, child_id=child_id)
-    return [_wrong_to_resp(wq, q, include_answer=True) for wq, q in rows]
+    return tasks_service.list_owned_child_wrong_questions(
+        session=session, parent=parent, child_id=child_id
+    )
 
 
 @router.get("/children/{child_id}/progress", response_model=ProgressResp)
 def progress(
     *, session: SessionDep, parent: CurrentParent, child_id: UUID
 ) -> ProgressResp:
-    child = session.get(User, child_id)
-    if child is None or child.parent_id != parent.id:
-        raise AppErrorException(ErrCode.TASK_NOT_YOUR_CHILD, "该娃娃不属于你的账号")
-    total, correct, checkin_days, streak = get_progress(
-        session=session, child_id=child.id
-    )
-    accuracy = round(correct / total, 2) if total else 0.0
-    return ProgressResp(
-        child_id=child.id,
-        total=total,
-        correct=correct,
-        accuracy=accuracy,
-        streak_days=streak,
-        checkin_days=checkin_days,
+    return tasks_service.owned_child_progress(
+        session=session, parent=parent, child_id=child_id
     )
 
 
@@ -432,7 +356,7 @@ def get_task_detail(
     tqs = get_task_questions(session=session, task_id=task.id)
     # 家长端：草稿/锁定/派发后都能看到答案（审阅 + 核查）。
     include_answer = task.status in ("draft", "ready") or task.parent_id == parent.id
-    return _task_to_resp(task, tqs, include_answer=include_answer)
+    return tasks_service.task_to_resp(task, tqs, include_answer=include_answer)
 
 
 @router.post("/{task_id}/questions/{tq_id}/promote", response_model=QuestionResp)
@@ -448,7 +372,7 @@ def promote_one(
     updated = promote_task_question(session=session, tq_id=tq_id)
     if updated is None:
         raise AppErrorException(ErrCode.TASK_QUESTION_NOT_FOUND, "题目不存在")
-    return _tq_to_resp(updated, include_answer=True)
+    return tasks_service.question_to_resp(updated, include_answer=True)
 
 
 @router.post("/{task_id}/promote-all", response_model=TaskResp)
@@ -462,7 +386,7 @@ def promote_all(
         if tq.question_id is None:
             promote_task_question(session=session, tq_id=tq.id)
     tqs = get_task_questions(session=session, task_id=task.id)
-    return _task_to_resp(task, tqs, include_answer=True)
+    return tasks_service.task_to_resp(task, tqs, include_answer=True)
 
 
 @router.post("/{task_id}/questions/from-bank", response_model=TaskResp)
@@ -479,7 +403,7 @@ def add_from_bank(
     )
     if updated is None:
         raise AppErrorException(ErrCode.TASK_NOT_FOUND, "任务不存在")
-    return _task_to_resp(
+    return tasks_service.task_to_resp(
         updated,
         get_task_questions(session=session, task_id=updated.id),
         include_answer=True,
@@ -545,7 +469,7 @@ def regenerate_one(
     )
     if updated is None:
         raise AppErrorException(ErrCode.TASK_QUESTION_NOT_FOUND, "题目不存在")
-    return _tq_to_resp(updated, include_answer=True)
+    return tasks_service.question_to_resp(updated, include_answer=True)
 
 
 @router.post("/{task_id}/regenerate", response_model=TaskResp)
@@ -584,7 +508,7 @@ def regenerate_all(
             ErrCode.TASK_STATUS_DRAFT_REQUIRED, "仅草稿态可整卷重生成"
         )
     tqs = get_task_questions(session=session, task_id=updated.id)
-    return _task_to_resp(updated, tqs, include_answer=True)
+    return tasks_service.task_to_resp(updated, tqs, include_answer=True)
 
 
 @router.put("/{task_id}/questions/{tq_id}", response_model=QuestionResp)
@@ -609,7 +533,7 @@ def edit_question(
     updated = update_task_question(session=session, tq_id=tq_id, edits=edit_dict)
     if updated is None:
         raise AppErrorException(ErrCode.TASK_QUESTION_NOT_FOUND, "题目不存在")
-    return _tq_to_resp(updated, include_answer=True)
+    return tasks_service.question_to_resp(updated, include_answer=True)
 
 
 @router.post("/{task_id}/confirm", response_model=TaskResp)
@@ -641,7 +565,7 @@ def confirm(
             ErrCode.TASK_STATUS_DRAFT_REQUIRED, "仅草稿态可执行锁定"
         )
     tqs = get_task_questions(session=session, task_id=updated.id)
-    return _task_to_resp(updated, tqs, include_answer=True)
+    return tasks_service.task_to_resp(updated, tqs, include_answer=True)
 
 
 @router.post("/{task_id}/assign", response_model=TaskResp)
@@ -661,7 +585,7 @@ def assign(
             ErrCode.TASK_STATUS_READY_REQUIRED, "Task 不在 ready 态，无法派发"
         )
     tqs = get_task_questions(session=session, task_id=task_id)
-    return _task_to_resp(updated, tqs, include_answer=True)
+    return tasks_service.task_to_resp(updated, tqs, include_answer=True)
 
 
 @router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)

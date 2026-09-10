@@ -5,38 +5,22 @@ from fastapi import APIRouter, HTTPException
 from app.core.deps import CurrentChild, SessionDep
 from app.db.models import Question, WrongQuestion
 from app.domain import Grader, build_provider
-from app.domain.review_scheduler import next_interval_days
-from app.features.review.repository import list_due_wrong_questions, mark_review_result
+from app.features.review import service as review_service
+from app.features.review.repository import mark_review_result
 from app.features.review.schemas import ReviewAnswerSubmit, ReviewItemResp
 from app.features.tasks.repository import create_answer_record
 from app.features.tasks.schemas import AnswerResult
 
 router = APIRouter(prefix="/review", tags=["review"])
 
-
-def _review_item_to_resp(wq: WrongQuestion, q: Question) -> ReviewItemResp:
-    return ReviewItemResp(
-        wrong_question_id=wq.id,
-        question_id=q.id,
-        subject=q.subject,
-        grade=q.grade,
-        knowledge_point=q.knowledge_point,
-        qtype=q.qtype,
-        stem=q.stem,
-        options=q.options,
-        explanation=q.explanation or "",
-        wrong_count=wq.wrong_count,
-        review_stage=wq.review_stage,
-        next_interval_days=next_interval_days(wq.review_stage),
-        due_at=wq.due_at,
-    )
+# 待复习队列的序列化 + 间隔计算在 `app/features/review/service.py`
+# （REST 与 ADR-0033 查询工具共用）；作答写路径（批改 + 遗忘曲线调度）留在本文件。
 
 
 @router.get("/due", response_model=list[ReviewItemResp])
 def due_reviews(*, session: SessionDep, child: CurrentChild) -> list[ReviewItemResp]:
     """娃娃的待复习队列：遗忘曲线到点的错题（不含答案，防作弊）。"""
-    rows = list_due_wrong_questions(session=session, child_id=child.id)
-    return [_review_item_to_resp(wq, q) for wq, q in rows]
+    return review_service.list_due_reviews(session=session, child_id=child.id)
 
 
 @router.post("/answer", response_model=AnswerResult)

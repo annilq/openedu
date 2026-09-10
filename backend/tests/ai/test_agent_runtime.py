@@ -62,10 +62,10 @@ def test_decide_parent_question():
     assert decision.name == "出题助手"
 
 
-def test_decide_parent_tasks():
+def test_decide_parent_query():
     decision = asyncio.run(_decide("查看我的任务有哪些", role="parent"))
-    assert decision.business == "tasks"
-    assert decision.name == "任务查询"
+    assert decision.business == "query"
+    assert decision.name == "学情查询"
 
 
 def test_decide_parent_tutor():
@@ -74,11 +74,18 @@ def test_decide_parent_tutor():
     assert decision.name == "伴学答疑"
 
 
-# ── decide：娃娃端角色可见性（child 永不可见出题/任务，见 #1） ──
+# ── decide：娃娃端角色可见性（child 永不可见出题；查询恒限自己，见 #1） ──
 def test_decide_child_question_forced_to_tutor():
     decision = asyncio.run(_decide("帮我出几道数学题", role="child"))
     assert decision.business == "tutor"
     assert decision.name == "伴学答疑"
+
+
+def test_decide_child_query_visible():
+    """ADR-0033 放宽 ADR-0026：娃娃端可见 query，但工具侧恒查自己、去答案。"""
+    decision = asyncio.run(_decide("今天有什么作业", role="child"))
+    assert decision.business == "query"
+    assert decision.name == "学情查询"
 
 
 def test_decide_child_tutor_stays_tutor():

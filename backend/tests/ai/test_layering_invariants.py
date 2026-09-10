@@ -6,7 +6,14 @@
 1. ``agent_core`` 内核（不含 ``adapters/``）**零 ``app.*`` 依赖**；
 2. ``agent_core`` 内核**零第三方依赖**（只允许 stdlib + 自身）；
 3. 全后端 ``import genkit`` **只出现在 ``agent_core/adapters/genkit.py``**，且只在函数体内（延迟导入）；
-4. 已删模块（``app.ai.generation`` / ``parsers`` / ``segment`` / ``debug_log``）**零残留引用**。
+4. 已删模块（``app.ai.generation`` / ``parsers`` / ``segment`` / ``debug_log`` / ``tools``）**零残留引用**；
+5. ``app/features/*/service.py`` **不得 import 本 feature 或其他 feature 的 router**——service 是
+   router 与查询工具共用的下游（ADR-0033 决策 13），反向依赖会立刻形成循环；
+6. ``app/features/*/service.py`` **不得 import ``fastapi``**——否则查询工具经 service 就绑上了
+   HTTP 层（工具在 SSE 请求内同步直调 service，不经 ASGI）；
+7. ``app/ai/subagents/query/tools/**`` **不得 import 任何 router 或 repository**——查询工具只许
+   经 feature service 取数（ADR-0033 决策 13）；绕过 service 直连 repository 会让聚合逻辑出现
+   第二份，正是本次重构要消灭的漂移源。
 
 全部为静态扫描，不打模型、不启服务。
 """
@@ -19,6 +26,8 @@ from pathlib import Path
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 KERNEL_ROOT = BACKEND_ROOT / "agent_core"
 ADAPTER_PATH = KERNEL_ROOT / "adapters" / "genkit.py"
+FEATURES_ROOT = BACKEND_ROOT / "app" / "features"
+QUERY_TOOLS_ROOT = BACKEND_ROOT / "app" / "ai" / "subagents" / "query" / "tools"
 
 # genkit 是引擎 SDK，其（及插件包）的唯一合法落点是适配器
 GENKIT_ROOTS = {"genkit", "genkit_ollama", "genkit_openai", "genkit_fastapi"}
@@ -28,6 +37,9 @@ DEAD_MODULES = {
     "app.ai.parsers",
     "app.ai.segment",
     "app.ai.debug_log",
+    # ADR-0033：shared_tool 包随 tasks 一并退役（list_tasks 逻辑并入 query 工具、
+    # search_knowledge 零调用方）；将来真被复用时再按 ADR-0024 语义重建。
+    "app.ai.tools",
 }
 _SKIP_DIRS = {".venv", "dist", "build", "__pycache__", "site-packages", "htmlcov"}
 
@@ -121,3 +133,59 @@ def test_no_reference_to_deleted_ai_modules():
         if m in DEAD_MODULES or any(m.startswith(f"{d}.") for d in DEAD_MODULES)
     }
     assert not offenders, f"已删模块仍被引用：{sorted(offenders)}"
+
+
+def _feature_services() -> list[Path]:
+    return sorted(FEATURES_ROOT.glob("*/service.py"))
+
+
+def test_feature_services_do_not_import_routers():
+    """不变量 5：feature service 不得依赖任何 router（依赖方向 router → service）。"""
+    offenders = {
+        f"{p.relative_to(BACKEND_ROOT)}: {m}"
+        for p in _feature_services()
+        for m in _dotted_targets(p)
+        if m.endswith(".router")
+    }
+    assert not offenders, f"feature service 不得 import router：{sorted(offenders)}"
+
+
+def test_feature_services_do_not_import_fastapi():
+    """不变量 6：feature service 不绑 HTTP 层（查询工具直调，不走 ASGI/依赖注入）。"""
+    offenders = {
+        f"{p.relative_to(BACKEND_ROOT)}: {m}"
+        for p in _feature_services()
+        for m in _import_roots(p)
+        if m == "fastapi"
+    }
+    assert not offenders, f"feature service 不得 import fastapi：{sorted(offenders)}"
+
+
+def _query_tool_files() -> list[Path]:
+    return sorted(QUERY_TOOLS_ROOT.rglob("*.py"))
+
+
+def test_query_tools_go_through_feature_services_only():
+    """不变量 7：查询工具只许经 feature service 取数，不得碰 router / repository。
+
+    - 碰 router：依赖方向反了（router → service ← tool）；
+    - 碰 repository：聚合与裁剪逻辑会绕过 service 出现第二份（ADR-0033 决策 13）。
+    """
+    offenders = {
+        f"{p.relative_to(BACKEND_ROOT)}: {m}"
+        for p in _query_tool_files()
+        for m in _dotted_targets(p)
+        if m.endswith(".router") or m.endswith(".repository")
+    }
+    assert not offenders, f"query 工具不得 import router/repository：{sorted(offenders)}"
+
+
+def test_query_tools_do_not_import_fastapi():
+    """不变量 8：查询工具不绑 HTTP 层（handler 在 SSE 请求内同步直调）。"""
+    offenders = {
+        f"{p.relative_to(BACKEND_ROOT)}: {m}"
+        for p in _query_tool_files()
+        for m in _import_roots(p)
+        if m == "fastapi"
+    }
+    assert not offenders, f"query 工具不得 import fastapi：{sorted(offenders)}"

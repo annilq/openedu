@@ -145,8 +145,11 @@ backend/
 **建议改名但非必须**（可后议）：
 - `agent_core/subagent.py`：内含 `BaseSubAgent` + `SubAgentContext` + `run_with_tools`（其实是一个 **agent loop**）。
   更"深"的切法：拆 `agent.py`（基类+上下文）与 `loop.py`（`run_with_tools`）。**暂不改**，避免无谓抖动。
-- `app/ai/tools/` 与 `app/ai/subagents/*/tools/`：ADR-0030 已删 `manifest.tools`，这些是**普通 helper 函数**，
-  `tools/` 名已名不副实（是"工具"命名的遗留谎）。若短期不引入真 tool loop，建议改 `helpers/` 或并入对应 subagent。
+- `app/ai/subagents/*/tools/`：ADR-0030 曾删 `manifest.tools` 声明式字段，但 **ADR-0033 已引入真 tool loop**，
+  `query/tools/` 下的模块现在是**真正被模型选型的 `ToolSpec`**（`tools/` 名已名副其实）；
+  其余 subagent 的 `tools/` 仍是占位目录，等真用到工具再填。
+- `app/ai/tools/`（shared_tool 公共文件）：**ADR-0033 已删除**——`list_tasks` 逻辑并入 `query` 工具，
+  `search_knowledge` 零调用方。将来确有跨 subagent 复用的工具时，再按 ADR-0024 的 shared_tool 语义重建。
 
 ---
 

@@ -392,6 +392,19 @@ def get_draft_tasks(*, session: Session, parent_id: uuid.UUID) -> list[Task]:
     )
 
 
+def list_tasks_by_parent(
+    *, session: Session, parent_id: uuid.UUID, status: str | None = None
+) -> list[Task]:
+    """家长名下任务（可选按状态过滤），新建在前。
+
+    ``get_draft_tasks`` 是其 ``status="draft"`` 的特例；查询工具走本函数（含各状态）。
+    """
+    stmt = select(Task).where(Task.parent_id == parent_id)
+    if status:
+        stmt = stmt.where(Task.status == status)
+    return list(session.exec(stmt.order_by(Task.created_at.desc())))
+
+
 def discard_draft_task(*, session: Session, task_id: uuid.UUID) -> bool:
     """作废草稿（R-Q3 四个动作之一）。
 

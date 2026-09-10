@@ -2,8 +2,10 @@
 
 覆盖六边形 adapter 的接口：
 1. ``decode_stream`` 把 genkit chunk 归一为 ``Segment``（Reasoning / Text 两通道）；
-2. ``GenkitLLMProvider.stream`` 三路：schema / tools / 纯文本，及 tools 降级；
+2. ``GenkitLLMProvider.stream`` 三路：schema / tools / 纯文本，及 tools 的**硬失败**（ADR-0033）；
 3. app 侧 ``GenkitProvider`` 把 ``EngineResolution`` 适配为 ``GenkitEngine`` 并委托。
+
+工具路径的完整契约（消息映射 / 占位 Tool / ToolCall 解析）见 ``test_genkit_adapter_tools.py``。
 
 全部使用假引擎（SimpleNamespace），**不打真实模型**。
 """
@@ -11,6 +13,8 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
+
+import pytest
 
 from agent_core.adapters.genkit import (
     GenkitEngine,
@@ -118,12 +122,19 @@ def test_tools_branch_streams_text_deltas():
     assert _deltas(events) == "你好"
 
 
-def test_tools_branch_degrades_to_text_on_error():
-    """函数调用不被支持时降级为纯文本，不抛错、不中断流。"""
-    eng = _engine([_chunk(text="降级")], raise_on_tools=True)
-    events = _run(eng, tools=[{"name": "t"}])
+def test_tools_branch_raises_tool_unsupported_on_engine_error():
+    """函数调用不被支持时**硬失败**（ADR-0033）。
 
-    assert _deltas(events) == "降级"
+    原实现是 ``except Exception: pass`` 后降级为纯文本；那等于允许模型在没拿到工具数据时
+    编造业务结论。现改为抛 ``ToolUnsupportedError``，由 runtime 转
+    ``ERROR(TOOL_UNSUPPORTED)`` 并中止。
+    """
+    from agent_core.errors import ToolUnsupportedError
+
+    eng = _engine([_chunk(text="降级")], raise_on_tools=True)
+
+    with pytest.raises(ToolUnsupportedError):
+        _run(eng, tools=[{"name": "t"}])
 
 
 # ───────────────────────── 3) app 侧委托接线 ─────────────────────────
