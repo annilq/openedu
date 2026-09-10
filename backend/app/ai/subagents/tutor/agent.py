@@ -23,15 +23,22 @@ def detect_subject(text: str) -> str:
 class TutorSubAgent(BaseSubAgent):
     business = "tutor"
 
-    def __init__(self, *, provider, retriever=None, engine=None) -> None:
-        super().__init__(provider=provider, retriever=retriever, engine=engine)
+    def __init__(self, *, provider, retriever=None) -> None:
+        super().__init__(provider=provider, retriever=retriever)
         self.service = TutorService(provider=provider, retriever=retriever)
 
     def _effective_context(self, subject: str, base_context: str | None) -> str:
-        persona = get_subject_persona(subject)
+        """学科 Persona 拼进上下文。
+
+        注意：业务 SOP（ADR-0030）**不走这里**——本方法的产物会被
+        ``TutorService`` 纳入 ``check_input`` 扫描范围，而 SOP 文本里本就含
+        「越狱 / 成人 / 暴力 / 政治敏感」等安全词，并进去会导致每条娃娃提问
+        被自己的 SOP 判为不安全。SOP 由 ``aexplain(skills=)`` 在闸门之后注入。
+        """
+        persona = get_subject_persona(subject).render()
         if base_context:
-            return f"{base_context}\n\n{persona.render()}".strip()
-        return persona.render()
+            return f"{base_context}\n\n{persona}".strip()
+        return persona
 
     def explain(
         self,
@@ -42,6 +49,7 @@ class TutorSubAgent(BaseSubAgent):
         context: str | None,
         question: str,
         history: list[dict] | None = None,
+        skills: str = "",
     ) -> TutorResult:
         """同步讲解入口（保留，供需要同步调用的场景）。"""
         effective_context = self._effective_context(subject, context)
@@ -52,20 +60,7 @@ class TutorSubAgent(BaseSubAgent):
             context=effective_context,
             question=question,
             history=history,
-        )
-
-    async def handle(self, intent: dict, ctx: SubAgentContext) -> TutorResult:
-        subject = ctx.subject or intent.get("subject", "")
-        grade = ctx.grade or intent.get("grade", 0)
-        kp = ctx.knowledge_point or intent.get("knowledge_point", "")
-        question = ctx.question or intent.get("question", "")
-        return self.explain(
-            grade=grade,
-            subject=subject,
-            knowledge_point=kp,
-            context=ctx.context,
-            question=question,
-            history=ctx.history,
+            skills=skills,
         )
 
     async def run(self, message: str, ctx: SubAgentContext, *, session=None):
@@ -81,6 +76,8 @@ class TutorSubAgent(BaseSubAgent):
             context=self._effective_context(subject, ctx.context),
             question=message,
             history=ctx.history,
+            # ADR-0030：SOP 在输入安全闸门之后注入（见 TutorService.aexplain）
+            skills=ctx.skills,
         )
         yield tc.result({"blocked": result.blocked})
         yield self._finish(result.answer, blocked=result.blocked)

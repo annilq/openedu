@@ -1,8 +1,8 @@
 """业务 SubAgent 基类与共享上下文（ADR-0021）。
 
-每个业务 SubAgent 暴露统一契约 ``handle(intent, ctx) -> result``，使轻主管（路由显式派发）
-能无差别地调用任意业务；未来也可平滑插入 LLM 意图分类升级为完整 supervisor，
-无需改动各 SubAgent 实现。
+统一契约：``run(message, ctx) -> AsyncIterator[AssistantEvent]``（悬浮助手入口，
+自由文本 → 异步产出 AG-UI 事件帧）。意图路由由 ``AgentRuntime`` 负责，各 SubAgent
+只需实现自身的 ``run``。
 """
 from __future__ import annotations
 
@@ -33,6 +33,9 @@ class SubAgentContext:
     # ADR-0026：服务端多轮——本会话已发生的对话历史（[{role, content}, ...]），
     # 由 runtime 从 Conversation/Message 载入后注入，供 SubAgent 透传给 provider 拼入 prompt。
     history: list[dict] | None = None
+    # ADR-0030：本业务的 SOP 文本（skills/*.md 全文），由 runtime 从 manifest 发现后注入；
+    # SubAgent 负责拼进 prompt（此前 skills 只是 manifest 里的死元数据，从未进模型上下文）。
+    skills: str = ""
     extra: dict[str, Any] = field(default_factory=dict)
 
 
@@ -61,13 +64,13 @@ class BaseSubAgent(ABC):
     # 业务键（注册表索引）：question / tutor / grader / diagnosis / planner / report …
     business: str = "base"
 
-    def __init__(self, *, provider, retriever=None, engine=None) -> None:
+    def __init__(self, *, provider, retriever=None) -> None:
+        """ADR-0030：引擎不再由 SubAgent 持有——解析统一在 AgentRuntime，
+        SubAgent 一律经 ``provider`` 取引擎（``build_provider(engine=...)`` 注入）。
+        """
         # provider: 业务层统一 LLM 抽象（LLMProvider）；retriever: 可选知识库检索。
-        # engine: 可选的显式引擎（路由带 session 解析出的 ModelConfig 自定义模型）；
-        #         为 None 时由 provider 自行解析，保证零破坏。
         self.provider = provider
         self.retriever = retriever
-        self.engine = engine
 
     # ── 协议助手：（深）把「tool_call/tool_result 同名成对」不变量收口到基类 ──
     def _tool(self, name: str, *, label: str | None = None, args: dict | None = None) -> ToolCall:
@@ -77,11 +80,6 @@ class BaseSubAgent(ABC):
     def _finish(self, text: str, *, blocked: bool | None = None) -> "object":
         """收尾 ASSISTANT_MESSAGE 帧（各 subagent 统一收尾语义，便于未来集中增强）。"""
         return assistant_message(text, blocked=blocked)
-
-    @abstractmethod
-    async def handle(self, intent: dict, ctx: SubAgentContext) -> Any:
-        """处理一次业务请求，返回业务结果（类型由子类定义）。"""
-        ...
 
     @abstractmethod
     async def run(self, message: str, ctx: SubAgentContext, *, session=None) -> Any:

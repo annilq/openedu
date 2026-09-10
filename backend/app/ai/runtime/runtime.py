@@ -3,7 +3,8 @@
 职责：
 1. 文件夹发现：扫描 ``app/ai/subagents/<business>/`` 加载 manifest（业务键/可见角色/
    触发词/工具/技能），新 subagent = 丢一个文件夹。
-2. 意图路由：混合路由（manifest.triggers 规则优先 → 可选 LLM 分类 → 启发式兜底）。
+2. 意图路由：两级路由（manifest.triggers 规则匹配 → manifest.hints 启发式兜底；
+   顺序由 manifest.priority 决定，见 ADR-0030）。
 3. 角色感知：按当前 role 过滤可见 subagent（娃娃端仅伴学答疑，ADR-0026）。
 4. 事件流：调用 SubAgent.run 产出 AG-UI 事件帧（USER_MESSAGE / THINKING / TOOL_CALL /
    TOOL_RESULT / DATA / ASSISTANT_MESSAGE / DONE），由端点以 SSE 推送。
@@ -159,8 +160,8 @@ class AgentRuntime:
             yield thinking(f"已选择助手：{name}", extra={"routing": True})
 
             # 依赖延迟构建：仅路由确定且 subagent 存在后初始化（见 #4）。
-            provider = build_provider()
-            retriever = build_retriever()
+            # ADR-0030：引擎在此解析一次（唯一解析点），经 build_provider 注入 provider；
+            # SubAgent 只从 provider 取引擎，不再保留并行通道。
             # child 经 parent_id 解析引擎（继承家长 ModelConfig / 全局默认），
             # 不再要求客户端显式带 model（原三元条件使 child 永不拿到引擎，见 #5）。
             engine = (
@@ -168,14 +169,18 @@ class AgentRuntime:
                 if parent_id is not None
                 else None
             )
+            provider = build_provider(engine=engine)
+            retriever = build_retriever()
             agent: BaseSubAgent | None = build_subagent(
-                decision.business, provider=provider, retriever=retriever, engine=engine
+                decision.business, provider=provider, retriever=retriever
             )
             if agent is None:
                 yield error(f"未找到可用的助手：{decision.business}", code="NO_AGENT")
                 yield done(session_id)
                 return
 
+            # ADR-0030：manifest 声明的 skills/*.md 全文，由 SubAgent 拼入 prompt
+            manifest = self._manifests.get(decision.business)
             ctx = SubAgentContext(
                 role=role,
                 child_id=child_id,
@@ -184,6 +189,7 @@ class AgentRuntime:
                 question=message,
                 focus_interest=focus_interest,
                 history=history,
+                skills=manifest.skill_prompt if manifest else "",
             )
 
             try:

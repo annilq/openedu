@@ -520,3 +520,107 @@ ADR-0028 让出题真流式落地（472 个非路由 THINKING 帧、2 个 STEP�
 - `ruff check app/ai app/domain app/features/tasks` 全过
 - `tests/ai` 38 例全过（含流式原语、解析器鲁棒性、SubAgent 帧类型统计、Translate 帧聚合与未知类型报错、落库路径回归）
 - e2e：路由 THINKING 2 帧、非路由 THINKING 53 帧、STEP 2 帧、DATA 2 帧、首个推理帧 1.99s（重构前整题生成完才下发 10s+）
+
+## ADR-0030 助手运行时抽象收口：引擎单一解析链 / SubAgent 零配置发现 / Skills 真消费 / 删除 LLM 分类插槽
+
+> 来源：ADR-0024（统一入口）落地后的一次架构体检，修掉「声明了但没接线」的四条抽象裂缝。
+
+### 背景
+ADR-0024 / 0025 / 0026 把 AI 入口收敛到 `POST /api/v1/assistant/chat` 后，运行时骨架（Runtime 发现 → 路由 → SubAgent → Domain）已经成立，但体检发现四处「看起来有、实际没有」的抽象：
+
+1. **引擎注入是死链（功能缺陷）**：`AgentRuntime.run` 用 `resolve_engine(model, parent_id, session)` 解析出引擎，经 `build_subagent(engine=)` 存进 `BaseSubAgent.self.engine`，但全仓**零处消费**——`GenkitProvider` 内部一律 `resolve_engine()` 无参。后果：家长 `ModelConfig` 自定义模型与前端 `model` 字段在助手链路上**完全不生效**，永远走全局 `LLM_PROVIDER`。
+2. **「新增 SubAgent = 丢一个文件夹」不成立**：`discover_subagent_manifests()` 只发现 `manifest.py`，agent 类仍要在 `registry.py` 手工登记一行；`intent_router._PRIORITY` 与 `_QUESTION_HINTS` / `_TASK_HINTS` 还硬编码了 `tasks` / `question` / `tutor` 三个业务名。新增一个业务要改三处。
+3. **`manifest.skills` 是死元数据**：`question_sop.md` / `tutor_sop.md` 已写好，但没有任何代码读取它们注入 prompt；声明的 SOP 一条都没进模型上下文。
+4. **LLM 分类插槽空着**：`classify(llm_classify=...)` 从未被传参，所谓「混合路由」实际只有规则 + 启发式两级。
+
+### 决策
+1. **引擎解析单一链**：引擎只在 `AgentRuntime` 里解析一次，经 `build_provider(engine=...)` 注入 `GenkitProvider`；`GenkitProvider` 持有引擎，无显式引擎时才回退 `resolve_engine()`。**删除 `BaseSubAgent.engine` 与 `build_subagent(engine=)` 这两个死参数**——SubAgent 一律经 `provider` 取引擎，不再有第二条并行通道。
+2. **发现即注册**：`discover_subagent_manifests()` 扫到 `manifest.py` 的同时，用 `inspect` 从同目录 `agent.py` 取出 `BaseSubAgent` 子类写入清单（`agent_cls`）；`registry.py` 的手工登记表删除。`SubAgentManifest` 增两个可选字段：`priority: int`（路由优先级，默认 0）与 `hints: list[str]`（启发式兜底词）；`intent_router` 删掉硬编码的 `_PRIORITY` 与业务提示词表，改为按 `priority` 降序做通用匹配，priority 最低者作兜底。
+3. **Skills 真消费**：发现阶段读取 `skills/*.md` 全文存入清单，Runtime 装配时经 `SubAgentContext.skills` 下传；出题 SubAgent 把 SOP 拼入 `persona_hint`、伴学拼入 `context`。声明了但文件缺失 → 发现时打印告警（此前静默）。`manifest.tools` 保留为**声明式清单**，字段注释明确「tool 事件由 `agent._tool()` 产出，当前无运行时调度器」——不假装存在调度器。
+4. **删除 LLM 分类插槽**：移除 `classify` 的 `llm_classify` 参数与相关分支。理由：业务只有三个、儿童产品要求路由确定性、规则 + 启发式已覆盖现有语料，而引入 LLM 分类会让每条请求多一次完整模型往返（首字节延迟翻倍）去换一个三选一。保留该插槽的代价（一个永远为 `None` 的参数 + 一段永不执行的分支）大于收益。
+
+### 备选
+- **引擎双通道保留（SubAgent 直连 engine）**：否决。两条解析链必然漂移，且 `resolve_engine` 的入参（`parent_id` / `session` / `model`）只有 Runtime 拿得全。
+- **保留 registry 手工登记 + 发现只管 manifest**：否决。这正是「声明与实现两处真相」的源头，新增业务漏登记会静默回退到 `tutor`。
+- **实现真正的 tool 调度器**：否决。三个 SubAgent 的「工具」就是各自执行体本身，抽调度器是为抽象而抽象；等出现第二个复用同一 tool 的业务再说。
+- **LLM 分类默认关闭、用配置开关接线**：否决。默认关闭的开关等于死代码，还额外引入配置项与测试矩阵。真需要时在 `classify` 加回一个 callable 参数即可，成本约 5 行。
+
+### 后果
+- 家长 `ModelConfig` 与前端 `model` 在 `/assistant/chat` 上真正生效；无显式引擎时行为不变（回退全局 `LLM_PROVIDER`）。
+- 新增业务只需在 `app/ai/subagents/<business>/` 放 `manifest.py` + `agent.py`，`priority` / `hints` 写在 manifest 里，零处登记。
+- SOP 文本进入模型上下文，出题 / 伴学的口径由 `skills/*.md` 与 prompt 共同决定，不再各写各的。
+- `intent_router` 不再知道任何具体业务名，可独立单测（喂 manifest 即可）。
+
+### 验证
+- `uv run ruff check .` 全过
+- `uv run pytest` 全过，新增：引擎透传断言、发现即注册断言、skills 注入断言
+- 手工：家长自定义模型 id 经 `model` 字段传入后，出题 / 伴学应命中该模型
+
+## ADR-0031 Agent 抽象层抽取为通用框架 `agent_core`（ADR-0003 升级）
+
+> 来源：用户需求——把 `app/ai` 从「教育业务专属管线」升级为「业务无关的通用 agent 框架」，作为内部协议规范接入各业务子项目。配套分析见 `docs/architecture/AI_Agent分层抽象对比分析.md`。
+
+### 背景
+1. 当前 `backend/app/ai` 是一条教育业务专属的 agent 管线：协议信封、文件夹发现注册、manifest 驱动路由、统一 SSE 流形这**四件骨架已通用且可复用**，但整层被教育业务焊死、「工具调用」是装饰性的（无真实 tool loop）。
+2. 需求方要求把 agent 层提升为**业务无关的抽象层**（协议 + subagent 注册 + subagent 路由 + 工具调用 + 统一事件流），作为内部通用协议规范，接入各个业务子项目；每个子项目实现自己的 subagent 处理自身业务。
+3. 逐层分析确认三处硬伤：① 真实 tool loop 缺失；② `app/ai` 重度反向依赖 `app.domain`/`app.features`/`app.db`/`app.core`，无法被其它工程复用；③ `LLMProvider` 泄漏教育语义（`generate_question_stream(subject, grade, knowledge_point, qtype, difficulty, interests, focus_interest, rag_context, persona_hint, history)`）。
+4. ADR-0003 已定「框架隔离 + 自封领域接口」，本 ADR 是对它的**升级**：把"领域接口"从"教育后端内的一层"升级为"独立可分发框架"。
+
+### 决策
+1. **抽为独立可安装 Python 包 `agent_core`**（内部 PyPI 发布；各业务工程 `pip install agent_core` 后实现自己的 subagent 接入），不再嵌在 `app/ai` 内。
+2. **`agent_core` 只定义抽象 seam，零业务依赖**：
+   - `LLMProvider`：收窄到消息级 `stream(system, prompt, schema, history) -> AsyncIterator[TextDelta | StructuredDone]`；业务 prompt 组装由 subagent 负责，provider 只认消息。
+   - `Retriever`：可选知识库检索（`retrieve(query) -> list[Chunk]`）。
+   - `Safety`：输入/输出安全闸门（抽象；具体实现由业务注入，如儿童双层防护）。
+   - `Tool`：`ToolSpec(name, description, schema, handler)` + 运行时执行器。
+3. **真实 tool loop**：`AgentRuntime` 在 subagent 声明 `tools` 时，把 tool schema 随首轮请求发给模型；收到 `tool_call` → 解析并执行注册的 `handler` → 回灌 `tool_result` → 循环直到 `done`。**subagent 自行决定是否声明 tools（opt-in）**；教育现有出题/答疑可保持一次性生成，不强依赖 loop。
+4. **协议信封 `AssistantEvent` 冻结为 `agent_core` 拥有**（AG-UI 式 11 种 eventType）。`DATA.type`、`blocked` 等教育特定字段改为 `extra` 扩展，core 不再认识业务词。
+5. **翻译/解析层下沉**：原 `translate.py`/`parsers/*` 的教育语义移到各 subagent 自身模块；`agent_core` 领域无关，只负责信封 ↔ 传输（SSE）的通用转换。
+6. **路由暴露可插拔 `classify` 钩子**：规则 + 启发式为默认实现（沿用 ADR-0030 确定性），弱意图领域可传入 LLM classifier（`classify(llm_classify=...)`，约 5 行接线）。
+7. **一步到位大重写**：内核与所有 subagent 一次性迁出（非增量），结构最干净。
+
+### 备选
+- 增量抽取（先抽内核、端点与 subagent 暂留教育仓适配）：风险低，但双源真相窗口长、过渡期两套并存。否决（用户选大重写）。
+- 本仓内共享子包 / 独立子仓 + monorepo：隔离不如独立包彻底。否决（用户选独立可安装包）。
+- 强制所有 subagent 走 loop：框架最纯粹但破坏现有一次性生成流。否决（用户选 opt-in）。
+
+### 后果
+- 正向：任何业务工程可 `pip install agent_core` 实现 subagent 接入；框架与具体 LLM/业务彻底解耦；真实 tool loop 到位，"工具调用"不再是谎言；`LLMProvider` 收窄后加业务不改 provider、换 provider 不懂教育。
+- 负向/风险：
+  - 大重写中途教育管线不可运行、回归面大。配套：**抽前冻结教育端接口契约**（SSE 帧结构、业务 subagent 的 `handle/run` 签名），以契约测试守护；抽完一次性切换并全量回归 `uv run pytest` + 真机验证。
+  - `agent_core` 需建独立测试与发布流程（内部 PyPI / 语义化版本 / CHANGELOG），治理成本上升。
+  - 真实 tool loop 引入多轮模型往返，需内置超时/重试/熔断（沿用儿童产品确定性前提，tool 执行保持同步可预期，异常转 `ERROR` 帧）。
+
+### 目标包结构（agent_core）
+```
+agent_core/
+  protocol.py     # AssistantEvent 信封 + 便捷构造器
+  registry.py     # 文件夹发现 + 业务键→类 查询
+  router.py       # 规则+启发式 默认路由 + 可插拔 classify
+  runtime.py      # AgentRuntime：发现/路由/tool loop/统一事件流
+  tools.py        # ToolSpec + 执行器
+  seams.py        # LLMProvider / Retriever / Safety 抽象基类
+  subagent.py     # BaseSubAgent + SubAgentContext（去掉教育字段）
+```
+业务工程侧：
+```
+my_biz_backend/
+  agent/
+    question/manifest.py + agent.py + tools/ + skills/
+  provider_impl.py   # 实现 agent_core.seams.LLMProvider（消息级）
+```
+
+### 执行计划（大重写）
+1. 建 `agent_core` 包骨架 + 抽象 seam + `AssistantEvent` 信封（从 `app/ai/runtime/protocol.py` 原样搬）。
+2. 迁 `registry`/`router`/`runtime`：去掉对 `app.domain`/`app.features`/`app.db` 的 import，改为依赖注入抽象 seam。
+3. 实现真实 tool loop（runtime 内），`BaseSubAgent` 暴露 `tools: list[ToolSpec]`（默认空 = 不走 loop）。
+4. 收窄 `LLMProvider` 到消息级；把 `app/ai/generation.py` 的 prompt 组装整体搬进对应 subagent。
+5. 把 `translate.py`/`parsers/*` 教育语义下沉到教育仓的 subagent 模块；`agent_core` 只留通用信封↔SSE。
+6. 教育仓改为 `pip install agent_core`，把现有 `question/tutor/tasks` 三个 subagent 作为"首个接入方"重写适配；端点层（鉴权/配额/落库）保留在教育仓，调用 `agent_core.AgentRuntime`。
+7. 发布 `agent_core` 到内部 PyPI；补契约测试 + 全量回归。
+
+### 关联
+- ADR-0003（框架隔离 + 自封领域接口，本 ADR 升级之）
+- ADR-0024 / 0025 / 0026（统一入口 / 事件信封 / 角色感知）
+- ADR-0030（发现即注册 / 去硬编码 / 删 LLM 分类插槽）
+

@@ -1,6 +1,9 @@
 """跨 SubAgent 复用的 shared_tool（ADR-0024：shared_tool = 公共文件）。
 
-各 subagent 在 manifest ``tools`` 中声明依赖；runtime 按名解析。
+注意：这些是**普通 Python 函数**，由各 SubAgent 在 ``run()`` 内直接 import 调用，
+并非 LLM 可声明的「工具」。``manifest.tools`` 字段已于 ADR-0030 收口时移除
+（此前它只是无运行时调度器消费的声明式元数据）。
+
 当前提供：
 - ``list_tasks``：列出某家长的草稿任务及其题目（悬浮助手「查任务题目」）。
 - ``search_knowledge``：知识库检索封装（出题/伴学 RAG 用）。

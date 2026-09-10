@@ -13,9 +13,6 @@ from app.ai.tools import list_tasks
 class TasksQuerySubAgent(BaseSubAgent):
     business = "tasks"
 
-    async def handle(self, intent: dict, ctx: SubAgentContext):
-        raise NotImplementedError("tasks subagent 仅经 run() 调用")
-
     async def run(self, message: str, ctx: SubAgentContext, *, session=None):
         if session is None:
             yield self._finish("暂无可查询的会话上下文。")

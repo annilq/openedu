@@ -30,6 +30,10 @@
 | 0024 | Agent Runtime 架构：SubAgent 文件夹化（`app/ai/subagents/<business>/` + manifest）+ `AgentRuntime` 统一发现/加载 + 混合意图路由（规则优先 + LLM 兜底）+ SSE 端点 `POST /api/v1/assistant/chat`；不推翻 ADR-0021 契约 |
 | 0025 | 助手交互协议：AG-UI 式统一事件信封（`USER_MESSAGE`/`ASSISTANT_MESSAGE`/`THINKING`/`TOOL_CALL`/`TOOL_RESULT`/`STEP`/`CARD`/`ERROR`/`DONE`），扩展 ADR-0017 为通用聊天协议 |
 | 0026 | 双端角色感知派发（强化 ADR-008）+ 助手会话持久化（`AssistantSession`/`AssistantEvent`）；废除 `debug_log`，supersede ADR-0022 |
+| 0027 | 后端包结构 Feature-First（模块化单体）：`app/features/<name>/` + ORM 集中 `app/db/models/` + 共享内核 `app/domain`·`app/core` |
+| 0028 | 出题改为单调用真流式（推理增量 + 题卡），取代「先整题后打字机」 |
+| 0029 | 出题解析与转换四管分层（Decode → Demux → Parse → Translate），解析器只判定不兜底 |
+| 0030 | 助手运行时抽象收口：引擎单一解析链（删 `BaseSubAgent.engine` 死参数）+ SubAgent 发现即注册（删 registry 手工登记）+ `skills` 真注入 prompt + 删除未接线的 LLM 分类插槽 |
 
 ## 前端 ADR
 

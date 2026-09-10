@@ -115,8 +115,10 @@ async def assistant_chat(req: AssistantChatReq, caller: CallerDep, session: Sess
         message, role=role, child_id=child_id, parent_id=parent_id, session=session
     )
 
-    if role == "child":
-        # 使用配额（伴学答疑计入每日上限）；subject 取自路由决策，仅算一次
+    if role == "child" and decision.business is not None:
+        # 使用配额（伴学答疑计入每日上限）；subject 取自路由决策，仅算一次。
+        # 关键：输入不安全时 runtime.decide 已把 business 置 None（run 内直接拒绝），
+        # 故业务未路由成功时不计配额——否则会先抛「配额超限」而非安全拒绝。
         quota_decision = _child_quota_decision(session, child_id, decision.subject or "")
         if not quota_decision.allowed:
             code = ErrCode.TUTOR_QUOTA_EXCEEDED

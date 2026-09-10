@@ -13,7 +13,7 @@ USER_MESSAGE / 路由 THINKING / DONE 与持久化。
 """
 from __future__ import annotations
 
-from app.ai.generation import step_label
+from app.ai.generation import build_question_prompts, step_label
 from app.ai.runtime.protocol import step
 from app.ai.runtime.translate import translate_stream
 from app.ai.subagents.base import BaseSubAgent, SubAgentContext
@@ -140,15 +140,22 @@ def parse_specs_from_text(text: str) -> list[dict]:
             qtype = qt
             break
 
-    # 知识点：尽力抽取（"关于X"/"X的"），否则留空交给 RAG/Persona
+    # 知识点：尽力抽取，否则留空交给 RAG/Persona
+    # 1) 关于《X》/ 关于X（后接 的 / 》 / ， 等分隔符）——允许《》包裹
     kp = ""
-    m = re.search(r"关于([\u4e00-\u9fa5A-Za-z0-9]+)", text)
+    m = re.search(r"关于\s*《?\s*([\u4e00-\u9fa5A-Za-z0-9]+)", text)
     if m:
         kp = m.group(1)
     else:
-        m = re.search(r"([\u4e00-\u9fa5A-Za-z0-9]+)的([\u4e00-\u9fa5A-Za-z0-9]+)", text)
-        if m and subject and m.group(1) == subject:
-            kp = m.group(2)
+        # 2) subject 与 题型关键词之间的中文串即知识点（如「数学分数选择题」→ 分数）
+        qt_kw = next((kw for kw, _ in _QTYPE_MAP.items() if kw in text), None)
+        if subject and qt_kw:
+            between = text.split(subject, 1)[-1].split(qt_kw, 1)[0]
+            candidate = re.sub(r"[关于的\s]+", "", between)
+            # 去掉可能混入的年级描述（如「三年级」）避免污染知识点
+            candidate = re.sub(r"\d\s*年级|[一二三四五六七八九]\s*年级", "", candidate)
+            if re.search(r"[\u4e00-\u9fa5]", candidate):
+                kp = candidate
 
     if subject:
         specs.append(
@@ -164,62 +171,17 @@ def parse_specs_from_text(text: str) -> list[dict]:
     return specs
 
 
+def with_skills(persona_hint: str, skills: str) -> str:
+    """把业务 SOP（ADR-0030：manifest 声明的 skills/*.md 全文）拼到学科 Persona 之后。
+
+    SOP 与 Persona 同为 prompt 提示段，合并后交由 provider 注入。
+    """
+    sop = (skills or "").strip()
+    return f"{persona_hint}\n\n{sop}" if sop else persona_hint
+
+
 class QuestionSubAgent(BaseSubAgent):
     business = "question"
-
-    def build_augments(
-        self,
-        specs,
-        *,
-        interests: list[str] | None = None,
-        focus_interests: list[str] | None = None,
-    ) -> tuple[dict[int, str], dict[int, str]]:
-        """为每个 q_index 预计算 RAG 上下文与学科 Persona（流式路径用）。"""
-        rag_contexts: dict[int, str] = {}
-        persona_hints: dict[int, str] = {}
-        n_focus = len(focus_interests) if focus_interests else 0
-        for idx, item in enumerate(expand_specs(specs)):
-            focus = focus_interests[idx % n_focus] if n_focus else None
-            rag, persona = build_question_context(
-                subject=item["subject"],
-                grade=item["grade"],
-                knowledge_point=item["knowledge_point"],
-                query=focus or item["knowledge_point"],
-                retriever=self.retriever,
-            )
-            if rag:
-                rag_contexts[idx] = rag
-            persona_hints[idx] = persona
-        return rag_contexts, persona_hints
-
-    async def handle(self, intent: dict, ctx: SubAgentContext):
-        """结构化出题（保留 ADR-0021 契约，供显式派发）。"""
-        subject = ctx.subject or intent.get("subject", "")
-        grade = ctx.grade or intent.get("grade", 0)
-        kp = ctx.knowledge_point or intent.get("knowledge_point", "")
-        qtype = intent.get("qtype", "choice")
-        difficulty = intent.get("difficulty", "medium")
-
-        rag_context, persona_hint = build_question_context(
-            subject=subject,
-            grade=grade,
-            knowledge_point=kp,
-            query=ctx.question or kp,
-            retriever=self.retriever,
-        )
-
-        return await self.provider.generate_question(
-            subject=subject,
-            grade=grade,
-            knowledge_point=kp,
-            qtype=qtype,
-            difficulty=difficulty,
-            interests=intent.get("interests"),
-            focus_interest=intent.get("focus_interest"),
-            rag_context=rag_context,
-            persona_hint=persona_hint,
-            history=ctx.history,
-        )
 
     async def run(self, message: str, ctx: SubAgentContext, *, session=None):
         """悬浮助手入口：自由文本 → 逐题（STEP 进度 + THINKING 推理 + DATA 题卡）。"""
@@ -252,6 +214,20 @@ class QuestionSubAgent(BaseSubAgent):
                 query=focus or item["knowledge_point"],
                 retriever=self.retriever,
             )
+            # ADR-0030：SOP（question_sop.md）随 Persona 一起进 prompt
+            persona_hint = with_skills(persona_hint, ctx.skills)
+            # ADR-0030 收口 #4：prompt 组装在此完成，provider 只收「已组装 prompt + spec」
+            system_prompt, user_prompt, spec = build_question_prompts(
+                subject=item["subject"],
+                grade=item["grade"],
+                knowledge_point=item["knowledge_point"],
+                qtype=item["qtype"],
+                difficulty=item["difficulty"],
+                focus_interest=focus,
+                rag_context=rag_context,
+                persona_hint=persona_hint,
+                history=ctx.history,
+            )
             # STEP：先给进度锚点（前端据此展开该内联区，消除静默等待）
             yield step(
                 step_label(
@@ -261,14 +237,9 @@ class QuestionSubAgent(BaseSubAgent):
             # 流式：语义事件经 Translate 层转帧（推理增量聚合 → 题卡 → 失败明示）。
             async for frame in translate_stream(
                 self.provider.generate_question_stream(
-                    subject=item["subject"],
-                    grade=item["grade"],
-                    knowledge_point=item["knowledge_point"],
-                    qtype=item["qtype"],
-                    difficulty=item["difficulty"],
-                    focus_interest=focus,
-                    rag_context=rag_context,
-                    persona_hint=persona_hint,
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    spec=spec,
                     history=ctx.history,
                 )
             ):

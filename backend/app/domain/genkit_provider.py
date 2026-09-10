@@ -8,26 +8,24 @@ Grader / QuestionGenerator 非流式路径）只依赖 `LLMProvider` ABC，本�
 - 无引擎（LLM_PROVIDER 未配置）：``generate_question`` / ``tutor`` 返回 None，
   ``grade_open`` 抛 RuntimeError，``generate_question_stream`` 空迭代（0 题），
   由上层决定降级（不再提供确定性 mock 兜底）。
+
+ADR-0030：引擎解析**单一链**——``AgentRuntime`` 解析一次后经 ``build_provider(engine=)``
+显式注入本类；未注入时才回退 ``resolve_engine()``（全局 ``LLM_PROVIDER``）。
+此前本类内部一律无参解析，导致家长 ``ModelConfig`` / 前端 ``model`` 在助手链路上静默失效。
 """
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
 
 from app.ai import debug_log, resolve_engine
+from app.ai.engine import EngineResolution
 from app.ai.generation import (
     _QUESTION_SYSTEM_PROMPT,
     GradeSchema,
-    _build_question_prompt,
+    _generate_question,
+    _generate_question_stream,
 )
-from app.ai.generation import (
-    generate_question_stream as genkit_generate_question_stream,
-)
-from app.ai.parsers.question import (
-    QuestionSchema,
-    QuestionSpec,
-    assemble_question,
-    schema_field,
-)
+from app.ai.parsers.question import QuestionSpec, schema_field
 from app.domain.provider import GeneratedQuestion, LLMProvider, QuestionStreamEvent
 from app.domain.safety import tutor_system_prompt
 
@@ -44,97 +42,58 @@ def _chunk_text(chunk) -> str:
 
 
 class GenkitProvider(LLMProvider):
-    """单一 Genkit 栈的 LLMProvider 实现（迁移 08b 退役 LangChain/Mock 双栈）。"""
+    """单一 Genkit 栈的 LLMProvider 实现（迁移 08b 退役 LangChain/Mock 双栈）。
+
+    ADR-0030：可接受显式引擎（家长 ``ModelConfig`` / 前端 ``model`` 解析所得）；
+    为 ``None`` 时每次调用回退 ``resolve_engine()``，行为与改动前一致。
+    """
+
+    def __init__(self, engine: EngineResolution | None = None) -> None:
+        self._engine = engine
+
+    def _resolve(self) -> EngineResolution | None:
+        """显式引擎优先，否则回退全局解析（ADR-0030 单一解析链）。"""
+        return self._engine if self._engine is not None else resolve_engine()
 
     async def generate_question(
         self,
         *,
-        subject,
-        grade,
-        knowledge_point,
-        qtype,
-        difficulty,
-        interests: list[str] | None = None,
-        focus_interest: str | None = None,
-        rag_context: str | None = None,
-        persona_hint: str | None = None,
+        system_prompt: str,
+        user_prompt: str,
+        spec: "QuestionSpec",
         history: list[dict] | None = None,
     ) -> GeneratedQuestion | None:
-        engine = resolve_engine()
+        engine = self._resolve()
         if engine is None:
             return None
-        prompt = _build_question_prompt(
-            subject=subject, grade=grade, knowledge_point=knowledge_point, qtype=qtype,
-            difficulty=difficulty, interests=interests, focus_interest=focus_interest,
-            rag_context=rag_context, persona_hint=persona_hint, history=history,
-        )
-        resp = await engine.genkit.generate(
-            model=engine.model, system=_QUESTION_SYSTEM_PROMPT, prompt=prompt,
-            output_schema=QuestionSchema,
-        )
-        raw = resp.output
-        out = assemble_question(
-            raw={
-                "stem": schema_field(raw, "stem") or "",
-                "options": schema_field(raw, "options"),
-                "answer": schema_field(raw, "answer") or "",
-                "explanation": schema_field(raw, "explanation") or "",
-                "reasoning": schema_field(raw, "reasoning") or "",
-            },
-            spec=QuestionSpec(
-                subject=subject,
-                grade=grade,
-                knowledge_point=knowledge_point,
-                qtype=qtype,
-                difficulty=difficulty,
-            ),
-        )
-        if out is None:
-            return None
-        return GeneratedQuestion(
-            subject=out.subject, grade=out.grade, knowledge_point=out.knowledge_point,
-            qtype=out.qtype, stem=out.stem, options=out.options, answer=out.answer,
-            explanation=out.explanation, difficulty=out.difficulty,
+        return await _generate_question(
+            engine, system_prompt=system_prompt, user_prompt=user_prompt, spec=spec, history=history,
         )
 
     async def generate_question_stream(
         self,
         *,
-        subject,
-        grade,
-        knowledge_point,
-        qtype,
-        difficulty,
-        interests: list[str] | None = None,
-        focus_interest: str | None = None,
-        rag_context: str | None = None,
-        persona_hint: str | None = None,
+        system_prompt: str,
+        user_prompt: str,
+        spec: "QuestionSpec",
         history: list[dict] | None = None,
     ) -> AsyncIterator[QuestionStreamEvent]:
-        """出题真流式：委托 ``app.ai.generation.generate_question_stream``。
+        """出题真流式：委托 ``app.ai.generation._generate_question_stream``。
 
-        无引擎时直接结束迭代（调用方按 0 题处理），不再提供确定性 mock 兜底。
+        ADR-0030 收口 #4：只收已组装 prompt + spec，prompt 组装由出题 SubAgent 负责，
+        本类不再感知 subject/grade/qtype 等业务语义。无引擎时直接结束迭代（调用方按 0 题处理），
+        不再提供确定性 mock 兜底。
         """
-        engine = resolve_engine()
+        engine = self._resolve()
         if engine is None:
             return
-        async for ev in genkit_generate_question_stream(
-            engine,
-            subject=subject,
-            grade=grade,
-            knowledge_point=knowledge_point,
-            qtype=qtype,
-            difficulty=difficulty,
-            interests=interests,
-            focus_interest=focus_interest,
-            rag_context=rag_context,
-            persona_hint=persona_hint,
-            history=history,
+        async for ev in _generate_question_stream(
+            engine, system_prompt=system_prompt, user_prompt=user_prompt, spec=spec, history=history,
         ):
             yield ev
 
     async def grade_open(self, *, question, student_answer) -> dict:
-        engine = resolve_engine()
+        engine = self._resolve()
         if engine is None:
             raise RuntimeError(
                 "未配置 LLM 引擎，无法批改（请设置 LLM_PROVIDER 与对应 API key）"
@@ -180,7 +139,7 @@ class GenkitProvider(LLMProvider):
         self, *, grade, subject, knowledge_point, context, question,
         history: list[dict] | None = None,
     ) -> str | None:
-        engine = resolve_engine()
+        engine = self._resolve()
         if engine is None:
             return None
         # TutorService 已在 context 注入知识库检索结果，这里只做模型生成、不重复检索。

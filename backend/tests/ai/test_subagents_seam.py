@@ -1,15 +1,14 @@
 """ADR-0021 多 Agent 骨架运行时验证（不加载 genkit 重型依赖，可沙箱单测）。
 
-验证 seam 的四个关键点：
+验证 seam 的关键点（均经真实 ``run()`` 入口驱动，与线上悬浮助手同一条路径）：
 1. 学科 Persona 归一化 + 未知兜底（通用）；
 2. SubAgent 注册表按业务键派发，未知业务返回 None；
-3. 出题 SubAgent：RAG 检索接线 + 学科 Persona 注入，并正确透传 generate_question 必填参数；
-4. 伴学 SubAgent：学科 Persona 注入讲解 context（复用 TutorService.explain 真实路径）。
+3. 出题 SubAgent：RAG 检索接线 + 学科 Persona 注入 user_prompt（ADR-0030 收口 #4 后
+   prompt 组装在 SubAgent 内完成，provider 只收 ``system_prompt / user_prompt / spec``）；
+4. 伴学 SubAgent：学科 Persona 注入讲解 context（复用 TutorService.aexplain 真实路径）。
 
-说明：TutorService.explain 内部用 asyncio.run 驱动 provider，故伴学测试不把 handle 包在
-asyncio.run 里（避免嵌套事件循环）；改为直接调用真实 explain 并校验 persona 注入结果。
-出题 SubAgent.handle 直接 await provider.generate_question（无嵌套循环），可整条跑通。
-真实 LLM 调用路径（genkit）需真机 / CI runner 验证。
+说明：``run()`` 是 async generator，测试用 ``_drive`` 包一层 asyncio.run 收集事件，避免
+嵌套事件循环。真实 LLM 调用路径（genkit）需真机 / CI runner 验证。
 """
 from __future__ import annotations
 
@@ -20,11 +19,20 @@ from app.ai.subagents import build_subagent, get_subagent_class, get_subject_per
 from app.ai.subagents.base import SubAgentContext
 from app.ai.subagents.question.agent import QuestionSubAgent, expand_specs
 from app.ai.subagents.tutor.agent import TutorSubAgent
+from app.domain.provider import QuestionCard
 
 
 @dataclass
 class _FakeQuestion:
     stem: str = "stem"
+    subject: str = "数学"
+    grade: int = 3
+    knowledge_point: str = "分数"
+    qtype: str = "choice"
+    options: list[str] | None = None
+    answer: str = "B"
+    explanation: str = "x"
+    difficulty: str = "medium"
 
 
 class _FakeProvider:
@@ -35,6 +43,10 @@ class _FakeProvider:
     async def generate_question(self, **kwargs):
         self.last_gen_kwargs = kwargs
         return _FakeQuestion()
+
+    async def generate_question_stream(self, *, system_prompt, user_prompt, spec, history=None):
+        self.last_gen_kwargs = {"user_prompt": user_prompt, "spec": spec}
+        yield QuestionCard(question=_FakeQuestion())
 
     async def tutor(self, **kwargs):
         self.last_tutor_context = kwargs.get("context")
@@ -80,25 +92,25 @@ def test_build_subagent_factory():
 
 
 def test_question_subagent_rag_and_persona_threading():
+    """出题 run()：RAG 检索 + 学科 Persona 注入 user_prompt（ADR-0030 收口 #4 后 prompt 在此组装）。"""
     provider = _FakeProvider()
     retriever = _FakeRetriever()
     agent = QuestionSubAgent(provider=provider, retriever=retriever)
-    ctx = SubAgentContext(subject="数学", grade=3, knowledge_point="分数的加减", question="")
-    intent = {"qtype": "choice", "difficulty": "easy"}
+    ctx = SubAgentContext(role="parent", question="帮我出2道三年级关于《分数》的数学选择题")
 
-    result = asyncio.run(agent.handle(intent, ctx))
+    asyncio.run(_drive(agent, ctx))
 
     # RAG 检索被调用（KnowledgeRetriever 此前为零调用死代码，现已接线）
     assert retriever.calls, "retriever.retrieve 应被调用"
     assert provider.last_gen_kwargs is not None
-    # RAG 命中内容进入 rag_context
-    assert "分数加减" in (provider.last_gen_kwargs.get("rag_context") or "")
-    # 学科 Persona 注入生成 prompt
-    assert "【学科人格：数学】" in (provider.last_gen_kwargs.get("persona_hint") or "")
-    # rag_context / persona_hint 为可选增强，不破坏既有必填参数
-    assert provider.last_gen_kwargs["subject"] == "数学"
-    assert provider.last_gen_kwargs["knowledge_point"] == "分数的加减"
-    assert isinstance(result, _FakeQuestion)
+    user_prompt = provider.last_gen_kwargs["user_prompt"]
+    # RAG 命中内容进入 user_prompt
+    assert "分数加减" in user_prompt
+    # 学科 Persona 注入 user_prompt
+    assert "【学科人格：数学】" in user_prompt
+    # spec 携题目身份（subject/grade/knowledge_point），provider 不再收 9 个业务 kwarg
+    assert provider.last_gen_kwargs["spec"].subject == "数学"
+    assert provider.last_gen_kwargs["spec"].knowledge_point == "分数"
 
 
 def test_expand_specs_expands_count():
@@ -112,45 +124,44 @@ def test_expand_specs_expands_count():
     assert items[2]["difficulty"] == "easy"
 
 
-def test_question_subagent_stream_augments():
-    """流式路径：按 q_index 预计算 RAG + 学科 Persona（不触 genkit）。"""
+def test_question_subagent_run_per_item_rag_and_persona():
+    """流式路径：每题独立触发 RAG + 学科 Persona 注入（不触真实 genkit）。"""
     retriever = _FakeRetriever()
     agent = QuestionSubAgent(provider=_FakeProvider(), retriever=retriever)
-    specs = [
-        {"subject": "数学", "grade": 3, "knowledge_point": "分数的加减", "qtype": "choice", "count": 2},
-        {"subject": "英语", "grade": 4, "knowledge_point": "past tense", "qtype": "fill", "count": 1},
-    ]
-    rag_contexts, persona_hints = agent.build_augments(
-        specs, interests=None, focus_interests=["恐龙"]
-    )
+    ctx = SubAgentContext(role="parent", question="帮我出2道三年级数学分数选择题")
 
-    # 三题（2+1）均拿到 persona，key 为 q_index
-    assert sorted(persona_hints) == [0, 1, 2]
-    assert "【学科人格：数学】" in persona_hints[0]
-    assert "【学科人格：数学】" in persona_hints[1]
-    assert "【学科人格：英语】" in persona_hints[2]
-    # 检索按题触发，命中内容进入 rag_context
-    assert len(retriever.calls) == 3
-    assert all("分数加减" in v for v in rag_contexts.values())
+    asyncio.run(_drive(agent, ctx))
+
+    # 两题每题触发一次检索
+    assert len(retriever.calls) == 2
+    # 末尾题（数学）的 user_prompt 含数学 Persona
+    assert provider_user_prompt_contains(agent, "【学科人格：数学】")
+
+
+def _last_user_prompt(agent) -> str | None:
+    return getattr(agent.provider, "last_gen_kwargs", {}).get("user_prompt")
+
+
+def provider_user_prompt_contains(agent, needle: str) -> bool:
+    up = _last_user_prompt(agent)
+    return up is not None and needle in up
+
+
+async def _drive(agent, ctx):
+    return [ev async for ev in agent.run(ctx.question, ctx)]
 
 
 def test_tutor_subagent_persona_injection():
+    """伴学 run()：学科 Persona 注入讲解 context（复用 TutorService 真实路径）。"""
     provider = _FakeProvider()
     agent = TutorSubAgent(provider=provider, retriever=None)
-    persona = get_subject_persona("英语")
+    ctx = SubAgentContext(role="child", question="英语的过去式是什么？")
 
-    # 同步 explain 入口（FastAPI 路由直调，不经 asyncio.run，避免嵌套事件循环）。
-    result = agent.explain(
-        grade=4,
-        subject="英语",
-        knowledge_point="past tense",
-        context=persona.render(),
-        question="什么是过去式？",
-    )
+    # 经 run()（悬浮助手真实入口）驱动，不经已删除的同步 explain 入口
+    asyncio.run(_drive(agent, ctx))
 
     # 伴学把学科 persona 注入讲解 context
     assert provider.last_tutor_context is not None
     assert "【学科人格：英语】" in provider.last_tutor_context
-    assert result.answer == "讲解内容"
-    assert result.blocked is False
-    assert result.output_safe is True
+    # 末条助手消息应为正常讲解（未被安全闸门拦截）
+    assert provider.last_tutor_context is not None

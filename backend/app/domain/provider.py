@@ -1,6 +1,12 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.ai.parsers.question import QuestionSpec
 
 
 @dataclass
@@ -59,47 +65,39 @@ class LLMProvider(ABC):
     async def generate_question(
         self,
         *,
-        subject,
-        grade,
-        knowledge_point,
-        qtype,
-        difficulty,
-        interests: list[str] | None = None,  # 轻融入：娃娃兴趣池（受控分类叶子 key）
-        focus_interest: str | None = None,  # 兴趣题模式：聚焦的单个兴趣主题
-        rag_context: str | None = None,  # ADR-0021：知识库检索命中内容（对齐教材口径）
-        persona_hint: str | None = None,  # ADR-0021：学科 Persona 渲染文本（语气/适龄/约定）
+        system_prompt: str,
+        user_prompt: str,
+        spec: "QuestionSpec",
         history: list[dict] | None = None,  # 多轮对话历史（ADR-0026 服务端会话）
-    ) -> GeneratedQuestion: ...
+    ) -> GeneratedQuestion | None:
+        """非流式出题：prompt 已由调用方组装好，provider 只负责调用模型并产出题卡。
+
+        ADR-0030 收口 #4：接口不再泄漏 9 个业务 kwarg（subject/grade/qtype/...），
+        「换 provider 不用懂教育」——新增题型/字段只需改 spec + 组装方，不动本接口。
+        ``spec`` 为题目不可变身份，由调用方给出、回填模型产出（模型不一定回写）。
+        模型产不安全时返回 None，由上层降级。
+        """
+        ...
 
     async def generate_question_stream(
         self,
         *,
-        subject,
-        grade,
-        knowledge_point,
-        qtype,
-        difficulty,
-        interests: list[str] | None = None,
-        focus_interest: str | None = None,
-        rag_context: str | None = None,
-        persona_hint: str | None = None,
+        system_prompt: str,
+        user_prompt: str,
+        spec: "QuestionSpec",
         history: list[dict] | None = None,
     ) -> AsyncIterator[QuestionStreamEvent]:
         """出题流式：逐段产出推理增量与成品题卡。
 
         默认实现退化为「一次性生成 → 单张题卡」（无推理增量），保证不支持流式的
         实现也能接上同一条调用链；``GenkitProvider`` 覆写为真正的逐 token 流式。
+
+        ADR-0030 收口 #4：与 ``generate_question`` 一致，只收已组装 prompt + spec。
         """
         q = await self.generate_question(
-            subject=subject,
-            grade=grade,
-            knowledge_point=knowledge_point,
-            qtype=qtype,
-            difficulty=difficulty,
-            interests=interests,
-            focus_interest=focus_interest,
-            rag_context=rag_context,
-            persona_hint=persona_hint,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            spec=spec,
             history=history,
         )
         if q is not None:

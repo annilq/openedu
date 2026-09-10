@@ -97,3 +97,17 @@
 - **AssistantSession（助手会话）**：持久化聊天 + 调试会话（id/role/parent_id/child_id/model/status）；其 `AssistantEvent` 既是对话步骤也是调试轨迹，废除原 `debug_log`（ADR-0026，supersede ADR-0022）。
 - **AssistantEvent（助手会话步骤）**：session 内带 role/type/step 的一步（content + payload + 安全/延迟/usage 标记），沿用 ADR-0022 口径（ADR-0026）。
 - **悬浮 AI 助手（Floating Assistant）**：前端全局悬浮按钮 + 对话框入口，双端通用，调 `POST /api/v1/assistant/chat` 经 AgentRuntime 完成「意图识别 → 路由 → subagent 执行 → 事件流」全流程（前端 ADR-0006）。
+
+## Agent 框架（agent_core，ADR-0031）
+> 本 ADR-0031 把 ADR-0024~0026 的 AgentRuntime 从「教育专属」升级为「通用框架」；下列术语取代/泛化原「Agent Runtime」节中的教育特定描述。
+
+- **agent_core**：从 `app/ai` 抽出的**独立可安装 Python 包**（内部 PyPI 发布），提供业务无关的 agent 抽象层——协议、subagent 注册、subagent 路由、真实 tool loop、统一事件流；各业务工程 `pip install agent_core` 后实现自己的 subagent 接入（ADR-0031）。
+- **seam（抽象接缝）**：`agent_core` 仅定义、不实现的抽象接口，由业务工程注入具体实现；含 `LLMProvider`（消息级）、`Retriever`、`Safety`、`Tool`。业务代码只依赖 seam，不依赖具体引擎。
+- **LLMProvider（消息级 seam）**：`stream(system, prompt, schema, history) -> AsyncIterator[TextDelta | StructuredDone]`；不再认识学科/年级等业务语义（取代原 `generate_question_stream(...)`）。
+- **ToolSpec（工具声明）**：`(name, description, schema, handler)`，subagent 声明后由 `AgentRuntime` 在 tool loop 中执行；`handler` 是普通可执行函数，区别于 ADR-0024 时代「仅声明、无调度器」的 `manifest.tools`。
+- **tool loop（工具循环）**：模型选型 → runtime 执行 `ToolSpec.handler` → 回灌 `tool_result` → 循环直到 `done`；subagent 通过是否声明 `tools` 决定走 loop（opt-in），一次性生成流可不声明。
+- **BaseSubAgent（通用基类）**：`handle(intent, ctx)` + `run(message, ctx)` 统一契约；`SubAgentContext` 去掉教育专属字段（subject/grade/knowledge_point 等），仅保留 role/history/skills/extra 等通用字段。
+- **manifest（subagent 清单，沿用 ADR-0024）**：`manifest.py` 的 `MANIFEST` 字典声明 business 键、name、roles、triggers、hints、priority、tools、skills；runtime 据其发现与路由。
+- **registry（注册表）**：文件夹发现 `discover_subagent_manifests()`，扫到 `manifest.py` 同时用 `inspect` 取 `BaseSubAgent` 子类写入清单（发现即注册，ADR-0030）。
+- **router（路由）**：规则（`triggers`）+ 启发式（`hints`）默认实现，按 `priority` 降序匹配、priority 最低者兜底；暴露可插拔 `classify` 钩子（弱意图领域可接 LLM，约 5 行）。
+- **统一事件流 / AssistantEvent（信封，沿用 ADR-0025）**：`agent_core` 拥有的 AG-UI 式信封（RUN_STARTED / USER_MESSAGE / THINKING / ASSISTANT_MESSAGE / TOOL_CALL / TOOL_RESULT / STEP / DATA / ERROR / DONE / RUN_FINISHED）；`DATA.type`、`blocked` 等教育字段改为 `extra` 扩展。

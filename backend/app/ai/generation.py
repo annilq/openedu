@@ -124,7 +124,114 @@ def _build_question_prompt(
     )
 
 
-# ───────────────────────── 底层生成（落库路径） ─────────────────────────
+def build_question_prompts(
+    *,
+    subject: str,
+    grade: int,
+    knowledge_point: str,
+    qtype: str,
+    difficulty: str,
+    interests: list[str] | None = None,
+    focus_interest: str | None = None,
+    rag_context: str | None = None,
+    persona_hint: str | None = None,
+    history: list[dict] | None = None,
+) -> tuple[str, str, "QuestionSpec"]:
+    """组装出题 prompt（ADR-0030 收口 #4：prompt 组装从 provider 搬到调用方）。
+
+    返回 ``(system_prompt, user_prompt, spec)``：
+    - ``system_prompt``：固定的出题系统约束（适龄 / JSON 输出）。
+    - ``user_prompt``：情境 / 难度 / 兴趣 / RAG / Persona / 多轮历史拼装后的完整用户指令。
+    - ``spec``：题目不可变身份（subject/grade/knowledge_point/qtype/difficulty），
+      由调用方给出、回填空模型产出（模型不一定回写这些字段）。
+
+    出题 SubAgent（``app/ai/subagents/question/agent.py``）与落库路径都经由此函数组装，
+    再交给 provider；provider 接口从此只收「已组装 prompt + spec」，不再泄漏 9 个业务 kwarg。
+    """
+    user_prompt = _build_question_prompt(
+        subject=subject, grade=grade, knowledge_point=knowledge_point, qtype=qtype,
+        difficulty=difficulty, interests=interests, focus_interest=focus_interest,
+        rag_context=rag_context, persona_hint=persona_hint, history=history,
+    )
+    spec = QuestionSpec(
+        subject=subject,
+        grade=grade,
+        knowledge_point=knowledge_point,
+        qtype=qtype,
+        difficulty=difficulty,
+    )
+    return _QUESTION_SYSTEM_PROMPT, user_prompt, spec
+
+
+# ───────────────────────── 底层生成（落库路径，已组装 prompt） ─────────────────────────
+async def _generate_question(
+    engine: EngineResolution,
+    *,
+    system_prompt: str,
+    user_prompt: str,
+    spec: "QuestionSpec",
+    history: list[dict] | None = None,
+) -> GeneratedQuestion | None:
+    """非流式出题核心：与流式共用同一份 prompt 与安全闸门。
+
+    返回 GeneratedQuestion；若真实模型产出不安全（check_output 未过）返回 None，
+    由调用方抛 LLM_UNAVAILABLE。
+    """
+    resp = await engine.genkit.generate(
+        model=engine.model, system=system_prompt, prompt=user_prompt,
+        output_schema=QuestionSchema,
+    )
+    out = assemble_question(
+        raw={
+            "stem": schema_field(resp.output, "stem") or "",
+            "options": schema_field(resp.output, "options"),
+            "answer": schema_field(resp.output, "answer") or "",
+            "explanation": schema_field(resp.output, "explanation") or "",
+            "reasoning": schema_field(resp.output, "reasoning") or "",
+        },
+        spec=spec,
+    )
+    if out is None:
+        return None
+    return GeneratedQuestion(
+        subject=out.subject, grade=out.grade, knowledge_point=out.knowledge_point,
+        qtype=out.qtype, stem=out.stem, options=out.options, answer=out.answer,
+        explanation=out.explanation, difficulty=out.difficulty,
+    )
+
+
+# ───────────────────────── 流式出题核心（已组装 prompt，Decode → Parse） ─────────────────────────
+async def _generate_question_stream(
+    engine: EngineResolution,
+    *,
+    system_prompt: str,
+    user_prompt: str,
+    spec: "QuestionSpec",
+    history: list[dict] | None = None,
+) -> AsyncIterator[QuestionStreamEvent]:
+    """流式出题核心：解码 chunk → 解析器判定 → 产出语义事件。
+
+    与 ``_generate_question`` 共用同一份 prompt 与同一份 ``output_schema``，
+    因此两条路径的产出形状必然一致。
+
+    产出三类语义事件，由调用方（出题 SubAgent）经 Translate 层转成 AG-UI 帧：
+    原生思维链逐段 ``ReasoningDelta`` → 结束时 ``QuestionCard``；
+    模型无产出 / 安全闸门未过 → ``QuestionFailed``（显式，不静默跳过）。
+    """
+    sresp = engine.genkit.generate_stream(
+        model=engine.model, system=system_prompt, prompt=user_prompt,
+        output_schema=QuestionSchema,
+    )
+    parser = SchemaQuestionParser(spec=spec)
+    async for seg in decode_stream(sresp.stream):
+        for ev in parser.feed(seg):
+            yield ev
+    resp = await sresp.response
+    for ev in parser.finish(getattr(resp, "output", None)):
+        yield ev
+
+
+# ── 对外兼容包装（保持旧业务参数签名：tests / 落库路径 tasks/router 仍用） ──
 async def generate_question(
     engine: EngineResolution,
     *,
@@ -139,46 +246,17 @@ async def generate_question(
     persona_hint: str | None = None,
     history: list[dict] | None = None,
 ) -> GeneratedQuestion | None:
-    """非流式出题（落库路径）：与流式共用 prompt + 安全闸门。
-
-    返回 GeneratedQuestion；若真实模型产出不安全（check_output 未过）返回 None，
-    由调用方抛 LLM_UNAVAILABLE。
-    """
-    prompt = _build_question_prompt(
+    """非流式出题（落库路径 / 测试兼容入口）：内部经 ``build_question_prompts`` 组装后再生成。"""
+    system_prompt, user_prompt, spec = build_question_prompts(
         subject=subject, grade=grade, knowledge_point=knowledge_point, qtype=qtype,
         difficulty=difficulty, interests=interests, focus_interest=focus_interest,
         rag_context=rag_context, persona_hint=persona_hint, history=history,
     )
-    resp = await engine.genkit.generate(
-        model=engine.model, system=_QUESTION_SYSTEM_PROMPT, prompt=prompt,
-        output_schema=QuestionSchema,
-    )
-    out = assemble_question(
-        raw={
-            "stem": schema_field(resp.output, "stem") or "",
-            "options": schema_field(resp.output, "options"),
-            "answer": schema_field(resp.output, "answer") or "",
-            "explanation": schema_field(resp.output, "explanation") or "",
-            "reasoning": schema_field(resp.output, "reasoning") or "",
-        },
-        spec=QuestionSpec(
-            subject=subject,
-            grade=grade,
-            knowledge_point=knowledge_point,
-            qtype=qtype,
-            difficulty=difficulty,
-        ),
-    )
-    if out is None:
-        return None
-    return GeneratedQuestion(
-        subject=out.subject, grade=out.grade, knowledge_point=out.knowledge_point,
-        qtype=out.qtype, stem=out.stem, options=out.options, answer=out.answer,
-        explanation=out.explanation, difficulty=out.difficulty,
+    return await _generate_question(
+        engine, system_prompt=system_prompt, user_prompt=user_prompt, spec=spec, history=history,
     )
 
 
-# ───────────────────────── 流式出题（Decode → Parse） ─────────────────────────
 async def generate_question_stream(
     engine: EngineResolution,
     *,
@@ -193,38 +271,15 @@ async def generate_question_stream(
     persona_hint: str | None = None,
     history: list[dict] | None = None,
 ) -> AsyncIterator[QuestionStreamEvent]:
-    """流式出题：解码 chunk → 解析器判定 → 产出语义事件。
-
-    与 ``generate_question`` 共用同一份 prompt 与同一份 ``output_schema``，
-    因此两条路径的产出形状必然一致。
-
-    产出三类语义事件，由调用方（出题 SubAgent）经 Translate 层转成 AG-UI 帧：
-    原生思维链逐段 ``ReasoningDelta`` → 结束时 ``QuestionCard``；
-    模型无产出 / 安全闸门未过 → ``QuestionFailed``（显式，不静默跳过）。
-    """
-    prompt = _build_question_prompt(
+    """流式出题（测试兼容入口）：内部经 ``build_question_prompts`` 组装后再生成。"""
+    system_prompt, user_prompt, spec = build_question_prompts(
         subject=subject, grade=grade, knowledge_point=knowledge_point, qtype=qtype,
         difficulty=difficulty, interests=interests, focus_interest=focus_interest,
         rag_context=rag_context, persona_hint=persona_hint, history=history,
     )
-    sresp = engine.genkit.generate_stream(
-        model=engine.model, system=_QUESTION_SYSTEM_PROMPT, prompt=prompt,
-        output_schema=QuestionSchema,
-    )
-    parser = SchemaQuestionParser(
-        spec=QuestionSpec(
-            subject=subject,
-            grade=grade,
-            knowledge_point=knowledge_point,
-            qtype=qtype,
-            difficulty=difficulty,
-        )
-    )
-    async for seg in decode_stream(sresp.stream):
-        for ev in parser.feed(seg):
-            yield ev
-    resp = await sresp.response
-    for ev in parser.finish(getattr(resp, "output", None)):
+    async for ev in _generate_question_stream(
+        engine, system_prompt=system_prompt, user_prompt=user_prompt, spec=spec, history=history,
+    ):
         yield ev
 
 

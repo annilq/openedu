@@ -63,24 +63,22 @@ class _FakeProvider(LLMProvider):
     async def tutor(self, **kwargs) -> str:
         return ""
 
-    async def generate_question_stream(self, **kwargs):
+    async def generate_question_stream(self, *, system_prompt, user_prompt, spec, history=None):
         for ev in self._events:
             if isinstance(ev, QuestionCard):
                 yield _card(
-                    kwargs["subject"],
-                    kwargs["grade"],
-                    kwargs["knowledge_point"],
-                    kwargs["qtype"],
-                    kwargs["difficulty"],
+                    spec.subject,
+                    spec.grade,
+                    spec.knowledge_point,
+                    spec.qtype,
+                    spec.difficulty,
                 )
                 continue
             yield ev
 
 
 def _run(message: str, events: list[QuestionStreamEvent]):
-    agent = QuestionSubAgent(
-        provider=_FakeProvider(events), retriever=None, engine=None
-    )
+    agent = QuestionSubAgent(provider=_FakeProvider(events), retriever=None)
     ctx = SubAgentContext(role="parent", question=message)
 
     async def _go():
