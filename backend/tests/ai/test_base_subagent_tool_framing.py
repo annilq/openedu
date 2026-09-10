@@ -7,21 +7,18 @@ from __future__ import annotations
 
 import asyncio
 
-from app.ai.runtime.protocol import (
+from agent_core.protocol import (
     EVENT_ASSISTANT_MESSAGE,
     EVENT_TOOL_CALL,
     EVENT_TOOL_RESULT,
 )
-from app.ai.subagents.base import BaseSubAgent, SubAgentContext, ToolCall
+from agent_core.subagent import BaseSubAgent, SubAgentContext, ToolCallPair
 
 
 class _FakeAgent(BaseSubAgent):
     """最小可运行 subagent，仅用于验证基类帧助手行为。"""
 
     business = "fake"
-
-    async def handle(self, intent, ctx):
-        raise NotImplementedError
 
     async def run(self, message: str, ctx: SubAgentContext, *, session=None):
         tc = self._tool("do_work", label="干活", args={"x": 1})
@@ -38,7 +35,7 @@ async def _collect(agen):
 def test_tool_handle_exposes_call_with_name_label_args():
     ag = _FakeAgent(provider=object())
     tc = ag._tool("do_work", label="干活", args={"x": 1})
-    assert isinstance(tc, ToolCall)
+    assert isinstance(tc, ToolCallPair)
     assert tc.name == "do_work"
     assert tc.call.eventType == EVENT_TOOL_CALL
     assert tc.call.tool == "do_work"

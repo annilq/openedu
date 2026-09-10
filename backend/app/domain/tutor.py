@@ -18,7 +18,7 @@ ADR-0030：``skills`` 为 manifest 声明的 SOP（``skills/*.md``，系统受�
 import asyncio
 from dataclasses import dataclass
 
-from app.domain.provider import LLMProvider
+from app.domain.provider import EducationLLMProvider
 from app.domain.retriever import KnowledgeRetriever
 from app.domain.safety import SAFE_REFUSAL, check_input, check_output
 
@@ -38,7 +38,7 @@ class TutorResult:
 class TutorService:
     def __init__(
         self,
-        provider: LLMProvider,
+        provider: EducationLLMProvider,
         retriever: KnowledgeRetriever | None = None,
     ) -> None:
         self.provider = provider

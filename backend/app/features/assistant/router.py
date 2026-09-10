@@ -1,12 +1,15 @@
 """悬浮助手统一端点（ADR-0024 / 0025 / 0026）：所有 AI 功能经此单入口。
 
-``POST /api/v1/assistant/chat`` 接收自由文本 + 角色身份，经 AgentRuntime 路由到
+``POST /api/v1/assistant/chat`` 接收自由文本 + 角色身份，经 agent_core.AgentRuntime 路由到
 对应 SubAgent，以 SSE 流式推送 AG-UI 事件帧（USER_MESSAGE / THINKING / TOOL_CALL /
 TOOL_RESULT / DATA / ASSISTANT_MESSAGE / DONE）。
 
 - 双端通用：家长与孩子共用此端点（Caller 依赖解析角色）。
 - 娃娃端角色感知 + 输入安全 + 使用配额（ADR-008 / T10）；家长端可出题/查任务/伴学。
 - 会话持久化复用 ``Conversation`` / ``Message``（ADR-0022 升级为助手会话，supersede）。
+- 统一编排由 agent_core 提供（ADR-0031）：``AgentRuntime`` + ``RuntimeDeps``（provider /
+  retriever / safety 注入）+ ``SubAgentContext``（业务字段走 ``extra``）。本端点只负责
+  鉴权 / 配额 / 落库，不感知任何路由或 subagent 内部细节。
 
 废弃的旧 AI 端点（统一收敛到此）：``/ai/tutor/ask``、``/ai/tasks/generate``、``/tutor/ask``。
 """
@@ -19,19 +22,31 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from sqlmodel import Field, Session, SQLModel
 
-from app.ai.runtime import AgentRuntime, RouteDecision
-from app.ai.runtime.protocol import (
+from agent_core.protocol import (
     EVENT_ASSISTANT_MESSAGE,
     EVENT_DATA,
     EVENT_ERROR,
     EVENT_TOOL_CALL,
     EVENT_TOOL_RESULT,
+    AssistantEvent,
 )
+from agent_core.runtime import AgentRuntime
+from agent_core.seams import RuntimeDeps
+from agent_core.subagent import SubAgentContext
+from app.ai.engine import resolve_engine
+from app.ai.subagents.tutor.agent import detect_subject
 from app.core.config import settings
 from app.core.deps import CallerDep, SessionDep
 from app.core.errors import AppErrorException, ErrCode
 from app.db.models import Conversation, Message
-from app.domain import REASON_SUBJECT_SCOPE, check_quota, resolve_quota_limits
+from app.domain import (
+    REASON_SUBJECT_SCOPE,
+    build_provider,
+    build_retriever,
+    check_quota,
+    resolve_quota_limits,
+)
+from app.domain.safety import ChildSafety
 from app.features.assistant.repository import (
     get_conversation_by_id,
     load_chat_history,
@@ -51,7 +66,7 @@ class AssistantChatReq(SQLModel):
     """悬浮助手对话请求体。
 
     WF-4 兴趣题模式：``focus_interest`` 为显式聚焦主题（如「恐龙」「太空」），
-    经 runtime 透传给出题 SubAgent，注入出题 prompt 让情境围绕该主题展开。
+    经 ctx.extra 透传给出题 SubAgent，注入出题 prompt 让情境围绕该主题展开。
     """
 
     message: str = Field(min_length=1, max_length=2000)
@@ -68,6 +83,7 @@ _RUNTIME: AgentRuntime | None = None
 def _get_runtime() -> AgentRuntime:
     global _RUNTIME
     if _RUNTIME is None:
+        # agent_core 默认根即 backend/app/ai/subagents（module_base="app.ai.subagents"）
         _RUNTIME = AgentRuntime.discover()
     return _RUNTIME
 
@@ -108,18 +124,30 @@ async def assistant_chat(req: AssistantChatReq, caller: CallerDep, session: Sess
         parent_id = caller.user.id
         child_id = None
 
-    # 预路由：解析 business + subject（不流式），供配额判定与落库复用，
-    # 消除端点对 THINKING(extra.business) 隐式契约与对 detect_subject 的重复调用（见 #2/#3）。
     runtime = _get_runtime()
-    decision: RouteDecision = await runtime.decide(
-        message, role=role, child_id=child_id, parent_id=parent_id, session=session
+    # subject 为教育特有概念，由端点计算并透传（agent_core 的 RouteDecision 不感知业务语义）。
+    subject = detect_subject(message)
+
+    # 构建运行时依赖（seam 注入）：provider 走单一解析链；retriever 默认 mock；
+    # 儿童端注入输入安全闸门（首层防御），家长端不拦截。
+    engine = (
+        resolve_engine(req.model, parent_id=parent_id, session=session)
+        if parent_id is not None
+        else None
     )
+    provider = build_provider(engine=engine)
+    retriever = build_retriever()
+    safety = ChildSafety() if role == "child" else None
+    deps = RuntimeDeps(provider=provider, retriever=retriever, safety=safety)
+
+    # 预路由：解析 business（不流式），供配额判定与落库复用，消除端点对 THINKING(extra) 隐式契约。
+    decision = await runtime.decide(message, role=role, deps=deps)
 
     if role == "child" and decision.business is not None:
-        # 使用配额（伴学答疑计入每日上限）；subject 取自路由决策，仅算一次。
+        # 使用配额（伴学答疑计入每日上限）；subject 取自预路由决策，仅算一次。
         # 关键：输入不安全时 runtime.decide 已把 business 置 None（run 内直接拒绝），
         # 故业务未路由成功时不计配额——否则会先抛「配额超限」而非安全拒绝。
-        quota_decision = _child_quota_decision(session, child_id, decision.subject or "")
+        quota_decision = _child_quota_decision(session, child_id, subject)
         if not quota_decision.allowed:
             code = ErrCode.TUTOR_QUOTA_EXCEEDED
             if quota_decision.code == REASON_SUBJECT_SCOPE:
@@ -176,6 +204,23 @@ async def assistant_chat(req: AssistantChatReq, caller: CallerDep, session: Sess
         # 无 session_id：兼容客户端自带历史（兜底）
         history = req.history
 
+    # 业务字段经 ctx.extra 透传（agent_core 不感知任何教育语义）。
+    ctx = SubAgentContext(
+        role=role,
+        message=message,
+        history=history,
+        model=req.model,
+        skills="",  # runtime 会按 manifest 注入 skill_prompt
+        extra={
+            "subject": subject,
+            "parent_id": parent_id,
+            "child_id": child_id,
+            "grade": (caller.user.grade if role == "child" else 0) or 0,
+            "focus_interest": [req.focus_interest] if req.focus_interest else None,
+            "session_id": str(conv_id),
+        },
+    )
+
     async def event_stream() -> AsyncIterator[str]:
         final_text = ""
         cards: list[dict] = []
@@ -184,20 +229,16 @@ async def assistant_chat(req: AssistantChatReq, caller: CallerDep, session: Sess
         turn = 1
         blocked_flag = False
 
-        # 复用预航班决策（decision），避免重复路由；run 返回 (决策, 事件流)。
-        # 仅取流；返回的 decision 与入参同一对象，沿用外层 decision 即可（避免闭包内重名遮蔽触发 F823）。
-        _, stream = await runtime.run(
+        # 复用预航班决策（decision），避免重复路由；run 返回事件流。
+        stream: AsyncIterator[AssistantEvent] = runtime.run(
             message,
             role=role,
-            child_id=child_id,
-            parent_id=parent_id,
+            ctx=ctx,
+            deps=deps,
+            business=decision.business,
             session=session,
-            model=req.model,
-            session_id=str(conv_id),
-            history=history,
-            focus_interest=[req.focus_interest] if req.focus_interest else None,
-            decision=decision,
         )
+
         # 路由步落库：用结构化决策，去掉 THINKING(extra.business) 隐式契约
         if decision.business is not None:
             session.add(
@@ -241,7 +282,7 @@ async def assistant_chat(req: AssistantChatReq, caller: CallerDep, session: Sess
                 elif ev.eventType == EVENT_ASSISTANT_MESSAGE and ev.text:
                     final_text += ev.text
                 elif ev.eventType == EVENT_DATA and ev.data:
-                    # DATA 事件 data 载荷为 {status, type, result}；落库保留 result 本体
+                    # DATA 事件 data 载荷为 {type, result}；落库保留 result 本体
                     cards.append(ev.data.get("result", ev.data))
                 elif ev.eventType == EVENT_ERROR:
                     conv_status = "error"
@@ -275,7 +316,7 @@ async def assistant_chat(req: AssistantChatReq, caller: CallerDep, session: Sess
                         session=session,
                         child_id=child_id,
                         grade=caller.user.grade or 0,
-                        subject=decision.subject or "",
+                        subject=subject,
                         knowledge_point="",
                         question=message,
                         answer=final_text,

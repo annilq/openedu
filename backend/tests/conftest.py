@@ -35,19 +35,19 @@ from tests.utils.fake_provider import FakeLLMProvider  # noqa: E402
 def fake_llm(monkeypatch) -> FakeLLMProvider:
     """全套件注入确定性 LLM 替身：任何测试都不得真实调用模型。
 
-    打桩点是 Agent Runtime 的 provider 工厂（``app.ai.runtime.runtime.build_provider``，
-    该模块在 import 期就把名字绑进了自己的命名空间，故须就地打桩）。
+    打桩点是悬浮助手端点构造 provider 的工厂（``app.features.assistant.router.build_provider``，
+    该模块在 import 期就把 ``build_provider`` 名字绑进了自己的命名空间，故须就地打桩）。
     生产路径不受影响：真实模型仍由 ``GenkitProvider`` + ``resolve_engine`` 解析。
 
-    ADR-0030：Runtime 会把解析好的引擎以 ``engine=`` 关键字注入工厂，替身签名须接受它
-    （替身不需要引擎，忽略即可）。
+    ADR-0031：端点经 ``RuntimeDeps(provider=...)`` 把 provider 注入 agent_core.AgentRuntime；
+    替身实现消息级 ``stream``，无需引擎。
     """
     provider = FakeLLMProvider()
 
     def _factory(engine=None):  # noqa: ARG001 — 替身忽略引擎，仅为匹配工厂签名
         return provider
 
-    monkeypatch.setattr("app.ai.runtime.runtime.build_provider", _factory)
+    monkeypatch.setattr("app.features.assistant.router.build_provider", _factory)
     return provider
 
 

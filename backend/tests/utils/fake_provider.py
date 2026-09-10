@@ -11,98 +11,52 @@
 - 零网络、零费用、秒级；
 - 真实模型连通性由 ``tests/domain/test_llm_smoke.py -m smoke`` 单独负责。
 
-替身只实现 ``LLMProvider`` 契约，产出形状与真实 ``GenkitProvider`` 一致：
-出题流式 = ``ReasoningDelta`` 增量 + ``QuestionCard`` 成品卡。
+替身实现 agent_core 消息级 ``LLMProvider.stream``（schema / tools / 纯文本三态）：
+- ``schema``：产出推理 + 末帧 ``StructuredDone(data=题面字典)``，供出题 SubAgent 解析成题卡；
+- ``tools``：首轮发 ``ToolCall``，工具回灌后再请求时给收尾文本（避免 tool loop 死循环）；
+- 纯文本：直接产出讲解文本。
 """
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
-
-from app.domain.provider import (
-    GeneratedQuestion,
-    LLMProvider,
-    QuestionCard,
-    QuestionStreamEvent,
-    ReasoningDelta,
-)
+from agent_core.seams import StructuredDone, TextDelta, ToolCall
+from app.domain.provider import EducationLLMProvider
 
 # 固定讲解文本（须与安全词表无交集，保证 check_output 放行）。
 _TUTOR_TEMPLATE = "这道题我们一步步来：先看清题目给的条件，再选合适的方法计算，最后检查一遍。答案是 68。"
 
+# 出题固定题面（只含题面四要素；subject/grade 等由 spec 回填）。
+_FAKE_QUESTION: dict = {
+    "stem": "这是一道测试题的题干，用于测试替身产出。",
+    "options": ["A. 第一个选项", "B. 第二个选项", "C. 第三个选项", "D. 第四个选项"],
+    "answer": "B",
+    "explanation": "把条件代入概念逐步推导即可得出结论。",
+}
 
-def _options(qtype: str) -> list[str] | None:
-    if qtype != "choice":
-        return None
-    return ["A. 第一个选项", "B. 第二个选项", "C. 第三个选项", "D. 第四个选项"]
-
-
-def _stem(subject: str, grade: int, knowledge_point: str, qtype: str) -> str:
-    kp = knowledge_point or "本节知识点"
-    return f"【{grade}年级{subject}·{kp}】这是一道{qtype}题的题干，用于测试替身产出。"
-
-
-def _card(
-    *,
-    subject: str,
-    grade: int,
-    knowledge_point: str,
-    qtype: str,
-    difficulty: str,
-) -> GeneratedQuestion:
-    return GeneratedQuestion(
-        subject=subject,
-        grade=grade,
-        knowledge_point=knowledge_point or "本节知识点",
-        qtype=qtype,
-        stem=_stem(subject, grade, knowledge_point, qtype),
-        options=_options(qtype),
-        answer="B",
-        explanation="把条件代入概念逐步推导即可得出结论。",
-        difficulty=difficulty,
-    )
+# 出题固定推理（随题卡整体到达）。
+_REASONING = "先确认考查点，再设计干扰项与答案，难度与年级匹配。"
 
 
-class FakeLLMProvider(LLMProvider):
+class FakeLLMProvider(EducationLLMProvider):
     """确定性 LLM 替身：同样的入参永远得到同样的产出。"""
 
-    async def generate_question(
-        self,
-        *,
-        system_prompt: str,
-        user_prompt: str,
-        spec,
-        history: list[dict] | None = None,
-    ) -> GeneratedQuestion:
-        return _card(
-            subject=spec.subject,
-            grade=spec.grade,
-            knowledge_point=spec.knowledge_point,
-            qtype=spec.qtype,
-            difficulty=spec.difficulty,
-        )
-
-    async def generate_question_stream(
-        self,
-        *,
-        system_prompt: str,
-        user_prompt: str,
-        spec,
-        history: list[dict] | None = None,
-    ) -> AsyncIterator[QuestionStreamEvent]:
-        # 与真实流式同样的事件序列：先推理增量，再成品题卡（单次调用 = 一道题）。
-        yield ReasoningDelta(
-            delta=f"先确认{spec.grade}年级{spec.subject}的考查点，再设计干扰项与答案，难度控制在{spec.difficulty}。"
-        )
-        yield QuestionCard(
-            question=_card(
-                subject=spec.subject,
-                grade=spec.grade,
-                knowledge_point=spec.knowledge_point,
-                qtype=spec.qtype,
-                difficulty=spec.difficulty,
-            ),
-            reasoning="情境取自教材例题，干扰项覆盖常见误算，难度与年级匹配。",
-        )
+    async def stream(self, system, prompt, *, schema=None, tools=None, history=None):
+        if tools:
+            # 首轮（history 尚无工具回灌）→ 发 ToolCall；回灌后再请求 → 收尾文本。
+            if history:
+                yield TextDelta(delta="已为你列出任务。")
+                return
+            for t in tools:
+                name = t.get("name") if isinstance(t, dict) else getattr(t, "name", None)
+                if name:
+                    yield ToolCall(name=name, args={})
+                    return
+            yield TextDelta(delta="已处理")
+            return
+        if schema is not None:
+            yield TextDelta(delta=_REASONING)
+            yield StructuredDone(data=dict(_FAKE_QUESTION))
+            return
+        yield TextDelta(delta=_TUTOR_TEMPLATE)
 
     async def grade_open(self, *, question, student_answer) -> dict:
         return {

@@ -1,11 +1,11 @@
-"""Agent Runtime ↔ 前端 的统一事件信封（ADR-0025：AG-UI 式）。
+"""agent_core 统一事件信封（AG-UI 式，业务无关）。
 
 一条 SSE 流由若干 ``AssistantEvent`` 帧组成；前端按 ``eventType`` 判别并分发渲染：
 USER_MESSAGE / ASSISTANT_MESSAGE(delta) / THINKING(reasoning delta) /
-TOOL_CALL / TOOL_RESULT / STEP(进度) / DATA(已收集到的结构化数据：题卡/任务卡) / ERROR / DONE。
+TOOL_CALL / TOOL_RESULT / STEP(进度) / DATA(结构化数据) / ERROR / DONE / RUN_STARTED / RUN_FINISHED。
 
-STEP / DATA 直接复用 ADR-0017 出题信封语义，向后兼容。
-所有帧以 ``data: {json}\\n\\n`` 推送（text/event-stream）。
+本模块**不认识任何业务语义**（不出题、不知学科）。业务特定字段（如 DATA 的 type、
+安全标记等）一律走 ``extra`` 扩展，core 只负责信封与 ``data: {json}\\n\\n`` 的通用序列化。
 """
 from __future__ import annotations
 
@@ -46,11 +46,11 @@ class AssistantEvent:
     args: dict | None = None         # TOOL_CALL：入参
     result: Any | None = None        # TOOL_RESULT：出参
     status: str | None = None        # STEP / DONE：状态（running|done|error）
-    data: dict | None = None         # DATA：结构化数据载荷 {status, type, result}
+    data: dict | None = None         # DATA：结构化数据载荷（{status, result, ...} + 业务字段走 extra）
     message: str | None = None       # ERROR：可读错误
     code: str | None = None          # ERROR：错误码
     session_id: str | None = None    # DONE：本次会话 id
-    blocked: bool | None = None      # 安全兜底标记（ASSISTANT_MESSAGE/ERROR）
+    blocked: bool | None = None      # 安全兜底标记（通用：内容被拦截），前端依赖
     extra: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -107,18 +107,22 @@ def step(label: str, *, status: str = "running") -> AssistantEvent:
     return AssistantEvent(eventType=EVENT_STEP, label=label, status=status)
 
 
-def data_event(status: str, data_type: str, result: Any) -> AssistantEvent:
+def data_event(result: Any, *, status: str | None = None, extra: dict | None = None) -> AssistantEvent:
     """DATA 事件：已收集到的结构化数据（题卡/任务卡等）。
 
-    ``data`` 载荷结构为 ``{status, type, result}``：
-    - status: 采集状态（done / error / ...）
-    - type:   数据种类（question | task | ...），取代旧 CARD 的 kind
-    - result: 结构化结果载荷
+    业务特定类型标记（如 ``question`` / ``task``）不进 core 语义，走 ``extra``：
+    ``data_event(payload, extra={"type": "question"})``。``data`` 载荷结构为
+    ``{status, type(经 extra), result}``——为兼容前端既有的 ``data`` 字典消费，这里把
+    ``extra`` 里的 ``type`` 也并入 ``data``（若前端需要），但 core 自身不依赖它。
     """
-    return AssistantEvent(
-        eventType=EVENT_DATA,
-        data={"status": status, "type": data_type, "result": result},
-    )
+    payload: dict[str, Any] = {}
+    if status is not None:
+        payload["status"] = status
+    data_type = (extra or {}).get("type")
+    if data_type is not None:
+        payload["type"] = data_type
+    payload["result"] = result
+    return AssistantEvent(eventType=EVENT_DATA, data=payload, extra=extra or {})
 
 
 def error(message: str, *, code: str | None = None) -> AssistantEvent:

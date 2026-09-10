@@ -1,9 +1,8 @@
-"""语义事件 → AG-UI 帧的转换层（解析管线第 4 层）。
+"""语义事件 → AG-UI 帧的转换层（教育出题语义，属教育集成层，不进 agent_core）。
 
-职责单一：把引擎层的语义事件（``ReasoningDelta`` / ``QuestionCard`` /
+职责单一：把出题引擎层的语义事件（``ReasoningDelta`` / ``QuestionCard`` /
 ``QuestionFailed``）翻译成传输帧。SubAgent 只写
-``async for frame in translate_stream(stream): yield frame``，不再内联
-``isinstance`` 分发。
+``async for frame in translate_stream(stream): yield frame``，不再内联 ``isinstance`` 分发。
 
 加新语义事件 = 在 ``to_frames`` 的 ``match`` 里加一个分支，**不动 SSE 协议**。
 事件类型超过 5 个再考虑换成注册表；现在上注册表是过度设计。
@@ -17,7 +16,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import asdict
 
-from app.ai.runtime.protocol import (
+from agent_core.protocol import (
     EVENT_THINKING,
     AssistantEvent,
     data_event,
@@ -44,7 +43,7 @@ def to_frames(event: QuestionStreamEvent) -> Iterator[AssistantEvent]:
             payload = asdict(q)
             if reasoning:
                 payload["reasoning"] = reasoning
-            yield data_event("done", "question", payload)
+            yield data_event(payload, extra={"type": "question"})
         case QuestionFailed(reason=reason):
             yield step(reason, status="error")
         case _:

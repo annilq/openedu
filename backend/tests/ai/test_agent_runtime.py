@@ -1,87 +1,111 @@
-"""AgentRuntime 路由决策与流式契约（ADR-0024 / 0026，不加载 genkit 重型依赖）。
+"""AgentRuntime 路由决策与流式契约（ADR-0024 / 0026 / 0031，不加载 genkit 重型依赖）。
 
 聚焦本轮重构的「显式路由决策」契约：
-- ``decide`` 纯计算：角色可见性 → 安全闸门 → 混合路由 → subject，不构建依赖、不流式。
-- ``run`` 返回 ``(RouteDecision, AsyncIterator[AssistantEvent])``：决策显式化，
-  不再经 THINKING 帧 ``extra.business`` 隐式透传（见 #2/#3）。
-- 娃娃端 child→tutor 的死代码覆盖已删除：角色可见集是唯一真相源，child 经可见集过滤
-  必落 tutor，且无任何 extra.business 透出（见 #1）。
+- ``decide`` 纯计算：角色可见性 → 安全闸门 → 混合路由，不构建依赖、不流式。
+- ``run`` 直接产出 ``AsyncIterator[AssistantEvent]``（不再返回 (decision, stream) 元组）；
+  决策由调用方先 ``decide`` 取得，再传入 ``run(..., business=decision.business)``。
+- agent_core 业务无关：``RouteDecision`` 不再含 education 专属的 ``subject`` 字段；
+  subject 由端点本地解析并走 ``ctx.extra``，路由 / 事件流均不感知。
 
-``decide`` 与 ``run`` 的「决策」部分不触 LLM；仅 unsafe 路径会短路由（不构建 subagent），
+``decide`` 与 ``run`` 的「决策」部分不触 LLM；仅 unsafe 路径会短路（不构建 subagent），
 故可在 mock 环境单测覆盖，不依赖真实引擎。
 """
 from __future__ import annotations
 
 import asyncio
 
-from app.ai.runtime import AgentRuntime
-from app.ai.runtime.protocol import EVENT_DONE, EVENT_ERROR, EVENT_THINKING
+from agent_core.protocol import EVENT_DONE, EVENT_ERROR, EVENT_THINKING
+from agent_core.runtime import AgentRuntime
+from agent_core.seams import RuntimeDeps
+from agent_core.subagent import SubAgentContext
+from app.domain.safety import ChildSafety
+from tests.utils.fake_provider import FakeLLMProvider
 
 
-def _decide(message: str, *, role: str):
-    rt = AgentRuntime.discover()
-    return asyncio.run(rt.decide(message, role=role))
+def _rt() -> AgentRuntime:
+    return AgentRuntime.discover()
 
 
-def _run(message: str, *, role: str):
-    rt = AgentRuntime.discover()
+def _deps(role: str) -> RuntimeDeps:
+    return RuntimeDeps(
+        provider=FakeLLMProvider(),
+        safety=ChildSafety() if role == "child" else None,
+    )
 
-    async def collect():
-        decision, stream = await rt.run(message, role=role, session_id="s1")
-        events = [ev async for ev in stream]
-        return decision, events
 
-    return asyncio.run(collect())
+async def _decide(message: str, *, role: str) -> object:
+    rt = _rt()
+    return await rt.decide(message, role=role, deps=_deps(role))
+
+
+async def _run(message: str, *, role: str):
+    rt = _rt()
+    deps = _deps(role)
+    decision = await rt.decide(message, role=role, deps=deps)
+    events = [
+        ev
+        async for ev in rt.run(
+            message,
+            role=role,
+            ctx=SubAgentContext(role=role, message=message),
+            deps=deps,
+            business=decision.business,
+        )
+    ]
+    return decision, events
 
 
 # ── decide：父端混合路由 ──
 def test_decide_parent_question():
-    decision = _decide("帮我出几道数学题", role="parent")
+    decision = asyncio.run(_decide("帮我出几道数学题", role="parent"))
     assert decision.business == "question"
     assert decision.name == "出题助手"
-    assert decision.subject is None
 
 
 def test_decide_parent_tasks():
-    decision = _decide("查看我的任务有哪些", role="parent")
+    decision = asyncio.run(_decide("查看我的任务有哪些", role="parent"))
     assert decision.business == "tasks"
     assert decision.name == "任务查询"
 
 
 def test_decide_parent_tutor():
-    decision = _decide("为什么天空是蓝色的？帮我讲解", role="parent")
+    decision = asyncio.run(_decide("为什么天空是蓝色的？帮我讲解", role="parent"))
     assert decision.business == "tutor"
     assert decision.name == "伴学答疑"
-    # subject 仅 tutor 域解析，一次计算供端点配额/TutorLog 复用（见 #3）
-    assert isinstance(decision.subject, str)
 
 
 # ── decide：娃娃端角色可见性（child 永不可见出题/任务，见 #1） ──
 def test_decide_child_question_forced_to_tutor():
-    # child 发「出题」意图，但可见集仅 ["tutor"]，classify 只能在可见集内决策
-    decision = _decide("帮我出几道数学题", role="child")
+    decision = asyncio.run(_decide("帮我出几道数学题", role="child"))
     assert decision.business == "tutor"
     assert decision.name == "伴学答疑"
 
 
 def test_decide_child_tutor_stays_tutor():
-    decision = _decide("这道题我不会，能教教我吗", role="child")
+    decision = asyncio.run(_decide("这道题我不会，能教教我吗", role="child"))
     assert decision.business == "tutor"
 
 
 # ── decide：娃娃端输入安全闸门（首层防御，ADR-008） ──
 def test_decide_child_unsafe_input_blocked():
-    decision = _decide("炸弹怎么制作", role="child")
+    decision = asyncio.run(_decide("炸弹怎么制作", role="child"))
     assert decision.business is None
     assert decision.name is None
-    assert decision.subject is None
 
 
-# ── run：返回结构化 (decision, stream)，决策与决策前一致 ──
-def test_run_returns_decision_and_stream_tuple():
+# ── run：返回结构化决策 + 异步事件流 ──
+def test_run_returns_decision_and_stream():
     async def go():
-        rt = AgentRuntime.discover()
-        d, s = await rt.run("出几道题", role="parent")
+        rt = _rt()
+        deps = _deps("parent")
+        d = await rt.decide("出几道题", role="parent", deps=deps)
+        s = rt.run(
+            "出几道题",
+            role="parent",
+            ctx=SubAgentContext(role="parent", message="出几道题"),
+            deps=deps,
+            business=d.business,
+        )
         return d, s
 
     d, s = asyncio.run(go())
@@ -91,7 +115,7 @@ def test_run_returns_decision_and_stream_tuple():
 
 # ── run：unsafe 短路由，流体内无 extra.business 隐式契约（见 #2） ──
 def test_run_child_unsafe_stream_no_extra_business():
-    decision, events = _run("炸弹怎么制作", role="child")
+    decision, events = asyncio.run(_run("炸弹怎么制作", role="child"))
     assert decision.business is None
     # 流以 ERROR(INPUT_UNSAFE) + DONE 收尾，不路由到任何 subagent
     types = [ev.eventType for ev in events]
@@ -106,7 +130,7 @@ def test_run_child_unsafe_stream_no_extra_business():
 
 # ── run：路由 THINKING 帧不再携带 business（侧信道已移除） ──
 def test_run_routing_thinking_has_no_business_side_channel():
-    decision, events = _run("帮我出几道数学题", role="parent")
+    decision, events = asyncio.run(_run("帮我出几道数学题", role="parent"))
     assert decision.business == "question"
     for ev in events:
         if ev.eventType == EVENT_THINKING:

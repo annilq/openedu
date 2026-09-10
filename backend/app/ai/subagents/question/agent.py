@@ -8,15 +8,16 @@ USER_MESSAGE / 路由 THINKING / DONE 与持久化。
 出题走**单调用流式**：每题先发 STEP 进度锚点，再把模型推理逐 token 转为 THINKING
 增量，JSON 解析 + 安全闸门通过后发 DATA 题卡（ADR-0017 升级）。
 
-出题逻辑（expand_specs / build_question_context）沿用 ADR-0021，零破坏；
-新增自由文本解析 ``parse_specs_from_text`` 支撑「悬浮助手一句话出题」。
+本 subagent 是 ``agent_core`` 的「首个接入方」之一：只依赖 agent_core 的
+``BaseSubAgent`` / ``SubAgentContext`` 与通用 ``LLMProvider.stream``，教育特有的
+prompt 组装（``app.ai.generation``）与解析（``parsers/question``）在本模块内完成。
 """
 from __future__ import annotations
 
-from app.ai.generation import build_question_prompts, step_label
-from app.ai.runtime.protocol import step
-from app.ai.runtime.translate import translate_stream
-from app.ai.subagents.base import BaseSubAgent, SubAgentContext
+from agent_core.protocol import step
+from agent_core.subagent import BaseSubAgent, SubAgentContext
+from app.ai.generation import build_question_prompts, step_label, stream_question
+from app.ai.subagents.question.translate import translate_stream
 from app.ai.subagents.subject_personas import get_subject_persona
 from app.domain.quota import SUBJECTS
 
@@ -97,9 +98,10 @@ def parse_specs_from_text(text: str) -> list[dict]:
     识别：科目（标准名/别名）、年级（数字/中文+年级）、数量（N道/题）、题型。
     识别不到时返回空列表（runtime 提示用户补充）。数量上限 5 防滥用。
     """
+    import re
+
     specs: list[dict] = []
 
-    # 科目
     subject = ""
     for alias, std in _SUBJECT_ALIASES.items():
         if alias in text:
@@ -111,10 +113,7 @@ def parse_specs_from_text(text: str) -> list[dict]:
                 subject = s
                 break
 
-    # 年级：数字+年级 / 中文+年级
     grade = 0
-    import re
-
     m = re.search(r"(\d)\s*年级", text)
     if m:
         grade = int(m.group(1))
@@ -123,7 +122,6 @@ def parse_specs_from_text(text: str) -> list[dict]:
         if m:
             grade = _CN_NUM.get(m.group(1), 0)
 
-    # 数量
     count = 1
     m = re.search(r"(\d+)\s*(道|题|个)", text)
     if m:
@@ -133,26 +131,21 @@ def parse_specs_from_text(text: str) -> list[dict]:
         if m:
             count = min(_CN_NUM.get(m.group(1), 1), 5)
 
-    # 题型
     qtype = "choice"
     for kw, qt in _QTYPE_MAP.items():
         if kw in text:
             qtype = qt
             break
 
-    # 知识点：尽力抽取，否则留空交给 RAG/Persona
-    # 1) 关于《X》/ 关于X（后接 的 / 》 / ， 等分隔符）——允许《》包裹
     kp = ""
     m = re.search(r"关于\s*《?\s*([\u4e00-\u9fa5A-Za-z0-9]+)", text)
     if m:
         kp = m.group(1)
     else:
-        # 2) subject 与 题型关键词之间的中文串即知识点（如「数学分数选择题」→ 分数）
         qt_kw = next((kw for kw, _ in _QTYPE_MAP.items() if kw in text), None)
         if subject and qt_kw:
             between = text.split(subject, 1)[-1].split(qt_kw, 1)[0]
             candidate = re.sub(r"[关于的\s]+", "", between)
-            # 去掉可能混入的年级描述（如「三年级」）避免污染知识点
             candidate = re.sub(r"\d\s*年级|[一二三四五六七八九]\s*年级", "", candidate)
             if re.search(r"[\u4e00-\u9fa5]", candidate):
                 kp = candidate
@@ -172,10 +165,7 @@ def parse_specs_from_text(text: str) -> list[dict]:
 
 
 def with_skills(persona_hint: str, skills: str) -> str:
-    """把业务 SOP（ADR-0030：manifest 声明的 skills/*.md 全文）拼到学科 Persona 之后。
-
-    SOP 与 Persona 同为 prompt 提示段，合并后交由 provider 注入。
-    """
+    """把业务 SOP（ADR-0030：manifest 声明的 skills/*.md 全文）拼到学科 Persona 之后。"""
     sop = (skills or "").strip()
     return f"{persona_hint}\n\n{sop}" if sop else persona_hint
 
@@ -200,8 +190,8 @@ class QuestionSubAgent(BaseSubAgent):
         )
         yield tc.call
 
-        # WF-4 兴趣题模式：focus_interest 是主题列表，按题序轮转分配到单题（与旧 flow 行为一致）。
-        focuses = ctx.focus_interest or []
+        # WF-4 兴趣题模式：focus_interest 是主题列表，按题序轮转分配（与旧 flow 行为一致）。
+        focuses = ctx.extra.get("focus_interest") or []
         n_focus = len(focuses)
 
         generated: list[dict] = []
@@ -214,9 +204,7 @@ class QuestionSubAgent(BaseSubAgent):
                 query=focus or item["knowledge_point"],
                 retriever=self.retriever,
             )
-            # ADR-0030：SOP（question_sop.md）随 Persona 一起进 prompt
             persona_hint = with_skills(persona_hint, ctx.skills)
-            # ADR-0030 收口 #4：prompt 组装在此完成，provider 只收「已组装 prompt + spec」
             system_prompt, user_prompt, spec = build_question_prompts(
                 subject=item["subject"],
                 grade=item["grade"],
@@ -228,15 +216,14 @@ class QuestionSubAgent(BaseSubAgent):
                 persona_hint=persona_hint,
                 history=ctx.history,
             )
-            # STEP：先给进度锚点（前端据此展开该内联区，消除静默等待）
             yield step(
                 step_label(
                     item["subject"], item["grade"], item["knowledge_point"], item["qtype"]
                 )
             )
-            # 流式：语义事件经 Translate 层转帧（推理增量聚合 → 题卡 → 失败明示）。
             async for frame in translate_stream(
-                self.provider.generate_question_stream(
+                stream_question(
+                    self.provider,
                     system_prompt=system_prompt,
                     user_prompt=user_prompt,
                     spec=spec,

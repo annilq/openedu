@@ -1,21 +1,25 @@
 """ADR-0030 抽象收口的回归测试。
 
 四条裂缝各有一组断言钉住：
-1. 引擎单一解析链：显式引擎能一路传到 provider（`build_provider(engine=)`）。
-2. 发现即注册：discover 出的清单自带 `agent_cls`，`registry` 不再手工登记。
+1. 引擎单一解析链：显式引擎能一路传到 provider（``build_provider(engine=)``）。
+2. 发现即注册：discover 出的清单自带 ``agent_cls``，``registry`` 不再手工登记。
 3. skills 真消费：manifest 声明的 SOP 文本进 prompt（出题走 persona_hint、伴学走 context）。
-4. 路由无硬编码：匹配顺序完全由 manifest 的 `priority` 决定。
+4. 路由无硬编码：匹配顺序完全由 manifest 的 ``priority`` 决定。
 """
 from __future__ import annotations
 
 import asyncio
 
-from app.ai.runtime.intent_router import classify
-from app.ai.runtime.manifest import SubAgentManifest, discover_subagent_manifests
-from app.ai.runtime.protocol import EVENT_ASSISTANT_MESSAGE
-from app.ai.subagents.base import SubAgentContext
+from agent_core.protocol import EVENT_ASSISTANT_MESSAGE
+from agent_core.registry import (
+    SubAgentManifest,
+    build_subagent,
+    discover_subagent_manifests,
+    get_subagent_class,
+)
+from agent_core.router import classify
+from agent_core.subagent import SubAgentContext
 from app.ai.subagents.question import QuestionSubAgent
-from app.ai.subagents.registry import build_subagent, get_subagent_class
 from app.ai.subagents.tutor import TutorSubAgent
 from app.domain import build_provider
 from app.domain.genkit_provider import GenkitProvider
@@ -42,7 +46,7 @@ def test_discovery_picks_up_agent_class_and_skill_prompt():
     assert set(manifests) >= {"tutor", "question", "tasks"}
     for business, manifest in manifests.items():
         assert manifest.agent_cls is not None, f"{business} 未发现 agent 类"
-        assert get_subagent_class(business) is manifest.agent_cls
+        assert get_subagent_class(manifests, business) is manifest.agent_cls
 
     # skills/*.md 真的被读进来了（此前是死元数据）
     assert "出题 SOP" in manifests["question"].skill_prompt
@@ -50,9 +54,10 @@ def test_discovery_picks_up_agent_class_and_skill_prompt():
 
 
 def test_build_subagent_uses_discovered_class():
-    assert isinstance(build_subagent("question", provider=FakeLLMProvider()), QuestionSubAgent)
-    assert isinstance(build_subagent("tutor", provider=FakeLLMProvider()), TutorSubAgent)
-    assert build_subagent("nonexistent", provider=FakeLLMProvider()) is None
+    manifests = discover_subagent_manifests()
+    assert isinstance(build_subagent(manifests, "question", provider=FakeLLMProvider()), QuestionSubAgent)
+    assert isinstance(build_subagent(manifests, "tutor", provider=FakeLLMProvider()), TutorSubAgent)
+    assert build_subagent(manifests, "nonexistent", provider=FakeLLMProvider()) is None
 
 
 # ── 3. skills 真消费 ──
@@ -63,23 +68,26 @@ class _SpyProvider(FakeLLMProvider):
         self.user_prompt: str | None = None
         self.context: str | None = None
 
-    async def generate_question_stream(self, **kwargs):  # noqa: D102
-        self.user_prompt = kwargs.get("user_prompt")
-        async for ev in super().generate_question_stream(**kwargs):
+    async def stream(self, system, prompt, *, schema=None, tools=None, history=None):
+        self.user_prompt = prompt
+        async for ev in super().stream(system, prompt, schema=schema, tools=tools, history=history):
             yield ev
 
-    async def tutor(self, **kwargs):  # noqa: D102
-        self.context = kwargs.get("context")
-        return await super().tutor(**kwargs)
+    async def tutor(self, *, grade, subject, knowledge_point, context, question, history=None):
+        self.context = context
+        return await super().tutor(
+            grade=grade, subject=subject, knowledge_point=knowledge_point,
+            context=context, question=question, history=history,
+        )
 
 
 def test_question_agent_injects_sop_into_user_prompt():
     provider = _SpyProvider()
     agent = QuestionSubAgent(provider=provider)
-    ctx = SubAgentContext(role="parent", question="帮我出3道三年级数学选择题", skills="SOP-XYZ")
+    ctx = SubAgentContext(role="parent", message="帮我出3道三年级数学选择题", skills="SOP-XYZ")
 
     async def _go():
-        return [ev async for ev in agent.run(ctx.question or "", ctx)]
+        return [ev async for ev in agent.run(ctx.message or "", ctx)]
 
     asyncio.run(_go())
     assert provider.user_prompt is not None
@@ -89,10 +97,10 @@ def test_question_agent_injects_sop_into_user_prompt():
 def test_tutor_agent_injects_sop_into_context():
     provider = _SpyProvider()
     agent = TutorSubAgent(provider=provider)
-    ctx = SubAgentContext(role="child", question="为什么分数要通分", skills="SOP-ABC")
+    ctx = SubAgentContext(role="child", message="为什么分数要通分", skills="SOP-ABC")
 
     async def _go():
-        return [ev async for ev in agent.run(ctx.question or "", ctx)]
+        return [ev async for ev in agent.run(ctx.message or "", ctx)]
 
     asyncio.run(_go())
     assert provider.context is not None
@@ -109,10 +117,10 @@ def test_real_sop_does_not_trip_input_safety():
     assert not check_input(sop).safe  # SOP 本身确实会命中词表
 
     agent = TutorSubAgent(provider=_SpyProvider())
-    ctx = SubAgentContext(role="child", question="为什么分数要通分", skills=sop)
+    ctx = SubAgentContext(role="child", message="为什么分数要通分", skills=sop)
 
     async def _go():
-        return [ev async for ev in agent.run(ctx.question or "", ctx)]
+        return [ev async for ev in agent.run(ctx.message or "", ctx)]
 
     events = asyncio.run(_go())
     assistant_messages = [e for e in events if e.eventType == EVENT_ASSISTANT_MESSAGE]

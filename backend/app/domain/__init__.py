@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING
 
 from app.domain.grader import Grader
-from app.domain.provider import GeneratedQuestion, LLMProvider
+from app.domain.provider import EducationLLMProvider, GeneratedQuestion, LLMProvider
 from app.domain.quota import (
     REASON_ASK_LIMIT,
     REASON_SUBJECT_SCOPE,
@@ -25,6 +25,7 @@ if TYPE_CHECKING:  # 避免 app.domain ↔ app.ai 包初始化期循环依赖
 
 __all__ = [
     "LLMProvider",
+    "EducationLLMProvider",
     "GeneratedQuestion",
     "Grader",
     "TutorService",
@@ -44,7 +45,7 @@ __all__ = [
 ]
 
 
-def build_provider(engine: "EngineResolution | None" = None) -> LLMProvider:
+def build_provider(engine: "EngineResolution | None" = None) -> EducationLLMProvider:
     """统一单栈：返回 GenkitProvider（Genkit 仅作底层 LLM 引擎）。
 
     迁移 08b 退役 LangChainProvider / MockProvider 双栈；真实模型由 GenkitProvider

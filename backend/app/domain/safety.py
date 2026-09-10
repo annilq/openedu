@@ -11,6 +11,8 @@
 
 from dataclasses import dataclass
 
+from agent_core.seams import Safety, SafetyResult
+
 # —— 输入侧：越狱 / 指令注入意图 ——
 _JAILBREAK_HINTS = (
     "忽略以上", "忽略之前", "忘掉", "你是谁", "假装", "越狱", "jailbreak",
@@ -71,3 +73,15 @@ def check_output(text: str) -> SafetyVerdict:
         if kw.lower() in t:
             return SafetyVerdict(safe=False, reason=f"输出含敏感词：{kw}")
     return SafetyVerdict(safe=True)
+
+
+class ChildSafety(Safety):
+    """儿童端输入安全闸门：把确定性 ``check_input`` 适配为 agent_core 的 ``Safety`` 抽象。
+
+    agent_core 的 ``RuntimeDeps.safety`` 只认 ``Safety`` 契约；本适配器让既有的
+    儿童双层防护（ADR-008）零改动地注入运行时。仅儿童端构造此实例（家长端不拦截）。
+    """
+
+    def check_input(self, text: str) -> SafetyResult:
+        v = check_input(text)
+        return SafetyResult(safe=v.safe, reason=v.reason)

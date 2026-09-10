@@ -2,24 +2,24 @@
 
 用 FakeProvider 隔离真实模型，验证编排：输入拦截 → 检索注入 → 调用 → 输出拦截。
 """
-
-from app.domain.provider import GeneratedQuestion, LLMProvider
+from agent_core.seams import TextDelta
+from app.domain.provider import EducationLLMProvider
 from app.domain.retriever import KnowledgeChunk
 from app.domain.safety import SAFE_REFUSAL
 from app.domain.tutor import TutorService
 
 
-class FakeProvider(LLMProvider):
+class FakeProvider(EducationLLMProvider):
     def __init__(self, tutor_text: str = "这是讲解内容") -> None:
         self._tutor_text = tutor_text
 
-    async def generate_question(self, **kwargs) -> GeneratedQuestion:
+    async def stream(self, system, prompt, *, schema=None, tools=None, history=None):
+        yield TextDelta(delta="")
+
+    async def grade_open(self, *, question, student_answer) -> dict:
         raise NotImplementedError
 
-    async def grade_open(self, **kwargs) -> dict:
-        raise NotImplementedError
-
-    async def tutor(self, **kwargs) -> str:
+    async def tutor(self, *, grade, subject, knowledge_point, context, question, history=None):
         return self._tutor_text
 
 
@@ -41,7 +41,7 @@ def test_input_jailbreak_blocked_without_calling_model():
     called = {"n": 0}
 
     class CountingProvider(FakeProvider):
-        async def tutor(self, **kwargs):
+        async def tutor(self, *, grade, subject, knowledge_point, context, question, history=None):
             called["n"] += 1
             return "泄露内容"
 
@@ -81,9 +81,12 @@ class RecordingProvider(FakeProvider):
         super().__init__()
         self.context: str | None = None
 
-    async def tutor(self, *, context=None, **kwargs) -> str:
+    async def tutor(self, *, grade, subject, knowledge_point, context, question, history=None):
         self.context = context
-        return self._tutor_text
+        return await super().tutor(
+            grade=grade, subject=subject, knowledge_point=knowledge_point,
+            context=context, question=question, history=history,
+        )
 
 
 class FakeRetriever:

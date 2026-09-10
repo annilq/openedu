@@ -6,8 +6,8 @@ from dataclasses import dataclass
 
 import pytest
 
-from app.ai.runtime.protocol import EVENT_DATA, EVENT_STEP, EVENT_THINKING
-from app.ai.runtime.translate import to_frames, translate_stream
+from agent_core.protocol import EVENT_DATA, EVENT_STEP, EVENT_THINKING
+from app.ai.subagents.question.translate import to_frames, translate_stream
 from app.domain.provider import (
     GeneratedQuestion,
     QuestionCard,

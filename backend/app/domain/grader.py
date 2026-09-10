@@ -1,13 +1,13 @@
 import asyncio
 import re
 
-from app.domain.provider import LLMProvider
+from app.domain.provider import EducationLLMProvider
 
 
 class Grader:
     """批改领域服务。客观题归一化比对；开放题委托 provider。"""
 
-    def __init__(self, provider: LLMProvider) -> None:
+    def __init__(self, provider: EducationLLMProvider) -> None:
         self.provider = provider
 
     @staticmethod

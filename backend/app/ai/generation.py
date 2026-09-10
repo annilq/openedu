@@ -26,6 +26,7 @@ from collections.abc import AsyncIterator
 
 from pydantic import BaseModel
 
+from agent_core.seams import LLMProvider, StructuredDone, TextDelta
 from app.ai.engine import EngineResolution
 from app.ai.parsers.question import (
     QuestionSchema,
@@ -36,7 +37,13 @@ from app.ai.parsers.question import (
     schema_field,
 )
 from app.ai.segment import decode_stream
-from app.domain.provider import GeneratedQuestion, QuestionStreamEvent
+from app.domain.provider import (
+    GeneratedQuestion,
+    QuestionCard,
+    QuestionFailed,
+    QuestionStreamEvent,
+    ReasoningDelta,
+)
 
 # 本模块不登记 Genkit flow（端点已废弃并收敛到 /assistant/chat）；
 # Genkit 仅作为底层 LLM 引擎，经 engine.genkit 调用（由 genkit_provider 触发）。
@@ -209,15 +216,7 @@ async def _generate_question_stream(
     spec: "QuestionSpec",
     history: list[dict] | None = None,
 ) -> AsyncIterator[QuestionStreamEvent]:
-    """流式出题核心：解码 chunk → 解析器判定 → 产出语义事件。
-
-    与 ``_generate_question`` 共用同一份 prompt 与同一份 ``output_schema``，
-    因此两条路径的产出形状必然一致。
-
-    产出三类语义事件，由调用方（出题 SubAgent）经 Translate 层转成 AG-UI 帧：
-    原生思维链逐段 ``ReasoningDelta`` → 结束时 ``QuestionCard``；
-    模型无产出 / 安全闸门未过 → ``QuestionFailed``（显式，不静默跳过）。
-    """
+    """流式出题核心（引擎版，落库 / 测试兼容入口仍用）：解码 chunk → 解析器判定 → 语义事件。"""
     sresp = engine.genkit.generate_stream(
         model=engine.model, system=system_prompt, prompt=user_prompt,
         output_schema=QuestionSchema,
@@ -229,6 +228,67 @@ async def _generate_question_stream(
     resp = await sresp.response
     for ev in parser.finish(getattr(resp, "output", None)):
         yield ev
+
+
+# ───────────────────────── 流式出题核心（通用 provider 版，SubAgent 用） ─────────────────────────
+def _coerce_dict(obj: object) -> dict:
+    if obj is None:
+        return {}
+    if isinstance(obj, dict):
+        return obj
+    if hasattr(obj, "model_dump"):
+        return obj.model_dump()
+    try:
+        return dict(obj)
+    except (TypeError, ValueError):
+        return {}
+
+
+async def stream_question(
+    provider: "LLMProvider",
+    *,
+    system_prompt: str,
+    user_prompt: str,
+    spec: "QuestionSpec",
+    history: list[dict] | None = None,
+) -> AsyncIterator[QuestionStreamEvent]:
+    """流式出题（通用 provider 版）：复用 ``provider.stream(schema=QuestionSchema)``。
+
+    provider 产出 ``TextDelta``（推理）+ 末帧 ``StructuredDone(data=解析字典)``；本函数
+    转译为教育语义事件（``ReasoningDelta`` / ``QuestionCard`` / ``QuestionFailed``），
+    由出题 SubAgent 经 translate 层转成 AG-UI 帧。与引擎版共用同一份 prompt + 安全闸门。
+    """
+    reasoning: list[str] = []
+    async for ev in provider.stream(
+        system_prompt, user_prompt, schema=QuestionSchema, history=history
+    ):
+        if isinstance(ev, TextDelta):
+            reasoning.append(ev.delta)
+            yield ReasoningDelta(delta=ev.delta)
+        elif isinstance(ev, StructuredDone):
+            raw = _coerce_dict(ev.data)
+            out = assemble_question(
+                raw=raw, spec=spec, reasoning="".join(reasoning).strip()
+            )
+            if out is None:
+                yield QuestionFailed(reason="生成内容未通过安全校验")
+            else:
+                yield QuestionCard(
+                    question=GeneratedQuestion(
+                        subject=out.subject,
+                        grade=out.grade,
+                        knowledge_point=out.knowledge_point,
+                        qtype=out.qtype,
+                        stem=out.stem,
+                        options=out.options,
+                        answer=out.answer,
+                        explanation=out.explanation,
+                        difficulty=out.difficulty,
+                    ),
+                    reasoning=out.reasoning,
+                )
+            return
+    yield QuestionFailed(reason="模型未返回结构化题卡")
 
 
 # ── 对外兼容包装（保持旧业务参数签名：tests / 落库路径 tasks/router 仍用） ──

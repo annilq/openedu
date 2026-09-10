@@ -10,8 +10,9 @@ ADR-0028：语义事件经 ``translate_stream`` 转帧，**推理增量会按字
 from __future__ import annotations
 
 import asyncio
+from dataclasses import asdict
 
-from app.ai.runtime.protocol import (
+from agent_core.protocol import (
     EVENT_ASSISTANT_MESSAGE,
     EVENT_DATA,
     EVENT_STEP,
@@ -19,67 +20,45 @@ from app.ai.runtime.protocol import (
     EVENT_TOOL_CALL,
     EVENT_TOOL_RESULT,
 )
-from app.ai.subagents.base import SubAgentContext
+from agent_core.seams import LLMProvider, StructuredDone, TextDelta
+from agent_core.subagent import SubAgentContext
 from app.ai.subagents.question.agent import QuestionSubAgent
-from app.domain.provider import (
-    GeneratedQuestion,
-    LLMProvider,
-    QuestionCard,
-    QuestionFailed,
-    QuestionStreamEvent,
-    ReasoningDelta,
+from app.domain.provider import GeneratedQuestion
+
+_Q = GeneratedQuestion(
+    subject="数学",
+    grade=3,
+    knowledge_point="分数",
+    qtype="choice",
+    stem="1/2 + 1/2 = ?",
+    options=["1", "2", "3", "4"],
+    answer="A",
+    explanation="同分母相加",
+    difficulty="medium",
 )
 
 
-def _card(subject: str, grade: int, kp: str, qtype: str, difficulty: str):
-    return QuestionCard(
-        question=GeneratedQuestion(
-            subject=subject,
-            grade=grade,
-            knowledge_point=kp,
-            qtype=qtype,
-            stem="1/2 + 1/2 = ?",
-            options=["1", "2", "3", "4"],
-            answer="A",
-            explanation="同分母相加",
-            difficulty=difficulty,
-        ),
-        reasoning="先确认分母相同，再让分子相加。",
-    )
-
-
 class _FakeProvider(LLMProvider):
-    """按「每次出题产出的事件序列」构造的假 provider。"""
+    """按「每次出题产出的事件序列」构造的假 provider（消息级 stream）。"""
 
-    def __init__(self, events: list[QuestionStreamEvent]) -> None:
-        self._events = events
+    def __init__(self, *, fail: bool = False) -> None:
+        self._fail = fail
 
-    async def generate_question(self, **kwargs) -> GeneratedQuestion:
-        return None
-
-    async def grade_open(self, *, question, student_answer) -> dict:
-        return {}
-
-    async def tutor(self, **kwargs) -> str:
-        return ""
-
-    async def generate_question_stream(self, *, system_prompt, user_prompt, spec, history=None):
-        for ev in self._events:
-            if isinstance(ev, QuestionCard):
-                yield _card(
-                    spec.subject,
-                    spec.grade,
-                    spec.knowledge_point,
-                    spec.qtype,
-                    spec.difficulty,
-                )
-                continue
-            yield ev
+    async def stream(self, system, prompt, *, schema=None, tools=None, history=None):
+        if schema is not None:
+            if self._fail:
+                yield TextDelta(delta="想错了")
+                return
+            yield TextDelta(delta="先确认分母相同，")
+            yield TextDelta(delta="再让分子相加。")
+            yield StructuredDone(data=asdict(_Q))
+            return
+        yield TextDelta(delta="这是讲解")
 
 
-def _run(message: str, events: list[QuestionStreamEvent]):
-    agent = QuestionSubAgent(provider=_FakeProvider(events), retriever=None)
-    ctx = SubAgentContext(role="parent", question=message)
+def _run(message: str, *, fail: bool = False):
+    agent = QuestionSubAgent(provider=_FakeProvider(fail=fail), retriever=None)
+    ctx = SubAgentContext(role="parent", message=message)
 
     async def _go():
         return [ev async for ev in agent.run(message, ctx)]
@@ -87,15 +66,8 @@ def _run(message: str, events: list[QuestionStreamEvent]):
     return asyncio.run(_go())
 
 
-_OK = [
-    ReasoningDelta(delta="先确认分母相同，"),
-    ReasoningDelta(delta="再让分子相加。"),
-    QuestionCard.__new__(QuestionCard),  # 占位，由 provider 换成真实题卡
-]
-
-
 def test_emits_step_thinking_and_data_per_question():
-    events = _run("帮我出2道三年级数学选择题，关于分数", _OK)
+    events = _run("帮我出2道三年级数学选择题，关于分数")
 
     types = [e.eventType for e in events]
     assert EVENT_TOOL_CALL in types
@@ -114,7 +86,7 @@ def test_emits_step_thinking_and_data_per_question():
 
 def test_thinking_frames_carry_no_business_extra():
     """推理帧不得带 extra.business，否则会被前端当作路由帧过滤掉。"""
-    events = _run("帮我出1道三年级数学选择题", _OK)
+    events = _run("帮我出1道三年级数学选择题")
     thinkings = [e for e in events if e.eventType == EVENT_THINKING]
     assert thinkings
     for ev in thinkings:
@@ -122,7 +94,7 @@ def test_thinking_frames_carry_no_business_extra():
 
 
 def test_data_payload_carries_reasoning():
-    events = _run("帮我出1道三年级数学选择题", _OK)
+    events = _run("帮我出1道三年级数学选择题")
     data = [e for e in events if e.eventType == EVENT_DATA][0]
     assert data.data["type"] == "question"
     assert data.data["result"]["reasoning"] == "先确认分母相同，再让分子相加。"
@@ -130,7 +102,7 @@ def test_data_payload_carries_reasoning():
 
 
 def test_step_label_readable():
-    events = _run("帮我出1道三年级数学选择题，关于分数", _OK)
+    events = _run("帮我出1道三年级数学选择题，关于分数")
     step = [e for e in events if e.eventType == EVENT_STEP][0]
     assert "数学" in (step.label or "")
     assert step.status == "running"
@@ -138,10 +110,7 @@ def test_step_label_readable():
 
 def test_failed_question_emits_error_step():
     """解析/闸门失败必须显式成 status=error 的 STEP，不得静默跳过。"""
-    events = _run(
-        "帮我出1道三年级数学选择题",
-        [QuestionFailed(reason="模型未返回结构化题卡")],
-    )
+    events = _run("帮我出1道三年级数学选择题", fail=True)
     steps = [e for e in events if e.eventType == EVENT_STEP]
     error_steps = [s for s in steps if s.status == "error"]
     assert [s.label for s in error_steps] == ["模型未返回结构化题卡"]
