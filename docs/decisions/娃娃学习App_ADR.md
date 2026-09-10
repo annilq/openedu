@@ -692,6 +692,8 @@ my_biz_backend/
 4. Q3 拆分落地（见决策 4）；`app/ai` 顶层不再含任何教育出题内容。
 5. 删除 `debug_log.py`（见决策 6）。
 6. `agent_core` 随 app wheel 打包（见决策 8）+ 清理 `features/ai/repository.py` 写入侧死代码（见决策 9）。
+7. **不变量由「靠纪律」升级为「靠机制」**：新增 `tests/ai/test_layering_invariants.py`（5 条 AST 级断言），
+   把决策 7 的两条分层不变量 + 已删模块零残留固化进 CI（详见「验证」）。
 
 ### 备选（已否决）
 - **genkit 集成进 `agent_core`**：把引擎易变性烤进基座、强制外部方案吃 genkit。否决（见决策 5）。
@@ -705,13 +707,15 @@ my_biz_backend/
   切引擎仍只动适配器一处、内核纹丝不动；外部方案可自由实现 `LLMProvider` 接入；死代码清零。
 - 负向/风险：
   - 拆分面较大（涉 `generation.py` 删除、`parsers` 迁移、多个调用方与测试改签名）；配套：分五阶段小步落地，
-    每阶段 `ruff check .` + 全量 `pytest` 把关（最终 **166 passed / 2 skipped**）。
-  - 两类不变量是"靠纪律"而非"靠机制"守护，须补 AST/结构级断言测试防漂移（当前已覆盖 engine 无 genkit import、
-    适配器仅函数内 import）。
+    每阶段 `ruff check .` + 全量 `pytest` 把关（最终 **171 passed / 2 skipped**）。
+  - ~~两类不变量是"靠纪律"而非"靠机制"守护~~ **已缓解**：新增 `tests/ai/test_layering_invariants.py`，
+    以 AST 扫描断言 ①内核零 `app.*` ②内核零第三方 ③`import genkit` 全后端仅适配器且必须延迟导入
+    ④已删模块零残留引用。剩余风险仅"有人删掉这些测试"，由 CI 门禁兜底。
 
 ### 验证
-- `uv run ruff check .` 全过；`uv run pytest` → **166 passed / 2 skipped / 0 failed**。
-- 结构不变量（grep/AST 实证）：`agent_core` 零 `app.*`；全后端 `import genkit` 仅适配器工厂内 3 行；
+- `uv run ruff check .` 全过；`uv run pytest` → **171 passed / 2 skipped / 0 failed**。
+- 结构不变量（AST 断言，非人工 grep）：见 `tests/ai/test_layering_invariants.py` 5 个用例——
+  `agent_core` 零 `app.*`；内核零第三方依赖；全后端 `import genkit` 仅适配器工厂内 3 行且非模块级；
   无 `app.ai.generation` / `app.ai.parsers` / `app.ai.segment` / `app.ai.debug_log` 残留引用。
 - 打包实证：`uv build --wheel` → `app-0.1.0-py3-none-any.whl` 内含 `agent_core/` **11 个文件**（`app/` 97 个），
   **未误带 `pyproject.toml`**；隔离 venv `pip install --no-deps <wheel>` 后
