@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/domain/models/models.dart';
+import '../../../../shared/presentation/resource.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_error.dart';
 import '../../../../shared/widgets/app_loading.dart';
@@ -20,12 +21,12 @@ class MasteryBoard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = AppTheme.colorsOf(context);
     final state = ref.watch(masteryNotifierProvider);
+    final mastery = state.dataOrNull;
     return switch (state) {
-      MasteryInitial() ||
-      MasteryLoading() =>
+      ResourceError() => AppError(message: state.errorOrNull ?? ''),
+      _ when mastery == null =>
         const AppLoading.skeletonInline(skeletonLines: 3),
-      MasteryError() => AppError(message: state.message),
-      MasteryLoaded() => state.mastery.items.isEmpty
+      _ => mastery.items.isEmpty
           ? AppCard(
               padding: const EdgeInsets.all(AppSpacing.md),
               child: LayoutBuilder(
@@ -86,14 +87,14 @@ class MasteryBoard extends ConsumerWidget {
                       children: [
                         TextSpan(text: isChild ? '你已掌握 ' : '已掌握 '),
                         TextSpan(
-                          text: '${state.mastery.masteredCount}',
+                          text: '${mastery.masteredCount}',
                           style: TextStyle(
                             color: scheme.primary,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
                         TextSpan(
-                          text: ' / ${state.mastery.totalKnowledgePoints} 个知识点',
+                          text: ' / ${mastery.totalKnowledgePoints} 个知识点',
                         ),
                       ],
                     ),
@@ -102,7 +103,7 @@ class MasteryBoard extends ConsumerWidget {
                   Wrap(
                     spacing: AppSpacing.sm,
                     runSpacing: AppSpacing.sm,
-                    children: state.mastery.items
+                    children: mastery.items
                         .map((m) => m.subject)
                         .toSet()
                         .map((s) => AppTags.subject(
@@ -112,7 +113,7 @@ class MasteryBoard extends ConsumerWidget {
                         .toList(),
                   ),
                   const SizedBox(height: AppSpacing.xl),
-                  ...state.mastery.items.map((m) => Padding(
+                  ...mastery.items.map((m) => Padding(
                         padding: const EdgeInsets.only(bottom: AppSpacing.md),
                         child: _MasteryBar(item: m),
                       )),

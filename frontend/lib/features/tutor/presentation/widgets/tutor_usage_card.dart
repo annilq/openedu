@@ -2,11 +2,12 @@ import 'package:flutter/widgets.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/theme/app_theme.dart';
-import '../providers/tutor_notifier.dart';
+import '../../../../shared/domain/models/models.dart';
+import '../../../../shared/presentation/resource.dart';
 
 /// 家长端 AI 用量卡：今日已用提问次数与时长。
 class TutorUsageCard extends StatelessWidget {
-  final TutorUsageState usageState;
+  final Resource<TutorUsageModel> usageState;
   const TutorUsageCard({super.key, required this.usageState});
 
   @override
@@ -40,16 +41,16 @@ class TutorUsageCard extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(left: 52),
             child: switch (usageState) {
-              TutorUsageLoaded(:final usage) => Text(
-                  '提问 ${usage.asksToday}'
-                  '${usage.askLimit != null ? ' / ${usage.askLimit} 次' : ' 次'}'
-                  '　·　时长 ${(usage.usedSeconds / 60).toStringAsFixed(1)}'
-                  '${usage.minutesLimit != null ? ' / ${usage.minutesLimit} 分钟' : ' 分钟'}',
+              ResourceLoaded(:final data) => Text(
+                  '提问 ${data.asksToday}'
+                  '${data.askLimit != null ? ' / ${data.askLimit} 次' : ' 次'}'
+                  '　·　时长 ${(data.usedSeconds / 60).toStringAsFixed(1)}'
+                  '${data.minutesLimit != null ? ' / ${data.minutesLimit} 分钟' : ' 分钟'}',
                   style: text.bodyLarge?.copyWith(
                     fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
-              TutorUsageError(:final message) =>
+              ResourceError(:final message) =>
                 Text(message, style: TextStyle(color: scheme.error)),
               _ => Text('今日用量加载中…', style: text.bodyMedium),
             },

@@ -6,13 +6,13 @@ from datetime import UTC, date, datetime, timedelta
 from sqlmodel import Session, func, select
 
 from app.core.errors import AppErrorException, ErrCode
+from app.core.guard import require_owned_child
 from app.db.models import (
     AnswerRecord,
     Checkin,
     Question,
     Task,
     TaskQuestion,
-    User,
     WrongQuestion,
 )
 from app.domain.review_scheduler import due_after_wrong
@@ -112,30 +112,30 @@ def update_task_question(
     return tq
 
 
-# confirm_task sentinel：None 语义冲突时用对象标记。task_id 不是自定义对象，安全。
-class _Sentinel:
-    def __init__(self, tag: str) -> None:
-        self.tag = tag
-
-
-_SENTINEL_PROMOTE_REQUIRED = _Sentinel("promote_required")
-_SENTINEL_NO_QUESTIONS = _Sentinel("no_questions")
-
-
-def confirm_task(*, session: Session, task_id: uuid.UUID) -> Task | None:
+def confirm_task(*, session: Session, task_id: uuid.UUID) -> Task:
     """draft → ready：家长确认锁定题集（CONTEXT 草稿/锁定/派发）。
 
     R-Q1=c 锁定前校验：所有草稿项 question_id 非空（都已加入题库）。
-    不通过时返回对应 _SENTINEL 对象（路由层识别后抛精确错误码）。
+
+    失败一律**抛** ``AppErrorException``（错误码即调用方要的语义）。此前用私有
+    sentinel 对象做三态返回，把「哪个哨兵对应哪个错误码」这个知识推给了调用方——
+    那是本模块的实现细节，不该越过 seam。调用方只要接住 ``AppErrorException``。
     """
     task = session.get(Task, task_id)
     if task is None or task.status != "draft":
-        return None
+        raise AppErrorException(
+            ErrCode.TASK_STATUS_DRAFT_REQUIRED, "仅草稿态可执行锁定"
+        )
     tqs = get_task_questions(session=session, task_id=task.id)
     if not tqs:
-        return _SENTINEL_NO_QUESTIONS
+        raise AppErrorException(
+            ErrCode.TASK_NO_QUESTIONS, "草稿没有题目，请先生成再锁定"
+        )
     if any(tq.question_id is None for tq in tqs):
-        return _SENTINEL_PROMOTE_REQUIRED
+        raise AppErrorException(
+            ErrCode.TASK_LOCK_REQUIRES_ALL_PROMOTED,
+            "锁定失败：部分题目仍未加入题库，请重试",
+        )
     task.status = "ready"
     session.add(task)
     session.commit()
@@ -297,9 +297,13 @@ def create_task_from_bank(
     作答/错题归集仍指向同一道源题。specs=None：无 AI 生成规格，不支持整卷重生成。
     """
     if child_id is not None:
-        child = session.get(User, child_id)
-        if child is None or child.parent_id != parent_id:
-            raise AppErrorException(ErrCode.TASK_CHILD_NOT_OWNED, "该娃娃不属于你的账号")
+        require_owned_child(
+            session=session,
+            owner_id=parent_id,
+            child_id=child_id,
+            code=ErrCode.TASK_CHILD_NOT_OWNED,
+            message="该娃娃不属于你的账号",
+        )
     owned = session.exec(
         select(Question).where(
             Question.id.in_(question_ids), Question.parent_id == parent_id

@@ -8,8 +8,28 @@ import 'package:kids_learn/features/assistant/data/assistant_api_client.dart';
 import 'package:kids_learn/features/assistant/domain/assistant_event.dart';
 import 'package:kids_learn/features/tutor/presentation/providers/tutor_notifier.dart';
 import 'package:kids_learn/shared/data/remote/network_service.dart';
+import 'package:kids_learn/shared/presentation/resource.dart';
 import 'package:kids_learn/shared/domain/models/models.dart';
 import 'package:kids_learn/shared/exceptions/app_exception.dart';
+
+/// 日志 / 用量现在是 [Resource] 加载器，测试按同样的形状构造即可。
+ParamResourceNotifier<List<TutorLogModel>, String> _logsNotifier(
+        NetworkService network) =>
+    ParamResourceNotifier(
+      network,
+      pathOf: (_) => '/tutor/logs',
+      queryOf: (childId) => {'child_id': childId},
+      parse: (d) => decodeList(d, TutorLogModel.fromJson),
+    );
+
+ParamResourceNotifier<TutorUsageModel, String> _usageNotifier(
+        NetworkService network) =>
+    ParamResourceNotifier(
+      network,
+      pathOf: (_) => '/tutor/usage',
+      queryOf: (childId) => {'child_id': childId},
+      parse: (d) => TutorUsageModel.fromJson(decodeMap(d)),
+    );
 
 /// mocktail 假网络：按 stub 返回/抛错，可 verify 调用次数。
 class MockNetworkService extends Mock implements NetworkService {}
@@ -222,23 +242,21 @@ void main() {
           }
         ],
       });
-      final notifier = TutorLogsNotifier(network);
+      final notifier = _logsNotifier(network);
 
-      await notifier.load(childId: 'c1');
+      await notifier.load('c1');
 
       expect(network.getPaths.single, '/tutor/logs');
-      final state = notifier.state;
-      expect(state, isA<TutorLogsLoaded>());
-      final loaded = state as TutorLogsLoaded;
-      expect(loaded.logs.length, 1);
-      expect(loaded.logs.first.question, '23+45 怎么算');
-      expect(loaded.logs.first.blocked, isFalse);
+      final logs = notifier.state.dataOrNull!;
+      expect(logs.length, 1);
+      expect(logs.first.question, '23+45 怎么算');
+      expect(logs.first.blocked, isFalse);
     });
 
     test('load 异常进入 Error 状态', () async {
-      final notifier = TutorLogsNotifier(_ThrowingNetwork());
-      await notifier.load(childId: 'c1');
-      expect(notifier.state, isA<TutorLogsError>());
+      final notifier = _logsNotifier(_ThrowingNetwork());
+      await notifier.load('c1');
+      expect(notifier.state, isA<ResourceError>());
     });
   });
 
@@ -319,16 +337,16 @@ void main() {
           'allowed_subjects': ['数学'],
         },
       });
-      final notifier = TutorUsageNotifier(network);
+      final notifier = _usageNotifier(network);
 
-      await notifier.load(childId: 'c1');
+      await notifier.load('c1');
 
       expect(network.getPaths.single, '/tutor/usage');
-      final state = notifier.state as TutorUsageLoaded;
-      expect(state.usage.asksToday, 3);
-      expect(state.usage.usedSeconds, 127);
-      expect(state.usage.askLimit, 9);
-      expect(state.usage.minutesLimit, 30);
+      final usage = notifier.state.dataOrNull!;
+      expect(usage.asksToday, 3);
+      expect(usage.usedSeconds, 127);
+      expect(usage.askLimit, 9);
+      expect(usage.minutesLimit, 30);
     });
   });
 
@@ -350,27 +368,27 @@ void main() {
                   'created_at': '2026-08-20T10:00:00',
                 },
               ]);
-      final notifier = TutorLogsNotifier(network);
+      final notifier = _logsNotifier(network);
 
-      expect(notifier.state, isA<TutorLogsInitial>());
-      final future = notifier.load(childId: 'c1');
-      expect(notifier.state, isA<TutorLogsLoading>());
+      expect(notifier.state, isA<ResourceIdle>());
+      final future = notifier.load('c1');
+      expect(notifier.state, isA<ResourceLoading>());
       await future;
 
-      final loaded = notifier.state as TutorLogsLoaded;
-      expect(loaded.logs.length, 1);
-      expect(loaded.logs.first.question, 'q');
+      final logs = notifier.state.dataOrNull!;
+      expect(logs.length, 1);
+      expect(logs.first.question, 'q');
     });
 
     test('TutorLogsNotifier: Error 态', () async {
       final network = MockNetworkService();
       when(() => network.get('/tutor/logs', query: any(named: 'query')))
           .thenThrow(Exception('boom'));
-      final notifier = TutorLogsNotifier(network);
+      final notifier = _logsNotifier(network);
 
-      await notifier.load(childId: 'c1');
+      await notifier.load('c1');
 
-      expect(notifier.state, isA<TutorLogsError>());
+      expect(notifier.state, isA<ResourceError>());
     });
 
     test('TutorQuotaNotifier: Initial → Loading → Loaded', () async {
@@ -405,16 +423,16 @@ void main() {
                 'minutes_limit': 30,
                 'allowed_subjects': null,
               });
-      final notifier = TutorUsageNotifier(network);
+      final notifier = _usageNotifier(network);
 
-      expect(notifier.state, isA<TutorUsageInitial>());
-      final future = notifier.load(childId: 'c1');
-      expect(notifier.state, isA<TutorUsageLoading>());
+      expect(notifier.state, isA<ResourceIdle>());
+      final future = notifier.load('c1');
+      expect(notifier.state, isA<ResourceLoading>());
       await future;
 
-      final loaded = notifier.state as TutorUsageLoaded;
-      expect(loaded.usage.asksToday, 2);
-      expect(loaded.usage.minutesLimit, 30);
+      final usage = notifier.state.dataOrNull!;
+      expect(usage.asksToday, 2);
+      expect(usage.minutesLimit, 30);
     });
   });
 }

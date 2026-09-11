@@ -1,8 +1,8 @@
-import asyncio
 import re
 
 from pydantic import BaseModel
 
+from app.core.async_bridge import run_async
 from app.domain.provider import EducationLLMProvider
 
 
@@ -30,7 +30,7 @@ class Grader:
 
     def grade(self, *, question, student_answer) -> dict:
         if question.qtype == "open":
-            return asyncio.run(
+            return run_async(
                 self.provider.grade_open(
                     question=question, student_answer=student_answer
                 )

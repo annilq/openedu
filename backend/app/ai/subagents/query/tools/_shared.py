@@ -18,8 +18,9 @@ from sqlmodel import Session
 
 from agent_core.subagent import SubAgentContext
 from app.core.errors import AppErrorException
+from app.core.guard import require_owned_child
 from app.db.models import User
-from app.features.children.service import list_children_of, require_owned_child
+from app.features.children.service import list_children_of
 
 # 娃娃端绝不可见的字段（ADR-008 硬门槛）：答案与解析。
 # 契约测试遍历全部工具、跑一遍娃娃视角，断言本集合中的键不出现。
@@ -110,7 +111,7 @@ def resolve_children(
             return [
                 require_owned_child(
                     session=session,
-                    parent=parent,
+                    owner_id=parent.id,
                     child_id=_as_uuid(child_id, field="child_id"),
                     message="未找到该娃娃，或该娃娃不属于你的账号。",
                 )

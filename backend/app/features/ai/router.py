@@ -10,9 +10,11 @@
 """
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter
 
 from app.core.deps import CurrentParent, SessionDep
+from app.core.errors import ErrCode
+from app.core.guard import require_owned
 from app.db.models import Conversation
 from app.features.ai.repository import get_conversation_messages, list_conversations
 from app.features.ai.schemas import (
@@ -38,9 +40,14 @@ def debug_get_conversation(
     *, session: SessionDep, parent: CurrentParent, conv_id: UUID
 ) -> ConversationDetailResp:
     """家长查看一次 AI 运行的概要 + 全部步骤（按 turn 回放）。越权（非本家长）→ 403。"""
-    conv = session.get(Conversation, conv_id)
-    if conv is None or conv.parent_id != parent.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your conversation")
+    conv = require_owned(
+        session=session,
+        owner_id=parent.id,
+        model=Conversation,
+        obj_id=conv_id,
+        code=ErrCode.FORBIDDEN,
+        message="Not your conversation",
+    )
     msgs = get_conversation_messages(session=session, conversation_id=conv_id)
     return ConversationDetailResp(
         conversation=ConversationResp(**conv.model_dump()),

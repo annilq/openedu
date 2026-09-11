@@ -8,6 +8,7 @@ import '../../../../../shared/widgets/app_error.dart';
 import '../../../../../shared/widgets/app_loading.dart';
 import '../../../../tutor/presentation/providers/tutor_notifier.dart';
 import '../../providers/selected_child_provider.dart';
+import '../../../../../shared/presentation/resource.dart';
 
 /// AI 答疑记录右栏（F-305）：家长查看选中娃娃的 AI 问答日志。
 class ParentTutorLogsView extends ConsumerWidget {
@@ -31,11 +32,11 @@ class ParentTutorLogsView extends ConsumerWidget {
             children: [
               const SectionTitle('AI 答疑记录'),
               switch (state) {
-                TutorLogsInitial() ||
-                TutorLogsLoading() =>
+                ResourceIdle() ||
+                ResourceLoading() =>
                   const AppLoading(message: '加载答疑记录...'),
-                TutorLogsError() => AppError(message: state.message),
-                TutorLogsLoaded() => state.logs.isEmpty
+                ResourceError() => AppError(message: state.errorOrNull ?? ''),
+                ResourceLoaded() => (state.dataOrNull ?? const []).isEmpty
                     ? AppCard(
                         padding: const EdgeInsets.all(AppSpacing.md),
                         child: Align(alignment: Alignment.topLeft,
@@ -47,7 +48,7 @@ class ParentTutorLogsView extends ConsumerWidget {
                         padding: const EdgeInsets.all(AppSpacing.md),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
-                          children: state.logs
+                          children: (state.dataOrNull ?? const <TutorLogModel>[])
                               .map((log) => _TutorLogCard(log: log))
                               .toList(),
                         ),

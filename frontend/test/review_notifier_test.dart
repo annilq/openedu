@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kids_learn/features/review/presentation/providers/review_notifier.dart';
 import 'package:kids_learn/shared/data/remote/network_service.dart';
 import 'package:kids_learn/shared/domain/models/models.dart';
+import 'package:kids_learn/shared/presentation/resource.dart';
 
 /// 内存版 NetworkService：按 path 返回预置响应，记录 POST body。
 class FakeNetwork implements NetworkService {
@@ -151,14 +152,18 @@ void main() {
       final network = FakeNetwork(responses: {
         '/tasks/wrong-questions': [wrongJson()],
       });
-      final notifier = WrongQuestionsNotifier(network);
+      final notifier = ResourceNotifier<List<WrongQuestionModel>>(
+        network,
+        path: '/tasks/wrong-questions',
+        parse: (d) => decodeList(d, WrongQuestionModel.fromJson),
+      );
 
       await notifier.load();
 
-      final state = notifier.state as WrongQuestionsLoaded;
-      expect(state.items.length, 1);
-      expect(state.items.first.answer, isNull);
-      expect(state.items.first.wrongCount, 1);
+      final items = notifier.state.dataOrNull!;
+      expect(items.length, 1);
+      expect(items.first.answer, isNull);
+      expect(items.first.wrongCount, 1);
     });
 
     test('家长查看命中 /tasks/children/{id}/wrong-questions 且含答案', () async {
@@ -167,12 +172,15 @@ void main() {
           {...wrongJson(), 'answer': '56'},
         ],
       });
-      final notifier = WrongQuestionsNotifier(network);
+      final notifier = ParamResourceNotifier<List<WrongQuestionModel>, String>(
+        network,
+        pathOf: (id) => '/tasks/children/$id/wrong-questions',
+        parse: (d) => decodeList(d, WrongQuestionModel.fromJson),
+      );
 
-      await notifier.load(childId: 'c1');
+      await notifier.load('c1');
 
-      final state = notifier.state as WrongQuestionsLoaded;
-      expect(state.items.single.answer, '56');
+      expect(notifier.state.dataOrNull!.single.answer, '56');
     });
   });
 

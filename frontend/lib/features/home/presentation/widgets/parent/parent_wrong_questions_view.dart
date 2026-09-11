@@ -8,6 +8,7 @@ import '../../../../../shared/widgets/app_error.dart';
 import '../../../../../shared/widgets/app_loading.dart';
 import '../../../../review/presentation/providers/review_notifier.dart';
 import '../../providers/selected_child_provider.dart';
+import '../../../../../shared/presentation/resource.dart';
 
 /// 家长错题本右栏：查看选中娃娃的错题列表。
 class ParentWrongQuestionsView extends ConsumerWidget {
@@ -31,11 +32,11 @@ class ParentWrongQuestionsView extends ConsumerWidget {
             children: [
               const SectionTitle('错题本'),
               switch (state) {
-                WrongQuestionsInitial() ||
-                WrongQuestionsLoading() =>
+                ResourceIdle() ||
+                ResourceLoading() =>
                   const AppLoading(message: '加载错题...'),
-                WrongQuestionsError() => AppError(message: state.message),
-                WrongQuestionsLoaded() => state.items.isEmpty
+                ResourceError() => AppError(message: state.errorOrNull ?? ''),
+                ResourceLoaded() => (state.dataOrNull ?? const []).isEmpty
                     ? AppCard(
                         padding: const EdgeInsets.all(AppSpacing.md),
                         child: Align(alignment: Alignment.topLeft,
@@ -45,7 +46,7 @@ class ParentWrongQuestionsView extends ConsumerWidget {
                       )
                     : Column(
                         children: [
-                          for (final item in state.items)
+                          for (final item in (state.dataOrNull ?? const <WrongQuestionModel>[]))
                             AppCard(
                               padding: const EdgeInsets.all(AppSpacing.md),
                               margin: const EdgeInsets.symmetric(

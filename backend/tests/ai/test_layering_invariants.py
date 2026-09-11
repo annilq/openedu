@@ -14,6 +14,9 @@
 7. ``app/ai/subagents/query/tools/**`` **不得 import 任何 router 或 repository**——查询工具只许
    经 feature service 取数（ADR-0033 决策 13）；绕过 service 直连 repository 会让聚合逻辑出现
    第二份，正是本次重构要消灭的漂移源。
+8. **归属校验只许经 ``app.core.guard``**——源码里不得再出现 ``X.parent_id != y`` 这类内联
+   比较。该不变量曾散在 7 处各写一遍，失败语义互相矛盾（同一越权有的返 403、有的返 404、
+   有的伪装成「不存在」），漏写一处即越权读。
 
 全部为静态扫描，不打模型、不启服务。
 """
@@ -189,3 +192,43 @@ def test_query_tools_do_not_import_fastapi():
         if m == "fastapi"
     }
     assert not offenders, f"query 工具不得 import fastapi：{sorted(offenders)}"
+
+
+GUARD_PATH = BACKEND_ROOT / "app" / "core" / "guard.py"
+
+
+def _inline_ownership_checks(path: Path) -> list[int]:
+    """AST 级找 ``<expr>.parent_id != <expr>`` / ``is not`` 这类内联归属比较。
+
+    只认比较运算符，不认 docstring / 注释里的字面量——guard.py 自己的 docstring
+    就写着这段历史，grep 会误报。
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    hits = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Compare):
+            continue
+        # 左侧必须是属性访问 x.parent_id
+        left = node.left
+        if not (isinstance(left, ast.Attribute) and left.attr == "parent_id"):
+            continue
+        hits.extend(
+            node.lineno
+            for op in node.ops
+            if isinstance(op, (ast.NotEq, ast.IsNot))
+        )
+    return hits
+
+
+def test_ownership_checks_go_through_guard_only():
+    """不变量 9：归属判定只许经 ``core.guard``，不得内联比较 ``parent_id``。"""
+    offenders = {
+        f"{p.relative_to(BACKEND_ROOT)}:{lineno}"
+        for p in _iter_py(BACKEND_ROOT)
+        if p != GUARD_PATH
+        for lineno in _inline_ownership_checks(p)
+    }
+    assert not offenders, (
+        f"归属校验不得内联比较 parent_id，请改用 app.core.guard"
+        f"（require_owned / require_owned_child / find_owned）：{sorted(offenders)}"
+    )

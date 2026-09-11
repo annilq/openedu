@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../shared/data/remote/network_service.dart';
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/domain/providers/core_providers.dart';
+import '../../../../shared/presentation/resource.dart';
 
 /// 复习作答：与练习一致的批改结果（错题调度更新由后端完成）。
 typedef ReviewAnswerResult = AnswerResultModel;
@@ -76,58 +77,24 @@ final dueReviewNotifierProvider =
 });
 
 // —— 错题本：娃娃自查 / 家长查看 ——
-sealed class WrongQuestionsState {
-  const WrongQuestionsState();
-}
-
-class WrongQuestionsInitial extends WrongQuestionsState {
-  const WrongQuestionsInitial();
-}
-
-class WrongQuestionsLoading extends WrongQuestionsState {
-  const WrongQuestionsLoading();
-}
-
-class WrongQuestionsLoaded extends WrongQuestionsState {
-  final List<WrongQuestionModel> items;
-  const WrongQuestionsLoaded(this.items);
-}
-
-class WrongQuestionsError extends WrongQuestionsState {
-  final String message;
-  const WrongQuestionsError(this.message);
-}
-
-class WrongQuestionsNotifier extends StateNotifier<WrongQuestionsState> {
-  final NetworkService _network;
-  WrongQuestionsNotifier(this._network) : super(const WrongQuestionsInitial());
-
-  /// childId 为空 → 娃娃自查（不含答案）；非空 → 家长查看（含答案）。
-  Future<void> load({String? childId}) async {
-    state = const WrongQuestionsLoading();
-    try {
-      final path = childId == null
-          ? '/tasks/wrong-questions'
-          : '/tasks/children/$childId/wrong-questions';
-      final data = await _network.get(path);
-      final items = (data as List)
-          .map((e) => WrongQuestionModel.fromJson(e as Map<String, dynamic>))
-          .toList();
-      state = WrongQuestionsLoaded(items);
-    } catch (e) {
-      state = WrongQuestionsError(e.toString());
-    }
-  }
-}
-
+/// 娃娃自查：GET /tasks/wrong-questions（不含答案）。
 final childWrongQuestionsProvider =
-    StateNotifierProvider<WrongQuestionsNotifier, WrongQuestionsState>((ref) {
-  final network = ref.watch(networkServiceProvider);
-  return WrongQuestionsNotifier(network);
-});
+    StateNotifierProvider<ResourceNotifier<List<WrongQuestionModel>>,
+        Resource<List<WrongQuestionModel>>>(
+  (ref) => ResourceNotifier(
+    ref.watch(networkServiceProvider),
+    path: '/tasks/wrong-questions',
+    parse: (d) => decodeList(d, WrongQuestionModel.fromJson),
+  ),
+);
 
-final parentWrongQuestionsProvider =
-    StateNotifierProvider<WrongQuestionsNotifier, WrongQuestionsState>((ref) {
-  final network = ref.watch(networkServiceProvider);
-  return WrongQuestionsNotifier(network);
-});
+/// 家长查看：GET /tasks/children/{id}/wrong-questions（含答案）。
+final parentWrongQuestionsProvider = StateNotifierProvider<
+    ParamResourceNotifier<List<WrongQuestionModel>, String>,
+    Resource<List<WrongQuestionModel>>>(
+  (ref) => ParamResourceNotifier(
+    ref.watch(networkServiceProvider),
+    pathOf: (childId) => '/tasks/children/$childId/wrong-questions',
+    parse: (d) => decodeList(d, WrongQuestionModel.fromJson),
+  ),
+);

@@ -15,9 +15,9 @@ ADR-0030：``skills`` 为 manifest 声明的 SOP（``skills/*.md``，系统受�
 （question / knowledge_point / context），SOP 在闸门之后拼接进 prompt。
 """
 
-import asyncio
 from dataclasses import dataclass
 
+from app.core.async_bridge import run_async
 from app.domain.provider import EducationLLMProvider
 from app.domain.retriever import KnowledgeRetriever
 from app.domain.safety import SAFE_REFUSAL, check_input, check_output
@@ -89,7 +89,7 @@ class TutorService:
         skills: str = "",
     ) -> TutorResult:
         """同步讲解入口：在独立事件循环中驱动 ``aexplain``。"""
-        return asyncio.run(
+        return run_async(
             self.aexplain(
                 grade=grade,
                 subject=subject,

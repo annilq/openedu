@@ -16,7 +16,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// ```dart
 /// ref.loadWhenIdle(
 ///   parentTasksNotifierProvider,
-///   (s) => s is ParentTasksIdle,
+///   (s) => s is ResourceIdle,
 ///   () => ref.read(parentTasksNotifierProvider.notifier).load(),
 /// );
 /// ```

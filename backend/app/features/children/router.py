@@ -3,7 +3,8 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, status
 
 from app.core.deps import CurrentParent, SessionDep
-from app.db.models import User
+from app.core.errors import ErrCode
+from app.core.guard import require_owned_child
 from app.features.auth.repository import (
     create_user,
     get_user_by_username,
@@ -47,9 +48,13 @@ def update_child(
 
     仅传入非 None 的字段生效；目标娃娃须属于当前家长。
     """
-    child = session.get(User, child_id)
-    if child is None or child.parent_id != parent.id:
-        raise HTTPException(status_code=404, detail="娃娃不存在或不属于你的账号")
+    child = require_owned_child(
+        session=session,
+        owner_id=parent.id,
+        child_id=child_id,
+        code=ErrCode.NOT_FOUND,
+        message="娃娃不存在或不属于你的账号",
+    )
     if child.role != "child":
         raise HTTPException(status_code=400, detail="仅可编辑娃娃账号")
     # 局部更新：忽略未传入（None）的字段

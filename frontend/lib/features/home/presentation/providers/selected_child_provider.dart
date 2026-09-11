@@ -22,10 +22,10 @@ class SelectedChildNotifier extends StateNotifier<SelectedChild?> {
     state = SelectedChild(id: id, grade: grade);
     _ref.read(progressNotifierProvider.notifier).load(id);
     _ref.read(masteryNotifierProvider.notifier).load(id);
-    _ref.read(parentWrongQuestionsProvider.notifier).load(childId: id);
-    _ref.read(tutorLogsNotifierProvider.notifier).load(childId: id);
+    _ref.read(parentWrongQuestionsProvider.notifier).load(id);
+    _ref.read(tutorLogsNotifierProvider.notifier).load(id);
     _ref.read(tutorQuotaNotifierProvider(id).notifier).load(childId: id);
-    _ref.read(tutorUsageNotifierProvider(id).notifier).load(childId: id);
+    _ref.read(tutorUsageNotifierProvider.notifier).load(id);
   }
 }
 

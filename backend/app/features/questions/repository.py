@@ -4,7 +4,8 @@ import uuid
 
 from sqlmodel import Session, func, select
 
-from app.core.errors import AppErrorException, ErrCode
+from app.core.errors import ErrCode
+from app.core.guard import require_owned
 from app.db.models import Question, Task, TaskQuestion
 
 
@@ -115,11 +116,14 @@ def get_question_usages(
     闭环「用过 N 次 → 在哪里用」：通过 TaskQuestion.question_id 反查
     引用该源题的 Task（去重）。题不在本家长题库 → 抛权限错误。
     """
-    q = session.get(Question, question_id)
-    if q is None or q.parent_id != parent_id:
-        raise AppErrorException(
-            ErrCode.QUESTION_ACCESS_DENIED, "该题库题不存在或无权限"
-        )
+    require_owned(
+        session=session,
+        owner_id=parent_id,
+        model=Question,
+        obj_id=question_id,
+        code=ErrCode.QUESTION_ACCESS_DENIED,
+        message="该题库题不存在或无权限",
+    )
     rows = session.exec(
         select(Task)
         .join(TaskQuestion, TaskQuestion.task_id == Task.id)

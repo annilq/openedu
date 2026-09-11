@@ -1,11 +1,12 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/data/remote/network_service.dart';
+import '../../../../shared/presentation/resource.dart';
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/domain/providers/core_providers.dart';
 import '../../../../shared/exceptions/app_exception.dart';
 import '../../../assistant/data/assistant_api_client.dart';
-import '../../../assistant/domain/assistant_event.dart';
+import '../../../assistant/domain/question_gen_fold.dart';
 import '../../../assistant/presentation/provider/assistant_notifier.dart';
 
 // —— 家长端：生成任务 ——
@@ -70,18 +71,12 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
     List<String>? focusInterest,
     String? model,
   }) async {
-    final questions = <QuestionPreview>[];
-    var liveLabel = '';
-    var liveReasoning = '';
-    // 当前正在生成的题序号（-1 = 无）。STEP 帧到达时置为下一题序号，题卡 DATA 帧
-    // 到达后归 -1（内联区折叠，推理随卡落到题卡的 info icon）。
-    var liveIndex = -1;
-    // 0 题兜底文案：捕获后端 ASSISTANT_MESSAGE（出题 subagent count=0 时下发
-    // 「本次未能生成题目，请调整科目或年级后重试。」），流结束 0 题时回显。
-    var lastMessage = '';
     // 方案 A：结构化 specs → 自然语言 prompt，走统一 /assistant/chat 的 question
     // subagent（AG-UI 事件协议，ADR-0025）；流结束后再把题卡落库为草稿任务。
-    state = const TaskGenPreview([], streaming: true);
+    // 事件解释委托 [QuestionGenFold]（纯模块）：本 notifier 只负责喂事件、落状态
+    // 与落库，逐帧规则全部收敛到那个模块并可单测。
+    var fold = const QuestionGenFold();
+    state = TaskGenPreview(fold.questions, streaming: true);
     try {
       final stream = _assistant.streamChat(
         AssistantChatReq(
@@ -91,68 +86,27 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
         ),
       );
       await for (final ev in stream) {
-        switch (ev.eventType) {
-          case AssistantEventType.toolCall:
-            liveLabel = ev.label ?? '生成中';
-          case AssistantEventType.step:
-            // 新题开始：展开内联区（序号 = 下一题），清空上一题残留的推理文本。
-            liveIndex = questions.length;
-            liveLabel = ev.label ?? '生成中';
-            liveReasoning = '';
-          case AssistantEventType.thinking:
-            // 路由帧（extra.business / extra.routing）跳过：那是「正在选择助手…」
-            // 这类编排状态，不是出题思路，拼进推理区会污染展示。
-            final extra = ev.extra;
-            final isRouting = extra != null &&
-                (extra['business'] != null || extra['routing'] == true);
-            if (!isRouting) {
-              liveReasoning += ev.text ?? '';
-            }
-          case AssistantEventType.assistantMessage:
-            // 出题 subagent 在 0 题时会下发「本次未能生成题目…」说明。
-            if (ev.text != null && ev.text!.isNotEmpty) lastMessage = ev.text!;
-          case AssistantEventType.data:
-            final type = ev.data?['type'];
-            if (type == 'question' && ev.data?['result'] is Map) {
-              questions.add(
-                QuestionPreview.fromJson(
-                  ev.data!['result'] as Map<String, dynamic>,
-                ),
-              );
-              // 题卡到达：折叠内联区（推理已随卡落到 info icon）。
-              liveIndex = -1;
-              liveLabel = '';
-              liveReasoning = '';
-            }
-          case AssistantEventType.toolResult:
-            liveIndex = -1;
-            liveLabel = '';
-          case AssistantEventType.error:
-            state = TaskGenError(ev.message ?? '生成失败');
-            return;
-          case AssistantEventType.done:
-            break;
+        fold = fold.apply(ev);
+        if (fold.hasError) {
+          state = TaskGenError(fold.errorText!);
+          return;
         }
         state = TaskGenPreview(
-          List.from(questions),
+          fold.questions,
           streaming: true,
-          liveIndex: liveIndex,
-          liveLabel: liveLabel,
-          liveReasoning: liveReasoning,
+          liveIndex: fold.liveIndex,
+          liveLabel: fold.liveLabel,
+          liveReasoning: fold.liveReasoning,
         );
       }
       // UX 修正：流结束若 0 题，直接回显后端说明并跳过必败的落库请求，
       // 避免误触发后端 TASK_EMPTY_SPECS「请先生成题目再保存」。
-      if (questions.isEmpty) {
-        state = TaskGenError(
-          lastMessage.isNotEmpty
-              ? lastMessage
-              : '本次未能生成题目，请调整科目或年级后重试。',
-        );
+      if (fold.questions.isEmpty) {
+        state = TaskGenError(fold.emptyMessage);
         return;
       }
       await _persist(
-        questions,
+        fold.questions,
         _buildBody(
           childId: childId,
           title: title,
@@ -218,113 +172,32 @@ final taskGenNotifierProvider =
   return TaskGenNotifier(network, assistant);
 });
 
-// —— 娃娃端：今日任务 ——
-sealed class TodayTasksState {
-  const TodayTasksState();
-}
-class TodayTasksInitial extends TodayTasksState { const TodayTasksInitial(); }
-class TodayTasksLoading extends TodayTasksState { const TodayTasksLoading(); }
-class TodayTasksLoaded extends TodayTasksState {
-  final List<TaskModel> tasks;
-  const TodayTasksLoaded(this.tasks);
-}
-class TodayTasksError extends TodayTasksState {
-  final String message;
-  const TodayTasksError(this.message);
-}
-
-class TodayTasksNotifier extends StateNotifier<TodayTasksState> {
-  final NetworkService _network;
-  TodayTasksNotifier(this._network) : super(const TodayTasksInitial());
-
-  Future<void> load() async {
-    state = const TodayTasksLoading();
-    try {
-      final data = await _network.get('/tasks/today');
-      final tasks = (data as List)
-          .map((e) => TaskModel.fromJson(e as Map<String, dynamic>))
-          .toList();
-      state = TodayTasksLoaded(tasks);
-    } catch (e) {
-      state = TodayTasksError(e.toString());
-    }
-  }
-}
-
+// —— 娃娃端：今日任务 ——（GET /tasks/today，纯资源加载）
 final todayTasksNotifierProvider =
-    StateNotifierProvider<TodayTasksNotifier, TodayTasksState>((ref) {
-  final network = ref.watch(networkServiceProvider);
-  return TodayTasksNotifier(network);
-});
+    StateNotifierProvider<ResourceNotifier<List<TaskModel>>, Resource<List<TaskModel>>>(
+  (ref) => ResourceNotifier(
+    ref.watch(networkServiceProvider),
+    path: '/tasks/today',
+    parse: (d) => decodeList(d, TaskModel.fromJson),
+  ),
+);
 
-// —— 家长端：查看娃娃进度 ——
-sealed class ProgressState {
-  const ProgressState();
-}
-class ProgressInitial extends ProgressState { const ProgressInitial(); }
-class ProgressLoading extends ProgressState { const ProgressLoading(); }
-class ProgressLoaded extends ProgressState {
-  final ProgressModel progress;
-  const ProgressLoaded(this.progress);
-}
-class ProgressError extends ProgressState {
-  final String message;
-  const ProgressError(this.message);
-}
+// —— 家长端：查看娃娃进度 ——（路径依赖 childId）
+final progressNotifierProvider = StateNotifierProvider<
+    ParamResourceNotifier<ProgressModel, String>, Resource<ProgressModel>>(
+  (ref) => ParamResourceNotifier(
+    ref.watch(networkServiceProvider),
+    pathOf: (childId) => '/tasks/children/$childId/progress',
+    parse: (d) => ProgressModel.fromJson(decodeMap(d)),
+  ),
+);
 
-class ProgressNotifier extends StateNotifier<ProgressState> {
-  final NetworkService _network;
-  ProgressNotifier(this._network) : super(const ProgressInitial());
-
-  Future<void> load(String childId) async {
-    state = const ProgressLoading();
-    try {
-      final data = await _network.get('/tasks/children/$childId/progress');
-      state = ProgressLoaded(ProgressModel.fromJson(data));
-    } catch (e) {
-      state = ProgressError(e.toString());
-    }
-  }
-}
-
-final progressNotifierProvider =
-    StateNotifierProvider<ProgressNotifier, ProgressState>((ref) {
-  final network = ref.watch(networkServiceProvider);
-  return ProgressNotifier(network);
-});
-
-// —— 家长端：知识点掌握度看板 ——
-sealed class MasteryState {
-  const MasteryState();
-}
-class MasteryInitial extends MasteryState { const MasteryInitial(); }
-class MasteryLoading extends MasteryState { const MasteryLoading(); }
-class MasteryLoaded extends MasteryState {
-  final MasteryModel mastery;
-  const MasteryLoaded(this.mastery);
-}
-class MasteryError extends MasteryState {
-  final String message;
-  const MasteryError(this.message);
-}
-
-class MasteryNotifier extends StateNotifier<MasteryState> {
-  final NetworkService _network;
-  MasteryNotifier(this._network) : super(const MasteryInitial());
-
-  Future<void> load(String childId) async {
-    state = const MasteryLoading();
-    try {
-      final data = await _network.get('/tasks/children/$childId/mastery');
-      state = MasteryLoaded(MasteryModel.fromJson(data));
-    } catch (e) {
-      state = MasteryError(e.toString());
-    }
-  }
-}
-
-final masteryNotifierProvider =
-    StateNotifierProvider<MasteryNotifier, MasteryState>((ref) {
-  final network = ref.watch(networkServiceProvider);
-  return MasteryNotifier(network);
-});
+// —— 家长端：知识点掌握度看板 ——（路径依赖 childId）
+final masteryNotifierProvider = StateNotifierProvider<
+    ParamResourceNotifier<MasteryModel, String>, Resource<MasteryModel>>(
+  (ref) => ParamResourceNotifier(
+    ref.watch(networkServiceProvider),
+    pathOf: (childId) => '/tasks/children/$childId/mastery',
+    parse: (d) => MasteryModel.fromJson(decodeMap(d)),
+  ),
+);

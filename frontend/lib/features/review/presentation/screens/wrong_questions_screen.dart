@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/domain/models/models.dart';
+import '../../../../shared/presentation/resource.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_error.dart';
 import '../../../../shared/widgets/app_loading.dart';
@@ -68,22 +69,22 @@ class _WrongQuestionsScreenState extends ConsumerState<WrongQuestionsScreen> {
             ),
             Expanded(
               child: switch (state) {
-                WrongQuestionsInitial() ||
-                WrongQuestionsLoading() =>
+                ResourceIdle() ||
+                ResourceLoading() =>
                   const AppLoading(message: '加载错题...'),
-                WrongQuestionsError() => AppError(
+                ResourceError() => AppError(
                     message: state.message,
                     onRetry: () =>
                         ref.read(childWrongQuestionsProvider.notifier).load(),
                   ),
-                WrongQuestionsLoaded() => state.items.isEmpty
+                ResourceLoaded() => (state.dataOrNull ?? const []).isEmpty
                     ? _buildEmptyView()
                     : ListView.builder(
                         padding: const EdgeInsets.fromLTRB(AppSpacing.lg,
                             AppSpacing.md, AppSpacing.lg, AppSpacing.xl2),
-                        itemCount: state.items.length,
+                        itemCount: (state.dataOrNull ?? const <WrongQuestionModel>[]).length,
                         itemBuilder: (ctx, i) =>
-                            _WrongQuestionCard(item: state.items[i]),
+                            _WrongQuestionCard(item: (state.dataOrNull ?? const <WrongQuestionModel>[])[i]),
                       ),
               },
             ),

@@ -97,7 +97,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ref.read(masteryNotifierProvider.notifier).load(selected.id);
       ref
           .read(parentWrongQuestionsProvider.notifier)
-          .load(childId: selected.id);
+          .load(selected.id);
     }
     setState(() => _reviewingTask = null);
   }

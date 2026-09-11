@@ -53,8 +53,8 @@ class _TutorQuotaScreenState extends ConsumerState<TutorQuotaScreen> {
           .read(tutorQuotaNotifierProvider(widget.childId).notifier)
           .load(childId: widget.childId);
       ref
-          .read(tutorUsageNotifierProvider(widget.childId).notifier)
-          .load(childId: widget.childId);
+          .read(tutorUsageNotifierProvider.notifier)
+          .load(widget.childId);
     });
   }
 
@@ -112,8 +112,8 @@ class _TutorQuotaScreenState extends ConsumerState<TutorQuotaScreen> {
     setState(() => _saving = false);
     if (error == null) {
       ref
-          .read(tutorUsageNotifierProvider(widget.childId).notifier)
-          .load(childId: widget.childId);
+          .read(tutorUsageNotifierProvider.notifier)
+          .load(widget.childId);
       AppToast.show(context, '已保存 AI 使用管控');
     } else {
       AppToast.error(context, error);
@@ -125,7 +125,7 @@ class _TutorQuotaScreenState extends ConsumerState<TutorQuotaScreen> {
     final scheme = AppTheme.colorsOf(context);
     final text = AppTheme.textOf(context);
     final quotaState = ref.watch(tutorQuotaNotifierProvider(widget.childId));
-    final usageState = ref.watch(tutorUsageNotifierProvider(widget.childId));
+    final usageState = ref.watch(tutorUsageNotifierProvider);
 
     ref.listen<TutorQuotaState>(
       tutorQuotaNotifierProvider(widget.childId),

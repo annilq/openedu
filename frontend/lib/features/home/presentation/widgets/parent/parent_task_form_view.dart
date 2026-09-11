@@ -206,7 +206,7 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
             ref.read(masteryNotifierProvider.notifier).load(selected.id);
             ref
                 .read(parentWrongQuestionsProvider.notifier)
-                .load(childId: selected.id);
+                .load(selected.id);
           }
           widget.onNavigateToReview(next.task);
         }

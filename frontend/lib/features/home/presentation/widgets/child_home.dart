@@ -2,6 +2,7 @@ import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/domain/models/models.dart';
+import '../../../../shared/presentation/resource.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_error.dart';
 import '../../../../shared/widgets/app_loading.dart';
@@ -63,21 +64,21 @@ class ChildHome extends ConsumerWidget {
                     padding: EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md,
                         AppSpacing.lg, AppSpacing.md)),
                 ...switch (state) {
-                  TodayTasksInitial() || TodayTasksLoading() => const [
+                  ResourceIdle() || ResourceLoading() => const [
                       AppLoading.skeletonInline(skeletonLines: 2)
                     ],
-                  TodayTasksError() => [
+                  ResourceError() => [
                       Padding(
                         padding: const EdgeInsets.all(AppSpacing.md),
                         child: AppError(
-                          message: state.message,
+                          message: state.errorOrNull ?? '',
                           onRetry: () => ref
                               .read(todayTasksNotifierProvider.notifier)
                               .load(),
                         ),
                       ),
                     ],
-                  TodayTasksLoaded() => state.tasks.isEmpty
+                  ResourceLoaded() => (state.dataOrNull ?? const []).isEmpty
                       ? [
                           Padding(
                             padding: const EdgeInsets.only(
@@ -112,7 +113,7 @@ class ChildHome extends ConsumerWidget {
                             ),
                           ),
                         ]
-                      : state.tasks
+                      : (state.dataOrNull ?? const [])
                           .map((t) => Padding(
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: AppSpacing.lg,

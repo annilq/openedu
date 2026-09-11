@@ -9,6 +9,7 @@ import '../../../../../shared/domain/models/models.dart';
 import '../../../../children/domain/providers/children_provider.dart';
 import '../../../../children/presentation/providers/children_notifier.dart';
 import '../../providers/parent_tasks_notifier.dart';
+import '../../../../../shared/presentation/resource.dart';
 
 /// 家长「任务」管理页：按状态分 Tab（草稿 / 进行中 / 已完成），
 /// 列表复用后端 GET /tasks 全量数据，卡片点击深链到复核页。
@@ -52,20 +53,20 @@ class _ParentTasksViewState extends ConsumerState<ParentTasksView> {
     final childrenState = ref.watch(childrenNotifierProvider);
     final nameOf = _childNameResolver(childrenState);
 
-    return state is ParentTasksLoading
+    return state is ResourceLoading
         ? const AppLoading(message: '加载任务…')
-        : state is ParentTasksError
+        : state is ResourceError
             ? AppError(
-                message: state.message,
+                message: state.errorOrNull ?? '',
                 onRetry: () =>
                     ref.read(parentTasksNotifierProvider.notifier).load(),
               )
             : _buildBody(context, state, nameOf);
   }
 
-  Widget _buildBody(BuildContext context, ParentTasksState state,
+  Widget _buildBody(BuildContext context, Resource<List<TaskModel>> state,
       String? Function(String?) nameOf) {
-    final all = state is ParentTasksLoaded ? state.tasks : const <TaskModel>[];
+    final all = state.dataOrNull ?? const <TaskModel>[];
     final counts = [
       all.where((t) => t.status == 'draft' || t.status == 'ready').length,
       all.where((t) => t.status == 'assigned').length,

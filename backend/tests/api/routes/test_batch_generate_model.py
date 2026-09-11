@@ -87,7 +87,7 @@ def test_regenerate_honors_selected_model(client, monkeypatch):
             difficulty=difficulty,
         )
 
-    monkeypatch.setattr("app.features.tasks.router.resolve_engine", fake_resolve)
+    monkeypatch.setattr("app.features.tasks.service.resolve_engine", fake_resolve)
     monkeypatch.setattr(
         "app.ai.subagents.question.pipeline.generate_question", fake_generate_question
     )

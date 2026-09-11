@@ -18,6 +18,8 @@ from fastapi import APIRouter, HTTPException
 
 from app.core.config import settings
 from app.core.deps import CurrentParent, SessionDep
+from app.core.errors import ErrCode
+from app.core.guard import require_owned_child
 from app.db.models import User
 from app.domain import validate_quota_config
 from app.domain.quota import resolve_quota_limits
@@ -39,11 +41,17 @@ router = APIRouter(prefix="/tutor", tags=["tutor"])
 
 
 def _own_child(session, parent, child_id: UUID) -> User:
-    """校验 child 归属当前家长，返回娃娃；不存在/越权 → 403。"""
-    child = session.get(User, child_id)
-    if child is None or child.parent_id != parent.id:
-        raise HTTPException(status_code=403, detail="Not your child")
-    return child
+    """校验 child 归属当前家长，返回娃娃；不存在/越权 → 403。
+
+    判定本身委托 ``core.guard``，这里只保留「本端点对外暴露 403 + 该文案」的契约。
+    """
+    return require_owned_child(
+        session=session,
+        owner_id=parent.id,
+        child_id=child_id,
+        code=ErrCode.FORBIDDEN,
+        message="Not your child",
+    )
 
 
 def _effective_limits(quota) -> tuple[int | None, int | None, list[str] | None]:

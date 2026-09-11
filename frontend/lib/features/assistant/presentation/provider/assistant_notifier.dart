@@ -2,7 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/domain/providers/core_providers.dart';
 import '../../data/assistant_api_client.dart';
-import '../../domain/assistant_event.dart';
+import '../../domain/ai_text_fold.dart';
 
 /// 一条助手对话气泡。
 class AssistantMessage {
@@ -17,22 +17,8 @@ class AssistantMessage {
     this.text = '',
     this.blocked = false,
     this.cards,
-    this.thinking = false,
-  });
-
-  AssistantMessage copyWith({
-    String? text,
-    bool? blocked,
-    List<Map<String, dynamic>>? cards,
-    bool? thinking,
-  }) =>
-      AssistantMessage(
-        role: role,
-        text: text ?? this.text,
-        blocked: blocked ?? this.blocked,
-        cards: cards ?? this.cards,
-        thinking: thinking ?? this.thinking,
-      );
+        this.thinking = false,
+      });
 }
 
 sealed class AssistantState {
@@ -78,85 +64,64 @@ class AssistantNotifier extends StateNotifier<AssistantState> {
       _ => <AssistantMessage>[],
     };
     current.add(AssistantMessage(role: 'user', text: message));
-    current.add(const AssistantMessage(role: 'ai', thinking: true));
     state = AssistantActive(current, true);
 
+    // 事件解释委托 [AiTextFold]（纯模块）：本 notifier 只负责喂事件与落状态。
+    var fold = const AiTextFold();
     try {
       await for (final ev in _client.streamChat(
         AssistantChatReq(message: message, history: history, model: model),
       )) {
-        _apply(ev, current);
-        state = AssistantActive(List<AssistantMessage>.from(current), true);
+        fold = fold.apply(ev);
+        state = AssistantActive(_render(current, fold, streaming: true), true);
       }
-      state = AssistantActive(
-        List<AssistantMessage>.from(_finalize(current)),
-        false,
-      );
+      state = AssistantActive(_render(current, fold, streaming: false), false);
     } catch (e) {
-      final cleaned = _finalize(current);
-      cleaned.add(AssistantMessage(role: 'ai', text: '⚠️ ${e.toString()}'));
-      state = AssistantActive(cleaned, false, error: true);
+      state = AssistantActive(
+        <AssistantMessage>[
+          ..._render(current, fold, streaming: false),
+          AssistantMessage(role: 'ai', text: '⚠️ ${e.toString()}'),
+        ],
+        false,
+        error: true,
+      );
     } finally {
       _submitting = false;
     }
   }
 
-  List<AssistantMessage> _finalize(List<AssistantMessage> msgs) =>
-      msgs.where((m) => !m.thinking).toList();
-
-  void _apply(AssistantEvent ev, List<AssistantMessage> msgs) {
-    switch (ev.eventType) {
-      case AssistantEventType.assistantMessage:
-        _appendAiText(msgs, ev.text ?? '');
-      case AssistantEventType.data:
-        _attachCard(msgs, ev);
-      case AssistantEventType.error:
-        msgs.removeWhere((m) => m.thinking);
-        msgs.add(AssistantMessage(
-          role: 'ai',
-          text: ev.message ?? '出错了，请稍后重试',
-          blocked: ev.code == 'INPUT_UNSAFE',
-        ));
-      case AssistantEventType.done:
-        // 收尾：无额外动作，_finalize 会在流结束后清掉 thinking 占位。
-        break;
-      default:
-        // THINKING / TOOL_CALL / TOOL_RESULT / STEP / RUN_STARTED：暂不单独渲染。
-        break;
+  /// 把 [fold] 的解释结果渲染到气泡列表尾部：思考中占位 → 正文 → 错误气泡。
+  ///
+  /// 占位气泡只在 [streaming] 时存在；流结束（或异常）后必须消失，否则会留下
+  /// 一个永久转圈的空气泡。
+  List<AssistantMessage> _render(
+    List<AssistantMessage> history,
+    AiTextFold fold, {
+    required bool streaming,
+  }) {
+    final out = List<AssistantMessage>.from(history);
+    if (fold.isEmpty) {
+      if (streaming) {
+        out.add(const AssistantMessage(role: 'ai', thinking: true));
+      }
+      return out;
     }
-  }
-
-  void _appendAiText(List<AssistantMessage> msgs, String delta) {
-    if (msgs.isEmpty) {
-      msgs.add(AssistantMessage(role: 'ai', text: delta));
-      return;
+    if (fold.text.isNotEmpty || fold.cards.isNotEmpty) {
+      out.add(AssistantMessage(
+        role: 'ai',
+        text: fold.text,
+        cards: fold.cards.isEmpty ? null : fold.cards,
+        blocked: fold.blocked,
+      ));
     }
-    final last = msgs.last;
-    if (last.role == 'ai') {
-      msgs[msgs.length - 1] = last.copyWith(
-        text: last.text + delta,
-        thinking: false,
-      );
-    } else {
-      msgs.add(AssistantMessage(role: 'ai', text: delta));
+    if (fold.hasError) {
+      out.add(AssistantMessage(
+        role: 'ai',
+        text: fold.errorText!,
+        blocked: fold.blocked,
+      ));
     }
-  }
-
-  void _attachCard(List<AssistantMessage> msgs, AssistantEvent ev) {
-    final data = ev.data ?? {};
-    final result = data['result'];
-    if (result is! Map<String, dynamic>) return;
-    if (msgs.isEmpty) {
-      msgs.add(AssistantMessage(role: 'ai', cards: [result]));
-      return;
-    }
-    final last = msgs.last;
-    if (last.role == 'ai') {
-      final cards = List<Map<String, dynamic>>.from(last.cards ?? [])..add(result);
-      msgs[msgs.length - 1] = last.copyWith(cards: cards, thinking: false);
-    } else {
-      msgs.add(AssistantMessage(role: 'ai', cards: [result]));
-    }
+    return out;
   }
 }
 

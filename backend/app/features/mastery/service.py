@@ -11,9 +11,9 @@ from uuid import UUID
 from sqlmodel import Session
 
 from app.core.errors import AppErrorException, ErrCode
+from app.core.guard import require_owned_child
 from app.db.models import User
 from app.domain.mastery import compute_mastery_score, mastery_level
-from app.features.children.service import require_owned_child
 from app.features.mastery.repository import get_knowledge_point_mastery
 from app.features.mastery.schemas import KnowledgeMasteryResp, MasteryResp
 
@@ -71,7 +71,7 @@ def get_mastery_for_user(
     else:  # parent
         require_owned_child(
             session=session,
-            parent=user,
+            owner_id=user.id,
             child_id=child_id,
             code=ErrCode.TASK_NOT_YOUR_CHILD,
             message="这不是你家娃娃的掌握度",

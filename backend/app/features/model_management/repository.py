@@ -5,6 +5,7 @@ import uuid
 from sqlmodel import Session, select, update
 
 from app.core.crypto import encrypt
+from app.core.guard import find_owned
 from app.db.models import ModelConfig
 
 
@@ -19,10 +20,7 @@ def get_model_config(
     *, session: Session, id: uuid.UUID, parent_id: uuid.UUID
 ) -> ModelConfig | None:
     """按 id 取自定义模型；越权（非本家长）返回 None。"""
-    mc = session.get(ModelConfig, id)
-    if mc is None or mc.parent_id != parent_id:
-        return None
-    return mc
+    return find_owned(session=session, owner_id=parent_id, model=ModelConfig, obj_id=id)
 
 
 def create_model_config(

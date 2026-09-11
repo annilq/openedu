@@ -6,6 +6,7 @@ import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/widgets/app_error.dart';
 import '../../../../../shared/widgets/app_loading.dart';
 import '../../../../../shared/domain/models/models.dart';
+import '../../../../../shared/presentation/resource.dart';
 import '../../../../children/domain/providers/children_provider.dart';
 import '../../../../children/presentation/providers/children_notifier.dart';
 import '../../providers/home_notifier.dart';
@@ -34,7 +35,7 @@ class ParentOverviewView extends ConsumerWidget {
     // 规范见 docs/agents/frontend.md「Riverpod 反模式清单」。
     ref.loadWhenIdle(
       parentTasksNotifierProvider,
-      (s) => s is ParentTasksIdle,
+      (s) => s is ResourceIdle,
       () => ref.read(parentTasksNotifierProvider.notifier).load(),
     );
 
@@ -90,12 +91,12 @@ class ParentOverviewView extends ConsumerWidget {
 
   Widget _buildProgress(BuildContext context, WidgetRef ref) {
     final progState = ref.watch(progressNotifierProvider);
+    final progress = progState.dataOrNull;
     return switch (progState) {
-      ProgressInitial() ||
-      ProgressLoading() =>
+      ResourceError() => AppError(message: progState.errorOrNull ?? ''),
+      _ when progress == null =>
         const AppLoading.skeletonInline(skeletonLines: 2),
-      ProgressError() => AppError(message: progState.message),
-      ProgressLoaded() => AppCard(
+      _ => AppCard(
           padding: const EdgeInsets.all(AppSpacing.md),
           child: LayoutBuilder(
             builder: (context, constraints) {
@@ -106,23 +107,23 @@ class ParentOverviewView extends ConsumerWidget {
                 children: [
                   _StatCard(
                       label: '总题数',
-                      value: '${progState.progress.total}',
+                      value: '${progress.total}',
                       wide: wide,
                       icon: LucideIcons.listOrdered),
                   _StatCard(
                       label: '答对',
-                      value: '${progState.progress.correct}',
+                      value: '${progress.correct}',
                       wide: wide,
                       icon: LucideIcons.checkCircle2),
                   _StatCard(
                       label: '正确率',
-                      value: '${(progState.progress.accuracy * 100).round()}%',
+                      value: '${(progress.accuracy * 100).round()}%',
                       wide: wide,
                       icon: LucideIcons.barChart3,
                       tone: _Tone.positive),
                   _StatCard(
                       label: '连续打卡',
-                      value: '${progState.progress.streakDays}天',
+                      value: '${progress.streakDays}天',
                       wide: wide,
                       icon: LucideIcons.flame,
                       tone: _Tone.warm),
@@ -137,14 +138,14 @@ class ParentOverviewView extends ConsumerWidget {
   Widget _buildMastery(BuildContext context) => const MasteryBoard();
 
   Widget _buildRecentTasks(
-      BuildContext context, WidgetRef ref, ParentTasksState tasksState) {
-    if (tasksState is ParentTasksLoading) {
+      BuildContext context, WidgetRef ref, Resource<List<TaskModel>> tasksState) {
+    if (tasksState is ResourceLoading) {
       return const AppLoading.skeletonInline(skeletonLines: 2);
     }
-    if (tasksState is! ParentTasksLoaded) {
+    if (tasksState is! ResourceLoaded) {
       return const SizedBox.shrink();
     }
-    final tasks = tasksState.tasks.take(4).toList();
+    final tasks = (tasksState.dataOrNull ?? const <TaskModel>[]).take(4).toList();
     if (tasks.isEmpty) {
       return Padding(
         padding: const EdgeInsets.only(top: AppSpacing.xs),

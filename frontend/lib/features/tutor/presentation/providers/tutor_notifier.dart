@@ -3,9 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../shared/data/remote/network_service.dart';
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/domain/providers/core_providers.dart';
+import '../../../../shared/presentation/resource.dart';
 import '../../../../shared/exceptions/app_exception.dart';
 import '../../../assistant/data/assistant_api_client.dart';
-import '../../../assistant/domain/assistant_event.dart';
+import '../../../assistant/domain/ai_text_fold.dart';
 import '../../../assistant/presentation/provider/assistant_notifier.dart';
 
 /// 一条对话气泡。
@@ -74,36 +75,26 @@ class TutorNotifier extends StateNotifier<TutorState> {
       const TutorMessage(role: 'ai', text: ''),
     ]);
 
-    List<TutorMessage> currentMessages() => switch (state) {
-          TutorLoaded(:final messages) || TutorLoading(:final messages) =>
-            List<TutorMessage>.from(messages),
-          _ => <TutorMessage>[],
-        };
-
-    bool blocked = false;
+    // 事件解释委托 [AiTextFold]（与悬浮助手共用同一份规则）：本 notifier 只负责
+    // 喂事件与落状态，不再自己 switch eventType。
+    var fold = const AiTextFold();
     try {
-      final stream = _assistant.streamChat(AssistantChatReq(message: req.question));
+      final stream = _assistant.streamChat(
+        AssistantChatReq(message: req.question),
+      );
       await for (final ev in stream) {
-        if (ev.eventType == AssistantEventType.assistantMessage &&
-            ev.text != null) {
-          final messages = currentMessages();
-          if (messages.isNotEmpty && messages.last.role == 'ai') {
-            messages[messages.length - 1] =
-                TutorMessage(role: 'ai', text: messages.last.text + ev.text!);
-          } else {
-            messages.add(TutorMessage(role: 'ai', text: ev.text!));
-          }
-          state = TutorLoading(messages);
-        } else if (ev.eventType == AssistantEventType.error) {
-          blocked = ev.code == 'INPUT_UNSAFE';
-        }
+        fold = fold.apply(ev);
+        state = TutorLoading([
+          ...history,
+          TutorMessage(role: 'child', text: req.question),
+          TutorMessage(role: 'ai', text: fold.text, blocked: fold.blocked),
+        ]);
       }
-      final messages = currentMessages();
-      if (messages.isNotEmpty && messages.last.role == 'ai') {
-        messages[messages.length - 1] =
-            TutorMessage(role: 'ai', text: messages.last.text, blocked: blocked);
-      }
-      state = TutorLoaded(messages);
+      state = TutorLoaded([
+        ...history,
+        TutorMessage(role: 'child', text: req.question),
+        TutorMessage(role: 'ai', text: fold.text, blocked: fold.blocked),
+      ]);
     } on AppException catch (e) {
       // 服务端业务错误（含 429 次数/时长上限、403 学科范围）：透出提示文案
       state = TutorLoaded([
@@ -130,55 +121,17 @@ final tutorNotifierProvider =
   return TutorNotifier(assistant);
 });
 
-// —— 家长端：AI 答疑日志 ——
-sealed class TutorLogsState {
-  const TutorLogsState();
-}
-
-class TutorLogsInitial extends TutorLogsState {
-  const TutorLogsInitial();
-}
-
-class TutorLogsLoading extends TutorLogsState {
-  const TutorLogsLoading();
-}
-
-class TutorLogsLoaded extends TutorLogsState {
-  final List<TutorLogModel> logs;
-  const TutorLogsLoaded(this.logs);
-}
-
-class TutorLogsError extends TutorLogsState {
-  final String message;
-  const TutorLogsError(this.message);
-}
-
-class TutorLogsNotifier extends StateNotifier<TutorLogsState> {
-  final NetworkService _network;
-  TutorLogsNotifier(this._network) : super(const TutorLogsInitial());
-
-  Future<void> load({required String childId}) async {
-    state = const TutorLogsLoading();
-    try {
-      final data = await _network.get(
-        '/tutor/logs',
-        query: {'child_id': childId},
-      );
-      final logs = (data as List)
-          .map((e) => TutorLogModel.fromJson(e as Map<String, dynamic>))
-          .toList();
-      state = TutorLogsLoaded(logs);
-    } catch (e) {
-      state = TutorLogsError(e.toString());
-    }
-  }
-}
-
-final tutorLogsNotifierProvider =
-    StateNotifierProvider<TutorLogsNotifier, TutorLogsState>((ref) {
-  final network = ref.watch(networkServiceProvider);
-  return TutorLogsNotifier(network);
-});
+// —— 家长端：AI 答疑日志 ——（GET /tutor/logs?child_id=）
+final tutorLogsNotifierProvider = StateNotifierProvider<
+    ParamResourceNotifier<List<TutorLogModel>, String>,
+    Resource<List<TutorLogModel>>>(
+  (ref) => ParamResourceNotifier(
+    ref.watch(networkServiceProvider),
+    pathOf: (_) => '/tutor/logs',
+    queryOf: (childId) => {'child_id': childId},
+    parse: (d) => decodeList(d, TutorLogModel.fromJson),
+  ),
+);
 
 // —— 家长端：AI 使用管控（T10，故事 23/26） ——
 sealed class TutorQuotaState {
@@ -252,51 +205,13 @@ final tutorQuotaNotifierProvider = StateNotifierProvider.family<
   return TutorQuotaNotifier(network);
 });
 
-// —— 家长端：当日用量 ——
-sealed class TutorUsageState {
-  const TutorUsageState();
-}
-
-class TutorUsageInitial extends TutorUsageState {
-  const TutorUsageInitial();
-}
-
-class TutorUsageLoading extends TutorUsageState {
-  const TutorUsageLoading();
-}
-
-class TutorUsageLoaded extends TutorUsageState {
-  final TutorUsageModel usage;
-  const TutorUsageLoaded(this.usage);
-}
-
-class TutorUsageError extends TutorUsageState {
-  final String message;
-  const TutorUsageError(this.message);
-}
-
-class TutorUsageNotifier extends StateNotifier<TutorUsageState> {
-  final NetworkService _network;
-  TutorUsageNotifier(this._network) : super(const TutorUsageInitial());
-
-  Future<void> load({required String childId}) async {
-    state = const TutorUsageLoading();
-    try {
-      final data = await _network.get(
-        '/tutor/usage',
-        query: {'child_id': childId},
-      );
-      state = TutorUsageLoaded(
-        TutorUsageModel.fromJson(data as Map<String, dynamic>),
-      );
-    } catch (e) {
-      state = TutorUsageError(e.toString());
-    }
-  }
-}
-
-final tutorUsageNotifierProvider = StateNotifierProvider.family<
-    TutorUsageNotifier, TutorUsageState, String>((ref, childId) {
-  final network = ref.watch(networkServiceProvider);
-  return TutorUsageNotifier(network);
-});
+// —— 家长端：当日用量 ——（GET /tutor/usage?child_id=）
+final tutorUsageNotifierProvider = StateNotifierProvider<
+    ParamResourceNotifier<TutorUsageModel, String>, Resource<TutorUsageModel>>(
+  (ref) => ParamResourceNotifier(
+    ref.watch(networkServiceProvider),
+    pathOf: (_) => '/tutor/usage',
+    queryOf: (childId) => {'child_id': childId},
+    parse: (d) => TutorUsageModel.fromJson(decodeMap(d)),
+  ),
+);
