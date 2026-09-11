@@ -11,19 +11,13 @@ sentinel，导致本文件膨胀到 700+ 行且 ORM/领域类型泄漏到 HTTP �
 FastAPI 会把 "/today" 当作 task_id="today" 命中 get_task_detail，
 走到 CurrentParent 依赖而娃娃 token 报 AUTH_30004（角色错）。
 """
-from typing import AsyncIterator
 from uuid import UUID
 
 from fastapi import APIRouter, Query, status
 from fastapi.responses import StreamingResponse
 
-from agent_core.ports import RuntimeDeps
-from agent_core.runtime import AgentRuntime
-from agent_core.subagent import SubAgentContext
-from app.core.ai_plumbing import build_ai_provider
 from app.core.deps import CurrentChild, CurrentParent, CurrentUser, SessionDep
 from app.core.errors import AppErrorException, ErrCode
-from app.domain import build_retriever
 from app.features.questions.schemas import BankQuestionsAdd, TaskFromBankCreate
 from app.features.tasks import service as tasks_service
 from app.features.tasks.schemas import (
@@ -40,17 +34,6 @@ from app.features.tasks.schemas import (
 )
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
-
-# ── AgentRuntime 单例（文件夹发现仅一次） ──
-_RUNTIME: AgentRuntime | None = None
-
-
-def _get_runtime() -> AgentRuntime:
-    global _RUNTIME
-    if _RUNTIME is None:
-        _RUNTIME = AgentRuntime.discover()
-    return _RUNTIME
-
 
 # ───────────────────────── 创建（题库 / 流式题卡落库） ─────────────────────────
 
@@ -90,50 +73,16 @@ def create_from_generated(
 async def generate_task(
     req: TaskGenerateReq, *, session: SessionDep, parent: CurrentParent
 ) -> StreamingResponse:
-    """结构化出题（ADR-0034 Phase 1）：收 specs → 服务端构造 prompt → question subagent 流式题卡。
+    """结构化出题（ADR-0034 Phase 1）：收 specs → question subagent 流式题卡。
 
-    取代「前端拼中文 → /assistant/chat → 后端正则反解」的有损链路：结构化规格直接经
-    AgentRuntime 的 question subagent 逐题产出 DATA 题卡，绝不过自然语言往返。前端收卡后
-    走 /tasks/from-generated 落库为草稿任务。
+    编排（构造 provider/ctx、流式透传）已收口到 ``tasks_service.generate_task_stream``；
+    本端点只做空规格校验与 ``StreamingResponse`` 包装。题卡由前端收齐后走
+    /tasks/from-generated 落库为草稿任务（两步法第二步）。
     """
     if not req.specs:
         raise AppErrorException(ErrCode.TASK_EMPTY_SPECS, "请至少提供一条出题规格")
-
-    runtime = _get_runtime()
-    parent_id = parent.id
-    child_id = req.child_id
-    # 出题 provider 经归一封装构造（ADR-0034 Phase 2）：统一由 resolve_engine 解析
-    # req.model / 家长 ModelConfig，与批改 / 伴学走同一条模型解析链。
-    provider = build_ai_provider(req.model, parent_id=parent_id, session=session)
-    retriever = build_retriever()
-    deps = RuntimeDeps(provider=provider, retriever=retriever, safety=None)
-
-    subject = req.specs[0].subject
-    ctx = SubAgentContext(
-        role="parent",
-        message="",  # 结构化规格走 ctx.extra["specs"]，不依赖自由文本
-        history=None,
-        model=req.model,
-        skills="",
-        extra={
-            "subject": subject,
-            "parent_id": parent_id,
-            "child_id": child_id,
-            "grade": 0,
-            "focus_interest": req.focus_interest,
-            "session_id": None,
-            "specs": [s.model_dump() for s in req.specs],
-        },
-    )
-
-    async def event_stream() -> AsyncIterator[str]:
-        async for ev in runtime.run(
-            "", role="parent", ctx=ctx, deps=deps, business="question", session=session
-        ):
-            yield ev.to_sse()
-
     return StreamingResponse(
-        event_stream(),
+        tasks_service.generate_task_stream(req=req, parent=parent, session=session),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

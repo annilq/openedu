@@ -47,7 +47,7 @@ def fake_llm(monkeypatch) -> FakeLLMProvider:
     def _factory(engine=None):  # noqa: ARG001 — 替身忽略引擎，仅为匹配工厂签名
         return provider
 
-    monkeypatch.setattr("app.features.assistant.router.build_provider", _factory)
+    monkeypatch.setattr("app.features.assistant.service.build_provider", _factory)
     return provider
 
 

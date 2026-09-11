@@ -15,7 +15,28 @@ from app.db.models import (
     TaskQuestion,
     WrongQuestion,
 )
-from app.domain.review_scheduler import due_after_wrong
+from app.domain.review_scheduler import apply_review_outcome, due_after_wrong
+
+
+def question_to_task_question(*, q: Question, task_id: uuid.UUID) -> TaskQuestion:
+    """题库 Question → 草稿 TaskQuestion（深拷贝字段，不预写 question_id 以外）。
+
+    选项 A（从题库新建）/ 选项 B（追加题库题）两条「从题库建题」路径共用同一份
+    字段映射（单一事实源），避免 10 字段逐字复制在多处漂移。
+    """
+    return TaskQuestion(
+        task_id=task_id,
+        question_id=q.id,
+        subject=q.subject,
+        grade=q.grade,
+        knowledge_point=q.knowledge_point,
+        qtype=q.qtype,
+        stem=q.stem,
+        options=q.options,
+        answer=q.answer,
+        explanation=q.explanation,
+        difficulty=q.difficulty,
+    )
 
 
 # ───────── 任务 / 题目 / 题库快照（ADR-0004） ─────────
@@ -322,19 +343,7 @@ def create_task_from_bank(
     session.flush()
     for qid in question_ids:
         q = owned_map[qid]
-        session.add(TaskQuestion(
-            task_id=task.id,
-            question_id=q.id,
-            subject=q.subject,
-            grade=q.grade,
-            knowledge_point=q.knowledge_point,
-            qtype=q.qtype,
-            stem=q.stem,
-            options=q.options,
-            answer=q.answer,
-            explanation=q.explanation,
-            difficulty=q.difficulty,
-        ))
+        session.add(question_to_task_question(q=q, task_id=task.id))
     session.commit()
     session.refresh(task)
     return task
@@ -367,19 +376,7 @@ def add_bank_questions_to_task(
     for q in owned:
         if q.id in existing:
             continue
-        session.add(TaskQuestion(
-            task_id=task.id,
-            question_id=q.id,
-            subject=q.subject,
-            grade=q.grade,
-            knowledge_point=q.knowledge_point,
-            qtype=q.qtype,
-            stem=q.stem,
-            options=q.options,
-            answer=q.answer,
-            explanation=q.explanation,
-            difficulty=q.difficulty,
-        ))
+        session.add(question_to_task_question(q=q, task_id=task.id))
     session.commit()
     session.refresh(task)
     return task
@@ -561,10 +558,9 @@ def upsert_wrong_question(
 ) -> WrongQuestion:
     """答错归集错题（故事 13）：已存在则次数 +1 不建多条。
 
-    每次答错都重置遗忘曲线计时器（故事 17）：review_stage=0、last_wrong_at=now、
-    due_at=now+1d，保证「重复错 = 从头再来」。
+    已存在的错题重置遗忘曲线计时器（故事 17）复用 ``apply_review_outcome`` 单一事实源
+    （与复习作答同一条状态机）；首次归集新建首档 1 天。
     """
-    now = datetime.now(UTC)
     existing = session.exec(
         select(WrongQuestion).where(
             WrongQuestion.child_id == child_id,
@@ -572,14 +568,8 @@ def upsert_wrong_question(
         )
     ).first()
     if existing:
-        existing.wrong_count += 1
-        existing.review_stage = 0
-        existing.last_wrong_at = now
-        existing.due_at = due_after_wrong(now)
-        session.add(existing)
-        session.commit()
-        session.refresh(existing)
-        return existing
+        return apply_review_outcome(session=session, wq=existing, correct=False)
+    now = datetime.now(UTC)
     wq = WrongQuestion(
         child_id=child_id,
         question_id=question_id,

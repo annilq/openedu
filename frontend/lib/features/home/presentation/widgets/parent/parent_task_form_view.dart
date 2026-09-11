@@ -6,8 +6,8 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../../shared/domain/models/models.dart';
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/widgets/app_inputs.dart';
-import '../../../../../shared/widgets/reasoning_typewriter.dart';
 import '../../../../../shared/widgets/app_loading.dart';
+import 'preview_generating.dart';
 import '../../../../../shared/widgets/app_model_selector.dart';
 import '../../../../../shared/widgets/app_toast.dart';
 import '../../../../children/domain/providers/children_provider.dart';
@@ -489,7 +489,7 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
         const SizedBox(height: AppSpacing.sm),
         // 生成中：当前题的内联推理区（题卡到达后折叠，见 _PreviewCard 的 info icon）。
         if (s.streaming && s.liveIndex >= 0)
-          _PreviewGenerating(
+          PreviewGenerating(
             index: s.liveIndex + 1,
             label: s.liveLabel,
             reasoning: s.liveReasoning,
@@ -499,81 +499,6 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
               (e) => _PreviewCard(index: e.key + 1, q: e.value),
             ),
       ],
-    );
-  }
-}
-
-/// 生成中面板（ADR-0017）：当前题的内联推理区，题卡到达后由 [_PreviewCard] 替代。
-/// 右上角不显示 info icon（推理尚在生成，无需展开）。
-class _PreviewGenerating extends StatelessWidget {
-  final int index;
-  final String label;
-  final String reasoning;
-  final bool streaming;
-
-  const _PreviewGenerating({
-    required this.index,
-    required this.label,
-    required this.reasoning,
-    required this.streaming,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final app = AppTheme.colorsOf(context);
-    final text = AppTheme.textOf(context);
-    return Container(
-      margin: const EdgeInsets.only(bottom: AppSpacing.md),
-      padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        color: app.surface,
-        borderRadius: BorderRadius.circular(AppRadius.bubble),
-        border: Border.all(color: app.outline),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.sm, vertical: 2),
-                decoration: BoxDecoration(
-                  color: app.primaryContainer,
-                  borderRadius: BorderRadius.circular(AppRadius.chip),
-                ),
-                child: Text('第 $index 题 · 生成中',
-                    style: text.labelSmall?.copyWith(
-                        color: app.onPrimaryContainer,
-                        fontWeight: FontWeight.w700)),
-              ),
-              const Spacer(),
-              if (label.isNotEmpty)
-                Expanded(
-                  child: Text(
-                    label,
-                    style:
-                        text.labelSmall?.copyWith(color: app.onSurfaceVariant),
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.end,
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          // 首个推理增量到达前给占位文案，避免内联区出现一段空白。
-          if (reasoning.isEmpty)
-            Text(
-              '正在构思出题思路…',
-              style: text.bodySmall?.copyWith(
-                color: app.onSurfaceVariant,
-                fontStyle: FontStyle.italic,
-              ),
-            )
-          else
-            ReasoningTypewriterWidget(reasoning, streaming: streaming),
-        ],
-      ),
     );
   }
 }

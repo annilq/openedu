@@ -12,18 +12,23 @@ repository 函数做多步编排，还把 repository 的私有 sentinel 当控�
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from datetime import date
 from uuid import UUID
 
 from sqlmodel import Session, select
 
+from agent_core.ports import RuntimeDeps
+from agent_core.runtime import AgentRuntime
+from agent_core.runtime_singleton import get_runtime
+from agent_core.subagent import SubAgentContext
 from app.ai import resolve_engine
+from app.core.ai_plumbing import build_ai_provider
 from app.core.async_bridge import run_async
 from app.core.errors import AppErrorException, ErrCode
 from app.core.guard import require_owned, require_owned_child
 from app.db.models import Question, Task, TaskQuestion, User, WrongQuestion
-from app.core.ai_plumbing import build_ai_provider
-from app.domain import Grader
+from app.domain import Grader, build_retriever
 from app.domain.provider import GeneratedQuestion
 from app.features.tasks.repository import (
     add_bank_questions_to_task,
@@ -54,6 +59,7 @@ from app.features.tasks.schemas import (
     CheckinResult,
     ProgressResp,
     QuestionResp,
+    TaskGenerateReq,
     TaskResp,
     WrongQuestionResp,
 )
@@ -252,6 +258,17 @@ def _gen_question(
     return g
 
 
+def _round_robin_focus(focus_interests: list[str] | None, i: int) -> str | None:
+    """兴趣题模式：第 i 题轮询取一个聚焦主题；空列表返回 None。
+
+    单题重生成（regenerate_all）与整卷生成（_generate_task_questions_for_specs）
+    共用同一份轮询分配（单一事实源），避免 `i % len` 在多处重复且漂移。
+    """
+    if not focus_interests:
+        return None
+    return focus_interests[i % len(focus_interests)]
+
+
 def _generate_task_questions_for_specs(
     specs: list[dict],
     *,
@@ -269,7 +286,6 @@ def _generate_task_questions_for_specs(
       focus_interests[i % n]），且此时不再轻融入兴趣池（避免双模式叠加）。
     """
     out: list[TaskQuestion] = []
-    n_focus = len(focus_interests) if focus_interests else 0
     idx = 0
     for sp in specs:
         if isinstance(sp, dict):
@@ -288,7 +304,7 @@ def _generate_task_questions_for_specs(
             count = sp.count
         for _ in range(max(0, count)):
             # 兴趣题模式：轮询取一个聚焦主题；否则轻融入兴趣池。
-            focus = focus_interests[idx % n_focus] if n_focus else None
+            focus = _round_robin_focus(focus_interests, idx)
             idx += 1
             g = _gen_question(
                 engine,
@@ -526,7 +542,7 @@ def regenerate_one(
             qi = next(k for k, t in enumerate(tqs) if t.id == tq.id)
         except StopIteration:
             qi = 0
-        focus = focus_interests[qi % len(focus_interests)]
+        focus = _round_robin_focus(focus_interests, qi)
     g = _gen_question(
         engine,
         subject=tq.subject,
@@ -748,3 +764,47 @@ def checkin(*, session: Session, user: User, task_id: UUID) -> CheckinResult:
     session.add(task)
     session.commit()
     return CheckinResult(ok=True, checkin_date=cin.checkin_date)
+
+
+async def generate_task_stream(
+    *, req: TaskGenerateReq, parent: User, session: Session,
+    runtime: AgentRuntime | None = None,
+) -> AsyncIterator[str]:
+    """结构化出题流式端点（ADR-0034 Phase 1）的业务层。
+
+    收 specs → 构造 question subagent 上下文 → 流式逐题产出 DATA 题卡（SSE 帧）。
+    纯透传：题卡由前端收齐后走 ``create_from_generated`` 落库（两步法第二步），
+    本函数不做任何持久化。``runtime`` 可选注入（默认 ``get_runtime()`` 单例），便于单测。
+    """
+    rt = runtime or get_runtime()
+    parent_id = parent.id
+    child_id = req.child_id
+
+    # 出题 provider 经归一封装构造（ADR-0034 Phase 2）：统一由 resolve_engine 解析
+    # req.model / 家长 ModelConfig，与批改 / 伴学走同一条模型解析链。
+    provider = build_ai_provider(req.model, parent_id=parent_id, session=session)
+    retriever = build_retriever()
+    deps = RuntimeDeps(provider=provider, retriever=retriever, safety=None)
+
+    subject = req.specs[0].subject
+    ctx = SubAgentContext(
+        role="parent",
+        message="",  # 结构化规格走 ctx.extra["specs"]，不依赖自由文本
+        history=None,
+        model=req.model,
+        skills="",
+        extra={
+            "subject": subject,
+            "parent_id": parent_id,
+            "child_id": child_id,
+            "grade": 0,
+            "focus_interest": req.focus_interest,
+            "session_id": None,
+            "specs": [s.model_dump() for s in req.specs],
+        },
+    )
+
+    async for ev in rt.run(
+        "", role="parent", ctx=ctx, deps=deps, business="question", session=session
+    ):
+        yield ev.to_sse()
