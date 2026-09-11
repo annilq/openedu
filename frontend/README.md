@@ -78,9 +78,3 @@ Dio + 双拦截器：
 | `/api/v1/tasks/{id}/checkin` | POST | 娃娃 | 打卡 |
 | `/api/v1/tasks/children/{id}/progress` | GET | 家长 | 正确率+连续打卡 |
 
-## 平板适配
-
-- 正文 ≥ 20sp，选项 ≥ 22sp
-- 护眼暖色主题（低饱和、大圆角）
-- 大点击区（按钮高度 ≥ 52）
-- 横屏友好布局
