@@ -55,10 +55,6 @@ class Settings(BaseSettings):
     MODEL_FALLBACK: str = "none"  # none | mock；仅 mock 时 provider 不可达静默回退 Mock
     MODEL_APIKEY_SECRET: str = ""  # Fernet 密钥，用于加密 ModelConfig.api_key
 
-    # —— 三期 AI 伴学答疑（F-304 每日上限）——
-    # MVP 以「每日消息条数」计上限；时长上限（如累计分钟）为后续增强项。
-    TUTOR_DAILY_LIMIT: int = 50
-
     # —— 三期 教材知识库检索（T11 / AC-305 检索能力）——
     # mock/builtin = 内置自编知识点库（无版权风险，闭环可用）；
     # vector（预留）= 后续接入 embedding 向量库；未知值回退 mock 并告警。

@@ -5,11 +5,11 @@
 TOOL_RESULT / DATA / ASSISTANT_MESSAGE / DONE）。
 
 - 双端通用：家长与孩子共用此端点（Caller 依赖解析角色）。
-- 娃娃端角色感知 + 输入安全 + 使用配额（ADR-008 / T10）；家长端可出题/查任务/伴学。
+- 娃娃端角色感知 + 输入安全（ADR-008）；家长端可出题/查任务/伴学。
 - 会话持久化复用 ``Conversation`` / ``Message``（ADR-0022 升级为助手会话，supersede）。
 - 统一编排由 agent_core 提供（ADR-0031）：``AgentRuntime`` + ``RuntimeDeps``（provider /
   retriever / safety 注入）+ ``SubAgentContext``（业务字段走 ``extra``）。本端点只负责
-  鉴权 / 配额 / 落库，不感知任何路由或 subagent 内部细节。
+  鉴权 / 落库，不感知任何路由或 subagent 内部细节。
 
 废弃的旧 AI 端点（统一收敛到此）：``/ai/tutor/ask``、``/ai/tasks/generate``、``/tutor/ask``。
 """

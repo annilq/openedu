@@ -6,7 +6,6 @@ import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/widgets/adaptive_shell.dart';
 import '../../../children/domain/providers/children_provider.dart';
-import '../../../children/presentation/providers/children_notifier.dart';
 import '../../../children/presentation/screens/child_form_screen.dart';
 import '../../../practice/presentation/screens/practice_screen.dart';
 import '../../../profile/presentation/screens/profile_screen.dart';
@@ -15,7 +14,6 @@ import '../../../review/presentation/screens/review_screen.dart';
 import '../../../review/presentation/screens/wrong_questions_screen.dart';
 import '../../../tutor/presentation/screens/tutor_chat_screen.dart';
 import '../../../tutor/presentation/screens/parent_model_management_screen.dart';
-import '../../../tutor/presentation/screens/tutor_quota_screen.dart';
 import '../providers/home_notifier.dart';
 import '../providers/parent_tasks_notifier.dart';
 import '../providers/selected_child_provider.dart';
@@ -215,7 +213,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ),
       2 => const ParentWrongQuestionsView(),
       3 => const ParentTutorLogsView(),
-      4 => _buildAiControl(ref),
       5 => ChildFormScreen(
           mode: ChildFormMode.create,
           onSaved: _onChildFormSaved,
@@ -233,55 +230,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ),
       _ => const SizedBox(),
     };
-  }
-
-  /// 「AI 管控」主页面：直接渲染设置页（TutorQuotaScreen），避免先进介绍页再点
-  /// 设置按钮的二次跳转。未选中娃娃时给空状态提示。
-  Widget _buildAiControl(WidgetRef ref) {
-    final selected = ref.watch(selectedChildProvider);
-    if (selected == null) {
-      return _aiControlEmptyState(context);
-    }
-    final childrenState = ref.watch(childrenNotifierProvider);
-    String childName = selected.id;
-    if (childrenState is ChildrenLoaded) {
-      for (final c in childrenState.children) {
-        if (c.id == selected.id) childName = c.displayName;
-      }
-    }
-    return TutorQuotaScreen(
-      childId: selected.id,
-      childName: childName,
-      showBack: false,
-    );
-  }
-
-  Widget _aiControlEmptyState(BuildContext context) {
-    final scheme = AppTheme.colorsOf(context);
-    return Center(
-      child: AppCard(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                color: scheme.secondaryContainer,
-                borderRadius: BorderRadius.circular(AppRadius.card),
-              ),
-              alignment: Alignment.center,
-              child: Icon(LucideIcons.timer,
-                  size: 28, color: scheme.onSecondaryContainer),
-            ),
-            const SizedBox(width: AppSpacing.xl),
-            Text('请先在侧栏选择娃娃',
-                style: AppTheme.textOf(context).bodyLarge),
-          ],
-        ),
-      ),
-    );
   }
 
   Widget _buildChildView() {
@@ -334,11 +282,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         label: 'AI 答疑记录',
         active: activeIndex == 3,
         onTap: () => _parentTap(3)),
-    AdaptiveNavDestination(
-        icon: LucideIcons.shieldCheck,
-        label: 'AI 管控',
-        active: activeIndex == 4,
-        onTap: () => _parentTap(4)),
     AdaptiveNavDestination(
         icon: LucideIcons.library,
         label: '题库',

@@ -2,22 +2,13 @@ from typing import TYPE_CHECKING
 
 from app.domain.grader import Grader
 from app.domain.provider import EducationLLMProvider, GeneratedQuestion, LLMProvider
-from app.domain.quota import (
-    REASON_ASK_LIMIT,
-    REASON_SUBJECT_SCOPE,
-    REASON_TIME_LIMIT,
-    SUBJECTS,
-    QuotaLimits,
-    check_quota,
-    resolve_quota_limits,
-    validate_quota_config,
-)
 from app.domain.retriever import (
     KnowledgeChunk,
     KnowledgeRetriever,
     MockKnowledgeRetriever,
     build_retriever,
 )
+from app.domain.subjects import SUBJECTS
 from app.domain.tutor import TutorService
 
 if TYPE_CHECKING:  # 避免 app.domain ↔ app.ai 包初始化期循环依赖
@@ -31,13 +22,6 @@ __all__ = [
     "TutorService",
     "build_provider",
     "SUBJECTS",
-    "check_quota",
-    "validate_quota_config",
-    "resolve_quota_limits",
-    "QuotaLimits",
-    "REASON_ASK_LIMIT",
-    "REASON_TIME_LIMIT",
-    "REASON_SUBJECT_SCOPE",
     "KnowledgeChunk",
     "KnowledgeRetriever",
     "MockKnowledgeRetriever",

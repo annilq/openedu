@@ -12,7 +12,7 @@ class SelectedChild {
   const SelectedChild({required this.id, required this.grade});
 }
 
-/// 全局选中娃娃控制器。选中即触发进度/掌握/错题/AI 记录/额度加载。
+/// 全局选中娃娃控制器。选中即触发进度/掌握/错题/AI 记录加载。
 class SelectedChildNotifier extends StateNotifier<SelectedChild?> {
   SelectedChildNotifier(this._ref) : super(null);
   final Ref _ref;
@@ -24,8 +24,6 @@ class SelectedChildNotifier extends StateNotifier<SelectedChild?> {
     _ref.read(masteryNotifierProvider.notifier).load(id);
     _ref.read(parentWrongQuestionsProvider.notifier).load(id);
     _ref.read(tutorLogsNotifierProvider.notifier).load(id);
-    _ref.read(tutorQuotaNotifierProvider(id).notifier).load(childId: id);
-    _ref.read(tutorUsageNotifierProvider.notifier).load(id);
   }
 }
 

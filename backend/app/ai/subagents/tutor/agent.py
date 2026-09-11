@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from agent_core.subagent import BaseSubAgent, SubAgentContext
 from app.ai.subagents.subject_personas import get_subject_persona
-from app.domain.quota import SUBJECTS
+from app.domain.subjects import SUBJECTS
 from app.domain.tutor import TutorService
 
 

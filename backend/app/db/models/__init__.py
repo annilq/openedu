@@ -17,7 +17,7 @@ from app.db.models.model_config import ModelConfig
 from app.db.models.progress import AnswerRecord, Checkin, WrongQuestion
 from app.db.models.question import Question
 from app.db.models.task import Task, TaskBase, TaskQuestion
-from app.db.models.tutor import TutorLog, TutorQuota, TutorUsage
+from app.db.models.tutor import TutorLog
 from app.db.models.user import User, UserBase
 
 __all__ = [
@@ -32,8 +32,6 @@ __all__ = [
     "Checkin",
     "WrongQuestion",
     "TutorLog",
-    "TutorQuota",
-    "TutorUsage",
     "Conversation",
     "Message",
     "get_datetime_utc",

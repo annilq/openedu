@@ -1,6 +1,5 @@
-"""Pydantic schemas for the tutor (AI governance) feature."""
+"""Pydantic schemas for the tutor (AI companion log) feature."""
 
-from datetime import date
 from uuid import UUID
 
 from sqlmodel import Field, SQLModel
@@ -35,30 +34,3 @@ class TutorLogResp(SQLModel):
     output_safe: bool
     blocked: bool
     created_at: object  # datetime | None
-
-
-class TutorQuotaUpdate(SQLModel):
-    """家长设置管控的请求体；字段缺省（None）= 清除该项限制（恢复默认）。"""
-
-    daily_ask_limit: int | None = None
-    daily_minutes_limit: int | None = None
-    allowed_subjects: list[str] | None = None
-
-
-class TutorQuotaResp(SQLModel):
-    child_id: UUID
-    daily_ask_limit: int | None = None
-    daily_minutes_limit: int | None = None
-    allowed_subjects: list[str] | None = None
-
-
-class TutorUsageResp(SQLModel):
-    """当日用量（家长端展示）；同时回带生效的限额，便于前端直接展示剩余。"""
-
-    child_id: UUID
-    date: date
-    asks_today: int
-    used_seconds: int
-    ask_limit: int | None = None
-    minutes_limit: int | None = None
-    allowed_subjects: list[str] | None = None

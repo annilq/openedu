@@ -1,9 +1,8 @@
 """悬浮助手统一端点 /api/v1/assistant/chat 单测（ADR-0024/0025/0026）。
 
 覆盖：
-- 娃娃端伴学答疑：SSE 返回讲解 + 落 TutorLog（家长可见 + 每日上限计数，ADR-008 / T10）
+- 娃娃端伴学答疑：SSE 返回讲解 + 落 TutorLog（家长可见，ADR-008 / F-305）
 - 越狱/非学习类输入：首层输入安全拦截（ERROR 帧）
-- 每日上限 / 配额禁用以 429 拒绝
 - 家长端出题：DATA 事件携带题卡（question）
 - 角色感知：娃娃端强制仅伴学（出题/查任务意图被重定向到 tutor）
 - 学情查询（ADR-0033 第 6 阶段）：路由到 query → 工具链帧 + DATA 卡 + 会话轨迹落库；
@@ -15,7 +14,6 @@ from uuid import UUID
 
 from sqlmodel import Session, select
 
-from app.core.config import settings
 from app.core.db import engine
 from app.db.models import Conversation, Message
 from tests.ai.test_query_tools_contract import KID_PASSWORD
@@ -93,32 +91,6 @@ def test_child_jailbreak_blocked(client):
     assert "ERROR" in types
     answer = "".join(e.get("text", "") for e in events if e["eventType"] == "ASSISTANT_MESSAGE")
     assert answer.strip() == ""
-
-
-def test_child_daily_limit_enforced(client, monkeypatch):
-    """达每日上限后拒答（429，F-304 状态驱动）。"""
-    _ptoken, _child, ctoken = _setup(client, "as3_parent", "as3_kid")
-    monkeypatch.setattr(settings, "TUTOR_DAILY_LIMIT", 1)
-
-    first_status, _ = _stream(client, ctoken, "1+1 等于几")
-    assert first_status == 200
-
-    second_status, _ = _stream(client, ctoken, "再问一次")
-    assert second_status == 429
-
-
-def test_child_quota_zero_disables_tutor(client):
-    """家长设每日上限 0 → 答疑 429（配额前置校验生效）。"""
-    ptoken, child, ctoken = _setup(client, "as4_parent", "as4_kid")
-    set_q = client.put(
-        "/api/v1/tutor/quota",
-        headers=auth_headers(ptoken),
-        params={"child_id": child["id"]},
-        json={"daily_ask_limit": 0},
-    )
-    assert set_q.status_code == 200, set_q.text
-    status, _ = _stream(client, ctoken, "1+1")
-    assert status == 429
 
 
 def test_parent_question_generation_emits_data_events(client):
@@ -253,7 +225,7 @@ def test_child_query_ignores_foreign_child_id_and_hides_answers(client, fake_llm
     conv, _rows = _query_trace(events)
     assert (conv.kind, str(conv.child_id)) == ("query", setup["a"]["id"])
 
-    # query ≠ 伴学：不落 TutorLog（T10 每日上限只计伴学答疑）
+    # query ≠ 伴学：不落 TutorLog（伴学答疑才记日志，F-305）
     logs = client.get(
         "/api/v1/tutor/logs",
         headers=auth_headers(setup["parent_token"]),

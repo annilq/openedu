@@ -59,10 +59,6 @@ class ErrCode(str, Enum):
     AUTH_CHILD_ONLY = "AUTH_30005"
     AUTH_USERNAME_TAKEN = "AUTH_30006"
 
-    # Tutor 60xxx
-    TUTOR_QUOTA_EXCEEDED = "TUTOR_60001"  # 每日提问/时长上限（429）
-    TUTOR_SUBJECT_FORBIDDEN = "TUTOR_60002"  # 学科范围越界（403）
-
     # Assistant chat 40xxx（复用对话类）
     CHAT_EMPTY_MESSAGE = "CHAT_40001"  # 空消息（400）
 
@@ -96,8 +92,6 @@ _HTTP_DEFAULT_STATUS: dict[ErrCode, int] = {
     ErrCode.AUTH_PARENT_ONLY: status.HTTP_403_FORBIDDEN,
     ErrCode.AUTH_CHILD_ONLY: status.HTTP_403_FORBIDDEN,
     ErrCode.AUTH_USERNAME_TAKEN: status.HTTP_400_BAD_REQUEST,
-    ErrCode.TUTOR_QUOTA_EXCEEDED: status.HTTP_429_TOO_MANY_REQUESTS,
-    ErrCode.TUTOR_SUBJECT_FORBIDDEN: status.HTTP_403_FORBIDDEN,
     ErrCode.CHAT_EMPTY_MESSAGE: status.HTTP_400_BAD_REQUEST,
 }
 

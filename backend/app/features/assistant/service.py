@@ -1,8 +1,8 @@
 """悬浮助手业务编排（ADR-0024 / 0025 / 0026）：把「流 → 落地」整条编排收口到 service 层。
 
 路由器端点（``router.py``）只负责鉴权 / 入参校验 / 包 ``StreamingResponse``，不含任何 ORM
-与编排逻辑。本模块持有：角色解析、subject 探测、RuntimeDeps 构造、预路由配额判定、会话
-upsert、事件流折叠为持久化（Message 轨迹 + TutorLog 副作用）。
+与编排逻辑。本模块持有：角色解析、subject 探测、RuntimeDeps 构造、会话 upsert、事件流
+折叠为持久化（Message 轨迹 + TutorLog 副作用）。
 
 ``runtime`` 以可选参数注入（默认 ``get_runtime()`` 单例），便于单测用桩 ``AgentRuntime``
 替换，无需真实 ``discover()`` 与 HTTP 链路（见 ``tests/features/assistant/test_service.py``）。
@@ -27,16 +27,8 @@ from agent_core.runtime_singleton import get_runtime
 from agent_core.subagent import SubAgentContext
 from app.ai.engine import resolve_engine
 from app.ai.subagents.tutor.agent import detect_subject
-from app.core.config import settings
-from app.core.errors import AppErrorException, ErrCode
 from app.db.models import Conversation, Message
-from app.domain import (
-    REASON_SUBJECT_SCOPE,
-    build_provider,
-    build_retriever,
-    check_quota,
-    resolve_quota_limits,
-)
+from app.domain import build_provider, build_retriever
 from app.domain.safety import ChildSafety
 from app.features.assistant.repository import (
     get_conversation_by_id,
@@ -44,33 +36,7 @@ from app.features.assistant.repository import (
     next_turn,
 )
 from app.features.assistant.schemas import AssistantChatReq
-from app.features.tutor.repository import (
-    count_tutor_today,
-    create_tutor_log,
-    get_tutor_quota,
-    get_tutor_usage_today,
-)
-
-
-def _child_quota_decision(session: Any, child_id: UUID, subject: str):
-    """复用 T10 配额逻辑（F-305 合规前置）。
-
-    生效限额（全局默认 + 每娃覆盖合并）委托 ``domain.quota.resolve_quota_limits``，
-    消除与 tutor/router._effective_limits 的重复逻辑（ADR-0027：共享逻辑进 domain）。
-    """
-    quota = get_tutor_quota(session=session, child_id=child_id)
-    limits = resolve_quota_limits(quota, default_ask_limit=settings.TUTOR_DAILY_LIMIT)
-    usage = get_tutor_usage_today(session=session, child_id=child_id)
-    used_seconds = usage.used_seconds if usage is not None else 0
-    used = count_tutor_today(session=session, child_id=child_id)
-    return check_quota(
-        subject=subject,
-        asks_today=used,
-        used_seconds=used_seconds,
-        ask_limit=limits.ask_limit,
-        minutes_limit=limits.minutes_limit,
-        allowed_subjects=limits.allowed_subjects,
-    )
+from app.features.tutor.repository import create_tutor_log
 
 
 async def chat(
@@ -80,7 +46,7 @@ async def chat(
     session: Any,
     runtime: AgentRuntime | None = None,
 ) -> AsyncIterator[str]:
-    """悬浮助手对话编排：预路由 → 配额 → 会话 upsert → 运行事件流 → 折叠持久化。
+    """悬浮助手对话编排：预路由 → 会话 upsert → 运行事件流 → 折叠持久化。
 
     返回 SSE 帧的异步迭代器；持久化作为副作用在迭代 / finally 中发生。HTTP 关注点
     （``StreamingResponse`` 包装、空消息校验）留在 ``router``，本函数不感知。
@@ -111,19 +77,8 @@ async def chat(
     safety = ChildSafety() if role == "child" else None
     deps = RuntimeDeps(provider=provider, retriever=retriever, safety=safety)
 
-    # 预路由：解析 business（不流式），供配额判定与落库复用，消除端点对 THINKING(extra) 隐式契约。
+    # 预路由：解析 business（不流式），供落库复用，消除端点对 THINKING(extra) 隐式契约。
     decision = await rt.decide(message, role=role, deps=deps)
-
-    if role == "child" and decision.business is not None:
-        # 使用配额（伴学答疑计入每日上限）；subject 取自预路由决策，仅算一次。
-        # 关键：输入不安全时 runtime.decide 已把 business 置 None（run 内直接拒绝），
-        # 故业务未路由成功时不计配额——否则会先抛「配额超限」而非安全拒绝。
-        quota_decision = _child_quota_decision(session, child_id, subject)  # type: ignore[arg-type]
-        if not quota_decision.allowed:
-            code = ErrCode.TUTOR_QUOTA_EXCEEDED
-            if quota_decision.code == REASON_SUBJECT_SCOPE:
-                code = ErrCode.TUTOR_SUBJECT_FORBIDDEN
-            raise AppErrorException(code, quota_decision.message)
 
     # ── 会话持久化（复用 Conversation/Message，ADR-0026 多轮） ──
     # 优先按 session_id 续接已有会话并载入历史；否则新建。
@@ -280,7 +235,7 @@ async def chat(
                 )
             conversation.status = conv_status
 
-            # ADR-008：娃娃端伴学交互落 TutorLog（家长可见 + 每日上限计数，F-304/305）
+            # ADR-008：娃娃端伴学交互落 TutorLog（家长可见，F-305）
             if role == "child" and decision.business == "tutor":
                 try:
                     create_tutor_log(

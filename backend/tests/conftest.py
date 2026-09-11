@@ -22,8 +22,6 @@ from app.db.models import (  # noqa: E402
     Question,
     Task,
     TutorLog,
-    TutorQuota,
-    TutorUsage,
     User,
     WrongQuestion,
 )
@@ -57,8 +55,6 @@ def db() -> Generator[Session]:
     with Session(engine) as session:
         yield session
         for model in (
-            TutorUsage,
-            TutorQuota,
             TutorLog,
             AnswerRecord,
             Checkin,

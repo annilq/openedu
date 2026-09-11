@@ -23,7 +23,7 @@ from app.ai.subagents.question.pipeline import (
 )
 from app.ai.subagents.question.translate import translate_stream
 from app.ai.subagents.subject_personas import get_subject_persona
-from app.domain.quota import SUBJECTS
+from app.domain.subjects import SUBJECTS
 
 
 def expand_specs(specs) -> list[dict]:
