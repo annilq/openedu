@@ -1112,3 +1112,81 @@ my_biz_backend/
   ADR-0025（事件信封）/ ADR-0027（Feature-First，service 层落位）/ ADR-0030（路由优先级）/
   ADR-0031 / ADR-0032（`agent_core` 分层与命名）
 - ADR-0008（儿童内容安全，答案不进孩子端）
+
+## ADR-0034 AI 集成重设计：结构化业务契约 + 轻量入口收敛（模型贯通 · 配额/审计归一）
+
+> 来源：用户确认业务闭环（数据/事务层）完整自洽、可重构；AI 集成层失控（入口分散、模型选择分裂、结构化规格走自然语言有损往返）。经 grill-with-docs 逐项收敛，用户拍板：**收敛式（A）+ 轻量入口收敛（批改/重生成保持同步返回，仅统一 provider/engine 解析 + 配额/审计封装，不强制 SSE/AG-UI）+ 新增 `/tasks/generate` 结构化接口 + 元数据单源**。本 ADR **修订 ADR-0024 决策 5**。先立文档，再动代码。
+
+### 背景
+
+1. **业务闭环健康，AI 层失控**：出题/做题/批改/复习在数据与状态机层面闭合，无断点；`from-generated` 只收前端已生成卡片、`repository.py` 不调模型（落库与生成解耦）。失控集中在 AI 集成面。
+2. **入口不收敛（违反 ADR-0024 统一入口意图）**：触发 LLM 的 HTTP 入口共 5 个——
+   - `/assistant/chat`（出题/答疑/查询，经 AgentRuntime，SSE+AG-UI+落库+配额+角色派发）
+   - `/review/answer`、`/tasks/{id}/answer`（批改，直连 `Grader`）
+   - `/tasks/{id}/regenerate`、`/tasks/{id}/questions/{tq_id}/regenerate`（出题重生成，直连 question pipeline）
+   后 4 个**不经 AgentRuntime**，模型选择与配额各自为政**：`Grader`/pipeline 的 service/router 内直连写法未复用 AgentRuntime 的 `build_provider(engine=resolve_engine(...))` 与配额封装，导致批改永远走全局 `LLM_PROVIDER`（见背景 4）。
+3. **「生成任务」走自然语言往返（本轮 bug 直接根因）**：
+   - 前端 `home_notifier.dart:52-65` `_buildPrompt()` 把每行 spec 拼成 `3年级数学计算题1道，关于…`，多行用「、」连成一句中文发给 `/assistant/chat`。结构化 count/题型/知识点在此全部变成文本。
+   - 后端 `app/ai/subagents/question/agent.py:99-168` `parse_specs_from_text()` 用正则**只解析出一条** spec（subject/grade/count/qtype/知识点全取首匹配，`specs.append` 在循环外只执行一次）。多行整行静默丢弃，题型还会串味。
+   - 后果：总题数 2（均分两行各 1 道）→ 只出 1 道。单行 count=2 则正常，故 bug 只在多行/多科目出现——而这恰是「生成任务」核心用法。
+4. **模型选择贯通性缺口（违反 ADR-0031 体检修复意图）**：调用点分裂——
+   - `assistant/router.py:138`、`tasks/service.py:231/515/567` → `build_provider(engine=...)`（带 model/parent/session）
+   - `tasks/service.py:706`、`review/router.py:49` → `Grader(build_provider())` **不带 engine**
+   → 批改永远走全局 `LLM_PROVIDER`，家长 `ModelConfig` 与请求级 `model` 在批改上完全失效。同一 API 两种行为。
+5. **模型元数据双源漂移**：`resolve_engine` 只读 `settings.BUILTIN_MODELS`（`app/ai/engine.py:69`）；UI「添加模型」预设来自 `app/ai/model_catalog.py`。两套真相源互不连通。
+6. **`focus_interest` 前后端类型不一致**：后端 `assistant/router.py:76` 为 `str | None`，前端 `assistant_api_client.dart:26/36` 发 `List<String>` → 开启「按兴趣出题」直接 422。
+
+### 决策（六条）
+
+**A. 架构基调（收敛式）**
+
+1. **保留 `agent_core` 三层不变量与 `Grader` 算法形态不变**，只修管道层缺陷（与 ADR-0031/0032 分层守护一致）。不重写业务逻辑、不动 `repository` 落库路径。
+2. **轻量入口收敛（管道层）**：批改（`/review/answer`、`/tasks/{id}/answer`）与重生成（`/tasks/{id}/regenerate`、`/tasks/{id}/questions/{tq_id}/regenerate`）**保持同步 JSON 返回**，不强制 SSE/AG-UI 信封（批改是事务性判分、重生成是事务性出题，无对话收益）。收敛发生在**管道层**：统一 `build_provider(engine=resolve_engine(model or parent.ModelConfig or 全局))` → 消弭「批改忽略 model」的分裂；追加配额扣减与审计落库封装；抽出共享 `app/core/ai_plumbing.py`（provider+quota+audit 归一），移除 `tasks/service.py:706`、`review/router.py:49` 的 `Grader` 直连与 `service.py:515/567` 的 pipeline 直连写法。仅 chat 与新增 `/tasks/generate` 经 AgentRuntime 流式；批改/重生成复用同一套 engine 解析与配额，但传输仍为同步 JSON。
+
+**B. 结构化业务契约（修订 ADR-0024 决策 5）**
+
+3. **新增 `POST /api/v1/tasks/generate`（SSE）**：接收 `specs: list[Spec]`，`Spec={subject,grade,knowledge_point,qtype,count}`，外加 `model?`/`parent_id`/`child_id`/`session_id?`。服务端 `build_prompt_from_specs(specs)` **在内部**构造确定性 prompt（仅喂 LLM，**绝不过网络往返**）→ `QuestionSubAgent.run(specs=specs)` 经 AgentRuntime 流式吐题卡。前端收卡片后走现有 `from-generated` 落库。**砍掉「前端拼中文→/assistant/chat→后端正则反解」整条有损链路。**
+4. **修订 ADR-0024 决策 5**：统一入口原则从「一切 AI 走 `/assistant/chat` 一句话 message」改为「**一切 AI 经 AgentRuntime；结构化业务操作拥有自己的强类型端点（specs/params），自由对话/答疑/查询走 `/assistant/chat`**」。chat 不再承载结构化业务参数。
+
+**C. 配置与类型修复**
+
+5. **元数据单源**：`model_catalog.py` 并入 `resolve_engine` 的可信源（`engine.py:69` 的 `BUILTIN_MODELS` 解析链）；UI「添加模型」预设改读同一处，灭双源漂移。
+6. **`focus_interest` 前后端类型对齐**：后端改 `list[str] | None`（`router.py:76`），前端维持 `List<String>`；`router.py:219` 的 `[req.focus_interest]` 包装移除。
+
+### 备选
+
+- **B 中选「ctx.extra 塞 specs 进 `/assistant/chat`」**：最小改动，但仍在 chat 通道里打补丁、未修 ADR-0024 契约过窄的根因，且 `focus_interest` 之类补丁式字段会持续累积 → 否决（用户拍板用独立结构化端点 `/tasks/generate`）。
+- **A 中选「全量收敛」（批改/重生成也塞进 AgentRuntime 走完整 SSE/AG-UI 信封）**：视觉上全统一，但批改是事务性判分、重生成是事务性出题，强加流式对话信封零业务增益；且前端作答/批改消费层需大改、回归面大 → 否决（用户拍板轻量收敛）。
+- **保留 `Grader` 独立直连、仅补 engine 参数**：最小修复模型分裂，但入口仍分散、无配额/审计封装，与「轻量收敛」的管道归一目标冲突 → 否决。
+- **A 中选「轻量收敛」（同步返回 + 统一 provider/engine 解析 + 配额/审计封装）**：回归面最小，批改/重生成保持原同步契约、前端零改动；模型选择与 chat 行为一致；配额/审计补齐 → **采用**。
+
+### 后果
+
+- **入口收敛（管道层）**：5 个 AI 触发端点共享同一套 `build_provider(engine=resolve_engine(...))` + 配额 + 审计封装；chat 与新增 `/tasks/generate` 经 AgentRuntime 流式（SSE/AG-UI），批改/重生成/作答保持同步 JSON 返回。传输不再分裂为"两套世界观"，但也不强行统一为 SSE。
+- **模型选择贯通**：批改/重生成现在吃 `model`/`ModelConfig`，与 chat 行为一致，灭掉"批改忽略 model"的分裂。
+- **根因消除**：生成任务不再经自然语言往返，"只出 1 题/题型串味"从契约层消失。
+- **代价（诚实成本，较全量更省）**：批改/重生成未进 AgentRuntime，故不吃 AG-UI 会话落库与角色感知派发（批改结果仍由业务 `review`/`tasks` 服务自身落库）。若未来批改需流式反馈，需再升级为 subagent（留作后续独立 ADR，不在本 ADR 范围）。
+- **元数据单源**：改 catalog 即影响实际可用模型，UI 与后端一致。
+- **迁移**：新增 `tasks/router.py::generate`（SSE，结构化 specs）+ `app/ai/subagents/question` 的 `specs` 入参 + `build_prompt_from_specs`；抽出 `app/core/ai_plumbing.py`（provider+quota+audit 归一），批改/重生成改走该封装（移除 `Grader`/pipeline 的 service/router 内直连写法）；`model_catalog.py` 归并；`focus_interest` 类型对齐。
+
+### 实现备注（分阶段，先立文档再动码）
+
+**Phase 1 — 结构化契约 + 解燃眉（最高优先，解锁「只出 1 题」）**
+- 后端：新增 `POST /api/v1/tasks/generate`（SSE）；`QuestionSubAgent.run(specs=...)` 优先用结构化 specs，`build_prompt_from_specs` 内部构造 prompt；回落 `parse_specs_from_text`（自由文本兜底）。修 `focus_interest` 类型。
+- 前端：`生成任务` 页改发 `/tasks/generate`（specs），收卡片→`from-generated` 落库；删 `_buildPrompt` 中文拼接。
+- 验收：`uv run pytest` 全绿（基线 256 passed / 2 skipped，见 ADR-0033）；新增端点测试「多行 specs 各 1 道 → 2 张题卡」；`flutter analyze` 0 issues。
+
+**Phase 2 — 轻量收敛（管道层）+ 模型贯通**
+- 后端：抽出 `app/core/ai_plumbing.py`（统一 `build_provider(engine=resolve_engine(model or parent.ModelConfig or 全局))` + 配额扣减 + 审计落库）；批改（`tasks/service.py:706`、`review/router.py:49`）与重生成（`service.py:515/567`）改走该封装，移除 `Grader`/question pipeline 的 service/router 内直连写法。批改/重生成**保持同步 JSON 返回**，前端无需改消费层。
+- 前端：无改动（批改/重生成仍同步 JSON）。
+- 验收：pytest 全绿；分层不变量新增「批改/重生成不得于 router/service 内直接 `build_provider()` 出 `Grader`/pipeline 且不带 engine、不扣配额；必须经 `ai_plumbing` 封装」；`flutter analyze` 0 issues。
+
+**Phase 3 — 元数据单源**
+- 后端：`model_catalog.py` 并入 `resolve_engine` 可信源；UI 模型选择读统一源。
+- 验收：pytest 全绿；改 catalog 后实际可用模型同步变化（单测守护）。
+
+### 关联
+
+- **修订 ADR-0024 决策 5**（统一入口从「一句话 message」改为「结构化业务端点 + AgentRuntime」）
+- **ADR-0025**（AG-UI 信封，chat 与 `/tasks/generate` 复用）/ **ADR-0026**（会话落库、角色派发，chat 与 `/tasks/generate` 复用；批改/重生成为事务性，由业务服务自身落库，不进 AgentRuntime 会话）/ **ADR-0031/0032**（`agent_core` 分层，新增 subagent 须守内核零 `app.*`、genkit 唯一延迟导入落点）/ **ADR-0033**（query subagent，同源 AgentRuntime 范式）
+- **ADR-0008**（儿童内容安全；chat 与 `/tasks/generate` 经 AgentRuntime 自动继承角色裁剪；批改/重生成走 `ai_plumbing` 封装，须显式复用同一套角色裁剪逻辑，不得绕过）

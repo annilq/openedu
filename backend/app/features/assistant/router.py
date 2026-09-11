@@ -73,7 +73,7 @@ class AssistantChatReq(SQLModel):
     session_id: str | None = None
     model: str | None = None
     history: list[dict] | None = None
-    focus_interest: str | None = None
+    focus_interest: list[str] | None = None
 
 
 # ── Runtime 单例（文件夹发现仅一次） ──
@@ -216,7 +216,7 @@ async def assistant_chat(req: AssistantChatReq, caller: CallerDep, session: Sess
             "parent_id": parent_id,
             "child_id": child_id,
             "grade": (caller.user.grade if role == "child" else 0) or 0,
-            "focus_interest": [req.focus_interest] if req.focus_interest else None,
+            "focus_interest": req.focus_interest,
             "session_id": str(conv_id),
         },
     )

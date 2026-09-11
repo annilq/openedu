@@ -47,23 +47,8 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
   final AssistantApiClient _assistant;
   TaskGenNotifier(this._network, this._assistant) : super(const TaskGenIdle());
 
-  /// 把结构化 specs 拼为自然语言 prompt（方案 A）：交后端 question subagent 解析。
-  /// 用「，关于{知识点}」句式，使其自由文本解析能捕获 knowledge_point。
-  String _buildPrompt(List<TaskSpecModel> specs) {
-    const qtypeLabel = {
-      'choice': '选择题',
-      'fill': '填空题',
-      'calc': '计算题',
-      'open': '问答题',
-    };
-    final parts = specs.map((s) {
-      final label = qtypeLabel[s.qtype] ?? '题';
-      final kp = s.knowledgePoint.isNotEmpty ? '，关于${s.knowledgePoint}' : '';
-      return '${s.grade}年级${s.subject}$label${s.count}道$kp';
-    }).toList();
-    return '帮我出${parts.join('、')}';
-  }
-
+  /// 把结构化 specs 经 `/tasks/generate` 直传后端（ADR-0034 P1）：服务端据此构造
+  /// 出题 prompt 并走 question subagent 流式返回题卡，不再拼自然语言走 /assistant/chat。
   Future<void> generate({
     required String childId,
     required String title,
@@ -71,18 +56,18 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
     List<String>? focusInterest,
     String? model,
   }) async {
-    // 方案 A：结构化 specs → 自然语言 prompt，走统一 /assistant/chat 的 question
-    // subagent（AG-UI 事件协议，ADR-0025）；流结束后再把题卡落库为草稿任务。
-    // 事件解释委托 [QuestionGenFold]（纯模块）：本 notifier 只负责喂事件、落状态
-    // 与落库，逐帧规则全部收敛到那个模块并可单测。
+    // 结构化 specs → /tasks/generate（服务端构造 prompt，AG-UI 事件协议，ADR-0025）；
+    // 流结束后再把题卡落库为草稿任务。事件解释委托 [QuestionGenFold]（纯模块）：
+    // 本 notifier 只负责喂事件、落状态与落库，逐帧规则全部收敛到那个模块并可单测。
     var fold = const QuestionGenFold();
     state = TaskGenPreview(fold.questions, streaming: true);
     try {
-      final stream = _assistant.streamChat(
-        AssistantChatReq(
-          message: _buildPrompt(specs),
+      final stream = _assistant.streamGenerate(
+        TaskGenerateReq(
+          specs: specs,
           model: model,
           focusInterest: focusInterest,
+          childId: childId,
         ),
       );
       await for (final ev in stream) {

@@ -57,6 +57,17 @@ def expand_specs(specs) -> list[dict]:
     return items
 
 
+def build_prompt_from_specs(specs) -> list[dict]:
+    """结构化出题规格 → 内部 per-question 项列表（按 count 展开，顺序即 q_index）。
+
+    这是 ADR-0034 Phase 1 的「通过结构化参数构造 prompt」接缝：规格在此直接规整为
+    内部表示，驱动 ``run`` 内逐题 prompt 构造，取代原先「自由文本 → 正则解析」的
+    有损通路。``specs`` 元素是 dict 或带 subject/grade/knowledge_point/qtype/
+    difficulty/count 属性的对象。
+    """
+    return expand_specs(specs)
+
+
 def build_question_context(
     *,
     subject: str,
@@ -178,15 +189,26 @@ class QuestionSubAgent(BaseSubAgent):
     business = "question"
 
     async def run(self, message: str, ctx: SubAgentContext, *, session=None):
-        """悬浮助手入口：自由文本 → 逐题（STEP 进度 + THINKING 推理 + DATA 题卡）。"""
-        specs = parse_specs_from_text(message)
-        if not specs:
-            yield self._finish(
-                "请告诉我科目、年级和题型，例如：「帮我出 3 道三年级分数选择题」。"
-            )
-            return
+        """出题入口：结构化规格（ctx.extra["specs"]）优先；无则回落自由文本解析。
 
-        items = expand_specs(specs)
+        结构化路径取代「自由文本 → parse_specs_from_text 正则」的有损往返：规格直接
+        进入逐题 prompt 构造，绝不过自然语言（ADR-0034 Phase 1）。
+        """
+        structured = ctx.extra.get("specs")
+        if structured:
+            items = build_prompt_from_specs(structured)
+        else:
+            specs = parse_specs_from_text(message)
+            if not specs:
+                yield self._finish(
+                    "请告诉我科目、年级和题型，例如：「帮我出 3 道三年级分数选择题」。"
+                )
+                return
+            items = expand_specs(specs)
+
+        if not items:
+            yield self._finish("未解析到有效的出题规格，请检查科目、年级与题型。")
+            return
         tc = self._tool(
             "generate_question",
             label="出题",

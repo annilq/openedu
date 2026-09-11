@@ -22,7 +22,8 @@ from app.core.async_bridge import run_async
 from app.core.errors import AppErrorException, ErrCode
 from app.core.guard import require_owned, require_owned_child
 from app.db.models import Question, Task, TaskQuestion, User, WrongQuestion
-from app.domain import Grader, build_provider
+from app.core.ai_plumbing import build_ai_provider
+from app.domain import Grader
 from app.domain.provider import GeneratedQuestion
 from app.features.tasks.repository import (
     add_bank_questions_to_task,
@@ -703,7 +704,11 @@ def answer(
     if tq is None:
         raise AppErrorException(ErrCode.TASK_QUESTION_NOT_FOUND, "题目不在当前任务里")
 
-    result = Grader(build_provider()).grade(question=tq, student_answer=student_answer)
+    # 批改经归一封装构造 provider：尊重 task.model / 家长 ModelConfig（ADR-0034 Phase 2），
+    # 消除「批改忽略 model」的分裂；task.model 为 None 时回退全局 LLM_PROVIDER。
+    result = Grader(
+        build_ai_provider(task.model, parent_id=task.parent_id, session=session)
+    ).grade(question=tq, student_answer=student_answer)
     record_question_id = tq.question_id or question_id
     create_answer_record(
         session=session,

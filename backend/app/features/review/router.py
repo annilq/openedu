@@ -2,9 +2,10 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException
 
+from app.core.ai_plumbing import build_ai_provider
 from app.core.deps import CurrentChild, SessionDep
 from app.db.models import Question, WrongQuestion
-from app.domain import Grader, build_provider
+from app.domain import Grader
 from app.features.review import service as review_service
 from app.features.review.repository import mark_review_result
 from app.features.review.schemas import ReviewAnswerSubmit, ReviewItemResp
@@ -46,7 +47,9 @@ def answer_review(
     if question is None:
         raise HTTPException(status_code=404, detail="Question not found")
 
-    grader = Grader(build_provider())
+    # 批改经归一封装构造 provider（ADR-0034 Phase 2）；复习作答不携带 per-task model，
+    # 故回落全局 LLM_PROVIDER，但统一走 ai_plumbing 单一入口。
+    grader = Grader(build_ai_provider())
     result = grader.grade(question=question, student_answer=submit.student_answer)
     create_answer_record(
         session=session,

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import '../../../../shared/data/remote/network_service.dart';
+import '../../../../shared/domain/models/models.dart';
 import '../domain/assistant_event.dart';
 
 /// 悬浮助手对话请求体（ADR-0024）：只需自由文本 + 角色（由后端 JWT 解析）。
@@ -81,5 +82,54 @@ class AssistantApiClient {
       }
     }
     return null;
+  }
+}
+
+/// 结构化出题请求体（ADR-0034 P1）：直接收 specs，服务端据此构造 prompt，
+/// 经 `/tasks/generate` 流式返回题卡，不再拼自然语言走 `/assistant/chat`。
+class TaskGenerateReq {
+  final List<TaskSpecModel> specs;
+  final String? model;
+  final List<String>? focusInterest;
+  final String? childId;
+
+  const TaskGenerateReq({
+    required this.specs,
+    this.model,
+    this.focusInterest,
+    this.childId,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'specs': specs.map((s) => s.toJson()).toList(),
+        if (model != null) 'model': model,
+        if (focusInterest != null) 'focus_interest': focusInterest,
+        if (childId != null) 'child_id': childId,
+      };
+}
+
+/// 结构化出题客户端：封装 `POST /tasks/generate` 的 SSE 流，逐帧解析为 [AssistantEvent]。
+///
+/// 与 [AssistantApiClient.streamChat] 共用同一套 SSE 分帧解析；事件协议完全一致
+/// （TOOL_CALL / STEP / THINKING / DATA / ASSISTANT_MESSAGE / DONE），前端 fold 无需改动。
+extension TaskGenerateClient on AssistantApiClient {
+  Stream<AssistantEvent> streamGenerate(TaskGenerateReq req) async* {
+    final byteStream = _network.streamPost('/tasks/generate', body: req.toJson());
+    String buffer = '';
+    await for (final chunk in byteStream) {
+      buffer += _decode(chunk);
+      var idx = buffer.indexOf('\n\n');
+      while (idx != -1) {
+        final frame = buffer.substring(0, idx);
+        buffer = buffer.substring(idx + 2);
+        final ev = _parseFrame(frame);
+        if (ev != null) yield ev;
+        idx = buffer.indexOf('\n\n');
+      }
+    }
+    if (buffer.trim().isNotEmpty) {
+      final ev = _parseFrame(buffer);
+      if (ev != null) yield ev;
+    }
   }
 }

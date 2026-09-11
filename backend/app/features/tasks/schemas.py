@@ -17,6 +17,19 @@ class TaskSpec(SQLModel):
     count: int = Field(default=1, ge=1)
 
 
+class TaskGenerateReq(SQLModel):
+    """POST /tasks/generate 请求体（结构化出题，ADR-0034 Phase 1）。
+
+    直接接收结构化规格，服务端据此构造出题 prompt（绝不过自然语言往返），经
+    AgentRuntime 的 question subagent 流式返回题卡。前端收卡后走 /tasks/from-generated 落库。
+    """
+
+    specs: list[TaskSpec]
+    model: str | None = None
+    child_id: uuid.UUID | None = None
+    focus_interest: list[str] | None = None
+
+
 class TaskFromGenerated(SQLModel):
     """POST /tasks/from-generated 请求体。
 
