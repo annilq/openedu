@@ -67,6 +67,7 @@ class _SpyProvider(FakeLLMProvider):
     """记录最后一次 prompt 侧入参，用于断言 SOP 是否真的进了模型上下文。"""
 
     def __init__(self) -> None:
+        super().__init__()  # 复用替身的计数与失败编排（缺了会丢 schema_calls 等状态）
         self.user_prompt: str | None = None
         self.context: str | None = None
 

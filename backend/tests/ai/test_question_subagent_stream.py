@@ -56,6 +56,22 @@ class _FakeProvider(LLMProvider):
         yield TextDelta(delta="这是讲解")
 
 
+class _ScriptedProvider(LLMProvider):
+    """按「第几次调用成功与否」编排的假 provider（模拟逐题串行出题的部分失败）。"""
+
+    def __init__(self, *, fail_at: set[int]) -> None:
+        self._fail_at = fail_at
+        self.calls = 0
+
+    async def stream(self, system, prompt, *, schema=None, tools=None, history=None):
+        self.calls += 1
+        if self.calls in self._fail_at:
+            yield TextDelta(delta="想错了")
+            return
+        yield TextDelta(delta="先确认分母相同，")
+        yield StructuredDone(data=asdict(_Q))
+
+
 def _run(message: str, *, fail: bool = False):
     agent = QuestionSubAgent(provider=_FakeProvider(fail=fail), retriever=None)
     ctx = SubAgentContext(role="parent", message=message)
@@ -64,6 +80,26 @@ def _run(message: str, *, fail: bool = False):
         return [ev async for ev in agent.run(message, ctx)]
 
     return asyncio.run(_go())
+
+
+def _run_specs(specs: list[dict], *, fail_at: set[int]):
+    """按结构化 specs 出题（ADR-0034），可指定第几次模型调用失败。"""
+    agent = QuestionSubAgent(provider=_ScriptedProvider(fail_at=fail_at), retriever=None)
+    ctx = SubAgentContext(role="parent", message="", extra={"specs": specs})
+
+    async def _go():
+        return [ev async for ev in agent.run("", ctx)]
+
+    return asyncio.run(_go())
+
+
+def _spec(subject: str, **kw) -> dict:
+    base = {
+        "subject": subject, "grade": 3, "knowledge_point": "分数",
+        "qtype": "choice", "difficulty": "medium", "count": 1,
+    }
+    base.update(kw)
+    return base
 
 
 def test_emits_step_thinking_and_data_per_question():
@@ -115,3 +151,39 @@ def test_failed_question_emits_error_step():
     error_steps = [s for s in steps if s.status == "error"]
     assert [s.label for s in error_steps] == ["模型未返回结构化题卡"]
     assert [e.eventType for e in events].count(EVENT_DATA) == 0
+
+
+def test_partial_failure_reports_shortfall_in_tool_result():
+    """多学科出题「某一科失败」必须在 TOOL_RESULT 里暴露计数，不得静默少题。
+
+    回归背景：数学+语文各 1 题，语文那次模型调用失败时，前端把 STEP(status=error)
+    当普通进度吞掉，流结束后照常落库 → 家长拿到只有数学的残缺任务且无任何提示。
+    """
+    events = _run_specs([_spec("数学"), _spec("语文")], fail_at={2})
+
+    assert [e.eventType for e in events].count(EVENT_DATA) == 1
+    result = [e for e in events if e.eventType == EVENT_TOOL_RESULT][0].result
+    assert result == {
+        "count": 1,
+        "requested": 2,
+        "failed": 1,
+        "fail_reason": "模型未返回结构化题卡",
+    }
+
+
+def test_partial_failure_message_states_shortfall():
+    """部分成功时收尾文案必须报「应出 / 实出」与失败原因。"""
+    events = _run_specs([_spec("数学"), _spec("语文")], fail_at={2})
+    text = [e for e in events if e.eventType == EVENT_ASSISTANT_MESSAGE][0].text
+    assert "应出 2 题" in text
+    assert "实出 1 题" in text
+    assert "模型未返回结构化题卡" in text
+
+
+def test_multi_subject_success_message_lists_all_subjects():
+    """多学科全成功时不得只报第一科的学科名（旧实现会说「已生成 2 道数学题」）。"""
+    events = _run_specs([_spec("数学"), _spec("语文")], fail_at=set())
+    text = [e for e in events if e.eventType == EVENT_ASSISTANT_MESSAGE][0].text
+    assert "已生成 2 道题" in text
+    assert "数学 1 道" in text
+    assert "语文 1 道" in text

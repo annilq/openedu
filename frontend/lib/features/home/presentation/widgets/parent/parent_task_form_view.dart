@@ -198,7 +198,13 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         if (next is TaskGenSuccess) {
-          AppToast.show(context, '已生成 ${next.task.questions.length} 道题');
+          // 少题必须说清楚：逐题串行出题时某题失败会产生残缺草稿，
+          // 静默当成功会让人以为「语文没出」是系统漏了而不是生成失败。
+          if (next.isShort) {
+            AppToast.error(context, next.shortMessage);
+          } else {
+            AppToast.show(context, '已生成 ${next.task.questions.length} 道题');
+          }
           ref.read(taskGenNotifierProvider.notifier).reset();
           final selected = ref.read(selectedChildProvider);
           if (selected != null) {
@@ -487,6 +493,11 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
           ],
         ),
         const SizedBox(height: AppSpacing.sm),
+        // 有单题失败：醒目提示「少题」，避免家长以为题已出齐。
+        if (s.failures.isNotEmpty)
+          _FailureBanner(
+            text: '有 ${s.failures.length} 道题生成失败：${s.failures.join('；')}',
+          ),
         // 生成中：当前题的内联推理区（题卡到达后折叠，见 _PreviewCard 的 info icon）。
         if (s.streaming && s.liveIndex >= 0)
           PreviewGenerating(
@@ -527,6 +538,40 @@ void _showReasoningSheet(BuildContext context, String reasoning) {
       ],
     ),
   );
+}
+
+/// 少题警示条：出题过程中有单题失败时展示，避免家长误以为题已出齐。
+class _FailureBanner extends StatelessWidget {
+  final String text;
+  const _FailureBanner({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    final app = AppTheme.colorsOf(context);
+    final textStyle = AppTheme.textOf(context);
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: app.errorContainer,
+        borderRadius: BorderRadius.circular(AppRadius.bubble),
+        border: Border.all(color: app.error),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(LucideIcons.triangleAlert, size: 18, color: app.onErrorContainer),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Text(
+              text,
+              style: textStyle.bodySmall?.copyWith(color: app.onErrorContainer),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// 兴趣出题主题芯片（WF-4）：点亮即把该主题加入 focus 轮询列表。

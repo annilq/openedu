@@ -88,3 +88,8 @@ class EducationLLMProvider(LLMProvider):
     async def grade_open(self, *, question, student_answer) -> dict:
         """开放题批改，返回 {"correct": bool, "score": float, "explanation": str}"""
         ...
+
+    @property
+    def configured(self) -> bool:
+        """引擎是否可用（子类可覆盖；默认 True，兼容非 genkit 实现）。"""
+        return True

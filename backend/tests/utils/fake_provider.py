@@ -94,12 +94,17 @@ class FakeLLMProvider(EducationLLMProvider):
         *,
         tool_script: Sequence[ToolStep | str] | None = None,
         tool_text: str | None = None,
+        fail_at: set[int] | None = None,
     ) -> None:
         self._script = _normalize_script(tool_script)
         self.tool_text = tool_text or _TOOL_TEMPLATE
+        # fail_at：第 N 次「结构化出题」调用只吐推理、不给 StructuredDone，
+        # 用于复现「某一题模型没返回结构化题卡」的部分失败（逐题串行出题的真实故障）。
+        self._fail_at = set(fail_at or ())
         # 可观测（断言用）：requests＝被请求次数；calls＝实际发出的工具调用序列。
         self.requests = 0
         self.calls: list[ToolStep] = []
+        self.schema_calls = 0
 
     # ── 脚本控制：端点/集成测试可在 fixture 交出的实例上就地改写 ──
     def script(self, *steps: ToolStep | str) -> "FakeLLMProvider":
@@ -110,6 +115,7 @@ class FakeLLMProvider(EducationLLMProvider):
     def reset(self) -> "FakeLLMProvider":
         self.requests = 0
         self.calls = []
+        self.schema_calls = 0
         return self
 
     # ── 本轮该发什么 ──
@@ -134,7 +140,11 @@ class FakeLLMProvider(EducationLLMProvider):
             yield ToolCall(name=name, args=dict(args))
             return
         if schema is not None:
+            self.schema_calls += 1
             yield TextDelta(delta=_REASONING)
+            if self.schema_calls in self._fail_at:
+                # 只吐推理、不给结构化结果 → 解析层判定为「模型未返回结构化题卡」。
+                return
             yield StructuredDone(data=dict(_FAKE_QUESTION))
             return
         yield TextDelta(delta=_TUTOR_TEMPLATE)

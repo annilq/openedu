@@ -14,7 +14,7 @@ prompt 组装与解析就地在子包内完成（``pipeline.py`` / ``parsers.py`
 """
 from __future__ import annotations
 
-from agent_core.protocol import step
+from agent_core.protocol import EVENT_STEP, step
 from agent_core.subagent import BaseSubAgent, SubAgentContext
 from app.ai.subagents.question.pipeline import (
     build_question_prompts,
@@ -185,6 +185,51 @@ def with_skills(persona_hint: str, skills: str) -> str:
     return f"{persona_hint}\n\n{sop}" if sop else persona_hint
 
 
+def _subject_summary(items: list[dict]) -> str:
+    """多学科一卷的学科概览：``数学 1 道、语文 1 道``；单学科返回空串。"""
+    order: list[str] = []
+    tally: dict[str, int] = {}
+    for it in items:
+        s = it["subject"]
+        if s not in tally:
+            order.append(s)
+            tally[s] = 0
+        tally[s] += 1
+    if len(order) < 2:
+        return ""
+    return "、".join(f"{s} {tally[s]} 道" for s in order)
+
+
+def _finish_message(
+    *, items: list[dict], generated: list[dict], failures: list[str]
+) -> str:
+    """收尾文案：如实反映「应出 / 实出 / 失败」三态。
+
+    三条不变量（本次修复的核心）：
+    - **多学科不得只报第一科的学科名**（旧实现取 ``items[0].subject``，数学+语文会
+      说出「已生成 2 道数学题」这种错话）。
+    - **部分成功必须报少题**，并给出第一处失败原因；家长据此重生成，而不是
+      拿到一份残缺任务还以为生成成功。
+    - **全失败优先回显真实失败原因**，不再笼统甩锅「调整科目或年级」。
+    """
+    requested = len(items)
+    ok = len(generated)
+    if ok == 0:
+        reason = failures[0] if failures else None
+        return reason or "本次未能生成题目，请检查后端 AI 出题引擎配置（LLM_PROVIDER + API key）。"
+
+    summary = _subject_summary(items)
+    head = f"已生成 {ok} 道题" + (f"（{summary}）" if summary and ok == requested else "")
+    tail = "题卡中包含题目、选项与解析，可据此布置给孩子（保存为任务为后续能力）。"
+    if ok < requested:
+        reason = failures[0] if failures else "未知原因"
+        return (
+            f"应出 {requested} 题，实出 {ok} 题：第 {ok + 1} 题生成失败（{reason}）。"
+            f"已保存这 {ok} 题，可在草稿页整卷重生成补齐。"
+        )
+    return f"{head}，{tail}"
+
+
 class QuestionSubAgent(BaseSubAgent):
     business = "question"
 
@@ -221,6 +266,10 @@ class QuestionSubAgent(BaseSubAgent):
         n_focus = len(focuses)
 
         generated: list[dict] = []
+        # 单题失败原因（按题序）：引擎未配置 / 解析或安全闸门未过。
+        # 逐题串行出题时「某一题失败」必须留痕——否则多学科出题会静默少题
+        # （家长只看到少了某一科，却没有任何提示），这是本次修复的目标缺陷。
+        failures: list[str] = []
         for idx, item in enumerate(items):
             focus = focuses[idx % n_focus] if n_focus else None
             rag_context, persona_hint = build_question_context(
@@ -256,17 +305,27 @@ class QuestionSubAgent(BaseSubAgent):
                     history=ctx.history,
                 )
             ):
+                # 单题失败：translate_stream 把 QuestionFailed 转成 STEP(status="error")。
+                # 帧照常下发（前端据此展示失败），同时留痕到 failures 供收尾汇总。
+                if frame.eventType == EVENT_STEP and frame.status == "error":
+                    failures.append(frame.label or "生成失败")
+                    yield frame
+                    continue
                 data = frame.data
                 if data is not None and data.get("type") == "question":
                     generated.append(data["result"])
                 yield frame
 
-        yield tc.result({"count": len(generated)})
-        if generated:
-            subj = items[0]["subject"]
-            yield self._finish(
-                f"已生成 {len(generated)} 道{subj}题，题卡中包含题目、选项与解析，"
-                f"可据此布置给孩子（保存为任务为后续能力）。"
-            )
-        else:
-            yield self._finish("本次未能生成题目，请调整科目或年级后重试。")
+        # TOOL_RESULT 带上「应出 / 实出 / 失败」计数：前端据此判断本次是否少题，
+        # 不再靠「题卡数 == 规格数」的隐式假设（少题时前端会静默落库残缺任务）。
+        yield tc.result(
+            {
+                "count": len(generated),
+                "requested": len(items),
+                "failed": len(failures),
+                "fail_reason": failures[0] if failures else None,
+            }
+        )
+        yield self._finish(
+            _finish_message(items=items, generated=generated, failures=failures)
+        )

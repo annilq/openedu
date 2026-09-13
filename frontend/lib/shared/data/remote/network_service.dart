@@ -11,5 +11,9 @@ abstract class NetworkService {
 
   /// SSE 流式 POST：返回原始字节流（text/event-stream），由调用方按 SSE 协议解析。
   /// 复用 Dio 拦截器（自动注入 Authorization、错误统一转 AppException）。
-  Stream<Uint8List> streamPost(String path, {Map<String, dynamic>? body});
+  ///
+  /// [receiveTimeout] 可覆写接收超时——流式端点（出题 / 伴学）耗时远超普通请求，
+  /// 沿用 BaseOptions 的短超时会在生成中途掐断流，表现为「少题」且难以定位。
+  Stream<Uint8List> streamPost(String path,
+      {Map<String, dynamic>? body, Duration? receiveTimeout});
 }

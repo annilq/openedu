@@ -45,6 +45,11 @@ class GenkitProvider(EducationLLMProvider):
             return None
         return GenkitLLMProvider(GenkitEngine(genkit=eng.genkit, model=eng.model))
 
+    @property
+    def configured(self) -> bool:
+        """引擎是否可用：显式/全局解析均拿到引擎才为 True。"""
+        return self._resolve() is not None
+
     async def stream(
         self,
         system: str,

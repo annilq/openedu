@@ -12,7 +12,11 @@ class FakeSseNetwork implements NetworkService {
   final Map<String, Stream<Uint8List>> streams;
 
   @override
-  Stream<Uint8List> streamPost(String path, {Map<String, dynamic>? body}) =>
+  Stream<Uint8List> streamPost(
+    String path, {
+    Map<String, dynamic>? body,
+    Duration? receiveTimeout,
+  }) =>
       streams[path] ?? const Stream<Uint8List>.empty();
 
   @override

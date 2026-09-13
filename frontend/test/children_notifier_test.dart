@@ -33,7 +33,11 @@ class _SilentNetwork implements NetworkService {
   Future<dynamic> delete(String path, {Map<String, dynamic>? body}) async => null;
 
   @override
-  Stream<Uint8List> streamPost(String path, {Map<String, dynamic>? body}) =>
+  Stream<Uint8List> streamPost(
+    String path, {
+    Map<String, dynamic>? body,
+    Duration? receiveTimeout,
+  }) =>
       const Stream<Uint8List>.empty();
 }
 

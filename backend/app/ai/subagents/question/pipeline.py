@@ -164,6 +164,14 @@ async def stream_question(
     转译为教育语义事件（``ReasoningDelta`` / ``QuestionCard`` / ``QuestionFailed``），
     由出题 SubAgent 经 translate 层转成 AG-UI 帧。prompt 与安全闸门与落库路径共用。
     """
+    # 引擎未配置：显式下发失败语义事件（而非静默空迭代），让上层给出准确提示，
+    # 而不是误导用户「调整科目或年级」（mock / 未配 key 时科目年级根本没被用到）。
+    if not getattr(provider, "configured", True):
+        yield QuestionFailed(
+            reason="未配置 AI 出题引擎，无法生成题目。请在后端 .env 设置 "
+            "LLM_PROVIDER（如 deepseek）与对应 API key 后重试。"
+        )
+        return
     reasoning: list[str] = []
     async for ev in provider.stream(
         system_prompt, user_prompt, schema=QuestionSchema, history=history

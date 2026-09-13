@@ -17,7 +17,23 @@ class TaskGenIdle extends TaskGenState { const TaskGenIdle(); }
 class TaskGenLoading extends TaskGenState { const TaskGenLoading(); }
 class TaskGenSuccess extends TaskGenState {
   final TaskModel task;
-  const TaskGenSuccess(this.task);
+
+  /// 应出题数（各条规格 count 之和）；0 表示未知（不校验少题）。
+  final int expected;
+
+  /// 单题失败原因（按发生顺序）；非空表示本次有题没生成出来。
+  final List<String> failures;
+
+  const TaskGenSuccess(this.task, {this.expected = 0, this.failures = const []});
+
+  /// 本次是否少题：应出题数已知且落库题数不足。
+  bool get isShort => expected > 0 && task.questions.length < expected;
+
+  /// 少题提示文案（供 UI 直接展示）。
+  String get shortMessage => failures.isNotEmpty
+      ? '应出 $expected 题，实际只生成 ${task.questions.length} 题：${failures.first}。'
+          '可在草稿页整卷重生成补齐。'
+      : '应出 $expected 题，实际只生成 ${task.questions.length} 题，可在草稿页整卷重生成补齐。';
 }
 class TaskGenError extends TaskGenState {
   final String message;
@@ -33,12 +49,16 @@ class TaskGenPreview extends TaskGenState {
   final String liveLabel;
   final String liveReasoning;
 
+  /// 单题失败原因（STEP status == 'error'），非空表示本次有题没生成出来。
+  final List<String> failures;
+
   const TaskGenPreview(
     this.questions, {
     this.streaming = false,
     this.liveIndex = -1,
     this.liveLabel = '',
     this.liveReasoning = '',
+    this.failures = const [],
   });
 }
 
@@ -60,6 +80,9 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
     // 流结束后再把题卡落库为草稿任务。事件解释委托 [QuestionGenFold]（纯模块）：
     // 本 notifier 只负责喂事件、落状态与落库，逐帧规则全部收敛到那个模块并可单测。
     var fold = const QuestionGenFold();
+    // 应出题数：各条规格 count 之和。流结束后据此校验「少题」——逐题串行出题时
+    // 单题失败只会丢一条 STEP(status=error)，不做校验就会静默落库残缺任务。
+    final expected = specs.fold<int>(0, (sum, s) => sum + s.count);
     state = TaskGenPreview(fold.questions, streaming: true);
     try {
       final stream = _assistant.streamGenerate(
@@ -82,6 +105,7 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
           liveIndex: fold.liveIndex,
           liveLabel: fold.liveLabel,
           liveReasoning: fold.liveReasoning,
+          failures: fold.failures,
         );
       }
       // UX 修正：流结束若 0 题，直接回显后端说明并跳过必败的落库请求，
@@ -99,6 +123,8 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
           focusInterest: focusInterest,
           model: model,
         ),
+        expected: expected,
+        failures: fold.failures,
       );
     } on AppException catch (e) {
       state = TaskGenError(e.message);
@@ -110,17 +136,24 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
   /// 把已生成题卡 POST 到 /tasks/from-generated 落库为 draft 任务。
   Future<void> _persist(
     List<QuestionPreview> questions,
-    Map<String, dynamic> body,
-  ) async {
+    Map<String, dynamic> body, {
+    int expected = 0,
+    List<String> failures = const [],
+  }) async {
     // 必填项 questions：把已流式题卡（QuestionPreview.toJson，snake_case）注入请求体。
     // 之前 generate() 漏了这一步 → 后端 422（TaskFromGenerated.questions 必填）。
     body['questions'] = questions.map((q) => q.toJson()).toList();
     // 落库期间保持流式态：隐藏生成/预览按钮，题卡继续展示（带保存中提示）。
-    state = TaskGenPreview(List.from(questions), streaming: true);
+    state = TaskGenPreview(List.from(questions), streaming: true, failures: failures);
     try {
       final data = await _network.post('/tasks/from-generated', body: body);
       // R3：生成后保持 draft 态，把确认/派发动作交给草稿审核页。
-      state = TaskGenSuccess(TaskModel.fromJson(data));
+      // 少题信息一并返回：草稿照常落库（不浪费已生成的题），由 UI 醒目提示家长补齐。
+      state = TaskGenSuccess(
+        TaskModel.fromJson(data),
+        expected: expected,
+        failures: failures,
+      );
     } on AppException catch (e) {
       state = TaskGenError(e.message);
     } catch (e) {

@@ -34,12 +34,20 @@ def _count_question_cards(sse_text: str) -> int:
     return cards
 
 
-def _patch_provider(monkeypatch) -> None:
+def _patch_provider(monkeypatch, *, fail_at: set[int] | None = None) -> None:
     """本端点经归一封装 build_ai_provider 构造 provider（ADR-0034 Phase 2）；
-    autouse 的 fake_llm 只覆盖 assistant.router，故须就地打桩。"""
+    autouse 的 fake_llm 只覆盖 assistant.router，故须就地打桩。
+
+    打桩点是 **service**（ADR-0033 把编排从 router 下沉到 service 后，router 已不再
+    import build_ai_provider——此前打在 router 上会让本文件 4 个用例全部以
+    AttributeError 崩溃，等于这条「多学科出题」回归防线长期失效）。
+    ``fail_at`` 指定第几次模型调用失败，用于验证部分失败时少题是否如实上报。
+    """
     monkeypatch.setattr(
-        "app.features.tasks.router.build_ai_provider",
-        lambda model_ref=None, *, parent_id=None, session=None: FakeLLMProvider(),
+        "app.features.tasks.service.build_ai_provider",
+        lambda model_ref=None, *, parent_id=None, session=None: FakeLLMProvider(
+            fail_at=fail_at or set()
+        ),
     )
 
 
@@ -121,3 +129,40 @@ def test_generate_empty_specs_rejected(client, parent_token, monkeypatch):
         json={"specs": []},
     )
     assert r.status_code == 422
+
+
+def _messages(sse_text: str) -> list[str]:
+    out = []
+    for raw in sse_text.split("\n\n"):
+        frame = raw.strip()
+        if not frame.startswith("data:"):
+            continue
+        try:
+            obj = json.loads(frame[len("data:") :].strip())
+        except json.JSONDecodeError:
+            continue
+        if obj.get("eventType") == "ASSISTANT_MESSAGE":
+            out.append(obj.get("text") or "")
+    return out
+
+
+def test_generate_partial_failure_reports_shortfall(client, parent_token, monkeypatch):
+    """数学+语文各 1 题、语文那次失败：必须只出 1 张卡，且收尾如实报「少题」。
+
+    这是本次缺陷的端点级回归：失败题此前只产出一条 STEP(status=error)，前端当普通
+    进度吞掉后照常落库 → 家长拿到「只有数学」的草稿却毫无提示。
+    """
+    _patch_provider(monkeypatch, fail_at={2})
+    body = {
+        "specs": [
+            {"subject": "数学", "grade": 3, "knowledge_point": "计算", "qtype": "calc", "count": 1},
+            {"subject": "语文", "grade": 3, "knowledge_point": "字词", "qtype": "fill", "count": 1},
+        ],
+    }
+    r = client.post("/api/v1/tasks/generate", headers=auth_headers(parent_token), json=body)
+    assert r.status_code == 200, r.text
+    assert _count_question_cards(r.text) == 1
+
+    text = " ".join(_messages(r.text))
+    assert "应出 2 题" in text
+    assert "实出 1 题" in text

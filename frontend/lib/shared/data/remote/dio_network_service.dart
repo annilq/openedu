@@ -143,9 +143,16 @@ class DioNetworkService implements NetworkService {
     }
   }
 
+  /// 流式端点（SSE）的默认接收超时。
+  ///
+  /// 出题是「逐题串行调用模型」：实测 2 题就要 19–36 秒，题目越多越久。BaseOptions
+  /// 的 30 秒接收超时会在中途掐断流，表现为「只出了前一科」且无任何报错——
+  /// 这是「数学出了、语文没出」的放大因素。流式端点改用长超时（由后端/模型节奏决定）。
+  static const Duration _streamReceiveTimeout = Duration(minutes: 10);
+
   @override
   Stream<Uint8List> streamPost(String path,
-      {Map<String, dynamic>? body}) async* {
+      {Map<String, dynamic>? body, Duration? receiveTimeout}) async* {
     // 必须先用 base options compose，把实例的 baseUrl（host）拼进请求选项。
     // Dio 的便捷方法（post/get/request）内部都会调 compose(_dio.options, path, ...)，
     // 而 fetch() 本身不会合并 baseUrl。手写 RequestOptions 直接 fetch 会得到
@@ -155,6 +162,7 @@ class DioNetworkService implements NetworkService {
       method: 'POST',
       headers: {'Accept': 'text/event-stream'},
       responseType: ResponseType.stream,
+      receiveTimeout: receiveTimeout ?? _streamReceiveTimeout,
     ).compose(_dio.options, path, data: body);
     // fetch 走拦截器链（Token 注入 + 错误统一）。
     // 注意：非 2xx（含 401 过期 / 5xx / 连接失败）会在 fetch 阶段就抛 DioException，

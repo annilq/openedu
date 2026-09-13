@@ -151,9 +151,53 @@ void main() {
       ]);
       expect(withHint.questions, isEmpty);
       expect(withHint.emptyMessage, '本次未能生成题目，请调整科目或年级后重试。');
+    });
+  });
 
-      expect(const QuestionGenFold().emptyMessage,
-          '本次未能生成题目，请调整科目或年级后重试。');
+  group('QuestionGenFold · 单题失败不静默（少题回归）', () {
+    AssistantEvent failStep(String label) => AssistantEvent(
+          eventType: AssistantEventType.step,
+          label: label,
+          status: 'error',
+        );
+
+    test('STEP status=error 记入 failures，不当作「下一题开始」', () {
+      final f = foldAll([
+        AssistantEvent(eventType: AssistantEventType.step, label: '第 1 题'),
+        questionCard('1+1=?'),
+        failStep('模型未返回结构化题卡'),
+      ]);
+
+      expect(f.questions.length, 1);
+      expect(f.failures, ['模型未返回结构化题卡']);
+      expect(f.hasFailures, isTrue);
+      // 关键：失败帧不得推进 liveIndex（否则 UI 会显示「第 3 题生成中」）
+      expect(f.liveIndex, -1);
+      expect(f.liveLabel, '');
+    });
+
+    test('多学科出题「语文失败」后仍留痕，题卡只保留数学', () {
+      final f = foldAll([
+        AssistantEvent(eventType: AssistantEventType.step, label: '数学'),
+        questionCard('1+1=?'),
+        AssistantEvent(eventType: AssistantEventType.step, label: '语文'),
+        failStep('生成内容未通过安全校验'),
+      ]);
+
+      expect(f.questions.length, 1);
+      expect(f.failureMessage, '生成内容未通过安全校验');
+      expect(f.hasError, isFalse, reason: '单题失败不是流级错误，仍有题卡可落库');
+    });
+
+    test('普通 STEP（status=running）仍推进题序，不进 failures', () {
+      final f = foldAll([
+        AssistantEvent(eventType: AssistantEventType.step, label: '第 1 题'),
+        AssistantEvent(eventType: AssistantEventType.step, label: '第 2 题'),
+      ]);
+
+      expect(f.failures, isEmpty);
+      expect(f.liveIndex, 0);
+      expect(f.liveLabel, '第 2 题');
     });
 
     test('apply 不改接收者（纯函数）', () {

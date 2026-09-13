@@ -6,7 +6,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    # 本地开发从仓库根目录的 .env 读取；容器内通过环境变量注入
+    # 本地开发优先读取 backend/.env（仓库根目录 .env 作为兼容遗留，
+    # 在元组中先加载、会被 backend/.env 覆盖，现已弃用，请勿依赖）。
+    # 容器内通过环境变量注入。
     model_config = SettingsConfigDict(
         env_file=("../.env", ".env"),
         env_ignore_empty=True,
