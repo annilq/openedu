@@ -120,4 +120,26 @@ class TaskGenerateReq {
 extension TaskGenerateClient on AssistantApiClient {
   Stream<AssistantEvent> streamGenerate(TaskGenerateReq req) =>
       _streamSse('/tasks/generate', req.toJson());
+
+  /// 单题重生成的流式版（草稿审核页「换一题」）。
+  ///
+  /// 同步版 `POST /tasks/{id}/questions/{tq}/regenerate` 是一次同步 LLM 调用，
+  /// 常常超过普通请求的 30 秒 receiveTimeout——家长点了长时间没反应。这里改走
+  /// SSE：复用流式端点的长超时，并逐帧收 RUN_STARTED/STEP/DATA/ERROR，
+  /// 事件协议与 `/tasks/generate` 完全一致，无需新的帧解析器。
+  Stream<AssistantEvent> streamRegenerateOne({
+    required String taskId,
+    required String tqId,
+  }) =>
+      _streamSse('/tasks/$taskId/questions/$tqId/regenerate-stream', const {});
+
+  /// 整卷重生成的流式版（草稿审核页「整卷重生成」）。
+  ///
+  /// 同步版 `POST /tasks/{id}/regenerate` 要等整卷 N 道题全出完（实测 2 题就要
+  /// 19–36 秒），必然撞上 30 秒超时。这里同样改走 SSE：逐帧收 STEP
+  /// 「正在生成第 i/N 题…」进度 + DATA(task)，协议与 `/tasks/generate` 一致。
+  Stream<AssistantEvent> streamRegenerateAll({
+    required String taskId,
+  }) =>
+      _streamSse('/tasks/$taskId/regenerate-stream', const {});
 }

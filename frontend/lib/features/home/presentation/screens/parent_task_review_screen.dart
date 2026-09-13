@@ -5,6 +5,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../shared/widgets/app_error.dart';
 import '../../../../shared/widgets/app_loading.dart';
 import '../../../../shared/widgets/app_toast.dart';
+import '../../../../shared/widgets/stream_reasoning_panel.dart';
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../providers/parent_task_review_notifier.dart';
@@ -53,7 +54,13 @@ class _ParentTaskReviewScreenState
                 .load(widget.task.id);
           },
         ),
-      ReviewLoaded(task: final task) => _buildBody(task),
+      ReviewLoaded(
+        task: final task,
+        busyTqId: final busyTqId,
+        progress: final progress,
+        liveText: final liveText,
+      ) =>
+        _buildBody(task, busyTqId, progress, liveText),
     };
     return CupertinoPageScaffold(
       backgroundColor: app.surfaceContainerLowest,
@@ -71,7 +78,11 @@ class _ParentTaskReviewScreenState
       child: state is ReviewLoaded
           ? Column(
               children: [
-                _buildActionBar(state.task, app),
+                _buildActionBar(state.task, app, state.anyBusy),
+                // 整卷重生成进行中：把后端推来的「第 i/N 题」进度贴在操作栏下方，
+                // 家长能看到推进，而不是整页白屏干等。
+                if (state.progress != null)
+                  _buildProgress(state.progress!, state.liveText, app),
                 Expanded(child: content),
               ],
             )
@@ -83,7 +94,8 @@ class _ParentTaskReviewScreenState
 
   /// 顶部操作栏：与正文同边距（xl2）的固定头部，统一所有按钮高度（40），
   /// 主操作（锁定并派发 / 派发）用实心 primary，次操作描边，作废用 destructive。
-  Widget _buildActionBar(TaskModel task, AppColors app) {
+  /// [locked] 为 true 表示某题正在执行单题动作，整卷级操作一并禁用。
+  Widget _buildActionBar(TaskModel task, AppColors app, bool locked) {
     final buttons = <Widget>[];
     if (task.isDraft) {
       // 题库组卷任务 specs 为空，无 AI 生成规格，故不展示「整卷重生成」
@@ -91,7 +103,7 @@ class _ParentTaskReviewScreenState
         buttons.add(
           ShadButton.outline(
             height: 40,
-            onPressed: () => _onRegenerateAll(task.id),
+            onPressed: locked ? null : () => _onRegenerateAll(task.id),
             leading: const Icon(LucideIcons.rotateCw, size: 16),
             child: const Text('整卷重生成'),
           ),
@@ -100,7 +112,7 @@ class _ParentTaskReviewScreenState
       buttons.add(
         ShadButton.outline(
           height: 40,
-          onPressed: task.promotedCount == task.questions.length
+          onPressed: locked || task.promotedCount == task.questions.length
               ? null
               : () => _onPromoteAll(task.id),
           leading: const Icon(LucideIcons.database, size: 16),
@@ -111,7 +123,7 @@ class _ParentTaskReviewScreenState
       buttons.add(
         ShadButton.destructive(
           height: 40,
-          onPressed: () => _onDiscard(task.id),
+          onPressed: locked ? null : () => _onDiscard(task.id),
           leading: const Icon(LucideIcons.trash2, size: 16),
           child: const Text('作废'),
         ),
@@ -119,7 +131,9 @@ class _ParentTaskReviewScreenState
       buttons.add(
         ShadButton(
           height: 40,
-          onPressed: task.questions.isEmpty ? null : () => _onConfirm(task),
+          onPressed: locked || task.questions.isEmpty
+              ? null
+              : () => _onConfirm(task),
           leading: const Icon(LucideIcons.lock, size: 18),
           child: const Text('锁定并派发'),
         ),
@@ -128,11 +142,13 @@ class _ParentTaskReviewScreenState
       buttons.add(
         ShadButton(
           height: 40,
-          onPressed: widget.defaultChildId != null
-              ? () => _onAssign(task, widget.defaultChildId!)
-              : () {
-                  AppToast.show(context, '请在首页选择娃娃后再派发');
-                },
+          onPressed: locked
+              ? null
+              : widget.defaultChildId != null
+                  ? () => _onAssign(task, widget.defaultChildId!)
+                  : () {
+                      AppToast.show(context, '请在首页选择娃娃后再派发');
+                    },
           leading: const Icon(LucideIcons.send, size: 18),
           child: Text(widget.defaultChildId != null ? '派发任务' : '派发'),
         ),
@@ -182,9 +198,57 @@ class _ParentTaskReviewScreenState
     );
   }
 
+  /// 整卷重生成进度条 + 模型实时文本：细条 + 文案，避免用全屏 loading 盖住整页内容。
+  Widget _buildProgress(String progress, String liveText, AppColors app) {
+    return Align(
+      alignment: Alignment.topLeft,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1080),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.sm),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  // 与题卡「处理中」同款：Lucide 图标转圈，不引入 Material 组件
+                  // （整棵 widget 树基于 ShadApp/CupertinoApp，无 Material 祖先）。
+                  Icon(LucideIcons.loaderCircle, size: 14, color: app.primary)
+                      .animate(onPlay: (c) => c.repeat())
+                      .rotate(duration: const Duration(milliseconds: 900)),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: Text(
+                      progress,
+                      style: AppTheme.textOf(context).bodySmall?.copyWith(
+                            color: app.onSurfaceVariant,
+                          ),
+                    ),
+                  ),
+                ],
+              ),
+              if (liveText.isNotEmpty)
+                StreamReasoningPanel(
+                  label: progress,
+                  reasoning: liveText,
+                  streaming: true,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   // ============ Body ============
 
-  Widget _buildBody(TaskModel task) {
+  Widget _buildBody(
+    TaskModel task,
+    String? busyTqId,
+    String? progress,
+    String liveText,
+  ) {
     final app = AppTheme.colorsOf(context);
     final total = task.questions.length;
     final promoted = task.promotedCount;
@@ -201,7 +265,13 @@ class _ParentTaskReviewScreenState
               _buildSummary(task, app, promoted, total),
               const SizedBox(height: AppSpacing.xl2),
               if (task.questions.isEmpty)
-                _EmptyHint(onRegen: () => _onRegenerateAll(task.id))
+                // 允许删到 0 题：空态按「有无生成规格」给不同引导——有规格可整卷
+                // 重生成，题库组卷的草稿（specs 为空）只能回题库重新选。
+                _EmptyHint(
+                  onRegen: task.specs.isNotEmpty
+                      ? () => _onRegenerateAll(task.id)
+                      : null,
+                )
               else
                 ...List.generate(task.questions.length, (i) {
                   final q = task.questions[i];
@@ -212,10 +282,13 @@ class _ParentTaskReviewScreenState
                       index: i + 1,
                       question: q,
                       isDraft: task.isDraft,
+                      // 进行中：按钮全禁 + spinner，杜绝连点并发。
+                      // 整卷重生成期间所有题卡一并锁住（题目会被全量替换）。
+                      busy: busyTqId == q.id || progress != null,
+                      // 单题动作的实时文本只给当前这张卡（整卷的走顶部进度区）。
+                      liveText: busyTqId == q.id ? liveText : '',
                       onPromote: () => _onPromoteOne(task.id, q.id),
-                      onDelete: task.questions.length <= 1
-                          ? null
-                          : () => _onDelete(task.id, q.id),
+                      onDelete: () => _onDelete(task.id, q.id),
                       onRegenerate: () => _onRegenerateOne(task.id, q.id),
                       onEdit: (edits) => _onEdit(task.id, q.id, edits),
                     ),
@@ -443,6 +516,19 @@ class _QuestionCard extends ConsumerStatefulWidget {
   final int index;
   final QuestionModel question;
   final bool isDraft;
+
+  /// 该卡片正在执行一个单题动作（删除/编辑保存/换一题/加入题库）。
+  ///
+  /// 期间按钮全部禁用并显示 spinner。此前没有这个标记：换一题是一次同步 LLM
+  /// 调用，按钮点了长时间没任何反馈，家长连点会并发多个请求。
+  final bool busy;
+
+  /// 该卡片正被「换一题」重生成时，模型实时产出的推理文本（THINKING 帧累加）。
+  ///
+  /// 仅当前卡 = busyTqId 时由父级传入（整卷重生成的 liveText 走顶部进度区），
+  /// 非空即在该卡内展示一个「模型思考中」流式面板，替代原本只能干等「处理中…」三字的体验。
+  final String liveText;
+
   final Future<void> Function()? onPromote;
   final Future<void> Function()? onDelete;
   final Future<void> Function()? onRegenerate;
@@ -453,6 +539,8 @@ class _QuestionCard extends ConsumerStatefulWidget {
     required this.index,
     required this.question,
     required this.isDraft,
+    this.busy = false,
+    this.liveText = '',
     this.onPromote,
     this.onDelete,
     this.onRegenerate,
@@ -480,7 +568,8 @@ class _QuestionCardState extends ConsumerState<_QuestionCard> {
   @override
   void didUpdateWidget(covariant _QuestionCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.question != widget.question && !_editing) {
+    // busy 期间不重灌输入框，避免覆盖用户正在编辑的内容。
+    if (oldWidget.question != widget.question && !_editing && !widget.busy) {
       _syncCtrls(widget.question);
     }
   }
@@ -526,6 +615,17 @@ class _QuestionCardState extends ConsumerState<_QuestionCard> {
           _buildHeader(q, app),
           const SizedBox(height: AppSpacing.md),
           _editing ? _buildEditForm(q) : _buildReadonly(q),
+          // 换一题进行中：在卡片内直接展示模型实时推理文本，而不是让家长只能看到
+          // 「处理中…」三个字干等十几秒。整卷重生成的 liveText 走顶部进度区，这里只渲染单题的。
+          if (!_editing && widget.liveText.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.md),
+            StreamReasoningPanel(
+              index: null,
+              label: '',
+              reasoning: widget.liveText,
+              streaming: true,
+            ),
+          ],
           const SizedBox(height: AppSpacing.lg),
           if (widget.isDraft) _buildActions(q, app),
         ],
@@ -799,17 +899,19 @@ class _QuestionCardState extends ConsumerState<_QuestionCard> {
         Row(
           children: [
             ShadButton.secondary(
-              onPressed: () {
-                _syncCtrls(widget.question);
-                setState(() => _editing = false);
-              },
+              onPressed: widget.busy
+                  ? null
+                  : () {
+                      _syncCtrls(widget.question);
+                      setState(() => _editing = false);
+                    },
               child: const Text('取消'),
             ),
             const SizedBox(width: AppSpacing.sm),
             ShadButton(
-              onPressed: _submitEdits,
+              onPressed: widget.busy ? null : _submitEdits,
               leading: const Icon(LucideIcons.check, size: 16),
-              child: const Text('保存修改'),
+              child: Text(widget.busy ? '保存中…' : '保存修改'),
             ),
           ],
         ),
@@ -862,34 +964,51 @@ class _QuestionCardState extends ConsumerState<_QuestionCard> {
       );
 
   Widget _buildActions(QuestionModel q, dynamic app) {
+    final busy = widget.busy;
     return Wrap(
       spacing: AppSpacing.sm,
       runSpacing: AppSpacing.xs,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         ShadButton.outline(
           height: 36,
-          onPressed: q.inQuestionBank ? null : widget.onPromote,
+          onPressed: busy || q.inQuestionBank ? null : widget.onPromote,
           leading: const Icon(LucideIcons.database, size: 16),
           child: Text(q.inQuestionBank ? '已入题库' : '加入题库'),
         ),
         ShadButton.outline(
           height: 36,
-          onPressed: _editing ? null : () => setState(() => _editing = true),
+          onPressed: busy || _editing ? null : () => setState(() => _editing = true),
           leading: const Icon(LucideIcons.pencil, size: 16),
           child: Text(_editing ? '编辑中…' : '编辑题目'),
         ),
         ShadButton.outline(
           height: 36,
-          onPressed: widget.onRegenerate,
+          onPressed: busy ? null : widget.onRegenerate,
           leading: const Icon(LucideIcons.rotateCw, size: 16),
           child: const Text('换一题'),
         ),
         ShadButton.destructive(
           height: 36,
-          onPressed: widget.onDelete,
+          onPressed: busy ? null : widget.onDelete,
           leading: const Icon(LucideIcons.trash2, size: 16),
           child: const Text('删除'),
         ),
+        if (busy) ...[
+          const SizedBox(width: AppSpacing.sm),
+          // 与 AppLoading 同款：Lucide 图标转圈，不引入 Material 组件
+          // （整棵 widget 树基于 ShadApp/CupertinoApp，无 Material 祖先）。
+          Icon(LucideIcons.loaderCircle, size: 16, color: app.primary)
+              .animate(onPlay: (c) => c.repeat())
+              .rotate(duration: const Duration(milliseconds: 900)),
+          const SizedBox(width: AppSpacing.xs),
+          Text(
+            '处理中…',
+            style: AppTheme.textOf(context).bodySmall?.copyWith(
+                  color: app.onSurfaceVariant,
+                ),
+          ),
+        ],
       ],
     );
   }
@@ -910,7 +1029,12 @@ class _QuestionCardState extends ConsumerState<_QuestionCard> {
       };
 }
 
+// ============ 流式实时文本面板 ============
+// 复用 shared/widgets/stream_reasoning_panel.dart 的 StreamReasoningPanel
+// （「换一题」与整卷重生成共用同一渲染 seam，见 DRY 收敛说明）。
+
 class _EmptyHint extends StatelessWidget {
+  /// 为 null 表示当前草稿没有生成规格（题库组卷），无法整卷重生成。
   final VoidCallback? onRegen;
   const _EmptyHint({this.onRegen});
 
@@ -931,16 +1055,22 @@ class _EmptyHint extends StatelessWidget {
           const SizedBox(height: AppSpacing.md),
           Text('草稿暂未包含任何题目', style: AppTheme.textOf(context).titleMedium),
           const SizedBox(height: AppSpacing.xs),
-          Text('点击「整卷重生成」按原规格重新出题',
-              style: AppTheme.textOf(context)
-                  .bodyMedium
-                  ?.copyWith(color: app.onSurfaceVariant)),
-          const SizedBox(height: AppSpacing.lg),
-          ShadButton(
-            onPressed: onRegen,
-            leading: const Icon(LucideIcons.rotateCw, size: 18),
-            child: const Text('整卷重生成'),
+          Text(
+            onRegen != null
+                ? '点击「整卷重生成」按原规格重新出题'
+                : '本题库组卷草稿无生成规格，请返回题库重新选题组卷',
+            style: AppTheme.textOf(context)
+                .bodyMedium
+                ?.copyWith(color: app.onSurfaceVariant),
           ),
+          if (onRegen != null) ...[
+            const SizedBox(height: AppSpacing.lg),
+            ShadButton(
+              onPressed: onRegen,
+              leading: const Icon(LucideIcons.rotateCw, size: 18),
+              child: const Text('整卷重生成'),
+            ),
+          ],
         ],
       ),
     );

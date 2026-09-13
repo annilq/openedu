@@ -7,7 +7,7 @@ import '../../../../../shared/domain/models/models.dart';
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/widgets/app_inputs.dart';
 import '../../../../../shared/widgets/app_loading.dart';
-import 'preview_generating.dart';
+import '../../../../../shared/widgets/stream_reasoning_panel.dart';
 import '../../../../../shared/widgets/app_model_selector.dart';
 import '../../../../../shared/widgets/app_toast.dart';
 import '../../../../children/domain/providers/children_provider.dart';
@@ -500,7 +500,7 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
           ),
         // 生成中：当前题的内联推理区（题卡到达后折叠，见 _PreviewCard 的 info icon）。
         if (s.streaming && s.liveIndex >= 0)
-          PreviewGenerating(
+          StreamReasoningPanel(
             index: s.liveIndex + 1,
             label: s.liveLabel,
             reasoning: s.liveReasoning,

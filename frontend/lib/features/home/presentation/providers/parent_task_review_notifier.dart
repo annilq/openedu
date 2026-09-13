@@ -3,6 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../shared/data/remote/network_service.dart';
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/domain/providers/core_providers.dart';
+import '../../../../shared/exceptions/app_exception.dart';
+import '../../../assistant/data/assistant_api_client.dart';
+import '../../../assistant/domain/assistant_event.dart';
+import '../../../assistant/presentation/provider/assistant_notifier.dart';
 
 // ───────── 草稿题审核状态机 ─────────
 sealed class ReviewState {
@@ -15,7 +19,36 @@ class ReviewLoading extends ReviewState {
 
 class ReviewLoaded extends ReviewState {
   final TaskModel task;
-  const ReviewLoaded(this.task);
+
+  /// 正在执行单题动作（删除/编辑/换一题/加入题库）的 TaskQuestion id。
+  ///
+  /// 非空即该卡片进入「处理中」：按钮全部禁用并显示 spinner。此前这些动作没有任何
+  /// 进行中反馈——换一题是一次同步 LLM 调用，家长连点会并发多个请求，且后返回的
+  /// 会用它自己开始时那份快照覆盖 state（丢更新）。
+  final String? busyTqId;
+
+  /// 整卷级动作（整卷重生成）的进行中进度文案，如「正在生成第 2/5 题…」。
+  ///
+  /// 非空时整页进入整卷 busy：操作栏与所有题卡一并禁用。此前整卷重生成只切到
+  /// 整页 ReviewLoading——整页白屏转圈，家长既看不到进度也看不到原题。
+  final String? progress;
+
+  /// 模型正在产出的实时文本（THINKING 帧累加），如「先定情境…再配干扰项…」。
+  ///
+  /// 只有进度文案没有它，家长看到的就是「生成中」三个字干等十几秒——这也是这次
+  /// 流式改造要真正交付的东西：底层出题管线本来就逐段吐推理文本，此前被同步
+  /// drain 版吞掉了。新题卡/新阶段到达时由 notifier 清空。
+  final String liveText;
+
+  const ReviewLoaded(
+    this.task, {
+    this.busyTqId,
+    this.progress,
+    this.liveText = '',
+  });
+
+  /// 任一题目正在处理：顶部整卷级操作（整卷重生成/一键入库/作废/锁定）也应禁用。
+  bool get anyBusy => busyTqId != null || progress != null;
 }
 
 class ReviewError extends ReviewState {
@@ -26,7 +59,8 @@ class ReviewError extends ReviewState {
 
 class ReviewNotifier extends StateNotifier<ReviewState> {
   final NetworkService _network;
-  ReviewNotifier(this._network, {TaskModel? initial})
+  final AssistantApiClient _assistant;
+  ReviewNotifier(this._network, this._assistant, {TaskModel? initial})
       : super(initial == null
             ? const ReviewLoading()
             : ReviewLoaded(initial));
@@ -51,13 +85,15 @@ class ReviewNotifier extends StateNotifier<ReviewState> {
     required String tqId,
   }) async {
     final cur = state;
-    if (cur is! ReviewLoaded) return;
+    if (cur is! ReviewLoaded || cur.anyBusy) return;
+    state = ReviewLoaded(cur.task, busyTqId: tqId);
     try {
       final data = await _network
           .post('/tasks/$taskId/questions/$tqId/promote');
       final updatedQ = QuestionModel.fromJson(data);
       state = ReviewLoaded(_replace(cur.task, tqId, updatedQ));
     } catch (e) {
+      state = ReviewLoaded(cur.task);
       rethrow;
     }
   }
@@ -65,7 +101,7 @@ class ReviewNotifier extends StateNotifier<ReviewState> {
   /// 一键把所有未入库的题批量 promote。
   Future<void> promoteAll(String taskId) async {
     final cur = state;
-    if (cur is! ReviewLoaded) return;
+    if (cur is! ReviewLoaded || cur.anyBusy) return;
     try {
       final data = await _network.post('/tasks/$taskId/promote-all');
       state = ReviewLoaded(TaskModel.fromJson(data));
@@ -74,31 +110,89 @@ class ReviewNotifier extends StateNotifier<ReviewState> {
     }
   }
 
-  /// 单题重生成。
+  /// 单题重生成（流式）。
+  ///
+  /// 走 `POST /tasks/{id}/questions/{tq}/regenerate-stream`（SSE）：一次 LLM 调用常常
+  /// 超过普通请求的 30 秒 receiveTimeout，同步版会被超时掐断、且期间无进度反馈。
+  /// 帧协议与整卷生成一致，这里只取 DATA(question) 与 ERROR 两帧。
   Future<void> regenerateOne({
     required String taskId,
     required String tqId,
   }) async {
     final cur = state;
-    if (cur is! ReviewLoaded) return;
+    if (cur is! ReviewLoaded || cur.anyBusy) return;
+    state = ReviewLoaded(cur.task, busyTqId: tqId);
     try {
-      final data = await _network
-          .post('/tasks/$taskId/questions/$tqId/regenerate');
-      final updatedQ = QuestionModel.fromJson(data);
-      state = ReviewLoaded(_replace(cur.task, tqId, updatedQ));
+      QuestionModel? updated;
+      var live = '';
+      await for (final ev
+          in _assistant.streamRegenerateOne(taskId: taskId, tqId: tqId)) {
+        if (ev.eventType == AssistantEventType.error) {
+          throw AppException(ev.message ?? '换一题失败，请稍后重试');
+        }
+        if (ev.eventType == AssistantEventType.thinking) {
+          live += ev.text ?? '';
+          state = ReviewLoaded(cur.task, busyTqId: tqId, liveText: live);
+        }
+        if (ev.eventType == AssistantEventType.data &&
+            ev.data?['type'] == 'question') {
+          final result = ev.data?['result'];
+          if (result is Map<String, dynamic>) {
+            updated = QuestionModel.fromJson(result);
+          }
+        }
+      }
+      if (updated == null) {
+        throw AppException('换一题失败：本次没有生成新题目');
+      }
+      state = ReviewLoaded(_replace(cur.task, tqId, updated));
     } catch (e) {
+      state = ReviewLoaded(cur.task);
       rethrow;
     }
   }
 
-  /// 整卷重生成（按 Task.specs 原规格）。
+  /// 整卷重生成（按 Task.specs 原规格，流式）。
+  ///
+  /// 同步版要把整卷 N 道题全部出完才返回（2 题就 19–36 秒），必然撞上普通请求的
+  /// 30 秒 receiveTimeout。改走 `POST /tasks/{id}/regenerate-stream` 后：复用流式
+  /// 端点的长超时，并把后端的 STEP 进度帧（「正在生成第 i/N 题…」）直接透到
+  /// [ReviewLoaded.progress]，家长能实时看到推进而不是整页白屏转圈。
   Future<void> regenerateAll(String taskId) async {
     final cur = state;
-    if (cur is! ReviewLoaded) return;
-    state = const ReviewLoading();
+    if (cur is! ReviewLoaded || cur.anyBusy) return;
+    const initialProgress = '正在重生成整卷…';
+    state = ReviewLoaded(cur.task, progress: initialProgress);
     try {
-      final data = await _network.post('/tasks/$taskId/regenerate');
-      state = ReviewLoaded(TaskModel.fromJson(data));
+      TaskModel? updated;
+      var progress = initialProgress;
+      var live = '';
+      await for (final ev in _assistant.streamRegenerateAll(taskId: taskId)) {
+        if (ev.eventType == AssistantEventType.error) {
+          throw AppException(ev.message ?? '整卷重生成失败，请稍后重试');
+        }
+        if (ev.eventType == AssistantEventType.step && ev.label != null) {
+          // 新阶段（下一题 / 落库）清空上一题的推理文本，避免越堆越长。
+          progress = ev.label!;
+          live = '';
+          state = ReviewLoaded(cur.task, progress: progress);
+        }
+        if (ev.eventType == AssistantEventType.thinking) {
+          live += ev.text ?? '';
+          state = ReviewLoaded(cur.task, progress: progress, liveText: live);
+        }
+        if (ev.eventType == AssistantEventType.data &&
+            ev.data?['type'] == 'task') {
+          final result = ev.data?['result'];
+          if (result is Map<String, dynamic>) {
+            updated = TaskModel.fromJson(result);
+          }
+        }
+      }
+      if (updated == null) {
+        throw AppException('整卷重生成失败：本次没有返回题目');
+      }
+      state = ReviewLoaded(updated);
     } catch (e) {
       state = ReviewLoaded(cur.task);
       rethrow;
@@ -111,14 +205,18 @@ class ReviewNotifier extends StateNotifier<ReviewState> {
     required String tqId,
   }) async {
     final cur = state;
-    if (cur is! ReviewLoaded) return;
+    if (cur is! ReviewLoaded || cur.anyBusy) return;
+    state = ReviewLoaded(cur.task, busyTqId: tqId);
     try {
       await _network.delete('/tasks/$taskId/questions/$tqId');
+      // 允许删到 0 题：草稿清空后走空态引导（整卷重生成 / 返回题库重新组卷），
+      // 比「最后一题点不动且无任何提示」更可预期。
       final task = cur.task.copyWith(
         questions: cur.task.questions.where((q) => q.id != tqId).toList(),
       );
       state = ReviewLoaded(task);
     } catch (e) {
+      state = ReviewLoaded(cur.task);
       rethrow;
     }
   }
@@ -130,7 +228,8 @@ class ReviewNotifier extends StateNotifier<ReviewState> {
     required Map<String, dynamic> edits,
   }) async {
     final cur = state;
-    if (cur is! ReviewLoaded) return;
+    if (cur is! ReviewLoaded || cur.anyBusy) return;
+    state = ReviewLoaded(cur.task, busyTqId: tqId);
     try {
       final data = await _network.put(
         '/tasks/$taskId/questions/$tqId',
@@ -139,6 +238,7 @@ class ReviewNotifier extends StateNotifier<ReviewState> {
       final updatedQ = QuestionModel.fromJson(data);
       state = ReviewLoaded(_replace(cur.task, tqId, updatedQ));
     } catch (e) {
+      state = ReviewLoaded(cur.task);
       rethrow;
     }
   }
@@ -185,5 +285,6 @@ final parentTaskReviewProvider = StateNotifierProvider.family<
     ReviewState,
     TaskModel>((ref, initialTask) {
   final network = ref.watch(networkServiceProvider);
-  return ReviewNotifier(network, initial: initialTask);
+  final assistant = ref.watch(assistantApiClientProvider);
+  return ReviewNotifier(network, assistant, initial: initialTask);
 });

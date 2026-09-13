@@ -1,33 +1,42 @@
-import 'package:cupertino_ui/cupertino_ui.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
 
-import '../../../../../shared/theme/app_theme.dart';
+import '../theme/app_theme.dart';
 
-/// 生成中面板（ADR-0017）：当前题的内联推理区，题卡到达后由 `_PreviewCard` 替代。
+/// 流式推理实时文本面板（DRY 收敛点：首次出题 `/tasks/generate` 与重生成
+/// `regenerate-stream` 共用同一渲染 seam）。
 ///
 /// 渲染层退化为对 [reasoning] 的忠实映射：后端已增量下发 THINKING，
-/// 前端无需自有定时器（原 [ReasoningTypewriterWidget] 的自定时 Timer 与事件到达解耦，
+/// 前端无需自有定时器（原 ReasoningTypewriterWidget 的 Timer 与事件到达解耦，
 /// 导致生成期 `_shown` 永不前进、题卡到达后全文闪现）。[streaming] 期间末尾挂 `▌`
 /// 光标，表示仍在揭示；[reasoning] 为空（首个增量到达前）显示占位文案。
-class PreviewGenerating extends StatelessWidget {
-  final int index;
+///
+/// [index] 为可选题号（从 1 开始）；非空时左侧芯片显示「第 N 题 · 生成中」，
+/// 为空时显示「生成中」。卡片/顶部已有题号场景传 null 即可。[label] 为右侧进度
+/// 文案（如整卷重生成的「第 i/N 题」），可空。
+///
+/// 仅依赖 `flutter/widgets.dart`，可在 Material-free 的 ShadApp/CupertinoApp
+/// widget 树中安全复用（不引入 Material 祖先假设）。
+class StreamReasoningPanel extends StatelessWidget {
+  final int? index;
   final String label;
   final String reasoning;
   final bool streaming;
 
-  const PreviewGenerating({
+  const StreamReasoningPanel({
     super.key,
-    required this.index,
-    required this.label,
+    this.index,
+    this.label = '',
     required this.reasoning,
-    required this.streaming,
+    this.streaming = true,
   });
 
   @override
   Widget build(BuildContext context) {
     final app = AppTheme.colorsOf(context);
     final text = AppTheme.textOf(context);
+    final chipText = index != null ? '第 $index 题 · 生成中' : '生成中';
     return Container(
+      width: double.infinity,
       margin: const EdgeInsets.only(bottom: AppSpacing.md),
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
@@ -47,7 +56,7 @@ class PreviewGenerating extends StatelessWidget {
                   color: app.primaryContainer,
                   borderRadius: BorderRadius.circular(AppRadius.chip),
                 ),
-                child: Text('第 $index 题 · 生成中',
+                child: Text(chipText,
                     style: text.labelSmall?.copyWith(
                         color: app.onPrimaryContainer,
                         fontWeight: FontWeight.w700)),
@@ -65,7 +74,7 @@ class PreviewGenerating extends StatelessWidget {
             ],
           ),
           const SizedBox(height: AppSpacing.sm),
-          // 首个推理增量到达前给占位文案，避免内联区出现一段空白。
+          // 首个推理增量到达前给占位文案，避免面板内出现一段空白。
           if (reasoning.isEmpty)
             Text(
               '正在构思出题思路…',

@@ -12,6 +12,7 @@ repository 函数做多步编排，还把 repository 的私有 sentinel 当控�
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from datetime import date
 from uuid import UUID
@@ -19,6 +20,16 @@ from uuid import UUID
 from sqlmodel import Session, select
 
 from agent_core.ports import RuntimeDeps
+from agent_core.protocol import (
+    EVENT_DATA,
+    EVENT_STEP,
+    EVENT_THINKING,
+    data_event,
+    done as done_event,
+    error as error_event,
+    run_started,
+    step as step_event,
+)
 from agent_core.runtime import AgentRuntime
 from agent_core.runtime_singleton import get_runtime
 from agent_core.subagent import SubAgentContext
@@ -29,7 +40,7 @@ from app.core.errors import AppErrorException, ErrCode
 from app.core.guard import require_owned, require_owned_child
 from app.db.models import Question, Task, TaskQuestion, User, WrongQuestion
 from app.domain import Grader, build_retriever
-from app.domain.provider import GeneratedQuestion
+from app.domain.provider import GeneratedQuestion, QuestionCard, QuestionStreamEvent
 from app.features.tasks.repository import (
     add_bank_questions_to_task,
     assign_task,
@@ -211,6 +222,48 @@ def _extract_interests_pool(child: User | None) -> list[str] | None:
     return pool or None
 
 
+async def _gen_question_stream(
+    engine,
+    *,
+    subject: str,
+    grade: int,
+    knowledge_point: str,
+    qtype: str,
+    difficulty: str,
+    interests: list[str] | None = None,
+    focus_interest: str | None = None,
+) -> AsyncIterator[QuestionStreamEvent]:
+    """出题单题的**流式**形态：直接透传管线的语义事件（ADR-0023 收敛 / ADR-0032）。
+
+    这是重生成能出「实时文本」的关键：底下 ``pipeline.stream_question`` 本来就会
+    逐段 yield ``ReasoningDelta``（模型出题思路）再给 ``QuestionCard``。此前同步版
+    ``generate_question`` 把这条流 drain 掉只留最终题卡，增量文本全丢；流式端点即使
+    建了 SSE 也只能推「第 i/N 题」这类进度锚点，家长看不到任何模型输出。
+
+    同步版与流式版共用本函数（单一事实源）：同步版 drain 取题卡，流式版逐事件转帧。
+    """
+    from app.ai.subagents.question.pipeline import (
+        build_question_prompts,
+        stream_question,
+    )
+    from app.domain import build_provider
+
+    provider = build_provider(engine=engine)
+    system_prompt, user_prompt, spec = build_question_prompts(
+        subject=subject,
+        grade=grade,
+        knowledge_point=knowledge_point,
+        qtype=qtype,
+        difficulty=difficulty,
+        interests=interests,
+        focus_interest=focus_interest,
+    )
+    async for ev in stream_question(
+        provider, system_prompt=system_prompt, user_prompt=user_prompt, spec=spec
+    ):
+        yield ev
+
+
 def _gen_question(
     engine,
     *,
@@ -222,32 +275,30 @@ def _gen_question(
     interests: list[str] | None = None,
     focus_interest: str | None = None,
 ) -> GeneratedQuestion:
-    """出题单题：统一走共享出题管线 ``app.ai.subagents.question.pipeline``
-    （ADR-0023 收敛 / ADR-0032：只依赖 ``LLMProvider``，不再直连 genkit 引擎）。
+    """出题单题（同步落库路径）：drain ``_gen_question_stream`` 取最终题卡。
 
     mock 兜底已移除：engine 为 None 或真实产出不安全（check_output 未过）时生成失败，
     由上层以 LLM_UNAVAILABLE 报错，不再静默回退假数据。
     """
-    from app.ai.subagents.question.pipeline import (
-        generate_question as _generate_question,
-    )
-    from app.domain import build_provider
+
+    async def _drain() -> GeneratedQuestion | None:
+        async for ev in _gen_question_stream(
+            engine,
+            subject=subject,
+            grade=grade,
+            knowledge_point=knowledge_point,
+            qtype=qtype,
+            difficulty=difficulty,
+            interests=interests,
+            focus_interest=focus_interest,
+        ):
+            if isinstance(ev, QuestionCard):
+                return ev.question
+        return None
 
     g: GeneratedQuestion | None = None
     try:
-        provider = build_provider(engine=engine)
-        g = run_async(
-            _generate_question(
-                provider,
-                subject=subject,
-                grade=grade,
-                knowledge_point=knowledge_point,
-                qtype=qtype,
-                difficulty=difficulty,
-                interests=interests,
-                focus_interest=focus_interest,
-            )
-        )
+        g = run_async(_drain())
     except Exception:
         g = None
     if g is None:
@@ -256,6 +307,92 @@ def _gen_question(
             "无可用 LLM 引擎或题目生成不安全，无法重生成（请配置 LLM_PROVIDER 与 API key）",
         )
     return g
+
+
+def _question_fields(payload: dict) -> dict:
+    """题卡 dict → 题目字段字典（落库两种形态共用）。
+
+    只取题目本身的字段：``stream_question`` 会额外挂 ``reasoning``（出题思路），
+    那是给人看的推理文本，不进题目表。
+    """
+    allowed = (
+        "subject", "grade", "knowledge_point", "qtype", "stem",
+        "options", "answer", "explanation", "difficulty",
+    )
+    return {k: payload[k] for k in allowed if k in payload}
+
+
+def _question_from_payload(payload: dict) -> Question:
+    """题卡 dict（``asdict(GeneratedQuestion)``）→ Question（单题重写入库用）。"""
+    return Question(**_question_fields(payload))
+
+
+def _task_question_from_payload(payload: dict) -> TaskQuestion:
+    """题卡 dict → 草稿 TaskQuestion（整卷重生成落库用，R-Q1=c：不入题库）。"""
+    return TaskQuestion(
+        task_id=None,  # 由 regenerate_all_task_questions 回填
+        question_id=None,  # R-Q1=c：草稿期不入题库
+        **_question_fields(payload),
+    )
+
+
+async def _stream_question_frames(
+    *,
+    engine,
+    subject: str,
+    grade: int,
+    knowledge_point: str,
+    qtype: str,
+    difficulty: str,
+    interests: list[str] | None = None,
+    focus_interest: str | None = None,
+    sink: list[dict],
+) -> AsyncIterator[str]:
+    """单题出题的 SSE 帧流：**透传模型实时文本**，题卡收进 [sink] 不外发。
+
+    - ``ReasoningDelta`` → THINKING 帧（这就是家长看到的「实时文本」，经
+      ``translate_stream`` 攒批，不会一个 token 一帧）。
+    - ``QuestionCard`` → 只入 ``sink``：题卡要等落库拿到 id 才有意义，调用方落库后
+      再发自己的 DATA 帧，避免前端看到「未落库的题」。
+    - ``QuestionFailed`` / 引擎不可用 → ERROR 帧（``SYS_10006``），口径与同步版
+      ``_gen_question`` 抛的 LLM_UNAVAILABLE 一致。
+
+    ``sink`` 为空即本次没有产出题卡（已发 ERROR 帧），调用方据此跳过落库。
+    """
+    from app.ai.subagents.question.translate import translate_stream
+
+    try:
+        async for frame in translate_stream(
+            _gen_question_stream(
+                engine,
+                subject=subject,
+                grade=grade,
+                knowledge_point=knowledge_point,
+                qtype=qtype,
+                difficulty=difficulty,
+                interests=interests,
+                focus_interest=focus_interest,
+            )
+        ):
+            if frame.eventType == EVENT_THINKING:
+                yield frame.to_sse()
+            elif frame.eventType == EVENT_DATA:
+                result = (frame.data or {}).get("result")
+                if isinstance(result, dict):
+                    sink.append(result)
+            elif frame.eventType == EVENT_STEP:
+                # QuestionFailed 经 translate 转成 step(status=error)：即出题失败。
+                raise AppErrorException(
+                    ErrCode.LLM_UNAVAILABLE, frame.label or "题目生成失败"
+                )
+    except AppErrorException as e:
+        yield error_event(e.message, code=getattr(e.code, "value", str(e.code))).to_sse()
+    except Exception:
+        # build_provider / provider.stream 抛错都归因为引擎不可用，与同步版一致。
+        yield error_event(
+            "无可用 LLM 引擎或题目生成不安全，无法重生成（请配置 LLM_PROVIDER 与 API key）",
+            code=getattr(ErrCode.LLM_UNAVAILABLE, "value", str(ErrCode.LLM_UNAVAILABLE)),
+        ).to_sse()
 
 
 def _round_robin_focus(focus_interests: list[str] | None, i: int) -> str | None:
@@ -267,6 +404,71 @@ def _round_robin_focus(focus_interests: list[str] | None, i: int) -> str | None:
     if not focus_interests:
         return None
     return focus_interests[i % len(focus_interests)]
+
+
+def _expand_spec_items(specs: list[dict]) -> list[dict]:
+    """把 specs 摊平成「一题一项」的规格列表（按 count 展开）。
+
+    整卷同步生成与流式逐题生成共用：前者一次性跑完，后者每跑完一项就推一帧
+    STEP 进度，家长能看到「第 i/N 题」而不是干等。
+    """
+    items: list[dict] = []
+    for sp in specs:
+        if isinstance(sp, dict):
+            item = {
+                "subject": str(sp.get("subject", "")),
+                "grade": int(sp.get("grade", 0)),
+                "knowledge_point": str(sp.get("knowledge_point", "")),
+                "qtype": str(sp.get("qtype", "")),
+                "difficulty": str(sp.get("difficulty", "medium")),
+            }
+            count = int(sp.get("count", 1))
+        else:
+            item = {
+                "subject": sp.subject,
+                "grade": sp.grade,
+                "knowledge_point": sp.knowledge_point,
+                "qtype": sp.qtype,
+                "difficulty": sp.difficulty,
+            }
+            count = sp.count
+        items.extend([item] * max(0, count))
+    return items
+
+
+def _gen_tq_for_spec_item(
+    item: dict,
+    idx: int,
+    *,
+    interests: list[str] | None,
+    focus_interests: list[str] | None,
+    engine=None,
+) -> TaskQuestion:
+    """按单项规格出一道题（草稿态：task_id / question_id 均为 None）。"""
+    focus = _round_robin_focus(focus_interests, idx)
+    g = _gen_question(
+        engine,
+        subject=item["subject"],
+        grade=item["grade"],
+        knowledge_point=item["knowledge_point"],
+        qtype=item["qtype"],
+        difficulty=item["difficulty"],
+        interests=interests if focus is None else None,
+        focus_interest=focus,
+    )
+    return TaskQuestion(
+        task_id=None,  # 由 batch_generate_task / regenerate_all 回填
+        question_id=None,  # R-Q1=c：草稿期不入题库
+        subject=g.subject,
+        grade=g.grade,
+        knowledge_point=g.knowledge_point,
+        qtype=g.qtype,
+        stem=g.stem,
+        options=g.options,
+        answer=g.answer,
+        explanation=g.explanation,
+        difficulty=g.difficulty,
+    )
 
 
 def _generate_task_questions_for_specs(
@@ -285,53 +487,16 @@ def _generate_task_questions_for_specs(
     - `focus_interests`：兴趣题模式聚焦主题（list）；非空时按题轮询均分（第 i 题取
       focus_interests[i % n]），且此时不再轻融入兴趣池（避免双模式叠加）。
     """
-    out: list[TaskQuestion] = []
-    idx = 0
-    for sp in specs:
-        if isinstance(sp, dict):
-            subject = str(sp.get("subject", ""))
-            grade = int(sp.get("grade", 0))
-            knowledge_point = str(sp.get("knowledge_point", ""))
-            qtype = str(sp.get("qtype", ""))
-            difficulty = str(sp.get("difficulty", "medium"))
-            count = int(sp.get("count", 1))
-        else:
-            subject = sp.subject
-            grade = sp.grade
-            knowledge_point = sp.knowledge_point
-            qtype = sp.qtype
-            difficulty = sp.difficulty
-            count = sp.count
-        for _ in range(max(0, count)):
-            # 兴趣题模式：轮询取一个聚焦主题；否则轻融入兴趣池。
-            focus = _round_robin_focus(focus_interests, idx)
-            idx += 1
-            g = _gen_question(
-                engine,
-                subject=subject,
-                grade=grade,
-                knowledge_point=knowledge_point,
-                qtype=qtype,
-                difficulty=difficulty,
-                interests=interests if focus is None else None,
-                focus_interest=focus,
-            )
-            out.append(
-                TaskQuestion(
-                    task_id=None,  # 由 batch_generate_task / regenerate_all 回填
-                    question_id=None,  # R-Q1=c：草稿期不入题库
-                    subject=g.subject,
-                    grade=g.grade,
-                    knowledge_point=g.knowledge_point,
-                    qtype=g.qtype,
-                    stem=g.stem,
-                    options=g.options,
-                    answer=g.answer,
-                    explanation=g.explanation,
-                    difficulty=g.difficulty,
-                )
-            )
-    return out
+    return [
+        _gen_tq_for_spec_item(
+            item,
+            idx,
+            interests=interests,
+            focus_interests=focus_interests,
+            engine=engine,
+        )
+        for idx, item in enumerate(_expand_spec_items(specs))
+    ]
 
 
 def _owned_task(*, session: Session, parent: User, task_id: UUID) -> Task:
@@ -521,10 +686,26 @@ def remove_one(*, session: Session, parent: User, task_id: UUID, tq_id: UUID) ->
         raise AppErrorException(ErrCode.TASK_QUESTION_NOT_FOUND, "题目不存在")
 
 
-def regenerate_one(
-    *, session: Session, parent: User, task_id: UUID, tq_id: UUID
+def _swap_question(
+    *, session: Session, tq_id: UUID, gen_question: Question
 ) -> QuestionResp:
-    """单题重生成：沿用原题的 subject/grade/knowledge_point/qtype/difficulty 拉新。"""
+    """把新题写回草稿项（R-Q5=b 级联删旧 Question）；不存在则报「题目不存在」."""
+    updated = regenerate_one_task_question(
+        session=session, tq_id=tq_id, gen_question=gen_question
+    )
+    if updated is None:
+        raise AppErrorException(ErrCode.TASK_QUESTION_NOT_FOUND, "题目不存在")
+    return question_to_resp(updated, include_answer=True)
+
+
+def _regenerate_one_inputs(
+    *, session: Session, parent: User, task_id: UUID, tq_id: UUID
+) -> tuple[TaskQuestion, object, list[str] | None, str | None]:
+    """单题重生成的公共前置：鉴权 + 引擎 + 兴趣设定（同步版与流式版共用）。
+
+    返回 ``(tq, engine, interests_pool, focus)``。``interests_pool`` 与 ``focus``
+    二选一下传：显式聚焦主题时不轻融入画像，避免两种兴趣模式叠加。
+    """
     task = _owned_task(session=session, parent=parent, task_id=task_id)
     _require_draft(task)
     tq = _draft_item(session=session, task=task, tq_id=tq_id)
@@ -543,6 +724,17 @@ def regenerate_one(
         except StopIteration:
             qi = 0
         focus = _round_robin_focus(focus_interests, qi)
+    return tq, engine, interests_pool, focus
+
+
+def _gen_for_swap(
+    tq: TaskQuestion,
+    engine,
+    *,
+    interests_pool: list[str] | None,
+    focus: str | None,
+) -> Question:
+    """按原题的 subject/grade/knowledge_point/qtype/difficulty 拉一道新题。"""
     g = _gen_question(
         engine,
         subject=tq.subject,
@@ -553,22 +745,98 @@ def regenerate_one(
         interests=interests_pool if focus is None else None,
         focus_interest=focus,
     )
-    new_q = Question(
+    return Question(
         subject=g.subject, grade=g.grade, knowledge_point=g.knowledge_point,
         qtype=g.qtype, stem=g.stem, options=g.options, answer=g.answer,
         explanation=g.explanation, difficulty=g.difficulty,
     )
-    updated = regenerate_one_task_question(session=session, tq_id=tq_id, gen_question=new_q)
-    if updated is None:
-        raise AppErrorException(ErrCode.TASK_QUESTION_NOT_FOUND, "题目不存在")
-    return question_to_resp(updated, include_answer=True)
 
 
-def regenerate_all(*, session: Session, parent: User, task_id: UUID) -> TaskResp:
-    """整卷重生成（R-Q2=c）：按 Task.specs 原规格重跑，全量替换草稿项。
+def regenerate_one(
+    *, session: Session, parent: User, task_id: UUID, tq_id: UUID
+) -> QuestionResp:
+    """单题重生成：沿用原题的 subject/grade/knowledge_point/qtype/difficulty 拉新。"""
+    tq, engine, interests_pool, focus = _regenerate_one_inputs(
+        session=session, parent=parent, task_id=task_id, tq_id=tq_id
+    )
+    new_q = _gen_for_swap(tq, engine, interests_pool=interests_pool, focus=focus)
+    return _swap_question(session=session, tq_id=tq_id, gen_question=new_q)
 
-    若 Task.specs 为空（非本版流程创建的草稿），抛 VALIDATION 错误，要求家长
-    返回出题页重新生成。
+
+async def regenerate_one_stream(
+    *, session: Session, parent: User, task_id: UUID, tq_id: UUID
+) -> AsyncIterator[str]:
+    """单题重生成的流式版：与 ``/tasks/generate`` 同一套 AG-UI 事件协议。
+
+    为什么要有它：单题重生成是一次同步 LLM 调用，实测远超前端普通请求的 30 秒
+    receiveTimeout——家长点「换一题」后界面长时间无反馈，超时后只弹一句「请求超时」，
+    体感就是按钮点不动。走 SSE 后复用流式端点的长超时（10 分钟），并在生成期间逐帧
+    推进度，前端能立刻渲染「正在换一题…」。落库与同步版完全一致（同一
+    ``_swap_question``），不引入第二条写路径。
+
+    帧序：RUN_STARTED → STEP(换一题) → [THINKING × n] → DATA(question) 或 ERROR → DONE。
+    THINKING 就是模型的实时出题思路——此前同步版把整段推理 drain 掉只留题卡，
+    家长只能干等进度文案；现在逐帧透传，前端能打字机式渲染。
+    落库与同步版完全一致（同一 ``_swap_question``），不引入第二条写路径。
+
+    前置校验同样在流内收口（越权 / 非草稿 / 题不存在 → ERROR 帧），理由同
+    ``regenerate_all_stream``：异步生成器里抛异常只会给客户端留一个 200 + 空正文。
+    """
+    try:
+        tq, engine, interests_pool, focus = _regenerate_one_inputs(
+            session=session, parent=parent, task_id=task_id, tq_id=tq_id
+        )
+    except AppErrorException as e:
+        yield error_event(e.message, code=getattr(e.code, "value", str(e.code))).to_sse()
+        yield done_event().to_sse()
+        return
+    yield run_started().to_sse()
+    yield step_event("正在换一题…").to_sse()
+
+    sink: list[dict] = []
+    async for frame in _stream_question_frames(
+        engine=engine,
+        subject=tq.subject,
+        grade=tq.grade,
+        knowledge_point=tq.knowledge_point,
+        qtype=tq.qtype,
+        difficulty=tq.difficulty or "medium",
+        interests=interests_pool if focus is None else None,
+        focus_interest=focus,
+        sink=sink,
+    ):
+        yield frame
+    if not sink:
+        # 没有题卡：ERROR 帧已由 _stream_question_frames 发过，直接收尾。
+        yield done_event().to_sse()
+        return
+    yield step_event("正在保存…").to_sse()
+
+    def _commit() -> dict:
+        return _swap_question(
+            session=session,
+            tq_id=tq_id,
+            gen_question=_question_from_payload(sink[0]),
+        ).model_dump(mode="json")
+
+    try:
+        payload = await asyncio.to_thread(_commit)
+    except AppErrorException as e:
+        # 业务错误（题不存在 / 非草稿）转成 ERROR 帧：流已开，不能改 HTTP 状态码。
+        yield error_event(e.message, code=getattr(e.code, "value", str(e.code))).to_sse()
+        yield done_event().to_sse()
+        return
+    yield data_event(payload, status="done", extra={"type": "question"}).to_sse()
+    yield done_event().to_sse()
+
+
+def _regenerate_all_inputs(
+    *, session: Session, parent: User, task_id: UUID
+) -> tuple[Task, list[dict], list[str] | None, object]:
+    """整卷重生成的公共前置：鉴权 + 规格校验 + 兴趣设定 + 引擎（同步版与流式版共用）。
+
+    返回 ``(task, spec_items, interests_pool, engine)``。``spec_items`` 已按 count
+    摊平成「一题一项」，流式版本据此逐题推进度。
     """
     task = _owned_task(session=session, parent=parent, task_id=task_id)
     _require_draft(task)
@@ -582,9 +850,13 @@ def regenerate_all(*, session: Session, parent: User, task_id: UUID) -> TaskResp
     interests_pool = _extract_interests_pool(child)
     # 沿用本任务所选模型（无则出题核心失败并抛 LLM_UNAVAILABLE）。
     engine = resolve_engine(task.model, parent_id=parent.id, session=session)
-    new_tqs = _generate_task_questions_for_specs(
-        specs, interests=interests_pool, focus_interests=task.focus_interest, engine=engine
-    )
+    return task, _expand_spec_items(specs), interests_pool, engine
+
+
+def _commit_regenerated(
+    *, session: Session, task: Task, new_tqs: list[TaskQuestion]
+) -> TaskResp:
+    """整卷重生成的落库段（R-Q2=c 全量替换草稿项），流式/同步版共用。"""
     updated = regenerate_all_task_questions(
         session=session, task_id=task.id, new_task_questions=new_tqs
     )
@@ -595,6 +867,100 @@ def regenerate_all(*, session: Session, parent: User, task_id: UUID) -> TaskResp
     return task_to_resp(
         updated, get_task_questions(session=session, task_id=updated.id), include_answer=True
     )
+
+
+def regenerate_all(*, session: Session, parent: User, task_id: UUID) -> TaskResp:
+    """整卷重生成（R-Q2=c）：按 Task.specs 原规格重跑，全量替换草稿项。
+
+    若 Task.specs 为空（非本版流程创建的草稿），抛 VALIDATION 错误，要求家长
+    返回出题页重新生成。
+    """
+    task, spec_items, interests_pool, engine = _regenerate_all_inputs(
+        session=session, parent=parent, task_id=task_id
+    )
+    new_tqs = [
+        _gen_tq_for_spec_item(
+            item,
+            idx,
+            interests=interests_pool,
+            focus_interests=task.focus_interest,
+            engine=engine,
+        )
+        for idx, item in enumerate(spec_items)
+    ]
+    return _commit_regenerated(session=session, task=task, new_tqs=new_tqs)
+
+
+async def regenerate_all_stream(
+    *, session: Session, parent: User, task_id: UUID
+) -> AsyncIterator[str]:
+    """整卷重生成的流式版：与 ``/tasks/generate`` 同一套 AG-UI 事件协议。
+
+    同步版要把整卷 N 道题一次性出完才返回，实测远超前端普通请求的 30 秒
+    receiveTimeout（模型出 2 题就要 19–36 秒），卷子越大必挂；家长点了只剩整页
+    转圈，超时后一句「请求超时」。流式版复用流式端点的长超时，并且**逐题推 STEP
+    进度帧**（「正在生成第 i/N 题…」），落库与同步版同一 ``_commit_regenerated``，
+    不引入第二条写路径。
+
+    帧序：RUN_STARTED → STEP(共 N 题) → [STEP(第 i/N 题)] × N → DATA(task) 或 ERROR → DONE。
+    每题的生成（阻塞 LLM 调用）offload 到线程，避免卡住事件循环。
+
+    前置校验也在流内收口：异步生成器里抛异常只会让客户端拿到「200 + 空正文」，
+    比一句人话错误更难排查，所以越权/非草稿/无规格统一转成 ERROR 帧。
+    """
+    try:
+        task, spec_items, interests_pool, engine = _regenerate_all_inputs(
+            session=session, parent=parent, task_id=task_id
+        )
+    except AppErrorException as e:
+        yield error_event(e.message, code=getattr(e.code, "value", str(e.code))).to_sse()
+        yield done_event().to_sse()
+        return
+    total = len(spec_items)
+    yield run_started().to_sse()
+    yield step_event(f"正在重生成整卷，共 {total} 题…").to_sse()
+
+    new_tqs: list[TaskQuestion] = []
+    failed = False
+    for idx, item in enumerate(spec_items, start=1):
+        yield step_event(f"正在生成第 {idx}/{total} 题…").to_sse()
+        sink: list[dict] = []
+        # 逐题透传 THINKING：模型在写什么，家长就能看到什么（不再只有进度文案跳变）。
+        async for frame in _stream_question_frames(
+            engine=engine,
+            subject=item["subject"],
+            grade=item["grade"],
+            knowledge_point=item["knowledge_point"],
+            qtype=item["qtype"],
+            difficulty=item["difficulty"],
+            interests=interests_pool,
+            focus_interest=_round_robin_focus(task.focus_interest, idx - 1),
+            sink=sink,
+        ):
+            yield frame
+        if not sink:
+            failed = True
+            break
+        new_tqs.append(_task_question_from_payload(sink[0]))
+
+    if failed:
+        # ERROR 帧已由 _stream_question_frames 发出（引擎不可用 / 安全校验未过）。
+        yield done_event().to_sse()
+        return
+    yield step_event("正在保存…").to_sse()
+    try:
+        resp = await asyncio.to_thread(
+            _commit_regenerated, session=session, task=task, new_tqs=new_tqs
+        )
+    except AppErrorException as e:
+        # 业务错误（非草稿 / 题不存在）转成 ERROR 帧：流已开，不能改 HTTP 状态码。
+        yield error_event(e.message, code=getattr(e.code, "value", str(e.code))).to_sse()
+        yield done_event().to_sse()
+        return
+    yield data_event(
+        resp.model_dump(mode="json"), status="done", extra={"type": "task"}
+    ).to_sse()
+    yield done_event().to_sse()
 
 
 def edit_question(

@@ -200,12 +200,49 @@ def regenerate_one(
     )
 
 
+@router.post("/{task_id}/questions/{tq_id}/regenerate-stream")
+async def regenerate_one_stream(
+    *, session: SessionDep, parent: CurrentParent, task_id: UUID, tq_id: UUID
+) -> StreamingResponse:
+    """单题重生成的流式版（SSE，事件协议同 /tasks/generate）。
+
+    同步版一次 LLM 调用常超过前端 30 秒 receiveTimeout，家长点「换一题」会长时间
+    无反馈；流式版复用长超时并逐帧推进度。落库与同步版同一 service 路径。
+    """
+    return StreamingResponse(
+        tasks_service.regenerate_one_stream(
+            session=session, parent=parent, task_id=task_id, tq_id=tq_id
+        ),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @router.post("/{task_id}/regenerate", response_model=TaskResp)
 def regenerate_all(
     *, session: SessionDep, parent: CurrentParent, task_id: UUID
 ) -> TaskResp:
     """整卷重生成（R-Q2=c）：按 Task.specs 原规格重跑，全量替换草稿项。"""
     return tasks_service.regenerate_all(session=session, parent=parent, task_id=task_id)
+
+
+@router.post("/{task_id}/regenerate-stream")
+async def regenerate_all_stream(
+    *, session: SessionDep, parent: CurrentParent, task_id: UUID
+) -> StreamingResponse:
+    """整卷重生成的流式版（SSE，事件协议同 /tasks/generate）。
+
+    同步版要等整卷 N 道题全出完（实测 2 题就 19–36 秒），远超前端 30 秒
+    receiveTimeout；流式版复用长超时并逐题推「第 i/N 题」进度。落库与同步版同一
+    service 路径（``_commit_regenerated``）。
+    """
+    return StreamingResponse(
+        tasks_service.regenerate_all_stream(
+            session=session, parent=parent, task_id=task_id
+        ),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.put("/{task_id}/questions/{tq_id}", response_model=QuestionResp)

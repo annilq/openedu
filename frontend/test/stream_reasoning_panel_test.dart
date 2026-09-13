@@ -1,17 +1,20 @@
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:kids_learn/features/home/presentation/widgets/parent/preview_generating.dart';
+import 'package:kids_learn/shared/widgets/stream_reasoning_panel.dart';
 
 /// 抓「推理闪现」回归：渲染层必须忠实映射 [reasoning]，给定即同步显示全文，
 /// 不得依赖自定时 Timer（旧 [ReasoningTypewriterWidget] 在生成期 `_shown` 永不前进，
 /// 题卡到达后全文闪现）。widget 测试中不 advance 任何 Timer，故本测试在旧实现下必失败。
+///
+/// 覆盖首次出题（`/tasks/generate`）与重生成（`regenerate-stream`）共用的
+/// [StreamReasoningPanel]（DRY 收敛点）。
 Widget _host(Widget child) => CupertinoApp(home: CupertinoPageScaffold(child: child));
 
 void main() {
   testWidgets('推理给定即同步显示全文（含光标），不依赖定时器', (tester) async {
     await tester.pumpWidget(
-      _host(const PreviewGenerating(
+      _host(const StreamReasoningPanel(
         index: 1,
         label: '',
         reasoning: '先审题再拆解考点',
@@ -25,7 +28,7 @@ void main() {
 
   testWidgets('streaming=false 时不挂光标', (tester) async {
     await tester.pumpWidget(
-      _host(const PreviewGenerating(
+      _host(const StreamReasoningPanel(
         index: 2,
         label: '已生成',
         reasoning: '已完成解析',
@@ -38,7 +41,7 @@ void main() {
 
   testWidgets('reasoning 为空时显示占位文案', (tester) async {
     await tester.pumpWidget(
-      _host(const PreviewGenerating(
+      _host(const StreamReasoningPanel(
         index: 3,
         label: '',
         reasoning: '',
