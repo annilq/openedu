@@ -6,6 +6,7 @@ import '../../../../shared/presentation/resource.dart';
 import '../../../../shared/exceptions/app_exception.dart';
 import '../../../assistant/data/assistant_api_client.dart';
 import '../../../assistant/domain/ai_text_fold.dart';
+import '../../../assistant/domain/assistant_event.dart';
 import '../../../assistant/presentation/provider/assistant_notifier.dart';
 
 /// 一条对话气泡。
@@ -48,6 +49,18 @@ class TutorNotifier extends StateNotifier<TutorState> {
 
   TutorNotifier(this._assistant) : super(const TutorInitial());
 
+  /// 当前伴学会话 id：首轮由后端 DONE 帧回写，之后每轮带回以续接上下文。
+  ///
+  /// 与悬浮助手各自独立（两个 notifier 实例 = 两条会话线）。后端会做归属校验，
+  /// 不匹配时另建会话并回写新 id，此处覆盖即可。
+  String? _currentSessionId;
+
+  /// 开启新会话：清空气泡与会话 id，下一轮重新建立后端会话。
+  void reset() {
+    _currentSessionId = null;
+    state = const TutorInitial();
+  }
+
   /// 防重入：提交中忽略重复点击，避免连点重复消耗每日额度。
   Future<void> ask(TutorAskReq req) async {
     // 统一收敛到流式端点（SSE `/assistant/chat`），行为一致。
@@ -79,9 +92,16 @@ class TutorNotifier extends StateNotifier<TutorState> {
     var fold = const AiTextFold();
     try {
       final stream = _assistant.streamChat(
-        AssistantChatReq(message: req.question),
+        AssistantChatReq(
+          message: req.question,
+          sessionId: _currentSessionId,
+        ),
       );
       await for (final ev in stream) {
+        // 会话身份随 DONE 帧回写：首轮建立；归属校验失败时后端换新 id，此处自愈覆盖。
+        if (ev.eventType == AssistantEventType.done && ev.sessionId != null) {
+          _currentSessionId = ev.sessionId;
+        }
         fold = fold.apply(ev);
         state = TutorLoading([
           ...history,
