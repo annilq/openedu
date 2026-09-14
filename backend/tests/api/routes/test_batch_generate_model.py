@@ -6,14 +6,14 @@ batch-generate 已删除，出题统一经
 `POST /tasks/from-generated`（落库预设题卡）→ `POST /tasks/{id}/regenerate`
 （按 Task.model 复用共享出题管线 ``question.pipeline.generate_question`` 重跑）。本测试用假 provider 验证：
   1) resolve_engine 收到的正是 Task 所选 model；
-  2) 重生成走 Genkit 路径（pipeline.generate_question 被调用）；
+  2) 重生成经 resolve_engine 解析引擎 → build_provider 构造 provider → stream_question 产出题卡（非 mock）；
   3) 所选 model 实际驱动出题（题面来自假 ollama 引擎）。
 """
 from __future__ import annotations
 
 from types import SimpleNamespace
 
-from app.domain.provider import GeneratedQuestion
+from agent_core.ports import LLMProvider, StructuredDone, TextDelta
 from tests.utils.user import auth_headers, register_parent
 
 
@@ -65,41 +65,49 @@ def test_regenerate_honors_selected_model(client, monkeypatch):
     cid = _create_child(client, ptoken, username="mfix_kid_a")["id"]
     tid = _make_draft(client, ptoken, cid, model="local-llama")
 
-    captured = {"model_ref": None, "genkit_called": False}
+    captured = {"model_ref": None, "provider_built": False}
 
     def fake_resolve(model_ref=None, *, parent_id=None, session=None):
         captured["model_ref"] = model_ref
+        # 模拟「模型管理」中解析出的引擎（只验证它被传给 provider 构造）
         return SimpleNamespace(genkit=SimpleNamespace(model="ollama/llama3"), model="ollama/llama3")
 
-    async def fake_generate_question(
-        provider, *, subject, grade, knowledge_point, qtype, difficulty,
-        interests=None, focus_interest=None, rag_context=None, persona_hint=None,
-    ):
-        captured["genkit_called"] = True
-        return GeneratedQuestion(
-            subject=subject,
-            grade=grade,
-            knowledge_point=knowledge_point,
-            qtype=qtype,
-            stem=f"[ollama]{subject}-{knowledge_point}",
-            options=None,
-            answer="42",
-            explanation="x",
-            difficulty=difficulty,
-        )
+    class FakeOllamaProvider(LLMProvider):
+        """假 ollama 引擎 provider：直接产出结构化题卡，证明走了 Genkit 路径。"""
+
+        configured = True
+
+        async def stream(self, system, prompt, *, schema=None, tools=None, history=None):
+            yield TextDelta(delta="[ollama] 推理中…")
+            yield StructuredDone(
+                data={
+                    "subject": "数学",
+                    "grade": 2,
+                    "knowledge_point": "加法",
+                    "qtype": "calc",
+                    "stem": "[ollama]数学-加法",
+                    "options": None,
+                    "answer": "42",
+                    "explanation": "占位",
+                    "difficulty": "easy",
+                    "reasoning": "假 ollama 引擎出题",
+                }
+            )
+
+    def fake_build_provider(engine=None):
+        captured["provider_built"] = True
+        return FakeOllamaProvider()
 
     monkeypatch.setattr("app.features.tasks.service.resolve_engine", fake_resolve)
-    monkeypatch.setattr(
-        "app.ai.subagents.question.pipeline.generate_question", fake_generate_question
-    )
+    monkeypatch.setattr("app.domain.build_provider", fake_build_provider)
 
     r = client.post(f"/api/v1/tasks/{tid}/regenerate", headers=auth_headers(ptoken))
     assert r.status_code == 200, r.text
     body = r.json()
     # 1) 重生成按 Task.model 解析，后端确实收到了所选模型
     assert captured["model_ref"] == "local-llama"
-    # 2) 出题走了 Genkit 路径（非 mock）
-    assert captured["genkit_called"] is True
+    # 2) 出题经 resolve_engine 解析的引擎构造了 provider（走 Genkit 路径，非 mock）
+    assert captured["provider_built"] is True
     # 3) 题面来自假 ollama 引擎，证明未被 mock 模板替代
     assert body["questions"][0]["stem"] == "[ollama]数学-加法"
 
