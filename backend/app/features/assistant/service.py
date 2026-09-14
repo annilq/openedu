@@ -13,7 +13,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 from uuid import UUID, uuid4
 
-from agent_core.ports import RuntimeDeps
+from agent_core.ports import RuntimeDeps, TextDelta
 from agent_core.protocol import (
     EVENT_ASSISTANT_MESSAGE,
     EVENT_DATA,
@@ -32,11 +32,38 @@ from app.domain import build_provider, build_retriever
 from app.domain.safety import ChildSafety
 from app.features.assistant.repository import (
     get_conversation_by_id,
-    load_chat_history,
+    load_chat_history_with_summary,
     next_turn,
 )
 from app.features.assistant.schemas import AssistantChatReq
 from app.features.tutor.repository import create_tutor_log
+
+# 自动摘要（P2）：compaction 命中预算要丢轮次时，把最旧轮次压成一句摘要注入，
+# 而非直接丢弃，保留长对话的上下文连续性。
+_SUMMARY_SYSTEM = (
+    "你是对话摘要器。把下面多轮学习对话压缩成一句中文摘要（不超过 80 字），"
+    "保留关键事实：学生问了什么、做了什么题、结论或订正要点。"
+    "不要编造，不要复述原文。"
+)
+
+
+async def _summarize_dropped(provider, dropped: list[dict]) -> str | None:
+    """把被 compaction 丢弃的最旧轮次压缩成一句摘要；失败返回 None 回退纯丢弃。"""
+    if not dropped:
+        return None
+    lines = "\n".join(
+        f"{'学生' if m.get('role') == 'user' else '老师'}: {m.get('content', '')}"
+        for m in dropped
+    )
+    parts: list[str] = []
+    try:
+        async for ev in provider.stream(_SUMMARY_SYSTEM, f"【对话历史】\n{lines}"):
+            if isinstance(ev, TextDelta):
+                parts.append(ev.delta)
+    except Exception:
+        return None
+    text = "".join(parts).strip()
+    return text or None
 
 
 async def chat(
@@ -100,7 +127,13 @@ async def chat(
             conversation = existing
             conv_id = existing.id
             conversation.status = "running"
-            history = load_chat_history(session, conv_id)
+            # 自动摘要（P2）：compaction 需丢最旧轮次时复用本次 provider 压成摘要注入，
+            # 失败则回退纯丢弃——不额外构造 provider、不阻断主链路。
+            history = await load_chat_history_with_summary(
+                session,
+                conv_id,
+                summarize=lambda dropped: _summarize_dropped(provider, dropped),
+            )
             session.add(
                 Message(
                     conversation_id=conv_id,
