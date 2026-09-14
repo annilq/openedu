@@ -26,7 +26,17 @@
 - Flutter SDK 在 `/Users/yunqi/Documents/flutter`（不在 PATH）。
 - `flutter analyze` 可跑（会写 `~/.dartServer`，可能触发沙箱授权）；`flutter_tester` / `flutter test` 在沙箱内跑不起来 → 前端改动只能 analyze + 真机验证。
 
+## 引擎失败归因与密钥（ADR-0038）
+
+- **`api_key` 解不开只能返回 `None`**（`app/core/crypto.py#decrypt`）——曾返回密文原文，Fernet 密文被当 API Key 发给厂商（401 + 凭据外泄，事故现场 `Your api key: ****xOOR` 的 `xOOR` 是密文尾号）。
+- **`SECRET_KEY` 默认值漂移会静默废掉所有已存密钥**：Fernet 密钥 = `MODEL_APIKEY_SECRET or SECRET_KEY`（走 SHA-256→base64）。仓库根 `.env`（值 `dev-secret-change-me`）已弃用改名后，`SECRET_KEY` 回落默认 `changeme` → 旧密文再也解不开。**生产/长期使用请显式配 `MODEL_APIKEY_SECRET`**；已存在的密文按当前密钥重填即可恢复。
+- **失败分两类，不得混用**：模型没有 function calling → `ToolUnsupportedError` / `ERROR(TOOL_UNSUPPORTED)`（ADR-0033）；厂商拒绝（认证/限流/网络/参数）→ `ProviderRequestError(kind)` / `ERROR(PROVIDER_ERROR)`，用户提示走 `err.user_hint`（原始厂商报文只进日志）。分类单一落点 `agent_core/adapters/genkit.py#classify_failure`（默认必须落 ProviderRequestError）。
+- **上层禁止 `except Exception` 把引擎失败抹成「请添加模型」**：出题/批改路径已分流（`features/tasks/service.py`、`features/review/service.py` → `ErrCode.LLM_REQUEST_FAILED` = `SYS_10007`，502）。
+- 后端服务端 warning 已有密钥解密失败日志；**启动期密钥健康检查仍缺**（家长要等到提问失败才知道）。
+
 ## 后端测试约束
 
 - 必须 `cd backend && mv .env .env.hidden` 再跑 pytest（否则 pydantic-settings 读 .env 被 broker 拦），跑完恢复。
 - 用 `.venv/bin/ruff` / `.venv/bin/pytest`（`uv` 不在 PATH）；Bash cwd 不跨调用持久，用 `cd backend && ...` 串联。
+- **zsh 里 `grep "a\|b"` 会静默返回空**（`\|` 交替在本 shell 下失灵），要多次搜索就用 Grep 工具或分多次单模式 grep，别被空结果误导。
+- 沙箱偶发 `PermissionError: Sensitive content approval timed out`（broker 审批准时），**重跑即可**，不是代码问题。
