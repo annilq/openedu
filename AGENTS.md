@@ -25,6 +25,7 @@ K12 错题复习应用：家长出题 → 儿童答题产生错题 → 间隔重
 - **ADR**：决策记 `docs/adr/`，被引用即需可定位；领域词汇以 `CONTEXT.md` 为唯一事实源。
 - **设计系统**：颜色/间距/字号只走 `AppColors`/`AppSpacing`/`AppText` 令牌，禁止硬编码。
 - **跨层硬规则**：归属/可见性判定只经 `core.guard`；query 工具只经 service 取数。
+- **前端分层**（ADR-0037）：`main/ → features/* → shared/*` 单向，**`shared/` 不得 import `features/`**；feature 之间不得横向互引（唯一豁免 `features/home/presentation/`，展示层组合根）；feature 与后端 `app/features/*` 一一对应。`App*` 前缀只给 `shared/widgets/` 通用组件——组件一旦订阅某 feature 的 provider 就落回该 feature。由 `frontend/test/feature_boundaries_test.dart` 静态扫描守住。
 
 ## 命令速查 → [docs/agents/development.md#2-命令速查commands](docs/agents/development.md)
 
@@ -56,4 +57,4 @@ Issues / PRDs 以 GitHub Issues 承载，全部操作经 `gh` CLI。建读列评
 
 - **领域术语**：`CONTEXT.md`（唯一 glossary）。
 - **架构评审**：`docs/agent-core-architecture-review.md`（含 P0 缺失 ADR、P1 缺 compaction、P2 缺扩展钩子、前端 SSE 逐帧渲染待定）。
-- **ADR 引用悬空**：代码 docstring 引用 0003/0021/0031/0032/0033 等，但 `docs/adr/` 仅 0001–0005 落地——新增决策先补 ADR 再交叉链接。
+- **ADR 索引**：`docs/adr/` 已落地 0001–0037（含 0008/0012/0014/0015/0017/0019/0020/0021–0028/0030–0037）；仅 0006/0007/0009–0011/0013/0016/0018/0029 无文档。新增决策先补 ADR 再在代码中交叉链接引用。

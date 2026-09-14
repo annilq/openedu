@@ -8,14 +8,14 @@ import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/widgets/app_inputs.dart';
 import '../../../../../shared/widgets/app_loading.dart';
 import '../../../../../shared/widgets/stream_reasoning_panel.dart';
-import '../../../../../shared/widgets/app_model_selector.dart';
 import '../../../../../shared/widgets/app_toast.dart';
 import '../../../../children/domain/providers/children_provider.dart';
 import '../../../../children/presentation/providers/children_notifier.dart';
-import '../../../../tutor/presentation/providers/models_notifier.dart';
+import '../../../../model_management/presentation/providers/models_notifier.dart';
+import '../../../../model_management/presentation/widgets/model_selector.dart';
+import '../../../../review/presentation/providers/review_notifier.dart';
 import '../../providers/home_notifier.dart';
 import '../../providers/selected_child_provider.dart';
-import '../../../../review/presentation/providers/review_notifier.dart';
 
 /// 布置练习任务右栏：多学科行表单 + 一键均分 + 生成（ADR-0004）。
 /// R3：生成成功后不直接跳娃娃练习页，回调 `onNavigateToReview` 进草稿审核页。
@@ -267,7 +267,7 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
                     const SizedBox(height: AppSpacing.lg),
                     ...List.generate(_rows.length, _buildRow),
                     const SizedBox(height: AppSpacing.xl),
-                    AppModelSelector(
+                    ModelSelector(
                       selected: _modelId,
                       onChanged: (v) => setState(() => _modelId = v),
                       showDefaultOption: false,

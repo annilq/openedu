@@ -1,22 +1,26 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'app_inputs.dart';
-import '../../features/tutor/presentation/providers/models_notifier.dart';
+import '../../../../shared/widgets/app_inputs.dart';
+import '../providers/models_notifier.dart';
 
-/// 可选 AI 模型的统一选择器（App* 语义组件，跨特性复用）。
+/// AI 模型选择器（归属模型管理 feature，非通用设计系统组件）。
 ///
 /// - 默认含首项「默认（后端自动）」（值为 null，以空串 '' 在 picker 中表示）；
 ///   出题场景可传 [showDefaultOption] = false 隐藏该项，强制显式选择模型。
 /// - 数据来自 [modelsNotifierProvider]（GET /models，仅家长可见自定义模型）。
 /// - 未加载时自动触发一次拉取；调用方也可在 initState 预加载。
-class AppModelSelector extends ConsumerWidget {
+///
+/// 归位说明（ADR-0037）：本组件认识 builtin/custom/isDefault 等模型域语义，
+/// 且直接订阅 `modelsNotifierProvider`，因此**不属于** `shared/widgets/` 的
+/// 通用组件（`App*` 前缀族）。此前放在 shared 导致 shared → features 反向依赖。
+class ModelSelector extends ConsumerWidget {
   final String? selected; // 模型 id；null = 默认（后端自动）
   final ValueChanged<String?> onChanged;
   final String label;
   final bool showDefaultOption;
 
-  const AppModelSelector({
+  const ModelSelector({
     super.key,
     this.selected,
     required this.onChanged,

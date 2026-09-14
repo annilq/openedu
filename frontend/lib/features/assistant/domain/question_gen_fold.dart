@@ -1,4 +1,4 @@
-import '../../../../shared/domain/models/models.dart';
+import '../../../shared/domain/models/models.dart';
 import 'assistant_event.dart';
 
 /// 把 AG-UI 事件流折成「出题预览态」的纯模块。

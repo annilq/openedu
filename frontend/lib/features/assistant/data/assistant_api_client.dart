@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
-import '../../../../shared/data/remote/network_service.dart';
-import '../../../../shared/domain/models/models.dart';
+import '../../../shared/data/remote/network_service.dart';
+import '../../../shared/domain/models/models.dart';
 import '../domain/assistant_event.dart';
 
 /// 悬浮助手对话请求体（ADR-0024）：只需自由文本 + 角色（由后端 JWT 解析）。

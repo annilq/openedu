@@ -13,7 +13,7 @@ import '../../../review/presentation/providers/review_notifier.dart';
 import '../../../review/presentation/screens/review_screen.dart';
 import '../../../review/presentation/screens/wrong_questions_screen.dart';
 import '../../../tutor/presentation/screens/tutor_chat_screen.dart';
-import '../../../tutor/presentation/screens/parent_model_management_screen.dart';
+import '../../../model_management/presentation/screens/parent_model_management_screen.dart';
 import '../providers/home_notifier.dart';
 import '../providers/parent_tasks_notifier.dart';
 import '../providers/selected_child_provider.dart';

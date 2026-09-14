@@ -94,16 +94,18 @@ app/
 frontend/lib/
 ├── main/            # 入口 + AdaptiveShell（三档断点响应式壳，AppUserMode 作用域）
 ├── configs/         # AppConfig：apiBase 经 --dart-define=API_BASE 注入，默认 127.0.0.1:8000
-├── features/        # auth / children / home / practice / review / tutor / assistant / profile（Riverpod）
+├── features/        # assistant / authentication / children / home / model_management / practice / profile / review / tutor（Riverpod）
 ├── services/        # auth_session（token 持久化）
 ├── shared/          # data / domain / exceptions / presentation / theme / utils / widgets
 └── dev/             # theme_preview.dart（设计系统自检，CI 外本地跑）
 ```
 
+- **分层与依赖方向（ADR-0037）**：`main/ → features/* → shared/*` 单向。`shared/` 是跨 feature 基础层，**不得 import `features/`**；feature 之间不得横向互引，唯一豁免是 `features/home/presentation/`（展示层组合根，装配各 feature 页面）。feature 与后端 `app/features/*` 一一对应。`App*` 前缀保留给 `shared/widgets/` 的通用设计系统组件——组件一旦订阅某 feature 的 provider 就必须落回该 feature（如 `model_management` 的 `ModelSelector`）。
+
 - **状态/网络**：Riverpod + Dio。`AppConfig.apiBaseUrl` = `API_BASE + /api/v1`。
 - **双模式**：`AppUserMode`（家长/儿童）持久化于 `storage_service`，在根 `AdaptiveShell` 作用域生效（ADR-0002）。Child Mode 整体放大一档字号，文案第一人称切换，消费学科 accent 令牌。
 - **设计系统单一事实源**：`AppColors` / `AppSpacing` / `AppText._typeScale` 推导所有颜色、间距、字号、转场时长；组件禁止硬编码 `Colors.*` 与魔法十六进制（`analysis_options.yaml` 已声明硬约束，待 `custom_lint` 启用静态强制）。
-- **AI 消费**：`features/assistant/` 按 SSE 事件帧即时 `setState`，`reasoning_typewriter.dart` 打字机揭示推理文本（ADR-0005；也是「生成任务闪现」缺陷的约束来源）。
+- **AI 消费**：`features/assistant/` 按 SSE 事件帧即时 `setState`，`shared/widgets/stream_reasoning_panel.dart` 打字机揭示推理文本（ADR-0017；也是「生成任务闪现」缺陷的约束来源）。
 
 ---
 
@@ -135,5 +137,5 @@ frontend/lib/
 - SubAgent：`backend/app/ai/subagents/{query,question,tutor}/{agent,manifest}.py`
 - SSE 入口与编排：`backend/app/features/assistant/{router,service}.py`
 - 归属/可见性：`backend/app/core/guard.py`
-- 分层不变量测试：`backend/tests/ai/test_layering_invariants.py`
+- 分层不变量测试：后端 `backend/tests/ai/test_layering_invariants.py`；前端 `frontend/test/feature_boundaries_test.dart`
 - 设计令牌：`frontend/lib/shared/theme/app_theme.dart`；双模式壳：`frontend/lib/main/adaptive_shell.dart`
