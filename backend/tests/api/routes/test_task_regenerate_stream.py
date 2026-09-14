@@ -129,7 +129,7 @@ def test_stream_regenerate_persists_new_question(client, monkeypatch):
 
 
 def test_stream_regenerate_reports_error_in_stream(client):
-    """无 LLM 引擎：同步版 500，流式版必须在流内以 ERROR 帧收尾。"""
+    """无可用 AI 出题引擎：同步版 500，流式版必须在流内以 ERROR 帧收尾。"""
     ptoken = register_parent(client, username="sse_regen_p2").json()["access_token"]
     pid = _parent_id(client, ptoken)
     task_id, tq_ids = _make_draft(pid, n=1)
@@ -147,4 +147,4 @@ def test_stream_regenerate_reports_error_in_stream(client):
     assert types == ["RUN_STARTED", "STEP", "ERROR", "DONE"]
     err = frames[2]
     assert err["code"] == "SYS_10006"
-    assert "LLM" in err["message"]
+    assert "出题引擎" in err["message"]

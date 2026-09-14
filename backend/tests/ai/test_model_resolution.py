@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
 from sqlmodel import Session
 
 from app.ai import list_builtin_models, resolve_engine
