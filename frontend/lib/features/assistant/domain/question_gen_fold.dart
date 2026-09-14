@@ -47,7 +47,7 @@ class QuestionGenFold {
 
   static const _generating = '生成中';
   static const _genFailed = '生成失败';
-  static const _emptyHint = '本次未能生成题目，请检查后端 AI 出题引擎配置（LLM_PROVIDER + API key）。';
+  static const _emptyHint = '本次未能生成题目，请检查后端 AI 出题引擎配置（在「模型管理」中添加模型并设为默认）。';
 
   bool get hasError => errorText != null;
 

@@ -5,13 +5,13 @@
 
 ## 这是什么
 
-K12 错题复习应用：家长出题 → 儿童答题产生错题 → 间隔重复复习直至毕业。Flutter 平板 App + FastAPI 后端（单 wheel 含 `agent_core` 内核 + `app` 集成层）+ SQLite/PostgreSQL。无模型 key 也能跑通（`LLM_PROVIDER=mock` 兜底）。
+K12 错题复习应用：家长出题 → 儿童答题产生错题 → 间隔重复复习直至毕业。Flutter 平板 App + FastAPI 后端（单 wheel 含 `agent_core` 内核 + `app` 集成层）+ SQLite/PostgreSQL。模型经「模型管理」配置（家长 `ModelConfig` / 管理员 `BUILTIN_MODELS`）；未配置时出题/答疑/批改返回「未配置模型」提示，**无离线 mock 兜底**。
 
 ## 技术栈速览
 
 - **前端**：Flutter（Dart ≥3.5，CI 锁 3.47.2）· Riverpod · Dio · Cupertino · shadcn_ui · tablet-first
 - **后端**：Python ≥3.14 · FastAPI · SQLModel · `uv` 管理依赖
-- **AI**：`agent_core` 框架无关内核 + genkit 适配器；`LLM_PROVIDER=mock|langchain|deepseek`
+- **AI**：`agent_core` 框架无关内核 + genkit 适配器；引擎统一经 `resolve_engine` 解析（家长 `ModelConfig` / 管理员 `BUILTIN_MODELS`，无本地 `LLM_PROVIDER` 等旁路 env）
 - **DB**：SQLite（默认零依赖）/ PostgreSQL（Docker / 云）
 
 ## 架构 → [docs/agents/architecture.md](docs/agents/architecture.md)

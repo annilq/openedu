@@ -9,7 +9,7 @@
   1. 显式 ModelConfig id（家长自定义，需 parent_id + session，越权返回 None）
   2. 内置模型 id（settings.BUILTIN_MODELS 目录）
   3. 未指定 model_ref 时，回落本家长的默认 ModelConfig（模型管理「设为默认」）
-  4. 均无 → 返回 None，由上层下发「未配置模型」提示或回退 MockProvider。
+  4. 均无 → 返回 None，由上层下发「未配置模型」提示（无离线 mock 兜底，需经「模型管理」配置真实模型）。
 
 本模块只做**配置解析**（读 ModelConfig 表 / 解密密钥 / 读 settings → 中性参数），
 真正的 Genkit 实例构造在 ``agent_core.adapters.genkit.build_genkit_engine``
@@ -115,7 +115,7 @@ def resolve_engine(
       1. 显式 ModelConfig id（家长自定义，需 parent_id + session，越权返回 None）
       2. 内置模型 id（settings.BUILTIN_MODELS 目录）
       3. 未指定 model_ref 时，回落本家长的默认 ModelConfig（模型管理「设为默认」）
-      4. 均无 → 返回 None，由上层下发「未配置模型」提示或回退 MockProvider
+      4. 均无 → 返回 None，由上层下发「未配置模型」提示（无离线 mock 兜底，需经「模型管理」配置真实模型）
     """
     # 1) 家长自定义 ModelConfig（仅 model_ref 为合法 UUID 时才查表，避免内置 id 触发 .hex 崩溃）
     if model_ref and session is not None and parent_id is not None:

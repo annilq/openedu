@@ -9,7 +9,7 @@
 
 - **后端**：Python ≥ 3.14（CI 锁 3.14），依赖用 `uv` 管理。首次 `uv sync` 自动建虚拟环境。
 - **前端**：Flutter SDK ≥ 3.5（CI 锁 **3.47.2**），Dart ≥ 3.5。`flutter pub get` 后联调。
-- **配置**：`cp .env.example .env`（后端从仓库根读 `.env`）。`LLM_PROVIDER=mock` 无需 key 即可跑通闭环。
+- **配置**：`cp .env.example .env`（后端从仓库根读 `.env`）。AI 模型须经「模型管理」配置——管理员设 `BUILTIN_MODELS` env 预设模型（如本地 Ollama），或家长在「模型管理」中添加 `ModelConfig` 并设为默认。**无本地 `LLM_PROVIDER` mock 兜底**，未配置模型时出题/答疑/批改不可用。
 
 ---
 
@@ -24,7 +24,7 @@
 | **局域网联调（真机/平板必用）** | `uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload` |
 | Lint | `uv run ruff check .` |
 | 测试 | `uv run pytest -q` |
-| 真实模型 smoke | `LLM_PROVIDER=deepseek RUN_LLM_SMOKE=1 uv run pytest tests/domain/test_llm_smoke.py -m smoke -v` |
+| 真实模型 smoke | `BUILTIN_MODELS='[{"id":"local-llama","provider":"ollama","base_url":"http://localhost:11434","model_name":"qwen2.5:latest"}]' RUN_LLM_SMOKE=1 uv run pytest tests/domain/test_llm_smoke.py -m smoke -v` |
 | 健康检查 | `curl http://localhost:8000/api/v1/health` |
 | 版权合规自检（门禁逻辑） | `python scripts/copyright_compliance_check.py --self-test` |
 

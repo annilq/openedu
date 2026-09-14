@@ -2,7 +2,7 @@
 
 家长给娃娃布置 AI 生成的日常练习，娃娃在平板上做题、自动批改、打卡、错题复习与 AI 伴学答疑。
 技术栈：**Flutter 平板 App（Riverpod + Dio + Cupertino + shadcn_ui，tablet-first）+ Python/FastAPI/SQLModel 后端（单 wheel 含 `agent_core` 内核）+ SQLite（默认）/ PostgreSQL**。
-**无模型 key 也能跑通**（默认 `LLM_PROVIDER=mock` 兜底）。
+AI 模型经「模型管理」配置（家长 `ModelConfig` / 管理员 `BUILTIN_MODELS`），**无本地 mock 兜底**：未配置模型时出题/答疑/批改返回「未配置模型」提示。
 
 ---
 
@@ -30,8 +30,8 @@ SQLite（本地零依赖，默认） / PostgreSQL（Docker / 云）
 **所有 AI 能力经单一 SSE 入口** `POST /api/v1/assistant/chat`（流式 AG-UI 事件帧：USER_MESSAGE / THINKING / TOOL_CALL / TOOL_RESULT / DATA / ASSISTANT_MESSAGE / DONE）。出题 / 伴学 / 查询都走此入口；旧的 `/ai/tutor/ask`、`/ai/tasks/generate` 已废弃并收敛到此。分层不变量（内核不反向依赖 app / fastapi、genkit 唯一落点、归属判定只经 `core.guard`）由 `tests/ai/test_layering_invariants.py` 静态扫描守住（见 `docs/agents/architecture.md`）。
 
 核心原则：
-- **不在 LangChain 之上重复封装 provider**：`LLMProvider` 是 `agent_core/ports.py` 里的抽象端口，业务只认抽象、不绑框架；`LLM_PROVIDER=mock|langchain|deepseek` 切换，国产模型填 `LLM_BASE_URL`(OpenAI 兼容) 即可接入。
-- **模型先不定**：默认 `mock` 无需 key 即可跑通闭环。
+- **不在 LangChain 之上重复封装 provider**：`LLMProvider` 是 `agent_core/ports.py` 里的抽象端口，业务只认抽象、不绑框架；模型统一经「模型管理」配置，引擎解析收敛到 `resolve_engine`（家长 `ModelConfig` / 管理员 `BUILTIN_MODELS`），无本地 `LLM_PROVIDER` 等旁路 env。
+- **模型必须经「模型管理」配置**：出题/答疑/批改都需真实引擎；未配置时返回「未配置模型」提示，不再有离线 `mock` 兜底。
 
 ---
 
@@ -78,7 +78,7 @@ SQLite（本地零依赖，默认） / PostgreSQL（Docker / 云）
 
 ### 方式 A：本地直接跑（无需 Docker，推荐先验证）
 
-后端用 `uv` 管理依赖（Python >= 3.14，`uv.lock` 已锁定）。默认 `LLM_PROVIDER=mock`，无需 key；本地默认 SQLite，零额外依赖。
+后端用 `uv` 管理依赖（Python >= 3.14，`uv.lock` 已锁定）。本地默认 SQLite，零额外依赖；但 AI 出题/答疑/批改需先在「模型管理」配置模型（见下方「配置模型」），否则相关接口返回「未配置模型」提示。
 
 ```bash
 # 1) 复制配置模板到仓库根目录（后端会优先读取根目录的 .env）
@@ -117,7 +117,7 @@ flutter run --dart-define=API_BASE=http://<电脑局域网IP>:8000
 ### 方式 B：Docker 一键（PostgreSQL）
 
 ```bash
-cp .env.example .env          # 按需改 SECRET_KEY / LLM_*
+cp .env.example .env          # 按需改 SECRET_KEY / BUILTIN_MODELS（模型预设，见「配置模型」）
 docker compose up --build     # 启动 PostgreSQL + backend，后端暴露 8000
 ```
 
@@ -136,7 +136,7 @@ docker compose up --build     # 启动 PostgreSQL + backend，后端暴露 8000
 | 局域网联调（真机/平板必用） | `uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload` |
 | Lint（零 error 门禁） | `uv run ruff check .` |
 | 测试 | `uv run pytest -q` |
-| 真实模型 smoke | `LLM_PROVIDER=deepseek RUN_LLM_SMOKE=1 uv run pytest tests/domain/test_llm_smoke.py -m smoke -v` |
+| 真实模型 smoke | `BUILTIN_MODELS='[{"id":"local-llama","provider":"ollama","base_url":"http://localhost:11434","model_name":"qwen2.5:latest"}]' RUN_LLM_SMOKE=1 uv run pytest tests/domain/test_llm_smoke.py -m smoke -v` |
 | 健康检查 | `curl http://localhost:8000/api/v1/health` |
 | 版权合规自检（门禁逻辑） | `python scripts/copyright_compliance_check.py --self-test` |
 
@@ -163,24 +163,25 @@ docker compose up --build     # 启动 PostgreSQL + backend，后端暴露 8000
 
 ---
 
-## 配置真实大模型
+## 配置模型（「模型管理」）
 
-编辑仓库根目录 `.env`（后端从根目录读取，容器内兜底读取 `backend/.env`）：
+AI 出题 / 伴学 / 批改都需真实引擎，且**已无本地 `mock` 兜底**——未配置模型时相关接口返回「未配置模型」提示。两种配置路径：
+
+**路径 A：管理员预设（推荐本地 / 演示）**
+在仓库根 `.env`（后端从根目录读取）注入 `BUILTIN_MODELS` JSON，声明内置模型：
 
 ```dotenv
-# 方式一：通用 OpenAI 兼容端点（混元/通义/豆包等）
-LLM_PROVIDER=langchain
-LLM_BASE_URL=https://api.hunyuan.cloud.tencent.com/v1
-LLM_MODEL=hunyuan-lite
-LLM_API_KEY=你的key
-
-# 方式二：DeepSeek 快捷预设（无需填上面 LLM_* 三项）
-# LLM_PROVIDER=deepseek
-# DEEPSEEK_API_KEY=你的deepseek_key
+# 本地 Ollama 示例（需先起 Ollama 并拉好模型）
+BUILTIN_MODELS='[{"id":"local-llama","provider":"ollama","base_url":"http://localhost:11434","model_name":"qwen2.5:latest"}]'
+# 远程 OpenAI 兼容端点示例（api_key 留空时由 .env 外的「模型管理」UI 填，或在此直填）
+# BUILTIN_MODELS='[{"id":"deepseek","provider":"openai_compat","base_url":"https://api.deepseek.com/v1","model_name":"deepseek-chat","api_key":"你的key"}]'
 ```
 
-> 未知 provider 值会回退 mock 并告警；显式选 `langchain`/`deepseek` 但未配好端点会在启动时报错。
-> 真实连通 smoke 测试：`LLM_PROVIDER=deepseek RUN_LLM_SMOKE=1 uv run pytest tests/domain/test_llm_smoke.py -m smoke -v`
+**路径 B：家长在「模型管理」中添加**
+家长登录后在「模型管理」页面添加模型（填写 provider / base_url / api_key，api_key 经 Fernet 加密落 `ModelConfig` 表），并「设为默认」。未显式指定模型时回落该默认模型。
+
+> `BUILTIN_MODELS` 为 env JSON 数组：`[{id,label?,provider,model_name,base_url?}]`，`provider ∈ {ollama, openai_compat}`；`base_url` 缺省时 ollama 走 `OLLAMA_BASE_URL`（默认 `http://localhost:11434`）。
+> 真实连通 smoke 测试（需先按路径 A 配好 Ollama 模型）：`BUILTIN_MODELS='[{"id":"local-llama","provider":"ollama","base_url":"http://localhost:11434","model_name":"qwen2.5:latest"}]' RUN_LLM_SMOKE=1 uv run pytest tests/domain/test_llm_smoke.py -m smoke -v`
 
 ---
 
@@ -233,7 +234,7 @@ flutter run --dart-define=API_BASE=http://192.168.1.50:8000
 
 ## 闭环演示步骤
 
-1. 后端以 `mock` 模式启动。
+1. 后端按「配置模型」一节配好模型（管理员 `BUILTIN_MODELS` 或家长「模型管理」设为默认）。
 2. 家长注册 → 登录（拿 token）。
 3. 家长添加娃娃（child 账号，记好返回的 ID）。
 4. 家长 `POST /api/v1/tasks/generate`（填 child_id、学科、知识点、题型、数量，SSE 流式返回题目）。
@@ -244,7 +245,7 @@ flutter run --dart-define=API_BASE=http://192.168.1.50:8000
 
 ## 路线图
 
-- **一期（已实现）**：刷题练习 + 每日打卡 + AI 出题（mock/真实）。
+- **一期（已实现）**：刷题练习 + 每日打卡 + AI 出题（经「模型管理」配置真实引擎）。
 - **二期（已实现）**：错题本 + 遗忘曲线复习（review 模块 + scheduler）+ 掌握度看板。
 - **三期（已实现）**：AI 伴学答疑（内容安全防护 + 每日额度）+ 教材知识库检索（retriever）。
 - **长期（上线准备期）**：教材版权合规（上线前必须解决，合规门禁见 `compliance.yml`、决策见 `docs/adr/`）、云部署生产化（见 `docs/adr/`）、跨设备同步。
