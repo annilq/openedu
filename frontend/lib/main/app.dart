@@ -9,6 +9,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../features/assistant/presentation/widgets/floating_assistant.dart';
 import '../features/authentication/presentation/screens/login_screen.dart';
 import '../features/home/presentation/screens/home_screen.dart';
+import '../services/auth_session/domain/providers/auth_guard_provider.dart';
 import '../services/auth_session/domain/providers/auth_session_provider.dart';
 import '../shared/domain/models/models.dart';
 import '../shared/domain/providers/core_providers.dart';
@@ -27,12 +28,23 @@ class _MyAppState extends ConsumerState<MyApp> {
   UserModel? _currentUser;
   bool _initialized = false;
 
+  /// 鉴权失效已处理标志：防止并发 401 重复跳登录/重复提示。
+  /// 登录成功（_onLoginSuccess）后重置，允许下次过期再处理。
+  bool _authExpiredHandled = false;
+
   @override
   void initState() {
     super.initState();
     // 推迟到首帧构建完成后，避免在 build 阶段同步修改 StateProvider
     // 导致 framework 的 !_dirty 断言失败。
     WidgetsBinding.instance.addPostFrameCallback((_) => _restoreSession());
+  }
+
+  /// token 过期/失效：清登录态回到登录页（复用既有 _logout）。
+  void _onAuthExpired() {
+    if (!mounted || _authExpiredHandled) return;
+    _authExpiredHandled = true;
+    _logout();
   }
 
   Future<void> _restoreSession() async {
@@ -58,6 +70,8 @@ class _MyAppState extends ConsumerState<MyApp> {
   }
 
   Future<void> _onLoginSuccess() async {
+    // 重新登录成功：解除「失效已处理」锁，允许下次过期再触发跳登录。
+    _authExpiredHandled = false;
     final storage = ref.read(storageServiceProvider);
     final userJson = storage.getUserJson();
     if (userJson != null) {
@@ -81,6 +95,8 @@ class _MyAppState extends ConsumerState<MyApp> {
 
   @override
   Widget build(BuildContext context) {
+    // token 过期/失效：Dio 层已触发 authExpiredProvider，这里清登录态跳登录页。
+    ref.listen(authExpiredProvider, (_, __) => _onAuthExpired());
     final themeMode = ref.watch(themeModeProvider);
     final userMode = ref.watch(userModeProvider);
     // 全局控件密度（默认 compact → parent 32 / child 40）。与亮暗、用户模式正交，

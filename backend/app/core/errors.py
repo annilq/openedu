@@ -86,7 +86,10 @@ _HTTP_DEFAULT_STATUS: dict[ErrCode, int] = {
     ErrCode.QUESTION_NOT_FOUND: status.HTTP_404_NOT_FOUND,
     ErrCode.QUESTION_ACCESS_DENIED: status.HTTP_403_FORBIDDEN,
     ErrCode.QUESTION_IN_USE: status.HTTP_409_CONFLICT,
-    ErrCode.AUTH_INVALID_TOKEN: status.HTTP_403_FORBIDDEN,
+    # JWT 过期/失效：属「未认证」，与缺 token（UNAUTHORIZED）一致返回 401，
+    # 让前端统一走 UnauthorizedException → 清 token 跳登录。真实越权（TASK_NOT_OWNED
+    # 等）才返回 403，绝不因此误踢已登录用户。
+    ErrCode.AUTH_INVALID_TOKEN: status.HTTP_401_UNAUTHORIZED,
     ErrCode.AUTH_INACTIVE_USER: status.HTTP_400_BAD_REQUEST,
     ErrCode.AUTH_BAD_CREDENTIALS: status.HTTP_401_UNAUTHORIZED,
     ErrCode.AUTH_PARENT_ONLY: status.HTTP_403_FORBIDDEN,

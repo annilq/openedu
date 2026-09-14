@@ -15,7 +15,11 @@ class DioNetworkService implements NetworkService {
   final StorageService _storage;
   late final Dio _dio;
 
-  DioNetworkService(this._storage) {
+  /// 鉴权失效回调：收到 401（token 过期/失效）时触发，由上层清登录态并跳登录。
+  final void Function()? _onUnauthorized;
+
+  DioNetworkService(this._storage, {void Function()? onUnauthorized})
+      : _onUnauthorized = onUnauthorized {
     _dio = Dio(BaseOptions(
       baseUrl: AppConfig.apiBaseUrl,
       connectTimeout: const Duration(seconds: 10),
@@ -42,6 +46,8 @@ class DioNetworkService implements NetworkService {
   Never _handleError(DioException e) {
     final statusCode = e.response?.statusCode;
     if (statusCode == 401) {
+      // 先通知上层跳登录，再抛异常（调用方仍可按 UnauthorizedException 展示文案）。
+      _onUnauthorized?.call();
       throw UnauthorizedException();
     }
     final parsed = _extractError(e);
