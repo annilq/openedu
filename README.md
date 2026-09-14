@@ -1,30 +1,37 @@
 # 娃娃日常学习应用 · 最小可跑原型
 
 家长给娃娃布置 AI 生成的日常练习，娃娃在平板上做题、自动批改、打卡、错题复习与 AI 伴学答疑。
-技术栈：**Flutter 平板 App（Riverpod + Dio + Cupertino）+ Python/FastAPI/SQLModel 后端 + PostgreSQL（可换 SQLite）**。
-**无模型 key 也能跑通**（默认 MockProvider 兜底）。
+技术栈：**Flutter 平板 App（Riverpod + Dio + Cupertino + shadcn_ui，tablet-first）+ Python/FastAPI/SQLModel 后端（单 wheel 含 `agent_core` 内核）+ SQLite（默认）/ PostgreSQL**。
+**无模型 key 也能跑通**（默认 `LLM_PROVIDER=mock` 兜底）。
 
 ---
 
 ## 架构
 
 ```
-Flutter 平板 App（娃娃端 / 家长端）
-        │  HTTP/JSON（/api/v1）
+Flutter 平板 App（娃娃端 / 家长端，Riverpod + Dio + Cupertino + shadcn_ui，tablet-first）
+        │  HTTP/JSON（/api/v1）+ SSE 流式（/api/v1/assistant/chat）
         ▼
-FastAPI 后端（backend/app）
-  ├─ api/routes: auth / children / tasks(出题·批改·打卡·进度) / review(错题·复习) / mastery(掌握度) / tutor(AI伴学·额度) / health
-  ├─ domain: QuestionGenerator · Grader · ReviewScheduler · TutorEngine
-  │     └─ LLMProvider 抽象 ── MockProvider（默认,无需key） / LangChainProvider（真实模型）/ DeepSeek 快捷预设
-  └─ models: User · Task · Question · AnswerRecord · Checkin · …
+FastAPI 后端（单 wheel 含两个包）
+  ├─ agent_core/   框架无关 agent 内核（零 app 依赖、零三方依赖；仅 adapters/genkit.py 接 genkit）
+  │     └─ ports / runtime / subagent / protocol / registry / router / tools：AgentRuntime + AG-UI 事件信封 + tool loop
+  └─ app/         FastAPI 集成层
+        ├─ api/main.py       聚合 features/* router（auth/children/tasks/review/mastery/tutor/questions/model_management/ai/assistant/health）
+        ├─ core/             config / db / security / guard(归属·可见性单一真相源) / errors / deps
+        ├─ domain/           grader · review_scheduler(间隔重复 0..4) · mastery · safety · retriever · provider
+        ├─ features/         每业务含 router/service/repository/schemas
+        ├─ ai/subagents/     query(查询) / question(出题) / tutor(伴学) + subject_personas(学科人格)
+        └─ db/models/        User · Task · Question · TaskQuestion · Conversation/Message · …
         │
         ▼
 SQLite（本地零依赖，默认） / PostgreSQL（Docker / 云）
 ```
 
-核心原则（见 `docs/decisions/娃娃学习App_ADR.md`）：
-- **不在 LangChain 之上重复封装 provider**，只在"框架层"自封领域接口，业务不绑框架。
-- **模型先不定**：`LLM_PROVIDER=mock|langchain|deepseek` 切换，国产模型填 `LLM_BASE_URL`(OpenAI 兼容) 即可接入。
+**所有 AI 能力经单一 SSE 入口** `POST /api/v1/assistant/chat`（流式 AG-UI 事件帧：USER_MESSAGE / THINKING / TOOL_CALL / TOOL_RESULT / DATA / ASSISTANT_MESSAGE / DONE）。出题 / 伴学 / 查询都走此入口；旧的 `/ai/tutor/ask`、`/ai/tasks/generate` 已废弃并收敛到此。分层不变量（内核不反向依赖 app / fastapi、genkit 唯一落点、归属判定只经 `core.guard`）由 `tests/ai/test_layering_invariants.py` 静态扫描守住（见 `docs/agents/architecture.md`）。
+
+核心原则：
+- **不在 LangChain 之上重复封装 provider**：`LLMProvider` 是 `agent_core/ports.py` 里的抽象端口，业务只认抽象、不绑框架；`LLM_PROVIDER=mock|langchain|deepseek` 切换，国产模型填 `LLM_BASE_URL`(OpenAI 兼容) 即可接入。
+- **模型先不定**：默认 `mock` 无需 key 即可跑通闭环。
 
 ---
 
@@ -32,27 +39,36 @@ SQLite（本地零依赖，默认） / PostgreSQL（Docker / 云）
 
 ```
 .
-├── backend/                 # Python 后端（uv 管理，Python >= 3.14）
+├── backend/                 # Python 后端（uv 管理，Python >= 3.14，单 wheel 含 app + agent_core）
 │   ├── app/
-│   │   ├── main.py          # FastAPI 入口（app.main:app）
-│   │   ├── core/            # config(env) / db / security
-│   │   ├── api/             # 路由：auth / children / tasks / review / mastery / tutor / health
-│   │   ├── domain/          # provider 抽象 + 出题/批改/复习/伴学
-│   │   └── crud.py / models.py
-│   ├── tests/               # pytest（含真实模型 smoke）
-│   ├── pyproject.toml       # 依赖声明（替代 requirements.txt）
+│   │   ├── main.py          # FastAPI 入口（app.main:app）：CORS / 统一错误 / 请求日志
+│   │   ├── api/main.py      # 聚合所有 features/* router（挂在 /api/v1）
+│   │   ├── core/            # config(env) / db / security / guard / errors / deps / crypto / async_bridge
+│   │   ├── domain/          # grader · review_scheduler · mastery · safety · retriever · provider · prompts
+│   │   ├── features/        # 按业务切分，每业务含 router/service/repository/schemas
+│   │   │   ├── auth children tasks review mastery tutor questions model_management ai assistant health
+│   │   ├── ai/              # engine.py(resolve_engine) / model_catalog.py / subagents/{query,question,tutor}
+│   │   └── db/models/       # User · Task · Question · TaskQuestion · Conversation · Message · …
+│   ├── agent_core/          # 框架无关 agent 内核（零 app/三方依赖）
+│   │   └── ports runtime subagent protocol registry router tools adapters(genkit)
+│   ├── tests/               # pytest：分层不变量 / SubAgent 契约 / domain 单测（含真实模型 smoke）
+│   ├── scripts/             # copyright_compliance_check.py（版权合规门禁）
+│   ├── pyproject.toml       # 依赖 + ruff/pytest 配置（app 与 agent_core 同 wheel）
 │   ├── uv.lock
 │   └── Dockerfile
-├── frontend/                # Flutter 平板 App（Riverpod + Dio + Cupertino）
+├── frontend/                # Flutter 平板 App（Riverpod + Dio + Cupertino + shadcn_ui，tablet-first）
 │   ├── lib/
-│   │   ├── main.dart
-│   │   ├── main/app.dart
-│   │   ├── configs/app_config.dart   # API Base URL 配置
-│   │   ├── features/                 # 按功能划分：auth / children / home / practice / review / tutor / profile
-│   │   └── shared/                   # 网络 / 本地存储 / 主题 / 通用组件
+│   │   ├── main/            # 入口 + AdaptiveShell（三档断点响应式壳，AppUserMode 作用域）
+│   │   ├── configs/app_config.dart   # API Base URL（--dart-define=API_BASE 注入）
+│   │   ├── features/        # auth / children / home / practice / review / tutor / assistant / profile
+│   │   ├── services/        # auth_session（token 持久化）
+│   │   ├── shared/          # data / domain / exceptions / presentation / theme(令牌) / utils / widgets
+│   │   └── dev/             # theme_preview.dart（设计系统自检）
+│   ├── analysis_options.yaml # flutter_lints + 设计系统硬约束（禁硬编码颜色/裸 Text）
 │   └── pubspec.yaml
 ├── .env.example             # 后端本地配置模板（复制为 .env）
 ├── docker-compose.yml       # PostgreSQL + backend 一键起
+├── docs/agents/             # 面向 AI 代理的架构/规范/命令文档（AGENTS.md 钻取）
 └── README.md
 ```
 
@@ -107,6 +123,46 @@ docker compose up --build     # 启动 PostgreSQL + backend，后端暴露 8000
 
 ---
 
+## 开发流程（命令速查）
+
+日常开发、测试、运行的命令总表。规范与细节见 `docs/agents/development.md`。
+
+### 后端（目录 `backend/`，Python ≥ 3.14，`uv` 管理）
+
+| 动作 | 命令 |
+|------|------|
+| 安装依赖 | `cd backend && uv sync` |
+| 本地起服（仅本机） | `uv run fastapi dev` 或 `uv run uvicorn app.main:app --reload` |
+| 局域网联调（真机/平板必用） | `uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload` |
+| Lint（零 error 门禁） | `uv run ruff check .` |
+| 测试 | `uv run pytest -q` |
+| 真实模型 smoke | `LLM_PROVIDER=deepseek RUN_LLM_SMOKE=1 uv run pytest tests/domain/test_llm_smoke.py -m smoke -v` |
+| 健康检查 | `curl http://localhost:8000/api/v1/health` |
+| 版权合规自检（门禁逻辑） | `python scripts/copyright_compliance_check.py --self-test` |
+
+### 前端（目录 `frontend/`，Flutter ≥ 3.5）
+
+| 动作 | 命令 |
+|------|------|
+| 安装依赖 | `cd frontend && flutter pub get` |
+| 起服（联调） | `flutter run --dart-define=API_BASE=http://<电脑局域网IP>:8000` |
+| 静态分析（零 issue 门禁） | `flutter analyze` |
+| 测试 | `flutter test --reporter=github` |
+| 设计系统自检（本地） | 运行 `lib/dev/theme_preview.dart` 页面核对令牌一致性 |
+
+### 一键容器（仓库根）
+
+`docker compose up --build`（PostgreSQL + backend，后端默认 `--host 0.0.0.0`）
+
+### CI（`.github/workflows/`）
+
+- `ci.yml`：frontend（`flutter analyze` + `flutter test`）→ backend（`ruff check` + `pytest`）。推 `main` / 开 PR 触发，任意步失败整轮红。
+- `compliance.yml`：后端 `pytest` + 版权合规门禁（ADR-0019 / ADR-0020）。
+
+> 联调铁律：后端 `--host 0.0.0.0` + 前端 `API_BASE` 填**电脑局域网 IP**（非 `127.0.0.1`，否则真机报「请求失败 (-1)」且服务端无日志）。详见上方「平板 / 真机联调」。
+
+---
+
 ## 配置真实大模型
 
 编辑仓库根目录 `.env`（后端从根目录读取，容器内兜底读取 `backend/.env`）：
@@ -139,7 +195,7 @@ LLM_API_KEY=你的key
 | GET  | `/api/v1/auth/me` | 当前用户 |
 | POST | `/api/v1/children` | 家长添加娃娃账号 |
 | GET  | `/api/v1/children` | 家长列出娃娃 |
-| POST | `/api/v1/tasks` | 家长生成任务+题目（调 LLM） |
+| POST | `/api/v1/tasks/generate` | 家长生成任务+题目（SSE 流式，调 LLM） |
 | GET  | `/api/v1/tasks/today` | 娃娃查看今日任务 |
 | POST | `/api/v1/tasks/{task_id}/answer` | 娃娃提交单题 → 自动批改 |
 | POST | `/api/v1/tasks/{task_id}/checkin` | 完成任务打卡 |
@@ -148,9 +204,10 @@ LLM_API_KEY=你的key
 | GET  | `/api/v1/tasks/children/{child_id}/mastery` | 掌握度看板 |
 | GET  | `/api/v1/review/due` | 到期待复习题（遗忘曲线） |
 | POST | `/api/v1/review/answer` | 复习作答 |
-| POST | `/api/v1/tutor/ask` | AI 伴学答疑 |
-| GET  | `/api/v1/tutor/quota` | 伴学额度/用量 |
+| POST | `/api/v1/assistant/chat` | **AI 统一入口（SSE）**：出题 / 伴学 / 查询，按角色+触发词路由 |
 | GET  | `/api/v1/health` | 健康检查 |
+
+> 伴学答疑、出题、查询统一走 `POST /api/v1/assistant/chat`（流式）。旧的 `/api/v1/tutor/ask`、`/api/v1/tutor/quota` 不存在（tutor router 仅 `GET /logs`）；套餐/额度在 assistant 会话内按 `caller` 角色与配额判定。
 
 ---
 
@@ -179,7 +236,7 @@ flutter run --dart-define=API_BASE=http://192.168.1.50:8000
 1. 后端以 `mock` 模式启动。
 2. 家长注册 → 登录（拿 token）。
 3. 家长添加娃娃（child 账号，记好返回的 ID）。
-4. 家长 `POST /api/v1/tasks`（填 child_id、学科、知识点、题型、数量）。
+4. 家长 `POST /api/v1/tasks/generate`（填 child_id、学科、知识点、题型、数量，SSE 流式返回题目）。
 5. 娃娃登录 → 首页看到今日任务 → 逐题作答 → 看解析 → 打卡。
 6. 家长 `GET /api/v1/tasks/children/{id}/progress` 查看正确率与连续打卡天数。
 
@@ -190,7 +247,7 @@ flutter run --dart-define=API_BASE=http://192.168.1.50:8000
 - **一期（已实现）**：刷题练习 + 每日打卡 + AI 出题（mock/真实）。
 - **二期（已实现）**：错题本 + 遗忘曲线复习（review 模块 + scheduler）+ 掌握度看板。
 - **三期（已实现）**：AI 伴学答疑（内容安全防护 + 每日额度）+ 教材知识库检索（retriever）。
-- **长期（上线准备期）**：教材版权合规（上线前必须解决，落地方案见 [ADR-0019](docs/decisions/娃娃学习App_ADR.md)）、云部署生产化（见 [ADR-0020](docs/decisions/娃娃学习App_ADR.md)）、跨设备同步。
+- **长期（上线准备期）**：教材版权合规（上线前必须解决，合规门禁见 `compliance.yml`、决策见 `docs/adr/`）、云部署生产化（见 `docs/adr/`）、跨设备同步。
 
 ---
 
