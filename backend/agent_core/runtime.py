@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, AsyncIterator
 
+from agent_core.errors import ProviderRequestError
 from agent_core.ports import RuntimeDeps
 from agent_core.protocol import (
     AssistantEvent,
@@ -135,6 +136,9 @@ class AgentRuntime:
                 agent, message, ctx, session=session, hooks=deps.hooks
             ):
                 yield ev
+        except ProviderRequestError as exc:
+            # 厂商拒绝请求（认证/限流/网络）：给可操作提示，别把 401 说成「助手执行出错」（ADR-0038）。
+            yield error(exc.user_hint, code="PROVIDER_ERROR")
         except Exception as exc:  # noqa: BLE001 — 单 subagent 异常不应让整条流崩
             yield error(f"助手执行出错：{exc}", code="AGENT_ERROR")
         finally:

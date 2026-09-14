@@ -5,6 +5,8 @@
 **边界（tool loop，硬失败不降级）**
 - **轮次上限**：tool loop 受 `BaseSubAgent.max_turns`（默认 3）保护，超限以 `ERROR(code="TOOL_TURN_LIMIT")` 中止，杜绝「回灌丢失 → 模型反复重调」的无限循环（`backend/agent_core/subagent.py:10,79,131,210-212`）。
 - **硬失败**：引擎不支持工具调用时适配器抛 `ToolUnsupportedError`，runtime 转 `ERROR(code="TOOL_UNSUPPORTED")` 并中止，**绝不静默降级为纯文本**（`backend/agent_core/subagent.py:11-12,133-134`、`backend/agent_core/ports.py:83`、`backend/agent_core/adapters/genkit.py:351,168`）。
+
+> **补充（ADR-0038，非矛盾）**：「硬失败」这条决策不变，但**失败类别**被收紧了。「不支持工具调用」只指模型缺 function calling 能力；厂商拒绝请求（认证 / 限流 / 网络）另立 `ProviderRequestError` → `ERROR(code="PROVIDER_ERROR")`。本 ADR 早期实现把工具路径上的**任意**引擎异常一律包成 `ToolUnsupportedError`，导致 401 被报成「当前模型不支持工具调用」——见 ADR-0038。
 - **同轮多工具**：一轮内模型请求的多个工具全部执行后再回灌，不丢弃后续请求（`backend/agent_core/subagent.py:135`）。
 - **回灌契约**：每轮先入 `assistant(tool_calls=[...])` 再入对应 `tool` 结果（成对出现），适配器据此重建 `ToolRequest ↔ ToolResponse` 配对（`backend/agent_core/subagent.py:137-139,182-203`、`backend/agent_core/ports.py:78`）。
 - **呈现双轨**：`TOOL_RESULT` 存原始载荷（模型上下文 + 落库回放），`render_tool_result` 覆写者可补发 `DATA` 帧供前端渲染，前端零改动（`backend/agent_core/subagent.py:92-99`）。

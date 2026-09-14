@@ -13,7 +13,8 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from typing import Any
 
-from agent_core.adapters.genkit import GenkitEngine, GenkitLLMProvider
+from agent_core.adapters.genkit import GenkitEngine, GenkitLLMProvider, classify_failure
+from agent_core.errors import ProviderRequestError
 from agent_core.ports import StreamEvent, TextDelta
 from app.ai import resolve_engine
 from app.ai.engine import EngineResolution
@@ -108,10 +109,18 @@ class GenkitProvider(EducationLLMProvider):
             f"题目：{question.stem}\n学生作答：{student_answer}\n"
             '请批改并返回 JSON：{"correct": bool, "score": float, "explanation": str}'
         )
-        resp = await engine.genkit.generate(
-            model=engine.model, system=EDU_SYSTEM_PROMPT, prompt=prompt,
-            output_schema=GradeSchema,
-        )
+        try:
+            resp = await engine.genkit.generate(
+                model=engine.model, system=EDU_SYSTEM_PROMPT, prompt=prompt,
+                output_schema=GradeSchema,
+            )
+        except Exception as exc:  # noqa: BLE001 — 归类后抛出，绝不让厂商原因被上层笼统吞掉
+            # 本方法直接调 genkit（不经适配器 stream），故须自行归类（ADR-0038）：
+            # 未归类时 401 会以原始 GenkitError 冒到顶层，被兜底 500 抹成「服务器内部错误」。
+            failure = classify_failure(exc)
+            if isinstance(failure, ProviderRequestError):
+                raise failure from exc
+            raise
         raw = resp.output
         return {
             "correct": bool(schema_field(raw, "correct", False)),

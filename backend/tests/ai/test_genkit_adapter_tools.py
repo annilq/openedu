@@ -9,7 +9,9 @@
    ``generate_stream(tools=)``（形参是 ``Sequence[str | Tool]``）——类型非法，这正是它只能
    降级成纯文本的直接原因。现改为 ``genkit.tool(...)`` 构造的**占位 Tool**。
 3. **失败必须硬抛**：原实现 ``except Exception: pass`` 后降级纯文本，等于允许模型在没拿到
-   数据时编造业务结论（「你共有 3 个任务」）。现一律抛 ``ToolUnsupportedError``。
+   数据时编造业务结论（「你共有 3 个任务」）。现一律抛错——**类别按根因分清**（ADR-0038）：
+   无 function calling → ``ToolUnsupportedError``；认证 / 限流 / 网络 / 参数被拒 →
+   ``ProviderRequestError``。混为一谈会让 401 被报成「模型不支持工具调用」。
 
 另有两条必须成立的性质：``return_tool_requests=True`` 让 genkit **不执行**工具（执行权留
 runtime）；工具入参 JSON 文本须被解析成 dict。
@@ -33,7 +35,7 @@ from agent_core.adapters.genkit import (
     _extract_tool_calls,
     _placeholder_tool,
 )
-from agent_core.errors import ToolUnsupportedError
+from agent_core.errors import ProviderRequestError, ToolUnsupportedError
 from agent_core.ports import StructuredDone, TextDelta, ToolCall
 
 
@@ -338,7 +340,11 @@ def test_engine_failure_raises_tool_unsupported_instead_of_degrading():
 
 
 def test_failure_after_partial_stream_still_raises():
-    """已吐出部分文本也不能「吞掉异常改当纯文本答完」——必须硬失败。"""
+    """已吐出部分文本也不能「吞掉异常改当纯文本答完」——必须硬失败。
+
+    失败类别按 ADR-0038 归类：``connection reset`` 是**网络故障**（``PROVIDER_ERROR``），
+    不是「模型不支持工具调用」。此前一律归成 ``ToolUnsupportedError``，属于指错根因。
+    """
 
     class _BoomStream:
         def generate_stream(self, **kwargs):
@@ -359,8 +365,12 @@ def test_failure_after_partial_stream_still_raises():
 
             return _StreamResponse()
 
-    with pytest.raises(ToolUnsupportedError, match="connection reset"):
+    with pytest.raises(ProviderRequestError) as ei:
         _collect(_provider(_BoomStream()), tools=[_SPEC])
+
+    assert ei.value.kind == "network"
+    assert "connection reset" in ei.value.reason
+    assert not isinstance(ei.value, ToolUnsupportedError), "网络故障不得被说成「不支持工具调用」"
 
 
 # ───────────────────────── ⑥ 回归护栏：schema 路不变 ─────────────────────────

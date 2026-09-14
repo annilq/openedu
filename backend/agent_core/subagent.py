@@ -7,9 +7,11 @@ AG-UI 事件帧）。意图路由由 ``AgentRuntime`` 负责，各 SubAgent 只�
 - ``BaseSubAgent.tools``（默认空）声明真实可调用工具；非空时 runtime 以 tool loop 调度
   （见 ``run_with_tools``）。``tools=[]`` 的 subagent 走一次性 ``run``（opt-in）。
 
-**轮次与失败边界（ADR-0033）**：tool loop 受 ``BaseSubAgent.max_turns`` 保护（默认 3），
-引擎不支持工具调用时由适配器抛 ``ToolUnsupportedError``，runtime 转
-``ERROR(code="TOOL_UNSUPPORTED")`` 并中止——**不静默降级为纯文本**。
+**轮次与失败边界（ADR-0033 / ADR-0038）**：tool loop 受 ``BaseSubAgent.max_turns`` 保护（默认 3）。
+失败分两类且**不得混用**：引擎不支持工具调用时由适配器抛 ``ToolUnsupportedError``，runtime 转
+``ERROR(code="TOOL_UNSUPPORTED")`` 并中止；厂商拒绝请求（认证 / 限流 / 网络）时抛
+``ProviderRequestError``，转 ``ERROR(code="PROVIDER_ERROR")`` 并中止。两者都是**硬失败**——
+不静默降级为纯文本。
 """
 from __future__ import annotations
 
@@ -18,7 +20,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator
 
-from agent_core.errors import ToolUnsupportedError
+from agent_core.errors import ProviderRequestError, ToolUnsupportedError
 from agent_core.ports import (
     Hooks,
     LLMProvider,
@@ -114,6 +116,10 @@ class BaseSubAgent(ABC):
         ...
 
 
+# 厂商拒绝请求时的**可操作**提示由 ``ProviderRequestError.user_hint`` 提供（ADR-0038）：
+# 认证 / 限流 / 网络走策展文案，原始厂商报文只进日志（不泄露被拒凭据尾号）。
+
+
 async def run_with_tools(
     agent: BaseSubAgent,
     message: str,
@@ -128,12 +134,15 @@ async def run_with_tools(
     → 执行 ``handler`` → 回灌工具结果 → 再请求，循环直到模型不再请求工具。
     每个阶段 yield 对应的 AG-UI 事件帧（THINKING / TOOL_CALL / TOOL_RESULT / ASSISTANT_MESSAGE）。
 
-    三条边界（ADR-0033）：
+    三条边界（ADR-0033）与两类失败（ADR-0038）：
 
     - **轮次上限**：最多请求模型 ``agent.max_turns`` 次（默认 3），超限以
       ``ERROR(code="TOOL_TURN_LIMIT")`` 中止——杜绝「回灌丢失 → 模型反复重调」的无限循环。
-    - **硬失败**：引擎不支持工具调用时适配器抛 ``ToolUnsupportedError``，此处转
+    - **硬失败 · 模型能力**：引擎不支持工具调用时适配器抛 ``ToolUnsupportedError``，此处转
       ``ERROR(code="TOOL_UNSUPPORTED")`` 并中止，**不静默降级为纯文本**。
+    - **硬失败 · 厂商拒绝**：认证失败 / 限流 / 网络不可达时适配器抛 ``ProviderRequestError``，
+      此处转 ``ERROR(code="PROVIDER_ERROR")`` 并给出**可操作**提示（如「API Key 无效，请重新填写」）。
+      两者必须分开：把 401 说成「不支持工具调用」会让用户去换模型，真问题是密钥。
     - **同轮多工具**：一轮内模型请求的多个工具全部执行后再回灌，不丢弃后续请求。
 
     **回灌契约**：每轮先入一条 ``{"role": "assistant", "tool_calls": [...]}`` 再入对应的
@@ -223,6 +232,9 @@ async def run_with_tools(
                         yield assistant_message(str(ev.data))
         except ToolUnsupportedError as exc:
             yield error(f"当前模型不支持工具调用：{exc.reason}", code="TOOL_UNSUPPORTED")
+            return
+        except ProviderRequestError as exc:
+            yield error(exc.user_hint, code="PROVIDER_ERROR")
             return
 
         # 工具请求轮必须先入 history（成对不变量：assistant.tool_calls → tool 结果），

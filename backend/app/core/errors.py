@@ -32,6 +32,7 @@ class ErrCode(str, Enum):
     VALIDATION = "SYS_10004"
     INTERNAL = "SYS_10005"
     LLM_UNAVAILABLE = "SYS_10006"  # 未配置 LLM 引擎（mock 兜底已移除，出题/答疑/批改需真实引擎）
+    LLM_REQUEST_FAILED = "SYS_10007"  # 引擎调用被厂商拒绝（认证失败/限流/网络，ADR-0038）
 
     # Tasks 领域 20xxx
     TASK_NOT_FOUND = "TASK_20001"
@@ -70,6 +71,7 @@ _HTTP_DEFAULT_STATUS: dict[ErrCode, int] = {
     ErrCode.VALIDATION: status.HTTP_422_UNPROCESSABLE_CONTENT,
     ErrCode.INTERNAL: status.HTTP_500_INTERNAL_SERVER_ERROR,
     ErrCode.LLM_UNAVAILABLE: status.HTTP_500_INTERNAL_SERVER_ERROR,
+    ErrCode.LLM_REQUEST_FAILED: status.HTTP_502_BAD_GATEWAY,
     ErrCode.TASK_NOT_FOUND: status.HTTP_404_NOT_FOUND,
     ErrCode.TASK_NOT_OWNED: status.HTTP_403_FORBIDDEN,
     ErrCode.TASK_NOT_YOUR_CHILD: status.HTTP_403_FORBIDDEN,

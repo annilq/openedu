@@ -16,17 +16,19 @@
 **工具调用（ADR-0033）**：适配器不做编排，只做两件翻译——中性工具声明 → genkit 占位 ``Tool``；
 中性 history ↔ genkit ``Message``/``Part``（含 ``ToolRequestPart`` / ``ToolResponsePart``）。
 ``return_tool_requests=True`` 保证 genkit **不自行执行**工具，模型的工具请求被译为中性
-``ToolCall`` 交 runtime 执行。不支持时抛 ``ToolUnsupportedError``，**不静默降级**。
+``ToolCall`` 交 runtime 执行。模型不支持工具调用时抛 ``ToolUnsupportedError``，**不静默降级**；
+厂商拒绝请求（认证 / 限流 / 网络）时抛 ``ProviderRequestError``——**两者不得混为一谈**（ADR-0038）。
 """
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
-from agent_core.errors import ToolUnsupportedError
+from agent_core.errors import ProviderRequestError, ToolUnsupportedError
 from agent_core.ports import (
     LLMProvider,
     StreamEvent,
@@ -34,6 +36,8 @@ from agent_core.ports import (
     TextDelta,
     ToolCall,
 )
+
+logger = logging.getLogger(__name__)
 
 
 # ───────────────────────── 流式解码：genkit chunk → 中性 Segment ─────────────────────────
@@ -320,9 +324,80 @@ def _extract_tool_calls(response: Any) -> list[tuple[str, dict[str, Any]]]:
 
 
 def _failure_reason(exc: BaseException) -> str:
-    """把引擎异常压成一句可读原因（供 ``TOOL_UNSUPPORTED`` 帧展示）。"""
+    """把引擎异常压成一句可读原因（供 ``TOOL_UNSUPPORTED`` / ``PROVIDER_ERROR`` 帧展示）。"""
     detail = str(exc).strip() or exc.__class__.__name__
     return f"{exc.__class__.__name__}: {detail}"
+
+
+# ───────────────────────── 厂商失败归类（ADR-0038） ─────────────────────────
+# 适配器只能拿到厂商回包的**文本**（genkit 把 SDK 异常统一裹成 GenkitError，原始
+# 状态码/错误类型都留在字符串里），故按标记词归类。刻意把「不支持工具」放在最前：
+# 若一个请求同时命中两类标记，宁可报「不支持工具调用」（会引导用户换模型），
+# 也不能把认证失败说成模型能力问题。
+_TOOL_UNSUPPORTED_MARKERS = (
+    "tool calling unsupported",
+    "tool calling not supported",
+    "tool calling 不被支持",
+    "does not support tool",
+    "doesn't support tool",
+    "does not support function",
+    "function calling is not supported",
+    "unsupported parameter: tools",
+    "tools is not supported",
+    "tools are not supported",
+    "不支持工具",
+    "不支持函数调用",
+)
+_AUTH_MARKERS = (
+    "401",
+    "403",
+    "authentication",
+    "unauthorized",
+    "invalid api key",
+    "your api key",
+    "permission",
+    "invalid_api_key",
+)
+_RATE_LIMIT_MARKERS = ("429", "rate limit", "too many requests", "quota", "overloaded")
+_NETWORK_MARKERS = (
+    "timeout",
+    "timed out",
+    "connection",
+    "connect",
+    "ssl",
+    "dns",
+    "unreachable",
+    "network",
+    "disconnected",
+    "apiconnectionerror",
+)
+
+
+def classify_failure(exc: BaseException) -> ToolUnsupportedError | ProviderRequestError:
+    """把引擎异常归类为「模型不支持工具调用」或「厂商拒绝请求」（ADR-0038）。
+
+    归类结果直接决定用户看到的提示，因此**默认必须落在 ProviderRequestError**：
+    指错根因（把 401 说成「不支持工具调用」）会让用户去换模型，而真问题是密钥。
+
+    公开给 app 层复用：``grade_open`` 等直接调 genkit 的旁路也要按同一规则归类，
+    否则同一个 401 在 chat 路径和批改路径会被说成两回事。
+    """
+    text = f"{exc.__class__.__name__}: {exc}".lower()
+
+    def _hit(markers: tuple[str, ...]) -> bool:
+        return any(m in text for m in markers)
+
+    if _hit(_TOOL_UNSUPPORTED_MARKERS):
+        return ToolUnsupportedError(_failure_reason(exc))
+    if _hit(_AUTH_MARKERS):
+        return ProviderRequestError(_failure_reason(exc), kind="auth")
+    if _hit(_RATE_LIMIT_MARKERS):
+        return ProviderRequestError(_failure_reason(exc), kind="rate_limit")
+    if _hit(_NETWORK_MARKERS):
+        return ProviderRequestError(_failure_reason(exc), kind="network")
+    if _hit(("400", "invalid_request", "bad request", "invalid request")):
+        return ProviderRequestError(_failure_reason(exc), kind="bad_request")
+    return ProviderRequestError(_failure_reason(exc), kind="unknown")
 
 
 def _response_text(response: Any) -> str:
@@ -365,17 +440,25 @@ class GenkitLLMProvider(LLMProvider):
         tools: list[Any] | None = None,
         history: list[dict] | None = None,
     ) -> AsyncIterator[StreamEvent]:
-        """消息级流式产出。"""
+        """消息级流式产出（三条分支的厂商异常统一经 ``classify_failure`` 归类）。
+
+        三条分支（schema / tools / 纯文本）**都必须**把厂商异常归类后再抛：否则
+        401 之类会以原始 GenkitError 冒到用户面前（或更糟，被上层笼统吞成
+        「请添加模型」），根因被抹掉（ADR-0038）。
+        """
         engine = self._engine
 
         if schema is not None:
-            sresp = engine.genkit.generate_stream(
-                model=engine.model, system=system, prompt=prompt, output_schema=schema
-            )
-            async for seg in decode_stream(sresp.stream):
-                if seg.kind is SegmentKind.REASONING:
-                    yield TextDelta(delta=seg.text)
-            resp = await sresp.response
+            try:
+                sresp = engine.genkit.generate_stream(
+                    model=engine.model, system=system, prompt=prompt, output_schema=schema
+                )
+                async for seg in decode_stream(sresp.stream):
+                    if seg.kind is SegmentKind.REASONING:
+                        yield TextDelta(delta=seg.text)
+                resp = await sresp.response
+            except Exception as exc:  # noqa: BLE001 — 归类后抛出，绝不静默
+                raise classify_failure(exc) from exc
             yield StructuredDone(data=_as_dict(getattr(resp, "output", None)))
             return
 
@@ -384,12 +467,17 @@ class GenkitLLMProvider(LLMProvider):
                 yield ev
             return
 
-        sresp = engine.genkit.generate_stream(model=engine.model, system=system, prompt=prompt)
-        async for chunk in sresp.stream:
-            text = _chunk_text(chunk)
-            if text:
-                yield TextDelta(delta=text)
-        await sresp.response
+        try:
+            sresp = engine.genkit.generate_stream(
+                model=engine.model, system=system, prompt=prompt
+            )
+            async for chunk in sresp.stream:
+                text = _chunk_text(chunk)
+                if text:
+                    yield TextDelta(delta=text)
+            await sresp.response
+        except Exception as exc:  # noqa: BLE001 — 归类后抛出，绝不静默
+            raise classify_failure(exc) from exc
 
     async def _stream_with_tools(
         self,
@@ -405,8 +493,15 @@ class GenkitLLMProvider(LLMProvider):
         并随 ``return_tool_requests=True`` 一起请求（genkit 因此**不执行**工具，只回传请求）；
         ③ 从响应抽取工具请求译为 ``ToolCall``。
 
-        任何环节失败（声明非法 / provider 不支持 / 映射或调用异常）都抛
-        ``ToolUnsupportedError``——由 runtime 转 ``ERROR(TOOL_UNSUPPORTED)`` 并中止。
+        任何环节失败都**显式抛错**（绝不静默降级为纯文本），但错误类别必须分清（ADR-0038）：
+
+        - 工具声明非法 / history 映射失败 / 模型确实没有 function calling →
+          ``ToolUnsupportedError``（runtime 转 ``ERROR(TOOL_UNSUPPORTED)`` 并中止）；
+        - 厂商拒绝请求（401 认证失败 / 429 限流 / 网络不可达 / 400 参数被拒）→
+          ``ProviderRequestError``（runtime 转 ``ERROR(PROVIDER_ERROR)`` 并中止）。
+
+        历史 bug：本处曾把**任意**异常无差别包成 ``ToolUnsupportedError``，导致
+        「API Key 无效（401）」被报成「当前模型不支持工具调用」，根因指错方向。
         """
         try:
             genkit_tools = _build_tools(tools)
@@ -432,8 +527,16 @@ class GenkitLLMProvider(LLMProvider):
                         streamed_text = True
                     yield TextDelta(delta=seg.text)
             resp = await sresp.response
+        except ToolUnsupportedError:
+            raise
         except Exception as exc:  # noqa: BLE001 — 硬失败：不降级、不假装查到了数据
-            raise ToolUnsupportedError(_failure_reason(exc)) from exc
+            failure = classify_failure(exc)
+            logger.warning(
+                "引擎调用失败（归类 %s）：%s",
+                getattr(failure, "kind", "tool_unsupported"),
+                _failure_reason(exc),
+            )
+            raise failure from exc
 
         # 兜底：未流式产出正文的 provider（只把正文放在末帧）也要把答复给出去，
         # 否则模型答了话而用户看到空回复。已流过正文则不重复（避免正文翻倍）。

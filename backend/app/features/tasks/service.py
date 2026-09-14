@@ -19,6 +19,7 @@ from uuid import UUID
 
 from sqlmodel import Session, select
 
+from agent_core.errors import ProviderRequestError
 from agent_core.ports import RuntimeDeps
 from agent_core.protocol import (
     EVENT_DATA,
@@ -305,6 +306,9 @@ def _gen_question(
     g: GeneratedQuestion | None = None
     try:
         g = run_async(_drain())
+    except ProviderRequestError as e:
+        # 厂商拒绝请求：把原因说清楚（认证失败/限流/网络），别让用户以为「没配模型」（ADR-0038）。
+        raise AppErrorException(ErrCode.LLM_REQUEST_FAILED, e.user_hint) from e
     except Exception:
         g = None
     if g is None:
@@ -393,6 +397,11 @@ async def _stream_question_frames(
                 )
     except AppErrorException as e:
         yield error_event(e.message, code=getattr(e.code, "value", str(e.code))).to_sse()
+    except ProviderRequestError as e:
+        # 厂商拒绝请求（认证失败/限流/网络）：给可操作提示，不吞成「请添加模型」（ADR-0038）。
+        yield error_event(
+            e.user_hint, code=getattr(ErrCode.LLM_REQUEST_FAILED, "value", str(ErrCode.LLM_REQUEST_FAILED))
+        ).to_sse()
     except Exception:
         # build_provider / provider.stream 抛错都归因为引擎不可用，与同步版一致。
         yield error_event(
@@ -1094,9 +1103,13 @@ def answer(
 
     # 批改经归一封装构造 provider：尊重 task.model / 家长 ModelConfig（ADR-0034 Phase 2），
     # 消除「批改忽略 model」的分裂；task.model 为 None 时回退本家长默认模型（模型管理）。
-    result = Grader(
-        build_ai_provider(task.model, parent_id=task.parent_id, session=session)
-    ).grade(question=tq, student_answer=student_answer)
+    try:
+        result = Grader(
+            build_ai_provider(task.model, parent_id=task.parent_id, session=session)
+        ).grade(question=tq, student_answer=student_answer)
+    except ProviderRequestError as exc:
+        # 厂商拒绝请求（认证失败/限流/网络）：如实回报，不笼统归成「未配置模型」（ADR-0038）。
+        raise AppErrorException(ErrCode.LLM_REQUEST_FAILED, exc.user_hint) from exc
     record_question_id = tq.question_id or question_id
     create_answer_record(
         session=session,

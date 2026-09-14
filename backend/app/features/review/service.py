@@ -16,7 +16,9 @@ from uuid import UUID
 
 from sqlmodel import Session
 
+from agent_core.errors import ProviderRequestError
 from app.core.ai_plumbing import build_ai_provider
+from app.core.errors import AppErrorException, ErrCode
 from app.db.models import Question, User, WrongQuestion
 from app.domain import Grader
 from app.domain.review_scheduler import apply_review_outcome, next_interval_days
@@ -89,7 +91,11 @@ def submit_answer(
     grader = Grader(
         build_ai_provider(parent_id=parent_id, session=session)
     )
-    result = grader.grade(question=question, student_answer=submit.student_answer)
+    try:
+        result = grader.grade(question=question, student_answer=submit.student_answer)
+    except ProviderRequestError as exc:
+        # 厂商拒绝请求（认证失败/限流/网络）：把原因如实告诉用户，不要笼统说「服务器内部错误」（ADR-0038）。
+        raise AppErrorException(ErrCode.LLM_REQUEST_FAILED, exc.user_hint) from exc
     create_answer_record(
         session=session,
         question_id=question.id,
