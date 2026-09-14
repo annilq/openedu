@@ -1,24 +1,12 @@
-"""Pydantic schemas for the tutor (AI companion log) feature."""
+"""Pydantic schemas for the tutor (AI companion log) feature.
+
+娃娃端实时答疑的请求/响应体（``TutorAskReq`` / ``TutorAnswer``）已随旧 ``POST /tutor/ask``
+一起废弃（ADR-0024 收敛到 ``POST /assistant/chat``），此处只留家长侧日志响应。
+"""
 
 from uuid import UUID
 
-from sqlmodel import Field, SQLModel
-
-
-class TutorAskReq(SQLModel):
-    subject: str = Field(max_length=32)
-    grade: int
-    knowledge_point: str = Field(default="", max_length=128)
-    context: str | None = None
-    question: str = Field(min_length=1, max_length=2000)
-    # 可选模型引用：内置 id / ModelConfig id；缺省走家长在「模型管理」中设为默认的模型
-    model: str | None = None
-
-
-class TutorAnswer(SQLModel):
-    answer: str
-    blocked: bool = False
-    reason: str | None = None
+from sqlmodel import SQLModel
 
 
 class TutorLogResp(SQLModel):

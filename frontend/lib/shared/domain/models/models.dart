@@ -707,35 +707,7 @@ class MasteryModel {
   }
 }
 
-// ───────── AI 伴学答疑（三期 F-302~305） ─────────
-class TutorAskReq {
-  final String subject;
-  final int grade;
-  final String knowledgePoint;
-  final String? context;
-  final String question;
-  /// 可选模型 id（内置字符串 id 或家长自定义 UUID）。null = 后端自动（默认/全局）。
-  final String? model;
-
-  TutorAskReq({
-    required this.subject,
-    required this.grade,
-    required this.knowledgePoint,
-    this.context,
-    required this.question,
-    this.model,
-  });
-
-  Map<String, dynamic> toJson() => {
-        'subject': subject,
-        'grade': grade,
-        'knowledge_point': knowledgePoint,
-        'context': context,
-        'question': question,
-        if (model != null) 'model': model,
-      };
-}
-
+// ───────── AI 伴学答疑日志（三期 F-305） ─────────
 class TutorLogModel {
   final String id;
   final int grade;

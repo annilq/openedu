@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../review/presentation/providers/review_notifier.dart';
-import '../../../tutor/presentation/providers/tutor_notifier.dart';
+import '../../../tutor/presentation/providers/tutor_logs_notifier.dart';
 import 'home_notifier.dart';
 
 /// 当前选中的娃娃（家长端全局上下文）。

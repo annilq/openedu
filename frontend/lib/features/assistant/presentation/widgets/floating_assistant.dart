@@ -4,9 +4,13 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/theme/app_theme.dart';
 import '../provider/assistant_notifier.dart';
+import 'assistant_message_list.dart';
 
 /// 全局悬浮 AI 助手宿主：把 `child`（如 HomeScreen）包进 Stack，右上角常驻一个
-/// 悬浮按钮，点击展开对话面板。家长 / 娃娃端通用——角色由后端 JWT 解析。
+/// 悬浮按钮，点击展开对话面板。
+///
+/// 角色门（ADR-0036）：只对**家长端**挂载。娃娃端改用整页
+/// `AssistantChatPage`（导航页签），避免同一个 AI 出现两个入口。
 class FloatingAssistant extends StatelessWidget {
   final Widget child;
 
@@ -48,7 +52,8 @@ class _AssistantOverlayState extends State<_AssistantOverlay> {
                 maxWidth: 380,
                 maxHeight: 540,
               ),
-              child: AssistantChatPanel(onClose: () => setState(() => _open = false)),
+              child:
+                  AssistantChatPanel(onClose: () => setState(() => _open = false)),
             ),
           ),
         Positioned(
@@ -85,6 +90,9 @@ class _AssistantOverlayState extends State<_AssistantOverlay> {
 }
 
 /// 助手对话面板（含消息列表 + 输入框）。状态由 [assistantNotifierProvider] 驱动。
+///
+/// 消息渲染委托 [AssistantMessageList]——与整页 `AssistantChatPage` 共用同一实现
+/// （ADR-0036），保证题卡 / 安全标记 / 复制的行为在两个形态下一致。
 class AssistantChatPanel extends ConsumerStatefulWidget {
   final VoidCallback onClose;
 
@@ -163,14 +171,9 @@ class _AssistantChatPanelState extends ConsumerState<AssistantChatPanel> {
                       ),
                     ),
                   )
-                : ListView.separated(
+                : AssistantMessageList(
+                    messages: messages,
                     controller: _scroll,
-                    padding: const EdgeInsets.all(AppSpacing.md),
-                    itemCount: messages.length,
-                    separatorBuilder: (_, __) =>
-                        const SizedBox(height: AppSpacing.sm),
-                    itemBuilder: (_, i) =>
-                        _Bubble(message: messages[i], scheme: scheme, text: text),
                   ),
           ),
           const Divider(height: 1),
@@ -254,145 +257,6 @@ class _InputBar extends StatelessWidget {
             onPressed: sending ? null : onSend,
             child: const Icon(Icons.send, size: 18),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Bubble extends StatelessWidget {
-  final AssistantMessage message;
-  final AppColors scheme;
-  final AppText text;
-
-  const _Bubble({
-    required this.message,
-    required this.scheme,
-    required this.text,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final isUser = message.role == 'user';
-    return Column(
-      crossAxisAlignment:
-          isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-      children: [
-        Container(
-          constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width * 0.7,
-          ),
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.md,
-            vertical: AppSpacing.sm,
-          ),
-          decoration: BoxDecoration(
-            color: isUser ? scheme.primary : scheme.surfaceContainerLow,
-            borderRadius: BorderRadius.circular(AppRadius.card),
-            border: isUser
-                ? null
-                : Border.all(color: scheme.outline, width: 1),
-          ),
-          child: _BubbleBody(message: message, scheme: scheme, text: text),
-        ),
-        if (message.blocked)
-          Padding(
-            padding: const EdgeInsets.only(top: 2, left: 4),
-            child: Text(
-              '内容安全限制',
-              style: text.labelSmall?.copyWith(color: scheme.error),
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-class _BubbleBody extends StatelessWidget {
-  final AssistantMessage message;
-  final AppColors scheme;
-  final AppText text;
-
-  const _BubbleBody({
-    required this.message,
-    required this.scheme,
-    required this.text,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    if (message.thinking) {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(
-            width: 12,
-            height: 12,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: scheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          Text('思考中…', style: text.bodySmall),
-        ],
-      );
-    }
-    final children = <Widget>[
-      if (message.text.isNotEmpty)
-        Text(
-          message.text,
-          style: text.bodyMedium?.copyWith(
-            color: message.role == 'user' ? scheme.onPrimary : scheme.onSurface,
-          ),
-        ),
-      if (message.cards != null && message.cards!.isNotEmpty)
-        ...message.cards!.map(
-          (c) => _CardTile(card: c, scheme: scheme, text: text),
-        ),
-    ];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: children,
-    );
-  }
-}
-
-class _CardTile extends StatelessWidget {
-  final Map<String, dynamic> card;
-  final AppColors scheme;
-  final AppText text;
-
-  const _CardTile({
-    required this.card,
-    required this.scheme,
-    required this.text,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final subject = card['subject']?.toString() ?? '';
-    final stem = card['stem']?.toString() ?? '';
-    final type = card['type']?.toString() ?? '';
-    if (stem.isEmpty) return const SizedBox.shrink();
-    return Container(
-      margin: const EdgeInsets.only(top: AppSpacing.sm),
-      padding: const EdgeInsets.all(AppSpacing.sm),
-      decoration: BoxDecoration(
-        color: scheme.surface,
-        borderRadius: BorderRadius.circular(AppRadius.input),
-        border: Border.all(color: scheme.outline, width: 1),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (subject.isNotEmpty || type.isNotEmpty)
-            Text(
-              [subject, type].where((e) => e.isNotEmpty).join(' · '),
-              style: text.labelSmall?.copyWith(color: scheme.primary),
-            ),
-          const SizedBox(height: 2),
-          Text(stem, style: text.bodySmall),
         ],
       ),
     );

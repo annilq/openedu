@@ -6,7 +6,7 @@ import '../../../../../shared/domain/models/models.dart';
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/widgets/app_error.dart';
 import '../../../../../shared/widgets/app_loading.dart';
-import '../../../../tutor/presentation/providers/tutor_notifier.dart';
+import '../../../../tutor/presentation/providers/tutor_logs_notifier.dart';
 import '../../providers/selected_child_provider.dart';
 import '../../../../../shared/presentation/resource.dart';
 

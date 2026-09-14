@@ -7,12 +7,12 @@ import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/widgets/adaptive_shell.dart';
 import '../../../children/domain/providers/children_provider.dart';
 import '../../../children/presentation/screens/child_form_screen.dart';
+import '../../../assistant/presentation/screens/assistant_chat_page.dart';
 import '../../../practice/presentation/screens/practice_screen.dart';
 import '../../../profile/presentation/screens/profile_screen.dart';
 import '../../../review/presentation/providers/review_notifier.dart';
 import '../../../review/presentation/screens/review_screen.dart';
 import '../../../review/presentation/screens/wrong_questions_screen.dart';
-import '../../../tutor/presentation/screens/tutor_chat_screen.dart';
 import '../../../model_management/presentation/screens/parent_model_management_screen.dart';
 import '../providers/home_notifier.dart';
 import '../providers/parent_tasks_notifier.dart';
@@ -168,7 +168,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ref.read(dueReviewNotifierProvider.notifier).load();
       case 2: // 错题本
         ref.read(childWrongQuestionsProvider.notifier).load();
-      case 3: // AI 伴学：会话由 TutorChatScreen 自我管理，无需全局刷新
+      case 3: // AI 问答：会话由 AssistantNotifier 自我管理，无需全局刷新
         break;
       case 4: // 学科掌握度
         ref.read(masteryNotifierProvider.notifier).load(widget.user.id);
@@ -248,7 +248,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ),
         const ReviewScreen(showBack: false),
         const WrongQuestionsScreen(showBack: false),
-        TutorChatScreen(user: widget.user, showBack: false),
+        const AssistantChatPage(showBack: false),
         ChildMasteryScreen(user: widget.user),
       ],
     );
@@ -324,7 +324,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         onTap: () => _switchChildTab(2)),
     AdaptiveNavDestination(
         icon: LucideIcons.sparkles,
-        label: 'AI 伴学',
+        label: '问 AI 老师',
         active: activeIndex == 3,
         onTap: () => _switchChildTab(3)),
     AdaptiveNavDestination(

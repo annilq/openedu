@@ -2,10 +2,11 @@ import 'assistant_event.dart';
 
 /// 把 AG-UI 事件流折成「AI 文本 + 结构化卡片 + 安全兜底标记」的纯模块。
 ///
-/// 解释规则原先写在 `assistant_notifier` 与 `tutor_notifier` 各自的 `await for`
-/// 循环里：两处语义完全一致（增量文本累加 / DATA 挂卡片 / INPUT_UNSAFE 标拦截），
-/// 但逐帧逻辑夹在 Riverpod 状态与 SSE 之间，无法断言。这里把它收敛成一个不可变
-/// 值 + 一个 [apply]，测试直接喂事件列表即可。
+/// 解释规则原先写在 `assistant_notifier` 与已删除的 `tutor_notifier` 各自的
+/// `await for` 循环里：两处语义完全一致（增量文本累加 / DATA 挂卡片 /
+/// INPUT_UNSAFE 标拦截），但逐帧逻辑夹在 Riverpod 状态与 SSE 之间，无法断言。
+/// 这里把它收敛成一个不可变值 + 一个 [apply]，测试直接喂事件列表即可。
+/// （ADR-0036 后只剩 `assistant_notifier` 一个消费方。）
 ///
 /// 不关心的帧（THINKING / TOOL_CALL / TOOL_RESULT / STEP / RUN_STARTED / DONE）
 /// 一律原样返回 [AiTextFold.apply] 的接收者：对话气泡不单独渲染它们。
