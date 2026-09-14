@@ -61,5 +61,5 @@ def test_wrong_resets_timer(db: Session):
     assert out.review_stage == 0
     assert out.wrong_count == 4
     assert out.due_at is not None
-    # 重置回首档 1 天
-    assert out.due_at <= datetime.now(UTC) + timedelta(days=1, minutes=5)
+    # 重置回首档 1 天；SQLite 往返后 due_at 为 naive UTC，统一去 tz 比较
+    assert out.due_at.replace(tzinfo=None) <= datetime.now(UTC).replace(tzinfo=None) + timedelta(days=1, minutes=5)

@@ -16,6 +16,7 @@ from app.features.review.schemas import ReviewAnswerSubmit
 
 def _make_entities(db: Session, *, due_in_past: bool = True, stage: int = 0):
     q = Question(
+        parent_id=uuid.uuid4(),
         subject="数学",
         grade=2,
         knowledge_point="加法",
@@ -57,7 +58,8 @@ def _stub_grader(monkeypatch, *, correct: bool = True):
         },
     )
     # build_ai_provider 在测试环境可能触发 env 缺失，桩掉避免构造真实 provider。
-    monkeypatch.setattr(review_service, "build_ai_provider", lambda: None)
+    # 生产代码调用带 parent_id/session 关键字参数，桩需接受（ADR-0034 归一封装）。
+    monkeypatch.setattr(review_service, "build_ai_provider", lambda *a, **k: None)
 
 
 def test_submit_answer_not_due_rejected(db: Session, monkeypatch):
