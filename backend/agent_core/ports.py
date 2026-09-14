@@ -121,6 +121,41 @@ class Safety(ABC):
         return SafetyResult(safe=True)
 
 
+# ───────────────────────── 生命周期钩子（可选，LLM 不可见） ─────────────────────────
+class Hooks:
+    """后台扩展钩子（extension seam，对应参考架构 pi-coding-agent 的 lifecycle hooks）。
+
+    全部方法默认空操作；业务继承后只覆写需要的一个或多个即可。agent_core 在 tool loop 的
+    固定阶段调用它们，用于审计、裁剪、注入约束等**模型不可见**的干预（不污染 system/prompt
+    的「业务语义」，除非 ``before_turn`` 显式改写）。
+
+    健壮性：``run_with_tools`` 在调用处保证 ``hooks is None`` 时完全不触发，且钩子抛异常被
+    吞掉（不影响主链路）——遵循评审「扩展置于后台，不改 LLM 上下文」的原则。
+
+    三个固定点：
+
+    - ``before_turn``：每轮 LLM 调用前触发，可改写 ``(system, prompt, history)`` 后返回。
+    - ``after_tool``：工具执行后触发，返回改写后的 result 载荷（如截断超大 tool result）。
+    - ``rewrite_messages``：发送前统一改写整段消息（如裁剪历史中的超大 tool result）。
+    """
+
+    async def before_turn(
+        self, *, turn: int, system: str, prompt: str, history: list[dict]
+    ) -> tuple[str, str, list[dict]]:
+        """每轮 LLM 调用前触发；可改写并返回 ``(system, prompt, history)``。"""
+        return system, prompt, history
+
+    async def after_tool(
+        self, *, name: str, args: dict, result: Any, tool_call_id: str
+    ) -> Any:
+        """工具执行后触发；返回改写后的 result 载荷（默认原样返回）。"""
+        return result
+
+    async def rewrite_messages(self, *, messages: list[dict]) -> list[dict]:
+        """发送前统一改写整段消息（默认原样返回）。"""
+        return messages
+
+
 # ───────────────────────── 运行时依赖注入包 ─────────────────────────
 @dataclass
 class RuntimeDeps:
@@ -130,9 +165,11 @@ class RuntimeDeps:
     - ``retriever``：可选知识库。
     - ``safety``：可选输入安全闸门（路由前拦截）。
     - ``llm_classify``：可选意图分类器（弱意图领域可注入 LLM 分类；默认规则 + 启发式）。
+    - ``hooks``：可选生命周期钩子（扩展 seam，参考评审 P2）；``None`` 表示不挂载。
     """
 
     provider: LLMProvider
     retriever: Retriever | None = None
     safety: Safety | None = None
     llm_classify: Callable[[str, list[str]], str] | None = None
+    hooks: Hooks | None = None

@@ -20,6 +20,7 @@ from typing import Any, AsyncIterator
 
 from agent_core.errors import ToolUnsupportedError
 from agent_core.ports import (
+    Hooks,
     LLMProvider,
     Retriever,
     StructuredDone,
@@ -119,6 +120,7 @@ async def run_with_tools(
     ctx: SubAgentContext,
     *,
     session: Any = None,
+    hooks: "Hooks | None" = None,
 ) -> AsyncIterator[Any]:
     """真实 tool loop 驱动（框架提供，subagent opt-in）。
 
@@ -152,13 +154,32 @@ async def run_with_tools(
     max_turns = max(1, int(getattr(agent, "max_turns", 3)))
     ref_seq = 0  # 工具调用关联 id 计数器（provider 侧 tool_call_id，须请求/结果同值）
 
-    for _ in range(max_turns):
+    for turn_idx in range(max_turns):
         acc = ""
         turn_calls: list[dict] = []  # 本轮模型请求的工具（含 ref，供适配器重建 ToolRequest）
         results: list[dict] = []  # 本轮工具结果（须紧随上面的 assistant 条目入 history）
+
+        # ── 生命周期钩子（可选，LLM 不可见，P2 extension seam） ──
+        # before_turn：每轮 LLM 调用前可改写 (system, prompt, history)；异常被吞，回退原值。
+        if hooks is not None:
+            try:
+                system, user, history = await hooks.before_turn(
+                    turn=turn_idx, system=system, prompt=user, history=history
+                )
+            except Exception:  # noqa: BLE001 — 钩子故障不得影响主链路
+                pass
+        # rewrite_messages：发送前统一改写整段消息（如裁剪超大 tool result）；
+        # 仅用于本次请求，不写回 canonical history，避免下一轮重复裁剪失真。
+        send_history = history
+        if hooks is not None:
+            try:
+                send_history = await hooks.rewrite_messages(messages=history)
+            except Exception:  # noqa: BLE001
+                send_history = history
+
         try:
             async for ev in agent.provider.stream(
-                system, user, tools=registry.schemas(), history=history
+                system, user, tools=registry.schemas(), history=send_history
             ):
                 if isinstance(ev, TextDelta):
                     acc += ev.delta
@@ -176,6 +197,14 @@ async def run_with_tools(
                             result = await spec.handler(ev.args, ctx=ctx, session=session)
                         except Exception as exc:  # noqa: BLE001 — 单工具异常不应让整条流崩
                             result = {"error": str(exc)}
+                    # after_tool 钩子：改写工具结果（如截断超大结果），失败则保留原结果。
+                    if hooks is not None:
+                        try:
+                            result = await hooks.after_tool(
+                                name=ev.name, args=ev.args, result=result, tool_call_id=ref
+                            )
+                        except Exception:  # noqa: BLE001 — 钩子故障不得影响主链路
+                            pass
                     yield tool_result(ev.name, result)
                     for frame in agent.render_tool_result(ev.name, result):
                         yield frame

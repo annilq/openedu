@@ -131,7 +131,9 @@ class AgentRuntime:
             ctx.skills = manifest.skill_prompt
 
         try:
-            async for ev in run_with_tools(agent, message, ctx, session=session):
+            async for ev in run_with_tools(
+                agent, message, ctx, session=session, hooks=deps.hooks
+            ):
                 yield ev
         except Exception as exc:  # noqa: BLE001 — 单 subagent 异常不应让整条流崩
             yield error(f"助手执行出错：{exc}", code="AGENT_ERROR")

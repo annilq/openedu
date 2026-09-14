@@ -10,6 +10,7 @@ from __future__ import annotations
 from agent_core.errors import AgentError, ToolExecutionError
 from agent_core.ports import (
     Chunk,
+    Hooks,
     LLMProvider,
     Retriever,
     RuntimeDeps,
@@ -66,6 +67,7 @@ __all__ = [
     "ToolRegistry",
     "LLMProvider",
     "Retriever",
+    "Hooks",
     "Safety",
     "SafetyResult",
     "RuntimeDeps",
