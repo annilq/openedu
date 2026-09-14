@@ -35,25 +35,16 @@ class Settings(BaseSettings):
                 return database_url.replace(scheme, "postgresql+psycopg://", 1)
         return database_url
 
-    # —— LLM / 出题引擎（可插拔，对应 ADR-003）——
-    LLM_PROVIDER: str = "mock"  # mock | langchain | deepseek
-    LLM_API_KEY: str = ""
-    LLM_BASE_URL: str = ""  # 国产模型 OpenAI 兼容端点（混元/通义等）
-    LLM_MODEL: str = ""
-    LLM_TEMPERATURE: float = 0.3
-
-    # DeepSeek 快捷配置：LLM_PROVIDER=deepseek 时读取，无需填 LLM_*
-    DEEPSEEK_API_KEY: str = ""
-    DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
-    DEEPSEEK_MODEL: str = "deepseek-v4-flash"
-
     # —— 多模型接入（ADR-0015 / 票据 08）：Genkit 编排流式 flow ——
+    # 所有引擎配置统一收敛到「模型管理」：
+    #   - 家长自定义模型落 ModelConfig 表（api_key 经 Fernet 加密，管理员不可见）；
+    #   - 管理员内置模型走此处 BUILTIN_MODELS 目录声明；
+    #   - 家长在「模型管理」中把某模型「设为默认」，未显式指定模型时回落该默认。
+    # （已移除本地 LLM_PROVIDER / DEEPSEEK_* / LLM_* 等旁路 env，避免与模型管理分裂。）
     # 内置模型清单（env JSON）：[{id,label,provider,model_name,base_url?}]
     #   provider ∈ {ollama, openai_compat}；base_url 缺省时 ollama 走 OLLAMA_BASE_URL。
-    # 家长自定义模型落 ModelConfig 表（见 models.py），管理员内置模型走此处声明。
     OLLAMA_BASE_URL: str = "http://localhost:11434"
-    DEFAULT_MODEL: str = ""  # 内置模型 id；为空时回退 LLM_PROVIDER 对应模型
-    BUILTIN_MODELS: str = "[]"  # JSON 字符串，解析见 app/ai/model_registry.py
+    BUILTIN_MODELS: str = "[]"  # JSON 字符串，解析见 app/ai/engine.py
     MODEL_FALLBACK: str = "none"  # none | mock；仅 mock 时 provider 不可达静默回退 Mock
     MODEL_APIKEY_SECRET: str = ""  # Fernet 密钥，用于加密 ModelConfig.api_key
 

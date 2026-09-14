@@ -26,7 +26,7 @@ def build_ai_provider(
 ):
     """归一构造 AI provider：统一经 ``resolve_engine`` 解析模型引用。
 
-    - ``model_ref`` 为 None → 回退全局 ``LLM_PROVIDER``（与既有 ``build_provider()`` 行为一致）。
+    - ``model_ref`` 为 None → 回退本家长在「模型管理」中设为默认的模型（与既有 ``build_provider()`` 行为一致）。
     - ``model_ref`` 为合法 ModelConfig UUID / 内置模型 id → 解析对应引擎，使批改 / 重生成
       与 chat 一样尊重家长 ``ModelConfig`` 与请求级 ``model``。
     """

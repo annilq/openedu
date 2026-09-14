@@ -23,7 +23,7 @@ from app.domain.retriever import KnowledgeRetriever
 from app.domain.safety import SAFE_REFUSAL, check_input, check_output
 
 # 引擎不可用时的兜底说明（mock 兜底已移除，provider.tutor 返回 None）。
-_LLM_UNAVAILABLE = "暂无可用的 AI 引擎，无法答疑（请配置 LLM_PROVIDER 与对应 API key）。"
+_LLM_UNAVAILABLE = "暂无可用的 AI 引擎，无法答疑（请在「模型管理」中添加模型并设为默认）。"
 
 
 @dataclass

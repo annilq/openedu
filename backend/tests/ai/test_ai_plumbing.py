@@ -38,8 +38,8 @@ def test_build_ai_provider_passes_model_ref_through(monkeypatch):
     assert captured["parent_id"] == pid
 
 
-def test_build_ai_provider_falls_back_to_global(monkeypatch):
-    """model_ref 为 None 时回落全局解析（与既有 build_provider() 行为一致）。"""
+def test_build_ai_provider_falls_back_when_no_model(monkeypatch):
+    """model_ref 为 None 且无家长上下文时回落 None（端点据此降级或回退默认模型）。"""
     captured = {}
 
     def fake_resolve(model_ref=None, *, parent_id=None, session=None):

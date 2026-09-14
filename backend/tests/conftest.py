@@ -9,9 +9,8 @@ from sqlmodel import Session, delete
 # 测试强制使用独立临时库：避免本地 app.db 旧 schema 影响（无迁移流程，表结构演进靠重建）
 _TEST_DB = Path(__file__).resolve().parent.parent / "test_app.db"
 os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DB}"
-# 测试一律不接真实模型：本地 .env 常配了 deepseek key，会让同一份测试在本地与
-# CI（无 key）行为分叉。LLM 产出统一由 fake_llm 夹具的确定性替身提供（见下）。
-os.environ["LLM_PROVIDER"] = "mock"
+# 测试一律不接真实模型：LLM 产出统一由 fake_llm 夹具的确定性替身提供（见下）。
+# （本地 LLM 配置已移除，引擎统一走「模型管理」ModelConfig，测试用 fake_llm 桩。）
 _TEST_DB.unlink(missing_ok=True)
 
 from app.core.db import engine, init_db  # noqa: E402

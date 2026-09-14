@@ -28,14 +28,14 @@ class GenkitProvider(EducationLLMProvider):
     """单一 Genkit 栈的 LLMProvider 实现。
 
     ADR-0030：可接受显式引擎（家长 ``ModelConfig`` / 前端 ``model`` 解析所得）；
-    为 ``None`` 时每次调用回退 ``resolve_engine()``。
+    为 ``None`` 时每次调用回退 ``resolve_engine()``（无上下文则 None）。
     """
 
     def __init__(self, engine: EngineResolution | None = None) -> None:
         self._engine = engine
 
     def _resolve(self) -> EngineResolution | None:
-        """显式引擎优先，否则回退全局解析（ADR-0030 单一解析链）。"""
+        """显式引擎优先，否则回退解析（无家长上下文时返回 None，由上层降级）。"""
         return self._engine if self._engine is not None else resolve_engine()
 
     def _adapter(self) -> GenkitLLMProvider | None:
@@ -102,7 +102,7 @@ class GenkitProvider(EducationLLMProvider):
         engine = self._resolve()
         if engine is None:
             raise RuntimeError(
-                "未配置 LLM 引擎，无法批改（请设置 LLM_PROVIDER 与对应 API key）"
+                "未配置模型，无法批改（请在「模型管理」中添加模型并设为默认）"
             )
         prompt = (
             f"题目：{question.stem}\n学生作答：{student_answer}\n"

@@ -310,7 +310,7 @@ def _gen_question(
     if g is None:
         raise AppErrorException(
             ErrCode.LLM_UNAVAILABLE,
-            "无可用 LLM 引擎或题目生成不安全，无法重生成（请配置 LLM_PROVIDER 与 API key）",
+            "无可用 LLM 引擎或题目生成不安全，无法重生成（请在「模型管理」中添加模型并设为默认）",
         )
     return g
 
@@ -396,7 +396,7 @@ async def _stream_question_frames(
     except Exception:
         # build_provider / provider.stream 抛错都归因为引擎不可用，与同步版一致。
         yield error_event(
-            "无可用 LLM 引擎或题目生成不安全，无法重生成（请配置 LLM_PROVIDER 与 API key）",
+            "无可用 LLM 引擎或题目生成不安全，无法重生成（请在「模型管理」中添加模型并设为默认）",
             code=getattr(ErrCode.LLM_UNAVAILABLE, "value", str(ErrCode.LLM_UNAVAILABLE)),
         ).to_sse()
 
@@ -1093,7 +1093,7 @@ def answer(
         raise AppErrorException(ErrCode.TASK_QUESTION_NOT_FOUND, "题目不在当前任务里")
 
     # 批改经归一封装构造 provider：尊重 task.model / 家长 ModelConfig（ADR-0034 Phase 2），
-    # 消除「批改忽略 model」的分裂；task.model 为 None 时回退全局 LLM_PROVIDER。
+    # 消除「批改忽略 model」的分裂；task.model 为 None 时回退本家长默认模型（模型管理）。
     result = Grader(
         build_ai_provider(task.model, parent_id=task.parent_id, session=session)
     ).grade(question=tq, student_answer=student_answer)

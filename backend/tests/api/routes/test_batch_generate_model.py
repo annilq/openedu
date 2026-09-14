@@ -1,7 +1,8 @@
 """整卷重生成「尊重所选模型」回归测试（ADR-0023：单流收口后，regenerate 复用共享出题核心）。
 
 历史 bug（原 batch-generate）：前端传了 model（如 ollama 内置 id），但旧路径忽略，
-永远走全局 LLM_PROVIDER（默认 mock）。batch-generate 已删除，出题统一经
+永远走全局 LLM_PROVIDER（默认 mock）。本地 LLM 配置已移除，引擎统一走「模型管理」，
+batch-generate 已删除，出题统一经
 `POST /tasks/from-generated`（落库预设题卡）→ `POST /tasks/{id}/regenerate`
 （按 Task.model 复用共享出题管线 ``question.pipeline.generate_question`` 重跑）。本测试用假 provider 验证：
   1) resolve_engine 收到的正是 Task 所选 model；

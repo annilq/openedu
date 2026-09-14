@@ -2,7 +2,7 @@
 
 历史 bug：流式 flow 把 parent_id 作为字符串（ctx.context 经 JSON 序列化）传入，
 而 resolve_engine 第 1 步用 `mc.parent_id == parent_id`（UUID == str）比较，恒为
-False，导致 ModelConfig 永不命中 → 回退全局 LLM_PROVIDER=mock，预览出题返回 mock。
+False，导致 ModelConfig 永不命中 → 回退本家长默认模型（模型管理），预览出题返回 mock。
 同步 batch-generate 传的是 UUID 对象，故曾行为不一致。
 
 本测试用「字符串 parent_id」模拟流式路径，确认：

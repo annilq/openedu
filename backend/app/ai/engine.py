@@ -1,10 +1,15 @@
 """引擎解析（ADR-0015）：把「模型引用」解析为可用的引擎 + model 字符串。
 
-解析优先级：
+所有引擎配置统一收敛到「模型管理」：
+  - 家长自定义模型落 ``ModelConfig`` 表（api_key 经 Fernet 加密）；
+  - 管理员内置模型走 ``settings.BUILTIN_MODELS`` 目录；
+  - 家长可在「模型管理」中把某个模型「设为默认」。
+
+解析优先级（不再读取本地 LLM_PROVIDER / DEEPSEEK_* 等 env）：
   1. 显式 ModelConfig id（家长自定义，需 parent_id + session，越权返回 None）
-  2. 内置模型 id（settings.BUILTIN_MODELS JSON）
-  3. 全局 LLM_PROVIDER（deepseek / langchain）→ 对应端点
-  mock 模式或无法解析 → 返回 None，由端点回退 MockProvider。
+  2. 内置模型 id（settings.BUILTIN_MODELS 目录）
+  3. 未指定 model_ref 时，回落本家长的默认 ModelConfig（模型管理「设为默认」）
+  4. 均无 → 返回 None，由上层下发「未配置模型」提示或回退 MockProvider。
 
 本模块只做**配置解析**（读 ModelConfig 表 / 解密密钥 / 读 settings → 中性参数），
 真正的 Genkit 实例构造在 ``agent_core.adapters.genkit.build_genkit_engine``
@@ -17,7 +22,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from agent_core.adapters.genkit import build_genkit_engine
 from app.core.config import settings
@@ -104,7 +109,14 @@ def resolve_engine(
     parent_id: object | None = None,
     session: Session | None = None,
 ) -> EngineResolution | None:
-    """解析模型引用 → 引擎；mock/不可解析返回 None。"""
+    """解析模型引用 → 引擎；未配置「模型管理」中的模型时返回 None。
+
+    优先级（统一走「模型管理」配置，不再读取本地 LLM_PROVIDER 等 env）：
+      1. 显式 ModelConfig id（家长自定义，需 parent_id + session，越权返回 None）
+      2. 内置模型 id（settings.BUILTIN_MODELS 目录）
+      3. 未指定 model_ref 时，回落本家长的默认 ModelConfig（模型管理「设为默认」）
+      4. 均无 → 返回 None，由上层下发「未配置模型」提示或回退 MockProvider
+    """
     # 1) 家长自定义 ModelConfig（仅 model_ref 为合法 UUID 时才查表，避免内置 id 触发 .hex 崩溃）
     if model_ref and session is not None and parent_id is not None:
         mc_id = _as_uuid(model_ref)
@@ -125,17 +137,25 @@ def resolve_engine(
                     m["model_name"],
                 )
 
-    # 3) 全局 LLM_PROVIDER
-    provider = settings.LLM_PROVIDER
-    if provider == "deepseek":
-        return _get_or_build(
-            "openai_compat", settings.DEEPSEEK_BASE_URL, settings.DEEPSEEK_API_KEY, settings.DEEPSEEK_MODEL
-        )
-    if provider == "langchain":
-        if not settings.LLM_BASE_URL or not settings.LLM_MODEL:
-            return None
-        return _get_or_build(
-            "openai_compat", settings.LLM_BASE_URL, settings.LLM_API_KEY or None, settings.LLM_MODEL
-        )
-    # mock 或未知 → 无真实引擎（端点回退 MockProvider）
+    # 3) 未指定模型 → 回落本家长在「模型管理」中设为默认的 ModelConfig
+    if model_ref is None and session is not None and parent_id is not None:
+        mc = _default_model_config(session, parent_id)
+        if mc is not None:
+            api_key = decrypt(mc.api_key_enc) if mc.api_key_enc else None
+            return _get_or_build(mc.provider, mc.base_url, api_key, mc.model_name)
+
+    # 4) 无可用模型（mock / 未配置）→ None
     return None
+
+
+def _default_model_config(session: Session, parent_id: object) -> ModelConfig | None:
+    """查本家长的默认 ModelConfig（模型管理「设为默认」）。"""
+    try:
+        pid = uuid.UUID(str(parent_id))
+    except (ValueError, TypeError, AttributeError):
+        return None
+    return session.exec(
+        select(ModelConfig).where(
+            ModelConfig.parent_id == pid, ModelConfig.is_default.is_(True)
+        )
+    ).first()

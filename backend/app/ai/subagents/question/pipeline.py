@@ -168,8 +168,7 @@ async def stream_question(
     # 而不是误导用户「调整科目或年级」（mock / 未配 key 时科目年级根本没被用到）。
     if not getattr(provider, "configured", True):
         yield QuestionFailed(
-            reason="未配置 AI 出题引擎，无法生成题目。请在后端 .env 设置 "
-            "LLM_PROVIDER（如 deepseek）与对应 API key 后重试。"
+            reason="未配置 AI 出题引擎，无法生成题目。请在「模型管理」中添加模型并设为默认后重试。"
         )
         return
     reasoning: list[str] = []

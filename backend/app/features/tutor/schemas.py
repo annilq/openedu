@@ -11,7 +11,7 @@ class TutorAskReq(SQLModel):
     knowledge_point: str = Field(default="", max_length=128)
     context: str | None = None
     question: str = Field(min_length=1, max_length=2000)
-    # 可选模型引用：内置 id / ModelConfig id；缺省走家长默认或全局 DEFAULT_MODEL
+    # 可选模型引用：内置 id / ModelConfig id；缺省走家长在「模型管理」中设为默认的模型
     model: str | None = None
 
 

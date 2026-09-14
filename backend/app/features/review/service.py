@@ -17,7 +17,7 @@ from uuid import UUID
 from sqlmodel import Session
 
 from app.core.ai_plumbing import build_ai_provider
-from app.db.models import Question, WrongQuestion
+from app.db.models import Question, User, WrongQuestion
 from app.domain import Grader
 from app.domain.review_scheduler import apply_review_outcome, next_interval_days
 from app.features.review.repository import list_due_wrong_questions
@@ -83,8 +83,12 @@ def submit_answer(
         raise ReviewNotFound()
 
     # 批改经归一封装构造 provider（ADR-0034 Phase 2）；复习作答不携带 per-task model，
-    # 回落全局 LLM_PROVIDER，统一走 ai_plumbing 单一入口。
-    grader = Grader(build_ai_provider())
+    # 回落「模型管理」中本家长的默认模型，统一走 ai_plumbing 单一入口。
+    child = session.get(User, child_id)
+    parent_id = child.parent_id if child is not None else None
+    grader = Grader(
+        build_ai_provider(parent_id=parent_id, session=session)
+    )
     result = grader.grade(question=question, student_answer=submit.student_answer)
     create_answer_record(
         session=session,

@@ -44,7 +44,7 @@ exclude = ["alembic"]
 
 [tool.pytest.ini_options]
 markers = [
-    "smoke: 真实大模型连通测试（需 LLM_PROVIDER=langchain + key + RUN_LLM_SMOKE=1）",
+    "smoke: 真实大模型连通测试（需在「模型管理」中配置模型并设为默认 + RUN_LLM_SMOKE=1）",
 ]
 
 [tool.ruff.lint]

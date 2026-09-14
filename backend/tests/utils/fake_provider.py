@@ -1,7 +1,7 @@
 """测试专用确定性 LLM 替身（test double）。
 
 背景：生产侧已**移除 mock 兜底**——未配置真实引擎时出题 / 答疑返回 None、批改抛错
-（见 ``app/domain/genkit_provider.py``），需 ``LLM_PROVIDER`` + key 才能跑通 AI 闭环。
+（见 ``app/domain/genkit_provider.py``），需「模型管理」中配置模型才能跑通 AI 闭环。
 
 但**测试不得依赖真实模型**：本地 ``.env`` 配了 key 时走真实调用，CI（无 key）走
 ``mock``，同一份代码两处行为分叉，出题/答疑断言随环境随机红（本次 CI 两条红线即因此）。

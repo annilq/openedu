@@ -216,7 +216,7 @@ def _finish_message(
     ok = len(generated)
     if ok == 0:
         reason = failures[0] if failures else None
-        return reason or "本次未能生成题目，请检查后端 AI 出题引擎配置（LLM_PROVIDER + API key）。"
+        return reason or "本次未能生成题目，请检查「模型管理」中的模型配置（添加模型并设为默认）。"
 
     summary = _subject_summary(items)
     head = f"已生成 {ok} 道题" + (f"（{summary}）" if summary and ok == requested else "")
