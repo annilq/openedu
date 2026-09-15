@@ -36,7 +36,6 @@ class AppOptionTile extends StatelessWidget {
       child: PressScale(
         onTap: disabled ? null : onTap,
         downScale: 0.975,
-        upDuration: const Duration(milliseconds: 300),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
           curve: Curves.easeOut,

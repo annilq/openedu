@@ -46,21 +46,25 @@ class SubjectColors {
 class SubjectAccent {
   const SubjectAccent._();
 
+  // 学科三件套（ADR-0044 三重编码：色相 + 明度差 + [SubjectMark] 几何标记）。
+  // 色值变更说明：英语由绿改黄——旧绿与语文红在红绿色盲下趋同，且绿 vs 黄在
+  // 纸底上的明度差（3.78 vs 1.38）不足以区分。fg 在 container 上实测
+  // 5.39 ~ 6.43，全部过 AA；accent 在纸底上最低 1.38（英语黄）→ 必须带墨黑描边。
   static const SubjectColors _lightMath =
-      SubjectColors(Color(0xFF4C7DE0), Color(0xFFE9F0FC), Color(0xFF2B5BB0));
+      SubjectColors(Color(0xFF2F6FD0), Color(0xFFDCE7FA), Color(0xFF1D4E9C));
   static const SubjectColors _lightChinese =
-      SubjectColors(Color(0xFFD85A6E), Color(0xFFFCEBEE), Color(0xFFB23A4E));
+      SubjectColors(Color(0xFFFF6B5A), Color(0xFFFFE2DE), Color(0xFFB02A18));
   static const SubjectColors _lightEnglish =
-      SubjectColors(Color(0xFF3FA67E), Color(0xFFE7F5EE), Color(0xFF2C7C5C));
+      SubjectColors(Color(0xFFFFD43B), Color(0xFFFFF4CC), Color(0xFF7A5A00));
   static const SubjectColors _lightReserved =
       SubjectColors(Color(0xFF8A8F98), Color(0xFFF1F1F0), Color(0xFF5C6068));
 
   static const SubjectColors _darkMath =
-      SubjectColors(Color(0xFF7FA8F0), Color(0xFF1B2740), Color(0xFFA9C4F5));
+      SubjectColors(Color(0xFF6C9BF0), Color(0xFF16233D), Color(0xFFB3C9F7));
   static const SubjectColors _darkChinese =
-      SubjectColors(Color(0xFFE78FA0), Color(0xFF3A1F26), Color(0xFFF2B6C2));
+      SubjectColors(Color(0xFFFF8C7A), Color(0xFF3A1F1C), Color(0xFFFFC0B4));
   static const SubjectColors _darkEnglish =
-      SubjectColors(Color(0xFF6FC4A2), Color(0xFF163026), Color(0xFFA7E0C6));
+      SubjectColors(Color(0xFFFFD43B), Color(0xFF3A3218), Color(0xFFFFE89A));
   static const SubjectColors _darkReserved =
       SubjectColors(Color(0xFF9CA3AF), Color(0xFF2A2A28), Color(0xFFC7CBD1));
 
@@ -119,6 +123,138 @@ class SubjectAccent {
 /// - 语义色降饱和（极淡绿/琥珀/红/靛蓝底）
 /// - Inter 西文/数字 + Noto Sans SC（OFL）CJK 回退（HarmonyOS Sans SC 因授权限制再分发，未打包）
 /// - 密排字号 15sp 基线，双端共用
+// =====================================================================
+// §新粗野原色与物理令牌（ADR-0044 · 完整色板与原则见 .impeccable.md）
+// =====================================================================
+
+/// 学科几何标记（ADR-0044 学科三重编码的形状层）。
+///
+/// 学科标识必须同时携带「色相 + 明度差 + 形状」三层信息，**禁止仅靠颜色区分**：
+/// 语文（coral）与英语（yellow）同属暖色系，在红绿色盲下趋同，由形状兜底。
+enum SubjectMark { square, circle, triangle }
+
+/// 学科 → 几何标记映射（唯一事实源，UI 层不得自行 switch 学科）。
+extension SubjectMarkOf on SubjectKey {
+  SubjectMark get mark => switch (this) {
+        SubjectKey.math => SubjectMark.square,
+        SubjectKey.chinese => SubjectMark.circle,
+        SubjectKey.english => SubjectMark.triangle,
+        SubjectKey.reserved => SubjectMark.square,
+      };
+}
+
+/// 新粗野撞色原色（ADR-0044）。
+///
+/// **一个色只有一种合规文字配对**，全部实测 WCAG AA：亮块配墨黑、深块配白。
+/// **禁止互换**——所有高饱和色配白字对比度最高仅 4.78，过不了 4.5:1
+///（`.impeccable.md` §Design Principles 3）。取色一律走 [AppBrutal.onColor]，
+/// 不得在业务代码里硬写黑/白。
+class AppBrutal {
+  const AppBrutal._();
+
+  /// 墨黑：承担全部描边与文字。非纯黑，避免与纸底产生刺眼反差。
+  static const Color ink = Color(0xFF111110);
+
+  /// 纸底：页面底色，微暖白。
+  static const Color paper = Color(0xFFFDFBF7);
+
+  /// 浮起纸面（卡片 / 浮层底）。
+  static const Color paperRaised = Color(0xFFFFFFFF);
+
+  // —— 亮块：只能配 [ink]（实测 4.83 ~ 13.25）——
+  static const Color yellow = Color(0xFFFFD43B); // 13.25
+  static const Color lime = Color(0xFFA9E34B); // 12.39
+  static const Color cyan = Color(0xFF22B8CF); //  7.94
+  static const Color teal = Color(0xFF12B886); //  7.40
+  static const Color orange = Color(0xFFF08C00); //  7.61
+  static const Color coral = Color(0xFFFF6B5A); //  6.75
+  static const Color magenta = Color(0xFFE64980); //  5.06
+  static const Color green = Color(0xFF2B9348); //  4.83
+
+  // —— 深块：只能配 [onDark]（配 ink 仅 3.40 ~ 3.87，不达标）——
+  static const Color violet = Color(0xFF7048E8); //  5.55 vs 白
+  static const Color red = Color(0xFFC92525); //  5.56 vs 白
+  static const Color blue = Color(0xFF2F6FD0); //  4.88 vs 白
+
+  /// 深块专用前景（纯白）。
+  static const Color onDark = Color(0xFFFFFFFF);
+
+  /// 深块登记表。**新增撞色若属深块必须同步登记**，否则 [onColor] 会误判为
+  /// 亮块而配墨黑字 → 对比度不达标。
+  ///
+  /// 不用 `const Set<Color>`：常量集合要求元素具备原始相等性，而 `Color`
+  /// 重写了 `==` / `hashCode`，编译器会报 `const_set_element_not_primitive_equality`。
+  static bool isDarkFill(Color fill) =>
+      fill == violet || fill == red || fill == blue;
+
+  /// 取该色的**唯一合规前景**：亮块 → [ink]，深块 → [onDark]。
+  static Color onColor(Color fill) => isDarkFill(fill) ? onDark : ink;
+}
+
+/// 描边与硬阴影令牌（ADR-0044）。
+///
+/// **硬阴影 = 无模糊（`blurRadius = 0`）的纯色偏移**。禁止带 blurRadius 的
+/// `BoxShadow`——模糊会破坏新粗野的硬边语言。Flutter 无内阴影 API，黏土式
+/// 内阴影不在本方案内（ADR-0044 Considered Options ②）。
+///
+/// 描边不是装饰：相邻高饱和色块对比度中位数仅 1.67（最低 `violet/red = 1.00`），
+/// 无描边时色块边界在视觉上不存在。
+class AppElevation {
+  const AppElevation._();
+
+  /// 主描边宽度（卡片 / 控件 / 分隔线）。
+  static const double borderWidth = 2;
+
+  /// 次级描边宽度（密集表格 / 列表内分隔）。
+  static const double borderWidthSm = 1.5;
+
+  /// 常态硬阴影偏移。
+  static const Offset offset = Offset(3, 3);
+
+  /// 按压态偏移：元素下沉 2px，模拟物理按压。
+  static const Offset offsetPressed = Offset(1, 1);
+
+  /// 常态硬阴影（`blurRadius` 恒为 0）。
+  static List<BoxShadow> hard([Color color = AppBrutal.ink]) =>
+      <BoxShadow>[BoxShadow(color: color, offset: offset, blurRadius: 0)];
+
+  /// 按压态硬阴影：位移收拢，元素「按下去了」。
+  static List<BoxShadow> hardPressed([Color color = AppBrutal.ink]) =>
+      <BoxShadow>[
+        BoxShadow(color: color, offset: offsetPressed, blurRadius: 0),
+      ];
+
+  /// 无阴影（纸底内嵌元素 / 纯分隔线场景）。
+  static const List<BoxShadow> none = <BoxShadow>[];
+}
+
+/// 物理弹簧令牌（ADR-0044）。
+///
+/// **取代 `Curves.easeOutBack`**：后者是三次贝塞尔近似，所有元素共用同一条曲线，
+/// 多元素同时动时会「齐步走」，没有质量差异、显得廉价。这里按元素量级给不同
+/// stiffness / damping——大卡片重、chip 轻（`.impeccable.md` §Design Principles 5）。
+///
+/// 括号内为阻尼比 `dampingRatio = damping / (2·√(mass·stiffness))`。
+class AppSprings {
+  const AppSprings._();
+
+  /// 交互态（按压 / hover）：快、几乎无超调（≈0.88）。
+  static const SpringDescription interaction =
+      SpringDescription(mass: 1, stiffness: 620, damping: 44);
+
+  /// 状态切换（展开 / 收起）：轻微超调（≈0.73）。
+  static const SpringDescription state =
+      SpringDescription(mass: 1, stiffness: 420, damping: 30);
+
+  /// 页面进入（≈0.75）。
+  static const SpringDescription page =
+      SpringDescription(mass: 1, stiffness: 300, damping: 26);
+
+  /// 庆祝反馈：明显回弹（≈0.47），仅 Child Mode。
+  static const SpringDescription celebrate =
+      SpringDescription(mass: 1, stiffness: 260, damping: 15);
+}
+
 class AppTheme {
   const AppTheme._();
 
@@ -130,96 +266,103 @@ class AppTheme {
     'Noto Sans SC',
   ];
 
-  /// 亮色令牌（中性灰白 + 靛蓝）。
+  /// 亮色令牌（新粗野：纸底 + 墨黑描边 + 高饱和撞色，ADR-0044）。
+  ///
+  /// 取值全部对齐 [AppBrutal]；语义容器的 fg 在容器底上实测 ≥ 5.3:1。
+  /// **outline 已从浅灰改为墨黑**——这是本次视觉语言切换的核心开关。
   static const AppColors light = AppColors(
     brightness: Brightness.light,
-    // CTA / 品牌主色：复用靛蓝 accent（全站品牌色统一为蓝紫）
-    primary: Color(0xFF5E6AD2), // = accent 靛蓝
+    // CTA / 品牌主色：新粗野蓝（深块，配白字 4.88）
+    primary: Color(0xFF2F6FD0),
     onPrimary: Color(0xFFFFFFFF),
-    primaryContainer: Color(0xFFEAF0FE), // 浅靛蓝容器（头像底 / 选中底）
-    onPrimaryContainer: Color(0xFF4338CA), // 深靛蓝（容器前景）
-    // 中性灰次强调
-    secondary: Color(0xFF6B7280),
-    onSecondary: Color(0xFFFFFFFF),
-    secondaryContainer: Color(0xFFFAF3E8), // = semanticWarning 底
-    onSecondaryContainer: Color(0xFF8A6D1F), // = semanticWarningFg
-    // positive 语义
-    tertiary: Color(0xFF3B7A2D),
-    onTertiary: Color(0xFFFFFFFF),
-    tertiaryContainer: Color(0xFFEFF5EC), // = semanticPositive 底
-    onTertiaryContainer: Color(0xFF3B7A2D), // = semanticPositiveFg
-    // error 语义
-    error: Color(0xFFB91C1C),
+    primaryContainer: Color(0xFFDCE7FA), // 浅蓝容器（头像底 / 选中底）
+    onPrimaryContainer: Color(0xFF1D4E9C),
+    // warning 语义（琥珀，亮块配墨黑）
+    secondary: Color(0xFFF08C00),
+    onSecondary: AppBrutal.ink,
+    secondaryContainer: Color(0xFFFFF0CC), // = semanticWarning 底
+    onSecondaryContainer: Color(0xFF6B4700), // = semanticWarningFg
+    // positive 语义（绿，亮块配墨黑）
+    tertiary: Color(0xFF2B9348),
+    onTertiary: AppBrutal.ink,
+    tertiaryContainer: Color(0xFFDFF3E4), // = semanticPositive 底
+    onTertiaryContainer: Color(0xFF1D6B33), // = semanticPositiveFg
+    // error 语义（深红，配白字 5.56）
+    error: Color(0xFFC92525),
     onError: Color(0xFFFFFFFF),
-    errorContainer: Color(0xFFFCE8E6), // = semanticError 底
-    onErrorContainer: Color(0xFFB91C1C), // = semanticErrorFg
-    // Surface 层次
-    surface: Color(0xFFFBFAFA), // 内容区微暖白
-    onSurface: Color(0xFF1D1B17),
+    errorContainer: Color(0xFFFFE2E0), // = semanticError 底
+    onErrorContainer: Color(0xFFA51C1C), // = semanticErrorFg
+    // Surface 层次（纸底体系：[AppBrutal.paper] → 纯白浮起）
+    surface: AppBrutal.paper, // 内容区纸底
+    onSurface: AppBrutal.ink,
     surfaceContainerLowest: Color(0xFFFFFFFF), // = surfaceRaised
     surfaceContainerLow: Color(0xFFFFFFFF), // = surfaceRaised（卡片）
-    surfaceContainer: Color(0xFFF4F4F2), // = surfaceSunken（侧栏）
-    surfaceContainerHigh: Color(0xFFF4F4F2), // = surfaceSunken（仅作 surface 色调，禁止当边框用）
-    surfaceContainerHighest: Color(0xFFEDEDF0), // = surfaceActive
-    onSurfaceVariant: Color(0xFF6B7280),
-    outline: Color(0xFFDEDDD8), // 边框令牌（1px 描边）：亮模式 ~1.36:1，可见但克制
-    inverseSurface: Color(0xFF1D1B17),
-    onInverseSurface: Color(0xFFF5F5F4),
-    // 靛蓝强调 + hover
-    accent: Color(0xFF5E6AD2),
+    surfaceContainer: Color(0xFFF2F0EA), // = surfaceSunken（侧栏）
+    surfaceContainerHigh: Color(0xFFF2F0EA), // = surfaceSunken（仅作 surface 色调，禁止当边框用）
+    surfaceContainerHighest: Color(0xFFE8E5DC), // = surfaceActive
+    onSurfaceVariant: Color(0xFF5C6068),
+    outline: AppBrutal.ink, // 墨黑描边（ADR-0044：功能必需，非装饰）
+    inverseSurface: AppBrutal.ink,
+    onInverseSurface: AppBrutal.paper,
+    // 强调 + hover
+    accent: Color(0xFF2F6FD0),
     onAccent: Color(0xFFFFFFFF),
-    surfaceHover: Color(0xFFF4F4F2),
-    outlineHover: Color(0xFFD1D1CE),
-    // info 语义（靛蓝系）
-    infoContainer: Color(0xFFEEF0FC), // = semanticInfo 底（AI 标记亦走此档）
-    onInfoContainer: Color(0xFF4338CA), // = semanticInfoFg
-    // CTA hover（靛蓝 CTA：hover 加深一档）
-    ctaHover: Color(0xFF4F5AC4),
-    // Toast 浮层（深色反色底，不用 surface 令牌以免与页面糊在一起）
-    toast: Color(0xFF2F2A24),
-    onToast: Color(0xFFFFFFFF),
+    surfaceHover: Color(0xFFF2F0EA),
+    outlineHover: AppBrutal.ink,
+    // info 语义（蓝系）
+    infoContainer: Color(0xFFDCE7FA), // = semanticInfo 底（AI 标记亦走此档）
+    onInfoContainer: Color(0xFF1D4E9C), // = semanticInfoFg
+    // CTA hover（蓝 CTA：hover 加深一档）
+    ctaHover: Color(0xFF245AB0),
+    // Toast 浮层：墨黑底 + 纸色字（新粗野反色，不用中性深炭）
+    toast: AppBrutal.ink,
+    onToast: AppBrutal.paper,
     scrim: Color(0x66000000),
   );
 
-  /// 暗色令牌（暖中性深炭 + 靛蓝提亮）。
+  /// 暗色令牌（深炭纸 + 亮描边，ADR-0044）。
+  ///
+  /// 暗色**不是优先目标**（`.impeccable.md` §Aesthetic Direction）：儿童端在暗底上
+  /// 撞色会失控。`outline` 取亮暖灰而非纯白——纯白描边在密集列表里会糊成一片，
+  /// 此值待暗色专项打磨时再定。
   static const AppColors dark = AppColors(
     brightness: Brightness.dark,
-    primary: Color(0xFF7B82EA), // 暗底品牌靛蓝
-    onPrimary: Color(0xFF0F0F0E),
-    primaryContainer: Color(0xFF20203A), // 深靛蓝容器（选中/头像底）
-    onPrimaryContainer: Color(0xFFB9BEF2), // 浅靛蓝（容器前景）
-    secondary: Color(0xFF9CA3AF),
-    onSecondary: Color(0xFF0F0F0E),
-    secondaryContainer: Color(0xFF2E2618), // = semanticWarning 底
-    onSecondaryContainer: Color(0xFFD4A82E), // = semanticWarningFg
-    tertiary: Color(0xFF86C060),
-    onTertiary: Color(0xFF0F0F0E),
-    tertiaryContainer: Color(0xFF1A2E1A), // = semanticPositive 底
-    onTertiaryContainer: Color(0xFF86C060), // = semanticPositiveFg
-    error: Color(0xFFF08888),
-    onError: Color(0xFF0F0F0E),
-    errorContainer: Color(0xFF2E1A1A), // = semanticError 底
-    onErrorContainer: Color(0xFFF08888), // = semanticErrorFg
-    surface: Color(0xFF0F0F0E), // 内容区暖中性深炭
-    onSurface: Color(0xFFF5F5F4),
-    surfaceContainerLowest: Color(0xFF161615),
-    surfaceContainerLow: Color(0xFF161615), // = surfaceRaised
-    surfaceContainer: Color(0xFF1A1A19), // = surfaceSunken
-    surfaceContainerHigh: Color(0xFF1A1A19), // = surfaceSunken（仅作 surface 色调，禁止当边框用）
+    primary: Color(0xFF7FA8F0), // 暗底品牌蓝（亮块，配深炭字）
+    onPrimary: Color(0xFF141412),
+    primaryContainer: Color(0xFF16233D), // 深蓝容器（选中/头像底）
+    onPrimaryContainer: Color(0xFFB3C9F7), // 浅蓝（容器前景）
+    secondary: Color(0xFFFFC94D), // warning 琥珀
+    onSecondary: Color(0xFF141412),
+    secondaryContainer: Color(0xFF3A3218), // = semanticWarning 底
+    onSecondaryContainer: Color(0xFFFFE89A), // = semanticWarningFg
+    tertiary: Color(0xFF6FC48A), // positive
+    onTertiary: Color(0xFF141412),
+    tertiaryContainer: Color(0xFF16301F), // = semanticPositive 底
+    onTertiaryContainer: Color(0xFFA7E0BE), // = semanticPositiveFg
+    error: Color(0xFFFF8C7A),
+    onError: Color(0xFF141412),
+    errorContainer: Color(0xFF3A1F1C), // = semanticError 底
+    onErrorContainer: Color(0xFFFFC0B4), // = semanticErrorFg
+    surface: Color(0xFF141412), // 内容区深炭
+    onSurface: Color(0xFFF5F3EE),
+    surfaceContainerLowest: Color(0xFF1C1C1A), // = surfaceRaised
+    surfaceContainerLow: Color(0xFF1C1C1A), // = surfaceRaised（卡片）
+    surfaceContainer: Color(0xFF1A1A18), // = surfaceSunken（侧栏）
+    surfaceContainerHigh: Color(0xFF1A1A18), // = surfaceSunken（仅作 surface 色调，禁止当边框用）
     surfaceContainerHighest: Color(0xFF2A2A28), // = surfaceActive
-    onSurfaceVariant: Color(0xFF9CA3AF),
-    outline: Color(0xFF2F2F2C), // 暗模式边框：~1.4:1 可见
-    inverseSurface: Color(0xFFF5F5F4),
-    onInverseSurface: Color(0xFF0F0F0E),
-    accent: Color(0xFF7B82EA),
-    onAccent: Color(0xFF0F0F0E),
-    surfaceHover: Color(0xFF242423),
-    outlineHover: Color(0xFF3D3D3A),
-    infoContainer: Color(0xFF1A1A2E), // = semanticInfo 底（AI 标记亦走此档）
-    onInfoContainer: Color(0xFF9BA0E8), // = semanticInfoFg
+    onSurfaceVariant: Color(0xFFA8A49B),
+    outline: Color(0xFF8A8780), // 暗模式亮描边：保证色块边界仍可辨
+    inverseSurface: Color(0xFFF5F3EE),
+    onInverseSurface: Color(0xFF141412),
+    accent: Color(0xFF7FA8F0),
+    onAccent: Color(0xFF141412),
+    surfaceHover: Color(0xFF232320),
+    outlineHover: Color(0xFFA8A49B),
+    infoContainer: Color(0xFF16233D), // = semanticInfo 底（AI 标记亦走此档）
+    onInfoContainer: Color(0xFFB3C9F7), // = semanticInfoFg
     ctaHover: Color(0xFFFFFFFF),
-    toast: Color(0xFF242423),
-    onToast: Color(0xFFF5F5F4),
+    toast: Color(0xFFF5F3EE), // 暗模式下 Toast 反色为浅底
+    onToast: Color(0xFF141412),
     scrim: Color(0x66000000),
   );
 
@@ -315,8 +458,26 @@ class AppTheme {
       subject['subject${name[0].toUpperCase()}${name.substring(1)}Fg'] = sc.fg;
     }
     return <String, Color>{
+      // —— 新粗野撞色原色（ADR-0044）——
+      // 经 `ShadColorScheme.custom['brutalXxx']` 取用；取**文字色**必须走
+      // `AppBrutal.onColor(fill)`，不得在这里另配 on* 键，否则会出现第二套配对
+      // 事实源。
+      'brutalInk': AppBrutal.ink,
+      'brutalPaper': AppBrutal.paper,
+      'brutalPaperRaised': AppBrutal.paperRaised,
+      'brutalYellow': AppBrutal.yellow,
+      'brutalLime': AppBrutal.lime,
+      'brutalCyan': AppBrutal.cyan,
+      'brutalTeal': AppBrutal.teal,
+      'brutalOrange': AppBrutal.orange,
+      'brutalCoral': AppBrutal.coral,
+      'brutalMagenta': AppBrutal.magenta,
+      'brutalGreen': AppBrutal.green,
+      'brutalViolet': AppBrutal.violet,
+      'brutalRed': AppBrutal.red,
+      'brutalBlue': AppBrutal.blue,
       // —— 强调（注意：ShadColorScheme.accent 是 shadcn 的 hover 高亮灰，
-      //    不是设计系统 accent；靛蓝在这里，另见 ring / selection）——
+      //    不是设计系统 accent；品牌蓝在这里，另见 ring / selection）——
       'accent': c.accent,
       'onAccent': c.onAccent,
       'cta': c.cta,
@@ -361,16 +522,22 @@ class AppTheme {
     };
   }
 
-  /// 卡片 / 浮层 / 弹层通用装饰：surfaceRaised 底 + 1px outline 描边 + 无阴影。
+  /// 卡片 / 浮层 / 弹层通用装饰：纸面底 + 墨黑描边 + 无模糊硬阴影（ADR-0044）。
+  ///
+  /// 原为「1px 描边 + 无阴影」，现改为 `AppElevation.borderWidth` + 硬阴影：
+  /// 相邻撞色块对比度中位数仅 1.67，描边是边界可辨的**功能前提**。
+  /// 暗模式下墨黑阴影不可见（阴影色与描边同色），故退化为无阴影。
   static ShadDecoration _surfaceDecoration(AppColors c, {double? radius}) =>
       ShadDecoration(
         color: c.surfaceRaised,
         border: ShadBorder.all(
           color: c.outline,
-          width: 1,
+          width: AppElevation.borderWidth,
           radius: BorderRadius.all(Radius.circular(radius ?? AppRadius.card)),
         ),
-        shadows: const <BoxShadow>[],
+        shadows: c.brightness == Brightness.dark
+            ? AppElevation.none
+            : AppElevation.hard(c.outline),
       );
 
   static ShadThemeData shadThemeData(
@@ -1521,22 +1688,24 @@ class AppSpacing {
   static const double xl5 = 48;
 }
 
-/// 圆角令牌（密排 / 简洁收敛）
+/// 圆角令牌（ADR-0044：新粗野小圆角 / 大面直角）
 ///
 /// 设计约束（单一事实源，全站通用组件共用）：
-/// - 采用 4 / 6 / 8 三档阶梯，避免「容器比内部控件更尖」的倒置。
-/// - 控件（chip / button / input）与卡片（card）统一 6，保证按钮落在卡片内时
-///   角半径一致、视觉内聚；大面（banner / bubble）略放至 8 维持体量。
+/// - 由旧的 4 / 6 / 8 三档**收敛为 2 / 4 / 0**：新粗野靠硬边与大色块建立体量，
+///   不需要靠圆角放大来「维持体量」。
+/// - 控件（chip / button / input）与卡片（card）统一 4，保证按钮落在卡片内时
+///   角半径一致、视觉内聚。
+/// - **大面（banner）取 0**：横幅是最大面积的强调件，直角才能撑住撞色块。
 /// - 装饰性大圆角（头像 / 分数环 / 浮层）不在本表约束内，按场景取 28/32/999。
 class AppRadius {
-  static const double xs = 4; // 标记点 / 极小元素
-  static const double sm = 6; // 微缩元素
-  static const double chip = 6; // 标签 / 侧栏项
-  static const double button = 6; // 按钮
-  static const double input = 6; // 输入框
-  static const double card = 6; // 卡片容器
-  static const double bubble = 8; // 答案气泡 / 浮层小卡
-  static const double banner = 8; // 大面横幅
+  static const double xs = 2; // 标记点 / 极小元素
+  static const double sm = 4; // 微缩元素
+  static const double chip = 4; // 标签 / 侧栏项
+  static const double button = 4; // 按钮
+  static const double input = 4; // 输入框
+  static const double card = 4; // 卡片容器
+  static const double bubble = 4; // 答案气泡 / 浮层小卡
+  static const double banner = 0; // 大面横幅（新粗野：直角）
 }
 
 /// 控件高度令牌（交互控件统一高度）
@@ -1658,6 +1827,16 @@ class AppMotion {
 }
 
 /// 转场曲线令牌（与 [AppMotion] 配套，禁止裸写 Curves.*）。
+///
+/// **本表已降级为「必须是 Curve」的场合专用**：shadcn 内部转场、第三方组件只收
+/// `Curve` 的参数、以及 `AnimatedContainer` 这类隐式动画。
+///
+/// 业务动效（按压、入场、庆祝）一律走 [AppSprings] 物理弹簧（ADR-0044）。
+/// `easeOutBack` 是三次贝塞尔近似，所有元素共用同一条曲线 → 多元素同时动时
+/// 「齐步走」，没有质量差异；弹簧能按元素量级给不同 stiffness / damping。
+///
+/// ⚠️ **隐式动画不会自动尊重 reduce-motion**：用本表的 `AnimatedScale` /
+/// `AnimatedContainer` 必须显式写 `duration: reduced ? Duration.zero : ...`。
 class AppCurves {
   /// 交互态：快出
   static const Curve interaction = Curves.easeOut;
@@ -1668,7 +1847,7 @@ class AppCurves {
   /// 页面进入：渐进渐出
   static const Curve page = Curves.easeInOut;
 
-  /// 庆祝：回弹（仅 Child Mode）
+  /// 庆祝：回弹（仅 Child Mode）。新代码请用 [AppSprings.celebrate]。
   static const Curve celebrate = Curves.easeOutBack;
 }
 

@@ -1,14 +1,19 @@
 import 'dart:math' as math;
 
+import 'package:flutter/physics.dart';
 import 'package:flutter/widgets.dart';
 
-/// 轻量运动组件，服务于「轻快愉悦」的情绪目标（见 .impeccable.md）。
+import '../theme/app_theme.dart';
+
+/// 轻量运动组件，服务于「直率 / 有力 / 明朗」的情绪目标（见 .impeccable.md）。
 ///
-/// 约定：
+/// 约定（ADR-0044）：
 /// - 一律只动 `transform + opacity`（GPU 合成），不触发布局/绘制重排。
-/// - 时长 200-300ms，入场 300ms、按压反馈 120→260ms。
-/// - 尊重系统减弱动画设置：`MediaQuery.disableAnimationsOf == true` 时退化为静态。
-/// - 归还弹跳统一用 `easeOutBack`（轻微超调 = 亲切的弹簧感，不夸张）。
+/// - **弹跳一律走 [AppSprings] 物理弹簧**，不再用 `Curves.easeOutBack`——后者是
+///   三次贝塞尔近似，所有元素共用同一条曲线会「齐步走」，没有质量差异、显得廉价。
+/// - 尊重系统减弱动画设置：`MediaQuery.disableAnimations == true` 时退化为静态，
+///   但**手势回调必须保留**——历史上在减弱动画分支里直接 `return child`，把
+///   `GestureDetector` 一起丢了，按钮会点不动。
 
 /// 判断系统是否「减弱动态效果」。
 bool reducedMotionOf(BuildContext context) =>
@@ -16,16 +21,21 @@ bool reducedMotionOf(BuildContext context) =>
 
 /// 弹簧入场：缩放 + 淡入，一次执行（initState 触发，不随重建重放）。
 /// 用于成就图标、结果卡片、首页 Banner 等「登场」时刻。
+///
+/// 时长由 [spring] 的物理参数决定（阻尼比 ≈0.73，轻微超调），不再接受
+/// `Duration`——固定时长表达不了弹簧的质量感。
 class PopIn extends StatefulWidget {
   final Widget child;
   final double fromScale;
-  final Duration duration;
+
+  /// 覆盖默认弹簧（庆祝场景可传 [AppSprings.celebrate] 加强回弹）。
+  final SpringDescription spring;
 
   const PopIn({
     super.key,
     required this.child,
     this.fromScale = 0.88,
-    this.duration = const Duration(milliseconds: 320),
+    this.spring = AppSprings.state,
   });
 
   @override
@@ -35,20 +45,18 @@ class PopIn extends StatefulWidget {
 class _PopInState extends State<PopIn>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
-  late final CurvedAnimation _curve;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(vsync: this, duration: widget.duration);
-    // easeOutBack：轻微超调后回弹，营造亲切弹簧感
-    _curve = CurvedAnimation(parent: _controller, curve: Curves.easeOutBack);
-    _controller.forward();
+    // unbounded：允许弹簧超调越过 1.0。用有界 controller 会把超调 clamp 掉，
+    // 结果就是「没有回弹」——正是旧 easeOutBack 想模拟却模拟不像的东西。
+    _controller = AnimationController.unbounded(vsync: this);
+    _controller.animateWith(SpringSimulation(widget.spring, 0, 1, 0));
   }
 
   @override
   void dispose() {
-    _curve.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -58,12 +66,12 @@ class _PopInState extends State<PopIn>
     // 减弱动态效果：呈现最终态（不重放）
     if (reducedMotionOf(context)) return widget.child;
     return AnimatedBuilder(
-      animation: _curve,
+      animation: _controller,
       builder: (context, child) {
-        final t = _curve.value; // 0..1（easeOutBack 可短暂 >1 超调）
-        final scale = widget.fromScale + (1 - widget.fromScale) * t;
+        final v = _controller.value; // 弹簧可短暂 >1 超调
+        final scale = widget.fromScale + (1 - widget.fromScale) * v;
         return Opacity(
-          opacity: t.clamp(0.0, 1.0),
+          opacity: v.clamp(0.0, 1.0),
           child: Transform.scale(scale: scale, child: child),
         );
       },
@@ -74,13 +82,17 @@ class _PopInState extends State<PopIn>
 
 /// 按压微交互：按下轻微缩小、松开弹簧回弹。
 /// 自身持有手势回调（onTap/onLongPress），适合替换裸 GestureDetector。
+///
+/// 缩放全程由 [spring] 驱动，不再接受 `downDuration` / `upDuration`——
+/// 贝塞尔曲线的固定时长表达不了「按下快、回弹带质量」的手感。
 class PressScale extends StatefulWidget {
   final Widget child;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final double downScale;
-  final Duration downDuration;
-  final Duration upDuration;
+
+  /// 覆盖默认弹簧（大卡片可传 [AppSprings.state] 让回弹更重）。
+  final SpringDescription spring;
 
   const PressScale({
     super.key,
@@ -88,36 +100,64 @@ class PressScale extends StatefulWidget {
     this.onTap,
     this.onLongPress,
     this.downScale = 0.96,
-    this.downDuration = const Duration(milliseconds: 120),
-    this.upDuration = const Duration(milliseconds: 280),
+    this.spring = AppSprings.interaction,
   });
 
   @override
   State<PressScale> createState() => _PressScaleState();
 }
 
-class _PressScaleState extends State<PressScale> {
-  bool _pressed = false;
+class _PressScaleState extends State<PressScale>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
 
-  bool get _reduce => reducedMotionOf(context);
+  @override
+  void initState() {
+    super.initState();
+    // 静止值 1.0（未按下）；unbounded 允许回弹超调越过 1.0。
+    _controller = AnimationController.unbounded(vsync: this, value: 1.0);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _setPressed(bool pressed) {
+    if (widget.onTap == null) return;
+    _controller.animateWith(
+      SpringSimulation(
+        widget.spring,
+        _controller.value,
+        pressed ? widget.downScale : 1.0,
+        0,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    if (_reduce) return widget.child;
+    // 减弱动态效果：仍要保留手势，只去掉缩放（见文件头注释的历史 bug）。
+    if (reducedMotionOf(context)) {
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onTap,
+        onLongPress: widget.onLongPress,
+        child: widget.child,
+      );
+    }
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTapDown:
-          widget.onTap != null ? (_) => setState(() => _pressed = true) : null,
-      onTapUp:
-          widget.onTap != null ? (_) => setState(() => _pressed = false) : null,
-      onTapCancel:
-          widget.onTap != null ? () => setState(() => _pressed = false) : null,
+      onTapDown: widget.onTap != null ? (_) => _setPressed(true) : null,
+      onTapUp: widget.onTap != null ? (_) => _setPressed(false) : null,
+      onTapCancel: widget.onTap != null ? () => _setPressed(false) : null,
       onTap: widget.onTap,
       onLongPress: widget.onLongPress,
-      child: AnimatedScale(
-        scale: _pressed ? widget.downScale : 1.0,
-        duration: _pressed ? widget.downDuration : widget.upDuration,
-        curve: _pressed ? Curves.easeOut : Curves.easeOutBack,
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (_, child) =>
+            Transform.scale(scale: _controller.value, child: child),
         child: widget.child,
       ),
     );

@@ -31,6 +31,22 @@ K12 错题复习应用：家长出题 → 儿童答题产生错题 → 间隔重
 - **助手卡片协议**（ADR-0042）：`DATA` 帧的 `data.type` 是**卡片种类判别键**（`question` / `task_list` / `wrong_question_list` / `due_review_list` / `mastery_list` / `child_list` / `progress` / `notice`），`data.result` 只放**结构化字段**（`{title, subject, items?, stats?, total?, text?}`）——服务端不拼展示串，排版归前端。新增种类要在 `query/render.py#_KIND` 与前端 `AssistantCardKind` 各登记一次；前端未登记的 kind 走降级卡（不丢内容）。**不要**在这条通道上做「服务端下发 UI schema」式的通用 GenUI。
 - **推理/正文分流**（ADR-0043）：`TextDelta.kind`（`TextKind`：`TEXT`/`REASONING`，缺省 `TEXT`）由适配器按 `SegmentKind` 标注；`run_with_tools` 只把 `kind=TEXT` 累进答案，`REASONING` 只作思考回显（`THINKING` 帧）且**不进回灌历史**。工具型 subagent「无原生 `ToolCall` 且正文为空」→ `ERROR(TOOL_UNSUPPORTED)` 硬失败，绝不把内部独白当答复。守卫 `tests/ai/test_tool_loop_bounds.py`。协议泄露判据分强/弱两档：强标记（`<invoke name=` / `</invoke>` / `<parameter name=`）**命中即判泄露，不得绑定具体工具名**——模型编造工具名（把 `list_wrong_questions` 写成 `get_mistakes`）时点名匹配必然落空，绑上去等于开后门。
 
+## 设计语言 → [.impeccable.md](.impeccable.md) · [ADR-0044](docs/adr/0044-neo-brutalist-visual-language.md)
+
+**新粗野（Neo-Brutalism）**：高饱和原色撞色 + 2px 墨黑描边 + 无模糊硬阴影 + 弹性动效。取代 2026-09 前的 Linear 克制风（1px 描边 / 无阴影 / 中饱和小面积）。
+
+> 渐进披露：本页**只列改视觉代码前必须知道的三条硬约束**。完整色板、品牌人格与七条设计原则见 `.impeccable.md`；选型过程与八个方向的取舍见 ADR-0044。术语见 `CONTEXT.md` §设计语言。
+
+- **一个色只有一种合规文字**（AA 实测，不可互换）：亮块 `yellow / lime / cyan / teal / orange / coral / magenta / green` 配**墨黑 `#111110`**；深块 `violet / red / blue` 配**白**。原因：所有高饱和色配白字对比度最高只有 4.78，过不了 4.5。
+- **色块是强调件，不是铺底**：单卡片内彩色填充 ≤ 卡片面积 40%、单屏不同色相 ≤ 3、列表行禁止整行彩色填充（只留 4px 学科色条）。撞色的作用是让人一眼找到重点。
+- **墨黑描边是功能必需，不是装饰**：相邻高饱和色块对比度**中位数仅 1.67**（最低 `violet/red = 1.00`，亮度完全相同）。没有描边它们在视觉上分不开——任何「描边太重了去掉吧」的改动都是破坏可读性。
+
+令牌层（`frontend/lib/shared/theme/app_theme.dart`）：`AppBrutal` 撞色原色 + `onColor()` 合规前景配对 · `AppElevation` 描边宽度与无模糊硬阴影 · `AppSprings` 物理弹簧（**取代 `Curves.easeOutBack`**）· `SubjectMark` 学科几何标记。
+
+**学科标识必须三重编码**：色相 + 明度差 + 几何标记（数学 ■ / 语文 ● / 英语 ▲），**禁止仅靠颜色区分学科**——语文与英语同属暖色系，在红绿色盲下会趋同。
+
+> **迁移进行中**（ADR-0044）：token 层先行 + 试点，**禁止一次性全量重做**。未迁移页面仍走旧语义令牌，属预期状态，不必逐个「修正」。
+
 ## 命令速查 → [docs/agents/development.md#2-命令速查commands](docs/agents/development.md)
 
 | 场景 | 命令 |

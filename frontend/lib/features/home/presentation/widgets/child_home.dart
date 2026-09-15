@@ -57,7 +57,6 @@ class ChildHome extends ConsumerWidget {
                   onWrong: onNavigateToWrongQuestions,
                 ),
                 PopIn(
-                  duration: const Duration(milliseconds: 420),
                   child: _TutorBanner(onTutor: onNavigateToTutor),
                 ),
                 const SectionTitle('今日任务',

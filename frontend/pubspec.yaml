@@ -17,6 +17,9 @@ dependencies:
   cupertino_ui: ^1.0.0
   shadcn_ui: ^0.56.1
   gpt_markdown: ^1.2.1
+  # 此前仅经 shadcn_ui 传递引入（pubspec.lock:145），app_theme.dart 已直接用
+  # `.animate()`；上游一旦摘掉该依赖即构建失败，故显式声明（ADR-0044）。
+  flutter_animate: ^4.5.2
 
 dev_dependencies:
   flutter_test:

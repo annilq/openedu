@@ -41,7 +41,6 @@ class AppAnswerResultDialog {
         animateIcon
             ? PopIn(
                 fromScale: 0.72,
-                duration: const Duration(milliseconds: 360),
                 child: iconContainer,
               )
             : iconContainer,

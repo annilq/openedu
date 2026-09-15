@@ -869,7 +869,8 @@ class _PreviewHomeState extends State<_PreviewHome> {
             ],
           ),
           const SizedBox(height: AppSpacing.lg),
-          Text('学科色（小面积使用）', style: t.labelMedium),
+          Text('学科色（三重编码：色相 + 明度差 + 几何标记，ADR-0044）',
+              style: t.labelMedium),
           const SizedBox(height: AppSpacing.sm),
           Wrap(
             spacing: AppSpacing.sm,
