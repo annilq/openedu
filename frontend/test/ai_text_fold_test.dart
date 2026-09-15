@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:kids_learn/features/assistant/domain/ai_text_fold.dart';
+import 'package:kids_learn/features/assistant/domain/assistant_card.dart';
 import 'package:kids_learn/features/assistant/domain/assistant_event.dart';
 
 /// 把一串事件喂给 [AiTextFold]，返回最终折叠结果（纯函数，无需 SSE / mock）。
@@ -77,36 +78,68 @@ void main() {
   });
 
   group('AiTextFold · DATA 卡片', () {
-    test('result 是 Map 时挂载卡片，且按到达顺序累积', () {
+    test('kind 取自信封 type，载荷按种类结构化，且按到达顺序累积', () {
       final f = foldAll([
         AssistantEvent(
           eventType: AssistantEventType.data,
           data: {
             'type': 'question',
-            'result': {'stem': '1+1=?'},
+            'result': {'stem': '1+1=?', 'answer': '2'},
           },
         ),
         AssistantEvent(
           eventType: AssistantEventType.data,
           data: {
-            'type': 'question',
-            'result': {'stem': '2+2=?'},
+            'type': 'wrong_question_list',
+            'result': {
+              'title': '错题',
+              'subject': '小明（2年级）',
+              'items': [
+                {'subject': '数学', 'stem': '9+3=?', 'wrong_count': 2},
+              ],
+              'total': 1,
+            },
           },
         ),
       ]);
 
       expect(f.cards.length, 2);
-      expect(f.cards.first['stem'], '1+1=?');
-      expect(f.cards.last['stem'], '2+2=?');
+      expect(f.cards.first.kind, AssistantCardKind.question);
+      expect(f.cards.first.rawPayload['stem'], '1+1=?');
+      expect(f.cards.last.kind, AssistantCardKind.wrongQuestionList);
+      expect(f.cards.last.title, '错题');
+      expect(f.cards.last.subject, '小明（2年级）');
+      expect(f.cards.last.items.single['wrong_count'], 2);
+      expect(f.cards.last.total, 1);
     });
 
-    test('result 非 Map / data 为空时不挂卡片', () {
+    test('kind 缺失时仍挂卡（种类未知，内容不丢）', () {
+      final f = foldAll([
+        AssistantEvent(
+          eventType: AssistantEventType.data,
+          data: {
+            'result': {'title': '提示', 'text': '后端新增了未登记的种类'},
+          },
+        ),
+      ]);
+
+      expect(f.cards.single.kind, '');
+      expect(f.cards.single.title, '提示');
+      expect(f.cards.single.text, '后端新增了未登记的种类');
+    });
+
+    test('result 非 Map / data 为空 / 载荷无任何字段时不挂卡片', () {
       final f = foldAll([
         AssistantEvent(
           eventType: AssistantEventType.data,
           data: {'type': 'question', 'result': 'not-a-map'},
         ),
         AssistantEvent(eventType: AssistantEventType.data),
+        // 空载荷：挂上去也只会画一个空壳，直接跳过（空卡片比不渲染更糟）。
+        AssistantEvent(
+          eventType: AssistantEventType.data,
+          data: {'type': 'notice', 'result': <String, dynamic>{}},
+        ),
       ]);
 
       expect(f.cards, isEmpty);

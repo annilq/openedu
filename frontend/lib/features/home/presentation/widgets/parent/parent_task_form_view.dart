@@ -5,10 +5,11 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../../shared/domain/models/models.dart';
 import '../../../../../shared/theme/app_theme.dart';
+import '../../../../../shared/utils/question_labels.dart';
 import '../../../../../shared/widgets/app_inputs.dart';
 import '../../../../../shared/widgets/app_loading.dart';
-import '../../../../../shared/widgets/stream_reasoning_panel.dart';
 import '../../../../../shared/widgets/app_toast.dart';
+import '../../../../../shared/widgets/stream_reasoning_panel.dart';
 import '../../../../children/domain/providers/children_provider.dart';
 import '../../../../children/presentation/providers/children_notifier.dart';
 import '../../../../model_management/presentation/providers/models_notifier.dart';
@@ -630,21 +631,6 @@ class _ThemeToggle extends StatelessWidget {
   }
 }
 
-String _previewQtypeLabel(String qtype) => switch (qtype) {
-      'calc' => '计算',
-      'fill' => '填空',
-      'choice' => '选择',
-      'open' => '应用',
-      _ => qtype,
-    };
-
-String _previewDifficultyLabel(String d) => switch (d) {
-      'easy' => '简单',
-      'medium' => '中等',
-      'hard' => '困难',
-      _ => d,
-    };
-
 /// 流式预览题卡（票据 08）：对应后端 `question` 事件，逐张浮现。
 class _PreviewCard extends StatelessWidget {
   final int index;
@@ -684,7 +670,7 @@ class _PreviewCard extends StatelessWidget {
               ),
               const Spacer(),
               Text(
-                '${q.subject} · ${q.grade}年级 · ${_previewQtypeLabel(q.qtype)} · ${_previewDifficultyLabel(q.difficulty)}',
+                '${q.subject} · ${q.grade}年级 · ${qtypeLabel(q.qtype)} · ${difficultyLabel(q.difficulty)}',
                 style: text.labelSmall?.copyWith(color: app.onSurfaceVariant),
               ),
               // 出题推理：卡片右上角 info icon，点击展开「AI 出题思路」（ADR-0017）。

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../shared/domain/providers/core_providers.dart';
 import '../../data/assistant_api_client.dart';
 import '../../domain/ai_text_fold.dart';
+import '../../domain/assistant_card.dart';
 import '../../domain/assistant_event.dart';
 
 /// 一条助手对话气泡。
@@ -10,7 +11,7 @@ class AssistantMessage {
   final String role; // 'user' | 'ai'
   final String text;
   final bool blocked;
-  final List<Map<String, dynamic>>? cards; // DATA 结构化结果（题卡 / 任务卡）
+  final List<AssistantCard>? cards; // DATA 类型化卡片（题卡 / 任务卡 / 学情卡）
   final bool thinking; // 占位「思考中」气泡（尚无文本）
 
   const AssistantMessage({

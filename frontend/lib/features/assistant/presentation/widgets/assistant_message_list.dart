@@ -7,13 +7,19 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_toast.dart';
+import '../../domain/assistant_card.dart';
 import '../provider/assistant_notifier.dart';
+import 'assistant_cards.dart';
 
-/// 统一的 AI 消息列表渲染（ADR-0036 单入口）。
+/// 统一的 AI 消息列表渲染（ADR-0036 单入口 / ADR-0042 卡片协议）。
 ///
 /// 悬浮面板 [AssistantChatPanel] 与整页 [AssistantChatPage] 共用本组件，
-/// 保证两个形态对 `cards`（题卡/任务卡）、`blocked`、复制按钮的渲染行为完全一致
-/// —— 收敛前整页只渲染纯文本、静默吞掉 DATA 帧，是「两份渲染」的直接后果。
+/// 保证两个形态对卡片、`blocked`、复制按钮的渲染行为完全一致——收敛前整页只渲染
+/// 纯文本、静默吞掉 DATA 帧，是「两份渲染」的直接后果。
+///
+/// 一条 AI 消息的构成（自上而下）：文本气泡 → 结构化卡片（气泡**外侧**）
+/// → 复制按钮 → 安全提示。卡片不进气泡：卡片自带 surface 底与描边，
+/// 套进气泡是双层容器。
 class AssistantMessageList extends StatelessWidget {
   final List<AssistantMessage> messages;
   final ScrollController? controller;
@@ -51,42 +57,66 @@ class _Bubble extends StatelessWidget {
 
   const _Bubble({required this.message, required this.maxWidthFactor});
 
+  /// 气泡与卡片共用的宽度上限：屏宽 × [maxWidthFactor]，再夹一个像素上限，
+  /// 避免平板上过宽（1400px 屏 × 0.7 = 980px 一行太长）。
+  BoxConstraints _constraints(BuildContext context) => BoxConstraints(
+        maxWidth: math.min(
+          MediaQuery.of(context).size.width * maxWidthFactor,
+          AssistantMessageList._maxBubbleWidthPx,
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
     final scheme = AppTheme.colorsOf(context);
     final text = AppTheme.textOf(context);
     final isUser = message.role == 'user';
+    final cards = message.cards ?? const <AssistantCard>[];
+    // 用户气泡只有文本；AI 气泡里「正文 / 思考中」进气泡，卡片落到气泡外侧。
+    final showBubble = message.text.isNotEmpty || message.thinking;
+    final copyText = _copyText(message, cards);
+
     return Column(
       crossAxisAlignment:
           isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
       children: [
-        Container(
-          constraints: BoxConstraints(
-            maxWidth: math.min(
-              MediaQuery.of(context).size.width * maxWidthFactor,
-              AssistantMessageList._maxBubbleWidthPx,
+        if (showBubble)
+          Container(
+            constraints: _constraints(context),
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.md,
+              vertical: AppSpacing.sm,
+            ),
+            decoration: BoxDecoration(
+              color: isUser ? scheme.primary : scheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(AppRadius.card),
+              border: isUser
+                  ? null
+                  : Border.all(color: scheme.outline, width: 1),
+            ),
+            child: _BubbleBody(message: message, scheme: scheme, text: text),
+          ),
+        if (cards.isNotEmpty)
+          ConstrainedBox(
+            constraints: _constraints(context),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (var i = 0; i < cards.length; i++) ...[
+                  if (i > 0 || showBubble) const SizedBox(height: AppSpacing.sm),
+                  AssistantCardTile(card: cards[i]),
+                ],
+              ],
             ),
           ),
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.md,
-            vertical: AppSpacing.sm,
-          ),
-          decoration: BoxDecoration(
-            color: isUser ? scheme.primary : scheme.surfaceContainerLow,
-            borderRadius: BorderRadius.circular(AppRadius.card),
-            border: isUser
-                ? null
-                : Border.all(color: scheme.outline, width: 1),
-          ),
-          child: _BubbleBody(message: message, scheme: scheme, text: text),
-        ),
         // 复制入口只挂在 AI 回复上：用户自己的提问没有复制价值，占位「思考中」
-        // 气泡也没有正文可复制。
-        if (!isUser && !message.thinking && message.text.isNotEmpty)
+        // 气泡也没有内容可复制。卡片算内容——有卡无文（引用查询结果时很常见）
+        // 也要能复制，所以判据是「正文或卡片非空」。
+        if (!isUser && !message.thinking && copyText.isNotEmpty)
           Padding(
             padding:
                 const EdgeInsets.only(top: AppSpacing.xs2, left: AppSpacing.xs),
-            child: _CopyButton(text: message.text),
+            child: _CopyButton(text: copyText),
           ),
         if (message.blocked)
           Padding(
@@ -100,6 +130,14 @@ class _Bubble extends StatelessWidget {
     );
   }
 }
+
+/// 复制到剪贴板的正文：消息文本 + 各卡片的纯文本（[cardPlainText]）。
+///
+/// 卡片与文本之间空一行分隔，粘进聊天框/笔记仍然可读。
+String _copyText(AssistantMessage message, List<AssistantCard> cards) => <String>[
+      if (message.text.isNotEmpty) message.text,
+      for (final card in cards) cardPlainText(card),
+    ].where((part) => part.trim().isNotEmpty).join('\n\n');
 
 class _BubbleBody extends StatelessWidget {
   final AssistantMessage message;
@@ -131,63 +169,11 @@ class _BubbleBody extends StatelessWidget {
         ],
       );
     }
-    final children = <Widget>[
-      if (message.text.isNotEmpty)
-        Text(
-          message.text,
-          style: text.bodyMedium?.copyWith(
-            color: message.role == 'user' ? scheme.onPrimary : scheme.onSurface,
-            height: 1.55,
-          ),
-        ),
-      if (message.cards != null && message.cards!.isNotEmpty)
-        ...message.cards!.map(
-          (c) => _CardTile(card: c, scheme: scheme, text: text),
-        ),
-    ];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: children,
-    );
-  }
-}
-
-class _CardTile extends StatelessWidget {
-  final Map<String, dynamic> card;
-  final AppColors scheme;
-  final AppText text;
-
-  const _CardTile({
-    required this.card,
-    required this.scheme,
-    required this.text,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final subject = card['subject']?.toString() ?? '';
-    final stem = card['stem']?.toString() ?? '';
-    final type = card['type']?.toString() ?? '';
-    if (stem.isEmpty) return const SizedBox.shrink();
-    return Container(
-      margin: const EdgeInsets.only(top: AppSpacing.sm),
-      padding: const EdgeInsets.all(AppSpacing.sm),
-      decoration: BoxDecoration(
-        color: scheme.surface,
-        borderRadius: BorderRadius.circular(AppRadius.input),
-        border: Border.all(color: scheme.outline, width: 1),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (subject.isNotEmpty || type.isNotEmpty)
-            Text(
-              [subject, type].where((e) => e.isNotEmpty).join(' · '),
-              style: text.labelSmall?.copyWith(color: scheme.primary),
-            ),
-          const SizedBox(height: 2),
-          Text(stem, style: text.bodySmall),
-        ],
+    return Text(
+      message.text,
+      style: text.bodyMedium?.copyWith(
+        color: message.role == 'user' ? scheme.onPrimary : scheme.onSurface,
+        height: 1.55,
       ),
     );
   }

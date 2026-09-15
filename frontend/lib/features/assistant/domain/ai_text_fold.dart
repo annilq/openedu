@@ -1,3 +1,4 @@
+import 'assistant_card.dart';
 import 'assistant_event.dart';
 
 /// 把 AG-UI 事件流折成「AI 文本 + 结构化卡片 + 安全兜底标记」的纯模块。
@@ -8,14 +9,17 @@ import 'assistant_event.dart';
 /// 这里把它收敛成一个不可变值 + 一个 [apply]，测试直接喂事件列表即可。
 /// （ADR-0036 后只剩 `assistant_notifier` 一个消费方。）
 ///
+/// 卡片不在这里解释字段——只做「信封 → [AssistantCard]」的解析（ADR-0042），
+/// 种类分派与排版在渲染层（`presentation/widgets/assistant_cards.dart`）。
+///
 /// 不关心的帧（THINKING / TOOL_CALL / TOOL_RESULT / STEP / RUN_STARTED / DONE）
 /// 一律原样返回 [AiTextFold.apply] 的接收者：对话气泡不单独渲染它们。
 class AiTextFold {
   /// 已累积的 AI 正文（ASSISTANT_MESSAGE 增量拼接结果）。
   final String text;
 
-  /// DATA 帧带下的结构化结果（题卡 / 任务卡 / 学情卡）。
-  final List<Map<String, dynamic>> cards;
+  /// DATA 帧带下的类型化卡片（题卡 / 任务卡 / 学情卡）。
+  final List<AssistantCard> cards;
 
   /// 是否因安全兜底（ERROR.code == INPUT_UNSAFE）。
   final bool blocked;
@@ -25,7 +29,7 @@ class AiTextFold {
 
   const AiTextFold({
     this.text = '',
-    this.cards = const <Map<String, dynamic>>[],
+    this.cards = const <AssistantCard>[],
     this.blocked = false,
     this.errorText,
   });
@@ -50,14 +54,15 @@ class AiTextFold {
       };
 
   AiTextFold _withCard(AssistantEvent ev) {
-    final result = ev.data?['result'];
-    if (result is! Map<String, dynamic>) return this;
-    return _copy(cards: <Map<String, dynamic>>[...cards, result]);
+    final card = AssistantCard.fromData(ev.data);
+    // 畸形帧（result 不是对象）与「无任何字段」的卡都不挂：不制造空气泡。
+    if (card == null || !card.hasContent) return this;
+    return _copy(cards: <AssistantCard>[...cards, card]);
   }
 
   AiTextFold _copy({
     String? text,
-    List<Map<String, dynamic>>? cards,
+    List<AssistantCard>? cards,
     bool? blocked,
     Object? errorText = _unset,
   }) =>

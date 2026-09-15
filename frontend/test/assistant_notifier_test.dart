@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:kids_learn/features/assistant/data/assistant_api_client.dart';
+import 'package:kids_learn/features/assistant/domain/assistant_card.dart';
 import 'package:kids_learn/features/assistant/domain/assistant_event.dart';
 import 'package:kids_learn/features/assistant/presentation/provider/assistant_notifier.dart';
 
@@ -111,7 +112,9 @@ void main() {
       final ai = _aiBubbles(notifier.state);
       expect(ai.length, 1);
       expect(ai.single.text, '这几道题练一下：');
-      expect(ai.single.cards?.single['stem'], '1+1=?');
+      // 卡片与文本同挂一条气泡；种类来自信封 type，载荷原样可读（ADR-0042）。
+      expect(ai.single.cards?.single.kind, AssistantCardKind.question);
+      expect(ai.single.cards?.single.rawPayload['stem'], '1+1=?');
     });
 
     test('INPUT_UNSAFE：气泡标 blocked 且正文与错误各一条', () async {
