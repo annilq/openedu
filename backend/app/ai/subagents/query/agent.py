@@ -9,7 +9,8 @@ runtime 走 ``run_with_tools`` 的 tool loop 调度，模型经原生 function c
 事件轨：
 - ``THINKING``：模型推理增量；
 - ``TOOL_CALL`` / ``TOOL_RESULT``：由 runtime 产出，原始载荷落库回放；
-- ``DATA``：本 subagent 经 ``render_tool_result`` 补发的展示卡（决策 11，前端零改动）；
+- ``DATA``：本 subagent 经 ``render_tool_result`` 补发的展示卡（决策 11；种类与载荷
+  契约见 ADR-0042，core 仍只负责信封，不认识任何卡片语义）；
 - ``ASSISTANT_MESSAGE``：模型收尾结论。
 
 业务边界（``parent_id`` / ``child_id`` / ``role``）全部走 ``SubAgentContext``；
@@ -61,9 +62,13 @@ class QuerySubAgent(BaseSubAgent):
     def initial_user(self, message: str, ctx: SubAgentContext) -> str:
         return message
 
-    # ── 展示投影（决策 11）：TOOL_RESULT 存原始，DATA 帧供前端渲染 ──
+    # ── 展示投影（决策 11 / ADR-0042）：TOOL_RESULT 存原始，DATA 帧供前端渲染 ──
     def render_tool_result(self, name: str, result: Any) -> list[Any]:
-        return [data_event(card, extra={"type": "query"}) for card in render_cards(name, result)]
+        # 卡片种类进信封的 `data.type`（前端据此分派渲染器），载荷进 `data.result`。
+        return [
+            data_event(card.payload, extra={"type": card.kind})
+            for card in render_cards(name, result)
+        ]
 
     # ── 直接调用入口 ──
     async def run(

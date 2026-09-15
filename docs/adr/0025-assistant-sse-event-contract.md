@@ -6,6 +6,7 @@
 - **统一信封字段**：`AssistantEvent` 以 `eventType` 判别，按类型选用 `text/delta`、`tool/label/args/result`、`status`、`data`、`message/code`、`session_id`、`blocked`、`extra`（`backend/agent_core/protocol.py:35-54`）。
 - **线协议序列化**：`to_sse()` 产出 `data: {json}\n\n`，省略 None 字段保帧精简（`backend/agent_core/protocol.py:56-82`）。
 - **DATA 帧载荷约定**：`{status, type(经 extra), result}`，业务类型（`question`/`query`/`task`）走 `extra.type`，core 不感知（`backend/agent_core/protocol.py:110-125`）。
+  > **补充（ADR-0042，非矛盾）**：`type` 已细化为**卡片种类判别键**（`question` / `task_list` / `wrong_question_list` / `due_review_list` / `mastery_list` / `child_list` / `progress` / `notice`），`result` 是**结构化载荷**（`{title, subject, items?, stats?, total?, text?}`）；粗粒度的 `query` 取值已废止。本节其余约定（信封字段、`to_sse()`、前端镜像契约）不变。
 - **前端镜像契约**：`AssistantEvent.fromJson` 与 `AssistantEventType` 常量逐字段对齐后端（`frontend/lib/features/assistant/domain/assistant_event.dart:1-69`）；`ERROR.code == INPUT_UNSAFE` 标「已拦截」而非报错（`:71-77`）。
 - **端到端帧证据**：DATA 携 `type:"question"` 题卡（`backend/tests/api/routes/test_assistant.py:104-107`）；ERROR 帧拦截非学习输入（`:84-93`）；前端 fold 按 `eventType` 折叠文本/卡片/错误（`frontend/lib/features/assistant/domain/ai_text_fold.dart:40-55`）。
 

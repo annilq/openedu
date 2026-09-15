@@ -28,6 +28,7 @@ K12 错题复习应用：家长出题 → 儿童答题产生错题 → 间隔重
 - **工具 schema 必须在 OpenAI strict 模式下自洽**（ADR-0040）：genkit 对每个工具无条件套 `_ensure_strict_json_schema` + `strict: True`，把 `"required": []` 改写成「所有 property 必填」，模型被迫为每个参数编值。故每个可省略参数都要有类型合法的缺席编码（字符串 `""`、整数 `0`）并在 handler 归一为「未提供」；枚举型参数必须含 `NO_FILTER`（`"all"`）。归一收口在 `query/tools/_shared.py`（`optional_str` / `optional_int` / `resolve_children`），由 `tests/ai/test_query_tools_contract.py` 的行为级守卫守住。
 - **引擎失败归因**（ADR-0038）：`decrypt()` 解不开只能返回 `None`（**密文永不出门**）；厂商失败（认证/限流/网络）→ `ProviderRequestError` → `ERROR(code="PROVIDER_ERROR")`，与「模型不支持工具调用」（`TOOL_UNSUPPORTED`，ADR-0033）**严格分开**。上层不得用 `except Exception` 把引擎失败抹成「请添加模型」。
 - **前端分层**（ADR-0037）：`main/ → features/* → shared/*` 单向，**`shared/` 不得 import `features/`**；feature 之间不得横向互引（唯一豁免 `features/home/presentation/`，展示层组合根）；feature 与后端 `app/features/*` 一一对应。`App*` 前缀只给 `shared/widgets/` 通用组件——组件一旦订阅某 feature 的 provider 就落回该 feature。由 `frontend/test/feature_boundaries_test.dart` 静态扫描守住。
+- **助手卡片协议**（ADR-0042）：`DATA` 帧的 `data.type` 是**卡片种类判别键**（`question` / `task_list` / `wrong_question_list` / `due_review_list` / `mastery_list` / `child_list` / `progress` / `notice`），`data.result` 只放**结构化字段**（`{title, subject, items?, stats?, total?, text?}`）——服务端不拼展示串，排版归前端。新增种类要在 `query/render.py#_KIND` 与前端 `AssistantCardKind` 各登记一次；前端未登记的 kind 走降级卡（不丢内容）。**不要**在这条通道上做「服务端下发 UI schema」式的通用 GenUI。
 
 ## 命令速查 → [docs/agents/development.md#2-命令速查commands](docs/agents/development.md)
 
@@ -59,4 +60,4 @@ Issues / PRDs 以 GitHub Issues 承载，全部操作经 `gh` CLI。建读列评
 
 - **领域术语**：`CONTEXT.md`（唯一 glossary）。
 - **架构评审**：`docs/agent-core-architecture-review.md`（含 P0 缺失 ADR、P1 缺 compaction、P2 缺扩展钩子、前端 SSE 逐帧渲染待定）。
-- **ADR 索引**：`docs/adr/` 已落地 0001–0040（含 0008/0012/0014/0015/0017/0019/0020/0021–0028/0030–0040）；仅 0006/0007/0009–0011/0013/0016/0018/0029 无文档。新增决策先补 ADR 再在代码中交叉链接引用。
+- **ADR 索引**：`docs/adr/` 已落地 0001–0042（含 0008/0012/0014/0015/0017/0019/0020/0021–0028/0030–0042）；仅 0006/0007/0009–0011/0013/0016/0018/0029 无文档。新增决策先补 ADR 再在代码中交叉链接引用。

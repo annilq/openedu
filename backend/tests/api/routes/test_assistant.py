@@ -179,14 +179,18 @@ def test_parent_query_streams_tool_chain_and_persists_trace(client, fake_llm):
     assert "A加法运算" in raw, "家长没查到错题 → 后续断言失去意义"
     assert '"answer"' in raw
 
-    # DATA 卡片：query 类型 + 前端 _CardTile 形状，且只含摘要（卡片永不带答案）
+    # DATA 卡片：类型化载荷（kind 在信封 type，字段在 result），且只含摘要（永不带答案）
     frames = _of(events, "DATA")
-    assert frames and all(f["data"]["type"] == "query" for f in frames)
+    assert frames and all(f["data"]["type"] == "wrong_question_list" for f in frames)
     cards = [f["data"]["result"] for f in frames]
-    assert any(c["type"] == "错题" and "A加法运算" in c["stem"] for c in cards)
+    assert any(
+        c["title"] == "错题"
+        and any("A加法运算" in i["stem"] for i in c.get("items", []))
+        for c in cards
+    ), cards
     for card in cards:
-        assert set(card) == {"type", "subject", "stem"}
-        assert card["stem"]
+        # 结构化的卡片：要么有明细、要么有说明文本，不留空壳
+        assert card.get("items") or card.get("text")
     assert "ans0" not in json.dumps(cards, ensure_ascii=False)
 
     # 落库轨迹：路由步 / 工具调用 / 工具结果 / 助手输出（turn 升序即因果顺序）
@@ -199,7 +203,9 @@ def test_parent_query_streams_tool_chain_and_persists_trace(client, fake_llm):
     assert rows[3].content == "list_wrong_questions"
     out = rows[-1]
     assert out.content == fake_llm.tool_text
-    assert out.payload and out.payload["cards"][0]["type"] == "错题"
+    assert out.payload and out.payload["cards"][0]["type"] == "wrong_question_list"
+    # 落库的是整帧 data（含判别键）——只存 result 会让回放时认不出卡片种类（ADR-0042）
+    assert out.payload["cards"][0]["result"]["title"] == "错题"
 
 
 def test_child_query_ignores_foreign_child_id_and_hides_answers(client, fake_llm):

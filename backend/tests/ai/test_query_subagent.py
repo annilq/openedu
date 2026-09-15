@@ -6,8 +6,9 @@
    泛触发词）、SOP 真被读进 prompt；SubAgent 实例携带全部 7 个工具。
 2. **路由边界**：带查询语境的问句（任务/作业/错题/复习）归 ``query``，
    「出题」意图仍归 ``question``；娃娃端可见 query 但「出题」仍被强制回 tutor。
-3. **展示投影**（决策 11）：``render_tool_result`` 产出的卡片是前端 ``_CardTile`` 的形状
-   （``{type, subject, stem}``、``stem`` 非空），错误结果不炸流。
+3. **展示投影**（决策 11 / ADR-0042）：卡片是**类型化**的——``kind`` 作判别键、
+   载荷是结构化字段（``items`` / ``stats`` / ``total``），不是拼好的展示字符串；
+   答案与解析永不进卡片，错误结果不炸流。
 4. **端到端 tool loop**：真 DB + 脚本化 provider 跑一轮，``TOOL_CALL`` → ``TOOL_RESULT``
    → ``DATA`` → ``ASSISTANT_MESSAGE`` 齐备；**娃娃端帧里不出现答案/解析**，家长端对照
    组证明这不是「数据为空」的假绿。
@@ -119,7 +120,8 @@ def _envelope(items: list[Any]) -> dict[str, Any]:
     }
 
 
-def test_render_cards_match_frontend_tile_shape():
+def test_render_cards_are_typed_and_structured():
+    """卡片 = 判别键（kind）+ 结构化载荷；答案/解析永不进卡片（ADR-0042）。"""
     cards = render_cards(
         "list_wrong_questions",
         _envelope(
@@ -127,6 +129,7 @@ def test_render_cards_match_frontend_tile_shape():
                 {
                     "subject": "数学",
                     "stem": "9 + 3 = ?",
+                    "qtype": "calc",
                     "wrong_count": 2,
                     "answer": "12",
                     "explanation": "进位。",
@@ -136,34 +139,81 @@ def test_render_cards_match_frontend_tile_shape():
     )
     assert len(cards) == 1
     card = cards[0]
-    assert set(card) == {"type", "subject", "stem"}  # 前端 _CardTile 消费契约
-    assert card["type"] == "错题"
-    assert card["subject"] == "小明（2年级）"
-    assert "9 + 3" in card["stem"] and "错 2 次" in card["stem"]
+    assert card.kind == "wrong_question_list"
+    assert card.payload["title"] == "错题"
+    assert card.payload["subject"] == "小明（2年级）"
+    assert card.payload["total"] == 1
+    # 明细是字段，不是拼好的一行文本——前端据此排版（题干 + 「错过 N 次」标签）。
+    assert card.payload["items"] == [
+        {"subject": "数学", "stem": "9 + 3 = ?", "qtype": "calc", "wrong_count": 2}
+    ]
+    dumped = json.dumps(card.payload, ensure_ascii=False)
+    assert "answer" not in card.payload["items"][0]
+    assert "进位" not in dumped  # 解析正文也不进卡片
 
 
-def test_render_cards_handles_empty_error_tools_and_caps_lines():
+def test_render_cards_handles_empty_error_tools_and_caps_items():
     empty = render_cards("list_today_tasks", _envelope([]))
-    assert empty[0]["stem"] == "今天没有任务。"
+    assert empty[0].kind == "task_list"
+    assert empty[0].payload["text"] == "今天没有任务。"
+    assert "items" not in empty[0].payload  # 没明细就不发空数组
 
     err = render_cards("get_progress", {"error": "没有找到该娃娃。"})
-    assert err == [{"type": "学习进度", "subject": "", "stem": "查询失败：没有找到该娃娃。"}]
+    assert err[0].kind == "notice"
+    assert err[0].payload["text"] == "查询失败：没有找到该娃娃。"
 
     many = render_cards("list_due_reviews", _envelope([{"stem": f"题 {i}"} for i in range(12)]))
-    assert "共 12 条" in many[0]["stem"]
+    capped = many[0]
+    assert len(capped.payload["items"]) == 5  # 明细截断
+    assert capped.payload["total"] == 12  # 但如实报总数（前端渲染「共 12 条」）
+    assert capped.payload["items"][0]["stem"] == "题 0"
 
-    assert render_cards("list_children", _envelope([]))[0]["stem"] == "可查询的娃娃"
+    children = render_cards("list_children", _envelope([]))
+    assert children[0].kind == "child_list"
+    assert children[0].payload["text"] == "可查询的娃娃"
 
 
-def test_render_tool_result_emits_data_frames():
+def test_render_cards_progress_uses_stats_not_items():
+    """进度是单条聚合：走 stats，别塞进 items（前端据此选指标卡版式）。"""
+    cards = render_cards(
+        "get_progress",
+        _envelope([{"total": 4, "correct": 3, "accuracy": 0.75, "streak_days": 2, "checkin_days": 5}]),
+    )
+    assert cards[0].kind == "progress"
+    assert cards[0].payload["stats"] == {
+        "total": 4,
+        "correct": 3,
+        "accuracy": 0.75,
+        "streak_days": 2,
+        "checkin_days": 5,
+    }
+    assert "items" not in cards[0].payload
+
+
+def test_render_cards_unassigned_items_keep_structure():
+    """未指派草稿走同一套结构化明细，只是归属标签不同。"""
+    result = {
+        "children": [],
+        "unassigned_items": [{"title": "草稿卷", "status": "draft", "questions": [{}, {}]}],
+    }
+    cards = render_cards("list_parent_tasks", result)
+    assert cards[0].payload["title"] == "任务·未指派"
+    assert cards[0].payload["subject"] == "未指派"
+    assert cards[0].payload["items"] == [
+        {"title": "草稿卷", "status": "draft", "question_count": 2}
+    ]
+
+
+def test_render_tool_result_emits_typed_data_frames():
     agent = QuerySubAgent(provider=FakeLLMProvider())
     frames = agent.render_tool_result(
         "get_progress",
         _envelope([{"total": 4, "correct": 3, "accuracy": 0.75, "streak_days": 2}]),
     )
     assert [f.eventType for f in frames] == [EVENT_DATA]
-    assert frames[0].data["type"] == "query"
-    assert "答对 3/4" in frames[0].data["result"]["stem"]
+    # 种类进信封 data.type（前端分派键），载荷进 data.result。
+    assert frames[0].data["type"] == "progress"
+    assert frames[0].data["result"]["stats"]["correct"] == 3
     # 基类默认不产帧 → 出题/伴学不受影响（回归护栏）
     assert TutorSubAgent(provider=FakeLLMProvider()).render_tool_result("x", {}) == []
 

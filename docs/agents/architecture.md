@@ -105,7 +105,7 @@ frontend/lib/
 - **状态/网络**：Riverpod + Dio。`AppConfig.apiBaseUrl` = `API_BASE + /api/v1`。
 - **双模式**：`AppUserMode`（家长/儿童）持久化于 `storage_service`，在根 `AdaptiveShell` 作用域生效（ADR-0002）。Child Mode 整体放大一档字号，文案第一人称切换，消费学科 accent 令牌。
 - **设计系统单一事实源**：`AppColors` / `AppSpacing` / `AppText._typeScale` 推导所有颜色、间距、字号、转场时长；组件禁止硬编码 `Colors.*` 与魔法十六进制（`analysis_options.yaml` 已声明硬约束，待 `custom_lint` 启用静态强制）。
-- **AI 消费**：`features/assistant/` 按 SSE 事件帧即时 `setState`，`shared/widgets/stream_reasoning_panel.dart` 打字机揭示推理文本（ADR-0017；也是「生成任务闪现」缺陷的约束来源）。
+- **AI 消费**：`features/assistant/` 按 SSE 事件帧即时 `setState`，`shared/widgets/stream_reasoning_panel.dart` 打字机揭示推理文本（ADR-0017；也是「生成任务闪现」缺陷的约束来源）。工具查到的数据以**类型化卡片**呈现（ADR-0042）：`DATA.data.type` 是种类判别键、`data.result` 是结构化载荷，由 `presentation/widgets/assistant_cards.dart` 分派渲染（题目卡 / 列表卡 / 指标卡 / 降级卡），卡片落在气泡外侧。
 
 ---
 

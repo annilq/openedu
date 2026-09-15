@@ -241,8 +241,11 @@ async def chat(
                 elif ev.eventType == EVENT_ASSISTANT_MESSAGE and ev.text:
                     final_text += ev.text
                 elif ev.eventType == EVENT_DATA and ev.data:
-                    # DATA 事件 data 载荷为 {type, result}；落库保留 result 本体
-                    cards.append(ev.data.get("result", ev.data))
+                    # DATA 帧整帧落库：`{type(判别键), result(载荷)}` 一起存。
+                    # 只存 result 会丢掉种类——与前端 fold 丢弃 `data.type` 是同一类
+                    # 缺陷（ADR-0042）：落库的 payload 必须自描述，否则将来做历史回放
+                    # 时无法把卡片分派回正确的渲染器。
+                    cards.append(ev.data)
                 elif ev.eventType == EVENT_ERROR:
                     conv_status = "error"
                     if ev.code == "INPUT_UNSAFE":
