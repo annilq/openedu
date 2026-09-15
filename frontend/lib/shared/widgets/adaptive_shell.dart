@@ -6,6 +6,7 @@ import '../../shared/domain/models/models.dart';
 import '../../shared/theme/app_theme.dart';
 import '../../shared/widgets/app_sidebar.dart';
 import '../domain/providers/core_providers.dart';
+import 'app_motion.dart';
 
 /// 导航目的地（数据驱动）：同一份定义同时喂给侧栏 / 底栏 / 抽屉三种形态，
 /// 避免三种布局各写一套 item，保证选中态与回调唯一来源。
@@ -100,7 +101,10 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             AnimatedContainer(
-              duration: const Duration(milliseconds: 280),
+              // 隐式动画须显式尊重 reduce-motion（ADR-0044）。
+              duration: reducedMotionOf(context)
+                  ? Duration.zero
+                  : const Duration(milliseconds: 280),
               curve: Curves.easeOutCubic,
               width: railWidth,
                 decoration: BoxDecoration(
@@ -198,7 +202,10 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
             ),
           ),
         AnimatedPositioned(
-          duration: const Duration(milliseconds: 280),
+          // 隐式动画须显式尊重 reduce-motion（ADR-0044）。
+          duration: reducedMotionOf(context)
+              ? Duration.zero
+              : const Duration(milliseconds: 280),
           curve: Curves.easeOutCubic,
           left: _drawerOpen ? 0 : -AdaptiveShell.expandedWidth,
           top: 0,

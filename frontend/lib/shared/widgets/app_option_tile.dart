@@ -37,7 +37,10 @@ class AppOptionTile extends StatelessWidget {
         onTap: disabled ? null : onTap,
         downScale: 0.975,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
+          // 隐式动画不会自动尊重 reduce-motion（ADR-0044）：显式归零时长。
+          duration: reducedMotionOf(context)
+              ? Duration.zero
+              : const Duration(milliseconds: 180),
           curve: Curves.easeOut,
           padding: const EdgeInsets.all(AppSpacing.xl),
           decoration: BoxDecoration(

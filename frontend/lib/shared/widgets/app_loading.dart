@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../theme/app_theme.dart';
+import 'app_motion.dart';
 
 /// 加载状态展示模式。
 enum _LoadingMode { spinner, skeleton, skeletonInline }
@@ -189,6 +190,18 @@ class _ShimmerBoxState extends State<_ShimmerBox>
     _anim = Tween<double>(begin: -1, end: 2).animate(
       CurvedAnimation(parent: _c, curve: Curves.easeInOut),
     );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 减弱动态效果：停掉循环 shimmer（ADR-0044），骨架退化为静态灰块，
+    // 而不是让它继续闪。
+    if (reducedMotionOf(context)) {
+      _c.stop();
+    } else if (!_c.isAnimating) {
+      _c.repeat();
+    }
   }
 
   @override
