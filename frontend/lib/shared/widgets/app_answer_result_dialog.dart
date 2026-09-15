@@ -28,6 +28,12 @@ class AppAnswerResultDialog {
       decoration: BoxDecoration(
         color: correct ? scheme.tertiaryContainer : scheme.errorContainer,
         borderRadius: BorderRadius.circular(AppRadius.card),
+        // 语义容器底（浅绿 / 浅红）在纸底上对比不足 1.5，靠墨黑描边把语义块
+        // 「钉」出来——与学科 chip、题号 chip 同一口径（ADR-0044）。
+        border: Border.all(
+          color: scheme.outline,
+          width: AppElevation.borderWidth,
+        ),
       ),
       alignment: Alignment.center,
       child: Icon(

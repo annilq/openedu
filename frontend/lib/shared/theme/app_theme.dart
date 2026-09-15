@@ -259,6 +259,16 @@ class AppElevation {
   /// 次级描边宽度（密集表格 / 列表内分隔）。
   static const double borderWidthSm = 1.5;
 
+  /// 发丝描边宽度（结构 chrome 边 / 区域分隔线 / 密集列表逐行卡片）。
+  ///
+  /// 三档口径（勿再写裸数字——仓里原先散着 6 处字面量 `1`，正是它们让
+  /// `separatorTheme` 的注释「与卡片边框同档」和值 `1` 互相矛盾）：
+  /// - [borderWidth] (2)：内容物体——卡片 / 弹窗 / 浮层 / 强调件。
+  /// - [borderWidthSm] (1.5)：密集列表内的小色块——chip / 学科标记 / 题号。
+  /// - [borderWidthHairline] (1)：结构边与重复出现的安静元素——顶栏底边、
+  ///   侧栏右缘、底部导航上缘、区域分隔线、[AppCard.listRow]。
+  static const double borderWidthHairline = 1;
+
   /// 常态硬阴影偏移。
   static const Offset offset = Offset(3, 3);
 
@@ -586,6 +596,15 @@ class AppTheme {
   /// 原为「1px 描边 + 无阴影」，现改为 `AppElevation.borderWidth` + 硬阴影：
   /// 相邻撞色块对比度中位数仅 1.67，描边是边界可辨的**功能前提**。
   /// 暗模式下墨黑阴影不可见（阴影色与描边同色），故退化为无阴影。
+  /// 浮层硬阴影（浮动表面统一口径：卡片 / 弹窗 / 下拉面板 / popover）。
+  ///
+  /// 暗色模式返回 [AppElevation.none]：硬阴影是墨黑实色，投在深底上不可见，
+  /// 留着只会让浮层显脏。暗色下浮层靠描边 + 提亮底表达层级。
+  static List<BoxShadow> _floatingShadows(AppColors c) =>
+      c.brightness == Brightness.dark
+          ? AppElevation.none
+          : AppElevation.hard(c.outline);
+
   static ShadDecoration _surfaceDecoration(AppColors c, {double? radius}) =>
       ShadDecoration(
         color: c.surfaceRaised,
@@ -594,9 +613,7 @@ class AppTheme {
           width: AppElevation.borderWidth,
           radius: BorderRadius.all(Radius.circular(radius ?? AppRadius.card)),
         ),
-        shadows: c.brightness == Brightness.dark
-            ? AppElevation.none
-            : AppElevation.hard(c.outline),
+        shadows: _floatingShadows(c),
       );
 
   static ShadThemeData shadThemeData(
@@ -669,6 +686,12 @@ class AppTheme {
           foregroundColor: fg,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.all(Radius.circular(AppRadius.chip)),
+            // 徽标一律描边（与学科 chip / AppTags 同口径）。secondary 档用的是
+            // surfaceSunken，在卡面上对比仅 ~1.09:1，不描边等于没有边界。
+            side: BorderSide(
+              color: c.outline,
+              width: AppElevation.borderWidthSm,
+            ),
           ),
         );
 
@@ -752,16 +775,21 @@ class AppTheme {
         backgroundColor: transparent,
         foregroundColor: c.onSurface,
         shape: RoundedRectangleBorder(
-          side: BorderSide(color: c.outline, width: 1),
+          // 徽标属小色块，与 chip / 学科标记同档（1.5px）。
+          side: BorderSide(color: c.outline, width: AppElevation.borderWidthSm),
           borderRadius: const BorderRadius.all(Radius.circular(999)),
         ),
       ),
+      // 主题层卡片默认值：与 AppCard 组件同口径（2px 墨黑边 + 硬阴影）。
+      // 组件侧会显式传 border/shadows 覆盖本项，这里对齐只为「单一事实源」——
+      // 任何直接使用裸 ShadCard 的地方不该拿到旧克制风的 1px + 无阴影。
       cardTheme: ShadCardTheme(
         backgroundColor: c.surfaceRaised,
-        border: ShadBorder.all(color: c.outline, width: 1),
+        border:
+            ShadBorder.all(color: c.outline, width: AppElevation.borderWidth),
         radius: const BorderRadius.all(Radius.circular(AppRadius.card)),
         padding: const EdgeInsets.all(AppSpacing.md),
-        shadows: const <BoxShadow>[],
+        shadows: _floatingShadows(c),
       ),
       progressTheme: ShadProgressTheme(
         backgroundColor: c.surfaceActive,
@@ -828,7 +856,9 @@ class AppTheme {
       popoverTheme: ShadPopoverTheme(
         padding: const EdgeInsets.all(AppSpacing.sm),
         decoration: _surfaceDecoration(c, radius: AppRadius.card),
-        shadows: const <BoxShadow>[],
+        // 原为 const <BoxShadow>[]，把 decoration 里刚算好的硬阴影又抹掉了——
+        // 浮层于是只剩描边，与输入框处在同一视觉平面，读不出「浮在页面之上」。
+        shadows: _floatingShadows(c),
       ),
       primaryDialogTheme: _dialogTheme(c),
       alertDialogTheme: _dialogTheme(c),
@@ -849,8 +879,10 @@ class AppTheme {
         ),
         padding: AppControl.inputPadding,
         optionsPadding: const EdgeInsets.all(AppSpacing.xs),
-        // 下拉面板（浮在页面之上）走 surfaceRaised + 描边 + 无阴影。
-        shadows: const <BoxShadow>[],
+        // 下拉面板浮在页面之上，必须投硬阴影才能与触发器分层。这个 shadows 会
+        // 原样传给内部的 ShadPopover（= 面板本体），与 popoverTheme 同口径；
+        // 触发器自身的 1px 描边不动（输入类控件与 inputStrut 的高度折算耦合）。
+        shadows: _floatingShadows(c),
       ),
       optionTheme: ShadOptionTheme(
         backgroundColor: c.surfaceRaised,
@@ -883,10 +915,12 @@ class AppTheme {
           ),
         ),
       ),
-      // 分隔线与卡片边框同档：全站描边只有 outline 一个令牌。
+      // 区域分隔线走发丝档：卡片是「物体」用 2px，分隔线是重复出现的安静元素，
+      // 与 AppCard.listRow 同档。（原注释写「与卡片边框同档」但值是 1，是卡片边宽
+      // 从 1 提到 2 时漏改注释留下的自相矛盾。）
       separatorTheme: ShadSeparatorTheme(
         color: c.outline,
-        thickness: 1,
+        thickness: AppElevation.borderWidthHairline,
       ),
       // 文档：tooltip 延迟 500ms、tooltip 属交互态（120ms 淡入）。
       tooltipTheme: ShadTooltipTheme(
@@ -908,10 +942,12 @@ class AppTheme {
   static ShadDialogTheme _dialogTheme(AppColors c) => ShadDialogTheme(
         backgroundColor: c.surfaceRaised,
         radius: BorderRadius.all(Radius.circular(AppRadius.card)),
-        border: Border.all(color: c.outline, width: 1),
+        // 弹窗是遮罩之上的独立物体，描边与阴影须与卡片同档（2px + 硬阴影）。
+        // 原为 1px + 无阴影，是旧克制风的残留——在新语言里弹窗会「陷」进页面。
+        border: Border.all(color: c.outline, width: AppElevation.borderWidth),
         padding: const EdgeInsets.all(AppSpacing.lg),
         gap: AppSpacing.md,
-        shadows: const <BoxShadow>[],
+        shadows: _floatingShadows(c),
       );
 
   static ShadToastTheme _toastTheme(AppColors c) => ShadToastTheme(
@@ -1293,9 +1329,10 @@ class AppCard extends StatelessWidget {
             ? AppElevation.hardPressed(app.outline)
             : AppElevation.hard(app.outline));
 
-    // 列表行变体：1px 边、无阴影；标准变体：2px 边 + 硬阴影。
+    // 列表行变体：发丝边、无阴影；标准变体：2px 边 + 硬阴影。
     final isRow = variant == AppCardVariant.listRow;
-    final borderWidth = isRow ? 1.0 : AppElevation.borderWidth;
+    final borderWidth =
+        isRow ? AppElevation.borderWidthHairline : AppElevation.borderWidth;
     final rowShadows = AppElevation.none;
 
     ShadCard buildCard(Color borderColor, List<BoxShadow> shadows) => ShadCard(
@@ -1709,8 +1746,13 @@ class _TagChip extends StatelessWidget {
             color: AppBrutal.ink, width: AppElevation.borderWidthSm),
       );
     } else {
+      // 非学科 chip 同样要描边：nearest 底色是 surfaceSunken(#F2F0EA)，在白色卡面上
+      // 对比约 1.09:1，不描边则标签边界不存在（与上面学科分支同一个理由，原先只给
+      // 学科分支加了边，这里漏了）。
       shape = RoundedRectangleBorder(
         borderRadius: BorderRadius.all(Radius.circular(AppRadius.chip)),
+        side: const BorderSide(
+            color: AppBrutal.ink, width: AppElevation.borderWidthSm),
       );
       (bg, fg) = switch (semantics) {
         _TagSemantics.normal => (app.surfaceSunken, app.onSurface),

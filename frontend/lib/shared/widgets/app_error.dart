@@ -53,6 +53,12 @@ class AppError extends StatelessWidget {
               decoration: BoxDecoration(
                 color: app.errorContainer,
                 borderRadius: BorderRadius.circular(28),
+                // 状态大色块与结果卡 / 做题反馈弹窗同口径：语义容器底（浅红）在
+                // 纸底上对比不足 1.5:1，靠墨黑描边把色块「钉」出来（ADR-0044）。
+                border: Border.all(
+                  color: app.outline,
+                  width: AppElevation.borderWidth,
+                ),
               ),
               child: Icon(
                 LucideIcons.alertCircle,

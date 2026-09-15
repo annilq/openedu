@@ -42,7 +42,14 @@ class StreamReasoningPanel extends StatelessWidget {
       decoration: BoxDecoration(
         color: app.surface,
         borderRadius: BorderRadius.circular(AppRadius.bubble),
-        border: Border.all(color: app.outline),
+        // 显式写宽：`Border.all(color:)` 默认 1px，在卡片普遍 2px 的体系里偏细
+        // （原写法正是踩了这个默认值）。
+        border: Border.all(color: app.outline, width: AppElevation.borderWidth),
+        // 生成中的面板是一张「浮在页面上的纸」——同色底 + 墨黑描边 + 无模糊硬阴影
+        // 表达抬升；暗色模式无阴影（墨黑阴影在深底不可见）。
+        boxShadow: app.brightness == Brightness.dark
+            ? AppElevation.none
+            : AppElevation.hard(app.outline),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -55,6 +62,12 @@ class StreamReasoningPanel extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: app.primaryContainer,
                   borderRadius: BorderRadius.circular(AppRadius.chip),
+                  // 标签类小色块一律 1.5px 墨黑描边（与学科 chip / 题号 chip 同口径）：
+                  // 浅蓝容器底在纸底上对比不足，不描边则标签边界糊掉。
+                  border: Border.all(
+                    color: app.outline,
+                    width: AppElevation.borderWidthSm,
+                  ),
                 ),
                 child: Text(chipText,
                     style: text.labelSmall?.copyWith(

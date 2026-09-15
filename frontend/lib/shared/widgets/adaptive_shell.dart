@@ -110,7 +110,7 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
                 decoration: BoxDecoration(
                   color: scheme.surfaceContainerHigh,
                   border: Border(
-                    right: BorderSide(color: scheme.outline, width: 1),
+                    right: BorderSide(color: scheme.outline, width: AppElevation.borderWidthHairline),
                   ),
                 ),
                 child: ClipRect(
@@ -158,7 +158,7 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
         Container(
           decoration: BoxDecoration(
             color: scheme.surfaceContainerHigh,
-            border: Border(top: BorderSide(color: scheme.outline, width: 1)),
+            border: Border(top: BorderSide(color: scheme.outline, width: AppElevation.borderWidthHairline)),
           ),
           child: SafeArea(
             top: false,
@@ -214,7 +214,7 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
           child: Container(
             decoration: BoxDecoration(
               color: scheme.surfaceContainerHigh,
-              border: Border(right: BorderSide(color: scheme.outline, width: 1)),
+              border: Border(right: BorderSide(color: scheme.outline, width: AppElevation.borderWidthHairline)),
             ),
             child: Column(
               children: [
@@ -342,7 +342,7 @@ class _CompactTopBar extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
       decoration: BoxDecoration(
         color: scheme.surfaceContainerHigh,
-        border: Border(bottom: BorderSide(color: scheme.outline, width: 1)),
+        border: Border(bottom: BorderSide(color: scheme.outline, width: AppElevation.borderWidthHairline)),
       ),
       child: Row(
         children: [
@@ -399,7 +399,7 @@ class AdaptiveUserBlock extends StatelessWidget {
       return Container(
         padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
         decoration: BoxDecoration(
-          border: Border(top: BorderSide(color: scheme.outline, width: 1)),
+          border: Border(top: BorderSide(color: scheme.outline, width: AppElevation.borderWidthHairline)),
         ),
         alignment: Alignment.center,
         child: GestureDetector(
@@ -421,7 +421,7 @@ class AdaptiveUserBlock extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.all(AppSpacing.md),
           decoration: BoxDecoration(
-            border: Border(top: BorderSide(color: scheme.outline, width: 1)),
+            border: Border(top: BorderSide(color: scheme.outline, width: AppElevation.borderWidthHairline)),
           ),
           child: Row(
             children: [

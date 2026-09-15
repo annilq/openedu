@@ -5,8 +5,9 @@ import '../theme/app_theme.dart';
 
 /// 顶部导航栏：替代 [CupertinoNavigationBar]。
 ///
-/// 设计：无描边、surfaceRaised 背景、52 高度、Leading/Trailing 40 宽槽位
-/// 平衡标题居中。默认 `showBack=true` 时自带 Lucide chevronLeft 返回按钮。
+/// 设计：surfaceRaised 背景 + 底部发丝墨黑描边（结构边档）、52 高度、
+/// Leading/Trailing 40 宽槽位平衡标题居中。默认 `showBack=true` 时自带
+/// Lucide chevronLeft 返回按钮。
 class AppTopBar extends StatelessWidget {
   final String title;
   final Widget? leading;
@@ -49,6 +50,19 @@ class AppTopBar extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: app.surfaceRaised,
+        // 顶栏底色 surfaceRaised 是纯白，页面底是纸色 #FDFBF7，两者对比仅 ~1.02——
+        // 原写法「无描边」让顶栏与页面完全融在一起，只剩标题悬空。必须给一条墨黑边
+        // 把两个平面切开。
+        //
+        // 宽度取发丝档（1）而非卡片的 2px：同一屏内所有「结构 chrome」边
+        // （侧栏右缘 / 抽屉右缘 / 底部导航上缘，见 adaptive_shell）都是同一档，
+        // 结构边要保持一致；2px 留给内容物体（卡片 / 弹窗 / 浮层）。
+        border: Border(
+          bottom: BorderSide(
+            color: app.outline,
+            width: AppElevation.borderWidthHairline,
+          ),
+        ),
       ),
       child: SafeArea(
         bottom: false,

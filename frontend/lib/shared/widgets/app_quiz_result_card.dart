@@ -69,12 +69,11 @@ class AppQuizResultCard extends StatelessWidget {
         padding: const EdgeInsets.all(AppSpacing.md),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 520),
-          child: Container(
+          child: AppCard(
+            margin: EdgeInsets.zero,
             padding: const EdgeInsets.all(AppSpacing.md),
-            decoration: BoxDecoration(
-              color: scheme.surfaceRaised,
-              borderRadius: BorderRadius.circular(AppRadius.banner),
-            ),
+            radius: AppRadius.banner,
+            color: scheme.surfaceRaised,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -84,6 +83,12 @@ class AppQuizResultCard extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: iconBg,
                     borderRadius: BorderRadius.circular(36),
+                    // 108px 大色块是这张卡的强调件，需要墨黑描边把它从纸底上「切」出来；
+                    // 语义容器底（浅绿/浅黄/浅蓝）在纸底上的对比都不足 1.5:1。
+                    border: Border.all(
+                      color: scheme.outline,
+                      width: AppElevation.borderWidth,
+                    ),
                   ),
                   alignment: Alignment.center,
                   child: Icon(iconData, size: 56, color: iconFg),
@@ -97,15 +102,26 @@ class AppQuizResultCard extends StatelessWidget {
                   Text(note!, style: text.bodySmall),
                 ],
                 const SizedBox(height: AppSpacing.xl3),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: SizedBox(
-                    height: 12,
-                    child: AppProgressBar(
-                      value: total > 0 ? (correct / total).clamp(0.0, 1.0) : 0,
+                Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                    // 轨道 surfaceSunken(#F2F0EA) 在白色卡面上对比仅 ~1.1:1，
+                    // 不描边则进度条的「槽」完全不可见，只剩一根悬空的填充条。
+                    border: Border.all(
+                      color: scheme.outline,
+                      width: AppElevation.borderWidth,
+                    ),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                    child: SizedBox(
                       height: 12,
-                      color: scheme.primary,
-                      trackColor: scheme.surfaceSunken,
+                      child: AppProgressBar(
+                        value: total > 0 ? (correct / total).clamp(0.0, 1.0) : 0,
+                        height: 12,
+                        color: scheme.primary,
+                        trackColor: scheme.surfaceSunken,
+                      ),
                     ),
                   ),
                 ),

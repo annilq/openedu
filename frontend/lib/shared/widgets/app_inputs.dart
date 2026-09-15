@@ -122,16 +122,19 @@ class _AppTextFieldState extends State<AppTextField> {
                   ),
                 )
               : null,
-          decoration: ShadDecoration(
-            disableSecondaryBorder: true,
-            color: widget.enabled
-                ? app.surfaceRaised
-                : app.surfaceSunken,
-            border: ShadBorder.all(
-              color: borderColor,
-              width: 1,
-              radius: BorderRadius.circular(AppRadius.input),
-            ),
+        decoration: ShadDecoration(
+          disableSecondaryBorder: true,
+          color: widget.enabled ? app.surfaceRaised : app.surfaceSunken,
+          // 刻意保持 1px（而按钮/卡片是 2px）：输入类控件的描边宽度与
+          // AppControl.inputStrut 的 `heightOf - 4` 折算量、以及 tight 高度
+          // 约束三者耦合——`-4` 正是「2×1px 边框 + 2px shadcn 内部预留」。
+          // 加粗到 2px 会让 forceStrutHeight 撑出的行高超出实际文字盒 → 裁字。
+          // 可见性不靠加粗：outline 已是墨黑，白底黑边对比约 19:1。
+          border: ShadBorder.all(
+            color: borderColor,
+            width: 1,
+            radius: BorderRadius.circular(AppRadius.input),
+          ),
             focusedBorder: ShadBorder.all(
               color: focusedBorderColor,
               width: 1,
