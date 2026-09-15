@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 *.pem
+.secret_key
 
 # ── Python / 后端 ──
 __pycache__/

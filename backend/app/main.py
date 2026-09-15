@@ -3,18 +3,23 @@ import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from sqlmodel import Session
 from starlette.middleware.cors import CORSMiddleware
 
 from app.api.main import api_router
 from app.core.config import settings
-from app.core.db import init_db
+from app.core.db import engine, init_db
 from app.core.errors import register_error_handlers
+from app.core.secrets import check_runtime_secrets_health
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 家自用：启动时建表即可，无需 Alembic 迁移流程
     init_db()
+    # 启动期密钥健康检查：尽早暴露密钥轮换 / 缺配，而非提问时才 401（ADR-0041）
+    with Session(engine) as s:
+        check_runtime_secrets_health(s)
     yield
 
 

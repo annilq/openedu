@@ -1,3 +1,5 @@
+import logging
+import secrets
 import warnings
 from pathlib import Path
 from typing import Literal, Self
@@ -10,6 +12,53 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # 读得到 backend/.env，在仓库根启动就读不到 —— 而 `.env` 里装着加密密钥
 # `MODEL_APIKEY_SECRET`，读不到就静默回落默认值，已存 API Key 全部解不开（ADR-0038 同类事故）。
 _BACKEND_DIR = Path(__file__).resolve().parents[2]
+
+logger = logging.getLogger(__name__)
+
+# SECRET_KEY 持久化落盘位置（gitignore）：未显式配置时生成每部署随机密钥并复用，
+# 避免每次重启换密钥导致已有登录态失效（ADR-0041）。
+_SECRET_KEY_FILE = _BACKEND_DIR / ".secret_key"
+
+
+def resolve_effective_secret_key(raw: str | None, *, file_path: Path = _SECRET_KEY_FILE) -> str:
+    """SECRET_KEY 解析：显式配置优先；未配置时回落到持久化的每部署随机密钥。
+
+    - 显式且非默认 → 原样返回（便于运维用环境变量固定）。
+    - 未配置 / 为默认 ``changeme`` → 首次启动生成随机密钥并落盘 ``backend/.secret_key``，
+      后续启动复用，避免每次重启换密钥导致登录态失效。
+    - 文件系统只读（容器 / CI）无法落盘 → 退化为内存随机密钥并告警（仅应急）。
+    """
+    if raw and raw != "changeme":
+        return raw
+    try:
+        if file_path.exists():
+            stored = file_path.read_text().strip()
+            if stored:
+                return stored
+        key = secrets.token_urlsafe(32)
+        file_path.write_text(key)
+        return key
+    except OSError:
+        logger.warning("无法写入 %s，SECRET_KEY 退化为内存随机值（重启即变，仅应急）", file_path)
+        return secrets.token_urlsafe(32)
+
+
+def _normalize_db_url(value: str) -> str:
+    """DATABASE_URL 归一：postgres 协议补全驱动；SQLite 相对路径按 backend/ 解析。
+
+    原先默认 ``sqlite:///./app.db`` 随进程 CWD 漂移（换目录指向另一库）。现相对路径
+    一律解析为 ``backend/`` 下绝对路径，与 env_file 修复同族（ADR-0038 / ADR-0041）。
+    """
+    database_url = str(value)
+    for scheme in ("postgres://", "postgresql://"):
+        if database_url.startswith(scheme):
+            return database_url.replace(scheme, "postgresql+psycopg://", 1)
+    if database_url.startswith("sqlite:///") and not database_url.startswith("sqlite:////"):
+        path_part = database_url[len("sqlite:///"):]
+        if not path_part.startswith("/"):
+            resolved = (_BACKEND_DIR / path_part).resolve()
+            return f"sqlite:///{resolved}"
+    return database_url
 
 
 class Settings(BaseSettings):
@@ -34,16 +83,19 @@ class Settings(BaseSettings):
     CORS_ORIGINS: list[str] = ["*"]
 
     # SQLite 本地零依赖；生产改为 postgresql+psycopg://
-    DATABASE_URL: str = "sqlite:///./app.db"
+    # 默认值即 backend/ 下绝对路径，CWD 无关（ADR-0041）。
+    DATABASE_URL: str = f"sqlite:///{_BACKEND_DIR / 'app.db'}"
 
     @field_validator("DATABASE_URL", mode="before")
     @classmethod
-    def _normalize_db_url(cls, value: str) -> str:
-        database_url = str(value)
-        for scheme in ("postgres://", "postgresql://"):
-            if database_url.startswith(scheme):
-                return database_url.replace(scheme, "postgresql+psycopg://", 1)
-        return database_url
+    def _validate_db_url(cls, value: str) -> str:
+        return _normalize_db_url(value)
+
+    @model_validator(mode="after")
+    def _resolve_secret_key(self) -> Self:
+        # 未显式配置 SECRET_KEY 时生成并持久化每部署随机密钥（ADR-0041）
+        self.SECRET_KEY = resolve_effective_secret_key(self.SECRET_KEY)
+        return self
 
     # —— 多模型接入（ADR-0015 / ADR-0039）：Genkit 编排流式 flow ——
     # 所有引擎配置统一收敛到「模型管理」：模型一律由家长在客户端手动录入，落
