@@ -58,12 +58,23 @@ shadcn 的 `ShadButton` 内部是 `Padding → Row(mainAxisSize: min)`，**文�
 - **补偿**：主题层把按钮水平 padding 各减 2（regular 14→12、sm 10→8、lg 18→16），正好抵消描边加粗带来的宽度增量——实心按钮总宽需求不变（旧 `padding×2 + border 0`，新 `(padding-2)×2 + border 2`），描边按钮反而窄 2px。
 - 例外：`_TabBar`（parent_tasks_view）仍用 `Expanded` 均分，其文案短（「草稿 12」约 88px），窗口 ≥320 即安全，保留等宽 tab 的视觉。
 
-## 约束：撞色分栏 banner 用 `IntrinsicHeight` 包 `Row(stretch)`
+## 约束：`Row(stretch)` 必须包 `IntrinsicHeight`（**通用，不止 banner**）
 
-新粗野 banner 常用「左色块 flex 2 : 右纸面 flex 5」分栏（`_BrutalBanner`）。`Row` 若设 `crossAxisAlignment: CrossAxisAlignment.stretch` 让左色块撑满整卡高度，而 banner 又放在 `CustomScrollView` 等**纵向无界**容器里（sliver 给子项 `h=Infinity`），`stretch` 会把 `h=Infinity` 推给左色块的 `RenderDecoratedBox` → 抛 `BoxConstraints forces an infinite height`。
+凡是「左侧色条 + `Expanded` 内容」的行卡，色条都靠 `Row(crossAxisAlignment: CrossAxisAlignment.stretch)` 撑满行高——而 `Row` 的 cross 轴（高度）**必须是有界的**。`Column` 的子项、`ListView` / `CustomScrollView` 的子项拿到的都是 `h = Infinity`，`stretch` 会把这个 `Infinity` 推给色条的 `RenderDecoratedBox` → 抛 `BoxConstraints forces an infinite height`（实测约束 `BoxConstraints(0.0<=w<=Infinity, h=Infinity)`）。
 
-- **规则**：`Row(crossAxisAlignment: stretch)` 若位于无界高度容器，外层必须包 `IntrinsicHeight`，让 Row 先按最高子项（右纸面列）算出有界高度，再 `stretch` 填充左块。两个 banner 的双 layout pass 开销可忽略。
-- **反例**：旧 `_ReviewBanner` 用默认 `start` 对齐所以不炸；换成 `stretch` 才有此坑。
+- **规则**：`Row(crossAxisAlignment: CrossAxisAlignment.stretch)` 一律用 `IntrinsicHeight` 包住，让它先按最高子项算出**有界高度**、再 `stretch` 填色条。双 layout pass 对行卡可忽略。
+- **首例**：`child_home._BrutalBanner`（试点期）。
+- **复发（2026-09-15 铺开期）**：这条坑被 **5 条并行流各自独立踩到**——`_TaskCard`（child_home）、题干 `stemBlock`（practice）、`_WrongToFixCard`（practice review）、`_WrongQuestionCard`（wrong_questions_screen）、助手 `_QuestionCard`（assistant_cards）。全部已修（行内或调用点包 `IntrinsicHeight`）。原本文档只写了「banner」，是复发主因。
+- **守卫**：`frontend/test/stretch_row_guard_test.dart` 静态扫描 lib/ 的裸 `Row(stretch)` 站点，**棘轮**式（已知集合只减不增）；新增裸站点直接红。
+- **别误改**：`Column(crossAxisAlignment: stretch)` 是横向拉伸（cross 轴 = 宽度有界）**安全**；默认 `start` 对齐的 Row 也不炸——只有 `Row + stretch` 才有此坑。
+
+## 约束：密集列表用 `AppCard.listRow`，不要用标准 `AppCard`
+
+「统一到家长端上限」的代价补偿：掌握度看板 / 错题列表 / 题库等**逐行卡片**若用标准 `AppCard`（2px 墨黑边 + 硬阴影），每行都压描边+投影 → 密集数据区视觉过载。
+
+- **规则**：逐行列表项用 `AppCard.listRow`（1px 墨黑描边、无阴影）；只有**独立容器卡 / 强调件**用标准 `AppCard`（2px + 硬阴影）。
+- **实现**：`AppCard` 新增 `variant` 字段 + `AppCard.listRow(...)` 便利构造；`listRow` 分支 `borderWidth=1`、阴影恒 `AppElevation.none`（暗模式亦无阴影）。
+- **实测**：`parent_wrong_questions_view` 逐行原为标准 `AppCard`（真噪音源）→ 已改 `listRow`；`parent_question_bank_view._buildItem` 原裸 `Container`（已 1px 无阴影）→ 收口为 `AppCard.listRow` 并透传选中态 `border`；`mastery_board` 逐行是裸 `Column`（无边框）本身已轻量，不动。
 
 ## 色相 ≤ 3 的适用口径（试点补充）
 
@@ -92,6 +103,15 @@ token 层 + 两个试点页已完成，代码一行行改通，`flutter analyze 
 **试点二 · 家长端任务表单**：少题警示条改 `AppBrutal.red` 实心 + 白字；兴趣主题 chip 选中态改 cyan 实心 + 硬阴影；预览题卡 2px 边 + 硬阴影 + violet 题号 chip + 学科三重编码 chip；题卡加 `PopIn` + `ValueKey(index)` 实现逐张浮现；`_ThemeToggle` 的 `AnimatedContainer` 按 ADR 要求显式归零 reduce-motion 时长。
 
 **待真机验证**：2px 墨黑描边 + 硬阴影加在家长端**密集列表**（掌握度看板 / 错题列表）上是否过吵——这是「统一到家长端上限」这一档唯一的风险点，只能眼睛说了算。
+
+## 铺开进度与后续（2026-09-15 第二轮）
+
+token 层落地后，剩余页面按「**文件互斥**」拆成可并行的批推进：
+
+- **已完成**：家长首页 5 子视图、练习、复习（含错题本）、孩子档案、模型管理、账户/登录、AI 助手（4 个强耦合文件作为**一条不拆分的流**）、家长草稿审核页 —— 均套 `AppCard` / `AppCard.listRow` / 学科三重编码 / 撞色 CTA / `PopIn` 入场。
+- **无需改**：`home_screen`（纯组合根，零裸样式）、`child_mastery_screen`（薄壳）、`mastery_board`（本就轻量）。
+- **全局收尾**：`reducedMotionOf` 审计补齐 `AppOptionTile` / `AdaptiveShell`（`AnimatedContainer` + `AnimatedPositioned`）/ `AppLoading` 骨架 shimmer 的显式归零或停表。`CupertinoApp` **未**加 `HeroController`——全仓无 `Hero(` 使用，加了是死代码，待首个共享元素转场出现再补。
+- **未铺开（下一批）**：`shared/widgets/` 中除 `app_motion.dart` 外的组件（`app_option_tile` 视觉、`app_inputs` 的 1px 描边、`app_top_bar`、`app_toast`、`app_answer_result_dialog`、`app_quiz_result_card`、`adaptive_shell` 描边与配色、`stream_reasoning_panel` 等）仍是旧 Linear 配色。它们被并行流的「禁改 `shared/`」红线挡在门外，需作为**独立一批**处理——共享组件改一处影响多页，不宜夹在页面流里被多流并发改。
 
 ## Considered Options
 
