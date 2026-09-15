@@ -19,14 +19,14 @@
 ## 工具 schema strict（ADR-0040）
 - genkit 把 `"required": []` 在 wire 改写成「全 property 必填」+ `strict:True` → 每个可省略参数都要有**缺席编码**：字符串 `""`、整数 `0`、枚举含 `NO_FILTER="all"`。`UNSET_TOKENS` 覆盖 `""/all/any/*/none/null/nil/undefined/unset/n/a/na`。归一收口 `query/tools/_shared.py`（`optional_str`/`optional_int`/`resolve_children`）。守卫 `tests/ai/test_query_tools_contract.py`。
 
-## 助手回答泄露：已修（2026-09-15 `77fd33f`，推理/正文分流）
-- `TextDelta.kind`（`ports.py TextKind`）由 adapter 按 `SegmentKind` 标注；`subagent.py:220` 的 `acc` **只收 kind=TEXT**，思维链走 `turn_thinking`；工具型 subagent「无原生 ToolCall 且正文空」→ `ERROR(TOOL_UNSUPPORTED)`。
-- ⚠️ **代码里这套标成「ADR-0041」，但 `docs/adr/0041` 是「启动期密钥健康检查」** → 编号撞号/引用悬空（与 09-15 记的 0041/0042 撞号同类）。真实应落 0043 且文档缺失。
+## 助手回答泄露：已修（2026-09-15，推理/正文分流，ADR-0043）
+- `TextDelta.kind`（`ports.py TextKind`）由 adapter 按 `SegmentKind` 标注；`subagent.py` 的 `acc` **只收 kind=TEXT**，思维链走 `turn_thinking` 且不进回灌历史；工具型 subagent「无原生 ToolCall 且正文空」→ `ERROR(TOOL_UNSUPPORTED)`。落地 `77fd33f`，正文 `docs/adr/0043-reasoning-text-channel-split.md`。
+- ✅ **编号悬空已订正**：该决策曾被代码误标 `ADR-0041`（0041 实为「启动期密钥健康检查」）→ 已落 ADR-0043，并把 `ports.py`/`genkit.py`/`subagent.py` 及两个测试的引用全部迁到 0043。`config.py`/`secrets.py`/`main.py` 的 0041 保持不动。
 - 残留：纯自然语言「我去查一下」（无协议标记）仍当普通回答流出——泄露危害已消除，根治须模型侧原生 FC。
-- **未落地**：AI 气泡 Markdown 渲染（推荐 `gpt_markdown`；落点 `shared/widgets/app_markdown.dart` + `assistant_message_list.dart#_BubbleBody`；CupertinoApp 根勿引入 Material 渲染栈）。
+- ✅ **AI 气泡 Markdown 渲染已落地**：`gpt_markdown` → `shared/widgets/app_markdown.dart#AppMarkdown`（设计令牌映成 `GptMarkdownStyleSheet`；代码块复制按钮关闭、沿用原生整条复制；根 CupertinoApp 无 Material 祖先），接入 `assistant_message_list.dart`。落地 `349e4ec`（`pubspec` 加 `gpt_markdown`）。
 
 ## 已知未修小瑕疵
-- 编辑模型时 provider+baseUrl 匹配不到预设 → 下拉显示第一个预设却不出模型名建议（`model_form_dialog.dart:199` `value: _presetKey ?? widget.presets.first.key`；显示误导；保存仍取 `initial.provider`，不坏数据）。
+- 无。原「编辑模型服务商下拉误导」已于 2026-09-15 修（`349e4ec`）：`AppPickerField.value` 放开为 `T?` + 新增 `placeholder` 参数；`model_form_dialog.dart` 未匹配预设时传 `value: _presetKey`，显示「自定义（未匹配预设）」而非硬选第一个。已真机验证。
 
 ## 架构重构候选（① ② ③ ⑤ 已完成；④+⑥ 进行中）
 - 已完成：① `core/guard.py`（`require_owned`/`find_owned`/`require_owned_child`，合并 7 处归属判定）② tasks write-path 下沉 `features/tasks/service.py`（`router.py` 只剩薄壳）③ SSE reducer fold（`assistant/domain/question_gen_fold.dart` + `ai_text_fold.dart`）⑤ `core/async_bridge.py#run_async`（grader/tutor/tasks 三处收口，删裸 `asyncio.run`）。
