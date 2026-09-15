@@ -15,10 +15,14 @@
 
 ## 视觉语言：新粗野（ADR-0044）
 - 高饱和撞色 + 2px 墨黑描边 + 无模糊硬阴影 + 弹簧动效（弃 `Curves.easeOutBack`）。色块=**强调件**（≤卡片 40%、单屏大色块 ≤3 色相、列表行禁整行填充）；亮块配墨黑字、深块配白字（WCAG AA 实测）。
-- 列表行用 `AppCard.listRow`（1px、无阴影），独立卡用 `AppCard`（2px+硬阴影）；学科三重编码 `AppTags.subject`+`SubjectMarkIcon`；新增 `AppBrutal`/`AppElevation`/`AppSprings`/`AppBrutalButton`；动效 `AppMotion`（PopIn/PressScale/ConfettiBurst，均尊重 reduce-motion）。
-- **隐式动画**（`AnimatedContainer`/`AnimatedPositioned` 等）**不会自动尊重 reduce-motion**，须显式 `duration: reducedMotionOf(context) ? Duration.zero : ...`。
+- 列表行用 `AppCard.listRow`（发丝边、无阴影），独立卡用 `AppCard`（2px+硬阴影）；学科三重编码 `AppTags.subject`+`SubjectMarkIcon`；新增 `AppBrutal`/`AppElevation`/`AppSprings`/`AppBrutalButton`；动效 `AppMotion`（PopIn/PressScale/ConfettiBurst，均尊重 reduce-motion）。
+- **描边三档（`AppElevation`，禁写裸数字）**：2 `borderWidth` = 内容物体（卡/弹窗/浮层）；1.5 `borderWidthSm` = 密集列表小色块（chip/徽标/题号）；1 `borderWidthHairline` = 结构边与重复安静元素（顶栏底边/侧栏右缘/分隔线/`listRow`）。同屏结构边必须同档。
+- **「白色物体在纸底没有边界」是头号陷阱**：`surfaceRaised` 纯白 vs 纸底 `#FDFBF7` 对比仅 ~1.02、`surfaceSunken` vs 白卡 ~1.09 —— 原先靠浅灰 `outline` 兜底，`outline` 换墨黑后**没写边的组件就失去边界**。修法是**补描边而非加粗**（墨黑边已有 ~19:1）。另：`Border.all(color:)` 默认 1px，必须显式写宽。
+- **输入框描边刻意保持 1px**：与 `AppControl.inputStrut` 的 `heightOf - 4`（= 2×1px 边 + 2px 内部预留）及 tight 高度三向耦合，加粗会裁字。
+- **隐式动画**（`AnimatedContainer`/`AnimatedPositioned`/骨架 shimmer）**不会自动尊重 reduce-motion**，须显式 `duration: reducedMotionOf(context) ? Duration.zero : ...`。
+- 浮层阴影统一走 `_floatingShadows()`（暗色返回 `AppElevation.none`）；**别写 `shadows: const []`** 把 `_surfaceDecoration` 算好的阴影抹掉。
 - 单一事实源 `.impeccable.md`；术语见 `CONTEXT.md` §设计语言。
-- **铺开状态（2026-09-15 第二轮）**：页面层已铺完（家长首页 5 子视图 / 练习 / 复习 / AI 助手 / 孩子档案 / 模型管理 / 账户 / 草稿审核）；`home_screen`、`child_mastery_screen`、`mastery_board` 无需改。**未铺开：`shared/widgets/`（除 `app_motion.dart`）仍是旧 Linear 配色**——下一批独立处理（共享组件影响多页，勿与页面流并发改）。待真机验证：家长端密集列表 2px 墨黑边 + 硬阴影是否过吵。
+- **铺开状态（2026-09-15 第三轮）**：页面层与 `shared/widgets` **均已铺完**。无需改：`home_screen`（组合根零裸样式）、`child_mastery_screen`、`mastery_board`、`app_toast`（本就是实心块）。待真机：① 选项块选中态 2px+硬阴影在 4 块同屏下是否过吵；② 发丝结构边与 2px 内容边同屏的粗细差观感。
 
 ## Git
 - ✅ `git push origin main` 可通；⚠️ 常输出 `Everything up-to-date` 但其实**已成功**，以 `git ls-remote origin main` 比对 HEAD 为准。push 走环境代理（端口每会话变），失败先 `curl -x $HTTPS_PROXY https://github.com` 探活再重试。
