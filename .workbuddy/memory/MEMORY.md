@@ -23,6 +23,12 @@
 - `flutter analyze` 可用且很快（~5s）。`flutter analyze lib` 可排除 test 目录。
 - 注意：`flutter analyze` 的退出码常非 0（沙箱拦 dartServer 临时文件写），**看输出里的 `No issues found!` 而非退出码**。
 
+## Git 工作流
+- ✅ **`git push origin main` 可通**（2026-09-15 实测推 `7b947bc..b180439`）。可能需沙箱放行。
+- ⚠️ push 有时会输出 `Everything up-to-date` 但实际**已推送成功**——不要据此判定失败。用 `git ls-remote origin main` 比对 `git rev-parse HEAD` 才是准的。
+- 提交习惯：按**逻辑批次拆 commit**（如「架构重构」与「视觉语言」分开），不成坨。正文写清「为什么」而非「改了什么」。仓库已有 `chore(memory):` 惯例，memory 更新可单独提交。
+- `backend/.agents/` 是工具产物的 skill 缓存，未跟踪，**不要顺手 commit**（2026-09-15 起存在）。
+
 ## 引擎/密钥（ADR-0038 / 0041）
 - `decrypt()` 解不开只返 `None`，**密文永不出门**。失败分两类：`ToolUnsupportedError`(无FC) vs `ProviderRequestError`(厂商拒绝)，落点 `agent_core/adapters/genkit.py#classify_failure`。
 - 密钥漂移已止血；`env_file` 与 `DATABASE_URL` 均 CWD 无关（`config.py` 按 `__file__` 解析）。**`SECRET_KEY` 已不再是默认值**（ADR-0041 正经正文）：未显式配置时 `resolve_effective_secret_key` 生成随机密钥并落盘 `backend/.secret_key`；`secrets.py:check_runtime_secrets_health` 启动期冒烟，生产缺配阻断启动。
