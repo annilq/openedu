@@ -608,23 +608,27 @@ class _ParentQuestionBankViewState
   }
 
   /// 选中题目后出现的操作区（卡片底部，随页面滚动）。
+  ///
+  /// 用 Wrap 而非 Row+Expanded：`ShadButton` 内部是 `Row(mainAxisSize: min)`，
+  /// 被父级压到窄于内容宽度时**不会收缩文字**，直接 RenderFlex overflow
+  ///（「用这些题生成任务」在窄分屏下实测溢出 9px）。Wrap 让按钮保持自然宽度、
+  /// 空间不足时整块换行，任何窗口宽度都不会压出溢出。
   Widget _buildActionFooter(dynamic app, bool busy) {
-    return Row(
+    return Wrap(
+      spacing: AppSpacing.sm,
+      runSpacing: AppSpacing.sm,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         ShadButton.outline(
           onPressed: busy ? null : _deleteSelected,
           leading: const Icon(LucideIcons.trash2, size: 16),
           child: Text('删除选中 (${_selectedIds.length})'),
         ),
-        const SizedBox(width: AppSpacing.sm),
-        Expanded(
-          child: ShadButton(
-            onPressed: busy ? null : _generate,
-            leading: const Icon(LucideIcons.filePlus, size: 16),
-            child: Text('用这些题生成任务 (${_selectedIds.length})'),
-          ),
+        ShadButton(
+          onPressed: busy ? null : _generate,
+          leading: const Icon(LucideIcons.filePlus, size: 16),
+          child: Text('用这些题生成任务 (${_selectedIds.length})'),
         ),
-        const SizedBox(width: AppSpacing.sm),
         ShadButton.outline(
           onPressed: busy ? null : _addToDraft,
           leading: const Icon(LucideIcons.folderPlus, size: 16),

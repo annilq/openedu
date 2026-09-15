@@ -680,18 +680,22 @@ class AppTheme {
       disabledOpacity: 0.5,
       // 按钮尺寸走 AppControl 令牌：与输入框 / 选择器同高，
       // 避免 shadcn 默认 36px 与 App* 组件（compact 32 / normal 40）混排。
+      // 水平 padding 各减 2px，正好抵消新粗野 2px 描边带来的宽度增量：
+      // 旧 = padding×2 + border 0（实心）/1（描边）；新 = (padding-2)×2 + border 2。
+      // 实心按钮总宽需求**完全不变**，描边按钮反而窄 2px——这样加粗描边不会
+      // 把任何「宽度刚好卡住」的按钮挤到 RenderFlex overflow（真机已踩过一次）。
       buttonSizesTheme: ShadButtonSizesTheme(
         regular: ShadButtonSizeTheme(
           height: controlH,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
         ),
         sm: ShadButtonSizeTheme(
           height: controlSmH,
-          padding: const EdgeInsets.symmetric(horizontal: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
         ),
         lg: ShadButtonSizeTheme(
           height: controlH + AppSpacing.sm,
-          padding: const EdgeInsets.symmetric(horizontal: 18),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
         ),
         icon: ShadButtonSizeTheme(
           height: controlH,

@@ -48,6 +48,23 @@
 
 性能红线沿用：只动 transform + opacity；`ListView.builder` 中使用 `flutter_animate` 需给 item 稳定 key，否则复用时动画重放。
 
+## 约束：`ShadButton` 不可放进会压缩它的容器
+
+shadcn 的 `ShadButton` 内部是 `Padding → Row(mainAxisSize: min)`，**文字不会收缩**：父级一旦给出紧于内容的宽度（tight），直接 `RenderFlex overflowed`，不会 ellipsis 也不会换行。
+
+真机已踩：`parent_question_bank_view._buildActionFooter` 用 `Row + Expanded(ShadButton('用这些题生成任务 (N)'))`，窄分屏下按钮被压到 173px、内容需 182px → 溢出 9px（2px 描边加粗后由 5px 变为 9px）。
+
+- **规则**：需要并排多个按钮时用 `Wrap`，不要用 `Row + Expanded` 包按钮。
+- **补偿**：主题层把按钮水平 padding 各减 2（regular 14→12、sm 10→8、lg 18→16），正好抵消描边加粗带来的宽度增量——实心按钮总宽需求不变（旧 `padding×2 + border 0`，新 `(padding-2)×2 + border 2`），描边按钮反而窄 2px。
+- 例外：`_TabBar`（parent_tasks_view）仍用 `Expanded` 均分，其文案短（「草稿 12」约 88px），窗口 ≥320 即安全，保留等宽 tab 的视觉。
+
+## 约束：撞色分栏 banner 用 `IntrinsicHeight` 包 `Row(stretch)`
+
+新粗野 banner 常用「左色块 flex 2 : 右纸面 flex 5」分栏（`_BrutalBanner`）。`Row` 若设 `crossAxisAlignment: CrossAxisAlignment.stretch` 让左色块撑满整卡高度，而 banner 又放在 `CustomScrollView` 等**纵向无界**容器里（sliver 给子项 `h=Infinity`），`stretch` 会把 `h=Infinity` 推给左色块的 `RenderDecoratedBox` → 抛 `BoxConstraints forces an infinite height`。
+
+- **规则**：`Row(crossAxisAlignment: stretch)` 若位于无界高度容器，外层必须包 `IntrinsicHeight`，让 Row 先按最高子项（右纸面列）算出有界高度，再 `stretch` 填充左块。两个 banner 的双 layout pass 开销可忽略。
+- **反例**：旧 `_ReviewBanner` 用默认 `start` 对齐所以不炸；换成 `stretch` 才有此坑。
+
 ## 色相 ≤ 3 的适用口径（试点补充）
 
 「单屏内不同色相 ≤ 3」约束的是**大面积色块**（> 卡片面积 5%）。以下不计入：

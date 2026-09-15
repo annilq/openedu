@@ -171,26 +171,27 @@ class _BrutalBanner extends StatelessWidget {
         border: Border.all(color: AppBrutal.ink, width: AppElevation.borderWidth),
         boxShadow: AppElevation.hard(),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            flex: 2,
-            child: Container(
-              decoration: BoxDecoration(
-                color: fill,
-                borderRadius: BorderRadius.horizontal(
-                    left: Radius.circular(AppRadius.banner)),
-                // 与右半区之间的竖线：撞色块与纸底对比仅 1.38~3.4，必须描边。
-                border: Border(
-                  right: BorderSide(
-                      color: AppBrutal.ink, width: AppElevation.borderWidth),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              flex: 2,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: fill,
+                  borderRadius: BorderRadius.horizontal(
+                      left: Radius.circular(AppRadius.banner)),
+                  // 与右半区之间的竖线：撞色块与纸底对比仅 1.38~3.4，必须描边。
+                  border: Border(
+                    right: BorderSide(
+                        color: AppBrutal.ink, width: AppElevation.borderWidth),
+                  ),
                 ),
+                alignment: Alignment.center,
+                child: Icon(icon, size: 40, color: AppBrutal.ink),
               ),
-              alignment: Alignment.center,
-              child: Icon(icon, size: 40, color: AppBrutal.ink),
             ),
-          ),
           Expanded(
             flex: 5,
             child: Padding(
@@ -217,6 +218,7 @@ class _BrutalBanner extends StatelessWidget {
             ),
           ),
         ],
+        ),
       ),
     );
   }

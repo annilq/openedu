@@ -26,6 +26,7 @@
 ## Git 工作流
 - ✅ **`git push origin main` 可通**（2026-09-15 实测推 `7b947bc..b180439`）。可能需沙箱放行。
 - ⚠️ push 有时会输出 `Everything up-to-date` 但实际**已推送成功**——不要据此判定失败。用 `git ls-remote origin main` 比对 `git rev-parse HEAD` 才是准的。
+- ⚠️ push 走环境代理（`HTTPS_PROXY=127.0.0.1:<端口>`，端口每次会话会变）。代理挂了的表现是 `Failed to connect ... port 443` 或 `CONNECT tunnel failed, response 502`。**先用 `curl -x $HTTPS_PROXY https://github.com` 探活再决定重试**，别盲目反复 push（单次超时 75s）。2026-09-15 晚曾连续失败，改由用户手动推。
 - 提交习惯：按**逻辑批次拆 commit**（如「架构重构」与「视觉语言」分开），不成坨。正文写清「为什么」而非「改了什么」。仓库已有 `chore(memory):` 惯例，memory 更新可单独提交。
 - `backend/.agents/` 是工具产物的 skill 缓存，未跟踪，**不要顺手 commit**（2026-09-15 起存在）。
 
@@ -56,6 +57,10 @@
 - 「单屏色相 ≤3」只约束**大面积色块（> 卡片 5%）**；学科 chip / 题号 chip / 语义容器 / 庆祝粒子不计入（已写进 ADR-0044）。
 - 待真机验证：家长端密集列表（掌握度看板 / 错题列表）加 2px 墨黑边 + 硬阴影是否过吵。
 - 设计单一事实源是 `.impeccable.md`（2026-09-15 首次建立，此前缺失但代码已引用它）；术语见 `CONTEXT.md` §设计语言。
+
+## Flutter / shadcn 踩坑
+- **`ShadButton` 不可放进会压缩它的容器**（`Expanded` / 固定宽）：内部是 `Padding → Row(mainAxisSize: min)`，文字**不收缩**，父给 tight 窄宽时直接 `RenderFlex overflowed`（不 ellipsis 不换行）。并排多个按钮一律用 `Wrap`。
+- 主题层按钮水平 padding 已各减 2（regular 12 / sm 8 / lg 16）以抵消 ADR-0044 的 2px 描边宽度增量，改 padding 前先算这个账。
 
 ## 已知未修小瑕疵
 - 无。原「编辑模型服务商下拉误导」已于 2026-09-15 修（`349e4ec`）：`AppPickerField.value` 放开为 `T?` + 新增 `placeholder` 参数；`model_form_dialog.dart` 未匹配预设时传 `value: _presetKey`，显示「自定义（未匹配预设）」而非硬选第一个。已真机验证。
