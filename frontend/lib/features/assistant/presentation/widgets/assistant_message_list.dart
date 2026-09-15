@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/app_markdown.dart';
 import '../../../../shared/widgets/app_toast.dart';
 import '../../domain/assistant_card.dart';
 import '../provider/assistant_notifier.dart';
@@ -169,13 +170,18 @@ class _BubbleBody extends StatelessWidget {
         ],
       );
     }
-    return Text(
-      message.text,
-      style: text.bodyMedium?.copyWith(
-        color: message.role == 'user' ? scheme.onPrimary : scheme.onSurface,
-        height: 1.55,
-      ),
-    );
+    // 用户消息是纯文本，气泡底色为 primary、文字 onPrimary，不走 Markdown；
+    // AI 消息（bubble 底色 surfaceContainerLow、文字 onSurface）走 Markdown 渲染。
+    if (message.role == 'user') {
+      return Text(
+        message.text,
+        style: text.bodyMedium?.copyWith(
+          color: scheme.onPrimary,
+          height: 1.55,
+        ),
+      );
+    }
+    return AppMarkdown(message.text);
   }
 }
 

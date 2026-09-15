@@ -167,13 +167,19 @@ class _AppTextFieldState extends State<AppTextField> {
 /// 扁平化选择框（基于 ShadSelect，替代 CupertinoPicker 底部面板）。
 ///
 /// 点击展开下拉选项；通用泛型 [T]。
+///
+/// [value] 为 null 表示「当前值不在 [values] 中」（未选择 / 外部值）、显示 [placeholder]，
+/// 而不是硬选一个选项——否则会把外部值静默显示成第一个选项（编辑场景的误导来源）。
 class AppPickerField<T> extends StatelessWidget {
   final String label;
   final List<T> values;
   final List<String> labels;
-  final T value;
+  final T? value;
   final ValueChanged<T> onChanged;
   final String? errorText;
+
+  /// [value] 为 null 时展示的占位文案。
+  final String placeholder;
 
   const AppPickerField({
     super.key,
@@ -183,6 +189,7 @@ class AppPickerField<T> extends StatelessWidget {
     required this.value,
     required this.onChanged,
     this.errorText,
+    this.placeholder = '请选择',
   });
 
   @override
@@ -224,7 +231,7 @@ class AppPickerField<T> extends StatelessWidget {
                 ),
             ],
             placeholder: Text(
-              '请选择',
+              placeholder,
               style: text.bodyLarge?.copyWith(color: app.onSurfaceVariant),
             ),
             decoration: ShadDecoration(

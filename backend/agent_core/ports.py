@@ -15,7 +15,7 @@ from typing import Any, AsyncIterator, Callable
 
 
 class TextKind(StrEnum):
-    """``TextDelta`` 的**语义通道**（ADR-0041）。
+    """``TextDelta`` 的**语义通道**（ADR-0043）。
 
     同一段模型输出里，思维链与正式答复是两回事：前者是模型「想什么」，后者是「答什么」。
     适配器必须标注、消费方必须分流——把两者混进同一个累加器，就会让「内部独白」在模型
@@ -82,7 +82,7 @@ class LLMProvider(ABC):
         - ``tools`` 给定 → 模型可回 ``ToolCall``；runtime 执行后回灌并再请求。
         - 两者皆无 → 纯文本，逐段 ``TextDelta(kind=TEXT)``，无 ``StructuredDone``。
 
-        **``kind`` 是必守契约（ADR-0041）**：实现方必须把原生思维链标为 ``REASONING``、把正式
+        **``kind`` 是必守契约（ADR-0043）**：实现方必须把原生思维链标为 ``REASONING``、把正式
         答复标为 ``TEXT``；不标注即默认 ``TEXT``。消费方据 ``kind`` 分流——``REASONING``
         不得进入最终答案，也不得进入回灌给模型的历史（思维链回灌会污染后续轮次）。
 

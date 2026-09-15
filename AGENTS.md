@@ -29,6 +29,7 @@ K12 错题复习应用：家长出题 → 儿童答题产生错题 → 间隔重
 - **引擎失败归因**（ADR-0038）：`decrypt()` 解不开只能返回 `None`（**密文永不出门**）；厂商失败（认证/限流/网络）→ `ProviderRequestError` → `ERROR(code="PROVIDER_ERROR")`，与「模型不支持工具调用」（`TOOL_UNSUPPORTED`，ADR-0033）**严格分开**。上层不得用 `except Exception` 把引擎失败抹成「请添加模型」。
 - **前端分层**（ADR-0037）：`main/ → features/* → shared/*` 单向，**`shared/` 不得 import `features/`**；feature 之间不得横向互引（唯一豁免 `features/home/presentation/`，展示层组合根）；feature 与后端 `app/features/*` 一一对应。`App*` 前缀只给 `shared/widgets/` 通用组件——组件一旦订阅某 feature 的 provider 就落回该 feature。由 `frontend/test/feature_boundaries_test.dart` 静态扫描守住。
 - **助手卡片协议**（ADR-0042）：`DATA` 帧的 `data.type` 是**卡片种类判别键**（`question` / `task_list` / `wrong_question_list` / `due_review_list` / `mastery_list` / `child_list` / `progress` / `notice`），`data.result` 只放**结构化字段**（`{title, subject, items?, stats?, total?, text?}`）——服务端不拼展示串，排版归前端。新增种类要在 `query/render.py#_KIND` 与前端 `AssistantCardKind` 各登记一次；前端未登记的 kind 走降级卡（不丢内容）。**不要**在这条通道上做「服务端下发 UI schema」式的通用 GenUI。
+- **推理/正文分流**（ADR-0043）：`TextDelta.kind`（`TextKind`：`TEXT`/`REASONING`，缺省 `TEXT`）由适配器按 `SegmentKind` 标注；`run_with_tools` 只把 `kind=TEXT` 累进答案，`REASONING` 只作思考回显（`THINKING` 帧）且**不进回灌历史**。工具型 subagent「无原生 `ToolCall` 且正文为空」→ `ERROR(TOOL_UNSUPPORTED)` 硬失败，绝不把内部独白当答复。守卫 `tests/ai/test_tool_loop_bounds.py`。
 
 ## 命令速查 → [docs/agents/development.md#2-命令速查commands](docs/agents/development.md)
 
@@ -59,5 +60,5 @@ Issues / PRDs 以 GitHub Issues 承载，全部操作经 `gh` CLI。建读列评
 ## 关键事实源与已知风险
 
 - **领域术语**：`CONTEXT.md`（唯一 glossary）。
-- **架构评审**：`docs/agent-core-architecture-review.md`（含 P0 缺失 ADR、P1 缺 compaction、P2 缺扩展钩子、前端 SSE 逐帧渲染待定）。
-- **ADR 索引**：`docs/adr/` 已落地 0001–0042（含 0008/0012/0014/0015/0017/0019/0020/0021–0028/0030–0042）；仅 0006/0007/0009–0011/0013/0016/0018/0029 无文档。新增决策先补 ADR 再在代码中交叉链接引用。
+- **架构评审**：`docs/agent-core-architecture-review.md`——**2026-09-11 快照**。其 §7 的 P0/P1/P2 建议均已关闭（P0 补 ADR → `docs/adr/` 现 0001–0043；P1 compaction → `app/features/assistant/repository.py`；P2 extension hooks → ADR-0035），§6 的「前端 SSE 逐帧渲染」后端侧已排除、前端代码层已消解（仅余真机验证）。读它时注意其结论是快照，不代表当前状态。
+- **ADR 索引**：`docs/adr/` 已落地 0001–0043（含 0008/0012/0014/0015/0017/0019/0020/0021–0028/0030–0043）；仅 0006/0007/0009–0011/0013/0016/0018/0029 无文档。新增决策先补 ADR 再在代码中交叉链接引用。

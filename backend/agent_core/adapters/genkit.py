@@ -49,7 +49,7 @@ class SegmentKind(StrEnum):
     TEXT = "text"  # 正式文本
 
 
-# Segment 通道 → TextDelta 语义通道（ADR-0041）。两者取值本就同源，显式映射以免
+# Segment 通道 → TextDelta 语义通道（ADR-0043）。两者取值本就同源，显式映射以免
 # 后续任一侧改名时静默错配（错配的代价是「思维链被当答案」）。
 _TEXT_KIND_OF: dict[SegmentKind, TextKind] = {
     SegmentKind.REASONING: TextKind.REASONING,
@@ -513,7 +513,7 @@ class GenkitLLMProvider(LLMProvider):
         历史 bug：本处曾把**任意**异常无差别包成 ``ToolUnsupportedError``，导致
         「API Key 无效（401）」被报成「当前模型不支持工具调用」，根因指错方向。
 
-        **语义通道（ADR-0041）**：流式片段一律按 ``SegmentKind`` 标注 ``TextDelta.kind``
+        **语义通道（ADR-0043）**：流式片段一律按 ``SegmentKind`` 标注 ``TextDelta.kind``
         ——REASONING 段是模型内部思考（常含调用草稿），TEXT 段才是答复。runtime 据此分流，
         思维链不会被当成答案（历史 bug：两者混流，模型一旦不发原生工具调用，内部独白
         就直接下发给了用户）。
@@ -540,7 +540,7 @@ class GenkitLLMProvider(LLMProvider):
                 for seg in _iter_segments(chunk):
                     if seg.kind is SegmentKind.TEXT:
                         streamed_text = True
-                    # 按 Segment 通道标注语义（ADR-0041）：REASONING 段是模型「想什么」，
+                    # 按 Segment 通道标注语义（ADR-0043）：REASONING 段是模型「想什么」，
                     # 交给 runtime 只作思考回显；混进正文会让不出原生工具调用的模型
                     # 把内部独白当成答案下发给用户。
                     # 未知通道保守按 TEXT（与旧行为一致），不至于把正文当推理丢掉。

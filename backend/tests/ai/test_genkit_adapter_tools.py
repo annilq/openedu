@@ -244,7 +244,7 @@ def test_replay_after_tool_result_includes_request_and_response_messages():
 
 
 def test_reasoning_and_text_chunks_carry_distinct_kinds():
-    """两通道都要流出来，但**语义标注必须分开**（ADR-0041）。
+    """两通道都要流出来，但**语义标注必须分开**（ADR-0043）。
 
     标注错误的代价实测过：下游把思维链当答复 → 模型不发原生工具调用时，
     内部独白被当作最终答案下发给用户。

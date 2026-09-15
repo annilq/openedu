@@ -178,7 +178,7 @@ def test_loop_stops_when_model_stops_calling_tools():
     assert EVENT_ERROR not in _types(events)
     texts = [ev.text for ev in events if ev.eventType == EVENT_ASSISTANT_MESSAGE]
     assert texts == ["查到了 2 个任务。"]
-    # 正文只走 ASSISTANT_MESSAGE；本轮没有思维链，故不应出现 THINKING 帧（ADR-0041）
+    # 正文只走 ASSISTANT_MESSAGE；本轮没有思维链，故不应出现 THINKING 帧（ADR-0043）
     assert EVENT_THINKING not in _types(events)
 
 
@@ -409,7 +409,7 @@ def test_plain_text_answer_without_protocol_marker_passes_through():
     assert texts == ["我只查学习数据，无法帮你写诗。"]
 
 
-# ── 推理与正文分流（ADR-0041）：思维链不进答案、不进历史、外发前过滤伪协议 ──
+# ── 推理与正文分流（ADR-0043）：思维链不进答案、不进历史、外发前过滤伪协议 ──
 def _plain_monologue() -> str:
     """真机形态的内部独白：**不含**任何调用协议标记的英文思考。
 

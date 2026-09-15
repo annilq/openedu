@@ -196,7 +196,10 @@ class _ModelFormDialogState extends ConsumerState<ModelFormDialog> {
                   label: '服务商',
                   values: widget.presets.map((p) => p.key).toList(),
                   labels: widget.presets.map((p) => p.label).toList(),
-                  value: _presetKey ?? widget.presets.first.key,
+                  // _presetKey 为 null 表示现有模型的 provider+baseUrl 匹配不到任何预设
+                  // （自定义服务商）——置空显示占位，而不是硬选第一个预设（会误导家长）。
+                  value: _presetKey,
+                  placeholder: '自定义（未匹配预设）',
                   onChanged: _onPresetChanged,
                 )
               else

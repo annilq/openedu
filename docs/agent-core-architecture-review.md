@@ -2,6 +2,8 @@
 
 > 依据参考链接（How to Build a Custom Agent Framework with PI / OpenClaw 的 agent stack）对照当前 `backend/agent_core` 与 `app/ai` / `app/features/assistant` 的集成设计。
 > 评审日期：2026-09-11
+>
+> **后续状态（2026-09-15 复核）：本文 §4 的三类偏差与 §7 的 P0/P1/P2 建议均已关闭** —— P0 补 ADR（`docs/adr/` 现落 0001–0043，被引用的 0003/0021/0031/0032/0033 均已就位）、P1 context compaction（`app/features/assistant/repository.py` 的 `_compact_history` / `load_chat_history_with_summary`）、P2 extension hooks（ADR-0035，`ports.py#Hooks` + `subagent.py#run_with_tools` 接线）。§6 的 SSE「闪现」后端侧已排除，前端已在代码层逐帧 setState 消解，仅余真机验证。**以下正文为 2026-09-11 快照，读结论时请以本状态为准。**
 
 ## 0. 结论（结论先行）
 
@@ -94,16 +96,20 @@
 
 **最可能的根因在前端**：SSE 缓冲未逐帧 flush、或只渲染 `ASSISTANT_MESSAGE` 而把中间 `THINKING/STEP/DATA` 帧挂起到最后才统一挂载。建议前端先确认是否对所有 `eventType` 做了即时 setState，而不是等 `DONE` 才渲染。这个不在本次后端架构评审范围内，但定位方向明确。
 
+**后续（2026-09-15）**：前端已按此方向改为逐帧 setState（`frontend/lib/features/home/presentation/providers/home_notifier.dart` → `.../widgets/parent/parent_task_form_view.dart`）；后端 `THINKING` 亦每 16 字符冲刷（`app/ai/subagents/question/translate.py`）。判据收敛为**一次真机验证**：出题时 `THINKING` 应打字机式逐帧出现，而非 5 秒后闪现。
+
 ---
 
 ## 7. 建议落点（按优先级）
 
-| 优先级 | 动作 | 判据 |
-|--------|------|------|
-| P0 | 补 `docs/adr/` 中被引用的 ADR（至少 0003/0021/0031/0032/0033） | `find docs/adr -name "ADR-00*.md"` 有文件且被 docstring 交叉链接 |
-| P1 | 加 context compaction（token 预算截断 + 周期 summary） | `load_chat_history` 或 `run_with_tools` 出现压缩分支；长会话 e2e 验证不爆窗 |
-| P2 | 加可选 `hooks` 接口（before_turn/after_tool/rewrite_messages） | `AgentRuntime` 接受 `hooks` 参数且默认无行为 |
-| 待定 | 前端验证 SSE 逐帧渲染 | 出题时 THINKING/STEP 帧实时出现，非 5 秒后闪现 |
+> **状态（2026-09-15 复核）：P0 / P1 / P2 均已关闭；「待定」项代码层根因已消解，仅余真机验证。** 表内保留评审当日条目，行末补关闭证据。
+
+| 优先级 | 动作 | 判据 | 状态 |
+|--------|------|------|------|
+| P0 | 补 `docs/adr/` 中被引用的 ADR（至少 0003/0021/0031/0032/0033） | `find docs/adr -name "ADR-00*.md"` 有文件且被 docstring 交叉链接 | ✅ 已关闭：`docs/adr/` 现 0001–0043，被引用者均就位 |
+| P1 | 加 context compaction（token 预算截断 + 周期 summary） | `load_chat_history` 或 `run_with_tools` 出现压缩分支；长会话 e2e 验证不爆窗 | ✅ 已关闭：`assistant/repository.py#_compact_history` / `load_chat_history_with_summary`（`CHAT_HISTORY_MAX_TOKENS=4000`） |
+| P2 | 加可选 `hooks` 接口（before_turn/after_tool/rewrite_messages） | `AgentRuntime` 接受 `hooks` 参数且默认无行为 | ✅ 已关闭：ADR-0035，`ports.py#Hooks` + `subagent.py#run_with_tools` 接线 |
+| 待定 | 前端验证 SSE 逐帧渲染 | 出题时 THINKING/STEP 帧实时出现，非 5 秒后闪现 | ⏳ 代码层已消解（后端每 16 字符冲刷 + 前端逐帧 setState）；**仅余真机验证** |
 
 ---
 

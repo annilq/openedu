@@ -155,7 +155,7 @@ def _flushable_thinking(buffered: list[str], tool_names: list[str]) -> list[str]
 
     思维链里出现 ``<invoke name="...">`` 这类**调用草稿**时，即便本轮已经正常产出原生
     ``ToolCall``（内容本身无害），把这些伪协议片段送进 SSE 也是把内部实现暴露给客户端。
-    不变式：**原始调用协议永不出现在任何下发给客户端的事件里**（ADR-0033 / ADR-0041）。
+    不变式：**原始调用协议永不出现在任何下发给客户端的事件里**（ADR-0033 / ADR-0043）。
     """
     if _text_looks_like_tool_call("".join(buffered), tool_names):
         return []
@@ -191,7 +191,7 @@ async def run_with_tools(
     ``{"role": "tool", "name", "ref", "content"}`` 结果（成对出现）——适配器据此重建
     provider 要求的 ToolRequest ↔ ToolResponse 配对。
 
-    **推理与正文分流（ADR-0041）**：``TextDelta.kind`` 决定去向——``REASONING`` 只进
+    **推理与正文分流（ADR-0043）**：``TextDelta.kind`` 决定去向——``REASONING`` 只进
     思考缓冲（外发为 THINKING，且下发前过滤掉调用伪协议），``TEXT`` 才累进 ``acc``。
     因此「工具型 subagent 整轮没有原生 ``ToolCall`` 且正文为空」只剩一种解释：模型把调用
     意图留在了思维链里、没走原生 function calling——此时硬失败（TOOL_UNSUPPORTED），
@@ -248,7 +248,7 @@ async def run_with_tools(
                 if isinstance(ev, TextDelta):
                     if ev.kind is TextKind.REASONING:
                         # 思维链（含模型写下的调用草稿）只作思考回显：**不进答案**（acc），
-                        # 也**不进回灌历史**——回灌思维链会污染后续轮次（ADR-0041）。
+                        # 也**不进回灌历史**——回灌思维链会污染后续轮次（ADR-0043）。
                         turn_thinking.append(ev.delta)
                     else:
                         acc += ev.delta
@@ -299,7 +299,7 @@ async def run_with_tools(
 
         # 工具请求轮必须先入 history（成对不变量：assistant.tool_calls → tool 结果），
         # 否则适配器无法重建 provider 要求的 ToolRequest ↔ ToolResponse 配对。
-        # 入历史的 content 是 acc（正文）——思维链不入历史（ADR-0041）。
+        # 入历史的 content 是 acc（正文）——思维链不入历史（ADR-0043）。
         if turn_calls:
             for t in _flushable_thinking(turn_thinking, tool_names):
                 yield thinking(t)
@@ -312,7 +312,7 @@ async def run_with_tools(
             if not native_fc_seen:
                 # 从未成功走过原生 function calling：模型的「调用意图」全留在思维链里
                 # （真机形态：英文独白 + ``<invoke>`` 草稿），而思维链绝不能当答案下发。
-                # 唯一正确的行为是硬失败，而不是把内部独白当答复（ADR-0033 / ADR-0041）。
+                # 唯一正确的行为是硬失败，而不是把内部独白当答复（ADR-0033 / ADR-0043）。
                 yield error(_UNSUPPORTED_TOOL_CALL_HINT, code="TOOL_UNSUPPORTED")
                 return
             # 之前轮次已成功调用过工具（数据卡已下发），本轮只是没有收尾话术——
