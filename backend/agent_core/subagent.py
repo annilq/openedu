@@ -122,11 +122,25 @@ class BaseSubAgent(ABC):
 # 认证 / 限流 / 网络走策展文案，原始厂商报文只进日志（不泄露被拒凭据尾号）。
 
 
-# 模型把工具调用「写成了文本」的判定：文本里出现工具调用协议标记，且点名了某个真实工具。
-# 命中即视为模型未走原生 function calling（把调用叙述进了思考/正文），必须硬失败，
-# 绝不能把这段原始协议当答案回流（ADR-0033：禁止静默降级为纯文本）。
-_TOOL_CALL_PROTOCOL_RE = re.compile(
-    r'(?:<invoke\s+name=|"name"\s*:\s*"|function_call|"function"\s*:\s*\{)',
+# 模型把工具调用「写成了文本」的判定：文本里出现工具调用协议标记。命中即视为模型未走
+# 原生 function calling（把调用叙述进了思考/正文），必须硬失败，绝不能把这段原始协议当
+# 答案回流（ADR-0033：禁止静默降级为纯文本）。
+#
+# 标记分强弱两档，因为两者的**误伤面**不同：
+#
+# - **强标记**：XML / Anthropic 风格调用外壳（``<invoke name=`` / ``</invoke>`` /
+#   ``<parameter name=`` …）。正常中文答复里不会出现这些字面量，故**命中即判泄露，
+#   不要求点名已注册工具**。真机教训（2026-09-15）：模型会把调用写成文本**并且编造
+#   工具名**（把 ``list_wrong_questions`` 写成 ``get_mistakes``），此时「点名已注册工具」
+#   这一条必然落空；若仍要求点名，整段原始协议就被当答案下发给了用户。
+# - **弱标记**：可能与正文同形（如讲解 JSON 结构时出现的 ``"name": "``），
+#   必须同时点名某个已注册工具才判泄露。
+_TOOL_CALL_PROTOCOL_STRONG_RE = re.compile(
+    r"(?:<invoke\s+name=|<parameter\s+name=|</invoke>|<function_calls>|</function_calls>|antml:)",
+    re.IGNORECASE,
+)
+_TOOL_CALL_PROTOCOL_WEAK_RE = re.compile(
+    r'(?:"name"\s*:\s*"|function_call|"function"\s*:\s*\{)',
     re.IGNORECASE,
 )
 
@@ -137,15 +151,28 @@ _UNSUPPORTED_TOOL_CALL_HINT = (
     "查询无法执行。请使用支持原生工具调用的模型，或在模型配置中关闭思维链后重试。"
 )
 
+# 已有工具结果下发过（数据卡已给用户）后，收尾轮才把调用写成文本——此时数据其实是查到了的，
+# 不能复述「查询无法执行」（与事实不符，用户会以为全都没查到）。文案须指明「部分成功」。
+_PARTIAL_TOOL_CALL_HINT = (
+    "本轮回答未能完成：模型把工具调用写成了文本而非标准 function calling，已中止本轮。"
+    "上方已给出本次查到的数据；如需更完整的结论，请重试或改用支持原生工具调用的模型。"
+)
+
 
 def _text_looks_like_tool_call(text: str, tool_names: list[str]) -> bool:
-    """文本是否伪装成了工具调用：含调用协议标记且点名了已注册工具。
+    """文本是否伪装成了工具调用：强协议标记命中即判，弱标记需同时点名已注册工具。
 
     仅作「该不该硬失败」的粗筛——命中说明模型把 ``<invoke name="...">`` / JSON
     ``"name": "..."`` 这类调用式写进了文本而非产出原生 ``ToolCall`` 事件，此时继续把
     ``acc`` 当答案是把内部协议泄露给用户，故交由调用方判为 TOOL_UNSUPPORTED。
+
+    ``tool_names`` 只用于**收紧弱标记**（``"name": "`` 可能与正文同形）。强标记是调用外壳
+    的结构性字面量，与工具名无关——把它绑到工具名上会让「模型编造工具名」这一最常见形态
+    正好逃逸（见上方 ``_TOOL_CALL_PROTOCOL_STRONG_RE`` 注释）。
     """
-    if not _TOOL_CALL_PROTOCOL_RE.search(text):
+    if _TOOL_CALL_PROTOCOL_STRONG_RE.search(text):
+        return True
+    if not _TOOL_CALL_PROTOCOL_WEAK_RE.search(text):
         return False
     return any(name and name in text for name in tool_names)
 
@@ -319,10 +346,15 @@ async def run_with_tools(
             # 能力没问题，安静结束，不误报成「模型不支持工具调用」。
             return
 
-        # 有正文，但正文里出现了已注册工具名的「调用式」写法（模型把工具调用写成了
-        # 文本而非原生 ToolCall）：不能把这段原始协议当答案回流给用户（ADR-0033）。
+        # 有正文，但正文里出现了工具调用协议（模型把工具调用写成了文本而非原生
+        # ToolCall）：不能把这段原始协议当答案回流给用户（ADR-0033）。
+        # 提示按「本轮之前有没有成功调过工具」分档：调过说明数据卡已下发，此时说
+        # 「查询无法执行」与用户所见不符，会让人以为一条都没查到。
         if _text_looks_like_tool_call(acc, tool_names):
-            yield error(_UNSUPPORTED_TOOL_CALL_HINT, code="TOOL_UNSUPPORTED")
+            yield error(
+                _PARTIAL_TOOL_CALL_HINT if native_fc_seen else _UNSUPPORTED_TOOL_CALL_HINT,
+                code="TOOL_UNSUPPORTED",
+            )
             return
 
         for t in _flushable_thinking(turn_thinking, tool_names):

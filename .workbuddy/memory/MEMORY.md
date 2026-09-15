@@ -23,6 +23,8 @@
 - `TextDelta.kind`（`ports.py TextKind`）由 adapter 按 `SegmentKind` 标注；`subagent.py` 的 `acc` **只收 kind=TEXT**，思维链走 `turn_thinking` 且不进回灌历史；工具型 subagent「无原生 ToolCall 且正文空」→ `ERROR(TOOL_UNSUPPORTED)`。落地 `77fd33f`，正文 `docs/adr/0043-reasoning-text-channel-split.md`。
 - ✅ **编号悬空已订正**：该决策曾被代码误标 `ADR-0041`（0041 实为「启动期密钥健康检查」）→ 已落 ADR-0043，并把 `ports.py`/`genkit.py`/`subagent.py` 及两个测试的引用全部迁到 0043。`config.py`/`secrets.py`/`main.py` 的 0041 保持不动。
 - 残留：纯自然语言「我去查一下」（无协议标记）仍当普通回答流出——泄露危害已消除，根治须模型侧原生 FC。
+- ⚠️ **协议泄露判据不得绑定工具名**（2026-09-15 修）：`_text_looks_like_tool_call` 原为「协议标记命中 **且** 点名已注册工具」。模型把 `list_wrong_questions` 幻觉成 `get_mistakes` 时点名必然落空 → 整段 `<tool_calls><invoke name="get_mistakes">…` 落库并下发（会话 `ff07d664…`）。现拆**强/弱两档**：强标记（`<invoke name=` / `</invoke>` / `<parameter name=` / `<function_calls>` / `antml:`）**命中即判泄露、与工具名无关**；弱标记（`"name": "` 等可能与正文同形者）保留点名收紧。另新增 `_PARTIAL_TOOL_CALL_HINT`：`native_fc_seen=True`（数据卡已下发）时报「本轮未完成、上方数据已给出」，不复述「查询无法执行」。守卫 `tests/ai/test_tool_loop_bounds.py`（24→28 passed）。
+- **模型侧已知事实：默认模型 `deepseek-v4-flash`（`openai_compat` / `api.deepseek.com`）在多轮 tool loop 里会把调用退化成 XML 文本**，参数含长 uuid 时尤甚（与 ADR-0040 的「strict 必填陷阱 → 空转 → 把调用叙述成文本」同源）。**对策是减跳数而非只堵输出**：`query` SOP 与 `_SYSTEM` 已改为优先用 `child_name` 一跳直达，仅昵称歧义时才取 `child_id`；`list_children` 描述同步删掉「不确定时先调本工具」的引导。
 - ✅ **AI 气泡 Markdown 渲染已落地**：`gpt_markdown` → `shared/widgets/app_markdown.dart#AppMarkdown`（设计令牌映成 `GptMarkdownStyleSheet`；代码块复制按钮关闭、沿用原生整条复制；根 CupertinoApp 无 Material 祖先），接入 `assistant_message_list.dart`。落地 `349e4ec`（`pubspec` 加 `gpt_markdown`）。
 
 ## 已知未修小瑕疵

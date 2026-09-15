@@ -409,6 +409,96 @@ def test_plain_text_answer_without_protocol_marker_passes_through():
     assert texts == ["我只查学习数据，无法帮你写诗。"]
 
 
+# ── 防护：模型**编造工具名**时的协议泄露（真机形态，2026-09-15） ──
+def _fabricated_call_draft() -> str:
+    """真机原文：模型把调用写成 XML，且工具名是**编的**（真实工具名另有其名）。"""
+    return (
+        '<invoke name="get_mistakes">\n'
+        '<parameter name="child_id">a13be10f-e02c-4169-929f-2088b505f3d0</parameter>\n'
+        "</invoke>"
+    )
+
+
+def test_fabricated_tool_name_is_not_leaked_as_answer():
+    """回归（真机形态）：协议标记命中但点名的工具**未注册**，也绝不能放行。
+
+    旧判定要求「协议标记命中 **且** 点名已注册工具」，模型把 ``list_wrong_questions``
+    写成 ``get_mistakes`` 时第二条必然落空 → 整段 XML 原文随 ``assistant_message``
+    下发给了用户。调用外壳是结构性字面量，与工具名无关，命中即须硬失败。
+    """
+    leaked = _fabricated_call_draft()
+    provider = _ScriptedProvider([[TextDelta(delta=leaked)]])
+    agent = _Agent(provider=provider, tools=[_spec()])
+
+    events = asyncio.run(_collect(agent))
+
+    errs = _errors(events)
+    assert [e.code for e in errs] == ["TOOL_UNSUPPORTED"]
+    # 未成功调过任何工具 → 走「查询无法执行」文案
+    assert "查询无法执行" in (errs[0].message or "")
+    assert EVENT_ASSISTANT_MESSAGE not in _types(events), "协议原文不得作为答案下发"
+    assert leaked not in "".join(ev.text or "" for ev in events)
+
+
+def test_fabricated_tool_name_after_successful_call_reports_partial():
+    """已成功调过工具（数据卡已下发）后，收尾轮写成调用式 → 报「部分成功」。
+
+    说「查询无法执行」与用户所见不符（卡片就在上面），会让人以为一条都没查到。
+    """
+    leaked = _fabricated_call_draft()
+    provider = _ScriptedProvider(
+        [[ToolCall(name="list_x", args={})], [TextDelta(delta=leaked)]]
+    )
+    agent = _Agent(provider=provider, tools=[_spec()], rendered="child")
+
+    events = asyncio.run(_collect(agent))
+
+    types = _types(events)
+    # 第一轮的调用与其数据卡照常下发（查询本身是成功的）
+    assert EVENT_TOOL_CALL in types and EVENT_TOOL_RESULT in types and EVENT_DATA in types
+    errs = _errors(events)
+    assert [e.code for e in errs] == ["TOOL_UNSUPPORTED"]
+    assert "已给出本次查到的数据" in (errs[0].message or "")
+    assert "查询无法执行" not in (errs[0].message or "")
+    assert EVENT_ASSISTANT_MESSAGE not in types
+    assert leaked not in "".join(ev.text or "" for ev in events)
+
+
+def test_fabricated_call_draft_in_reasoning_is_dropped():
+    """思考缓冲里的编造名调用草稿同样不得外发（协议永不出现于任何事件）。"""
+    leaked = _fabricated_call_draft()
+    provider = _ScriptedProvider(
+        [
+            [
+                ToolCall(name="list_x"),
+                TextDelta(delta=f"我先调用工具：{leaked}", kind=TextKind.REASONING),
+            ],
+            [TextDelta(delta="查到 2 个任务。")],
+        ]
+    )
+    agent = _Agent(provider=provider, tools=[_spec()])
+
+    events = asyncio.run(_collect(agent))
+
+    assert EVENT_THINKING not in _types(events), "含调用伪协议的思考须整段丢弃"
+    assert leaked not in "".join(ev.text or "" for ev in events)
+    assert [ev.text for ev in events if ev.eventType == EVENT_ASSISTANT_MESSAGE] == [
+        "查到 2 个任务。"
+    ]
+
+
+def test_weak_marker_without_registered_tool_name_is_plain_text():
+    """防误伤：``"name": "`` 可能与正文同形（讲解 JSON 结构），无已注册工具名时照常放行。"""
+    answer = '返回的字段长这样：{"name": "小明", "score": 90}，score 是掌握度。'
+    provider = _ScriptedProvider([[TextDelta(delta=answer)]])
+    agent = _Agent(provider=provider, tools=[_spec()])
+
+    events = asyncio.run(_collect(agent))
+
+    assert EVENT_ERROR not in _types(events)
+    assert [ev.text for ev in events if ev.eventType == EVENT_ASSISTANT_MESSAGE] == [answer]
+
+
 # ── 推理与正文分流（ADR-0043）：思维链不进答案、不进历史、外发前过滤伪协议 ──
 def _plain_monologue() -> str:
     """真机形态的内部独白：**不含**任何调用协议标记的英文思考。

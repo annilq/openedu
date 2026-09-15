@@ -14,6 +14,12 @@
 
 **既有防护不够**：`_text_looks_like_tool_call`（`subagent.py:141`）只认 `acc` 里的 XML / JSON 调用协议标记（`<invoke name=` / `"name": "` / `function_call`），**拦不住「答案本身就是独白」**这一形态（无协议标记）。
 
+**防护第二例（2026-09-15，同一函数的另一个洞）**：原判据是「协议标记命中 **且** 点名了已注册工具」。真机（`deepseek-v4-flash` / `openai_compat`）上，模型第一轮原生调用 `list_children` 成功拿到 `child_id` 后，**第二轮把「查错题」的调用写成了 XML 文本，并把工具名幻觉成 `get_mistakes`**（真名 `list_wrong_questions`，见 `query/tools/list_wrong_questions.py`）。协议标记明明命中，却因工具名对不上而放行——整段 `<tool_calls><invoke name="get_mistakes">…</invoke></tool_calls>` 原样落库（`message.content`）并下发给用户。
+
+判据已拆为**强 / 弱两档**：强标记（`<invoke name=` / `</invoke>` / `<parameter name=` / `<function_calls>` / `antml:`）是调用外壳的结构性字面量，**命中即判泄露，与工具名无关**；弱标记（`"name": "` / `function_call` / `"function": {`）可能与正文同形（讲解 JSON 时会写到），保留「点名已注册工具」作为收紧。**教训：把结构性协议标记绑到具体工具名上，等于给「模型编造工具名」这一最常见形态开后门。**
+
+**连带修复（同一根因的另一半）**：`query` 的 SOP 原写「先调 `list_children` 拿 `child_id`，再带 id 查明细」，等于强制每次跨娃娃查询都多走一轮「复述一串 uuid」——而这正是 `deepseek-v4-flash` 最容易退化成文本调用的动作（`_shared.py:45-65` 已记录同源形态）。SOP 与 `_SYSTEM` 已改为**优先用 `child_name` 一跳直达**，仅在昵称歧义时才取 `child_id`。
+
 根因：**协议层（`TextDelta`）不分推理 / 正文**，于是「流向」（累不累进 `acc`）与「语义」（思考回显 vs 最终答案）无法对齐。
 
 ## 决策
@@ -41,7 +47,7 @@
 
 ## 验证判据
 
-- 后端 `tests/ai/test_tool_loop_bounds.py`：无原生 `ToolCall` 且正文空 → `TOOL_UNSUPPORTED`；思维链不进答案、不进历史；协议伪片段外发前被过滤；正文只走 `ASSISTANT_MESSAGE`、无思维链时不产 `THINKING` 帧。
+- 后端 `tests/ai/test_tool_loop_bounds.py`：无原生 `ToolCall` 且正文空 → `TOOL_UNSUPPORTED`；思维链不进答案、不进历史；协议伪片段外发前被过滤；正文只走 `ASSISTANT_MESSAGE`、无思维链时不产 `THINKING` 帧；**协议标记命中但工具名是编造的同样硬失败**（`test_fabricated_tool_name_is_not_leaked_as_answer`），且已下发数据卡时报「部分成功」而非「查询无法执行」。
 - 后端 `tests/ai/test_genkit_adapter_tools.py`：两通道（`REASONING`/`TEXT`）都要流出，但**语义标注必须分开**。
 
 ## 已知遗留

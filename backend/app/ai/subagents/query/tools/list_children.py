@@ -19,7 +19,8 @@ from app.ai.subagents.query.tools._shared import (
 NAME = "list_children"
 DESCRIPTION = (
     "列出当前账号可查询的娃娃（家长＝名下全部孩子；娃娃＝自己）。"
-    "当你不确定要查哪一个娃娃、或需要娃娃的 id 时，先调用本工具。"
+    "用于用户想了解有哪些娃娃、或需要娃娃 id 消歧时；"
+    "只想查某个娃娃的明细，请直接用其他工具的 child_name，不必先调用本工具。"
 )
 
 
