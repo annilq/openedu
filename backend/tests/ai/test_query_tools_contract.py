@@ -25,6 +25,7 @@ from sqlmodel import Session, func, select
 from agent_core.subagent import SubAgentContext
 from app.ai.subagents.query.tools._shared import (
     ANSWER_FIELDS,
+    NO_FILTER,
     ToolArgumentError,
     project_for_role,
     resolve_children,
@@ -436,3 +437,109 @@ def test_mastery_and_progress_tools_report_real_numbers(client):
     assert block["meta"]["total_knowledge_points"] == 1
     assert block["items"][0]["knowledge_point"] == "加法"
     assert block["items"][0]["active_wrong"] == 1
+
+
+# ─────────────────── 5. OpenAI strict 模式自洽性（ADR-0040） ───────────────────
+#
+# genkit_openai 的 ``_get_tools_definition`` 对每个工具无条件套
+# ``_ensure_strict_json_schema`` + ``strict: True``，把 ``required`` 重写为**全部 property**。
+# 于是我们写的 ``"required": []`` 在 wire 上不存在，模型被迫为每个参数编值。若某参数的
+# 「缺席」没有类型合法的编码，模型只能填非法值 → 收到硬错误 → 反复试探 → 空转并把工具
+# 调用叙述成文本（真机事故：``status=''`` 被判非法，模型连试三轮后放弃）。
+
+ABSENT_ENCODING: dict[str, Any] = {"string": "", "integer": 0, "number": 0, "boolean": False}
+
+
+def _strictified(schema: dict) -> dict:
+    """复刻 genkit 发包前的 schema 加工（``genkit_openai/models/model.py:88-120``）。"""
+    from openai.lib._pydantic import _ensure_strict_json_schema
+
+    return _ensure_strict_json_schema(schema, path=(), root=schema)
+
+
+def test_wire_schema_forces_every_property_required():
+    """证据锚点：确认「必填陷阱」依然存在——补丁是照着这个前提写的。
+
+    本条若失败，说明 genkit / OpenAI SDK 改变了 strict 改写行为，下面的守卫结论
+    （每个参数都需要缺席编码）需重新评估，而不是顺手删掉。
+    """
+    for spec in QUERY_TOOLS:
+        wire = _strictified(spec.schema)
+        props = wire.get("properties") or {}
+        assert wire.get("additionalProperties") is False, spec.name
+        assert set(wire.get("required") or []) == set(props), spec.name
+
+
+def test_enum_args_expose_an_explicit_no_filter_value():
+    """枚举型可选参数必须把 ``NO_FILTER`` 列进 enum，否则 strict 下模型无合法值可填。"""
+    for spec in QUERY_TOOLS:
+        for arg, prop in (spec.schema.get("properties") or {}).items():
+            if "enum" in prop:
+                assert NO_FILTER in prop["enum"], f"{spec.name}.{arg} 缺 {NO_FILTER} 取值"
+
+
+def test_absent_encodings_are_equivalent_to_not_passing(client):
+    """行为级守卫：用「缺席编码」填满全部参数 ≡ 不传（新增工具忘改会被此条拦下）。
+
+    实测模型在 strict 下的填充值就是 ``""``（字符串）、``0``（整数）、``all``（枚举）。
+    """
+    setup = _setup(client, "strict_absent")
+    ctx = _ctx("parent", parent_id=setup["parent_id"])
+
+    for spec in QUERY_TOOLS:
+        args: dict[str, Any] = {}
+        for arg, prop in (spec.schema.get("properties") or {}).items():
+            args[arg] = NO_FILTER if "enum" in prop else ABSENT_ENCODING[prop["type"]]
+        filled = _run(spec, ctx, args)  # 不得抛 ToolArgumentError
+        baseline = _run(spec, ctx)
+        assert filled == baseline, f"{spec.name}: 缺席编码 ≠ 不传"
+
+
+def test_absent_normalization_does_not_weaken_real_validation(client):
+    """归一只针对「缺席」：真实非法值仍须报错，别顺手把校验放宽。"""
+    setup = _setup(client, "strict_bogus")
+    ctx = _ctx("parent", parent_id=setup["parent_id"])
+
+    with pytest.raises(ToolArgumentError):
+        _run(_spec("list_parent_tasks"), ctx, {"status": "archived"})
+    with pytest.raises(ToolArgumentError):
+        _run(_spec("list_wrong_questions"), ctx, {"limit": -1})
+    with pytest.raises(ToolArgumentError):
+        _run(_spec("list_wrong_questions"), ctx, {"limit": "abc"})
+    with pytest.raises(ToolArgumentError):
+        _run(_spec("list_parent_tasks"), ctx, {"child_id": "abc"})  # 真垃圾值不放过
+
+
+TEXTUAL_ABSENCE_VALUES = ["null", "NULL", "None", "undefined", "nil", "all", "", "   ", "n/a"]
+
+
+def _absence_tag(prefix: str, blank: str) -> str:
+    """每个参数用例必须独占 tag：``_create_child`` 断言 201，同一轮内重名会 400。"""
+    return f"{prefix}{TEXTUAL_ABSENCE_VALUES.index(blank)}"
+
+
+@pytest.mark.parametrize("blank", TEXTUAL_ABSENCE_VALUES)
+def test_textual_absence_in_child_id_is_treated_as_unspecified(client, blank):
+    """真机回归：模型把「没有目标娃娃」写成**字符串** ``"null"`` 传给 ``child_id``。
+
+    旧行为：``str("null").strip()`` 为真 → 拿去解析 uuid → ``ToolArgumentError``
+    「child_id 不是合法的 uuid：'null'」→ 模型再试一轮（真机「查询草稿任务」即此）。
+    现在必须等价于「不指定目标」：草稿仍进 ``unassigned_items``（不被误判为精确指定）。
+    """
+    setup = _setup(client, _absence_tag("cid", blank))
+    ctx = _ctx("parent", parent_id=setup["parent_id"])
+    spec = _spec("list_parent_tasks")
+
+    filled = _run(spec, ctx, {"child_id": blank})
+    assert filled == _run(spec, ctx)
+    assert [i["title"] for i in filled["unassigned_items"]] == [setup["draft"]["title"]]
+
+
+@pytest.mark.parametrize("blank", TEXTUAL_ABSENCE_VALUES)
+def test_textual_absence_in_child_name_is_treated_as_unspecified(client, blank):
+    """``child_name`` 同一回归面：文本化缺席不得被当作「找不到这个娃」而抛错。"""
+    setup = _setup(client, _absence_tag("cname", blank))
+    ctx = _ctx("parent", parent_id=setup["parent_id"])
+    spec = _spec("list_parent_tasks")
+
+    assert _run(spec, ctx, {"child_name": blank}) == _run(spec, ctx)

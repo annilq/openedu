@@ -369,3 +369,41 @@ def test_no_tools_delegates_to_agent_run():
     assert [ev.text for ev in events if ev.eventType == EVENT_ASSISTANT_MESSAGE] == [
         "来自一次性 run（无工具路径）"
     ]
+
+
+# ── 防护：模型把工具调用写成文本/XML 而非原生 ToolCall 时，不得把原始协议当答案泄露 ──
+def test_text_tool_call_protocol_is_not_leaked_as_answer():
+    """回归：模型本应发起原生 function calling，却把 ``<invoke name="...">`` 写进正文。
+
+    旧实现会把这段原始协议随 ``assistant_message`` 直接回流给用户（暴露内部工具调用
+    格式、且未真正执行查询）。现在应判为 TOOL_UNSUPPORTED 硬失败，绝不泄露原始协议。
+    """
+    leaked = (
+        'Let me call the tool.<invoke name="list_x">'
+        '<parameter name="child_id" string="true">c1</parameter></invoke>'
+    )
+    provider = _ScriptedProvider([[TextDelta(delta=leaked)]])
+    agent = _Agent(provider=provider, tools=[_spec()])
+
+    events = asyncio.run(_collect(agent))
+
+    errs = _errors(events)
+    assert len(errs) == 1
+    assert errs[0].code == "TOOL_UNSUPPORTED"
+    # 关键：不得出现任何助手文本——原始协议不能落到用户面前
+    assert EVENT_ASSISTANT_MESSAGE not in _types(events)
+    assert leaked not in "".join(
+        ev.text or "" for ev in events if ev.eventType == EVENT_THINKING
+    )
+
+
+# ── 防护不误伤：普通文本收尾（无调用协议标记）仍正常作为答案 ──
+def test_plain_text_answer_without_protocol_marker_passes_through():
+    provider = _ScriptedProvider([[TextDelta(delta="我只查学习数据，无法帮你写诗。")]])
+    agent = _Agent(provider=provider, tools=[_spec()])
+
+    events = asyncio.run(_collect(agent))
+
+    assert EVENT_ERROR not in _types(events)
+    texts = [ev.text for ev in events if ev.eventType == EVENT_ASSISTANT_MESSAGE]
+    assert texts == ["我只查学习数据，无法帮你写诗。"]

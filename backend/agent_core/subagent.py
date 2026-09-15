@@ -16,6 +16,7 @@ AG-UI 事件帧）。意图路由由 ``AgentRuntime`` 负责，各 SubAgent 只�
 from __future__ import annotations
 
 import json
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator
@@ -120,6 +121,27 @@ class BaseSubAgent(ABC):
 # 认证 / 限流 / 网络走策展文案，原始厂商报文只进日志（不泄露被拒凭据尾号）。
 
 
+# 模型把工具调用「写成了文本」的判定：文本里出现工具调用协议标记，且点名了某个真实工具。
+# 命中即视为模型未走原生 function calling（把调用叙述进了思考/正文），必须硬失败，
+# 绝不能把这段原始协议当答案回流（ADR-0033：禁止静默降级为纯文本）。
+_TOOL_CALL_PROTOCOL_RE = re.compile(
+    r'(?:<invoke\s+name=|"name"\s*:\s*"|function_call|"function"\s*:\s*\{)',
+    re.IGNORECASE,
+)
+
+
+def _text_looks_like_tool_call(text: str, tool_names: list[str]) -> bool:
+    """文本是否伪装成了工具调用：含调用协议标记且点名了已注册工具。
+
+    仅作「该不该硬失败」的粗筛——命中说明模型把 ``<invoke name="...">`` / JSON
+    ``"name": "..."`` 这类调用式写进了文本而非产出原生 ``ToolCall`` 事件，此时继续把
+    ``acc`` 当答案是把内部协议泄露给用户，故交由调用方判为 TOOL_UNSUPPORTED。
+    """
+    if not _TOOL_CALL_PROTOCOL_RE.search(text):
+        return False
+    return any(name and name in text for name in tool_names)
+
+
 async def run_with_tools(
     agent: BaseSubAgent,
     message: str,
@@ -167,6 +189,8 @@ async def run_with_tools(
         acc = ""
         turn_calls: list[dict] = []  # 本轮模型请求的工具（含 ref，供适配器重建 ToolRequest）
         results: list[dict] = []  # 本轮工具结果（须紧随上面的 assistant 条目入 history）
+        # 本轮回显的思考缓冲：判定为「协议泄露」时整段丢弃，绝不外泄原始工具调用伪协议。
+        turn_thinking: list[str] = []
 
         # ── 生命周期钩子（可选，LLM 不可见，P2 extension seam） ──
         # before_turn：每轮 LLM 调用前可改写 (system, prompt, history)；异常被吞，回退原值。
@@ -192,7 +216,7 @@ async def run_with_tools(
             ):
                 if isinstance(ev, TextDelta):
                     acc += ev.delta
-                    yield thinking(ev.delta)
+                    turn_thinking.append(ev.delta)  # 缓冲：轮次结束判定后再决定是否冲刷
                 elif isinstance(ev, ToolCall):
                     ref = f"call_{ref_seq}"
                     ref_seq += 1
@@ -240,10 +264,27 @@ async def run_with_tools(
         # 工具请求轮必须先入 history（成对不变量：assistant.tool_calls → tool 结果），
         # 否则适配器无法重建 provider 要求的 ToolRequest ↔ ToolResponse 配对。
         if turn_calls:
+            for t in turn_thinking:  # 干净轮：冲刷本轮回显思考
+                yield thinking(t)
             history.append({"role": "assistant", "content": acc, "tool_calls": turn_calls})
             history.extend(results)
             continue
 
+        # 工具型 subagent：本轮模型未产出任何原生 ToolCall 却留下了文本。
+        # 若文本里出现了已注册工具名的「调用式」写法（模型把工具调用写成了文本 /
+        # 思维链里的伪协议，而非标准 function calling），这是模型未走原生 FC 的表现——
+        # 不能把这段原始协议当答案回流给用户（ADR-0033：禁止静默降级为纯文本）。
+        if tools and acc and _text_looks_like_tool_call(acc, [t.name for t in tools]):
+            # 协议泄露：直接丢弃本轮回显思考（含工具调用伪协议），绝不外泄，只给干净错误。
+            yield error(
+                "当前模型未以标准 function calling 返回工具调用（疑似将调用写成了文本/思维链），"
+                "查询无法执行。请使用支持原生工具调用的模型，或在模型配置中关闭思维链后重试。",
+                code="TOOL_UNSUPPORTED",
+            )
+            return
+
+        for t in turn_thinking:  # 干净轮：冲刷本轮回显思考
+            yield thinking(t)
         if acc:
             yield assistant_message(acc)
         return

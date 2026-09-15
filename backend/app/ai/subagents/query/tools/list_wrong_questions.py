@@ -12,10 +12,11 @@ from agent_core.subagent import SubAgentContext
 from agent_core.tools import ToolSpec
 from app.ai.subagents.query.tools._shared import (
     LOCATOR_PROPS,
-    ToolArgumentError,
     child_block,
     dump,
     envelope,
+    optional_int,
+    optional_str,
     project_for_role,
     resolve_children,
 )
@@ -31,15 +32,10 @@ MAX_LIMIT = 200
 
 
 async def handler(args: dict[str, Any], *, ctx: SubAgentContext, session: Any = None) -> Any:
-    subject = args.get("subject")
-    limit = args.get("limit")
+    # 缺席归一（ADR-0040）：strict 模式会替模型补 ""/0，模型也可能自发填 all/none。
+    subject = optional_str(args.get("subject"))
+    limit = optional_int(args.get("limit"), name="limit")
     if limit is not None:
-        try:
-            limit = int(limit)
-        except (TypeError, ValueError) as exc:
-            raise ToolArgumentError(f"limit 必须是整数，收到：{limit!r}") from exc
-        if limit <= 0:
-            raise ToolArgumentError("limit 必须大于 0。")
         limit = min(limit, MAX_LIMIT)
 
     children = resolve_children(
@@ -72,11 +68,11 @@ SPEC = ToolSpec(
             **LOCATOR_PROPS,
             "subject": {
                 "type": "string",
-                "description": "学科过滤，如「数学」「语文」；不传＝全部学科。",
+                "description": "学科过滤，如「数学」「语文」；不传或传空字符串＝全部学科。",
             },
             "limit": {
                 "type": "integer",
-                "description": f"最多返回多少道错题（默认全部，上限 {MAX_LIMIT}）。",
+                "description": f"最多返回多少道错题（0 或空＝不限，上限 {MAX_LIMIT}）。",
             },
         },
         "required": [],

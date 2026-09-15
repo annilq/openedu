@@ -12,11 +12,13 @@ from agent_core.subagent import SubAgentContext
 from agent_core.tools import ToolSpec
 from app.ai.subagents.query.tools._shared import (
     LOCATOR_PROPS,
+    NO_FILTER,
     ToolArgumentError,
     caller_role,
     child_block,
     dump,
     envelope,
+    optional_str,
     project_for_role,
     resolve_children,
     resolve_parent,
@@ -25,7 +27,7 @@ from app.features.tasks import service as tasks_service
 
 NAME = "list_parent_tasks"
 DESCRIPTION = (
-    "查询任务清单。家长：我发布的任务（可用 status 过滤 draft/assigned/done）。"
+    "查询任务清单。家长：我发布的任务（可用 status 过滤 draft/assigned/done/all）。"
     "娃娃：我今天要做的任务。用于「我有哪些任务」「作业做完了吗」这类问题。"
 )
 
@@ -33,15 +35,16 @@ TASK_STATUSES = ("draft", "assigned", "done")
 
 
 async def handler(args: dict[str, Any], *, ctx: SubAgentContext, session: Any = None) -> Any:
-    status = args.get("status")
+    # 缺席归一：strict 模式会替模型补 ""，模型也可能自发填 all/none（见 _shared 顶部说明）。
+    status = optional_str(args.get("status"))
     if status is not None and status not in TASK_STATUSES:
         raise ToolArgumentError(
-            f"status 只能是 {list(TASK_STATUSES)} 之一，收到：{status!r}"
+            f"status 只能是 {[NO_FILTER, *TASK_STATUSES]} 之一，收到：{status!r}"
         )
-    child_id = args.get("child_id")
-    child_name = args.get("child_name")
+    child_id = optional_str(args.get("child_id"))
+    child_name = optional_str(args.get("child_name"))
     # 是否显式指定了目标娃娃：决定「未指派任务」是否随响应返回。
-    explicit_target = bool(child_id) or bool(str(child_name or "").strip())
+    explicit_target = bool(child_id or child_name)
 
     children = resolve_children(
         session=session, ctx=ctx, child_id=child_id, child_name=child_name
@@ -81,8 +84,13 @@ SPEC = ToolSpec(
             **LOCATOR_PROPS,
             "status": {
                 "type": "string",
-                "enum": list(TASK_STATUSES),
-                "description": "任务状态过滤：draft 草稿 / assigned 已派发 / done 已完成。不传＝全部。",
+                # enum 必须含 NO_FILTER：strict 模式下参数被强制必填，枚举里没有「全部」
+                # 取值时模型无合法值可填，只能填 "" → 被拒 → 陷入重试（ADR-0040）。
+                "enum": [NO_FILTER, *TASK_STATUSES],
+                "description": (
+                    "任务状态过滤：draft 草稿 / assigned 已派发 / done 已完成 / "
+                    "all 全部。不过滤时传 all 或空字符串。"
+                ),
             },
         },
         "required": [],

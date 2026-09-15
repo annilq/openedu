@@ -11,10 +11,10 @@ from agent_core.subagent import SubAgentContext
 from agent_core.tools import ToolSpec
 from app.ai.subagents.query.tools._shared import (
     LOCATOR_PROPS,
-    ToolArgumentError,
     child_block,
     dump,
     envelope,
+    optional_int,
     project_for_role,
     resolve_children,
 )
@@ -28,14 +28,8 @@ DESCRIPTION = (
 
 
 async def handler(args: dict[str, Any], *, ctx: SubAgentContext, session: Any = None) -> Any:
-    limit = args.get("limit")
-    if limit is not None:
-        try:
-            limit = int(limit)
-        except (TypeError, ValueError) as exc:
-            raise ToolArgumentError(f"limit 必须是整数，收到：{limit!r}") from exc
-        if limit <= 0:
-            raise ToolArgumentError("limit 必须大于 0。")
+    # 缺席归一（ADR-0040）：strict 模式会替模型补 0，0 恒表示「不设限」。
+    limit = optional_int(args.get("limit"), name="limit")
 
     children = resolve_children(
         session=session,
@@ -62,7 +56,7 @@ SPEC = ToolSpec(
             **LOCATOR_PROPS,
             "limit": {
                 "type": "integer",
-                "description": "最多返回多少道待复习题（不传＝全部）。",
+                "description": "最多返回多少道待复习题（0 或空＝不限）。",
             },
         },
         "required": [],

@@ -26,7 +26,9 @@ from app.features.children.service import list_children_of
 # 契约测试遍历全部工具、跑一遍娃娃视角，断言本集合中的键不出现。
 ANSWER_FIELDS: frozenset[str] = frozenset({"answer", "explanation"})
 
-_LOCATOR_DESC = "与 {other} 二选一；都不传＝家长名下全部娃娃 / 娃娃本人。"
+_LOCATOR_DESC = (
+    "与 {other} 二选一；不指定时传空字符串，两者都为空＝家长名下全部娃娃 / 娃娃本人。"
+)
 
 # 全部查询工具共用的两个定位参数（同一份 schema 片段，保证模型侧描述一致）。
 LOCATOR_PROPS: dict[str, Any] = {
@@ -40,6 +42,34 @@ LOCATOR_PROPS: dict[str, Any] = {
     },
 }
 
+# ── OpenAI strict 模式下的「必填」陷阱与缺席编码（ADR-0040） ──
+#
+# genkit_openai 的 ``_get_tools_definition`` 对**每个**工具无条件套
+# ``openai.lib._pydantic._ensure_strict_json_schema`` 并打 ``strict: True``；该函数把
+# ``required`` 重写为**全部 property**（实现第 57 行
+# ``json_schema["required"] = [prop for prop in properties.keys()]``）。
+# 于是本文件写的 ``"required": []`` 在 wire 上并不存在——模型被迫为每个参数编一个值。
+#
+# 实测（deepseek-v4-flash / 真接口）：strict 下 ``list_parent_tasks`` 的入参为
+# ``{"child_id": "", "child_name": "", "status": ""}``。此时若某参数的「缺席」没有类型合法的
+# 编码，模型只能填非法值 → 收到硬错误 → 反复试探（省略 → 仍被要求必填 → 空串 → 还是错）
+# → 撞上 SOP「不重复调用同一个工具」后空转、把调用叙述成文本。
+#
+# 两条不变量（由 ``tests/ai/test_query_tools_contract.py`` 的行为级守卫测试守住）：
+# 1. 每个可省略参数都必须有**类型合法的缺席编码**：字符串用 ``""``，整数用 ``0``；
+# 2. 枚举型参数必须把 ``NO_FILTER``（``"all"``）列进 ``enum``，否则模型无合法值可填。
+#
+# 真机第二例：模型把「没有目标娃娃」写成了**字符串** ``"null"`` 传给 ``child_id``
+# （``optional_str`` 的缺席值把文本化的 ``None``/``null`` 一并覆盖，JSON ``null`` 本就是
+# ``None``）——两条路径都必须归一到「未提供」，否则模型会拿到 ``child_id 不是合法的 uuid``
+# 再试一轮。``"undefined"``/``"nil"`` 是同一类文本化缺席（JS / Ruby 口径），一并收。
+UNSET_TOKENS: frozenset[str] = frozenset(
+    {"", "all", "any", "*", "none", "null", "nil", "undefined", "unset", "n/a", "na"}
+)
+
+# 枚举型可选参数的显式「全部 / 不过滤」取值。
+NO_FILTER = "all"
+
 
 class ToolArgumentError(ValueError):
     """入参不合法 / 目标不存在。
@@ -49,18 +79,53 @@ class ToolArgumentError(ValueError):
     """
 
 
+def optional_str(raw: Any) -> str | None:
+    """字符串型可选参数的缺席归一：``None`` / 空白 / ``all`` / ``none``… → ``None``。
+
+    ``None`` 与空字符串在语义上是同一件事（未提供），统一收敛到 ``None``，避免
+    「strict 模式替模型补的 ``""``」（以及模型自发填的 ``all``）被当成有意义的过滤值。
+    """
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text or text.lower() in UNSET_TOKENS:
+        return None
+    return text
+
+
+def optional_int(raw: Any, *, name: str) -> int | None:
+    """整型可选参数的缺席归一：``None`` / 空串 / ``0`` → ``None``（=不设限）。
+
+    ``0`` 显式表示「不设限」——strict 模式下模型必须填一个整数，没有别的缺席写法。
+    负数报错（语义上无意义，且能提示模型填错）。
+    """
+    if raw is None:
+        return None
+    if isinstance(raw, str) and not raw.strip():
+        return None
+    try:
+        value = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise ToolArgumentError(f"{name} 必须是整数，收到：{raw!r}") from exc
+    if value < 0:
+        raise ToolArgumentError(f"{name} 不能为负数：{raw!r}")
+    return value or None
+
+
 def caller_role(ctx: SubAgentContext) -> str:
     """调用者角色（小写归一），工具据它决定可查范围。"""
     return (ctx.role or "").strip().lower()
 
 
-def _as_uuid(value: Any, *, field: str) -> UUID:
+def _as_uuid(value: Any, *, field: str, hint: str = "") -> UUID:
     if isinstance(value, UUID):
         return value
     try:
         return UUID(str(value))
     except (ValueError, TypeError, AttributeError) as exc:
-        raise ToolArgumentError(f"{field} 不是合法的 uuid：{value!r}") from exc
+        # hint 给模型一条可执行的出路：这类错误回灌后模型要靠自纠才能继续，
+        # 光说「不是 uuid」它会换个猜法重试（真机见过连试三轮后放弃）。
+        raise ToolArgumentError(f"{field} 不是合法的 uuid：{value!r}{hint}") from exc
 
 
 def _load_user(session: Session, user_id: UUID, *, message: str) -> User:
@@ -93,8 +158,16 @@ def resolve_children(
     - **家长**：``child_id`` / ``child_name`` 二选一；都不传＝名下全部娃娃；
       指定了但不在名下 → 抛 ``ToolArgumentError``（不静默返回空，避免模型把
       「你没这个娃」误读成「这个娃没数据」）。
+
+    入参先过 ``optional_str``：空串 / ``all`` / ``none`` 一律视为「未指定」。
     """
     extra: dict[str, Any] = ctx.extra or {}
+
+    # 缺席归一收口在此（全部定位工具的公用入口，ADR-0033 决策 8）：strict 模式会替模型补
+    # ``""``，模型也可能自发填 ``all``/``none``；不归一的话它们会被当作 uuid 去解析而报错，
+    # 模型随即陷入重试（见本模块顶部「strict 模式下的必填陷阱」）。
+    child_id = optional_str(child_id)
+    child_name = optional_str(child_name)
 
     if caller_role(ctx) == "child":
         own_raw = extra.get("child_id")
@@ -106,13 +179,17 @@ def resolve_children(
         return [own]
 
     parent = resolve_parent(session=session, ctx=ctx)
-    if child_id is not None and str(child_id).strip():
+    if child_id:
         try:
             return [
                 require_owned_child(
                     session=session,
                     owner_id=parent.id,
-                    child_id=_as_uuid(child_id, field="child_id"),
+                    child_id=_as_uuid(
+                        child_id,
+                        field="child_id",
+                        hint="（按昵称定位请改用 child_name；不指定目标请留空）",
+                    ),
                     message="未找到该娃娃，或该娃娃不属于你的账号。",
                 )
             ]
@@ -121,8 +198,8 @@ def resolve_children(
             # 归一为 ToolArgumentError，避免业务异常类型从 REST 层漏进内核调用栈。
             raise ToolArgumentError(str(exc)) from exc
 
-    if child_name is not None and str(child_name).strip():
-        keyword = str(child_name).strip()
+    if child_name:
+        keyword = child_name
         hits = [
             c
             for c in list_children_of(session=session, parent_id=parent.id)
