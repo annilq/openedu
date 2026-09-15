@@ -1316,6 +1316,12 @@ class AppText {
 /// - [standard]：2px 墨黑描边 + 硬阴影，用于独立卡片 / 强调件。
 /// - [listRow]：1px 墨黑描边 + 无阴影，用于密集列表的逐行卡片——避免每行
 ///   都压 2px 边 + 硬阴影导致家长端看板视觉过载（「统一到家长端上限」的代价补偿）。
+///
+/// ⚠️ **卡片比内容高时，内容会贴顶、不会垂直居中**：底层 [ShadCard] 内部固定是
+/// `Row(crossAxisAlignment: start)` → `Column(mainAxisSize: min)`，内容只按自身高度
+/// 收缩并朝上沿对齐。内容自撑高度时（绝大多数用法）两者相等、看不出问题；一旦外面用
+/// `SizedBox(height:)` 把卡片钉高（如侧栏头部触发器），差值就变成底部一段空白。
+/// 调用点需自己包一层 `Center`——不要指望这里居中，改这里会动到全站每张卡片的布局。
 enum AppCardVariant { standard, listRow }
 
 class AppCard extends StatelessWidget {

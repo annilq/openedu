@@ -166,43 +166,51 @@ class _ParentChildSelectorState extends ConsumerState<ParentChildSelector> {
         margin: EdgeInsets.zero,
         // 仅横向内边距：高度由外层 SizedBox 钉死，纵向 padding 会把内容挤扁。
         padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-        child: Row(
-          children: [
-            if (hasChildren)
-              AvatarSquircle.xs(name: name)
-            else
-              Icon(LucideIcons.plusCircle, size: 20, color: scheme.accent),
-            const SizedBox(width: AppSpacing.sm),
-            Expanded(
-              child: Text.rich(
-                TextSpan(
-                  children: [
-                    TextSpan(
-                      text: hasChildren ? name : '添加娃娃',
-                      style: text.labelMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        // 无娃娃时这个触发器的语义从「当前是 A」变成「去添加」，
-                        // 用 accent 表态是动作，而不是把动作名当成娃娃名。
-                        color: hasChildren ? scheme.onSurface : scheme.accent,
-                      ),
-                    ),
-                    if (hasChildren && grade > 0)
+        // ⚠️ `Center` 不能省。外层 `SizedBox` 把卡片钉到 44，而 `ShadCard` 内部那条
+        // Row 是 `crossAxisAlignment: start` + `Column(mainAxisSize: min)`
+        // （shadcn 默认，见 `card.dart`）——内容**只按自身高度收缩、朝上沿贴**，
+        // 不会因为容器被拉高而垂直居中。实测：卡片 12–56（h=44）、头像 13–41（h=28），
+        // 上边距 1、下边距 15，内容中心比卡片中心高 7px——就是「内容与容器没有上下对齐」。
+        // 这一层只在本卡「容器比内容高」时才有意义，所以修在调用点而不是 `AppCard` 内部。
+        child: Center(
+          child: Row(
+            children: [
+              if (hasChildren)
+                AvatarSquircle.xs(name: name)
+              else
+                Icon(LucideIcons.plusCircle, size: 20, color: scheme.accent),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text.rich(
+                  TextSpan(
+                    children: [
                       TextSpan(
-                        text: ' · $grade年级',
+                        text: hasChildren ? name : '添加娃娃',
                         style: text.labelMedium?.copyWith(
-                          color: scheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w600,
+                          // 无娃娃时这个触发器的语义从「当前是 A」变成「去添加」，
+                          // 用 accent 表态是动作，而不是把动作名当成娃娃名。
+                          color: hasChildren ? scheme.onSurface : scheme.accent,
                         ),
                       ),
-                  ],
+                      if (hasChildren && grade > 0)
+                        TextSpan(
+                          text: ' · $grade年级',
+                          style: text.labelMedium?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                    ],
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
               ),
-            ),
-            const SizedBox(width: AppSpacing.xs),
-            Icon(LucideIcons.chevronsUpDown,
-                size: 14, color: scheme.onSurfaceVariant),
-          ],
+              const SizedBox(width: AppSpacing.xs),
+              Icon(LucideIcons.chevronsUpDown,
+                  size: 14, color: scheme.onSurfaceVariant),
+            ],
+          ),
         ),
       ),
     );

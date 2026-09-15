@@ -163,6 +163,39 @@ void main() {
         reason: '头部顶部留白，贴边会让卡片与侧栏上边缘黏在一起');
   });
 
+  /// 触发卡的可见外框（含 1px 发丝描边）：选择器子树里第一个带描边的 `Container`。
+  ///
+  /// `ShadCard` 内部就是一个 `Container(decoration: BoxDecoration(border: ...))`，
+  /// 不是 `ShadDecorator`（探针实测：搜 `ShadDecorator` 找不到元素）。
+  Finder triggerCard() => find
+      .descendant(
+        of: find.byType(ParentChildSelector),
+        matching: find.byWidgetPredicate(
+          (w) => w is Container && w.decoration is BoxDecoration &&
+              (w.decoration! as BoxDecoration).border != null,
+        ),
+      )
+      .first;
+
+  testWidgets('展开态：触发卡内容与容器上下居中（钉高后不得贴顶）', (tester) async {
+    final storage = await makeStorage();
+    await pumpShell(tester, storage);
+
+    // 卡片被 `SizedBox(height: tapTarget)` 钉到 44，内容只有 28（头像高度）。
+    // 而 `ShadCard` 内部是 `Row(crossAxisAlignment: start)` + `Column(min)`，
+    // 内容**不会**因容器被拉高而居中 —— 修前实测：卡片 12–56、头像 13–41，
+    // 上边距 1、下边距 15，内容中心比卡片中心高 7px。修法是在卡片内容外补 `Center`。
+    final card = tester.getRect(triggerCard());
+    final avatar = tester.getRect(find.byType(AvatarSquircle).first);
+
+    expect(card.height, AppLayout.tapTarget, reason: '卡片仍须钉到 tapTarget');
+    expect((avatar.top + avatar.bottom) / 2, closeTo((card.top + card.bottom) / 2, 1),
+        reason: '内容中心必须等于容器中心；容差 1px 留给 1px 发丝描边与亚像素舍入。'
+            '贴顶（而非居中）说明卡片内容外面漏了 `Center`');
+    expect(avatar.top - card.top, closeTo(card.bottom - avatar.bottom, 1),
+        reason: '上下留白必须对称');
+  });
+
   testWidgets('轨态：选择器降级为头像，不溢出、不丢失（带 Expanded 的行会撑爆 48px）',
       (tester) async {
     final storage = await makeStorage();
