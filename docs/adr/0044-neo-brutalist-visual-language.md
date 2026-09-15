@@ -111,7 +111,72 @@ token 层落地后，剩余页面按「**文件互斥**」拆成可并行的批�
 - **已完成**：家长首页 5 子视图、练习、复习（含错题本）、孩子档案、模型管理、账户/登录、AI 助手（4 个强耦合文件作为**一条不拆分的流**）、家长草稿审核页 —— 均套 `AppCard` / `AppCard.listRow` / 学科三重编码 / 撞色 CTA / `PopIn` 入场。
 - **无需改**：`home_screen`（纯组合根，零裸样式）、`child_mastery_screen`（薄壳）、`mastery_board`（本就轻量）。
 - **全局收尾**：`reducedMotionOf` 审计补齐 `AppOptionTile` / `AdaptiveShell`（`AnimatedContainer` + `AnimatedPositioned`）/ `AppLoading` 骨架 shimmer 的显式归零或停表。`CupertinoApp` **未**加 `HeroController`——全仓无 `Hero(` 使用，加了是死代码，待首个共享元素转场出现再补。
-- **未铺开（下一批）**：`shared/widgets/` 中除 `app_motion.dart` 外的组件（`app_option_tile` 视觉、`app_inputs` 的 1px 描边、`app_top_bar`、`app_toast`、`app_answer_result_dialog`、`app_quiz_result_card`、`adaptive_shell` 描边与配色、`stream_reasoning_panel` 等）仍是旧 Linear 配色。它们被并行流的「禁改 `shared/`」红线挡在门外，需作为**独立一批**处理——共享组件改一处影响多页，不宜夹在页面流里被多流并发改。
+- **共享组件批次（2026-09-15 第三轮，已完成）**：`shared/widgets/` 与主题层浮层一并收口。共享组件**全站共用**（改一处影响多页），因此不夹在并行页面流里，单独顺序做。详见下节。
+
+## `shared/widgets` 铺开：三类真实缺陷（2026-09-15 第三轮）
+
+### 类型一：「白色物体在纸底上没有边界」
+
+这是本轮最主要的发现，属**真实可见性缺陷**而非审美取舍。根因：`surfaceRaised` 解析为纯白 `#FFFFFF`，
+页面纸底是 `#FDFBF7` —— 对比 **~1.02:1**；`surfaceSunken` (#F2F0EA) 在白卡面上 **~1.09:1**。
+旧 Linear 体系靠浅灰 `outline` (#DEDDD8) 的 1px 边兜底；token 层把 `outline` 换成墨黑、并把卡片边提到
+2px 时，这些「只写了 1px 或干脆没写边」的组件就**失去了边界**，视觉上融进页面。
+
+修法一律是**补描边**（不是加粗）——墨黑边在纸底的对比约 19:1，只要存在就够：
+
+| 组件 | 原状 | 现状 |
+|---|---|---|
+| `AppOptionTile` 未选中态 | 白底、**无边框** | 1.5px 墨黑边；选中态 2px 边 + 硬阴影（不整行填充，它是列表行） |
+| `AppQuizResultCard` 外卡 | 白底直角、无边框无阴影 | 改用 `AppCard`（2px + 硬阴影） |
+| `AppTopBar` | 白底、**无边框** | 底部发丝墨黑边 |
+| `_TagChip` 非学科分支 | `surfaceSunken` 底、无边框 | 1.5px 墨黑边（学科分支早已有，这里漏了） |
+| `badge()` 三个 shadcn 徽标 | 无边框 | 1.5px 墨黑边 |
+| `AppError` 88px 状态块 | 浅红底、无边框 | 2px 墨黑边 |
+| `AppAnswerResultDialog` 36px 图标块 | 浅绿/浅红底、无边框 | 2px 墨黑边 |
+| `AppQuizResultCard` 进度条槽 | `surfaceSunken` 底、无边框 | 2px 墨黑边 |
+| `StreamReasoningPanel` 容器 / 生成中标签 | `Border.all(color:)` **默认 1px**；标签无边框 | 2px 边 + 硬阴影；标签 1.5px 边 |
+
+### 类型二：浮层的 `shadows` 被显式 `[]` 抹掉
+
+`popoverTheme` 先用 `_surfaceDecoration()` 算出「2px 边 + 硬阴影」，紧接着又写 `shadows: const []`
+把阴影清零；`_dialogTheme` / `ShadSelectTheme` / `ShadCardTheme` 则是「1px + 无阴影」。这类自相矛盾的
+配置让浮层只剩描边，与输入框处在同一视觉平面 —— 读不出「浮在页面之上」。
+（已查证 `ShadSelectTheme.shadows` 会原样传给内部 `ShadPopover`，即**面板本体**，不是触发器。）
+
+**规则**：新增私有助手 `_floatingShadows(c)` 统一浮动表面的阴影口径 —— 暗色模式返回 `AppElevation.none`
+（墨黑实色阴影投在深底上不可见，留着只会显脏）。卡片 / 弹窗 / 下拉面板 / popover 一律走它。
+
+### 类型三：描边只有两档具名，1px 只能硬写
+
+`AppElevation` 原本只有 `borderWidth` (2) 与 `borderWidthSm` (1.5)，于是仓里散落 6 处字面量 `1`。
+`separatorTheme` 的注释写「与卡片边框同档」而值是 `1` —— 正是这个缺口让注释与值互相矛盾
+（卡片边宽从 1 提到 2 时漏改注释）。补 `borderWidthHairline = 1` 并**定死三档语义**：
+
+| 档 | 值 | 用于 |
+|---|---|---|
+| `borderWidth` | 2 | 内容物体：卡片 / 弹窗 / 浮层 / 强调件 |
+| `borderWidthSm` | 1.5 | 密集列表内的小色块：chip / 学科标记 / 徽标 / 题号 |
+| `borderWidthHairline` | 1 | 结构边与重复出现的安静元素：顶栏底边、侧栏右缘、底部导航上缘、区域分隔线、`AppCard.listRow` |
+
+结构 chrome 边统一走**发丝档**（不是卡片的 2px）：同一屏内所有结构边必须同档，2px 留给内容物体。
+
+### 刻意不做一：输入框描边不加粗
+
+`AppTextField` / `AppPickerField` / textarea 保持 **1px**，尽管按钮 / 卡片是 2px。缘由是**三向耦合**：
+`AppControl.inputStrut` 的 `heightOf(context) - 4` 里那个 `-4` 正等于「2×1px 边框 + 2px shadcn 内部预留」，
+再叠加 `inputConstraintsOf` 的 tight 高度 —— 加粗到 2px 会让 `forceStrutHeight` 撑出的行高超出实际文字盒
+而**裁字**。可见性也不依赖加粗：`outline` 已是墨黑，白底黑边约 19:1。
+（已在 `app_inputs.dart` 就地留注释，防后人在「统一描边宽度」时误改。）
+
+### 刻意不做二：`AppToast`
+
+`toast` 令牌亮色即 `AppBrutal.ink`、错误档即深红 —— 已是「实心色块 + 纸面/白字」，本就是新粗野形态。
+给它描边（同色不可见）或墨黑硬阴影（同色底 → 只等于把块放大 3px 的形状不规则）都是负收益。
+
+### 本批未闭合判据
+
+- **真机**：`AppOptionTile` 选中态的 2px 边 + 硬阴影是否过吵（答一道题会同时出现 4 个选项块，密度高于此前任何已验页面）。
+- **真机**：顶栏 / 侧栏的发丝结构边与内容卡片的 2px 边同屏时，粗细差是否被读成「不一致」而非「分层」。
 
 ## Considered Options
 
