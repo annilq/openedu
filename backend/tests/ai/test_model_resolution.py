@@ -1,18 +1,18 @@
-"""模型解析单元测试（ADR-0015 / 票据 08）。
+"""模型解析单元测试（ADR-0015 / ADR-0039）。
 
-验证 ``resolve_engine`` 统一走「模型管理」配置后的解析优先级：
-  1. 显式 ModelConfig id（家长自定义，需 parent_id + session，越权返回 None）
-  2. 内置模型 id（settings.BUILTIN_MODELS 目录）
-  3. 未指定 model_ref 时，回落本家长的默认 ModelConfig（模型管理「设为默认」）
-  4. 均无 → 返回 None
+验证 ``resolve_engine`` 唯一走「模型管理」配置后的解析优先级：
+  1. 显式 ModelConfig id（家长自建，需 parent_id + session，越权返回 None）
+  2. 未指定 model_ref 时，回落本家长的默认 ModelConfig（模型管理「设为默认」）
+  3. 显式引用但查不到 → None（不回落默认，避免静默用错引擎）
+
+ADR-0039 起**不再有内置模型目录**，故原「内置 id 解析」两例已删除；
+如有人重新引入第二份模型声明源，这里应有对应用例回来。
 """
 from __future__ import annotations
 
-import json
-
 from sqlmodel import Session
 
-from app.ai import list_builtin_models, resolve_engine
+from app.ai import resolve_engine
 from app.db.models import ModelConfig, User
 
 
@@ -70,31 +70,17 @@ def test_resolve_explicit_unknown_ref_returns_none(db: Session) -> None:
     assert resolve_engine("nonexistent-id", parent_id=str(parent.id), session=db) is None
 
 
-def test_builtin_model_resolves_engine(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "app.ai.engine.settings.BUILTIN_MODELS",
-        json.dumps(
-            [
-                {
-                    "id": "local-llama",
-                    "label": "本地 Llama",
-                    "provider": "ollama",
-                    "model_name": "llama3",
-                    "base_url": "http://localhost:11434",
-                }
-            ]
-        ),
-    )
-    res = resolve_engine("local-llama")
-    assert res is not None
-    assert res.model == "ollama/llama3"
-    assert res.genkit is not None
+def test_resolve_explicit_id_without_session_returns_none(db: Session) -> None:
+    """显式引用但没带 session / parent_id → 无从鉴权，返回 None（不猜）。"""
+    parent = _make_parent(db, 14)
+    mc = _make_default_model(db, parent)
+    assert resolve_engine(str(mc.id)) is None
 
 
-def test_list_builtin_models_parses_json(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "app.ai.engine.settings.BUILTIN_MODELS",
-        json.dumps([{"id": "x", "label": "X", "provider": "openai_compat", "model_name": "gpt"}]),
-    )
-    builtin = list_builtin_models()
-    assert builtin and builtin[0]["id"] == "x"
+def test_resolve_explicit_id_of_other_parent_returns_none(db: Session) -> None:
+    """显式引用别人的 ModelConfig → None（越权不解析，且不回落自己的默认）。"""
+    owner = _make_parent(db, 15)
+    other = _make_parent(db, 16)
+    mc = _make_default_model(db, owner)
+    _make_default_model(db, other)  # 让对方也有默认模型，确保 None 不是「没得回落」造成的
+    assert resolve_engine(str(mc.id), parent_id=str(other.id), session=db) is None

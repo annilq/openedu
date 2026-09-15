@@ -1,23 +1,21 @@
-"""引擎解析（ADR-0015）：把「模型引用」解析为可用的引擎 + model 字符串。
+"""引擎解析（ADR-0015 / ADR-0039）：把「模型引用」解析为可用的引擎 + model 字符串。
 
-所有引擎配置统一收敛到「模型管理」：
-  - 家长自定义模型落 ``ModelConfig`` 表（api_key 经 Fernet 加密）；
-  - 管理员内置模型走 ``settings.BUILTIN_MODELS`` 目录；
-  - 家长可在「模型管理」中把某个模型「设为默认」。
+**唯一配置源是「模型管理」**（ADR-0039 起）：所有模型都由家长在客户端手动录入，
+落 ``ModelConfig`` 表（api_key 经 Fernet 加密）。不再有管理员 ``BUILTIN_MODELS``
+内置目录，也不读本地 ``LLM_PROVIDER`` / ``DEEPSEEK_*`` 等旁路 env——模型来源单点化，
+避免「同一模型两处声明、行为不一致」。
 
-解析优先级（不再读取本地 LLM_PROVIDER / DEEPSEEK_* 等 env）：
+解析优先级：
   1. 显式 ModelConfig id（家长自定义，需 parent_id + session，越权返回 None）
-  2. 内置模型 id（settings.BUILTIN_MODELS 目录）
-  3. 未指定 model_ref 时，回落本家长的默认 ModelConfig（模型管理「设为默认」）
-  4. 均无 → 返回 None，由上层下发「未配置模型」提示（无离线 mock 兜底，需经「模型管理」配置真实模型）。
+  2. 未指定 model_ref 时，回落本家长的默认 ModelConfig（模型管理「设为默认」）
+  3. 均无 → 返回 None，由上层下发「未配置模型」提示（无离线 mock 兜底）。
 
-本模块只做**配置解析**（读 ModelConfig 表 / 解密密钥 / 读 settings → 中性参数），
+本模块只做**配置解析**（读 ModelConfig 表 / 解密密钥 → 中性参数），
 真正的 Genkit 实例构造在 ``agent_core.adapters.genkit.build_genkit_engine``
 （全工程唯一 ``import genkit`` 处）——app 层不再直接依赖 genkit SDK。
 """
 from __future__ import annotations
 
-import json
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -60,25 +58,13 @@ def _supports_reasoning(model_name: str) -> bool:
 def _as_uuid(value: object) -> uuid.UUID | None:
     """仅当 model_ref 是合法 UUID 时才查 ModelConfig 表。
 
-    ModelConfig 主键为 uuid.UUID，直接把内置 id（如 'local-llama'）传给
-    session.get 会让 UUID 类型的 bind 处理器对字符串调 .hex 而崩溃。
+    ModelConfig 主键为 uuid.UUID，把非 UUID 字符串直接交给 ``session.get`` 会让
+    UUID 类型的 bind 处理器对字符串调 ``.hex`` 而崩溃。非法引用一律当作「查不到」。
     """
     try:
         return uuid.UUID(str(value))
     except (ValueError, TypeError, AttributeError):
         return None
-
-
-def _builtin_models() -> list[dict[str, Any]]:
-    try:
-        return json.loads(settings.BUILTIN_MODELS) or []
-    except (json.JSONDecodeError, ValueError):
-        return []
-
-
-def list_builtin_models() -> list[dict[str, Any]]:
-    """管理员内置模型清单（GET /models 使用，无需登录/家长归属）。"""
-    return _builtin_models()
 
 
 def _get_or_build(
@@ -111,13 +97,14 @@ def resolve_engine(
 ) -> EngineResolution | None:
     """解析模型引用 → 引擎；未配置「模型管理」中的模型时返回 None。
 
-    优先级（统一走「模型管理」配置，不再读取本地 LLM_PROVIDER 等 env）：
+    优先级（唯一配置源是「模型管理」，不再读本地 LLM_PROVIDER 等 env，也没有内置目录）：
       1. 显式 ModelConfig id（家长自定义，需 parent_id + session，越权返回 None）
-      2. 内置模型 id（settings.BUILTIN_MODELS 目录）
-      3. 未指定 model_ref 时，回落本家长的默认 ModelConfig（模型管理「设为默认」）
-      4. 均无 → 返回 None，由上层下发「未配置模型」提示（无离线 mock 兜底，需经「模型管理」配置真实模型）
+      2. 未指定 model_ref 时，回落本家长的默认 ModelConfig（模型管理「设为默认」）
+      3. 均无 → 返回 None，由上层下发「未配置模型」提示（无离线 mock 兜底，需经「模型管理」配置真实模型）
+
+    显式引用查不到时**不回落默认模型**——避免静默用错引擎答出别家的题。
     """
-    # 1) 家长自定义 ModelConfig（仅 model_ref 为合法 UUID 时才查表，避免内置 id 触发 .hex 崩溃）
+    # 1) 家长自定义 ModelConfig（仅 model_ref 为合法 UUID 时才查表）
     if model_ref and session is not None and parent_id is not None:
         mc_id = _as_uuid(model_ref)
         if mc_id is not None:
@@ -126,25 +113,14 @@ def resolve_engine(
                 api_key = decrypt(mc.api_key_enc) if mc.api_key_enc else None
                 return _get_or_build(mc.provider, mc.base_url, api_key, mc.model_name)
 
-    # 2) 内置模型 id
-    if model_ref:
-        for m in _builtin_models():
-            if m.get("id") == model_ref:
-                return _get_or_build(
-                    m.get("provider", "openai_compat"),
-                    m.get("base_url"),
-                    m.get("api_key"),
-                    m["model_name"],
-                )
-
-    # 3) 未指定模型 → 回落本家长在「模型管理」中设为默认的 ModelConfig
+    # 2) 未指定模型 → 回落本家长在「模型管理」中设为默认的 ModelConfig
     if model_ref is None and session is not None and parent_id is not None:
         mc = _default_model_config(session, parent_id)
         if mc is not None:
             api_key = decrypt(mc.api_key_enc) if mc.api_key_enc else None
             return _get_or_build(mc.provider, mc.base_url, api_key, mc.model_name)
 
-    # 4) 无可用模型（mock / 未配置）→ None
+    # 3) 无可用模型（未配置）→ None
     return None
 
 

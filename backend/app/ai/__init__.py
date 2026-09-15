@@ -38,7 +38,7 @@ def __getattr__(name: str) -> Any:
         from app.ai.subagents.question.parsers import QuestionSchema
 
         return QuestionSchema
-    if name in {"resolve_engine", "list_builtin_models", "EngineResolution"}:
+    if name in {"resolve_engine", "EngineResolution"}:
         from app.ai import engine
 
         return getattr(engine, name)
@@ -51,7 +51,6 @@ def __getattr__(name: str) -> Any:
 
 __all__ = [
     "resolve_engine",
-    "list_builtin_models",
     "EngineResolution",
     "generate_question",
     "QuestionSchema",

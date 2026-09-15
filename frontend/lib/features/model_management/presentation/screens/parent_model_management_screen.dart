@@ -10,7 +10,9 @@ import '../../../../shared/widgets/app_toast.dart';
 import '../providers/models_notifier.dart';
 import 'model_form_dialog.dart';
 
-/// 家长端 AI 模型管理页（票据 08）：列出内置 + 自定义模型，支持增删改与设默认。
+/// 家长端 AI 模型管理页：列出、增删改本家长录入的模型，并支持设默认。
+///
+/// ADR-0039：不再有「内置模型」，所有模型都必须手动添加（新增时 api_key 必填）。
 /// 仅家长可见；api_key 由后端加密存储，前端不回显明文。
 class ParentModelManagementScreen extends ConsumerStatefulWidget {
   const ParentModelManagementScreen({super.key});
@@ -83,27 +85,13 @@ class _ParentModelManagementScreenState
               const SectionTitle('AI 模型管理'),
               const SizedBox(height: AppSpacing.sm),
               Text(
-                '选择用于出题 / 答疑的模型。内置模型随系统提供；自定义模型（Ollama / OpenAI 兼容）仅你可见，密钥由后端加密存储。',
+                '选择用于出题 / 答疑的模型。模型需你手动添加（DeepSeek / Ollama / OpenAI 兼容），'
+                '添加时必须填写 API Key，密钥由后端加密存储、仅你可见。',
                 style: text.bodySmall?.copyWith(color: app.onSurfaceVariant),
               ),
               const SizedBox(height: AppSpacing.xl),
-              Text('内置模型',
-                  style:
-                      text.titleMedium?.copyWith(fontWeight: FontWeight.w700)),
-              const SizedBox(height: AppSpacing.md),
-              if (state is ModelsLoaded) ...[
-                ...state.resp.builtin.map(_builtinCard),
-                if (state.resp.builtin.isEmpty) _emptyHint('暂无内置模型'),
-              ] else if (state is ModelsLoading) ...[
-                const AppLoading(),
-              ] else if (state is ModelsError) ...[
-                _emptyHint('加载失败：${(state).message}'),
-              ] else ...[
-                _emptyHint('加载中…'),
-              ],
-              const SizedBox(height: AppSpacing.lg),
               SectionTitle(
-                '自定义模型',
+                '我的模型',
                 trailing: AppPrimaryButton(
                   label: '添加模型',
                   icon: LucideIcons.plus,
@@ -111,11 +99,18 @@ class _ParentModelManagementScreenState
                   onPressed: () => _openForm(context, null),
                 ),
               ),
+              const SizedBox(height: AppSpacing.md),
               if (state is ModelsLoaded) ...[
                 if (state.resp.custom.isEmpty)
-                  _emptyHint('还没有自定义模型，点「添加模型」接入本地 Ollama 或 OpenAI 兼容服务')
+                  _emptyHint('还没有模型，点「添加模型」接入 DeepSeek、本地 Ollama 或其他 OpenAI 兼容服务')
                 else
-                  ...state.resp.custom.map((m) => _customCard(context, m)),
+                  ...state.resp.custom.map((m) => _modelCard(context, m)),
+              ] else if (state is ModelsLoading) ...[
+                const AppLoading(),
+              ] else if (state is ModelsError) ...[
+                _emptyHint('加载失败：${(state).message}'),
+              ] else ...[
+                _emptyHint('加载中…'),
               ],
             ],
           ),
@@ -124,39 +119,7 @@ class _ParentModelManagementScreenState
     );
   }
 
-  Widget _builtinCard(ModelInfo m) {
-    final app = AppTheme.colorsOf(context);
-    final text = AppTheme.textOf(context);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.md),
-      child: AppCard(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Row(
-          children: [
-            Icon(LucideIcons.sparkles, size: 18, color: app.accent),
-            const SizedBox(width: AppSpacing.md),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(m.label,
-                      style: text.labelLarge
-                          ?.copyWith(fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 2),
-                  Text('${m.modelName} · ${m.provider}',
-                      style: text.bodySmall
-                          ?.copyWith(color: app.onSurfaceVariant)),
-                ],
-              ),
-            ),
-            AppTags.info('内置'),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _customCard(BuildContext context, ModelInfo m) {
+  Widget _modelCard(BuildContext context, ModelInfo m) {
     final app = AppTheme.colorsOf(context);
     final text = AppTheme.textOf(context);
     return Padding(

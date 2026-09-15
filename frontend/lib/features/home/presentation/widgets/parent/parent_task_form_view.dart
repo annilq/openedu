@@ -104,7 +104,7 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
     // 家长设为默认的模型（否则取列表首项），保证出题请求带有效 model 而非 null。
     ref.listenManual(modelsNotifierProvider, (prev, next) {
       if (next is! ModelsLoaded || _modelId != null) return;
-      final all = [...next.resp.builtin, ...next.resp.custom];
+      final all = next.resp.custom;
       if (all.isEmpty) return;
       String? defaultId;
       for (final m in all) {

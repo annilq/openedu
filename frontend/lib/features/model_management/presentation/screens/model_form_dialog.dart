@@ -9,12 +9,13 @@ import '../../../../shared/widgets/app_inputs.dart';
 import '../../../../shared/widgets/app_toast.dart';
 import '../providers/models_notifier.dart';
 
-/// 新增 / 编辑自定义模型的对话框（ShadDialog + 表单字段）。
+/// 新增 / 编辑模型的对话框（ShadDialog + 表单字段）。
 ///
 /// 通过 [presets] 渲染「服务商」下拉（DeepSeek / OpenAI / Ollama ...），
 /// 选中后自动带出 base_url 与模型名建议，大幅减少家长手动输入。
 ///
 /// [initial] 为 null 表示新增；否则为编辑（id 用于 PUT）。保存成功后关闭并回调 [onDone]。
+/// ADR-0039：新增时 API Key 必填（本地前置拦截 + 后端强制）；编辑留空 = 不修改。
 class ModelFormDialog extends ConsumerStatefulWidget {
   final ModelInfo? initial;
   final List<ModelProviderPreset> presets;
@@ -107,6 +108,13 @@ class _ModelFormDialogState extends ConsumerState<ModelFormDialog> {
       AppToast.show(context, '名称与模型名不能为空');
       return;
     }
+    // ADR-0039：新增必须带 API Key（后端也强制校验，这里前置拦截以免白跑一趟）；
+    // 编辑留空 = 不修改已有密钥，故仅在新增时必填。
+    final apiKey = _apiKeyCtrl.text.trim();
+    if (widget.initial == null && apiKey.isEmpty) {
+      AppToast.show(context, '请填写 API Key');
+      return;
+    }
     // provider 优先取所选服务商预设；无预设（手动模式）取手动填写值，再回退到编辑态/默认。
     final manualProvider = _providerCtrl.text.trim();
     final provider = _preset?.provider ??
@@ -122,7 +130,7 @@ class _ModelFormDialogState extends ConsumerState<ModelFormDialog> {
                 provider: provider,
                 baseUrl: baseUrl,
                 modelName: modelName,
-                apiKey: _apiKeyCtrl.text.isEmpty ? null : _apiKeyCtrl.text,
+                apiKey: apiKey,
                 isDefault: _isDefault,
                 providerPreset: _presetKey,
               ),
@@ -135,7 +143,7 @@ class _ModelFormDialogState extends ConsumerState<ModelFormDialog> {
                 baseUrl: baseUrl,
                 modelName: modelName,
                 // 编辑时 api_key 留空表示不修改；非空则覆盖。
-                apiKey: _apiKeyCtrl.text.isEmpty ? null : _apiKeyCtrl.text,
+                apiKey: apiKey.isEmpty ? null : apiKey,
                 isDefault: _isDefault,
                 providerPreset: _presetKey,
               ),
@@ -219,12 +227,12 @@ class _ModelFormDialogState extends ConsumerState<ModelFormDialog> {
               ),
               const SizedBox(height: AppSpacing.md),
               AppTextField(
-                label: 'API Key（留空=不修改）',
+                label: widget.initial == null ? 'API Key' : 'API Key（留空=不修改）',
                 controller: _apiKeyCtrl,
                 obscureText: true,
                 hintText: widget.initial != null
                     ? '••••••••（不改请留空）'
-                    : preset?.apiKeyHint,
+                    : (preset?.apiKeyHint ?? '必填：填入该服务的 API Key'),
               ),
               const SizedBox(height: AppSpacing.md),
               Row(

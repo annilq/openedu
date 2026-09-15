@@ -1,13 +1,13 @@
-"""模型管理（ADR-0015 / 票据 08）：仅家长可用。
+"""模型管理（ADR-0015 / ADR-0039）：仅家长可用，模型一律手动录入。
 
-GET  /models           列出可用模型（内置 + 本家长自定义，不含 api_key 明文）
-GET  /models/providers 内置服务商目录（deepseek/openai/... 默认 base_url + 模型名建议）
-POST /models           新增自定义模型（api_key 写入前加密；支持 provider_preset 自动补全）
+GET  /models           列出本家长自建模型（不含 api_key）
+GET  /models/providers 服务商目录（deepseek/openai/... 默认 base_url + 模型名建议）
+POST /models           新增模型（api_key 必填，写入前加密；支持 provider_preset 自动补全）
 GET  /models/default   查本家长默认模型
 PUT  /models/default   设本家长默认模型（body: {id}）
-GET  /models/{id}      查单个自定义模型（越权 / 不存在 → 404）
-PUT  /models/{id}      改自定义模型（支持 provider_preset 自动补全）
-DELETE /models/{id}    删自定义模型
+GET  /models/{id}      查单个模型（越权 / 不存在 → 404）
+PUT  /models/{id}      改模型（支持 provider_preset 自动补全）
+DELETE /models/{id}    删模型
 
 注意路由顺序：/default、/providers 必须排在 /{model_id} 之前，否则会被 /{model_id}
 捕获（model_id="default"/"providers" 不是合法 UUID → 422/405）。
@@ -18,7 +18,6 @@ import uuid
 
 from fastapi import APIRouter, HTTPException, status
 
-from app.ai.engine import list_builtin_models
 from app.ai.model_catalog import get_provider_preset, list_provider_presets
 from app.core.deps import CurrentParent, SessionDep
 from app.core.errors import AppErrorException, ErrCode
@@ -31,7 +30,6 @@ from app.features.model_management.repository import (
     update_model_config,
 )
 from app.features.model_management.schemas import (
-    BuiltinModelInfo,
     DefaultModelReq,
     ModelConfigCreate,
     ModelConfigResp,
@@ -46,18 +44,10 @@ router = APIRouter(prefix="/models", tags=["models"])
 
 @router.get("", response_model=ModelListResp)
 def list_models(*, session: SessionDep, parent: CurrentParent) -> ModelListResp:
-    builtin = [
-        BuiltinModelInfo(
-            id=m["id"],
-            label=m.get("label", m["model_name"]),
-            provider=m.get("provider", "openai_compat"),
-            model_name=m["model_name"],
-            base_url=m.get("base_url"),
-        )
-        for m in list_builtin_models()
-    ]
-    custom = [_to_resp(mc) for mc in list_model_configs(session=session, parent_id=parent.id)]
-    return ModelListResp(builtin=builtin, custom=custom)
+    """本家长的全部模型（ADR-0039：无内置模型，故无需合并两份来源）。"""
+    return ModelListResp(
+        custom=[_to_resp(mc) for mc in list_model_configs(session=session, parent_id=parent.id)]
+    )
 
 
 @router.get("/providers", response_model=list[ProviderPreset])

@@ -150,6 +150,29 @@ def _body(code: ErrCode | str, message: str, status: int, data: Any = None) -> d
     )
 
 
+def _safe_validation_errors(exc: RequestValidationError) -> list[dict[str, Any]]:
+    """把 pydantic 的错误列表压成 **JSON 可序列化**结构。
+
+    pydantic v2 在自定义 ``field_validator`` 抛 ``ValueError`` 时，会把**异常对象本体**
+    放进 ``ctx["error"]``；直接丢给 ``jsonable_encoder`` 会抛
+    ``PydanticSerializationError: Unable to serialize unknown type: <class 'ValueError'>``，
+    于是本该 422 的请求变成 500（且前端只看得到「服务器内部错误」）。
+    这里只保留 loc / msg / type，ctx 内容一律字符串化。
+    """
+    safe: list[dict[str, Any]] = []
+    for e in exc.errors():
+        item: dict[str, Any] = {
+            "loc": [str(x) for x in e.get("loc", [])],
+            "msg": str(e.get("msg", "invalid")),
+            "type": str(e.get("type", "")),
+        }
+        ctx = e.get("ctx")
+        if ctx:
+            item["ctx"] = {str(k): str(v) for k, v in ctx.items()}
+        safe.append(item)
+    return safe
+
+
 def register_error_handlers(app: FastAPI) -> None:
     """在 FastAPI app 上挂 HTTPException / Validation / AppErrorException / 兜底 500。"""
 
@@ -183,10 +206,10 @@ def register_error_handlers(app: FastAPI) -> None:
     async def _validation_handler(
         request: Request, exc: RequestValidationError
     ) -> JSONResponse:
-        errors = exc.errors()
+        errors = _safe_validation_errors(exc)
         lines = []
         for e in errors:
-            loc = ".".join(str(x) for x in e.get("loc", [])) or "<body>"
+            loc = ".".join(e.get("loc", [])) or "<body>"
             lines.append(f"{loc}: {e.get('msg', 'invalid')}")
         message = "; ".join(lines) if lines else "请求参数校验失败"
         return JSONResponse(

@@ -5,16 +5,17 @@ import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/domain/providers/core_providers.dart';
 import '../../../../shared/exceptions/app_exception.dart';
 
-// ───────── AI 模型管理（票据 08，仅家长） ─────────
-/// 新增 / 更新模型请求体。provider 仅允许 ollama / openai_compat。
-/// [providerPreset] 为内置服务商预设 key（如 deepseek），后端据此自动补全
+// ───────── AI 模型管理（仅家长） ─────────
+/// 新增模型请求体。provider 仅允许 ollama / openai_compat。
+/// [apiKey] **必填**（ADR-0039，后端同为必填字段）——类型上不给 `null` 的余地。
+/// [providerPreset] 为服务商预设 key（如 deepseek），后端据此自动补全
 /// provider / base_url；显式传入的 provider / baseUrl 优先。
 class ModelCreateReq {
   final String label;
   final String provider;
   final String? baseUrl;
   final String modelName;
-  final String? apiKey;
+  final String apiKey;
   final bool isDefault;
   final String? providerPreset;
 
@@ -23,7 +24,7 @@ class ModelCreateReq {
     required this.provider,
     this.baseUrl,
     required this.modelName,
-    this.apiKey,
+    required this.apiKey,
     this.isDefault = false,
     this.providerPreset,
   });
@@ -44,6 +45,8 @@ class ModelUpdateReq {
   final String? provider;
   final String? baseUrl;
   final String? modelName;
+  /// 为 null = **不修改**已有密钥（表单留空即为此意）。ADR-0039 起新增必填，
+  /// 但编辑仍允许留空，否则改个名字也得把密钥重打一遍。
   final String? apiKey;
   final bool? isDefault;
   final String? providerPreset;

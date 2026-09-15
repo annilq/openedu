@@ -41,7 +41,7 @@ def _make_draft(client, ptoken, cid, *, model):
         json={
             "title": "选模型卷",
             "child_id": cid,
-            "model": model,  # 家长所选 ollama 内置模型
+            "model": model,  # 家长所选模型（ModelConfig id）
             "specs": [
                 {"subject": "数学", "grade": 2, "knowledge_point": "加法", "qtype": "calc", "difficulty": "easy", "count": 1}
             ],

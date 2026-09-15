@@ -787,14 +787,13 @@ class ModelProviderPreset {
   }
 }
 
-/// 单个可选模型：内置（builtin=true，id 为字符串）或家长自定义（id 为 UUID 字符串）。
+/// 单个可选模型（ADR-0039：模型一律由家长手动录入，不再区分内置/自定义）。
 class ModelInfo {
   final String id;
   final String label;
   final String provider; // ollama | openai_compat
   final String? baseUrl;
   final String modelName;
-  final bool isBuiltin;
   final bool isDefault;
 
   const ModelInfo({
@@ -803,34 +802,28 @@ class ModelInfo {
     required this.provider,
     this.baseUrl,
     required this.modelName,
-    this.isBuiltin = false,
     this.isDefault = false,
   });
 
-  factory ModelInfo.fromJson(Map<String, dynamic> json, {bool builtin = false}) {
+  factory ModelInfo.fromJson(Map<String, dynamic> json) {
     return ModelInfo(
       id: json['id'].toString(),
       label: json['label'] as String,
       provider: json['provider'] as String,
       baseUrl: json['base_url'] as String?,
       modelName: json['model_name'] as String,
-      isBuiltin: builtin,
       isDefault: json['is_default'] as bool? ?? false,
     );
   }
 }
 
 class ModelListResp {
-  final List<ModelInfo> builtin;
   final List<ModelInfo> custom;
 
-  const ModelListResp({this.builtin = const [], this.custom = const []});
+  const ModelListResp({this.custom = const []});
 
   factory ModelListResp.fromJson(Map<String, dynamic> json) {
     return ModelListResp(
-      builtin: (json['builtin'] as List? ?? [])
-          .map((e) => ModelInfo.fromJson(e as Map<String, dynamic>, builtin: true))
-          .toList(),
       custom: (json['custom'] as List? ?? [])
           .map((e) => ModelInfo.fromJson(e as Map<String, dynamic>))
           .toList(),
