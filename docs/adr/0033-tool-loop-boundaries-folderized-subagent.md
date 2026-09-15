@@ -7,6 +7,8 @@
 - **硬失败**：引擎不支持工具调用时适配器抛 `ToolUnsupportedError`，runtime 转 `ERROR(code="TOOL_UNSUPPORTED")` 并中止，**绝不静默降级为纯文本**（`backend/agent_core/subagent.py:11-12,133-134`、`backend/agent_core/ports.py:83`、`backend/agent_core/adapters/genkit.py:351,168`）。
 
 > **补充（ADR-0038，非矛盾）**：「硬失败」这条决策不变，但**失败类别**被收紧了。「不支持工具调用」只指模型缺 function calling 能力；厂商拒绝请求（认证 / 限流 / 网络）另立 `ProviderRequestError` → `ERROR(code="PROVIDER_ERROR")`。本 ADR 早期实现把工具路径上的**任意**引擎异常一律包成 `ToolUnsupportedError`，导致 401 被报成「当前模型不支持工具调用」——见 ADR-0038。
+> **补充（非矛盾）**：「硬失败」还须覆盖**模型把调用写成了文本**的情形。有些模型（本仓实测 `deepseek-v4-flash` 走标准 FC 无此问题，但本地/中转模型常见）不产出原生 `ToolCall`，而把 `<invoke name="...">` / `{"name": "..."}` 这类调用式写进思考或正文。旧实现此时 `turn_calls` 为空 → `acc`（含原始协议）被 `assistant_message` 当答案回流，用户直接看到内部工具调用格式且查询并未执行。现判为硬失败：文本含调用协议标记**且**点名了已注册工具（`_TOOL_CALL_PROTOCOL_RE` + `_text_looks_like_tool_call`，`backend/agent_core/subagent.py:127-142`）→ `ERROR(code="TOOL_UNSUPPORTED")`，且**整段丢弃本轮回显思考**（`turn_thinking` 缓冲后按轮次判定是否冲刷，`:193,219,267,286`），确保原始协议一帧都不外泄。反向不变量：无协议标记的普通文本收尾仍照常作答案（回归用例 `test_plain_text_answer_without_protocol_marker_passes_through`）。
+
 - **同轮多工具**：一轮内模型请求的多个工具全部执行后再回灌，不丢弃后续请求（`backend/agent_core/subagent.py:135`）。
 - **回灌契约**：每轮先入 `assistant(tool_calls=[...])` 再入对应 `tool` 结果（成对出现），适配器据此重建 `ToolRequest ↔ ToolResponse` 配对（`backend/agent_core/subagent.py:137-139,182-203`、`backend/agent_core/ports.py:78`）。
 - **呈现双轨**：`TOOL_RESULT` 存原始载荷（模型上下文 + 落库回放），`render_tool_result` 覆写者可补发 `DATA` 帧供前端渲染，前端零改动（`backend/agent_core/subagent.py:92-99`）。

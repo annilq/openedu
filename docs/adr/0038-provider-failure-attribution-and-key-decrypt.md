@@ -26,3 +26,9 @@
 **Considered Options**：① 只改文案（把「不支持工具调用」改得中性些）——根因（密文外泄 + 归因错）都还在，拒绝；② `decrypt` 失败时抛异常、让整个模型解析失败——密钥轮换会让**所有**已存模型直接不可用，而 `resolve_engine` 的 `None` 语义已被「未配置模型」占用，改契约的爆炸半径远大于收益，拒绝；③ 保留「一律 ToolUnsupportedError」并在上层加词法判断——判断散落多处必然漂移，拒绝；④ 密文一律返回 `None`（采用）+ 适配器 `classify_failure` 单一归类点（采用）+ `user_hint` 挂在异常类型上（采用）。
 
 **Consequences**：密钥轮换后的表现从「玄学 401 + 密文外泄」变成「一条可操作提示 + 服务端 warning 日志」，用户按提示重填密钥即可恢复；`kind` 词法表（`genkit.py:337-371`）是**启发式**，新增厂商时可能要补标记词——未命中的一律落 `unknown` 并带上原始原因，绝不误报成能力问题。遗留（未做，需另起）：① **启动期密钥健康检查**——当前仍无任何主动告警，家长要等到提问失败才知道密钥失效（可考虑 `init_db` 后扫描 `ModelConfig` 并 warn）；② `SECRET_KEY` 仍可被默认值顶替（`MODEL_APIKEY_SECRET` 未配置时用它派生 Fernet 密钥），生产部署应显式配置前者，文档已提示但无强制。
+
+## 补充（ADR-0039 同期，堵住另外两个同族入口）
+
+1. **`env_file` 改为不依赖启动目录**：原 `env_file=("../.env", ".env")` 是**相对 CWD** 解析的——在 `backend/` 里启动能读到 `backend/.env`（含 `MODEL_APIKEY_SECRET`），在仓库根启动就读不到，于是密钥静默回落 `SECRET_KEY`，已存 API Key 全部解不开：与本文事故**同一个失效模式**，只是触发条件从「改名 .env」换成「换个目录起服」。现改为按 `__file__` 解析绝对路径（`app/core/config.py`）。实测在仓库根 / `backend/` / `/tmp` 三种 CWD 下 `MODEL_APIKEY_SECRET` 均正确加载（`DATABASE_URL=sqlite:///./app.db` 仍是相对路径，换目录会指向另一个库文件——同一族问题，未动，起服请固定 `backend/`）。
+2. **停止宣传错误的兜底语义**：根 `.env.example` 原写「`MODEL_APIKEY_SECRET` 留空则使用**进程内随机密钥，重启失效**」——实际是回落 `SECRET_KEY` 派生（`crypto._fernet()`）。两处 `.env.example` 已改写为准确描述并加上「先固定密钥再加模型」的操作顺序。
+3. **随 ADR-0039 顺带修掉一个 422→500 缺陷**：`RequestValidationError` 处理器把 pydantic 原始 `errors()` 交给 `jsonable_encoder`，而自定义校验器抛 `ValueError` 时 pydantic 会把异常对象塞进 `ctx["error"]` → 序列化失败 → 本应 422 的请求变成 500。已加 `_safe_validation_errors()`（`app/core/errors.py`）。

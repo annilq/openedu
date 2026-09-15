@@ -24,9 +24,9 @@ services:
       DATABASE_URL: postgresql+psycopg://wawa:wawa@db:5432/wawa
       SECRET_KEY: ${SECRET_KEY:-change-me-in-prod}
       PROJECT_NAME: 娃娃学习App
-      # 模型经「模型管理」配置（无本地 LLM_PROVIDER mock 兜底）；此处仅注入管理员内置模型预设。
-      # BUILTIN_MODELS 为 JSON 数组：[{"id","provider","model_name","base_url?"}]，provider ∈ {ollama, openai_compat}
-      BUILTIN_MODELS: ${BUILTIN_MODELS:-[]}
+      # 模型一律由家长在「模型管理」里手动添加（ADR-0039：无内置模型目录）。
+      # MODEL_APIKEY_SECRET 必须与「添加模型」时一致，否则已存 API Key 解不开（ADR-0038）：
+      # 本地开发请与 backend/.env 填同一个值。
       MODEL_APIKEY_SECRET: ${MODEL_APIKEY_SECRET:-}
     ports:
       - "8000:8000"

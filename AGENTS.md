@@ -5,13 +5,13 @@
 
 ## 这是什么
 
-K12 错题复习应用：家长出题 → 儿童答题产生错题 → 间隔重复复习直至毕业。Flutter 平板 App + FastAPI 后端（单 wheel 含 `agent_core` 内核 + `app` 集成层）+ SQLite/PostgreSQL。模型经「模型管理」配置（家长 `ModelConfig` / 管理员 `BUILTIN_MODELS`）；未配置时出题/答疑/批改返回「未配置模型」提示，**无离线 mock 兜底**。
+K12 错题复习应用：家长出题 → 儿童答题产生错题 → 间隔重复复习直至毕业。Flutter 平板 App + FastAPI 后端（单 wheel 含 `agent_core` 内核 + `app` 集成层）+ SQLite/PostgreSQL。模型在客户端「模型管理」里手动添加（家长 `ModelConfig`，api_key 经 Fernet 加密；**无内置模型目录**，ADR-0039）；未添加时出题/答疑/批改返回「未配置模型」提示，**无离线 mock 兜底**。
 
 ## 技术栈速览
 
 - **前端**：Flutter（Dart ≥3.5，CI 锁 3.47.2）· Riverpod · Dio · Cupertino · shadcn_ui · tablet-first
 - **后端**：Python ≥3.14 · FastAPI · SQLModel · `uv` 管理依赖
-- **AI**：`agent_core` 框架无关内核 + genkit 适配器；引擎统一经 `resolve_engine` 解析（家长 `ModelConfig` / 管理员 `BUILTIN_MODELS`，无本地 `LLM_PROVIDER` 等旁路 env）
+- **AI**：`agent_core` 框架无关内核 + genkit 适配器；引擎统一经 `resolve_engine` 解析（只读家长 `ModelConfig` 与其 `is_default`，无内置目录、无本地 `LLM_PROVIDER` 等旁路 env）
 - **DB**：SQLite（默认零依赖）/ PostgreSQL（Docker / 云）
 
 ## 架构 → [docs/agents/architecture.md](docs/agents/architecture.md)
@@ -25,6 +25,7 @@ K12 错题复习应用：家长出题 → 儿童答题产生错题 → 间隔重
 - **ADR**：决策记 `docs/adr/`，被引用即需可定位；领域词汇以 `CONTEXT.md` 为唯一事实源。
 - **设计系统**：颜色/间距/字号只走 `AppColors`/`AppSpacing`/`AppText` 令牌，禁止硬编码。
 - **跨层硬规则**：归属/可见性判定只经 `core.guard`；query 工具只经 service 取数。
+- **工具 schema 必须在 OpenAI strict 模式下自洽**（ADR-0040）：genkit 对每个工具无条件套 `_ensure_strict_json_schema` + `strict: True`，把 `"required": []` 改写成「所有 property 必填」，模型被迫为每个参数编值。故每个可省略参数都要有类型合法的缺席编码（字符串 `""`、整数 `0`）并在 handler 归一为「未提供」；枚举型参数必须含 `NO_FILTER`（`"all"`）。归一收口在 `query/tools/_shared.py`（`optional_str` / `optional_int` / `resolve_children`），由 `tests/ai/test_query_tools_contract.py` 的行为级守卫守住。
 - **引擎失败归因**（ADR-0038）：`decrypt()` 解不开只能返回 `None`（**密文永不出门**）；厂商失败（认证/限流/网络）→ `ProviderRequestError` → `ERROR(code="PROVIDER_ERROR")`，与「模型不支持工具调用」（`TOOL_UNSUPPORTED`，ADR-0033）**严格分开**。上层不得用 `except Exception` 把引擎失败抹成「请添加模型」。
 - **前端分层**（ADR-0037）：`main/ → features/* → shared/*` 单向，**`shared/` 不得 import `features/`**；feature 之间不得横向互引（唯一豁免 `features/home/presentation/`，展示层组合根）；feature 与后端 `app/features/*` 一一对应。`App*` 前缀只给 `shared/widgets/` 通用组件——组件一旦订阅某 feature 的 provider 就落回该 feature。由 `frontend/test/feature_boundaries_test.dart` 静态扫描守住。
 
@@ -58,4 +59,4 @@ Issues / PRDs 以 GitHub Issues 承载，全部操作经 `gh` CLI。建读列评
 
 - **领域术语**：`CONTEXT.md`（唯一 glossary）。
 - **架构评审**：`docs/agent-core-architecture-review.md`（含 P0 缺失 ADR、P1 缺 compaction、P2 缺扩展钩子、前端 SSE 逐帧渲染待定）。
-- **ADR 索引**：`docs/adr/` 已落地 0001–0038（含 0008/0012/0014/0015/0017/0019/0020/0021–0028/0030–0038）；仅 0006/0007/0009–0011/0013/0016/0018/0029 无文档。新增决策先补 ADR 再在代码中交叉链接引用。
+- **ADR 索引**：`docs/adr/` 已落地 0001–0040（含 0008/0012/0014/0015/0017/0019/0020/0021–0028/0030–0040）；仅 0006/0007/0009–0011/0013/0016/0018/0029 无文档。新增决策先补 ADR 再在代码中交叉链接引用。
