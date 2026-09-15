@@ -48,6 +48,34 @@
 
 性能红线沿用：只动 transform + opacity；`ListView.builder` 中使用 `flutter_animate` 需给 item 稳定 key，否则复用时动画重放。
 
+## 色相 ≤ 3 的适用口径（试点补充）
+
+「单屏内不同色相 ≤ 3」约束的是**大面积色块**（> 卡片面积 5%）。以下不计入：
+
+- 学科 chip / 题号 chip / 状态 pill——它们是**标识件**，色相由业务语义决定，面积 < 1%；
+- 语义色容器（错误/警告/成功底）——仅在异常分支出现；
+- 庆祝粒子（一次性、非持续视觉）。
+
+试点首页实测：复习横幅 cyan（占横幅 28%）+ AI 横幅 yellow（28%）+ 任务卡 CTA 复用学科色 → 大块色相为 2，学科 chip 的蓝/珊瑚/黄不计入。
+
+## 试点落地（2026-09-15）
+
+token 层 + 两个试点页已完成，代码一行行改通，`flutter analyze lib` 零 issue。
+
+**主题层（全站生效）**：
+- `AppCard` → 2px 墨黑描边 + 硬阴影；可点击卡片按下时整块位移 `Offset(1,1)` 并收拢阴影。
+- 按钮主题：实心 CTA 加 2px 墨黑边 + 硬阴影（浮起）；次级 / outline 按钮 2px 边但**无**阴影（平贴），避免表单里一排按钮全部浮起。
+- `AppTags.subject` 改为**学科 accent 实心填充 + `AppBrutal.onColor` 前景 + 几何标记**，落地三重编码（数学■ 白字 / 语文● 墨黑字 / 英语▲ 墨黑字）。英语黄在纸底仅 1.38:1，故 chip 一律带 1.5px 墨黑描边。
+- `SectionTitle` 左侧色条：3px 靛蓝 → 4px 墨黑。
+- 新增 `AppBrutalButton`（任意撞色填充 + 合规前景 + 硬阴影 + 按压下沉）、`SubjectMarkIcon`（自绘实心几何形，不用 lucide 描边图标——9-12px 下描边糊成一团）。
+- 彩带 `ConfettiBurst` 调色板换成撞色原色。
+
+**试点一 · 儿童端首页**：两个 banner 改为「左侧撞色块（flex 2:5，约 28%）+ 右侧纸面」分栏，取消全填充；任务卡改为左侧 6px 学科色条 + 学科 chip + 学科色 CTA；空状态图标块改 yellow 实心方块；任务卡加 `PopIn` + `ValueKey(task.id)`（key 稳定才不会在刷新时重放动画）。
+
+**试点二 · 家长端任务表单**：少题警示条改 `AppBrutal.red` 实心 + 白字；兴趣主题 chip 选中态改 cyan 实心 + 硬阴影；预览题卡 2px 边 + 硬阴影 + violet 题号 chip + 学科三重编码 chip；题卡加 `PopIn` + `ValueKey(index)` 实现逐张浮现；`_ThemeToggle` 的 `AnimatedContainer` 按 ADR 要求显式归零 reduce-motion 时长。
+
+**待真机验证**：2px 墨黑描边 + 硬阴影加在家长端**密集列表**（掌握度看板 / 错题列表）上是否过吵——这是「统一到家长端上限」这一档唯一的风险点，只能眼睛说了算。
+
 ## Considered Options
 
 ① **两端分强度色板**（parent 降饱和 / child 全放开）——拒绝：用户明确要求减少抽象，两套 scale 会让主题层复杂度翻倍，且新增页面需声明归属哪一套。

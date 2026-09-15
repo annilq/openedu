@@ -241,12 +241,13 @@ class _ConfettiParticle {
         rotationSpeed = (random.nextDouble() - 0.5) * 12,
         color = _palette[random.nextInt(_palette.length)];
 
+  // 庆祝场景正好是「撞色大块」唯一被允许全铺的时刻，直接取原色档（ADR-0044）。
   static const _palette = <Color>[
-    Color(0xFF43A047), // 植物绿
-    Color(0xFFF97316), // 暖橙
-    Color(0xFF38BDF8), // 天蓝
-    Color(0xFFFB923C), // 暖橙淡
-    Color(0xFF6FD0F4), // 天蓝淡
+    AppBrutal.yellow,
+    AppBrutal.cyan,
+    AppBrutal.coral,
+    AppBrutal.lime,
+    AppBrutal.violet,
   ];
 }
 

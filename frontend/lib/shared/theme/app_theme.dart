@@ -115,16 +115,12 @@ class SubjectAccent {
   }
 }
 
-/// Linear 风格主题（亮色 + 暗色 · 中性灰白 + 靛蓝强调）。
-///
-/// 设计约定（见 .impeccable.md / ADR-0003）：
-/// - surface 微暖白、卡片纯白 + 1px 极细描边、无阴影
-/// - accent 靛蓝用于 selection/focus/progress/link/CTA（primary = accent 品牌主色）
-/// - 语义色降饱和（极淡绿/琥珀/红/靛蓝底）
-/// - Inter 西文/数字 + Noto Sans SC（OFL）CJK 回退（HarmonyOS Sans SC 因授权限制再分发，未打包）
-/// - 密排字号 15sp 基线，双端共用
 // =====================================================================
 // §新粗野原色与物理令牌（ADR-0044 · 完整色板与原则见 .impeccable.md）
+//
+// ADR-0004「设计约束 D」的 Linear 克制风（1px 极细描边 / 无阴影 / 中饱和
+// 学科色仅小面积）**已被 ADR-0044 取代**：现为纸底 + 墨黑 2px 描边 + 无模糊
+// 硬阴影 + 高饱和撞色。
 // =====================================================================
 
 /// 学科几何标记（ADR-0044 学科三重编码的形状层）。
@@ -141,6 +137,61 @@ extension SubjectMarkOf on SubjectKey {
         SubjectKey.english => SubjectMark.triangle,
         SubjectKey.reserved => SubjectMark.square,
       };
+}
+
+/// 学科几何标记图标（实心，自绘）。
+///
+/// 自绘而非用图标字体：lucide 的 square/circle/triangle 是**描边**图标，
+/// 在 9-12px 尺寸下描边糊成一团，形状辨识度反而不如实心块。
+class SubjectMarkIcon extends StatelessWidget {
+  final SubjectMark mark;
+  final double size;
+  final Color color;
+
+  const SubjectMarkIcon({
+    super.key,
+    required this.mark,
+    this.size = 10,
+    this.color = AppBrutal.ink,
+  });
+
+  @override
+  Widget build(BuildContext context) => CustomPaint(
+        size: Size.square(size),
+        painter: _SubjectMarkPainter(mark: mark, color: color),
+      );
+}
+
+class _SubjectMarkPainter extends CustomPainter {
+  final SubjectMark mark;
+  final Color color;
+  const _SubjectMarkPainter({required this.mark, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+    switch (mark) {
+      case SubjectMark.square:
+        canvas.drawRect(Offset.zero & size, paint);
+      case SubjectMark.circle:
+        canvas.drawCircle(size.center(Offset.zero), size.width / 2, paint);
+      case SubjectMark.triangle:
+        canvas.drawPath(
+          Path()
+            ..moveTo(size.width / 2, 0)
+            ..lineTo(size.width, size.height)
+            ..lineTo(0, size.height)
+            ..close(),
+          paint,
+        );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_SubjectMarkPainter oldDelegate) =>
+      oldDelegate.mark != mark || oldDelegate.color != color;
 }
 
 /// 新粗野撞色原色（ADR-0044）。
@@ -255,6 +306,14 @@ class AppSprings {
       SpringDescription(mass: 1, stiffness: 260, damping: 15);
 }
 
+/// 主题装配（亮色 + 暗色 · 纸底 + 墨黑描边 + 撞色强调，ADR-0044）。
+///
+/// 设计约定（见 .impeccable.md / ADR-0044）：
+/// - surface 纸底 `#FDFBF7`、卡片纯白 + 2px 墨黑描边 + 无模糊硬阴影
+/// - 撞色只作强调件（≤ 卡片 40%、单屏色相 ≤ 3），不铺底
+/// - 语义色降饱和容器底 + 对应前景（fg 在容器上实测 ≥ 5.3:1）
+/// - Inter 西文/数字 + Noto Sans SC（OFL）CJK 回退
+/// - 密排字号 15sp 基线，Child Mode 放大一档（ADR-0014）
 class AppTheme {
   const AppTheme._();
 
@@ -579,9 +638,16 @@ class AppTheme {
 
     const transparent = Color(0x00000000);
 
+    // 暗模式下墨黑硬阴影与描边同色、不可见，退化为无阴影（ADR-0044）。
+    final hardShadows =
+        c.brightness == Brightness.dark ? AppElevation.none : AppElevation.hard();
+
     // hover / press 分级（文档：hover surface 变色、press 再深一档）。
     // 实心按钮（CTA / destructive）底已是近黑或饱和色，hover 提亮/加深一档，
     // 绝不是「无反馈」——此前 hover=bg 等于把 hover 令牌废掉。
+    //
+    // 新粗野化：实心 CTA 加 2px 墨黑描边 + 硬阴影，从纸面「浮起来」；
+    // 原为 `width: 0` 无描边，撞色块在纸底上边界不可辨（相邻色块对比中位数 1.67）。
     ShadButtonTheme button(Color bg, Color fg, {Color? hover}) => ShadButtonTheme(
           backgroundColor: bg,
           foregroundColor: fg,
@@ -590,10 +656,11 @@ class AppTheme {
           pressedForegroundColor: fg,
           decoration: ShadDecoration(
             border: ShadBorder.all(
-              color: bg,
-              width: 0,
+              color: AppBrutal.ink,
+              width: AppElevation.borderWidth,
               radius: BorderRadius.all(Radius.circular(AppRadius.button)),
             ),
+            shadows: hardShadows,
           ),
         );
 
@@ -639,10 +706,12 @@ class AppTheme {
         hoverBackgroundColor: c.surfaceHover,
         pressedBackgroundColor: c.surfaceActive,
         pressedForegroundColor: c.onSurface,
+        // 次级按钮：描边加粗到 2px 但**不加**硬阴影——与浮起的 CTA 拉开层级，
+        // 避免家长端表单里一排按钮全部浮起造成视觉噪声。
         decoration: ShadDecoration(
           border: ShadBorder.all(
             color: c.outline,
-            width: 1,
+            width: AppElevation.borderWidth,
             radius: BorderRadius.all(Radius.circular(AppRadius.button)),
           ),
         ),
@@ -656,7 +725,7 @@ class AppTheme {
         decoration: ShadDecoration(
           border: ShadBorder.all(
             color: c.outline,
-            width: 1,
+            width: AppElevation.borderWidth,
             radius: BorderRadius.all(Radius.circular(AppRadius.button)),
           ),
         ),
@@ -1192,14 +1261,22 @@ class AppCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final app = AppTheme.colorsOf(context);
-    ShadCard buildCard(Color borderColor) => ShadCard(
+    // 暗模式下墨黑硬阴影与描边同色、不可见 → 退化为无阴影（ADR-0044）。
+    List<BoxShadow> shadowsFor(bool pressed) => app.brightness == Brightness.dark
+        ? AppElevation.none
+        : (pressed
+            ? AppElevation.hardPressed(app.outline)
+            : AppElevation.hard(app.outline));
+
+    ShadCard buildCard(Color borderColor, List<BoxShadow> shadows) => ShadCard(
           padding: padding,
           backgroundColor: color ?? app.surfaceContainerLow,
           radius: BorderRadius.circular(radius ?? AppRadius.card),
           border: border != null
               ? _convertBorder(border!)
-              : ShadBorder.all(color: borderColor, width: 1),
-          shadows: const <BoxShadow>[],
+              : ShadBorder.all(
+                  color: borderColor, width: AppElevation.borderWidth),
+          shadows: shadows,
           child: child,
         );
     // NOTE: Do NOT wrap `buildCard(...)` in `ShadButton.ghost(width: double.infinity)`.
@@ -1214,26 +1291,38 @@ class AppCard extends StatelessWidget {
     // still fills it via its own `Expanded` content. `GestureDetector` needs
     // no `Material` ancestor, so it is safe under `ShadApp`.
     if (onTap == null) {
-      return Container(margin: margin, child: buildCard(app.outline));
+      return Container(
+          margin: margin, child: buildCard(app.outline, shadowsFor(false)));
     }
-    // 可点击卡片：hover 时边框微深到 outlineHover，让"可点"有真实反馈，
-    // 同时激活此前定义却从未接入的 outlineHover 令牌（shadcn 原生 button/input
-    // 无 hover-border API，故在我们的卡片组件里接）。
-    final hover = ValueNotifier(false);
+    // 可点击卡片：hover 时边框微深到 outlineHover，让"可点"有真实反馈；
+    // 按下时整卡下沉 + 阴影收拢（新粗野的「按压」语义，ADR-0044）。
+    // (hover, pressed) 打包进同一个 notifier，避免两层 ValueListenableBuilder。
+    final state = ValueNotifier<(bool, bool)>((false, false));
     return Container(
       margin: margin,
-      child: ValueListenableBuilder<bool>(
-        valueListenable: hover,
-        builder: (_, h, __) => MouseRegion(
-          cursor: SystemMouseCursors.basic,
-          onEnter: (_) => hover.value = true,
-          onExit: (_) => hover.value = false,
-          child: GestureDetector(
-            onTap: onTap,
-            behavior: HitTestBehavior.opaque,
-            child: buildCard(h ? app.outlineHover : app.outline),
-          ),
-        ),
+      child: ValueListenableBuilder<(bool, bool)>(
+        valueListenable: state,
+        builder: (_, s, __) {
+          final (h, p) = s;
+          return MouseRegion(
+            cursor: SystemMouseCursors.basic,
+            onEnter: (_) => state.value = (true, state.value.$2),
+            onExit: (_) => state.value = (false, state.value.$2),
+            child: GestureDetector(
+              onTapDown: (_) => state.value = (state.value.$1, true),
+              onTapUp: (_) => state.value = (state.value.$1, false),
+              onTapCancel: () => state.value = (state.value.$1, false),
+              onTap: onTap,
+              behavior: HitTestBehavior.opaque,
+              // 只动 transform（GPU 合成），不触发布局重排。
+              child: Transform.translate(
+                offset: p ? AppElevation.offsetPressed : Offset.zero,
+                child: buildCard(
+                    h ? app.outlineHover : app.outline, shadowsFor(p)),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -1299,6 +1388,106 @@ class AppPrimaryButton extends StatelessWidget {
   }
 }
 
+/// 新粗野实心按钮：撞色填充 + 唯一合规前景 + 2px 墨黑描边 + 硬阴影，
+/// 按下时整块下沉（[AppElevation.offsetPressed]）并收拢阴影（ADR-0044）。
+///
+/// 与 [AppPrimaryButton] 的区别：后者走 shadcn 主题（品牌蓝 CTA），本组件
+/// 接受任意 [AppBrutal] 撞色，用于「每屏最多 3 个色相」的强调件。
+///
+/// 前景色**不**由调用方传——必须走 [AppBrutal.onColor]，否则亮块配白字会
+/// 掉到 4.78:1 以下（实测所有高饱和色配白字最高仅 4.78）。
+class AppBrutalButton extends StatefulWidget {
+  final String label;
+  final Color fill;
+  final VoidCallback? onPressed;
+  final IconData? icon;
+  final bool fullWidth;
+  final double? height;
+
+  const AppBrutalButton({
+    super.key,
+    required this.label,
+    required this.fill,
+    this.onPressed,
+    this.icon,
+    this.fullWidth = false,
+    this.height,
+  });
+
+  @override
+  State<AppBrutalButton> createState() => _AppBrutalButtonState();
+}
+
+class _AppBrutalButtonState extends State<AppBrutalButton> {
+  bool _pressed = false;
+
+  void _set(bool v) {
+    if (widget.onPressed == null) return;
+    if (_pressed != v) setState(() => _pressed = v);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final text = AppTheme.textOf(context);
+    final enabled = widget.onPressed != null;
+    final fg = AppBrutal.onColor(widget.fill);
+    final content = Row(
+      mainAxisSize: widget.fullWidth ? MainAxisSize.max : MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        if (widget.icon != null) ...[
+          Icon(widget.icon, size: 16, color: fg),
+          const SizedBox(width: 6),
+        ],
+        Flexible(
+          child: Text(
+            widget.label,
+            overflow: TextOverflow.ellipsis,
+            style: text.labelLarge?.copyWith(
+              color: fg,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    );
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (_) => _set(true),
+      onTapUp: (_) => _set(false),
+      onTapCancel: () => _set(false),
+      onTap: widget.onPressed,
+      child: Opacity(
+        // 禁用态沿用全站 disabledOpacity 语义，不新增令牌。
+        opacity: enabled ? 1 : 0.5,
+        child: Transform.translate(
+          // 只动 transform（GPU 合成）；下沉是即时位移而非补间动画，
+          // 因此无需按 reduce-motion 关闭（手势与反馈都保留）。
+          offset: _pressed ? AppElevation.offsetPressed : Offset.zero,
+          child: Container(
+            height: widget.height ?? AppControl.heightOf(context),
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: widget.fill,
+              borderRadius:
+                  const BorderRadius.all(Radius.circular(AppRadius.button)),
+              border: Border.all(
+                color: AppBrutal.ink,
+                width: AppElevation.borderWidth,
+              ),
+              boxShadow: _pressed
+                  ? AppElevation.hardPressed()
+                  : AppElevation.hard(),
+            ),
+            child: content,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// 线性进度条：靛蓝填充。
 class AppProgressBar extends StatelessWidget {
   final double value;
@@ -1350,6 +1539,9 @@ class _HoverPill extends StatelessWidget {
   final double iconSize;
   final double gap;
   final IconData? icon;
+
+  /// 自定义前导件（学科 chip 传几何标记 [SubjectMarkIcon]）。优先于 [icon]。
+  final Widget? leading;
   final String label;
 
   const _HoverPill({
@@ -1360,6 +1552,7 @@ class _HoverPill extends StatelessWidget {
     this.iconSize = 13,
     this.gap = 5,
     this.icon,
+    this.leading,
     required this.label,
   });
 
@@ -1390,7 +1583,10 @@ class _HoverPill extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (icon != null) ...[
+                    if (leading != null) ...[
+                      leading!,
+                      SizedBox(width: gap),
+                    ] else if (icon != null) ...[
                       Icon(icon, size: iconSize),
                       SizedBox(width: gap),
                     ],
@@ -1467,11 +1663,25 @@ class _TagChip extends StatelessWidget {
     final app = AppTheme.colorsOf(context);
     late final Color bg;
     late final Color fg;
+    Widget? leading;
+    ShapeBorder shape;
     if (subject != null) {
       final sc = SubjectAccent.forContext(subject!, context);
-      bg = sc.container;
-      fg = sc.fg;
+      // 学科 chip 属「小面积强调」，允许全填充。前景**必须**由 [AppBrutal.onColor]
+      // 判定：数学蓝是深块配白字，语文珊瑚 / 英语黄是亮块配墨黑字——反过来就不过 AA。
+      bg = sc.accent;
+      fg = AppBrutal.onColor(sc.accent);
+      leading = SubjectMarkIcon(mark: subject!.mark, color: fg, size: 9);
+      // 英语黄在纸底上仅 1.38:1、语文珊瑚 2.71:1，不描边时 chip 边界不存在。
+      shape = RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(Radius.circular(AppRadius.chip)),
+        side: const BorderSide(
+            color: AppBrutal.ink, width: AppElevation.borderWidthSm),
+      );
     } else {
+      shape = RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(Radius.circular(AppRadius.chip)),
+      );
       (bg, fg) = switch (semantics) {
         _TagSemantics.normal => (app.surfaceSunken, app.onSurface),
         _TagSemantics.info => (app.semanticInfo, app.semanticInfoFg),
@@ -1488,12 +1698,11 @@ class _TagChip extends StatelessWidget {
       bg: bg,
       fg: fg,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.all(Radius.circular(AppRadius.chip)),
-      ),
+      shape: shape,
       iconSize: 13,
       gap: 4,
       icon: icon,
+      leading: leading,
       label: label,
     );
   }
@@ -1556,7 +1765,8 @@ class _BadgePill extends StatelessWidget {
   }
 }
 
-/// 章节标题：左侧 3px 靛蓝色条 + 标题文字
+/// 章节标题：左侧 4px 墨黑色条 + 标题文字（ADR-0044：色条从 3px 靛蓝改为 4px 墨黑，
+/// 与描边语言统一；标题色在撞色环境里承担「锚点」，不再与学科色抢色相）
 /// 规范章节节奏（统一间距事实源，ADR 设计系统约束）：
 /// - top    = [AppSpacing.sm] (8)：标题上沿留白；相邻 section 靠「上标题 bottom(8)
 ///   + 下标题 top(8)」叠加成 16px 统一间隔，页面无需再手动加 SizedBox。
@@ -1586,11 +1796,11 @@ class SectionTitle extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Container(
-            width: 3,
+            width: 4,
             height: 18,
             margin: const EdgeInsets.only(right: 8),
             decoration: BoxDecoration(
-              color: app.accent,
+              color: app.outline,
               borderRadius: BorderRadius.circular(2),
             ),
           ),

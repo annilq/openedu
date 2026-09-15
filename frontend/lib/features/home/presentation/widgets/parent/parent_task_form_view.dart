@@ -8,6 +8,7 @@ import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/utils/question_labels.dart';
 import '../../../../../shared/widgets/app_inputs.dart';
 import '../../../../../shared/widgets/app_loading.dart';
+import '../../../../../shared/widgets/app_motion.dart';
 import '../../../../../shared/widgets/app_toast.dart';
 import '../../../../../shared/widgets/stream_reasoning_panel.dart';
 import '../../../../children/providers/children_provider.dart';
@@ -507,8 +508,13 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
             reasoning: s.liveReasoning,
             streaming: s.streaming,
           ),
+        // key 用序号（列表只追加）→ PopIn 的 State 不重建，已在屏上的题卡
+        // 不会因下一张到达而重放弹簧入场。
         ...s.questions.asMap().entries.map(
-              (e) => _PreviewCard(index: e.key + 1, q: e.value),
+              (e) => PopIn(
+                key: ValueKey<int>(e.key),
+                child: _PreviewCard(index: e.key + 1, q: e.value),
+              ),
             ),
       ],
     );
@@ -542,31 +548,38 @@ void _showReasoningSheet(BuildContext context, String reasoning) {
 }
 
 /// 少题警示条：出题过程中有单题失败时展示，避免家长误以为题已出齐。
+///
+/// 新粗野化：红色改走 `AppBrutal.red` 实心（深块，只能配白字 5.56:1），
+/// 2px 墨黑描边 + 硬阴影——警示必须是全屏最强的视觉层级。
 class _FailureBanner extends StatelessWidget {
   final String text;
   const _FailureBanner({required this.text});
 
   @override
   Widget build(BuildContext context) {
-    final app = AppTheme.colorsOf(context);
     final textStyle = AppTheme.textOf(context);
     return Container(
       margin: const EdgeInsets.only(bottom: AppSpacing.sm),
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
-        color: app.errorContainer,
+        color: AppBrutal.red,
         borderRadius: BorderRadius.circular(AppRadius.bubble),
-        border: Border.all(color: app.error),
+        border: Border.all(
+            color: AppBrutal.ink, width: AppElevation.borderWidth),
+        boxShadow: AppElevation.hard(),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(LucideIcons.triangleAlert, size: 18, color: app.onErrorContainer),
+          Icon(LucideIcons.triangleAlert, size: 18, color: AppBrutal.onDark),
           const SizedBox(width: AppSpacing.sm),
           Expanded(
             child: Text(
               text,
-              style: textStyle.bodySmall?.copyWith(color: app.onErrorContainer),
+              style: textStyle.bodySmall?.copyWith(
+                color: AppBrutal.onDark,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],
@@ -596,18 +609,23 @@ class _ThemeToggle extends StatelessWidget {
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
+        // 隐式动画**不会**自动尊重 reduce-motion，必须显式归零（ADR-0044）。
+        duration: reducedMotionOf(context)
+            ? Duration.zero
+            : const Duration(milliseconds: 160),
         curve: Curves.easeOut,
         padding: const EdgeInsets.symmetric(
             horizontal: AppSpacing.md, vertical: AppSpacing.sm),
         decoration: BoxDecoration(
-          color:
-              selected ? scheme.primaryContainer : scheme.surfaceContainerHigh,
+          // 选中态允许全填充（ADR-0044 仅 CTA 与选中态可全填）；
+          // cyan 是亮块 → 只能配墨黑字（7.94:1）。
+          color: selected ? AppBrutal.cyan : scheme.surfaceContainerLow,
           borderRadius: BorderRadius.circular(AppRadius.chip),
           border: Border.all(
-            color: selected ? scheme.primary : scheme.outline,
-            width: selected ? 1.5 : 0,
+            color: AppBrutal.ink,
+            width: AppElevation.borderWidth,
           ),
+          boxShadow: selected ? AppElevation.hard() : AppElevation.none,
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -616,12 +634,11 @@ class _ThemeToggle extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(right: 6),
                 child: Icon(LucideIcons.check,
-                    size: 16, color: scheme.onPrimaryContainer),
+                    size: 16, color: AppBrutal.ink),
               ),
             Text(label,
                 style: text.labelMedium?.copyWith(
-                  color:
-                      selected ? scheme.onPrimaryContainer : scheme.onSurface,
+                  color: AppBrutal.ink,
                   fontWeight: FontWeight.w600,
                 )),
           ],
@@ -647,31 +664,43 @@ class _PreviewCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: AppSpacing.md),
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
-        color: app.surface,
+        color: app.surfaceContainerLow,
         borderRadius: BorderRadius.circular(AppRadius.bubble),
-        border: Border.all(color: app.outline),
+        border: Border.all(
+            color: AppBrutal.ink, width: AppElevation.borderWidth),
+        boxShadow: AppElevation.hard(),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
+              // 题号用 violet（深块 → 白字 5.55:1），与学科 chip 的色相错开。
               Container(
                 padding: const EdgeInsets.symmetric(
                     horizontal: AppSpacing.sm, vertical: 2),
                 decoration: BoxDecoration(
-                  color: app.primaryContainer,
+                  color: AppBrutal.violet,
                   borderRadius: BorderRadius.circular(AppRadius.chip),
+                  border: Border.all(
+                      color: AppBrutal.ink,
+                      width: AppElevation.borderWidthSm),
                 ),
                 child: Text('第 $index 题',
                     style: text.labelSmall?.copyWith(
-                        color: app.onPrimaryContainer,
+                        color: AppBrutal.onDark,
                         fontWeight: FontWeight.w700)),
               ),
-              const Spacer(),
-              Text(
-                '${q.subject} · ${q.grade}年级 · ${qtypeLabel(q.qtype)} · ${difficultyLabel(q.difficulty)}',
-                style: text.labelSmall?.copyWith(color: app.onSurfaceVariant),
+              const SizedBox(width: AppSpacing.sm),
+              // 学科走三重编码 chip（色 + 几何标记 + 文字），不再只靠纯文本。
+              AppTags.subject(SubjectAccent.fromName(q.subject)),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  '${q.grade}年级 · ${qtypeLabel(q.qtype)} · ${difficultyLabel(q.difficulty)}',
+                  textAlign: TextAlign.end,
+                  style: text.labelSmall?.copyWith(color: app.onSurfaceVariant),
+                ),
               ),
               // 出题推理：卡片右上角 info icon，点击展开「AI 出题思路」（ADR-0017）。
               if (q.reasoning.isNotEmpty) ...[
@@ -713,20 +742,23 @@ class _PreviewCard extends StatelessWidget {
           // 让「生成中」闪现的推理在卡片上也能看清（ADR-0017 落地）。
           if (q.reasoning.isNotEmpty) ...[
             const SizedBox(height: AppSpacing.sm),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(AppSpacing.md),
-              decoration: BoxDecoration(
-                color: app.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(AppRadius.chip),
-                border: Border.all(color: app.outline),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('出题思路',
-                      style: text.labelSmall?.copyWith(
-                          color: app.primary, fontWeight: FontWeight.w700)),
+                         Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(AppSpacing.md),
+                decoration: BoxDecoration(
+                  color: AppBrutal.paper,
+                  borderRadius: BorderRadius.circular(AppRadius.chip),
+                  border: Border.all(
+                      color: AppBrutal.ink,
+                      width: AppElevation.borderWidthSm),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('出题思路',
+                        style: text.labelSmall?.copyWith(
+                            color: AppBrutal.violet,
+                            fontWeight: FontWeight.w700)),
                   const SizedBox(height: 4),
                   Text(q.reasoning,
                       style: text.bodySmall?.copyWith(

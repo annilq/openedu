@@ -35,7 +35,6 @@ class ChildHome extends ConsumerWidget {
     final reviewState = ref.watch(dueReviewNotifierProvider);
     final dueCount =
         reviewState is DueReviewLoaded ? reviewState.items.length : 0;
-    final app = AppTheme.colorsOf(context);
 
     return CustomScrollView(
       slivers: [
@@ -92,12 +91,17 @@ class ChildHome extends ConsumerWidget {
                                   width: 88,
                                   height: 88,
                                   decoration: BoxDecoration(
-                                    color: app.tertiaryContainer,
-                                    borderRadius: BorderRadius.circular(28),
+                                    color: AppBrutal.yellow,
+                                    borderRadius: BorderRadius.circular(
+                                        AppRadius.card),
+                                    border: Border.all(
+                                        color: AppBrutal.ink,
+                                        width: AppElevation.borderWidth),
+                                    boxShadow: AppElevation.hard(),
                                   ),
                                   alignment: Alignment.center,
                                   child: Icon(CupertinoIcons.sun_max,
-                                      size: 44, color: app.onTertiaryContainer),
+                                      size: 44, color: AppBrutal.ink),
                                 ),
                                 const SizedBox(height: AppSpacing.xl2),
                                 Text('今天还没有任务哦',
@@ -113,13 +117,17 @@ class ChildHome extends ConsumerWidget {
                           ),
                         ]
                       : (state.dataOrNull ?? const [])
+                          // key 稳定 → PopIn 的 State 不重建，列表刷新时不会重放入场动画。
                           .map((t) => Padding(
+                                key: ValueKey<String>(t.id),
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: AppSpacing.lg,
                                     vertical: AppSpacing.xs),
-                                child: _TaskCard(
-                                  task: t,
-                                  onStart: () => onNavigateToPractice(t),
+                                child: PopIn(
+                                  child: _TaskCard(
+                                    task: t,
+                                    onStart: () => onNavigateToPractice(t),
+                                  ),
                                 ),
                               ))
                           .toList(),
@@ -133,7 +141,124 @@ class ChildHome extends ConsumerWidget {
   }
 }
 
-/// 复习错题横幅：更大圆角 24、图标更大、色彩更柔和——Banner 与普通卡片区分。
+/// 新粗野横幅：左侧撞色大块（约占横幅 28%，守住「色块 ≤ 卡片 40%」）+ 右侧纸面内容。
+///
+/// 撞色块不铺满整条：ADR-0044 定色块为强调件，横幅全填充会让首页两个 banner
+/// 直接打架，且家长端同款组件在密集信息区不可读。
+class _BrutalBanner extends StatelessWidget {
+  final Color fill;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final List<Widget> actions;
+
+  const _BrutalBanner({
+    required this.fill,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.actions,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final app = AppTheme.colorsOf(context);
+    final text = AppTheme.textOf(context);
+    return Container(
+      decoration: BoxDecoration(
+        color: app.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(AppRadius.banner),
+        border: Border.all(color: AppBrutal.ink, width: AppElevation.borderWidth),
+        boxShadow: AppElevation.hard(),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            flex: 2,
+            child: Container(
+              decoration: BoxDecoration(
+                color: fill,
+                borderRadius: BorderRadius.horizontal(
+                    left: Radius.circular(AppRadius.banner)),
+                // 与右半区之间的竖线：撞色块与纸底对比仅 1.38~3.4，必须描边。
+                border: Border(
+                  right: BorderSide(
+                      color: AppBrutal.ink, width: AppElevation.borderWidth),
+                ),
+              ),
+              alignment: Alignment.center,
+              child: Icon(icon, size: 40, color: AppBrutal.ink),
+            ),
+          ),
+          Expanded(
+            flex: 5,
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      style: text.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w800)),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(subtitle,
+                      style: text.bodyMedium
+                          ?.copyWith(color: app.onSurfaceVariant)),
+                  const SizedBox(height: AppSpacing.md),
+                  Wrap(
+                    spacing: AppSpacing.sm,
+                    runSpacing: AppSpacing.sm,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: actions,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 方形图标按钮（次级入口）：纸底 + 墨黑描边，不与撞色 CTA 抢层级。
+class _SquareIconButton extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  const _SquareIconButton(
+      {required this.icon, required this.tooltip, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final app = AppTheme.colorsOf(context);
+    return Semantics(
+      button: true,
+      label: tooltip,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          width: AppControl.heightOf(context),
+          height: AppControl.heightOf(context),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: app.surfaceContainerLow,
+            borderRadius:
+                const BorderRadius.all(Radius.circular(AppRadius.button)),
+            border: Border.all(
+                color: AppBrutal.ink, width: AppElevation.borderWidth),
+          ),
+          child: Icon(icon, size: 20, color: app.onSurface),
+        ),
+      ),
+    );
+  }
+}
+
+/// 复习错题横幅（撞色 = cyan，亮块配墨黑字 7.94:1）。
 class _ReviewBanner extends StatelessWidget {
   final int dueCount;
   final VoidCallback onReview;
@@ -147,147 +272,93 @@ class _ReviewBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final app = AppTheme.colorsOf(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(
           AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, AppSpacing.md),
-      child: Container(
-        decoration: BoxDecoration(
-          color: app.primaryContainer,
-          borderRadius: BorderRadius.circular(AppRadius.banner),
-          // 顶部极细的"植物绿高光"纹理：避免完全扁平
-          border: Border.all(
-            color: app.outline,
-            width: 1,
+      child: _BrutalBanner(
+        fill: AppBrutal.cyan,
+        icon: CupertinoIcons.refresh,
+        title: '复习错题',
+        subtitle: dueCount > 0 ? '今天有 $dueCount 道题要复习' : '今天没有要复习的题',
+        actions: [
+          _SquareIconButton(
+              icon: CupertinoIcons.book, tooltip: '错题本', onTap: onWrong),
+          AppBrutalButton(
+            label: '去复习',
+            fill: AppBrutal.cyan,
+            onPressed: onReview,
+            icon: CupertinoIcons.arrow_right,
           ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.xl),
-          child: Row(
-            children: [
-              Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  color: app.surfaceContainerLow,
-                  borderRadius: BorderRadius.circular(AppRadius.bubble),
-                ),
-                child:
-                    Icon(CupertinoIcons.refresh, size: 32, color: app.primary),
-              ),
-              const SizedBox(width: AppSpacing.xl),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('复习错题',
-                        style: AppTheme.textOf(context).titleMedium?.copyWith(
-                            color: app.onPrimaryContainer,
-                            fontWeight: FontWeight.w700)),
-                    const SizedBox(height: AppSpacing.xs),
-                    Text(
-                      dueCount > 0 ? '今天有 $dueCount 道题要复习' : '今天没有要复习的题',
-                      style: AppTheme.textOf(context).bodyMedium?.copyWith(
-                          color:
-                              app.onPrimaryContainer),
-                    ),
-                  ],
-                ),
-              ),
-              CupertinoButton(
-                // 错题入口：扁平图标按钮，弱化为次要操作，突出「去复习」主按钮
-                padding: const EdgeInsets.all(AppSpacing.xs),
-                pressedOpacity: 0.6,
-                onPressed: onWrong,
-                child: Icon(CupertinoIcons.book, size: 22, color: app.primary),
-              ),
-              const SizedBox(width: AppSpacing.md),
-              CupertinoButton.filled(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
-                borderRadius:
-                    const BorderRadius.all(Radius.circular(AppRadius.button)),
-                onPressed: onReview,
-                child: const Text('去复习'),
-              ),
-            ],
-          ),
-        ),
+        ],
       ),
     );
   }
 }
 
-/// AI 老师横幅：用 secondaryContainer 的 AI 专属暖色调 + 更大圆角。
+/// AI 老师横幅（撞色 = yellow，亮块配墨黑字 13.25:1）。
 class _TutorBanner extends StatelessWidget {
   final VoidCallback onTutor;
   const _TutorBanner({required this.onTutor});
 
   @override
   Widget build(BuildContext context) {
-    final app = AppTheme.colorsOf(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(
           AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.md),
-      child: Container(
-        decoration: BoxDecoration(
-          color: app.secondaryContainer,
-          borderRadius: BorderRadius.circular(AppRadius.banner),
-          border: Border.all(
-            color: app.outline,
-            width: 1,
+      child: _BrutalBanner(
+        fill: AppBrutal.yellow,
+        icon: CupertinoIcons.sparkles,
+        title: '问 AI 老师',
+        subtitle: '遇到不懂的题，随时来问～',
+        actions: [
+          AppBrutalButton(
+            label: '去提问',
+            fill: AppBrutal.yellow,
+            onPressed: onTutor,
+            icon: CupertinoIcons.arrow_right,
           ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.xl),
-          child: Row(
-            children: [
-              Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  color: app.surfaceContainerLow,
-                  borderRadius: BorderRadius.circular(AppRadius.bubble),
-                ),
-                child: Icon(CupertinoIcons.sparkles,
-                    size: 32, color: app.secondary),
-              ),
-              const SizedBox(width: AppSpacing.xl),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('问 AI 老师',
-                        style: AppTheme.textOf(context).titleMedium?.copyWith(
-                            color: app.onSecondaryContainer,
-                            fontWeight: FontWeight.w700)),
-                    const SizedBox(height: AppSpacing.xs),
-                    Text('遇到不懂的题，随时来问～',
-                        style: AppTheme.textOf(context).bodyMedium?.copyWith(
-                            color: app.onSecondaryContainer
-                                )),
-                  ],
-                ),
-              ),
-              CupertinoButton.filled(
-                // AI 区主按钮沿用植物绿主色，保持单强调色一致性
-                padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
-                borderRadius:
-                    const BorderRadius.all(Radius.circular(AppRadius.button)),
-                onPressed: onTutor,
-                child: const Text('去提问'),
-              ),
-            ],
-          ),
-        ),
+        ],
       ),
     );
   }
 }
 
-/// 今日任务卡片：标签使用 AppTags.normal，"已完成"用 AppBadge.successChip
-/// （避免 Colors.green 硬编码，避免芯片全都套 AI 暖黄）。
+/// 「已完成」标记：实心柠檬绿 pill + 墨黑描边（撞色强调件，非语义淡底）。
+class _DonePill extends StatelessWidget {
+  const _DonePill();
+
+  @override
+  Widget build(BuildContext context) {
+    final text = AppTheme.textOf(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm, vertical: 3),
+      decoration: BoxDecoration(
+        color: AppBrutal.lime,
+        borderRadius:
+            const BorderRadius.all(Radius.circular(AppRadius.chip)),
+        border: Border.all(
+            color: AppBrutal.ink, width: AppElevation.borderWidthSm),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(CupertinoIcons.check_mark,
+              size: 12, color: AppBrutal.ink),
+          const SizedBox(width: 4),
+          Text('已完成',
+              style: text.labelSmall?.copyWith(
+                  color: AppBrutal.ink, fontWeight: FontWeight.w700)),
+        ],
+      ),
+    );
+  }
+}
+
+/// 今日任务卡片：左侧 6px 学科色条 + 学科 chip（三重编码）+ 学科色 CTA。
+///
+/// 列表行**禁止整行彩色填充**（ADR-0044）：一屏多个任务卡时，整行撞色会让
+/// 标题与标签全部糊掉。学科身份由色条 + chip 承担，够辨识也够克制。
 class _TaskCard extends StatelessWidget {
   final TaskModel task;
   final VoidCallback onStart;
@@ -297,50 +368,69 @@ class _TaskCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDone = task.status == 'done';
+    final text = AppTheme.textOf(context);
+    // 学科/年级/知识点已下沉到题（ADR-0004），从首题取展示值。
+    final q0 = task.questions.isNotEmpty ? task.questions.first : null;
+    final subjectKey = SubjectAccent.fromName(q0?.subject);
+    final subjectColor = SubjectAccent.forContext(subjectKey, context).accent;
 
     return AppCard(
-      padding: const EdgeInsets.all(AppSpacing.md),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Text(task.title,
-                    style: AppTheme.textOf(context).titleMedium),
-              ),
-              const SizedBox(width: AppSpacing.md),
-              if (isDone) AppBadge.successChip('已完成'),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Builder(
-            builder: (context) {
-              // 学科/年级/知识点已下沉到题（ADR-0004），从首题取展示值。
-              final q0 =
-                  task.questions.isNotEmpty ? task.questions.first : null;
-              return Wrap(
-                spacing: AppSpacing.sm,
-                runSpacing: AppSpacing.sm,
-                children: [
-                  if (q0 != null) ...[
-                    AppTags.normal(q0.subject),
-                    if (q0.grade > 0) AppTags.normal('${q0.grade}年级'),
-                    AppTags.info(q0.knowledgePoint),
+      padding: EdgeInsets.zero,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppRadius.card),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(width: 6, color: subjectColor),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(task.title,
+                              style: text.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.w700)),
+                        ),
+                        const SizedBox(width: AppSpacing.md),
+                        if (isDone) const _DonePill(),
+                      ],
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    Wrap(
+                      spacing: AppSpacing.sm,
+                      runSpacing: AppSpacing.sm,
+                      children: [
+                        // 学科 chip 自带色 + 几何标记（数学■ / 语文● / 英语▲），
+                        // 不依赖颜色单独区分学科。
+                        AppTags.subject(subjectKey),
+                        if (q0 != null && q0.grade > 0)
+                          AppTags.normal('${q0.grade}年级'),
+                        if (q0 != null) AppTags.info(q0.knowledgePoint),
+                        AppTags.normal('${task.questions.length}题'),
+                      ],
+                    ),
+                    if (!isDone) ...[
+                      const SizedBox(height: AppSpacing.xl),
+                      // CTA 用学科色：不新增色相，前景由 AppBrutal.onColor 判定
+                      //（数学蓝→白字，语文珊瑚 / 英语黄→墨黑字）。
+                      AppBrutalButton(
+                        label: '开始做题',
+                        fill: subjectColor,
+                        onPressed: onStart,
+                        fullWidth: true,
+                      ),
+                    ],
                   ],
-                  AppTags.normal('${task.questions.length}题'),
-                ],
-              );
-            },
-          ),
-          const SizedBox(height: AppSpacing.xl),
-          if (!isDone)
-            AppPrimaryButton(
-              label: '开始做题',
-              onPressed: onStart,
+                ),
+              ),
             ),
-        ],
+          ],
+        ),
       ),
     );
   }
