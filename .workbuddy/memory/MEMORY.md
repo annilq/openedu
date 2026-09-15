@@ -38,3 +38,4 @@
 - pytest 前 `cd backend && mv .env .env.hidden`（避 broker 读 .env），跑完恢复。用 `.venv/bin/ruff` / `.venv/bin/pytest`。
 - zsh 里 `grep "a\|b"` 静默空，用 Grep 工具或分次单模式 grep。
 - 偶发 `PermissionError: Sensitive content approval timed out` → 重跑即可。
+- **`git push` 2026-09-15 实测可通**（此前记忆记「沙箱阻断」，已不成立；成功推 `349e4ec..77cf7e1`）。仍可能随网络波动，失败时重试。
