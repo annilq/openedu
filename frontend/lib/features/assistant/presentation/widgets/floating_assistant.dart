@@ -68,13 +68,9 @@ class _AssistantOverlayState extends State<_AssistantOverlay> {
               decoration: BoxDecoration(
                 color: scheme.primary,
                 shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black12,
-                    blurRadius: 8,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
+                border: Border.all(
+                    color: AppBrutal.ink, width: AppElevation.borderWidth),
+                boxShadow: AppElevation.hard(),
               ),
               child: Icon(
                 _open ? Icons.close : Icons.smart_toy_outlined,
@@ -147,14 +143,9 @@ class _AssistantChatPanelState extends ConsumerState<AssistantChatPanel> {
       decoration: BoxDecoration(
         color: scheme.surface,
         borderRadius: BorderRadius.circular(AppRadius.card),
-        border: Border.all(color: scheme.outline, width: 1),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black12,
-            blurRadius: 16,
-            offset: const Offset(0, 6),
-          ),
-        ],
+        border: Border.all(
+            color: AppBrutal.ink, width: AppElevation.borderWidth),
+        boxShadow: AppElevation.hard(),
       ),
       child: Column(
         children: [

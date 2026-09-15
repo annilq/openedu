@@ -6,6 +6,7 @@ import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/theme/theme_provider.dart';
 import '../../../../shared/widgets/app_dialog.dart';
+import '../../../../shared/widgets/app_motion.dart';
 
 class ProfileScreen extends ConsumerWidget {
   final UserModel user;
@@ -63,24 +64,17 @@ class ProfileScreen extends ConsumerWidget {
 
         // 外观：亮暗主题切换
         const SectionTitle('外观'),
-        _ThemeModeSetting(),
+        PopIn(child: _ThemeModeSetting()),
         const SizedBox(height: AppSpacing.md),
-        _UserModeSetting(),
+        PopIn(child: _UserModeSetting()),
 
         const SizedBox(height: AppSpacing.xl2),
 
         // Info card
         const SectionTitle('账号信息'),
-        Container(
-          decoration: BoxDecoration(
-            color: app.surface,
-            borderRadius: BorderRadius.circular(AppRadius.card),
-            border: Border.all(
-              color: app.outline,
-              width: 1,
-            ),
-          ),
-          child: Column(
+        PopIn(
+          child: AppCard(
+            child: Column(
             children: [
               _InfoRow(
                 icon: LucideIcons.userRound,
@@ -102,36 +96,39 @@ class ProfileScreen extends ConsumerWidget {
                 ),
               ],
             ],
+            ),
           ),
         ),
 
         SizedBox(height: AppSpacing.lg),
 
         // Logout
-        SizedBox(
-          width: double.infinity,
-          child: ShadButton(
-            height: 52,
-            backgroundColor: app.errorContainer,
-            hoverBackgroundColor: app.errorContainer,
-            pressedBackgroundColor: app.error,
-            onPressed: () async {
-              final confirmed = await AppDialog.confirm(
-                context,
-                title: Text('退出登录',
-                    style: text.titleMedium?.copyWith(color: app.onSurface)),
-                content: Text('确定要退出当前账号吗？', style: text.bodyMedium),
-                cancelLabel: '取消',
-                confirmLabel: '确定退出',
-                destructive: true,
-              );
-              if (confirmed == true) onLogout();
-            },
-            child: Text(
-              '退出登录',
-              style: text.bodyMedium?.copyWith(
-                color: app.onErrorContainer,
-                fontWeight: FontWeight.w600,
+        PopIn(
+          child: SizedBox(
+            width: double.infinity,
+            child: ShadButton(
+              height: 52,
+              backgroundColor: app.errorContainer,
+              hoverBackgroundColor: app.errorContainer,
+              pressedBackgroundColor: app.error,
+              onPressed: () async {
+                final confirmed = await AppDialog.confirm(
+                  context,
+                  title: Text('退出登录',
+                      style: text.titleMedium?.copyWith(color: app.onSurface)),
+                  content: Text('确定要退出当前账号吗？', style: text.bodyMedium),
+                  cancelLabel: '取消',
+                  confirmLabel: '确定退出',
+                  destructive: true,
+                );
+                if (confirmed == true) onLogout();
+              },
+              child: Text(
+                '退出登录',
+                style: text.bodyMedium?.copyWith(
+                  color: app.onErrorContainer,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ),
@@ -213,15 +210,7 @@ class _ThemeModeSetting extends ConsumerWidget {
     final mode = ref.watch(themeModeProvider);
     final controller = ref.read(themeModeProvider.notifier);
 
-    return Container(
-      decoration: BoxDecoration(
-        color: app.surface,
-        borderRadius: BorderRadius.circular(AppRadius.card),
-        border: Border.all(
-          color: app.outline,
-          width: 1,
-        ),
-      ),
+    return AppCard(
       padding: const EdgeInsets.all(AppSpacing.md),
       child: Container(
         decoration: BoxDecoration(
@@ -285,12 +274,7 @@ class _UserModeSetting extends ConsumerWidget {
     final mode = ref.watch(userModeProvider);
     final controller = ref.read(userModeProvider.notifier);
 
-    return Container(
-      decoration: BoxDecoration(
-        color: app.surface,
-        borderRadius: BorderRadius.circular(AppRadius.card),
-        border: Border.all(color: app.outline, width: 1),
-      ),
+    return AppCard(
       padding: const EdgeInsets.all(AppSpacing.md),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

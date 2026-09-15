@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/app_motion.dart';
 import '../../../../shared/widgets/app_top_bar.dart';
 import '../provider/assistant_notifier.dart';
 import '../widgets/assistant_message_list.dart';
@@ -100,48 +101,48 @@ class _WelcomeHint extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = AppTheme.colorsOf(context);
     final text = AppTheme.textOf(context);
-    return Align(
-      alignment: Alignment.topLeft,
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 440),
-          child: Container(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            decoration: BoxDecoration(
-              color: scheme.secondaryContainer,
-              borderRadius: BorderRadius.circular(AppRadius.banner),
-              border: Border.all(color: scheme.outline, width: 1),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 72,
-                  height: 72,
-                  decoration: BoxDecoration(
-                    color: scheme.surfaceContainerLow,
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: scheme.outline, width: 1),
+    return PopIn(
+      child: Align(
+        alignment: Alignment.topLeft,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 440),
+            child: AppCard(
+              margin: EdgeInsets.zero,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 空态图标块：yellow 亮块 + 墨黑字（13.25:1），新粗野撞色强调件。
+                  Container(
+                    width: 72,
+                    height: 72,
+                    decoration: BoxDecoration(
+                      color: AppBrutal.yellow,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                          color: AppBrutal.ink, width: AppElevation.borderWidth),
+                      boxShadow: AppElevation.hard(),
+                    ),
+                    alignment: Alignment.center,
+                    child: Icon(LucideIcons.sparkles,
+                        size: 36, color: AppBrutal.ink),
                   ),
-                  alignment: Alignment.center,
-                  child: Icon(LucideIcons.sparkles,
-                      size: 36, color: scheme.secondary),
-                ),
-                const SizedBox(height: AppSpacing.xl),
-                Text('有问题就问 AI 老师吧',
-                    textAlign: TextAlign.start,
-                    style: text.titleLarge?.copyWith(
-                      color: scheme.onSecondaryContainer,
-                    )),
-                const SizedBox(height: AppSpacing.sm),
-                Text('只讲学习内容，其他问题不回答哦',
-                    textAlign: TextAlign.start,
-                    style: text.bodyMedium?.copyWith(
-                      color: scheme.onSecondaryContainer,
-                    )),
-              ],
+                  const SizedBox(height: AppSpacing.xl),
+                  Text('有问题就问 AI 老师吧',
+                      textAlign: TextAlign.start,
+                      style: text.titleLarge?.copyWith(
+                        color: scheme.onSurface,
+                      )),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text('只讲学习内容，其他问题不回答哦',
+                      textAlign: TextAlign.start,
+                      style: text.bodyMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      )),
+                ],
+              ),
             ),
           ),
         ),

@@ -7,6 +7,7 @@ import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_dialog.dart';
 import '../../../../shared/widgets/app_loading.dart';
 import '../../../../shared/widgets/app_toast.dart';
+import '../../../../shared/widgets/app_motion.dart';
 import '../providers/models_notifier.dart';
 import 'model_form_dialog.dart';
 
@@ -104,7 +105,12 @@ class _ParentModelManagementScreenState
                 if (state.resp.custom.isEmpty)
                   _emptyHint('还没有模型，点「添加模型」接入 DeepSeek、本地 Ollama 或其他 OpenAI 兼容服务')
                 else
-                  ...state.resp.custom.map((m) => _modelCard(context, m)),
+                  ...state.resp.custom.map(
+                    (m) => PopIn(
+                      key: ValueKey<String>(m.id),
+                      child: _modelCard(context, m),
+                    ),
+                  ),
               ] else if (state is ModelsLoading) ...[
                 const AppLoading(),
               ] else if (state is ModelsError) ...[
@@ -122,61 +128,85 @@ class _ParentModelManagementScreenState
   Widget _modelCard(BuildContext context, ModelInfo m) {
     final app = AppTheme.colorsOf(context);
     final text = AppTheme.textOf(context);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.md),
-      child: AppCard(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Row(
-          children: [
-            Icon(LucideIcons.box, size: 18, color: app.accent),
-            const SizedBox(width: AppSpacing.md),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(m.label,
-                          style: text.labelLarge
-                              ?.copyWith(fontWeight: FontWeight.w600)),
-                      if (m.isDefault) ...[
-                        const SizedBox(width: AppSpacing.sm),
-                        AppTags.success('默认'),
-                      ],
+    return AppCard.listRow(
+      margin: const EdgeInsets.only(bottom: AppSpacing.md),
+      padding: const EdgeInsets.all(AppSpacing.md),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Icon(LucideIcons.box, size: 18, color: app.accent),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(m.label,
+                        style: text.labelLarge
+                            ?.copyWith(fontWeight: FontWeight.w600)),
+                    if (m.isDefault) ...[
+                      const SizedBox(width: AppSpacing.sm),
+                      _defaultBadge(text),
                     ],
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                      '${m.modelName} · ${m.provider}${m.baseUrl != null ? ' · ${m.baseUrl}' : ''}',
-                      style: text.bodySmall
-                          ?.copyWith(color: app.onSurfaceVariant)),
-                ],
-              ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                    '${m.modelName} · ${m.provider}${m.baseUrl != null ? ' · ${m.baseUrl}' : ''}',
+                    style: text.bodySmall
+                        ?.copyWith(color: app.onSurfaceVariant)),
+              ],
             ),
-            if (!m.isDefault)
-              CupertinoButton(
-                padding: EdgeInsets.zero,
-                onPressed: () async {
-                  final err = await ref
-                      .read(modelsNotifierProvider.notifier)
-                      .setDefault(m.id);
-                  if (!mounted) return;
-                  _reportModelError(err);
-                },
-                child: const Text('设为默认'),
-              ),
+          ),
+          if (!m.isDefault)
             CupertinoButton(
               padding: EdgeInsets.zero,
-              onPressed: () => _openForm(context, m),
-              child: const Text('编辑'),
+              onPressed: () async {
+                final err = await ref
+                    .read(modelsNotifierProvider.notifier)
+                    .setDefault(m.id);
+                if (!mounted) return;
+                _reportModelError(err);
+              },
+              child: const Text('设为默认'),
             ),
-            CupertinoButton(
-              padding: EdgeInsets.zero,
-              onPressed: () => _confirmDelete(m),
-              child: Text('删除', style: TextStyle(color: app.error)),
-            ),
-          ],
-        ),
+          CupertinoButton(
+            padding: EdgeInsets.zero,
+            onPressed: () => _openForm(context, m),
+            child: const Text('编辑'),
+          ),
+          CupertinoButton(
+            padding: EdgeInsets.zero,
+            onPressed: () => _confirmDelete(m),
+            child: Text('删除', style: TextStyle(color: app.error)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 默认模型强调件：AppBrutal 实心 lime 小色块（亮块配墨黑字 12.39:1）+ 2px 墨黑描边 + 硬阴影。
+  /// 仅作行内标识，不整行填充（ADR-0044「列表行禁整行彩色填充」）。
+  Widget _defaultBadge(AppText text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 3),
+      decoration: BoxDecoration(
+        color: AppBrutal.lime,
+        borderRadius: BorderRadius.circular(AppRadius.chip),
+        border: Border.all(
+            color: AppBrutal.ink, width: AppElevation.borderWidthSm),
+        boxShadow: AppElevation.hard(),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(LucideIcons.check, size: 12, color: AppBrutal.ink),
+          const SizedBox(width: 4),
+          Text('默认',
+              style: text.labelSmall
+                  ?.copyWith(color: AppBrutal.ink, fontWeight: FontWeight.w700)),
+        ],
       ),
     );
   }
@@ -189,6 +219,9 @@ class _ParentModelManagementScreenState
       decoration: BoxDecoration(
         color: app.surfaceContainerLow,
         borderRadius: BorderRadius.circular(AppRadius.card),
+        border: Border.all(
+            color: AppBrutal.ink, width: AppElevation.borderWidth),
+        boxShadow: AppElevation.hard(),
       ),
       child: Text(msg,
           style: text.bodySmall?.copyWith(color: app.onSurfaceVariant)),

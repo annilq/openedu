@@ -5,6 +5,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/widgets/app_error.dart';
 import '../../../../../shared/widgets/app_loading.dart';
+import '../../../../../shared/widgets/app_motion.dart';
 import '../../../../../shared/domain/models/models.dart';
 import '../../../../children/providers/children_provider.dart';
 import '../../../../children/presentation/providers/children_notifier.dart';
@@ -152,12 +153,14 @@ class _TaskCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final app = AppTheme.colorsOf(context);
-    return AppCard(
-      onTap: onTap,
-      padding: const EdgeInsets.all(AppSpacing.md),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+    return PopIn(
+      key: ValueKey(task.id),
+      child: AppCard.listRow(
+        onTap: onTap,
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -186,6 +189,7 @@ class _TaskCard extends StatelessWidget {
             ],
           ),
         ],
+      ),
       ),
     );
   }

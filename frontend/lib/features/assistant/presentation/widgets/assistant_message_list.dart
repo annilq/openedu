@@ -7,6 +7,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_markdown.dart';
+import '../../../../shared/widgets/app_motion.dart';
 import '../../../../shared/widgets/app_toast.dart';
 import '../../domain/assistant_card.dart';
 import '../provider/assistant_notifier.dart';
@@ -82,20 +83,17 @@ class _Bubble extends StatelessWidget {
           isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
       children: [
         if (showBubble)
-          Container(
+          ConstrainedBox(
             constraints: _constraints(context),
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.md,
-              vertical: AppSpacing.sm,
-            ),
-            decoration: BoxDecoration(
+            child: AppCard(
+              margin: EdgeInsets.zero,
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.md,
+                vertical: AppSpacing.sm,
+              ),
               color: isUser ? scheme.primary : scheme.surfaceContainerLow,
-              borderRadius: BorderRadius.circular(AppRadius.card),
-              border: isUser
-                  ? null
-                  : Border.all(color: scheme.outline, width: 1),
+              child: _BubbleBody(message: message, scheme: scheme, text: text),
             ),
-            child: _BubbleBody(message: message, scheme: scheme, text: text),
           ),
         if (cards.isNotEmpty)
           ConstrainedBox(
@@ -105,7 +103,10 @@ class _Bubble extends StatelessWidget {
               children: [
                 for (var i = 0; i < cards.length; i++) ...[
                   if (i > 0 || showBubble) const SizedBox(height: AppSpacing.sm),
-                  AssistantCardTile(card: cards[i]),
+                  PopIn(
+                    key: ValueKey<int>(i),
+                    child: AssistantCardTile(card: cards[i]),
+                  ),
                 ],
               ],
             ),

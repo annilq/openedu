@@ -508,55 +508,51 @@ class _ParentQuestionBankViewState
 
   Widget _buildItem(BankQuestionItem q, dynamic app) {
     final selected = _selectedIds.contains(q.id);
-    return Container(
+    return AppCard.listRow(
+      // 列表行变体：1px 墨黑描边、无阴影（ADR-0044「列表降噪」）。
+      // 选中态描边转为 primary，复用 [AppCard.border] 透传。
       margin: const EdgeInsets.only(bottom: AppSpacing.sm),
-      decoration: BoxDecoration(
-        // 与卡片底色一致，仅以 1px 描边区分行（选中态描边转为 primary）。
-        color: app.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(AppRadius.card),
-        border: Border.all(
-          color: selected ? app.primary : app.outline,
-        ),
+      border: Border.all(
+        color: selected ? app.primary : AppBrutal.ink,
+        width: 1,
       ),
-      child: GestureDetector(
-        onTap: () => _toggle(q.id),
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.md),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      q.stem,
-                      style: AppTheme.textOf(context)
-                          .bodyLarge
-                          ?.copyWith(height: 1.4),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: AppSpacing.xs),
-                    Wrap(
-                      spacing: AppSpacing.xs,
-                      runSpacing: AppSpacing.xs,
-                      children: [
-                        _tag(app, q.subject),
-                        _tag(app, '${q.grade}年级'),
-                        _tag(app, q.knowledgePoint),
-                        _tag(app, _qtypeLabel(q.qtype)),
-                        if (q.usageCount > 0) _usageTag(app, q),
-                      ],
-                    ),
-                  ],
-                ),
+      onTap: () => _toggle(q.id),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    q.stem,
+                    style: AppTheme.textOf(context)
+                        .bodyLarge
+                        ?.copyWith(height: 1.4),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Wrap(
+                    spacing: AppSpacing.xs,
+                    runSpacing: AppSpacing.xs,
+                    children: [
+                      _tag(app, q.subject),
+                      _tag(app, '${q.grade}年级'),
+                      _tag(app, q.knowledgePoint),
+                      _tag(app, _qtypeLabel(q.qtype)),
+                      if (q.usageCount > 0) _usageTag(app, q),
+                    ],
+                  ),
+                ],
               ),
-              ShadCheckbox(
-                value: selected,
-                onChanged: (_) => _toggle(q.id),
-              ),
-            ],
-          ),
+            ),
+            ShadCheckbox(
+              value: selected,
+              onChanged: (_) => _toggle(q.id),
+            ),
+          ],
         ),
       ),
     );

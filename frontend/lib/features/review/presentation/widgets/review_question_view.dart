@@ -32,7 +32,6 @@ class ReviewQuestionView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = AppTheme.colorsOf(context);
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(
           AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xl2),
@@ -46,20 +45,17 @@ class ReviewQuestionView extends StatelessWidget {
                 spacing: AppSpacing.sm,
                 runSpacing: AppSpacing.sm,
                 children: [
-                  AppTags.normal(item.subject),
+                  // 学科三重编码 chip（色 + 几何标记 + 文字），不靠颜色单分学科。
+                  AppTags.subject(SubjectAccent.fromName(item.subject)),
                   AppTags.normal('${item.grade}年级'),
                   AppTags.info(item.knowledgePoint),
                   AppTags.warning('错过 ${item.wrongCount} 次'),
                 ],
               ),
               const SizedBox(height: AppSpacing.xxl),
-              Container(
-                width: double.infinity,
+              AppCard(
                 padding: const EdgeInsets.all(AppSpacing.md),
-                decoration: BoxDecoration(
-                  color: scheme.surfaceRaised,
-                  borderRadius: BorderRadius.circular(AppRadius.banner),
-                ),
+                margin: EdgeInsets.zero,
                 child: Text(item.stem,
                     style: AppTheme.textOf(context).titleMedium),
               ),

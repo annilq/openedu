@@ -4,6 +4,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_inputs.dart';
+import '../../../../shared/widgets/app_motion.dart';
 import '../../../../shared/widgets/app_toast.dart';
 import '../../providers/auth_provider.dart';
 import '../providers/auth_notifier.dart';
@@ -95,19 +96,24 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Brand area
+                    // Brand area：撞色块做品牌强调（≤整屏面积，非整屏铺满）。
                     Center(
                       child: Container(
                         width: 96,
                         height: 96,
                         decoration: BoxDecoration(
-                          color: app.primaryContainer,
-                          borderRadius: BorderRadius.circular(28),
+                          color: AppBrutal.yellow,
+                          borderRadius: BorderRadius.circular(AppRadius.card),
+                          border: Border.all(
+                            color: AppBrutal.ink,
+                            width: AppElevation.borderWidth,
+                          ),
+                          boxShadow: AppElevation.hard(),
                         ),
                         child: Icon(
                           LucideIcons.bookOpen,
                           size: 52,
-                          color: app.onPrimaryContainer,
+                          color: AppBrutal.ink,
                         ),
                       ),
                     ),
@@ -133,76 +139,70 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     SizedBox(height: AppSpacing.xxl * 1.2),
 
                     // Form card
-                    Container(
-                      padding: const EdgeInsets.all(AppSpacing.xl),
-                      decoration: BoxDecoration(
-                        color: app.surface,
-                        borderRadius: BorderRadius.circular(AppRadius.card),
-                        border: Border.all(
-                          color: app.outline,
-                          width: 1,
-                        ),
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Text(
-                            _isRegister ? '注册' : '登录',
-                            style: text.titleLarge?.copyWith(
-                              fontWeight: FontWeight.w600,
+                    PopIn(
+                      child: AppCard(
+                        padding: const EdgeInsets.all(AppSpacing.xl),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text(
+                              _isRegister ? '注册' : '登录',
+                              style: text.titleLarge?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: AppSpacing.lg),
-                          AppTextField(
-                            label: '用户名',
-                            controller: _username,
-                            prefixIcon: LucideIcons.userRound,
-                            errorText: _usernameError,
-                          ),
-                          const SizedBox(height: AppSpacing.md),
-                          AppTextField(
-                            label: '密码',
-                            controller: _password,
-                            obscureText: true,
-                            prefixIcon: LucideIcons.lock,
-                            errorText: _passwordError,
-                          ),
-                          if (_isRegister) ...[
+                            const SizedBox(height: AppSpacing.lg),
+                            AppTextField(
+                              label: '用户名',
+                              controller: _username,
+                              prefixIcon: LucideIcons.userRound,
+                              errorText: _usernameError,
+                            ),
                             const SizedBox(height: AppSpacing.md),
                             AppTextField(
-                              label: '昵称',
-                              controller: _displayName,
-                              prefixIcon: LucideIcons.circleUserRound,
-                              errorText: _displayNameError,
+                              label: '密码',
+                              controller: _password,
+                              obscureText: true,
+                              prefixIcon: LucideIcons.lock,
+                              errorText: _passwordError,
+                            ),
+                            if (_isRegister) ...[
+                              const SizedBox(height: AppSpacing.md),
+                              AppTextField(
+                                label: '昵称',
+                                controller: _displayName,
+                                prefixIcon: LucideIcons.circleUserRound,
+                                errorText: _displayNameError,
+                              ),
+                            ],
+                            const SizedBox(height: AppSpacing.xl),
+                            AppPrimaryButton(
+                              label: _isRegister ? '注册并进入' : '登录',
+                              onPressed: isLoading
+                                  ? null
+                                  : (_isRegister ? _submit : _login),
+                              loading: isLoading,
+                            ),
+                            const SizedBox(height: AppSpacing.md),
+                            ShadButton.ghost(
+                              width: double.infinity,
+                              onPressed: isLoading
+                                  ? null
+                                  : () {
+                                      setState(() => _isRegister = !_isRegister);
+                                      ref
+                                          .read(authNotifierProvider.notifier)
+                                          .reset();
+                                    },
+                              foregroundColor: app.primary,
+                              child: Text(
+                                _isRegister ? '已有账号？去登录' : '没有账号？注册家长账号',
+                                style: text.bodyMedium,
+                              ),
                             ),
                           ],
-                          const SizedBox(height: AppSpacing.xl),
-                          AppPrimaryButton(
-                            label: _isRegister ? '注册并进入' : '登录',
-                            onPressed: isLoading
-                                ? null
-                                : (_isRegister ? _submit : _login),
-                            loading: isLoading,
-                          ),
-                          const SizedBox(height: AppSpacing.md),
-                          ShadButton.ghost(
-                            width: double.infinity,
-                            onPressed: isLoading
-                                ? null
-                                : () {
-                                    setState(() => _isRegister = !_isRegister);
-                                    ref
-                                        .read(authNotifierProvider.notifier)
-                                        .reset();
-                                  },
-                            foregroundColor: app.primary,
-                            child: Text(
-                              _isRegister ? '已有账号？去登录' : '没有账号？注册家长账号',
-                              style: text.bodyMedium,
-                            ),
-                          ),
-                        ],
+                        ),
                       ),
                     ),
 

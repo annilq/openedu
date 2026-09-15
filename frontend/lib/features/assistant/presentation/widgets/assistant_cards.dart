@@ -28,7 +28,10 @@ class AssistantCardTile extends StatelessWidget {
   Widget build(BuildContext context) {
     if (!card.hasContent) return const SizedBox.shrink();
     final Widget body = switch (card.kind) {
-      AssistantCardKind.question => _QuestionCard(card: card),
+      // 题目卡左侧学科色条由 Row(stretch) 撑满卡片高度；卡片高度随内容，
+      // 消息流内高度无界，须 IntrinsicHeight 给 Row 一个有界高度。
+      AssistantCardKind.question =>
+          IntrinsicHeight(child: _QuestionCard(card: card)),
       AssistantCardKind.progress => _StatsCard(card: card),
       AssistantCardKind.notice => _TextCard(card: card),
       _ => card.items.isEmpty ? _TextCard(card: card) : _ListCard(card: card),
@@ -78,16 +81,14 @@ class _CardShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = AppTheme.colorsOf(context);
-    return Container(
+    // 新粗野卡片容器：2px 墨黑描边 + 无模糊硬阴影（ADR-0044），由 AppCard 统一定义。
+    // 不设外边距——卡片之间的间距由调用方控制（气泡 Column 内已留 SizedBox）。
+    return SizedBox(
       width: double.infinity,
-      padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        color: scheme.surfaceRaised,
-        borderRadius: BorderRadius.circular(AppRadius.card),
-        border: Border.all(color: scheme.outline, width: 1),
+      child: AppCard(
+        margin: EdgeInsets.zero,
+        child: child,
       ),
-      child: child,
     );
   }
 }
@@ -311,11 +312,31 @@ class _QuestionCard extends StatelessWidget {
     final explanation = _s(raw['explanation']);
     final reasoning = _s(raw['reasoning']);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    // 题目卡学科编码：左侧学科色条 + 学科 chip（chip 自带几何标记，见下方 Wrap）。
+    final subjectKey = SubjectAccent.fromName(subject);
+    final hasSubject = subject.isNotEmpty;
+    final subjectColor = hasSubject
+        ? SubjectAccent.forContext(subjectKey, context).accent
+        : null;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const _CardHeader(icon: LucideIcons.sparkles, title: '题目'),
-        const SizedBox(height: AppSpacing.sm),
+        if (hasSubject)
+          Container(
+            width: 6,
+            margin: const EdgeInsets.only(right: AppSpacing.md),
+            decoration: BoxDecoration(
+              color: subjectColor,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const _CardHeader(icon: LucideIcons.sparkles, title: '题目'),
+              const SizedBox(height: AppSpacing.sm),
         Wrap(
           spacing: AppSpacing.sm,
           runSpacing: AppSpacing.xs,
@@ -396,7 +417,10 @@ class _QuestionCard extends StatelessWidget {
           _ReasoningDisclosure(reasoning: reasoning),
         ],
       ],
-    );
+            ),
+          ),
+        ],
+      );
   }
 }
 

@@ -124,9 +124,13 @@ class ChildHome extends ConsumerWidget {
                                     horizontal: AppSpacing.lg,
                                     vertical: AppSpacing.xs),
                                 child: PopIn(
-                                  child: _TaskCard(
-                                    task: t,
-                                    onStart: () => onNavigateToPractice(t),
+                                  // 左侧学科色条由 Row(stretch) 撑满卡片高度；
+                                  // 卡片高度随内容，需 IntrinsicHeight 给 Row 有界高度。
+                                  child: IntrinsicHeight(
+                                    child: _TaskCard(
+                                      task: t,
+                                      onStart: () => onNavigateToPractice(t),
+                                    ),
                                   ),
                                 ),
                               ))

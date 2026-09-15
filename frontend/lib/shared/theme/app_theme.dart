@@ -1227,7 +1227,14 @@ class AppText {
 // §通用组件
 // =====================================================================
 
-/// 卡片：1px 极细描边 + surfaceRaised 填充，无阴影（Linear 风格）。
+/// 卡片：2px 墨黑描边 + 硬阴影（新粗野），可点击时按下整卡位移、阴影收拢。
+///
+/// 卡片强度变体（ADR-0044「列表降噪」）。
+/// - [standard]：2px 墨黑描边 + 硬阴影，用于独立卡片 / 强调件。
+/// - [listRow]：1px 墨黑描边 + 无阴影，用于密集列表的逐行卡片——避免每行
+///   都压 2px 边 + 硬阴影导致家长端看板视觉过载（「统一到家长端上限」的代价补偿）。
+enum AppCardVariant { standard, listRow }
+
 class AppCard extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry padding;
@@ -1236,6 +1243,7 @@ class AppCard extends StatelessWidget {
   final double? radius;
   final Border? border;
   final VoidCallback? onTap;
+  final AppCardVariant variant;
 
   const AppCard({
     super.key,
@@ -1246,7 +1254,20 @@ class AppCard extends StatelessWidget {
     this.radius,
     this.border,
     this.onTap,
+    this.variant = AppCardVariant.standard,
   });
+
+  /// 密集列表逐行卡片：1px 墨黑边、无阴影。
+  const AppCard.listRow({
+    super.key,
+    required this.child,
+    this.padding = const EdgeInsets.all(AppSpacing.md),
+    this.margin = const EdgeInsets.symmetric(vertical: 4),
+    this.color,
+    this.radius,
+    this.border,
+    this.onTap,
+  }) : variant = AppCardVariant.listRow;
 
   static ShadBorder _convertBorder(Border b) {
     ShadBorderSide side(BorderSide s) => ShadBorderSide(
@@ -1272,14 +1293,18 @@ class AppCard extends StatelessWidget {
             ? AppElevation.hardPressed(app.outline)
             : AppElevation.hard(app.outline));
 
+    // 列表行变体：1px 边、无阴影；标准变体：2px 边 + 硬阴影。
+    final isRow = variant == AppCardVariant.listRow;
+    final borderWidth = isRow ? 1.0 : AppElevation.borderWidth;
+    final rowShadows = AppElevation.none;
+
     ShadCard buildCard(Color borderColor, List<BoxShadow> shadows) => ShadCard(
           padding: padding,
           backgroundColor: color ?? app.surfaceContainerLow,
           radius: BorderRadius.circular(radius ?? AppRadius.card),
           border: border != null
               ? _convertBorder(border!)
-              : ShadBorder.all(
-                  color: borderColor, width: AppElevation.borderWidth),
+              : ShadBorder.all(color: borderColor, width: borderWidth),
           shadows: shadows,
           child: child,
         );
@@ -1296,7 +1321,8 @@ class AppCard extends StatelessWidget {
     // no `Material` ancestor, so it is safe under `ShadApp`.
     if (onTap == null) {
       return Container(
-          margin: margin, child: buildCard(app.outline, shadowsFor(false)));
+          margin: margin,
+          child: buildCard(app.outline, isRow ? rowShadows : shadowsFor(false)));
     }
     // 可点击卡片：hover 时边框微深到 outlineHover，让"可点"有真实反馈；
     // 按下时整卡下沉 + 阴影收拢（新粗野的「按压」语义，ADR-0044）。
@@ -1321,8 +1347,8 @@ class AppCard extends StatelessWidget {
               // 只动 transform（GPU 合成），不触发布局重排。
               child: Transform.translate(
                 offset: p ? AppElevation.offsetPressed : Offset.zero,
-                child: buildCard(
-                    h ? app.outlineHover : app.outline, shadowsFor(p)),
+              child: buildCard(h ? app.outlineHover : app.outline,
+                  isRow ? rowShadows : shadowsFor(p)),
               ),
             ),
           );

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_inputs.dart';
+import '../../../../shared/widgets/app_motion.dart';
 import '../../../../shared/widgets/app_top_bar.dart';
 import '../../providers/children_provider.dart';
 import '../providers/children_notifier.dart';
@@ -153,54 +154,60 @@ class _ChildFormScreenState extends ConsumerState<ChildFormScreen> {
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md,
                     AppSpacing.lg, AppSpacing.xl2),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    AppTextField(
-                      label: '娃娃昵称（例如：大宝）',
-                      controller: _nameCtrl,
+                child: PopIn(
+                  child: AppCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        AppTextField(
+                          label: '娃娃昵称（例如：大宝）',
+                          controller: _nameCtrl,
+                        ),
+                        const SizedBox(height: AppSpacing.lg),
+                        if (!_isEdit) ...[
+                          AppTextField(
+                            label: '登录账号（唯一，例如：dabao）',
+                            controller: _usernameCtrl,
+                          ),
+                          const SizedBox(height: AppSpacing.lg),
+                          AppTextField(
+                            label: '密码（至少 4 位）',
+                            controller: _passwordCtrl,
+                            obscureText: true,
+                          ),
+                          const SizedBox(height: AppSpacing.lg),
+                        ] else
+                          _LockedField(
+                              label: '登录账号（不可修改）', value: _usernameCtrl.text),
+                        AppPickerField<int>(
+                          label: '年级',
+                          values: List.generate(6, (i) => i + 1),
+                          labels: List.generate(6, (i) => '${i + 1} 年级'),
+                          value: _grade,
+                          onChanged: (v) => setState(() => _grade = v),
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        // 2px 墨黑硬分隔线（ADR-0044：borderWidth 即分隔线宽）。
+                        Container(
+                            height: AppElevation.borderWidth, color: AppBrutal.ink),
+                        const SizedBox(height: AppSpacing.md),
+                        InterestPicker(
+                          initial: _interests,
+                          onChanged: (v) => setState(() => _interests = v),
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        if (_error != null) ...[
+                          Text(_error!, style: TextStyle(color: app.error)),
+                          const SizedBox(height: AppSpacing.md),
+                        ],
+                        AppPrimaryButton(
+                          label: _isEdit ? '保存修改' : '创建娃娃账号',
+                          onPressed: _submitting ? null : _submit,
+                          loading: _submitting,
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: AppSpacing.lg),
-                    if (!_isEdit) ...[
-                      AppTextField(
-                        label: '登录账号（唯一，例如：dabao）',
-                        controller: _usernameCtrl,
-                      ),
-                      const SizedBox(height: AppSpacing.lg),
-                      AppTextField(
-                        label: '密码（至少 4 位）',
-                        controller: _passwordCtrl,
-                        obscureText: true,
-                      ),
-                      const SizedBox(height: AppSpacing.lg),
-                    ] else
-                      _LockedField(
-                          label: '登录账号（不可修改）', value: _usernameCtrl.text),
-                    AppPickerField<int>(
-                      label: '年级',
-                      values: List.generate(6, (i) => i + 1),
-                      labels: List.generate(6, (i) => '${i + 1} 年级'),
-                      value: _grade,
-                      onChanged: (v) => setState(() => _grade = v),
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    Container(height: 1, color: app.outline),
-                    const SizedBox(height: AppSpacing.md),
-                    InterestPicker(
-                      initial: _interests,
-                      onChanged: (v) => setState(() => _interests = v),
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    if (_error != null) ...[
-                      Text(_error!, style: TextStyle(color: app.error)),
-                      const SizedBox(height: AppSpacing.md),
-                    ],
-                    AppPrimaryButton(
-                      label: _isEdit ? '保存修改' : '创建娃娃账号',
-                      onPressed: _submitting ? null : _submit,
-                      loading: _submitting,
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -234,7 +241,10 @@ class _LockedField extends StatelessWidget {
           decoration: BoxDecoration(
             color: app.surfaceContainerLow,
             borderRadius: BorderRadius.circular(AppRadius.bubble),
-            border: Border.all(color: app.outline),
+            border: Border.all(
+              color: AppBrutal.ink,
+              width: AppElevation.borderWidth,
+            ),
           ),
           child: Text(value, style: text.bodyLarge),
         ),

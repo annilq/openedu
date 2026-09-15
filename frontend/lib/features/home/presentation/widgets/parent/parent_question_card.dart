@@ -4,6 +4,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../../shared/domain/models/models.dart';
 import '../../../../../shared/theme/app_theme.dart';
+import '../../../../../shared/widgets/app_motion.dart';
 import '../../../../../shared/widgets/stream_reasoning_panel.dart';
 
 /// 草稿审核页的单题卡片：只读展示 / 内联编辑 / 单题动作（入库、删除、换一题）。
@@ -100,33 +101,31 @@ class ParentQuestionCardState extends ConsumerState<ParentQuestionCard> {
   Widget build(BuildContext context) {
     final q = widget.question;
     final app = AppTheme.colorsOf(context);
-    return Container(
-      decoration: BoxDecoration(
-        color: app.surface,
-        borderRadius: BorderRadius.circular(AppRadius.card),
-        border: Border.all(color: app.outline),
-      ),
-      padding: const EdgeInsets.all(AppSpacing.md),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildHeader(q, app),
-          const SizedBox(height: AppSpacing.md),
-          _editing ? _buildEditForm(q) : _buildReadonly(q),
-          // 换一题进行中：在卡片内直接展示模型实时推理文本，而不是让家长只能看到
-          // 「处理中…」三个字干等十几秒。整卷重生成的 liveText 走顶部进度区，这里只渲染单题的。
-          if (!_editing && widget.liveText.isNotEmpty) ...[
+    return PopIn(
+      key: ValueKey(widget.index),
+      child: AppCard(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildHeader(q, app),
             const SizedBox(height: AppSpacing.md),
-            StreamReasoningPanel(
-              index: null,
-              label: '',
-              reasoning: widget.liveText,
-              streaming: true,
-            ),
+            _editing ? _buildEditForm(q) : _buildReadonly(q),
+            // 换一题进行中：在卡片内直接展示模型实时推理文本，而不是让家长只能看到
+            // 「处理中…」三个字干等十几秒。整卷重生成的 liveText 走顶部进度区，这里只渲染单题的。
+            if (!_editing && widget.liveText.isNotEmpty) ...[
+              const SizedBox(height: AppSpacing.md),
+              StreamReasoningPanel(
+                index: null,
+                label: '',
+                reasoning: widget.liveText,
+                streaming: true,
+              ),
+            ],
+            const SizedBox(height: AppSpacing.lg),
+            if (widget.isDraft) _buildActions(q, app),
           ],
-          const SizedBox(height: AppSpacing.lg),
-          if (widget.isDraft) _buildActions(q, app),
-        ],
+        ),
       ),
     );
   }
@@ -139,28 +138,21 @@ class ParentQuestionCardState extends ConsumerState<ParentQuestionCard> {
           width: 32,
           height: 32,
           decoration: BoxDecoration(
-            color: app.primaryContainer,
+            color: AppBrutal.violet,
             borderRadius: BorderRadius.circular(AppRadius.bubble),
+            border: Border.all(color: AppBrutal.ink, width: 2),
           ),
           alignment: Alignment.center,
           child: Text(
             '${widget.index}',
             style: AppTheme.textOf(context).labelLarge?.copyWith(
-                  color: app.onPrimaryContainer,
+                  color: AppBrutal.onDark,
                   fontWeight: FontWeight.w700,
                 ),
           ),
         ),
         const SizedBox(width: AppSpacing.md),
-        Container(
-          padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.sm, vertical: 2),
-          decoration: BoxDecoration(
-            color: app.surfaceContainerHigh,
-            borderRadius: BorderRadius.circular(AppRadius.sm),
-          ),
-          child: Text(q.subject, style: AppTheme.textOf(context).labelSmall),
-        ),
+        AppTags.subject(SubjectAccent.fromName(q.subject), label: q.subject),
         const SizedBox(width: AppSpacing.xs),
         Text(
           '${q.grade}年级·${q.knowledgePoint}·${_qtypeLabel(q.qtype)}·${_diffLabel(q.difficulty)}',
@@ -170,24 +162,9 @@ class ParentQuestionCardState extends ConsumerState<ParentQuestionCard> {
         ),
         const Spacer(),
         if (inBank)
-          Icon(
-            LucideIcons.checkCircle2,
-            size: 18,
-            color: app.primary,
-          )
+          AppTags.success('已入题库')
         else
-          Icon(
-            LucideIcons.circleDashed,
-            size: 18,
-            color: app.onSurfaceVariant,
-          ),
-        const SizedBox(width: AppSpacing.xs),
-        Text(
-          inBank ? '已入题库' : '未入题库',
-          style: AppTheme.textOf(context).labelMedium?.copyWith(
-                color: inBank ? app.primary : app.onSurfaceVariant,
-              ),
-        ),
+          AppTags.normal('未入题库'),
       ],
     );
   }

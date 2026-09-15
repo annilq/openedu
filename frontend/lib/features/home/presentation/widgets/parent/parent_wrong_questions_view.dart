@@ -47,7 +47,7 @@ class ParentWrongQuestionsView extends ConsumerWidget {
                     : Column(
                         children: [
                           for (final item in (state.dataOrNull ?? const <WrongQuestionModel>[]))
-                            AppCard(
+                            AppCard.listRow(
                               padding: const EdgeInsets.all(AppSpacing.md),
                               margin: const EdgeInsets.symmetric(
                                   vertical: AppSpacing.sm),

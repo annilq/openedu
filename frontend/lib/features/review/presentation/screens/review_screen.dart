@@ -11,6 +11,7 @@ import '../../../../shared/widgets/app_top_bar.dart';
 import '../providers/review_notifier.dart';
 import '../widgets/review_empty_view.dart';
 import '../widgets/review_question_view.dart';
+import '../../../../shared/widgets/app_motion.dart';
 
 /// 娃娃端复习作答页：逐题作答遗忘曲线到期的错题。
 /// v2 redesign：与 practice_screen 视觉一致（选项卡式答案、禁用提交、主题色弹窗）。
@@ -90,7 +91,6 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
 
   void _showResult(
       BuildContext context, AnswerResultModel result, ReviewItemModel item) {
-    final scheme = AppTheme.colorsOf(context);
     final text = AppTheme.textOf(context);
     final nextIn =
         result.correct ? '下次 ${item.nextIntervalDays} 天后复习' : '已重新计时，明天再来';
@@ -105,13 +105,9 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
           Text(nextIn, style: text.bodyMedium),
           if (result.explanation.isNotEmpty) ...[
             const SizedBox(height: AppSpacing.md),
-            Container(
-              width: double.infinity,
+            AppCard(
               padding: const EdgeInsets.all(AppSpacing.md),
-              decoration: BoxDecoration(
-                color: scheme.surfaceSunken,
-                borderRadius: BorderRadius.circular(AppRadius.card),
-              ),
+              margin: EdgeInsets.zero,
               child: Text(result.explanation, style: text.bodyMedium),
             ),
           ],
@@ -163,6 +159,11 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
                         decoration: BoxDecoration(
                           color: scheme.surfaceSunken,
                           borderRadius: BorderRadius.circular(999),
+                          // 色块 = 2px 墨黑描边 + 硬阴影（ADR-0044）。
+                          border: Border.all(
+                              color: AppBrutal.ink,
+                              width: AppElevation.borderWidth),
+                          boxShadow: AppElevation.hard(),
                         ),
                         child: Text(
                           '${_currentIndex + 1}/$_totalCount',
@@ -188,21 +189,25 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
                     ? _buildDoneView(context)
                     : (state.items.isEmpty
                         ? const ReviewEmptyView()
-                        : ReviewQuestionView(
-                            item: state.items[
-                                _currentIndex.clamp(0, state.items.length - 1)],
-                            selectedOption: _selectedOption,
-                            answerController: _answerController,
-                            submitting: _submitting,
-                            answerReady: _answerReady(state.items[_currentIndex
-                                .clamp(0, state.items.length - 1)]),
-                            onOptionTap: (v) => setState(() {
-                              _selectedOption = v;
-                              _answerController.text = v;
-                            }),
-                            onAnswerChanged: () => setState(() {}),
-                            onSubmit: () => _submit(state.items[_currentIndex
-                                .clamp(0, state.items.length - 1)]),
+                        : PopIn(
+                            // key 稳定 → 切到下一题时重放弹簧入场，已在屏上的不重放。
+                            key: ValueKey<int>(_currentIndex),
+                            child: ReviewQuestionView(
+                              item: state.items[
+                                  _currentIndex.clamp(0, state.items.length - 1)],
+                              selectedOption: _selectedOption,
+                              answerController: _answerController,
+                              submitting: _submitting,
+                              answerReady: _answerReady(state.items[_currentIndex
+                                  .clamp(0, state.items.length - 1)]),
+                              onOptionTap: (v) => setState(() {
+                                _selectedOption = v;
+                                _answerController.text = v;
+                              }),
+                              onAnswerChanged: () => setState(() {}),
+                              onSubmit: () => _submit(state.items[_currentIndex
+                                  .clamp(0, state.items.length - 1)]),
+                            ),
                           )),
               },
             ),

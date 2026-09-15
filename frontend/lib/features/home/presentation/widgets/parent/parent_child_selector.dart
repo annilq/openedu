@@ -28,16 +28,11 @@ class ParentChildSelector extends ConsumerStatefulWidget {
 
 class _ParentChildSelectorState extends ConsumerState<ParentChildSelector> {
   final _popoverCtrl = ShadPopoverController();
-  bool _triggerHovered = false;
 
   @override
   void dispose() {
     _popoverCtrl.dispose();
     super.dispose();
-  }
-
-  void _setHover(bool v) {
-    if (_triggerHovered != v) setState(() => _triggerHovered = v);
   }
 
   Future<void> _openAddChild() async {
@@ -69,11 +64,7 @@ class _ParentChildSelectorState extends ConsumerState<ParentChildSelector> {
       padding: const EdgeInsets.only(right: AppSpacing.md),
       child: ShadPopover(
         controller: _popoverCtrl,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => _popoverCtrl.toggle(),
-          child: _buildTrigger(scheme, childrenState, selected),
-        ),
+        child: _buildTrigger(scheme, childrenState, selected),
         popover: (_) => _buildPopover(scheme, childrenState, selected),
       ),
     );
@@ -108,21 +99,12 @@ class _ParentChildSelectorState extends ConsumerState<ParentChildSelector> {
       );
     }
 
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => _setHover(true),
-      onExit: (_) => _setHover(false),
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
-        decoration: BoxDecoration(
-          color: _triggerHovered
-              ? scheme.surfaceHover
-              : CupertinoColors.transparent,
-          borderRadius: BorderRadius.circular(AppRadius.button),
-        ),
-        child: Row(
-          children: [
+    return AppCard(
+      onTap: () => _popoverCtrl.toggle(),
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
+      child: Row(
+        children: [
             if (hasChildren)
               AvatarSquircle.xs(name: name)
             else
@@ -157,7 +139,6 @@ class _ParentChildSelectorState extends ConsumerState<ParentChildSelector> {
                   size: 14, color: scheme.onSurfaceVariant),
           ],
         ),
-      ),
     );
   }
 
@@ -242,21 +223,14 @@ class _ChildOption extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
+    return AppCard.listRow(
       onTap: onTap,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: Container(
+      margin: const EdgeInsets.symmetric(horizontal: AppSpacing.xs, vertical: 2),
+      color: active ? scheme.surfaceActive : null,
       padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.md, vertical: AppSpacing.xs),
-      margin: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
-          decoration: BoxDecoration(
-            color: active ? scheme.surfaceActive : CupertinoColors.transparent,
-            borderRadius: BorderRadius.circular(AppRadius.chip),
-          ),
-          child: Row(
-            children: [
+      child: Row(
+        children: [
               if (icon != null)
                 Icon(icon,
                     size: 18,
@@ -312,8 +286,6 @@ class _ChildOption extends StatelessWidget {
                 ),
             ],
           ),
-        ),
-      ),
     );
   }
 }

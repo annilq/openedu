@@ -125,21 +125,41 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
     ref.read(practiceNotifierProvider.notifier).goTo(index);
   }
 
-  Widget _buildPreviewBanner(AppColors scheme) {
+  Widget _buildPreviewBanner() {
     return Container(
-      color: scheme.tertiaryContainer,
+      margin: const EdgeInsets.fromLTRB(
+          AppSpacing.lg, AppSpacing.md, AppSpacing.lg, 0),
       padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: AppBrutal.paper,
+        borderRadius: BorderRadius.circular(AppRadius.banner),
+        border: Border.all(
+            color: AppBrutal.ink, width: AppElevation.borderWidth),
+        boxShadow: AppElevation.hard(),
+      ),
       child: Row(
         children: [
-          Icon(LucideIcons.eye, size: 18, color: scheme.onTertiaryContainer),
+          // 撞色图标块（cyan 亮块配墨黑字）作强调件，非整块铺色。
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: AppBrutal.cyan,
+              borderRadius: BorderRadius.circular(AppRadius.button),
+              border: Border.all(
+                  color: AppBrutal.ink, width: AppElevation.borderWidthSm),
+            ),
+            alignment: Alignment.center,
+            child: Icon(LucideIcons.eye, size: 18, color: AppBrutal.ink),
+          ),
           const SizedBox(width: AppSpacing.sm),
           Expanded(
             child: Text(
               '家长预览（只读）· 仅查看，不会写入娃娃作答记录',
               style: AppTheme.textOf(context)
                   .bodySmall
-                  ?.copyWith(color: scheme.onTertiaryContainer),
+                  ?.copyWith(color: AppBrutal.ink),
             ),
           ),
           ShadButton(
@@ -186,12 +206,17 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: AppSpacing.md, vertical: AppSpacing.xs),
                         decoration: BoxDecoration(
-                          color: scheme.surfaceSunken,
+                          // 题号 chip：violet 深块配白字（5.55:1），2px 墨黑描边。
+                          color: AppBrutal.violet,
                           borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                              color: AppBrutal.ink,
+                              width: AppElevation.borderWidthSm),
                         ),
                         child: Text(
                           '${state.currentIndex + 1}/${widget.task.questions.length}',
                           style: AppTheme.textOf(context).labelMedium?.copyWith(
+                                color: AppBrutal.onDark,
                                 fontFeatures: const [
                                   FontFeature.tabularFigures()
                                 ],
@@ -201,7 +226,7 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
                     )
                   : null,
             ),
-            if (_preview) _buildPreviewBanner(scheme),
+            if (_preview) _buildPreviewBanner(),
             Expanded(
               child: switch (state) {
                 PracticeIdle() => const AppLoading(message: '准备中...'),

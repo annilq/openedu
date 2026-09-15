@@ -5,6 +5,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_inputs.dart';
+import '../../../../shared/widgets/app_motion.dart';
 
 /// 兴趣分类词表（WF-1 定稿）：15 个一级 → 可选二级叶子。
 /// 取值语义见 wayfinder/tickets/01-兴趣分类词表.md。
@@ -199,17 +200,23 @@ class _LeafToggle extends StatelessWidget {
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
+        // 隐式动画不自动尊重 reduce-motion，必须显式归零（ADR-0044）。
+        duration: reducedMotionOf(context)
+            ? Duration.zero
+            : const Duration(milliseconds: 160),
         curve: Curves.easeOut,
         padding: const EdgeInsets.symmetric(
             horizontal: AppSpacing.md, vertical: AppSpacing.sm),
         decoration: BoxDecoration(
-          color: selected ? scheme.primaryContainer : scheme.surfaceContainerHigh,
+          // 选中态允许全填充（ADR-0044 仅 CTA 与选中态可全填）；
+          // cyan 亮块 → 只能配墨黑字（7.94:1），与 parent 兴趣主题 chip 同款。
+          color: selected ? AppBrutal.cyan : scheme.surfaceContainerLow,
           borderRadius: BorderRadius.circular(AppRadius.chip),
           border: Border.all(
-            color: selected ? scheme.primary : scheme.outline,
-            width: selected ? 1.5 : 0,
+            color: AppBrutal.ink,
+            width: AppElevation.borderWidth,
           ),
+          boxShadow: selected ? AppElevation.hard() : AppElevation.none,
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -218,11 +225,11 @@ class _LeafToggle extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(right: 6),
                 child: Icon(LucideIcons.check,
-                    size: 16, color: scheme.onPrimaryContainer),
+                    size: 16, color: AppBrutal.ink),
               ),
             Text(label,
                 style: text.labelMedium?.copyWith(
-                  color: selected ? scheme.onPrimaryContainer : scheme.onSurface,
+                  color: AppBrutal.ink,
                   fontWeight: FontWeight.w600,
                 )),
           ],

@@ -7,6 +7,7 @@ import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_chip.dart';
 import '../../../../shared/widgets/app_inputs.dart';
 import '../../../../shared/widgets/app_toast.dart';
+import '../../../../shared/widgets/app_motion.dart';
 import '../../domain/model_requests.dart';
 import '../providers/models_notifier.dart';
 
@@ -184,9 +185,10 @@ class _ModelFormDialogState extends ConsumerState<ModelFormDialog> {
           ),
         ),
       ],
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 480),
-        child: SingleChildScrollView(
+      child: PopIn(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -253,6 +255,7 @@ class _ModelFormDialogState extends ConsumerState<ModelFormDialog> {
               ),
             ],
           ),
+        ),
         ),
       ),
     );

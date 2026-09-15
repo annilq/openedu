@@ -5,6 +5,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/widgets/app_error.dart';
 import '../../../../../shared/widgets/app_loading.dart';
+import '../../../../../shared/widgets/app_motion.dart';
 import '../../../../../shared/domain/models/models.dart';
 import '../../../../../shared/presentation/resource.dart';
 import '../../../../children/providers/children_provider.dart';
@@ -63,7 +64,6 @@ class ParentOverviewView extends ConsumerWidget {
   }
 
   Widget _emptyState(BuildContext context) {
-    final scheme = AppTheme.colorsOf(context);
     return Align(alignment: Alignment.topLeft,
       child: AppCard(
         padding: const EdgeInsets.all(AppSpacing.md),
@@ -74,12 +74,13 @@ class ParentOverviewView extends ConsumerWidget {
               width: 52,
               height: 52,
               decoration: BoxDecoration(
-                color: scheme.primaryContainer,
+                color: AppBrutal.yellow,
                 borderRadius: BorderRadius.circular(AppRadius.card),
+                border: Border.all(color: AppBrutal.ink, width: 2),
               ),
               alignment: Alignment.center,
               child: Icon(LucideIcons.layoutDashboard,
-                  size: 28, color: scheme.onPrimaryContainer),
+                  size: 28, color: AppBrutal.ink),
             ),
             const SizedBox(width: AppSpacing.xl),
             Text('请先在侧栏选择娃娃', style: AppTheme.textOf(context).bodyLarge),
@@ -96,7 +97,8 @@ class ParentOverviewView extends ConsumerWidget {
       ResourceError() => AppError(message: progState.errorOrNull ?? ''),
       _ when progress == null =>
         const AppLoading.skeletonInline(skeletonLines: 2),
-      _ => AppCard(
+      _ => PopIn(
+          child: AppCard(
           padding: const EdgeInsets.all(AppSpacing.md),
           child: LayoutBuilder(
             builder: (context, constraints) {
@@ -135,6 +137,7 @@ class ParentOverviewView extends ConsumerWidget {
               );
             },
           ),
+          ),
         ),
     };
   }
@@ -163,75 +166,66 @@ class ParentOverviewView extends ConsumerWidget {
     final childrenState = ref.watch(childrenNotifierProvider);
     final nameOf = _childNameResolver(childrenState);
 
-    return AppCard(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-      child: Column(
-        children: [
-          for (int i = 0; i < tasks.length; i++) ...[
-            if (i > 0)
-              Container(
-                height: 1,
-                color: AppTheme.colorsOf(context).outline,
-              ),
-            _RecentTaskTile(
-              task: tasks[i],
-              childName: nameOf(tasks[i].childId),
+    return Column(
+      children: [
+        for (int i = 0; i < tasks.length; i++)
+          PopIn(
+            key: ValueKey(tasks[i].id),
+            child: AppCard.listRow(
               onTap: () => onNavigateToReview(tasks[i]),
+              margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+              child: _RecentTaskRow(
+                task: tasks[i],
+                childName: nameOf(tasks[i].childId),
+              ),
             ),
-          ]
-        ],
-      ),
+          ),
+      ],
     );
   }
 }
 
 /// 概览「最近任务」单行：标题 + 状态 + 对应娃娃。
-class _RecentTaskTile extends StatelessWidget {
+/// 卡片外壳由调用方用 [AppCard.listRow] 提供（列表降噪 + 可点）。
+class _RecentTaskRow extends StatelessWidget {
   final TaskModel task;
   final String? childName;
-  final VoidCallback onTap;
-  const _RecentTaskTile({
+  const _RecentTaskRow({
     required this.task,
     this.childName,
-    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final app = AppTheme.colorsOf(context);
-    return GestureDetector(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                task.title,
-                style: AppTheme.textOf(context).bodyMedium,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            if (childName != null)
-              Padding(
-                padding: const EdgeInsets.only(right: AppSpacing.sm),
-                child: Text(
-                  childName!,
-                  style: AppTheme.textOf(context).labelSmall?.copyWith(
-                        color: app.onSurfaceVariant,
-                      ),
-                ),
-              ),
-            _statusTag(task.status),
-            const SizedBox(width: AppSpacing.xs),
-            Icon(LucideIcons.chevronRight,
-                size: 16, color: app.onSurfaceVariant),
-          ],
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            task.title,
+            style: AppTheme.textOf(context).bodyMedium,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
-      ),
+        const SizedBox(width: AppSpacing.sm),
+        if (childName != null)
+          Padding(
+            padding: const EdgeInsets.only(right: AppSpacing.sm),
+            child: Text(
+              childName!,
+              style: AppTheme.textOf(context).labelSmall?.copyWith(
+                    color: app.onSurfaceVariant,
+                  ),
+            ),
+          ),
+        _statusTag(task.status),
+        const SizedBox(width: AppSpacing.xs),
+        Icon(LucideIcons.chevronRight,
+            size: 16, color: app.onSurfaceVariant),
+      ],
     );
   }
 
@@ -287,28 +281,25 @@ class _StatCard extends StatelessWidget {
       _Tone.alert => (scheme.errorContainer, scheme.onErrorContainer),
       _Tone.neutral => (scheme.surfaceSunken, scheme.onSurface),
     };
-    return Container(
+    return SizedBox(
       width: cardWidth,
-      padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        color: scheme.surfaceRaised,
-        borderRadius: BorderRadius.circular(AppRadius.card),
-        border: Border.all(color: scheme.outline, width: 1),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              color: bg,
-              borderRadius: BorderRadius.circular(AppRadius.card),
+      child: AppCard(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: bg,
+                borderRadius: BorderRadius.circular(AppRadius.card),
+                border: Border.all(color: AppBrutal.ink, width: 1.5),
+              ),
+              alignment: Alignment.center,
+              child: Icon(icon, size: 20, color: fg),
             ),
-            alignment: Alignment.center,
-            child: Icon(icon, size: 20, color: fg),
-          ),
           const SizedBox(height: AppSpacing.md),
           Text(value,
               style: AppTheme.textOf(context).headlineMedium?.copyWith(
@@ -318,6 +309,7 @@ class _StatCard extends StatelessWidget {
           const SizedBox(height: AppSpacing.xs),
           Text(label, style: AppTheme.textOf(context).bodySmall),
         ],
+      ),
       ),
     );
   }

@@ -6,6 +6,7 @@ import '../../../../tutor/domain/models.dart';
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/widgets/app_error.dart';
 import '../../../../../shared/widgets/app_loading.dart';
+import '../../../../../shared/widgets/app_motion.dart';
 import '../../../../tutor/presentation/providers/tutor_logs_notifier.dart';
 import '../../providers/selected_child_provider.dart';
 import '../../../../../shared/presentation/resource.dart';
@@ -44,14 +45,19 @@ class ParentTutorLogsView extends ConsumerWidget {
                               style: AppTheme.textOf(context).bodyLarge),
                         ),
                       )
-                    : AppCard(
-                        padding: const EdgeInsets.all(AppSpacing.md),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: (state.dataOrNull ?? const <TutorLogModel>[])
-                              .map((log) => _TutorLogCard(log: log))
-                              .toList(),
-                        ),
+                    : Column(
+                        children: (state.dataOrNull ?? const <TutorLogModel>[])
+                            .map((log) => PopIn(
+                                  key: ValueKey(log.id),
+                                  child: AppCard.listRow(
+                                    margin: const EdgeInsets.only(
+                                        bottom: AppSpacing.sm),
+                                    padding:
+                                        const EdgeInsets.all(AppSpacing.md),
+                                    child: _TutorLogCard(log: log),
+                                  ),
+                                ))
+                            .toList(),
                       ),
               },
             ],
@@ -62,7 +68,6 @@ class ParentTutorLogsView extends ConsumerWidget {
   }
 
   Widget _emptyState(BuildContext context) {
-    final scheme = AppTheme.colorsOf(context);
     return Align(alignment: Alignment.topLeft,
       child: AppCard(
         padding: const EdgeInsets.all(AppSpacing.md),
@@ -73,12 +78,13 @@ class ParentTutorLogsView extends ConsumerWidget {
               width: 52,
               height: 52,
               decoration: BoxDecoration(
-                color: scheme.secondaryContainer,
+                color: AppBrutal.cyan,
                 borderRadius: BorderRadius.circular(AppRadius.card),
+                border: Border.all(color: AppBrutal.ink, width: 2),
               ),
               alignment: Alignment.center,
               child: Icon(LucideIcons.sparkles,
-                  size: 28, color: scheme.onSecondaryContainer),
+                  size: 28, color: AppBrutal.ink),
             ),
             const SizedBox(width: AppSpacing.xl),
             Text('请先在侧栏选择娃娃', style: AppTheme.textOf(context).bodyLarge),
@@ -120,6 +126,8 @@ class _TutorLogCard extends StatelessWidget {
                 child: Text('问：${log.question}',
                     style: AppTheme.textOf(context).bodyMedium),
               ),
+              const SizedBox(width: AppSpacing.sm),
+              AppTags.subject(SubjectAccent.fromName(log.subject)),
               const SizedBox(width: AppSpacing.md),
               log.blocked
                   ? AppBadge.warningChip('已拦截')

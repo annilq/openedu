@@ -64,9 +64,9 @@ class _ParentTaskReviewScreenState
         _buildBody(task, busyTqId, progress, liveText),
     };
     return CupertinoPageScaffold(
-      backgroundColor: app.surfaceContainerLowest,
+      backgroundColor: app.surface,
       navigationBar: CupertinoNavigationBar(
-        backgroundColor: app.surfaceContainerLowest,
+        backgroundColor: app.surface,
         leading: CupertinoButton(
           padding: EdgeInsets.zero,
           onPressed: widget.onBackToHome,
@@ -177,8 +177,12 @@ class _ParentTaskReviewScreenState
 
     return Container(
       decoration: BoxDecoration(
-        color: app.surfaceContainerLowest,
-        border: Border(bottom: BorderSide(color: app.outline, width: 1)),
+        color: app.surface,
+        border: Border(
+          // 头部分隔 = 2px 墨黑描边（ADR-0044）。
+          bottom: BorderSide(
+              color: AppBrutal.ink, width: AppElevation.borderWidth),
+        ),
       ),
       child: Align(
         alignment: Alignment.topLeft,
@@ -311,13 +315,9 @@ class _ParentTaskReviewScreenState
       _ => ('未知', app.surfaceSunken, app.onSurface),
     } as (String, Color, Color);
 
-    return Container(
+    return AppCard(
       padding: const EdgeInsets.all(AppSpacing.xl),
-      decoration: BoxDecoration(
-        color: app.surface,
-        borderRadius: BorderRadius.circular(AppRadius.card),
-        border: Border.all(color: app.outline),
-      ),
+      margin: EdgeInsets.zero,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -338,6 +338,9 @@ class _ParentTaskReviewScreenState
                 decoration: BoxDecoration(
                   color: statusChip.$2,
                   borderRadius: BorderRadius.circular(AppRadius.bubble),
+                  // 状态 chip = 实心色块 + 2px 墨黑描边（ADR-0044）。
+                  border: Border.all(
+                      color: AppBrutal.ink, width: AppElevation.borderWidth),
                 ),
                 child: Text(
                   statusChip.$1,
@@ -520,17 +523,24 @@ class _EmptyHint extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final app = AppTheme.colorsOf(context);
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        color: app.surface,
-        borderRadius: BorderRadius.circular(AppRadius.card),
-        border: Border.all(color: app.outline),
-      ),
+    return AppCard(
+      margin: EdgeInsets.zero,
       child: Column(
         children: [
-          Icon(LucideIcons.inbox, size: 48, color: app.onSurfaceVariant),
+          Container(
+            width: 88,
+            height: 88,
+            decoration: BoxDecoration(
+              color: AppBrutal.yellow,
+              borderRadius: BorderRadius.circular(AppRadius.card),
+              border: Border.all(
+                  color: AppBrutal.ink, width: AppElevation.borderWidth),
+              boxShadow: AppElevation.hard(),
+            ),
+            alignment: Alignment.center,
+            child:
+                const Icon(LucideIcons.inbox, size: 44, color: AppBrutal.ink),
+          ),
           const SizedBox(height: AppSpacing.md),
           Text('草稿暂未包含任何题目', style: AppTheme.textOf(context).titleMedium),
           const SizedBox(height: AppSpacing.xs),
@@ -627,6 +637,10 @@ class _SpecsSummary extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: app.surfaceContainerHigh,
                   borderRadius: BorderRadius.circular(AppRadius.sm),
+                  // 小信息 chip = 1.5px 墨黑描边（ADR-0044，与学科 chip 同宽）。
+                  border: Border.all(
+                      color: AppBrutal.ink,
+                      width: AppElevation.borderWidthSm),
                 ),
                 child: Text(
                   '${s.subject}·${s.grade}·${s.knowledgePoint} x${s.count}',
