@@ -1,78 +1,36 @@
 # openedu · 项目长期约定
 
-## AI 入口与分层（ADR-0036/0037）
-- 前端 AI 唯一入口：`assistantNotifierProvider` + `AssistantMessageList`；家长=悬浮球 `FloatingAssistant`，娃娃=整页 `AssistantChatPage`。不再加第二个入口。
-- 后端唯一端点 `POST /api/v1/assistant/chat`（ADR-0024）；可见 SubAgent 单点 `AgentRuntime.visible_businesses(role)`。
-- 业务字段不前端预填：`AssistantChatReq` 只含 message/sessionId/model/history/focusInterest；subject 后端重算、grade 取 JWT。
-- 依赖单向 `main/ → features/* → shared/*`；`shared/` 不得 import `features/`。`App*` 前缀只给 shared 通用组件。守卫 `frontend/test/feature_boundaries_test.dart`（R1/R2/R3）。
+## 前端分层（ADR-0036/0037）
+- AI 唯一入口 `assistantNotifierProvider`+`AssistantMessageList`（家长悬浮球 / 娃娃整页）；后端唯一端点 `POST /api/v1/assistant/chat`。业务字段不前端预填（subject 后端算、grade 取 JWT）。
+- 单向 `main/ → features/* → shared/*`；`shared/` 不得 import `features/`；`App*` 只给 `shared/widgets/`。
+- 9 feature 全有 repository（`domain/repositories` 接口 + `data/repositories/*_impl` + `features/<f>/providers/` 组合根）；**刻意不建 datasource**。守卫 `test/feature_boundaries_test.dart` R1–R5（R4/R5 棘轮，已清零）。
+- `ResourceNotifier<T>` 只吃 `Future<T> Function()`，解析在 repository；`decodeList/decodeMap` 在 `shared/utils/json_decode.dart`。请求 DTO 归 domain。
 
-## 前端分层落地约定（2026-09-15 重构后，见 docs/frontend-architecture-review.md）
-- **9 个 feature 全部有 repository**：`domain/repositories/<x>_repository.dart`（接口）+ `data/repositories/<x>_repository_impl.dart`（端点 + 模型映射）+ `providers/<x>_provider.dart`（组合根）。**刻意不建 datasource**——项目已删过一个 pass-through datasource，再垫只做转发的层是重蹈覆辙。
-- **组合根 = feature 级的 `features/<f>/providers/`**（与 `data|domain|presentation` 平级）。装配代码必然同时 import data（绑实现）和 presentation（建 notifier），塞进 domain 会反向依赖 presentation、塞进 presentation 会违反 R4。auth/children/practice/review/home/assistant/model_management/tutor 均已建。
-- **边界守卫 5 条**（`test/feature_boundaries_test.dart`）：R1 shared 不 import features · R2 除 home 外 feature 不横向 import · R3 features 下不定义 `App*` · **R4 presentation 不 import data** · **R5 domain 不 import presentation**。R4/R5 用**棘轮**（`_knownR4`/`_knownR5` 只许变短）：名单外新违规红、名单内已修未删也红。**两条名单均已清零**，新增违规会直接红。
-- `shared/presentation/resource.dart`：`ResourceNotifier<T>` 只吃 `Future<T> Function()`，**解析在 repository**（不要在 notifier 再 parse 一次，会双重解析）。
-- `decodeList`/`decodeMap` 在 `shared/utils/json_decode.dart`（消费方是 data 层，放 presentation 会倒置）。
-- 请求 DTO 归 domain：`assistant/domain/assistant_requests.dart`（AssistantChatReq/TaskGenerateReq）、`model_management/domain/model_requests.dart`。
-- 模型归属：`shared/domain/models/models.dart` 只放多 feature 共用的（708 行）；`TutorLogModel` 归 `tutor/domain/models.dart`，`Model*` 归 `model_management/domain/models.dart`。**不要为它们做 barrel**（shared 反向 export features 违反 R1）。
-
-## Dart 陷阱 / 沙箱
+## Dart / Flutter 陷阱
+- ✅ `flutter test` 可跑，**先关代理**：`env no_proxy="127.0.0.1,localhost,::1" NO_PROXY=同值 <sdk>/bin/flutter test`（否则 flutter_tester 的本地 WebSocket 走代理，报 `Invalid WebSocket upgrade request`）。
+- **Flutter SDK = `/Users/annilq/Documents/fulttersdk/flutter`**（不在 PATH）。`flutter analyze` 很快但退出码常非 0 → 看输出 `No issues found!`。
+- ⚠️ **`Row(crossAxisAlignment: stretch)` 必须包 `IntrinsicHeight`**：左色条行卡（左色条+`Expanded`）落在 `Column`/`ListView`/`CustomScrollView`（高度无界）里会抛 `BoxConstraints forces an infinite height`（`h=Infinity`）。`Column(stretch)` 是横向拉伸、**安全**。守卫 `test/stretch_row_guard_test.dart`（棘轮）。详见 ADR-0044。
+- ⚠️ **`ShadButton` 不可放进会压缩它的容器**（`Expanded`/固定宽）：内部文字不收缩 → `RenderFlex overflowed`。并排按钮一律 `Wrap`。主题层按钮水平 padding 已各减 2 抵消 2px 描边增量。
 - 相对 import `..` 越过 `lib/` 根时分析器「截断」不报错 → 层数自己数准。
-- ✅ **`flutter test` 能跑**（2026-09-15 订正：旧记「沙箱跑不了」是误判）。失败真因是环境 `HTTP_PROXY=http://127.0.0.1:54128`，Dart HttpClient 把 flutter_tester 的**本地 WebSocket** 也走代理 → `Unable to connect to flutter_tester process: WebSocketException: Invalid WebSocket upgrade request`。加 `no_proxy` 即可：
-  `env no_proxy="127.0.0.1,localhost,::1" NO_PROXY="127.0.0.1,localhost,::1" ~/Documents/fulttersdk/flutter/bin/flutter test`
-- **Flutter SDK 在 `/Users/annilq/Documents/fulttersdk/flutter`（不在 PATH，须全路径调用）**。旧记忆记的 `/Users/yunqi/Documents/flutter` 已失效（2026-09-15 实测）。
-- `flutter analyze` 可用且很快（~5s）。`flutter analyze lib` 可排除 test 目录。
-- 注意：`flutter analyze` 的退出码常非 0（沙箱拦 dartServer 临时文件写），**看输出里的 `No issues found!` 而非退出码**。
 
-## Git 工作流
-- ✅ **`git push origin main` 可通**（2026-09-15 实测推 `7b947bc..b180439`）。可能需沙箱放行。
-- ⚠️ push 有时会输出 `Everything up-to-date` 但实际**已推送成功**——不要据此判定失败。用 `git ls-remote origin main` 比对 `git rev-parse HEAD` 才是准的。
-- ⚠️ push 走环境代理（`HTTPS_PROXY=127.0.0.1:<端口>`，端口每次会话会变）。代理挂了的表现是 `Failed to connect ... port 443` 或 `CONNECT tunnel failed, response 502`。**先用 `curl -x $HTTPS_PROXY https://github.com` 探活再决定重试**，别盲目反复 push（单次超时 75s）。2026-09-15 晚曾连续失败，改由用户手动推。
-- 提交习惯：按**逻辑批次拆 commit**（如「架构重构」与「视觉语言」分开），不成坨。正文写清「为什么」而非「改了什么」。仓库已有 `chore(memory):` 惯例，memory 更新可单独提交。
-- `backend/.agents/` 是工具产物的 skill 缓存，未跟踪，**不要顺手 commit**（2026-09-15 起存在）。
+## 视觉语言：新粗野（ADR-0044）
+- 高饱和撞色 + 2px 墨黑描边 + 无模糊硬阴影 + 弹簧动效（弃 `Curves.easeOutBack`）。色块=**强调件**（≤卡片 40%、单屏大色块 ≤3 色相、列表行禁整行填充）；亮块配墨黑字、深块配白字（WCAG AA 实测）。
+- 列表行用 `AppCard.listRow`（1px、无阴影），独立卡用 `AppCard`（2px+硬阴影）；学科三重编码 `AppTags.subject`+`SubjectMarkIcon`；新增 `AppBrutal`/`AppElevation`/`AppSprings`/`AppBrutalButton`；动效 `AppMotion`（PopIn/PressScale/ConfettiBurst，均尊重 reduce-motion）。
+- **隐式动画**（`AnimatedContainer`/`AnimatedPositioned` 等）**不会自动尊重 reduce-motion**，须显式 `duration: reducedMotionOf(context) ? Duration.zero : ...`。
+- 单一事实源 `.impeccable.md`；术语见 `CONTEXT.md` §设计语言。
+- **铺开状态（2026-09-15 第二轮）**：页面层已铺完（家长首页 5 子视图 / 练习 / 复习 / AI 助手 / 孩子档案 / 模型管理 / 账户 / 草稿审核）；`home_screen`、`child_mastery_screen`、`mastery_board` 无需改。**未铺开：`shared/widgets/`（除 `app_motion.dart`）仍是旧 Linear 配色**——下一批独立处理（共享组件影响多页，勿与页面流并发改）。待真机验证：家长端密集列表 2px 墨黑边 + 硬阴影是否过吵。
 
-## 引擎/密钥（ADR-0038 / 0041）
-- `decrypt()` 解不开只返 `None`，**密文永不出门**。失败分两类：`ToolUnsupportedError`(无FC) vs `ProviderRequestError`(厂商拒绝)，落点 `agent_core/adapters/genkit.py#classify_failure`。
-- 密钥漂移已止血；`env_file` 与 `DATABASE_URL` 均 CWD 无关（`config.py` 按 `__file__` 解析）。**`SECRET_KEY` 已不再是默认值**（ADR-0041 正经正文）：未显式配置时 `resolve_effective_secret_key` 生成随机密钥并落盘 `backend/.secret_key`；`secrets.py:check_runtime_secrets_health` 启动期冒烟，生产缺配阻断启动。
-- 文本防护 `subagent.py:127-142`（无原生 ToolCall + 含 XML 协议标记 → TOOL_UNSUPPORTED）仍在，但它**不是根治**，只覆盖「答案带协议」形态。
+## Git
+- ✅ `git push origin main` 可通；⚠️ 常输出 `Everything up-to-date` 但其实**已成功**，以 `git ls-remote origin main` 比对 HEAD 为准。push 走环境代理（端口每会话变），失败先 `curl -x $HTTPS_PROXY https://github.com` 探活再重试。
+- 提交按**逻辑批次**拆，正文写「为什么」；`chore(memory):` 可单独提交。`backend/.agents/` 未跟踪，**别顺手 commit**。
 
-## 工具 schema strict（ADR-0040）
-- genkit 把 `"required": []` 在 wire 改写成「全 property 必填」+ `strict:True` → 每个可省略参数都要有**缺席编码**：字符串 `""`、整数 `0`、枚举含 `NO_FILTER="all"`。`UNSET_TOKENS` 覆盖 `""/all/any/*/none/null/nil/undefined/unset/n/a/na`。归一收口 `query/tools/_shared.py`（`optional_str`/`optional_int`/`resolve_children`）。守卫 `tests/ai/test_query_tools_contract.py`。
+## 后端（引擎 / 密钥 / schema / 泄露）
+- `decrypt()` 解不开只返 `None`（**密文永不出门**）；`ToolUnsupportedError`(无FC) vs `ProviderRequestError`(厂商拒绝) 落点 `agent_core/adapters/genkit.py#classify_failure`；禁用 `except Exception` 把引擎失败抹成「请添加模型」。
+- `SECRET_KEY` 未配置时生成随机密钥落盘 `backend/.secret_key`，启动期冒烟（ADR-0041）。`env_file`/`DATABASE_URL` 均 CWD 无关。
+- 工具 schema strict（ADR-0040）：可省略参数要有缺席编码（`""`/`0`/枚举含 `NO_FILTER="all"`），归一收口 `query/tools/_shared.py`。守卫 `tests/ai/test_query_tools_contract.py`。
+- 助手推理/正文分流（ADR-0043，已修）：`TextDelta.kind`，`acc` 只收 TEXT；协议泄露判据分**强/弱两档**，强标记命中即判、**不得绑定工具名**。守卫 `tests/ai/test_tool_loop_bounds.py`。残留：默认模型 `deepseek-v4-flash` 多轮 tool loop 会退化成 XML 文本 → 对策是**减跳数**（`child_name` 一跳直达）。
 
-## 助手回答泄露：已修（2026-09-15，推理/正文分流，ADR-0043）
-- `TextDelta.kind`（`ports.py TextKind`）由 adapter 按 `SegmentKind` 标注；`subagent.py` 的 `acc` **只收 kind=TEXT**，思维链走 `turn_thinking` 且不进回灌历史；工具型 subagent「无原生 ToolCall 且正文空」→ `ERROR(TOOL_UNSUPPORTED)`。落地 `77fd33f`，正文 `docs/adr/0043-reasoning-text-channel-split.md`。
-- ✅ **编号悬空已订正**：该决策曾被代码误标 `ADR-0041`（0041 实为「启动期密钥健康检查」）→ 已落 ADR-0043，并把 `ports.py`/`genkit.py`/`subagent.py` 及两个测试的引用全部迁到 0043。`config.py`/`secrets.py`/`main.py` 的 0041 保持不动。
-- 残留：纯自然语言「我去查一下」（无协议标记）仍当普通回答流出——泄露危害已消除，根治须模型侧原生 FC。
-- ⚠️ **协议泄露判据不得绑定工具名**（2026-09-15 修）：`_text_looks_like_tool_call` 原为「协议标记命中 **且** 点名已注册工具」。模型把 `list_wrong_questions` 幻觉成 `get_mistakes` 时点名必然落空 → 整段 `<tool_calls><invoke name="get_mistakes">…` 落库并下发（会话 `ff07d664…`）。现拆**强/弱两档**：强标记（`<invoke name=` / `</invoke>` / `<parameter name=` / `<function_calls>` / `antml:`）**命中即判泄露、与工具名无关**；弱标记（`"name": "` 等可能与正文同形者）保留点名收紧。另新增 `_PARTIAL_TOOL_CALL_HINT`：`native_fc_seen=True`（数据卡已下发）时报「本轮未完成、上方数据已给出」，不复述「查询无法执行」。守卫 `tests/ai/test_tool_loop_bounds.py`（24→28 passed）。
-- **模型侧已知事实：默认模型 `deepseek-v4-flash`（`openai_compat` / `api.deepseek.com`）在多轮 tool loop 里会把调用退化成 XML 文本**，参数含长 uuid 时尤甚（与 ADR-0040 的「strict 必填陷阱 → 空转 → 把调用叙述成文本」同源）。**对策是减跳数而非只堵输出**：`query` SOP 与 `_SYSTEM` 已改为优先用 `child_name` 一跳直达，仅昵称歧义时才取 `child_id`；`list_children` 描述同步删掉「不确定时先调本工具」的引导。
-- ✅ **AI 气泡 Markdown 渲染已落地**：`gpt_markdown` → `shared/widgets/app_markdown.dart#AppMarkdown`（设计令牌映成 `GptMarkdownStyleSheet`；代码块复制按钮关闭、沿用原生整条复制；根 CupertinoApp 无 Material 祖先），接入 `assistant_message_list.dart`。落地 `349e4ec`（`pubspec` 加 `gpt_markdown`）。
-
-## 视觉语言（ADR-0044，2026-09-15 定，代码未动）
-- **新粗野**已定为新视觉语言，取代 Linear 克制风：高饱和原色撞色 + 2px 墨黑描边 + 无模糊硬阴影 + 弹性动效。层级靠描边/位移，不靠色块面积。
-- **色块是强调件不是铺底**（统一到家长端上限）：填充 ≤ 卡片 40%、单屏色相 ≤ 3、列表行禁整行填充。双端**统一强度**，不设 parent/child 双色板；仅保留 ADR-0014 的 Child 字号放大一档。
-- **配色硬约束（实测 AA）**：亮块只能配墨黑 `#111110`，深块（violet/red/blue）只能配白字——高饱和色配白字最高仅 4.78，过不了。相邻色块对比中位数 1.67 → 墨黑描边是功能必需，不可「简化」掉。
-- 动效弃用 `Curves.easeOutBack`，改真弹簧（`SpringDescription`/`springster`）。
-- 迁移顺序：token 层先行 + 试点，**禁止一次性全量重做**。
-- **试点已完成**（2026-09-15）：token 层 + 共享组件（AppCard/按钮主题/学科 chip/SectionTitle）+ 儿童端首页 + 家长端任务表单。全站其余页面仍走旧写法属预期。铺开时按同一套「左色条 + chip + CTA 撞色」模板推进。
-- 新增组件：`AppBrutalButton`（撞色填充 + `AppBrutal.onColor` 前景 + 硬阴影 + 按压下沉）、`SubjectMarkIcon`。学科 chip 一律 1.5px 墨黑描边（英语黄在纸底仅 1.38:1）。
-- 「单屏色相 ≤3」只约束**大面积色块（> 卡片 5%）**；学科 chip / 题号 chip / 语义容器 / 庆祝粒子不计入（已写进 ADR-0044）。
-- 待真机验证：家长端密集列表（掌握度看板 / 错题列表）加 2px 墨黑边 + 硬阴影是否过吵。
-- 设计单一事实源是 `.impeccable.md`（2026-09-15 首次建立，此前缺失但代码已引用它）；术语见 `CONTEXT.md` §设计语言。
-
-## Flutter / shadcn 踩坑
-- **`ShadButton` 不可放进会压缩它的容器**（`Expanded` / 固定宽）：内部是 `Padding → Row(mainAxisSize: min)`，文字**不收缩**，父给 tight 窄宽时直接 `RenderFlex overflowed`（不 ellipsis 不换行）。并排多个按钮一律用 `Wrap`。
-- 主题层按钮水平 padding 已各减 2（regular 12 / sm 8 / lg 16）以抵消 ADR-0044 的 2px 描边宽度增量，改 padding 前先算这个账。
-
-## 已知未修小瑕疵
-- 无。原「编辑模型服务商下拉误导」已于 2026-09-15 修（`349e4ec`）：`AppPickerField.value` 放开为 `T?` + 新增 `placeholder` 参数；`model_form_dialog.dart` 未匹配预设时传 `value: _presetKey`，显示「自定义（未匹配预设）」而非硬选第一个。已真机验证。
-
-## 架构重构候选（① ② ③ ⑤ 已完成；④+⑥ 进行中）
-- 已完成：① `core/guard.py`（`require_owned`/`find_owned`/`require_owned_child`，合并 7 处归属判定）② tasks write-path 下沉 `features/tasks/service.py`（`router.py` 只剩薄壳）③ SSE reducer fold（`assistant/domain/question_gen_fold.dart` + `ai_text_fold.dart`）⑤ `core/async_bridge.py#run_async`（grader/tutor/tasks 三处收口，删裸 `asyncio.run`）。
-- 未完成：④+⑥ `Resource<T>` 迁移——`shared/presentation/resource.dart` 已建，home 的 today/progress/mastery 已迁；**ModelsState / DueReviewState / ReviewState / BankState / ChildrenState 仍是自建四态**。（TaskGen/Assistant/Auth/Practice 是「带动作状态机」，按 resource.dart 自述不套，不算欠账。）
-- 待办：AI 集成层待业务闭环后整层重构。
-- 文档缺口：③ 无 ADR；⑤ docstring 仍是 `ADR-00xx` 占位。`docs/adr/` 现 0001–0043；`docs/agent-core-architecture-review.md` §7 与 `AGENTS.md` 风险段已于 2026-09-15 标注 P0/P1/P2 关闭。
-
-## 后端测试/沙箱约束
-- pytest 前 `cd backend && mv .env .env.hidden`（避 broker 读 .env），跑完恢复。用 `.venv/bin/ruff` / `.venv/bin/pytest`。
-- zsh 里 `grep "a\|b"` 静默空，用 Grep 工具或分次单模式 grep。
-- 偶发 `PermissionError: Sensitive content approval timed out` → 重跑即可。
-- **`git push` 2026-09-15 实测可通**（此前记忆记「沙箱阻断」，已不成立；成功推 `349e4ec..77cf7e1`）。仍可能随网络波动，失败时重试。
+## 后端测试 / 待办
+- pytest 前 `cd backend && mv .env .env.hidden`（避 broker 读 .env），跑完恢复；用 `.venv/bin/ruff`、`.venv/bin/pytest`。偶发 `PermissionError: Sensitive content approval timed out` → 重跑即可。
+- `Resource<T>` 迁移未完成（Models/DueReview/Review/Bank/Children 仍自建四态）；AI 集成层待业务闭环后整层重构；③/⑤ 重构无 ADR。`docs/adr/` 现 0001–0044。
+- 已知未修小瑕疵：无。
