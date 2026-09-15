@@ -79,7 +79,7 @@ class PracticeQuestionView extends StatelessWidget {
             AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xl2),
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 820),
+            constraints: const BoxConstraints(maxWidth: AppLayout.contentReading),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -121,7 +121,7 @@ class PracticeQuestionView extends StatelessWidget {
                   onPressed: preview
                       ? (isLast ? null : onNext)
                       : (answerReady ? onSubmit : null),
-                  height: 52,
+                  height: AppControl.heightLgOf(context),
                   fullWidth: false,
                 ),
                 if (!preview && !answerReady)

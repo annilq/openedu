@@ -68,7 +68,7 @@ class AppQuizResultCard extends StatelessWidget {
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(AppSpacing.md),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 520),
+          constraints: const BoxConstraints(maxWidth: AppLayout.contentCard),
           child: AppCard(
             margin: EdgeInsets.zero,
             padding: const EdgeInsets.all(AppSpacing.md),

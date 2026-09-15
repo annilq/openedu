@@ -32,7 +32,7 @@ class PracticeDoneView extends StatelessWidget {
         label: '完成打卡',
         icon: LucideIcons.checkCircle2,
         onPressed: onCheckin,
-        height: 52,
+        height: AppControl.heightLgOf(context),
         fullWidth: false,
       ),
       overlay: perfect ? const ConfettiBurst() : null,

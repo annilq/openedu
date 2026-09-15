@@ -103,10 +103,10 @@ class _AppTextFieldState extends State<AppTextField> {
                 ),
           trailing: widget.obscureText
               ? SizedBox(
-                  // 眼睛切换按钮：用 heightSm（比 tight 32 的输入矮一档 = 28），
-                  // 直接钉死盒尺寸，避免 shadcn ShadButton 内部 padding / 尺寸膨胀
-                  // 把 28 顶成 32+ 撑爆 BoxyColumn。命中区用 GestureDetector 包裹
-                  // Icon（与 AppCard 同套路：无 Material 依赖、尺寸确定）。
+                  // 眼睛切换按钮：用 heightSm（比标准档输入矮一阶，parent compact
+                  // = 32 对 40），直接钉死盒尺寸，避免 shadcn ShadButton 内部
+                  // padding / 尺寸膨胀把盒子顶爆 BoxyColumn。命中区用 GestureDetector
+                  // 包裹 Icon（与 AppCard 同套路：无 Material 依赖、尺寸确定）。
                   width: AppControl.heightSmOf(context),
                   height: AppControl.heightSmOf(context),
                   child: GestureDetector(

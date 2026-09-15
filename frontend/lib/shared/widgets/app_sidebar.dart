@@ -22,15 +22,22 @@ class SidebarCollapseScope extends InheritedWidget {
     return context.dependOnInheritedWidgetOfExactType<SidebarCollapseScope>()!;
   }
 
+  /// 可空版本：抽屉态不注入本 scope，`sidebarTop` 仍会被渲染。
+  ///
+  /// 读不到的语义是「没有可收缩的侧栏」→ 视为展开态（抽屉本来就是全宽面板）。
+  static SidebarCollapseScope? maybeOf(BuildContext context) {
+    return context.dependOnInheritedWidgetOfExactType<SidebarCollapseScope>();
+  }
+
   @override
   bool updateShouldNotify(SidebarCollapseScope old) =>
       collapsed != old.collapsed;
 }
 
-/// 侧栏导航项：图标 + 文字，active 态显示左竖条 + 浅灰药丸背景。
+/// 侧栏导航项：图标 + 文字，active 态用药丸底色 + accent 图标。
 ///
 /// 收缩态（通过 [SidebarCollapseScope] 注入）只显示居中图标，
-/// 隐藏 label / trailing / 左竖条，active 用药丸背景区分。
+/// 隐藏 label 与 trailing，active 仍靠药丸底色区分。
 class AppSidebarItem extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -54,19 +61,20 @@ class AppSidebarItem extends StatelessWidget {
     final scheme = AppTheme.colorsOf(context);
     final text = AppTheme.textOf(context);
 
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        // 选中态即时切换，避免渐隐造成切换时的闪烁感。
+    return Padding(
+      // margin 提到焦点环外侧：环必须贴着药丸，而不是把 margin 也圈进去。
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm, vertical: 2),
+      child: AppFocusableAction(
+        onTap: onTap,
+        semanticLabel: label,
+        borderRadius: BorderRadius.circular(AppRadius.chip),
+        hoverHighlight: true,
         child: Container(
           padding: collapsed
               ? const EdgeInsets.symmetric(vertical: AppSpacing.sm)
               : const EdgeInsets.symmetric(
                   horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-          margin: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.sm, vertical: 2),
           decoration: BoxDecoration(
             color: active ? scheme.surfaceActive : CupertinoColors.transparent,
             borderRadius: BorderRadius.circular(AppRadius.chip),
@@ -112,9 +120,11 @@ class AppSidebarItem extends StatelessWidget {
   }
 }
 
-/// 侧栏容器：顶部区 + 收缩切换按钮 + 中部导航列表 + 底部区。
+/// 侧栏容器：头部区（可选 [top] + 收缩切换按钮）+ 中部导航列表 + 底部区。
 ///
-/// 收缩态隐藏 [top] 区；底部区由调用方根据 [SidebarCollapseScope] 自适应。
+/// 头部四向内边距统一走 [AppLayout.sidebarHeaderPadding]，使 [top] 的左缘与导航项
+/// 左缘对齐；展开时 [top] 与收缩按钮同行（按钮贴右），收起时二者竖排堆叠，保证
+/// 「当前在看谁的数据」这一信息在轨态不丢失。
 class AppSidebar extends StatelessWidget {
   final Widget? top;
   final List<Widget> items;
@@ -132,21 +142,7 @@ class AppSidebar extends StatelessWidget {
     final scope = SidebarCollapseScope.of(context);
     return Column(
       children: [
-        if (top != null && !scope.collapsed)
-          Row(
-            children: [
-              Expanded(child: top!),
-              _CollapseToggle(
-                collapsed: false,
-                onToggle: scope.onToggle,
-              ),
-            ],
-          )
-        else
-          _CollapseToggle(
-            collapsed: scope.collapsed,
-            onToggle: scope.onToggle,
-          ),
+        _buildHeader(context, scope),
         Expanded(
           child: ListView(
             padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
@@ -157,8 +153,44 @@ class AppSidebar extends StatelessWidget {
       ],
     );
   }
+
+  /// 头部：只有 [top] 为空时才退化为「单独一个居中切换按钮」。
+  Widget _buildHeader(BuildContext context, SidebarCollapseScope scope) {
+    final toggle = _CollapseToggle(
+      collapsed: scope.collapsed,
+      onToggle: scope.onToggle,
+    );
+    if (top == null) {
+      return Padding(
+        padding: AppLayout.sidebarHeaderPadding,
+        child: Align(alignment: Alignment.center, child: toggle),
+      );
+    }
+    return Padding(
+      padding: AppLayout.sidebarHeaderPadding,
+      child: scope.collapsed
+          ? Column(
+              children: [
+                top!,
+                const SizedBox(height: AppSpacing.xs),
+                toggle,
+              ],
+            )
+          : Row(
+              children: [
+                Expanded(child: top!),
+                const SizedBox(width: AppSpacing.sm),
+                toggle,
+              ],
+            ),
+    );
+  }
 }
 
+/// 侧栏收起 / 展开按钮。
+///
+/// 悬停底色走 [AppFocusableAction.hoverHighlight]（与导航项同一套悬停语言）；
+/// 尺寸取 [AppLayout.tapTarget]，与头部另一侧的选择器同高，基线齐平。
 class _CollapseToggle extends StatelessWidget {
   final bool collapsed;
   final VoidCallback onToggle;
@@ -167,22 +199,18 @@ class _CollapseToggle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = AppTheme.colorsOf(context);
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
+    return AppFocusableAction(
       onTap: onToggle,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: Container(
-          width: 44,
-          height: 44,
-          alignment: Alignment.center,
-          child: Icon(
-            collapsed
-                ? LucideIcons.panelLeftOpen
-                : LucideIcons.panelLeftClose,
-            size: 18,
-            color: scheme.onSurfaceVariant,
-          ),
+      semanticLabel: collapsed ? '展开侧栏' : '收起侧栏',
+      borderRadius: BorderRadius.circular(AppRadius.chip),
+      hoverHighlight: true,
+      child: SizedBox(
+        width: AppLayout.tapTarget,
+        height: AppLayout.tapTarget,
+        child: Icon(
+          collapsed ? LucideIcons.panelLeftOpen : LucideIcons.panelLeftClose,
+          size: 18,
+          color: scheme.onSurfaceVariant,
         ),
       ),
     );
@@ -203,7 +231,10 @@ class AppSidebarDivider extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
-      child: Container(height: 1, color: scheme.outline),
+      child: Container(
+        height: AppElevation.borderWidthHairline,
+        color: scheme.outline,
+      ),
     );
   }
 }

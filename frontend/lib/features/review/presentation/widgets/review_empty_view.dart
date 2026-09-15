@@ -16,7 +16,7 @@ class ReviewEmptyView extends StatelessWidget {
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(AppSpacing.md),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 440),
+          constraints: const BoxConstraints(maxWidth: AppLayout.contentEmpty),
           child: PopIn(
             child: AppCard(
               padding: const EdgeInsets.all(AppSpacing.md),

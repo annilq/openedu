@@ -114,7 +114,7 @@ class _WrongQuestionsScreenState extends ConsumerState<WrongQuestionsScreen> {
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(AppSpacing.xl2),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 440),
+          constraints: const BoxConstraints(maxWidth: AppLayout.contentEmpty),
           child: PopIn(
             child: AppCard(
               padding: const EdgeInsets.all(AppSpacing.md),

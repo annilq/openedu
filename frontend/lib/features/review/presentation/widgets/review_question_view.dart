@@ -37,7 +37,7 @@ class ReviewQuestionView extends StatelessWidget {
           AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xl2),
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 820),
+          constraints: const BoxConstraints(maxWidth: AppLayout.contentReading),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -83,7 +83,7 @@ class ReviewQuestionView extends StatelessWidget {
                 loadingLabel: '判题中…',
                 loading: submitting,
                 onPressed: answerReady ? onSubmit : null,
-                height: 52,
+                height: AppControl.heightLgOf(context),
                 fullWidth: false,
               ),
               if (!answerReady && !submitting)

@@ -15,9 +15,9 @@ import 'assistant_cards.dart';
 
 /// 统一的 AI 消息列表渲染（ADR-0036 单入口 / ADR-0042 卡片协议）。
 ///
-/// 悬浮面板 [AssistantChatPanel] 与整页 [AssistantChatPage] 共用本组件，
-/// 保证两个形态对卡片、`blocked`、复制按钮的渲染行为完全一致——收敛前整页只渲染
-/// 纯文本、静默吞掉 DATA 帧，是「两份渲染」的直接后果。
+/// 助手整页 [AssistantChatPage]（娃娃端页签 / 家长端浮球打开的都是它）渲染本组件，
+/// 保证两个角色对卡片、`blocked`、复制按钮的渲染行为完全一致——收敛前悬浮面板与整页
+/// 各写一份渲染，整页只渲染纯文本、静默吞掉 DATA 帧，是「两份渲染」的直接后果。
 ///
 /// 一条 AI 消息的构成（自上而下）：文本气泡 → 结构化卡片（气泡**外侧**）
 /// → 复制按钮 → 安全提示。卡片不进气泡：卡片自带 surface 底与描边，
@@ -59,11 +59,18 @@ class _Bubble extends StatelessWidget {
 
   const _Bubble({required this.message, required this.maxWidthFactor});
 
-  /// 气泡与卡片共用的宽度上限：屏宽 × [maxWidthFactor]，再夹一个像素上限，
+  /// 气泡与卡片共用的宽度上限：可用宽度 × [maxWidthFactor]，再夹一个像素上限，
   /// 避免平板上过宽（1400px 屏 × 0.7 = 980px 一行太长）。
-  BoxConstraints _constraints(BuildContext context) => BoxConstraints(
+  ///
+  /// 取**可用宽度**（[LayoutBuilder] 的 `constraints.maxWidth`）而非屏宽（ADR-0045）：
+  /// 消息列表可能落在 master-detail 的窄栏里，按屏宽算会宽过所在容器。
+  static BoxConstraints _constraintsFor(
+    BoxConstraints available,
+    double maxWidthFactor,
+  ) =>
+      BoxConstraints(
         maxWidth: math.min(
-          MediaQuery.of(context).size.width * maxWidthFactor,
+          available.maxWidth * maxWidthFactor,
           AssistantMessageList._maxBubbleWidthPx,
         ),
       );
@@ -78,57 +85,64 @@ class _Bubble extends StatelessWidget {
     final showBubble = message.text.isNotEmpty || message.thinking;
     final copyText = _copyText(message, cards);
 
-    return Column(
-      crossAxisAlignment:
-          isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-      children: [
-        if (showBubble)
-          ConstrainedBox(
-            constraints: _constraints(context),
-            child: AppCard(
-              margin: EdgeInsets.zero,
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.md,
-                vertical: AppSpacing.sm,
-              ),
-              color: isUser ? scheme.primary : scheme.surfaceContainerLow,
-              child: _BubbleBody(message: message, scheme: scheme, text: text),
-            ),
-          ),
-        if (cards.isNotEmpty)
-          ConstrainedBox(
-            constraints: _constraints(context),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                for (var i = 0; i < cards.length; i++) ...[
-                  if (i > 0 || showBubble) const SizedBox(height: AppSpacing.sm),
-                  PopIn(
-                    key: ValueKey<int>(i),
-                    child: AssistantCardTile(card: cards[i]),
+    return LayoutBuilder(
+      builder: (context, available) {
+        final constraints = _constraintsFor(available, maxWidthFactor);
+        return Column(
+          crossAxisAlignment:
+              isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          children: [
+            if (showBubble)
+              ConstrainedBox(
+                constraints: constraints,
+                child: AppCard(
+                  margin: EdgeInsets.zero,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.md,
+                    vertical: AppSpacing.sm,
                   ),
-                ],
-              ],
-            ),
-          ),
-        // 复制入口只挂在 AI 回复上：用户自己的提问没有复制价值，占位「思考中」
-        // 气泡也没有内容可复制。卡片算内容——有卡无文（引用查询结果时很常见）
-        // 也要能复制，所以判据是「正文或卡片非空」。
-        if (!isUser && !message.thinking && copyText.isNotEmpty)
-          Padding(
-            padding:
-                const EdgeInsets.only(top: AppSpacing.xs2, left: AppSpacing.xs),
-            child: _CopyButton(text: copyText),
-          ),
-        if (message.blocked)
-          Padding(
-            padding: const EdgeInsets.only(top: 2, left: 4),
-            child: Text(
-              '内容安全限制',
-              style: text.labelSmall?.copyWith(color: scheme.error),
-            ),
-          ),
-      ],
+                  color: isUser ? scheme.primary : scheme.surfaceContainerLow,
+                  child:
+                      _BubbleBody(message: message, scheme: scheme, text: text),
+                ),
+              ),
+            if (cards.isNotEmpty)
+              ConstrainedBox(
+                constraints: constraints,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (var i = 0; i < cards.length; i++) ...[
+                      if (i > 0 || showBubble)
+                        const SizedBox(height: AppSpacing.sm),
+                      PopIn(
+                        key: ValueKey<int>(i),
+                        child: AssistantCardTile(card: cards[i]),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            // 复制入口只挂在 AI 回复上：用户自己的提问没有复制价值，占位「思考中」
+            // 气泡也没有内容可复制。卡片算内容——有卡无文（引用查询结果时很常见）
+            // 也要能复制，所以判据是「正文或卡片非空」。
+            if (!isUser && !message.thinking && copyText.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(
+                    top: AppSpacing.xs2, left: AppSpacing.xs),
+                child: _CopyButton(text: copyText),
+              ),
+            if (message.blocked)
+              Padding(
+                padding: const EdgeInsets.only(top: 2, left: 4),
+                child: Text(
+                  '内容安全限制',
+                  style: text.labelSmall?.copyWith(color: scheme.error),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }

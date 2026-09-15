@@ -108,8 +108,9 @@ class _MyAppState extends ConsumerState<MyApp> {
         Brightness.dark;
     final active = isDark ? AppTheme.dark : AppTheme.light;
 
-    // AI 单入口（ADR-0036）：家长端走右上角悬浮球；娃娃端走「问 AI 老师」页签，
-    // 不叠浮动入口——两者共用同一个 assistantNotifierProvider 与消息渲染。
+    // AI 单入口（ADR-0036 / 0047）：家长端右下角浮球，点击进助手整页；娃娃端走
+    // 「问 AI 老师」页签，不叠浮动入口——两者是同一个页面、共用同一个
+    // assistantNotifierProvider 与消息渲染。
     final user = _currentUser;
     final Widget home = !_initialized
         ? const _SplashScreen()
@@ -139,18 +140,25 @@ class _MyAppState extends ConsumerState<MyApp> {
           ],
           builder: (context, child) => ShadAppBuilder(
             backgroundColor: active.surfaceContainerLow,
-            // UserModeScope / DensityScope 包裹整个导航子树，使全局 textOf 与
-            // AppControl.heightOf 随双模式 / 密度切换重建（无需逐 widget 监听 provider）。
-            child: UserModeScope(
-              mode: userMode,
-              child: DensityScope(
-                density: density,
-                child: MediaQuery(
-                  data: MediaQuery.of(context).copyWith(
-                    platformBrightness:
-                        isDark ? Brightness.dark : Brightness.light,
+            child: FocusTraversalGroup(
+              // 桌面端 Tab 遍历（ADR-0045）：按阅读顺序（侧栏 → 主栏 → 详情栏）串起全站
+              // 可聚焦元素。这里显式声明策略而不依赖缺省，是为了让「顺序可预期」这件事
+              // 有据可查；导航项 / 图标按钮要能进焦点树，必须用 AppFocusableAction——
+              // 裸 GestureDetector 不在焦点树里。
+              policy: ReadingOrderTraversalPolicy(),
+              // UserModeScope / DensityScope 包裹整个导航子树，使全局 textOf 与
+              // AppControl.heightOf 随双模式 / 密度切换重建（无需逐 widget 监听 provider）。
+              child: UserModeScope(
+                mode: userMode,
+                child: DensityScope(
+                  density: density,
+                  child: MediaQuery(
+                    data: MediaQuery.of(context).copyWith(
+                      platformBrightness:
+                          isDark ? Brightness.dark : Brightness.light,
+                    ),
+                    child: child ?? const SizedBox.shrink(),
                   ),
-                  child: child ?? const SizedBox.shrink(),
                 ),
               ),
             ),

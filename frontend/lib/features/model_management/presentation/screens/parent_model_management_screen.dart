@@ -79,7 +79,7 @@ class _ParentModelManagementScreenState
       child: Align(
         alignment: Alignment.topLeft,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1080),
+          constraints: const BoxConstraints(maxWidth: AppLayout.contentWide),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [

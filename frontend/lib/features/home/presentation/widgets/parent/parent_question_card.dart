@@ -314,8 +314,11 @@ class ParentQuestionCardState extends ConsumerState<ParentQuestionCard> {
                     ),
                   ),
                   const SizedBox(width: AppSpacing.xs),
-                  CupertinoButton(
-                    padding: EdgeInsets.zero,
+                  // 命中区走标准档 → 与同行输入框同高（CupertinoButton 的默认
+                  // 44×44 minSize 会把这一行撑高）。禁用态淡色由组件统一给。
+                  AppIconAction(
+                    icon: LucideIcons.minus,
+                    semanticLabel: '删除第 ${i + 1} 个选项',
                     onPressed: _optionCtrls.length <= 2
                         ? null
                         : () {
@@ -324,11 +327,6 @@ class ParentQuestionCardState extends ConsumerState<ParentQuestionCard> {
                               _optionCtrls.removeAt(i);
                             });
                           },
-                    child: Icon(LucideIcons.minus,
-                        size: 18,
-                        color: _optionCtrls.length <= 2
-                            ? app.outline
-                            : app.onSurfaceVariant),
                   ),
                 ],
               ),
@@ -338,7 +336,6 @@ class ParentQuestionCardState extends ConsumerState<ParentQuestionCard> {
           Align(
             alignment: Alignment.centerLeft,
             child: ShadButton.outline(
-              height: 36,
               onPressed: () {
                 setState(() {
                   _optionCtrls.add(TextEditingController());
@@ -446,25 +443,25 @@ class ParentQuestionCardState extends ConsumerState<ParentQuestionCard> {
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         ShadButton.outline(
-          height: 36,
+          
           onPressed: busy || q.inQuestionBank ? null : widget.onPromote,
           leading: const Icon(LucideIcons.database, size: 16),
           child: Text(q.inQuestionBank ? '已入题库' : '加入题库'),
         ),
         ShadButton.outline(
-          height: 36,
+          
           onPressed: busy || _editing ? null : () => setState(() => _editing = true),
           leading: const Icon(LucideIcons.pencil, size: 16),
           child: Text(_editing ? '编辑中…' : '编辑题目'),
         ),
         ShadButton.outline(
-          height: 36,
+          
           onPressed: busy ? null : widget.onRegenerate,
           leading: const Icon(LucideIcons.rotateCw, size: 16),
           child: const Text('换一题'),
         ),
         ShadButton.destructive(
-          height: 36,
+          
           onPressed: busy ? null : widget.onDelete,
           leading: const Icon(LucideIcons.trash2, size: 16),
           child: const Text('删除'),

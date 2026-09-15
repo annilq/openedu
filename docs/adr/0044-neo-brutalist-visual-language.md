@@ -178,6 +178,70 @@ token 层落地后，剩余页面按「**文件互斥**」拆成可并行的批�
 - **真机**：`AppOptionTile` 选中态的 2px 边 + 硬阴影是否过吵（答一道题会同时出现 4 个选项块，密度高于此前任何已验页面）。
 - **真机**：顶栏 / 侧栏的发丝结构边与内容卡片的 2px 边同屏时，粗细差是否被读成「不一致」而非「分层」。
 
+## 控件高度标准：以触控锚点逐阶下推（2026-09-16）
+
+触发：用户报「输入框与按钮同行不协调，输入框 32 显得小」。查下去发现**三层根因叠加**，
+且每一层都能定位到具体代码行——不是单纯的数值调大。
+
+### 三层根因
+
+1. **标准档取值把「桌面鼠标惯例」当成「平板触控惯例」用。** 32 是 Ant Design / Element
+   Plus 的表单控件默认值，那是鼠标工具（可点区域可以很小）。而 `AppControl` 原注释自述
+   依据是「平板优先 + 触控目标」——**理由与取值自相矛盾**，32 低于所有触控规范
+   （Material 最小触控目标 48dp、Apple HIG 44pt）。
+2. **`ShadButton.height` 是「内容盒高」而非可见高。** 描边由 `ShadDecorator` 画在内容盒
+   之外，实测「可见高 = 传入值 + 2×描边宽」。所以主题里声明 32 的按钮**实际渲染 40**
+   （输入框则被 `tightFor` 钉在 32）——同行差 8px。这也是「看声明值永远发现不了」的原因。
+3. **第三个高度权威：`CupertinoButton` 的默认 `minSize` 44×44。** 到处写成
+   `CupertinoButton(padding: EdgeInsets.zero, child: Icon(...))` 看着像「纯图标」，
+   实际是 44 高，混进控件的行里就把整行撑高（`parent_question_card` 的「选项行」里
+   `ShadInput` 与它就并排）。
+
+### 决策：一条等距阶梯，锚在触控下限档
+
+三档不再各自拍数，而是**相邻恒差 `AppControl.step`（8）的等距阶梯**，锚点是主行动档
+`heightLg`——三档里唯一被**外部规范**约束的一档（48 同时满足 Material 48dp 与 HIG 44pt）。
+标准档 / 紧凑档由锚点下推（−1 阶 / −2 阶），**调档位只需改锚点**。
+
+| 档位 | parent·compact | parent·normal | child·compact | child·normal |
+|---|---|---|---|---|
+| `heightSm` 紧凑 | 32 | 40 | 40 | 48 |
+| `height` 标准 | **40** | 48 | 48 | 56 |
+| `heightLg` 主行动 | 48 | 56 | 56 | 64 |
+
+副产物：阶梯变得可解释——「child 比 parent 大一档」与「normal 比 compact 大一档」是同一
+个 +8 位移，故 child·compact 与 parent·normal 必然同值（旧表里这层关系被埋住了）。
+
+### 为什么取 40，不取 38
+
+38 是 **Bootstrap 的实现副产物**（12px padding×2 + 24px 行高 + 2px 描边），不对应任何
+设计原则，也不落在本仓间距令牌的任何一档；40 则是 `AppSpacing.xl4`，且正是 **Material 3
+的按钮标准高度**，位于 HIG 44pt 下一档、阶梯上恰为锚点 −1 阶。引入 38 等于新增一个魔法数字。
+
+### 收口动作（清掉所有竞争权威）
+
+- `parent_question_card` 的 `ShadButton.outline(height: 36)`、`profile_screen` 两处分段
+  控件的 `ghost(height: 40)`：删除硬编码，交还主题。
+- 新增 `AppIconAction` 取代 6 处 `CupertinoButton(padding: zero, child: Icon)`：方形命中区
+  走 `AppControl.heightOf`，与同行输入框严格同高。**刻意不写成裸 `GestureDetector`**——
+  内层走 `AppFocusableAction` 进焦点树（`CupertinoButton` 本就可聚焦，换成裸手势会**倒退
+  键盘可达性**，见 ADR-0046），并补 `semanticLabel`。
+- `AppControl.step` 独立成常量而**不复用 `AppSpacing.sm`**：间距令牌与控件档差是两件事，
+  共用会让日后调间距静默改掉全站控件高度。
+
+### 守卫
+
+`frontend/test/control_height_test.dart`——同时守**阶梯结构**（标准档 = 锚点 −1 阶）与
+**实测渲染高度**（`getSize` 出来的值，不是主题声明值；声明 32 却渲染 40 正是当初的 bug）。
+覆盖 ShadInput / ShadButton 各变体 / AppPrimaryButton / AppBrutalButton / AppIconAction /
+ShadSelect / AppTextField 内部输入框，以及 child 与 normal 两档对照。
+
+### 未闭合判据
+
+- **真机**：标准档由 32 提到 40 后，家长端密集表单（布置任务：总题数 + 年级 + 题型 + 难度
+  多行并排）纵向是否过长、一屏能放下的行数是否可接受。
+- **真机**：`AppIconAction` 的 40×40 命中区在密集表单里是否偏小（对照 Apple HIG 44pt）。
+
 ## Considered Options
 
 ① **两端分强度色板**（parent 降饱和 / child 全放开）——拒绝：用户明确要求减少抽象，两套 scale 会让主题层复杂度翻倍，且新增页面需声明归属哪一套。

@@ -163,7 +163,7 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
             ),
           ),
           ShadButton(
-            height: 36,
+          
             onPressed: _enterInteractive,
             leading: const Icon(LucideIcons.pencil, size: 16),
             child: const Text('以娃娃身份代答'),

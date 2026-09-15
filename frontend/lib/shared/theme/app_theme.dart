@@ -1,5 +1,6 @@
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter/material.dart' show ThemeMode;
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// 按正确率分级的视觉情绪。
@@ -627,6 +628,37 @@ class AppTheme {
     final mode = child ? AppUserMode.child : AppUserMode.parent;
     final controlH = AppControl.height(mode, density);
     final controlSmH = AppControl.heightSm(mode, density);
+    final controlLgH = AppControl.heightLg(mode, density);
+
+    // 按钮尺寸主题。**必须先分清「可见高」与「内容盒高」**：
+    // `ShadButton.height` 是内容盒高，有描边的变体在盒外另占 2×描边宽。
+    // 所以「有描边」与「无描边」两族必须给不同的内容盒高，否则同屏的实心按钮
+    // 会比 ghost 按钮高出 4px——登录页「登录」与「没有账号？注册」两个按钮上下
+    // 相叠，4px 差肉眼可辨（实测 40 vs 36）。
+    ShadButtonSizesTheme buttonSizes({required bool bordered}) {
+      double box(double visible) =>
+          bordered ? AppControl.buttonContentHeight(visible) : visible;
+      return ShadButtonSizesTheme(
+        regular: ShadButtonSizeTheme(
+          height: box(controlH),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+        ),
+        sm: ShadButtonSizeTheme(
+          height: box(controlSmH),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+        ),
+        lg: ShadButtonSizeTheme(
+          height: box(controlLgH),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+        ),
+        icon: ShadButtonSizeTheme(
+          height: box(controlH),
+          width: box(controlH),
+          padding: EdgeInsets.zero,
+        ),
+      );
+    }
+
     final scheme = ShadColorScheme(
       background: c.surface,
       foreground: c.onSurface,
@@ -655,6 +687,23 @@ class AppTheme {
 
     const transparent = Color(0x00000000);
 
+    // 「零几何」按钮装饰：四边显式 width 0（不绘制）、内距零，但保留圆角。
+    //
+    // 给 ghost / link 用。它们的「无边界」是设计意图，但不能不设 decoration——
+    // 不设时会继承 shadcn 主题默认装饰的 `padding: 2`，凭空多出 4px（实测
+    // height:40 → 44），与同屏的实心按钮错落。也不该改成「补一圈透明描边」：
+    // 那会平白加 4px 宽，把顶栏里显式 `width: 40` 的图标按钮撑成 44 挤出槽位。
+    //
+    // 四边必须显式写出来（`ShadBorder.all(width: 0)`）而不能只写 padding/radius：
+    // 变体默认装饰的描边侧在 merge 时会保留，`link` 变体正因此仍多出 4px。
+    final zeroGeometryDecoration = ShadDecoration(
+      border: ShadBorder.all(
+        width: 0,
+        padding: EdgeInsets.zero,
+        radius: const BorderRadius.all(Radius.circular(AppRadius.button)),
+      ),
+    );
+
     // 暗模式下墨黑硬阴影与描边同色、不可见，退化为无阴影（ADR-0044）。
     final hardShadows =
         c.brightness == Brightness.dark ? AppElevation.none : AppElevation.hard();
@@ -675,6 +724,11 @@ class AppTheme {
             border: ShadBorder.all(
               color: AppBrutal.ink,
               width: AppElevation.borderWidth,
+              // 必须显式写零内距：`ShadBorder.all` 省略 padding 时会继承主题默认
+              // 装饰的 `EdgeInsets.all(2)`，在内容盒外再悄悄撑高 4px（实测 32 → 40）。
+              // 描边本身就画在盒外那圈，留不留这 4px 都不影响观感（按钮水平 padding
+              // ≥8px，内容不会压到描边），但会让所有高度算式凭空多出 4px。
+              padding: EdgeInsets.zero,
               radius: BorderRadius.all(Radius.circular(AppRadius.button)),
             ),
             shadows: hardShadows,
@@ -701,31 +755,12 @@ class AppTheme {
       radius: const BorderRadius.all(Radius.circular(AppRadius.sm)),
       textTheme: _shadTextTheme(c, child: child),
       disabledOpacity: 0.5,
-      // 按钮尺寸走 AppControl 令牌：与输入框 / 选择器同高，
-      // 避免 shadcn 默认 36px 与 App* 组件（compact 32 / normal 40）混排。
+      // 按钮尺寸走 AppControl 令牌：与输入框 / 选择器同高。
       // 水平 padding 各减 2px，正好抵消新粗野 2px 描边带来的宽度增量：
       // 旧 = padding×2 + border 0（实心）/1（描边）；新 = (padding-2)×2 + border 2。
       // 实心按钮总宽需求**完全不变**，描边按钮反而窄 2px——这样加粗描边不会
       // 把任何「宽度刚好卡住」的按钮挤到 RenderFlex overflow（真机已踩过一次）。
-      buttonSizesTheme: ShadButtonSizesTheme(
-        regular: ShadButtonSizeTheme(
-          height: controlH,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-        ),
-        sm: ShadButtonSizeTheme(
-          height: controlSmH,
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-        ),
-        lg: ShadButtonSizeTheme(
-          height: controlH + AppSpacing.sm,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-        ),
-        icon: ShadButtonSizeTheme(
-          height: controlH,
-          width: controlH,
-          padding: EdgeInsets.zero,
-        ),
-      ),
+      buttonSizesTheme: buttonSizes(bordered: true),
       primaryButtonTheme: button(c.cta, c.onCta, hover: c.ctaHover),
       secondaryButtonTheme: ShadButtonTheme(
         backgroundColor: c.surfaceSunken,
@@ -739,6 +774,7 @@ class AppTheme {
           border: ShadBorder.all(
             color: c.outline,
             width: AppElevation.borderWidth,
+            padding: EdgeInsets.zero,
             radius: BorderRadius.all(Radius.circular(AppRadius.button)),
           ),
         ),
@@ -753,20 +789,28 @@ class AppTheme {
           border: ShadBorder.all(
             color: c.outline,
             width: AppElevation.borderWidth,
+            padding: EdgeInsets.zero,
             radius: BorderRadius.all(Radius.circular(AppRadius.button)),
           ),
         ),
       ),
+      // ghost / link 无描边 → 可见高 == 内容盒高，因此换一套尺寸（用 bordered 族
+      // 的 -4 折算会让它们比同屏的实心按钮矮 2×描边宽），并要求零几何装饰把继承
+      // 来的 4px 内距清掉。两者配合，四个变体才真正同高。
       ghostButtonTheme: ShadButtonTheme(
         backgroundColor: transparent,
         foregroundColor: c.onSurface,
         hoverBackgroundColor: c.surfaceHover,
         pressedBackgroundColor: c.surfaceActive,
+        sizesTheme: buttonSizes(bordered: false),
+        decoration: zeroGeometryDecoration,
       ),
       linkButtonTheme: ShadButtonTheme(
         backgroundColor: transparent,
         foregroundColor: c.accent,
         textDecoration: TextDecoration.underline,
+        sizesTheme: buttonSizes(bordered: false),
+        decoration: zeroGeometryDecoration,
       ),
       primaryBadgeTheme: badge(c.semanticInfo, c.semanticInfoFg),
       secondaryBadgeTheme: badge(c.surfaceSunken, c.onSurface),
@@ -854,6 +898,9 @@ class AppTheme {
       // 它会漏到 switch / checkbox 等无框控件上，凭空长出描边。
       disableSecondaryBorder: true,
       popoverTheme: ShadPopoverTheme(
+        // ⚠️ 这条内边距（连同 decoration 的 2px 描边）是包在浮层**内容之外**的，
+        // 属于 [AppLayout.popoverChrome]。想让某个浮层的外框等于某个宽度，
+        // 内容侧必须减去这份开销，别按内容宽直接写数字。
         padding: const EdgeInsets.all(AppSpacing.sm),
         decoration: _surfaceDecoration(c, radius: AppRadius.card),
         // 原为 const <BoxShadow>[]，把 decoration 里刚算好的硬阴影又抹掉了——
@@ -1375,12 +1422,15 @@ class AppCard extends StatelessWidget {
             cursor: SystemMouseCursors.basic,
             onEnter: (_) => state.value = (true, state.value.$2),
             onExit: (_) => state.value = (false, state.value.$2),
-            child: GestureDetector(
-              onTapDown: (_) => state.value = (state.value.$1, true),
-              onTapUp: (_) => state.value = (state.value.$1, false),
-              onTapCancel: () => state.value = (state.value.$1, false),
+            // 走 AppFocusableAction（而非裸 GestureDetector）：卡片是全站最主要的可点
+            // 区域，裸 GestureDetector 不在焦点树里 → 桌面端 Tab 得到菜单却打不开任何东西
+            // （ADR-0045）。它全程不注入宽高约束，因此不会踩上面 ShadButton.ghost 那个
+            // 「无界宽度」的坑；键盘 Enter/Space 也会走同一 onTap。
+            child: AppFocusableAction(
               onTap: onTap,
-              behavior: HitTestBehavior.opaque,
+              borderRadius: BorderRadius.circular(radius ?? AppRadius.card),
+              onPressedChanged: (pressed) =>
+                  state.value = (state.value.$1, pressed),
               // 只动 transform（GPU 合成），不触发布局重排。
               child: Transform.translate(
                 offset: p ? AppElevation.offsetPressed : Offset.zero,
@@ -1395,7 +1445,170 @@ class AppCard extends StatelessWidget {
   }
 }
 
+/// 键盘可达的即时点击区（ADR-0045）。
+///
+/// **背景**：本仓的可点区域（导航项 / 列表行 / 卡片）一律用裸 [GestureDetector] +
+/// `MouseRegion` 实现（应用根是 `ShadApp`、无 Material 祖先，因此刻意不用 `InkWell`）。
+/// 但裸 [GestureDetector] **不进焦点树**——Tab 跳不过去、Enter/Space 也点不动，桌面端
+/// 因此完全没有键盘可达性；`flutter analyze` 也照不出这类问题（它不是类型错误）。
+///
+/// 本组件补齐三件事：
+/// 1. 进入焦点树（[FocusableActionDetector] + `Shortcuts`/`Actions`）；
+/// 2. `Enter` / `Space` / 小键盘回车激活——与鼠标点击走**同一个** [onTap]；
+/// 3. 焦点可见：聚焦时叠一圈 2px 焦点环（不使用系统默认高亮）。
+///
+/// 用 `foregroundDecoration` 而非 `decoration` 画焦点环：前者覆盖绘制、**不参与布局**，
+/// 因此聚焦 / 失焦不会让元素尺寸跳动（描边加粗导致行高变化的经典坑）。
+///
+/// 焦点环取 [AppColors.accent]（靛蓝）而非墨黑：本仓的墨黑描边到处都是（卡片、列表行、
+/// 每组色块的边），用墨黑画焦点环会退化成「边框好像变粗了」，读不出「焦点在这里」。
+///
+/// **约束**：本组件全程不注入任何宽高约束（`FocusableActionDetector` / `Semantics` /
+/// `GestureDetector` / `MouseRegion` / `DecoratedBox` 都是透传的 proxy），因此可以安全地
+/// 包住 [AppCard]——那张卡对「外层塞进无界宽度」极其敏感（见上方 `ShadButton.ghost`
+/// 的 NOTE）。
+///
+/// [onTap] 为空或 [enabled] 为 false 时不进焦点树——不可操作的项不该被 Tab 到。
+class AppFocusableAction extends StatefulWidget {
+  final Widget child;
+  final VoidCallback? onTap;
+
+  /// 按压态变化（按下 → true，抬起 / 取消 → false）。
+  ///
+  /// 用于驱动「整卡下沉」「硬阴影收拢」这类按压反馈：键盘 [ActivateIntent] 也会
+  /// 走一次 true→false，使键盘激活与鼠标点击有同样的视觉反馈。
+  final ValueChanged<bool>? onPressedChanged;
+
+  /// 焦点环圆角；缺省跟随 chip 档（与导航药丸一致）。
+  final BorderRadius? borderRadius;
+
+  final bool enabled;
+
+  /// 供读屏使用的动作名（如「首页」）。
+  final String? semanticLabel;
+
+  /// 悬停时是否垫一层药丸底色（缺省否）。
+  ///
+  /// 只画底色，**不改布局**（与焦点环同思路）。底部绘制，故选中的子项自带底色时
+  /// 会盖住它——「选中」与「悬停」因而天然分层：悬停是浅的 `surfaceHover`，选中是
+  /// 深的 `surfaceActive`，同一元素上二者可区分。
+  ///
+  /// 侧栏导航项 / 收缩按钮 / 下拉菜单项这类「无文字撑宽、只有图标或短标签」的可点
+  /// 区域都应打开；否则鼠标移上去没有任何反馈（触屏看不出来，桌面端很明显）。
+  final bool hoverHighlight;
+
+  const AppFocusableAction({
+    super.key,
+    required this.child,
+    this.onTap,
+    this.onPressedChanged,
+    this.borderRadius,
+    this.enabled = true,
+    this.semanticLabel,
+    this.hoverHighlight = false,
+  });
+
+  @override
+  State<AppFocusableAction> createState() => _AppFocusableActionState();
+}
+
+class _AppFocusableActionState extends State<AppFocusableAction> {
+  bool _focused = false;
+  bool _hovered = false;
+
+  bool get _actionable => widget.enabled && widget.onTap != null;
+
+  void _activate() {
+    // 键盘激活补齐一次按压反馈：鼠标走 onTapDown/Up，键盘两者都没有。
+    widget.onPressedChanged?.call(true);
+    widget.onPressedChanged?.call(false);
+    widget.onTap?.call();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = AppTheme.colorsOf(context);
+    final radius = widget.borderRadius ?? BorderRadius.circular(AppRadius.chip);
+    return FocusableActionDetector(
+      enabled: _actionable,
+      includeFocusSemantics: true,
+      onShowFocusHighlight: (v) {
+        if (_focused != v) setState(() => _focused = v);
+      },
+      shortcuts: const <ShortcutActivator, Intent>{
+        SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
+        SingleActivator(LogicalKeyboardKey.numpadEnter): ActivateIntent(),
+        SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
+      },
+      actions: <Type, Action<Intent>>{
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (_) {
+            _activate();
+            return null;
+          },
+        ),
+      },
+      child: Semantics(
+        button: true,
+        enabled: _actionable,
+        label: widget.semanticLabel,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown:
+              _actionable ? (_) => widget.onPressedChanged?.call(true) : null,
+          onTapUp: _actionable
+              ? (_) => widget.onPressedChanged?.call(false)
+              : null,
+          onTapCancel:
+              _actionable ? () => widget.onPressedChanged?.call(false) : null,
+          onTap: _actionable ? _activate : null,
+          child: MouseRegion(
+            cursor: _actionable
+                ? SystemMouseCursors.click
+                : SystemMouseCursors.basic,
+            onEnter: widget.hoverHighlight
+                ? (_) => setState(() => _hovered = true)
+                : null,
+            onExit: widget.hoverHighlight
+                ? (_) => setState(() => _hovered = false)
+                : null,
+            child: DecoratedBox(
+              // 悬停底色画在**底层**（decoration），子项自带的选中底色会盖住它。
+              decoration: BoxDecoration(
+                color: _hovered && _actionable
+                    ? scheme.surfaceHover
+                    : CupertinoColors.transparent,
+                borderRadius: radius,
+              ),
+              // 焦点环画在顶层（foregroundDecoration）：覆盖绘制、不参与布局，
+              // 因此聚焦 / 失焦不会让元素尺寸跳动（描边加粗导致行高变化的经典坑）。
+              child: Container(
+                foregroundDecoration: _focused && _actionable
+                    ? BoxDecoration(
+                        borderRadius: radius,
+                        border: Border.all(
+                          color: scheme.accent,
+                          width: AppElevation.borderWidth,
+                        ),
+                      )
+                    : null,
+                child: widget.child,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// 主操作按钮：品牌靛蓝 CTA（走 accent）。
+/// 主行动按钮（品牌蓝 CTA）。
+///
+/// [height] 是**可见总高**（含 2px 描边），默认走标准档 [AppControl.heightOf]；
+/// 单屏唯一的主行动传 [AppControl.heightLgOf]。内部会换算成 shadcn 需要的内容盒
+/// 高度——这一点很关键：`ShadButton.height` 并非可见高度，直接透传会让按钮比同行
+/// 的输入框高出 2×描边宽。
 class AppPrimaryButton extends StatelessWidget {
   final String label;
   final VoidCallback? onPressed;
@@ -1403,6 +1616,8 @@ class AppPrimaryButton extends StatelessWidget {
   final bool fullWidth;
   final IconData? icon;
   final String? loadingLabel;
+
+  /// 可见总高；null 走标准档。
   final double? height;
 
   const AppPrimaryButton({
@@ -1447,7 +1662,10 @@ class AppPrimaryButton extends StatelessWidget {
           )
         : (loading ? spinner : labelWidget);
     return ShadButton(
-      height: height ?? AppControl.heightOf(context),
+      // 令牌给的是可见总高，ShadButton 要的是内容盒高 → 减掉 2×描边宽。
+      height: AppControl.buttonContentHeight(
+        height ?? AppControl.heightOf(context),
+      ),
       expands: fullWidth,
       onPressed: loading ? null : onPressed,
       child: child,
@@ -1469,6 +1687,12 @@ class AppBrutalButton extends StatefulWidget {
   final VoidCallback? onPressed;
   final IconData? icon;
   final bool fullWidth;
+
+  /// 可见总高；null 走标准档 [AppControl.heightOf]。
+  ///
+  /// 与 [AppPrimaryButton] 的 `height` 语义**一致**（都是可见总高）：本组件用裸
+  /// `Container` + `BoxDecoration(border:)`，Flutter 的描边画在盒内，故传入值
+  /// 就是可见高度，无需换算。
   final double? height;
 
   const AppBrutalButton({
@@ -1550,6 +1774,60 @@ class _AppBrutalButtonState extends State<AppBrutalButton> {
             child: content,
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// 行内图标操作：方形命中区 + 居中图标，尺寸走 [AppControl] 标准档。
+///
+/// 为什么需要它：`CupertinoButton(padding: EdgeInsets.zero, child: Icon(...))`
+/// 看着是「纯图标」，实际被 Cupertino 的默认 `minSize` 钉成 **44×44**——与标准档
+/// 输入框同行时会把整行撑高 4px，且图标中心与输入框文字中线错位。这是本仓第三种
+/// 「控件高度权威」（前两种是 [AppControl] 与 `ShadButton` 的内容盒高，见
+/// [AppControl.buttonContentHeight]），必须收口。
+///
+/// 命中区取标准档而非更小的紧凑档：行高本就由同行的输入框决定，命中区与行高对齐
+/// 既不会撑行，也不牺牲可点性（紧凑档 32 在密集表单里偏小）。
+///
+/// **不是裸 `GestureDetector`**：内层走 [AppFocusableAction]，因此进焦点树、支持
+/// Enter / Space 激活、有焦点环与悬停底色。`CupertinoButton` 本来是可聚焦的，
+/// 直接换成裸手势会**倒退键盘可达性**（见 ADR-0046）。
+class AppIconAction extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback? onPressed;
+
+  /// 图标视觉尺寸（命中区恒为标准档，与此无关）。
+  final double iconSize;
+  final Color? color;
+
+  /// 读屏动作名。图标按钮没有文字，**调用点应尽量提供**（如「删除该选项」）。
+  final String? semanticLabel;
+
+  const AppIconAction({
+    super.key,
+    required this.icon,
+    this.onPressed,
+    this.iconSize = 18,
+    this.color,
+    this.semanticLabel,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final app = AppTheme.colorsOf(context);
+    final hit = AppControl.heightOf(context);
+    final tint = onPressed != null
+        ? (color ?? app.onSurfaceVariant)
+        : app.onSurfaceVariant.withValues(alpha: 0.5);
+    return AppFocusableAction(
+      onTap: onPressed,
+      semanticLabel: semanticLabel,
+      hoverHighlight: true,
+      child: SizedBox(
+        width: hit,
+        height: hit,
+        child: Center(child: Icon(icon, size: iconSize, color: tint)),
       ),
     );
   }
@@ -1970,6 +2248,105 @@ class AppSpacing {
   static const double xl5 = 48;
 }
 
+/// 断点与内容宽度令牌（ADR-0045）
+///
+/// 设计约束（单一事实源）：
+/// - 布局决策**只**基于 [LayoutBuilder] 的 `constraints.maxWidth`（父级分配的可用
+///   宽度），不得使用 `MediaQuery.orientationOf` / `OrientationBuilder`，也不得按
+///   硬件类型（phone / tablet / desktop）分支——Flutter 应用跑在可缩放窗口、多窗口
+///   与画中画里，**设备形态不等于可用空间**。
+/// - 内容宽度上限的作用是防止大屏下文本行过长、卡片被无限拉宽。约束值按**语义**
+///   分档，禁止在页面里再写裸数字（否则「哪一档才是我该用的」无从判断）。
+class AppLayout {
+  /// 紧凑档上界：`width < compactMax` 走紧凑布局（娃娃端底栏 / 家长端汉堡抽屉）。
+  static const double compactMax = 700;
+
+  /// 大屏档下界：`width >= largeMin` 时由页面提供 master-detail 双栏编排。
+  static const double largeMin = 1200;
+
+  /// 侧栏展开宽度。
+  static const double sidebarExpanded = 240;
+
+  /// 侧栏收起宽度（轨态）。
+  static const double sidebarCollapsed = 64;
+
+  /// 最小方形触控目标边长。
+  ///
+  /// 取 44：Apple HIG 的最小可点尺寸（44pt），也高于 Material 的 48dp 触控目标
+  /// 对**图标按钮**的宽松下限。用于侧栏头部按钮 / 紧凑顶栏菜单按钮 / 列表行内的
+  /// 行内操作——凡是「只有一个图标、没有文字撑宽」的可点区域，都取这一档，
+  /// 不要各自写 40 / 44 / 48。
+  static const double tapTarget = 44;
+
+  /// 大号方形触控目标边长（浮动入口，如助手浮球）。
+  ///
+  /// 取 52：它悬浮在内容**之上**，要比行内图标按钮更大才能从内容里「跳出来」
+  /// （52 = 图标 24 + 两侧各 14 呼吸）。同样是「只有一个图标、没有文字撑宽」的
+  /// 可点区域，因此也收口到令牌，不写裸数字。
+  static const double tapTargetLg = 52;
+
+  /// 侧栏头部（[AdaptiveShell.sidebarTop]）四向内边距。
+  ///
+  /// 左侧必须等于导航项的左缘（[AppSpacing.sm]）——否则侧栏内会出现「头部贴边、
+  /// 导航缩进」的双左缘，视觉上像两个不相干的区块。
+  static const EdgeInsets sidebarHeaderPadding = EdgeInsets.fromLTRB(
+    AppSpacing.sm,
+    AppSpacing.md,
+    AppSpacing.sm,
+    AppSpacing.xs,
+  );
+
+  /// 侧栏菜单（[AdaptiveShell.sidebarTop] 里那个浮层）**外框**宽度。
+  ///
+  /// 等于侧栏展开宽度减去 [sidebarHeaderPadding] 的左右内边距——菜单外框与头部
+  /// 触发卡共用同一条左右边缘，整体落在侧栏内、左右各留 [AppSpacing.sm]。
+  ///
+  /// 只用在这里，所以直接从 [sidebarExpanded] 推导：侧栏变宽时菜单自动跟随，
+  /// 不会出现「侧栏改了、浮层还是老宽度于是又溢出」。
+  /// **不要**拿它当通用的浮层宽度——它的值来自「与侧栏等宽」这个具体约束。
+  static const double sidebarMenuWidth = sidebarExpanded - 2 * AppSpacing.sm;
+
+  /// 浮层外框相对**内容**多出的固定开销：主题内边距（左右各 [AppSpacing.sm]）
+  /// + 新粗野 2px 描边（左右各 [AppElevation.borderWidth]）。
+  ///
+  /// 存在的理由：shadcn 的 `popoverTheme.padding` 与 `decoration` 的描边都包在
+  /// **内容之外**，所以「我要外框 224」必须写成「内容 224 - 开销」。
+  /// 这条开销**无法从内容侧推导**，只能显式记账——配套的
+  /// `test/sidebar_header_layout_test.dart` 会断言渲染出来的外框宽 ==
+  /// [sidebarMenuWidth]，所以改了主题内边距 / 描边宽度会立刻红，而不是静默变宽。
+  static const double popoverChrome =
+      2 * AppSpacing.sm + 2 * AppElevation.borderWidth;
+
+  /// 侧栏菜单最大高度；超出后菜单内部滚动。
+  static const double menuMaxHeight = 400;
+
+  /// master-detail 双栏的宽度配比（主栏 : 详情栏 = 5 : 8）。
+  ///
+  /// 详情栏更宽：主栏是列表（行文本短），详情栏是要读的题面 / 解析。用配比而非固定
+  /// 像素——内容区已被 [contentWide] 钉死，配比在实机宽度区间内变化很小，同时避免
+  /// 主栏是表单页时被压成一条窄缝。
+  static const int masterFlex = 5;
+  static const int detailFlex = 8;
+
+  /// 家长端工作区内容最大宽度（列表 / 仪表盘 / 表单页）。
+  static const double contentWide = 1080;
+
+  /// 答题与阅读区内容最大宽度（缩短视线跨度，提升阅读舒适度）。
+  static const double contentReading = 820;
+
+  /// 单张结果卡 / 居中卡片的内容最大宽度。
+  static const double contentCard = 520;
+
+  /// 登录页与表单对话框等窄栏内容最大宽度。
+  static const double contentNarrow = 480;
+
+  /// 空态 / 提示卡内容最大宽度。
+  ///
+  /// 注意：曾有第六档 `contentFloat = 380`（悬浮助手面板），ADR-0047 把助手改成整页
+  /// 后浮层不复存在，该档已删除——留一个没有消费方的档位只会让人猜「什么该用它」。
+  static const double contentEmpty = 440;
+}
+
 /// 圆角令牌（ADR-0044：新粗野小圆角 / 大面直角）
 ///
 /// 设计约束（单一事实源，全站通用组件共用）：
@@ -1990,16 +2367,10 @@ class AppRadius {
   static const double banner = 0; // 大面横幅（新粗野：直角）
 }
 
-/// 控件高度令牌（交互控件统一高度）
-///
-/// 设计约束（单一事实源）：输入框、按钮、下拉选择器等同属「交互控件」，
-/// 必须共用同一高度，避免同行控件高低不齐（如布置任务表单中 36px 按钮与
-/// ~40px 输入框并排错落）。平板优先 + Child Mode 放大，取 40（= AppSpacing.xl4）。
-/// 紧凑场景（表格行内小按钮）用 [heightSm] = 32（= AppSpacing.xl3）。
 /// 控件密度（交互控件紧凑度）。与亮暗（[AppThemeMode]）、用户模式（[AppUserMode]）正交，
 /// 用于推导统一的控件高度，使按钮 / 输入框 / 选择器随紧凑度缩放。
 ///
-/// **默认 [compact]**（parent 32 / child 40）。密度已全局接入：由 `densityProvider`
+/// **默认 [compact]**（parent 40 / child 48）。密度已全局接入：由 `densityProvider`
 /// 持久化并驱动 `AppTheme.shadFor(isDark, mode, density)`，[DensityScope] 只需在
 /// 需要局部偏离的子树上包一层（如数据密集型表格切 [normal]）。
 /// 所有控件高度都由该维度推导，无硬编码魔法值。
@@ -2008,41 +2379,90 @@ enum AppDensity { normal, compact }
 /// 控件高度令牌（交互控件统一高度，单一事实源）
 ///
 /// 设计约束：输入框、按钮、下拉选择器等同属「交互控件」，必须共用同一高度，避免同行控件
-/// 高低不齐。高度完全由「用户模式 × 密度」推导，**全部取自间距令牌 [AppSpacing]，无魔法数字**，
-/// 并随紧凑度 / 双模式自动缩放（呼应 ADR-0014 双模式字号阶梯）。
+/// 高低不齐。三档高度完全由「用户模式 × 密度」推导，**取值全部落在间距令牌
+/// [AppSpacing] 上，无魔法数字**，并随紧凑度 / 双模式自动缩放
+/// （呼应 ADR-0014 双模式字号阶梯）。
 ///
-/// | 用户模式＼密度 | normal | **compact（默认）** |
-/// |---|---|---|
-/// | parent（密排专业） | xl4 = 40 | **xl3 = 32** |
-/// | child（大字趣味）  | xl5 = 48 | **xl4 = 40** |
+/// ## 一条等距阶梯，锚在触控下限档
 ///
-/// 取值依据：平板优先 + 触控目标；parent 默认取 32（扁平工具型界面，节省纵向空间）；
-/// child 模式字号放大一档，控件同步放大到 40 以匹配更大点击区；
-/// normal 各升一档（40 / 48）用于需要更松呼吸感 / 纯触控的场景。
+/// 三档不是三个各自独立拍出来的数，而是**相邻恒差 [step] 的等距阶梯**，锚点是主行动档
+/// [heightLg]——它是三档里唯一被**外部规范**约束的一档：Material 的最小触控目标 48dp
+/// 与 Apple HIG 的 44pt 都要满足，取 48 即同时达标。标准档与紧凑档由锚点向下推
+/// （各减一阶 / 两阶），所以**调档位时只需改锚点**，阶梯不会散架。
+///
+/// | 档位 | parent·compact | parent·normal | child·compact | child·normal |
+/// |---|---|---|---|---|
+/// | [heightSm] 紧凑 | 32 | 40 | 40 | 48 |
+/// | [height] 标准 | **40** | 48 | 48 | 56 |
+/// | [heightLg] 主行动 | 48 | 56 | 56 | 64 |
+///
+/// 「child 比 parent 大一档」与「normal 比 compact 大一档」是**同一个 +8 位移**，
+/// 所以 child·compact 与 parent·normal 数值完全相同——这不是巧合，而是阶梯的必然结果。
+///
+/// ## 为什么标准档是 40 而不是 32
+///
+/// 32 是 **Ant Design / Element Plus** 的表单控件默认值，那是**桌面鼠标**工具的惯例
+/// （可点区域可以很小）。本项目平板优先、纯触控，32 低于所有触控规范（Material 48dp /
+/// HIG 44pt）——旧注释写「平板优先 + 触控目标」却取 32，**理由与取值自相矛盾**，
+/// 这才是「输入框看着有点小」的根因。取 40 也正是 Material 3 的按钮标准高度，
+/// 位于 HIG 44pt 下一档、阶梯上恰为锚点 −1 阶。
+///
+/// 38 未采用：它是 Bootstrap 的实现副产物（12px padding×2 + 24px 行高 + 2px 描边），
+/// 不对应任何设计原则，也不落在本仓间距令牌的任何一档上，引入即新增魔法数字。
 class AppControl {
-  /// 全局默认密度（= [AppDensity.compact]，parent 32 / child 40）。
+  /// 全局默认密度（= [AppDensity.compact]，parent 40 / child 48）。
   static const AppDensity defaultDensity = AppDensity.compact;
 
-  /// 主交互控件高度（输入框 / 按钮 / 选择器）。
-  static double height(AppUserMode mode, AppDensity density) => switch ((mode, density)) {
-        (AppUserMode.child, AppDensity.compact) => AppSpacing.xl4, // 40
-        (AppUserMode.child, AppDensity.normal) => AppSpacing.xl5, // 48
-        (AppUserMode.parent, AppDensity.compact) => AppSpacing.xl3, // 32
-        (AppUserMode.parent, AppDensity.normal) => AppSpacing.xl4, // 40
+  /// 相邻档位的高度差（阶梯公差）。
+  ///
+  /// 独立成常量而**不复用 [AppSpacing.sm]**：间距令牌与控件档差是两件事，
+  /// 若共用，日后调整间距会静默改掉全站控件高度。
+  static const double step = 8;
+
+  /// 主行动档（单屏唯一的主要 CTA）——**阶梯锚点**，标准档 / 紧凑档由它下推。
+  ///
+  /// 取 Material 的最小触控目标 48dp（Apple HIG 为 44pt，48 同时满足两者）。
+  static double heightLg(AppUserMode mode, AppDensity density) => switch ((mode, density)) {
+        (AppUserMode.child, AppDensity.compact) => AppSpacing.xl5 + step, // 56
+        (AppUserMode.child, AppDensity.normal) => AppSpacing.xl5 + AppSpacing.lg, // 64
+        (AppUserMode.parent, AppDensity.compact) => AppSpacing.xl5, // 48
+        (AppUserMode.parent, AppDensity.normal) => AppSpacing.xl5 + step, // 56
       };
 
-  /// 紧凑控件（表格行内小按钮 / 行内操作）：比主控件小一档（间距 md=12 档差）。
-  static double heightSm(AppUserMode mode, AppDensity density) => switch ((mode, density)) {
-        (AppUserMode.child, AppDensity.compact) => AppSpacing.xl3, // 32
-        (AppUserMode.child, AppDensity.normal) => AppSpacing.xl4, // 40
-        (AppUserMode.parent, AppDensity.compact) => AppSpacing.xl2, // 28
-        (AppUserMode.parent, AppDensity.normal) => AppSpacing.xl3, // 32
-      };
+  /// 标准档（表单输入框 / 选择器 / 表单内按钮）= 锚点下一阶。
+  ///
+  /// **同行控件必须同用这一档**。三档都指「可见总高」（含描边），与「传给
+  /// `ShadButton` 的 content-box 高」是两个量——换算见 [buttonContentHeight]。
+  static double height(AppUserMode mode, AppDensity density) =>
+      heightLg(mode, density) - step; // parent 40 / child 48
+
+  /// 紧凑档（表格行内小按钮 / 行内操作）= 锚点下两阶。
+  static double heightSm(AppUserMode mode, AppDensity density) =>
+      heightLg(mode, density) - 2 * step; // parent 32 / child 40
 
   /// 从上下文解析当前模式 + 密度（[UserModeScope] / [DensityScope] 未挂载时回退
   /// parent / [AppControl.defaultDensity]）。
   static double heightOf(BuildContext context) =>
       height(UserModeScope.of(context), DensityScope.of(context));
+
+  /// 从上下文解析主行动档高度。
+  static double heightLgOf(BuildContext context) =>
+      heightLg(UserModeScope.of(context), DensityScope.of(context));
+
+  /// 把「可见高度」换算成 **ShadButton 的 `height` 参数值**（内容盒高度）。
+  ///
+  /// shadcn 的 `ShadButton.height` 是**内容盒**高度，不是可见高度：描边由
+  /// `ShadDecorator` 画在内容盒**之外**，实测「可见高 = 传入值 + 2×描边宽」。
+  /// 我们的按钮描边是 [AppElevation.borderWidth]（2px），所以直接传 [heightOf]
+  /// 会**高出 4px**；而输入框被 `tightFor` 钉死在 [heightOf]，两者同行必然错落
+  /// （实测按钮 40 / 输入框 32）。
+  ///
+  /// 用算式而非硬编码 `4`：描边宽本身就是令牌，改档时必须同步，算式让它无法漂移。
+  ///
+  /// **`ghost` / `link` 变体没有描边，不得用本函数**——它们的内容盒高即可见高，
+  /// 主题层已单独给它们一套尺寸（见 `shadThemeData` 的 `buttonSizes(bordered:)`）。
+  static double buttonContentHeight(double visibleHeight) =>
+      visibleHeight - 2 * AppElevation.borderWidth;
 
   /// 从上下文解析紧凑控件高度。
   static double heightSmOf(BuildContext context) =>
@@ -2064,8 +2484,9 @@ class AppControl {
   /// 单行输入框文字垂直居中所需的 [StrutStyle]。
   ///
   /// 根因：shadcn 的 `ShadInput` 不暴露 `textAlignVertical`，其内部 `EditableText`
-  /// 默认 `textAlignVertical: top`，文字会落在编辑盒**顶端**（实测 compact 偏上
-  /// ~2.8px、child 模式偏上 ~8.7px）——这就是「输入框文字不上下居中」的真正原因。
+  /// 默认 `textAlignVertical: top`，文字会落在编辑盒**顶端**——盒子比文字行高高出
+  /// 多少，文字就偏上多少，因此档位越高偏得越明显。这就是「输入框文字不上下居中」
+  /// 的真正原因。
   /// 用 `forceStrutHeight` 把行高强制撑满编辑盒（controlH - 4，扣边框与 shadcn
   /// 内部预留），Flutter 的半行距（half-leading）会把字形上下均分 → 视觉严格居中。
   ///

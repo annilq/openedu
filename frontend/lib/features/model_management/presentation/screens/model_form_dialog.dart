@@ -187,7 +187,7 @@ class _ModelFormDialogState extends ConsumerState<ModelFormDialog> {
       ],
       child: PopIn(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 480),
+          constraints: const BoxConstraints(maxWidth: AppLayout.contentNarrow),
           child: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,

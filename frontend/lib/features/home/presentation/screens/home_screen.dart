@@ -175,7 +175,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
-  Widget _buildParentView() {
+  /// 家长端「详情」面板（master-detail 的 detail，ADR-0045）。返回 null 表示无详情。
+  ///
+  /// 大屏下它与 body 并排；中屏 / 紧凑下由 [AdaptiveShell] 整幅顶替 body——两种情况
+  /// 都只需如实返回「当前该看的详情」，宽度判定交给壳，这里不做任何测量。
+  ///
+  /// 优先级：草稿审核 > 编辑娃娃资料（与拆分前一致）。
+  Widget? _buildParentDetail() {
     // 草稿审核覆盖层：优先级最高（即使切了侧栏也停在审核直到家长退出）
     final reviewing = _reviewingTask;
     if (reviewing != null) {
@@ -202,6 +208,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         onBack: () => setState(() => _editingChild = null),
       );
     }
+    return null;
+  }
+
+  /// 家长端主栏（master）：侧栏当前选中的页面。
+  ///
+  /// 详情覆盖层不再吃掉本栏——大屏下两者并排，家长可以在左侧直接换一条继续看；
+  /// 中屏 / 紧凑下由壳用详情整幅顶替本栏，观感与拆分前完全一致。
+  Widget _buildParentPage() {
     if (_showProfile) {
       return ProfileScreen(user: widget.user, onLogout: widget.onLogout);
     }
@@ -359,7 +373,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           onProfileTap: _onProfileTap,
           subtitle: '家长账号',
         ),
-        body: _buildParentView(),
+        body: _buildParentPage(),
+        detail: _buildParentDetail(),
       );
     }
 

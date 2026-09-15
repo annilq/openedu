@@ -47,65 +47,77 @@ class PracticeReviewView extends StatelessWidget {
     return Column(
       children: [
         Expanded(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(
-                AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xl2),
-            children: [
-              // 汇总头：AppCard（2px 墨黑描边 + 硬阴影）+ 弹簧入场。
-              PopIn(
-                child: AppCard(
-                  padding: const EdgeInsets.all(AppSpacing.xl2),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('提交完成，看看哪里错了',
-                          style: text.titleMedium),
-                      const SizedBox(height: AppSpacing.xs),
-                      Text(
-                        '$correctCount / $total 正确 · 正确率 $accuracy%',
-                        style: text.bodyMedium,
-                      ),
-                      const SizedBox(height: AppSpacing.md),
-                      AppProgressBar(
-                        value: total > 0 ? correctCount / total : 0,
-                        height: 10,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: AppSpacing.xl2),
-              // 待订正列表
-              Row(
+          child: Align(
+            alignment: Alignment.topCenter,
+            // 内容宽度上限（ADR-0045）：本页由 Navigator 推入，**不在 AdaptiveShell
+            // 的宽度兜底范围内**，必须自带约束，否则大屏下每行会被拉满整屏。
+            // 用 Align.topCenter 而非 Center——只约束横向，竖向保持贴顶（对齐壳的口径）。
+            // 底部行动条刻意留在约束外——它该通栏，不该跟着内容一起缩进。
+            child: ConstrainedBox(
+              constraints:
+                  const BoxConstraints(maxWidth: AppLayout.contentWide),
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(AppSpacing.lg,
+                    AppSpacing.md, AppSpacing.lg, AppSpacing.xl2),
                 children: [
-                  Icon(LucideIcons.pencilLine,
-                      size: 18, color: scheme.error),
-                  const SizedBox(width: AppSpacing.sm),
-                  Text('需要订正的题（${wrongQuestions.length}）',
-                      style: text.titleSmall),
-                ],
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              // 错峰：key 稳定 → PopIn 不重用重建，列表刷新时不会重放弹簧。
-              ...wrongQuestions.asMap().entries.map(
-                    (e) => PopIn(
-                      key: ValueKey<int>(e.key),
-                      // 左侧学科色条由 Row(stretch) 撑满行高；ListView 内高度无界，
-                      // 须 IntrinsicHeight 给 Row 一个有界高度。
-                      child: IntrinsicHeight(
-                        child: _WrongToFixCard(
-                          question: e.value,
-                          onCorrect: () => onCorrect(e.value.id),
-                        ),
+                  // 汇总头：AppCard（2px 墨黑描边 + 硬阴影）+ 弹簧入场。
+                  PopIn(
+                    child: AppCard(
+                      padding: const EdgeInsets.all(AppSpacing.xl2),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('提交完成，看看哪里错了',
+                              style: text.titleMedium),
+                          const SizedBox(height: AppSpacing.xs),
+                          Text(
+                            '$correctCount / $total 正确 · 正确率 $accuracy%',
+                            style: text.bodyMedium,
+                          ),
+                          const SizedBox(height: AppSpacing.md),
+                          AppProgressBar(
+                            value: total > 0 ? correctCount / total : 0,
+                            height: 10,
+                          ),
+                        ],
                       ),
                     ),
                   ),
-              const SizedBox(height: AppSpacing.lg),
-              Text(
-                '提示：能当场订正的尽量订正；实在不要再提交，错题会自动进入复习计划。',
-                style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+                  const SizedBox(height: AppSpacing.xl2),
+                  // 待订正列表
+                  Row(
+                    children: [
+                      Icon(LucideIcons.pencilLine,
+                          size: 18, color: scheme.error),
+                      const SizedBox(width: AppSpacing.sm),
+                      Text('需要订正的题（${wrongQuestions.length}）',
+                          style: text.titleSmall),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  // 错峰：key 稳定 → PopIn 不重用重建，列表刷新时不会重放弹簧。
+                  ...wrongQuestions.asMap().entries.map(
+                        (e) => PopIn(
+                          key: ValueKey<int>(e.key),
+                          // 左侧学科色条由 Row(stretch) 撑满行高；ListView 内高度无界，
+                          // 须 IntrinsicHeight 给 Row 一个有界高度。
+                          child: IntrinsicHeight(
+                            child: _WrongToFixCard(
+                              question: e.value,
+                              onCorrect: () => onCorrect(e.value.id),
+                            ),
+                          ),
+                        ),
+                      ),
+                  const SizedBox(height: AppSpacing.lg),
+                  Text(
+                    '提示：能当场订正的尽量订正；实在不要再提交，错题会自动进入复习计划。',
+                    style: text.bodySmall
+                        ?.copyWith(color: scheme.onSurfaceVariant),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
         // 底部最终提交：纸底 + 2px 墨黑顶边（行动条，非内容卡）。
@@ -123,7 +135,7 @@ class PracticeReviewView extends StatelessWidget {
             label: '完成打卡 · 进入复习',
             icon: LucideIcons.checkCircle2,
             onPressed: onCommit,
-            height: 52,
+            height: AppControl.heightLgOf(context),
           ),
         ),
       ],
@@ -183,7 +195,7 @@ class _WrongToFixCard extends StatelessWidget {
                         label: '去订正',
                         icon: LucideIcons.pencil,
                         onPressed: onCorrect,
-                        height: 40,
+                        // 行内次要行动：不传 height → 走标准档，与同行其他控件同高。
                         fullWidth: false,
                       ),
                     ),

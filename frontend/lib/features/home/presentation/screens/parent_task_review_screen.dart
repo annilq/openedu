@@ -103,7 +103,7 @@ class _ParentTaskReviewScreenState
       if (task.specs.isNotEmpty) {
         buttons.add(
           ShadButton.outline(
-            height: 40,
+
             onPressed: locked ? null : () => _onRegenerateAll(task.id),
             leading: const Icon(LucideIcons.rotateCw, size: 16),
             child: const Text('整卷重生成'),
@@ -112,7 +112,7 @@ class _ParentTaskReviewScreenState
       }
       buttons.add(
         ShadButton.outline(
-          height: 40,
+          
           onPressed: locked || task.promotedCount == task.questions.length
               ? null
               : () => _onPromoteAll(task.id),
@@ -123,7 +123,7 @@ class _ParentTaskReviewScreenState
       );
       buttons.add(
         ShadButton.destructive(
-          height: 40,
+          
           onPressed: locked ? null : () => _onDiscard(task.id),
           leading: const Icon(LucideIcons.trash2, size: 16),
           child: const Text('作废'),
@@ -131,7 +131,7 @@ class _ParentTaskReviewScreenState
       );
       buttons.add(
         ShadButton(
-          height: 40,
+          
           onPressed: locked || task.questions.isEmpty
               ? null
               : () => _onConfirm(task),
@@ -142,7 +142,7 @@ class _ParentTaskReviewScreenState
     } else if (task.isReady) {
       buttons.add(
         ShadButton(
-          height: 40,
+          
           onPressed: locked
               ? null
               : widget.defaultChildId != null
@@ -157,7 +157,7 @@ class _ParentTaskReviewScreenState
     } else if (task.isAssigned) {
       buttons.add(
         ShadButton.secondary(
-          height: 40,
+          
           onPressed: widget.onNavigateToPractice == null
               ? null
               : () => widget.onNavigateToPractice!(task),
@@ -168,7 +168,7 @@ class _ParentTaskReviewScreenState
     } else {
       buttons.add(
         ShadButton.secondary(
-          height: 40,
+          
           onPressed: widget.onBackToHome,
           child: const Text('返回首页'),
         ),
@@ -187,7 +187,7 @@ class _ParentTaskReviewScreenState
       child: Align(
         alignment: Alignment.topLeft,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1080),
+          constraints: const BoxConstraints(maxWidth: AppLayout.contentWide),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(
                 AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.md),
@@ -208,7 +208,7 @@ class _ParentTaskReviewScreenState
     return Align(
       alignment: Alignment.topLeft,
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 1080),
+        constraints: const BoxConstraints(maxWidth: AppLayout.contentWide),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(
               AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.sm),
@@ -263,7 +263,7 @@ class _ParentTaskReviewScreenState
       child: Align(
         alignment: Alignment.topLeft,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1080),
+          constraints: const BoxConstraints(maxWidth: AppLayout.contentWide),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -618,39 +618,43 @@ class _SpecsSummary extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final app = AppTheme.colorsOf(context);
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(LucideIcons.listChecks, size: 18, color: app.onSurfaceVariant),
-        const SizedBox(width: AppSpacing.sm),
-        ConstrainedBox(
-          constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.45),
-          child: Wrap(
-            spacing: AppSpacing.xs,
-            runSpacing: AppSpacing.xs,
-            children: specs.map((s) {
-              return Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
-                decoration: BoxDecoration(
-                  color: app.surfaceContainerHigh,
-                  borderRadius: BorderRadius.circular(AppRadius.sm),
-                  // 小信息 chip = 1.5px 墨黑描边（ADR-0044，与学科 chip 同宽）。
-                  border: Border.all(
-                      color: AppBrutal.ink,
-                      width: AppElevation.borderWidthSm),
-                ),
-                child: Text(
-                  '${s.subject}·${s.grade}·${s.knowledgePoint} x${s.count}',
-                  style: AppTheme.textOf(context).bodySmall,
-                ),
-              );
-            }).toList(),
+    // 用「可用宽度」而非屏宽（ADR-0045）：本组件可能落在 master-detail 的窄详情栏里，
+    // 按屏宽算会让 chip 块宽过所在容器 → 溢出。
+    return LayoutBuilder(
+      builder: (context, constraints) => Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(LucideIcons.listChecks, size: 18, color: app.onSurfaceVariant),
+          const SizedBox(width: AppSpacing.sm),
+          ConstrainedBox(
+            constraints:
+                BoxConstraints(maxWidth: constraints.maxWidth * 0.45),
+            child: Wrap(
+              spacing: AppSpacing.xs,
+              runSpacing: AppSpacing.xs,
+              children: specs.map((s) {
+                return Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
+                  decoration: BoxDecoration(
+                    color: app.surfaceContainerHigh,
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                    // 小信息 chip = 1.5px 墨黑描边（ADR-0044，与学科 chip 同宽）。
+                    border: Border.all(
+                        color: AppBrutal.ink,
+                        width: AppElevation.borderWidthSm),
+                  ),
+                  child: Text(
+                    '${s.subject}·${s.grade}·${s.knowledgePoint} x${s.count}',
+                    style: AppTheme.textOf(context).bodySmall,
+                  ),
+                );
+              }).toList(),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

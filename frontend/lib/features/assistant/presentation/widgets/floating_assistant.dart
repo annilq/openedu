@@ -1,254 +1,103 @@
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/theme/app_theme.dart';
-import '../provider/assistant_notifier.dart';
-import 'assistant_message_list.dart';
+import '../screens/assistant_chat_page.dart';
 
-/// 全局悬浮 AI 助手宿主：把 `child`（如 HomeScreen）包进 Stack，右上角常驻一个
-/// 悬浮按钮，点击展开对话面板。
+/// 家长端 AI 助手宿主（ADR-0036 单入口 / ADR-0047 整页形态）。
 ///
-/// 角色门（ADR-0036）：只对**家长端**挂载。娃娃端改用整页
-/// `AssistantChatPage`（导航页签），避免同一个 AI 出现两个入口。
+/// 把 [child]（HomeScreen）铺底、右下角叠一个常驻**浮动按钮**；点击后 push 整页
+/// [AssistantChatPage]——助手是**单独页面**，不再是与宿主布局无关的浮层。
+///
+/// **为什么从浮层改成整页**：浮层尺寸（380×540）与导航壳（侧栏 + `contentWide`
+/// 内容列）没有任何关系，桌面 / 平板下它压在内容上，既不齐侧栏也不齐内容列，看起来
+/// 像贴纸。整页形态则与娃娃端「问 AI 老师」页签是**同一个页面、同一份会话、同一套
+/// 渲染**，宽度随可用空间自然适配（ADR-0045）。
+///
+/// 入口仍然只有这一个浮动按钮（ADR-0036：每个角色恰好一个 AI 入口）。按钮不在助手
+/// 页上重复出现——整页自带返回，浮球盖在整页右下角会正好压住输入栏。
 class FloatingAssistant extends StatelessWidget {
   final Widget child;
 
   const FloatingAssistant({super.key, required this.child});
+
+  void _open(BuildContext context) {
+    Navigator.of(context).push(
+      CupertinoPageRoute<void>(
+        // showBack：整页自带返回（push 路由，默认走 Navigator.maybePop）。
+        // isParent：标题与空态引导按家长口径渲染——家长能出题 / 查任务，
+        // 与娃娃端「只讲学习内容」的边界不同。
+        builder: (_) => const AssistantChatPage(showBack: true, isParent: true),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Stack(
       children: [
         child,
-        const _AssistantOverlay(),
-      ],
-    );
-  }
-}
-
-class _AssistantOverlay extends StatefulWidget {
-  const _AssistantOverlay();
-
-  @override
-  State<_AssistantOverlay> createState() => _AssistantOverlayState();
-}
-
-class _AssistantOverlayState extends State<_AssistantOverlay> {
-  bool _open = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = AppTheme.colorsOf(context);
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        if (_open)
-          Positioned(
-            right: AppSpacing.lg,
-            bottom: 88,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(
-                maxWidth: 380,
-                maxHeight: 540,
-              ),
-              child:
-                  AssistantChatPanel(onClose: () => setState(() => _open = false)),
-            ),
-          ),
         Positioned(
           right: AppSpacing.lg,
           bottom: AppSpacing.lg,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => setState(() => _open = !_open),
-            child: Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                color: scheme.primary,
-                shape: BoxShape.circle,
-                border: Border.all(
-                    color: AppBrutal.ink, width: AppElevation.borderWidth),
-                boxShadow: AppElevation.hard(),
-              ),
-              child: Icon(
-                _open ? Icons.close : Icons.smart_toy_outlined,
-                color: scheme.onPrimary,
-                size: 26,
-              ),
-            ),
-          ),
+          child: AssistantLauncher(onTap: () => _open(context)),
         ),
       ],
     );
   }
 }
 
-/// 助手对话面板（含消息列表 + 输入框）。状态由 [assistantNotifierProvider] 驱动。
+/// 助手浮动入口按钮：新粗野圆形强调件（`primary` 底 + 墨黑描边 + 硬阴影）。
 ///
-/// 消息渲染委托 [AssistantMessageList]——与整页 `AssistantChatPage` 共用同一实现
-/// （ADR-0036），保证题卡 / 安全标记 / 复制的行为在两个形态下一致。
-class AssistantChatPanel extends ConsumerStatefulWidget {
-  final VoidCallback onClose;
+/// 收敛前它是裸 `GestureDetector`——**不在焦点树里**（桌面端 Tab 跳不过来、
+/// Enter 点不动，而 `flutter analyze` 照不出来，ADR-0045/0046）。现在走
+/// [AppFocusableAction]，按压反馈与 [AppCard] 同一套语义：整块下沉 + 硬阴影收拢。
+class AssistantLauncher extends StatefulWidget {
+  final VoidCallback onTap;
 
-  const AssistantChatPanel({super.key, required this.onClose});
+  const AssistantLauncher({super.key, required this.onTap});
 
   @override
-  ConsumerState<AssistantChatPanel> createState() => _AssistantChatPanelState();
+  State<AssistantLauncher> createState() => _AssistantLauncherState();
 }
 
-class _AssistantChatPanelState extends ConsumerState<AssistantChatPanel> {
-  final _ctrl = TextEditingController();
-  final _scroll = ScrollController();
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    _scroll.dispose();
-    super.dispose();
-  }
-
-  void _send() {
-    final text = _ctrl.text.trim();
-    if (text.isEmpty) return;
-    _ctrl.clear();
-    ref.read(assistantNotifierProvider.notifier).send(text);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final state = ref.watch(assistantNotifierProvider);
-    final scheme = AppTheme.colorsOf(context);
-    final text = AppTheme.textOf(context);
-
-    final messages = switch (state) {
-      AssistantActive(:final messages) => messages,
-      _ => const <AssistantMessage>[],
-    };
-    final streaming = state is AssistantActive && state.streaming;
-
-    // 新消息自动滚到底部。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scroll.hasClients) {
-        _scroll.animateTo(
-          _scroll.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 160),
-          curve: Curves.easeOut,
-        );
-      }
-    });
-
-    return Container(
-      decoration: BoxDecoration(
-        color: scheme.surface,
-        borderRadius: BorderRadius.circular(AppRadius.card),
-        border: Border.all(
-            color: AppBrutal.ink, width: AppElevation.borderWidth),
-        boxShadow: AppElevation.hard(),
-      ),
-      child: Column(
-        children: [
-          _Header(onClose: widget.onClose),
-          const Divider(height: 1),
-          Expanded(
-            child: messages.isEmpty
-                ? Center(
-                    child: Text(
-                      '问我任何学习问题：\n出题、查任务、答疑…',
-                      textAlign: TextAlign.center,
-                      style: text.bodySmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                  )
-                : AssistantMessageList(
-                    messages: messages,
-                    controller: _scroll,
-                  ),
-          ),
-          const Divider(height: 1),
-          _InputBar(
-            controller: _ctrl,
-            sending: streaming,
-            onSend: _send,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Header extends StatelessWidget {
-  final VoidCallback onClose;
-  const _Header({required this.onClose});
+class _AssistantLauncherState extends State<AssistantLauncher> {
+  bool _pressed = false;
 
   @override
   Widget build(BuildContext context) {
     final scheme = AppTheme.colorsOf(context);
-    final text = AppTheme.textOf(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.md,
-        vertical: AppSpacing.sm,
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.smart_toy_outlined, color: scheme.primary, size: 20),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Text('AI 学习助手', style: text.titleSmall),
-          ),
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: onClose,
-            child: Icon(Icons.close, color: scheme.onSurfaceVariant, size: 18),
-          ),
-        ],
-      ),
-    );
-  }
-}
+    // 暗模式下墨黑硬阴影与背景同色、不可见 → 退化为无阴影（ADR-0044）。
+    final dark = scheme.brightness == Brightness.dark;
 
-class _InputBar extends StatelessWidget {
-  final TextEditingController controller;
-  final bool sending;
-  final VoidCallback onSend;
-
-  const _InputBar({
-    required this.controller,
-    required this.sending,
-    required this.onSend,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = AppTheme.colorsOf(context);
-    return Padding(
-      padding: const EdgeInsets.all(AppSpacing.md),
-      child: Row(
-        children: [
-          Expanded(
-            child: ShadInput(
-              controller: controller,
-              placeholder: const Text('说点什么…'),
-              onSubmitted: (_) => onSend(),
-              decoration: ShadDecoration(
-                color: scheme.surfaceContainerLow,
-                border: ShadBorder.all(
-                  color: scheme.outline,
-                  width: 1,
-                  radius: BorderRadius.circular(AppRadius.input),
-                ),
-              ),
-            ),
+    return AppFocusableAction(
+      onTap: widget.onTap,
+      semanticLabel: 'AI 学习助手',
+      borderRadius: BorderRadius.circular(AppLayout.tapTargetLg / 2),
+      onPressedChanged: (pressed) => setState(() => _pressed = pressed),
+      // 只动 transform（GPU 合成），不触发布局重排。
+      child: Transform.translate(
+        offset: _pressed ? AppElevation.offsetPressed : Offset.zero,
+        child: Container(
+          width: AppLayout.tapTargetLg,
+          height: AppLayout.tapTargetLg,
+          decoration: BoxDecoration(
+            color: scheme.primary,
+            shape: BoxShape.circle,
+            border: Border.all(
+                color: AppBrutal.ink, width: AppElevation.borderWidth),
+            boxShadow: dark
+                ? AppElevation.none
+                : (_pressed
+                    ? AppElevation.hardPressed()
+                    : AppElevation.hard()),
           ),
-          const SizedBox(width: AppSpacing.sm),
-          ShadButton(
-            onPressed: sending ? null : onSend,
-            child: const Icon(Icons.send, size: 18),
+          child: Icon(
+            LucideIcons.bot,
+            color: scheme.onPrimary,
+            size: 24,
           ),
-        ],
+        ),
       ),
     );
   }

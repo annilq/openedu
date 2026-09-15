@@ -230,7 +230,7 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
       child: Align(
         alignment: Alignment.topLeft,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1080),
+          constraints: const BoxConstraints(maxWidth: AppLayout.contentWide),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -254,13 +254,13 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
                         ),
                         const SizedBox(width: AppSpacing.md),
                         ShadButton.outline(
-                          height: AppControl.heightOf(context),
+                        
                           onPressed: _evenSplit,
                           child: const Text('一键均分'),
                         ),
                         const SizedBox(width: AppSpacing.sm),
                         ShadButton.outline(
-                          height: AppControl.heightOf(context),
+                        
                           onPressed: _addRow,
                           child: const Text('+ 加学科'),
                         ),
@@ -441,10 +441,13 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
           ),
           if (_rows.length > 1) ...[
             const SizedBox(width: AppSpacing.sm),
-            CupertinoButton(
-              padding: EdgeInsets.zero,
+            // 同行有年级 ShadSelect（标准档 40）：图标操作也必须走标准档命中区，
+            // 否则 CupertinoButton 的 44×44 默认 minSize 会把这一行撑高 4px。
+            AppIconAction(
+              icon: LucideIcons.x,
+              iconSize: 20,
+              semanticLabel: '删除第 ${i + 1} 行',
               onPressed: () => _removeRow(i),
-              child: const Icon(LucideIcons.x, size: 20),
             ),
           ],
         ],
@@ -705,11 +708,11 @@ class _PreviewCard extends StatelessWidget {
               // 出题推理：卡片右上角 info icon，点击展开「AI 出题思路」（ADR-0017）。
               if (q.reasoning.isNotEmpty) ...[
                 const SizedBox(width: AppSpacing.sm),
-                CupertinoButton(
-                  padding: EdgeInsets.zero,
+                AppIconAction(
+                  icon: LucideIcons.info,
+                  semanticLabel: '查看 AI 出题思路',
+                  color: app.onSurfaceVariant,
                   onPressed: () => _showReasoningSheet(context, q.reasoning),
-                  child: Icon(LucideIcons.info,
-                      size: 18, color: app.onSurfaceVariant),
                 ),
               ],
             ],

@@ -107,7 +107,8 @@ class ProfileScreen extends ConsumerWidget {
           child: SizedBox(
             width: double.infinity,
             child: ShadButton(
-              height: 52,
+              // 退出登录是这一屏的主行动 → 走主行动档（48/56），不硬编码像素。
+              size: ShadButtonSize.lg,
               backgroundColor: app.errorContainer,
               hoverBackgroundColor: app.errorContainer,
               pressedBackgroundColor: app.error,
@@ -242,7 +243,8 @@ class _ThemeModeSetting extends ConsumerWidget {
     final selected = current == value;
     return Expanded(
       child: ShadButton.ghost(
-        height: 40,
+        // ghost 无描边 → 内容盒高即可见高，直接吃标准档（不能用 contentHeight 折算）。
+        height: AppControl.heightOf(context),
         backgroundColor:
             selected ? app.primaryContainer : const Color(0x00000000),
         hoverBackgroundColor:
@@ -324,7 +326,8 @@ class _UserModeSetting extends ConsumerWidget {
     final selected = current == value;
     return Expanded(
       child: ShadButton.ghost(
-        height: 40,
+        // ghost 无描边 → 内容盒高即可见高，直接吃标准档（不能用 contentHeight 折算）。
+        height: AppControl.heightOf(context),
         backgroundColor:
             selected ? app.primaryContainer : const Color(0x00000000),
         hoverBackgroundColor:

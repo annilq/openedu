@@ -85,7 +85,8 @@ class AppError extends StatelessWidget {
             if (onRetry != null) ...[
               const SizedBox(height: AppSpacing.xl),
               ShadButton(
-                height: 52,
+                // 错误态里唯一的出口 → 主行动档，不硬编码像素。
+                size: ShadButtonSize.lg,
                 padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
                 onPressed: onRetry,
                 leading: const Icon(LucideIcons.refreshCcw, size: 18),

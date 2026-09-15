@@ -26,29 +26,43 @@ class AdaptiveNavDestination {
   });
 }
 
-/// 响应式导航壳（ADR-0014）：按 [LayoutBuilder] 宽度在三档断点间切换布局。
+/// 响应式导航壳（ADR-0014 / ADR-0045）：按 [LayoutBuilder] 的**可用宽度**分三档。
 ///
-/// - medium / expanded (≥700)：侧栏 240 ↔ 64 可收起，状态经 [StorageService] 持久化。
-/// - compact (<700)：娃娃端底部导航；家长端顶部汉堡 + 左抽屉。
+/// | 可用宽度 | 布局 |
+/// |---|---|
+/// | `< [AppLayout.compactMax]`（紧凑） | 娃娃端底部导航；家长端顶部汉堡 + 左抽屉 |
+/// | `[compactMax, largeMin)`（中屏） | 侧栏 240 ↔ 64 可收起 |
+/// | `≥ [AppLayout.largeMin]`（大屏） | 同上，且 [detail] 非空时展开 master-detail 双栏 |
+///
+/// 另（ADR-0045）：内容区统一套 [AppLayout.contentWide] 宽度上限并居中——大屏下
+/// 防止文本行过长、卡片被无限拉宽。页面若需更窄（登录 480 / 答题 820），自带
+/// 更强的 [ConstrainedBox] 即可，内层更紧者生效。
 ///
 /// 侧栏/轨态复用 [AppSidebar] + [AppSidebarItem]；紧凑态自绘（不使用 Material 的
 /// BottomNavigationBar / Drawer / Scaffold，因应用根基于 ShadApp 无 Material 祖先）。
 class AdaptiveShell extends ConsumerStatefulWidget {
   final List<AdaptiveNavDestination> destinations;
   final Widget body;
+
+  /// 详情面板（master-detail 的 detail）。
+  ///
+  /// - 大屏（≥ [AppLayout.largeMin]）：与 [body]（master）并排双栏；
+  /// - 中屏 / 紧凑：整幅顶替 [body]——保持「详情是整页」的既有行为，同时避免在
+  ///   平板竖屏或手机上硬塞双栏。
+  ///
+  /// 为空时只渲染 [body]。宽度判定由本壳负责，调用方无需自己测量宽度。
+  final Widget? detail;
+
   final AppUserMode mode;
   final Widget? sidebarTop;
   final Widget? sidebarBottom;
   final AdaptiveNavDestination? profileDestination;
 
-  static const double expandedWidth = 240;
-  static const double collapsedWidth = 64;
-  static const double compactThreshold = 700;
-
   const AdaptiveShell({
     super.key,
     required this.destinations,
     required this.body,
+    this.detail,
     required this.mode,
     this.sidebarTop,
     this.sidebarBottom,
@@ -81,7 +95,8 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
-        final isCompact = width < AdaptiveShell.compactThreshold;
+        final isCompact = width < AppLayout.compactMax;
+        final isLarge = width >= AppLayout.largeMin;
 
         if (isCompact) {
           return widget.mode == AppUserMode.child
@@ -91,26 +106,29 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
 
         // 中 / 大屏：侧栏 240 ↔ 64 可收起；收起偏好对所有非紧凑宽度生效并持久化。
         final railWidth =
-            _collapsed ? AdaptiveShell.collapsedWidth : AdaptiveShell.expandedWidth;
+            _collapsed ? AppLayout.sidebarCollapsed : AppLayout.sidebarExpanded;
         final scheme = AppTheme.colorsOf(context);
         return SidebarCollapseScope(
           collapsed: _collapsed,
           onToggle: _toggleCollapsed,
-        child: Row(
-          // 内容页贴顶自然布局，绝不垂直居中（避免内容少的页面上下留白「局中」）。
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            AnimatedContainer(
-              // 隐式动画须显式尊重 reduce-motion（ADR-0044）。
-              duration: reducedMotionOf(context)
-                  ? Duration.zero
-                  : const Duration(milliseconds: 280),
-              curve: Curves.easeOutCubic,
-              width: railWidth,
+          child: Row(
+            // 内容页贴顶自然布局，绝不垂直居中（避免内容少的页面上下留白「局中」）。
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AnimatedContainer(
+                // 隐式动画须显式尊重 reduce-motion（ADR-0044）。
+                duration: reducedMotionOf(context)
+                    ? Duration.zero
+                    : const Duration(milliseconds: 280),
+                curve: Curves.easeOutCubic,
+                width: railWidth,
                 decoration: BoxDecoration(
                   color: scheme.surfaceContainerHigh,
                   border: Border(
-                    right: BorderSide(color: scheme.outline, width: AppElevation.borderWidthHairline),
+                    right: BorderSide(
+                      color: scheme.outline,
+                      width: AppElevation.borderWidthHairline,
+                    ),
                   ),
                 ),
                 child: ClipRect(
@@ -132,7 +150,7 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
               Expanded(
                 child: Container(
                   color: scheme.surface,
-                  child: widget.body,
+                  child: _buildContent(context, isLarge: isLarge),
                 ),
               ),
             ],
@@ -141,6 +159,66 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
       },
     );
   }
+
+  /// 单栏内容：详情存在时整幅顶替 body（紧凑 / 中屏沿用「详情是整页」的既有行为）。
+  Widget get _singleColumn => widget.detail ?? widget.body;
+
+  /// 内容区（非紧凑路径）。
+  ///
+  /// - 大屏且有详情：[AppLayout.masterFlex] : [AppLayout.detailFlex] 双栏；
+  /// - 其余：单栏。
+  ///
+  /// 两条路径都套 [AppLayout.contentWide] 上限并居中（ADR-0045）。
+  Widget _buildContent(BuildContext context, {required bool isLarge}) {
+    final detail = widget.detail;
+    if (detail == null || !isLarge) {
+      return _cappedWidth(_singleColumn);
+    }
+
+    final scheme = AppTheme.colorsOf(context);
+    return _cappedWidth(
+      Row(
+        // stretch 让两侧各自撑满、独立滚动。安全性已登记在
+        // test/stretch_row_guard_test.dart：本 Row 位于 Expanded 之下，可用高度由
+        // 窗口钉死；**不要**改用 IntrinsicHeight——子项都是滚动视图，固有高度无意义。
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // 主栏 : 详情栏 = 5 : 8（详情是要读的内容，给它更多横向空间）。
+          // 用 Flex 配比而非固定像素：内容区已被 contentWide 钉死，配比在实机区间内
+          // 变化很小，同时避免主栏是表单页时被压成一条窄缝。
+          Expanded(
+            flex: AppLayout.masterFlex,
+            child: widget.body,
+          ),
+          // 主 / 详之间的结构分隔线：与侧栏右缘同档（发丝边，禁写裸数字）。
+          Container(
+            width: AppElevation.borderWidthHairline,
+            color: scheme.outline,
+          ),
+          Expanded(
+            flex: AppLayout.detailFlex,
+            child: detail,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 内容宽度上限 + 水平居中：大屏下避免文本行过长、卡片被无限拉宽。
+  ///
+  /// 用 [Align] 的 `topCenter` 而**不是** [Center]：这里只想约束横向。`Center` 的竖向
+  /// 居中会让「内容不足一屏」的页面（表单、错误态）整块浮到屏幕中间——本仓刻意要
+  /// 「内容贴顶自然布局」。`Align` 横向传下松约束，贪心子项（ListView / scroll view）
+  /// 仍会取满 `contentWide`，与 `Center` 等效。
+  ///
+  /// 紧凑宽度下 1080 不生效，等价于无包裹（不改变手机 / 小平板的现有排布）。
+  Widget _cappedWidth(Widget child) => Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: AppLayout.contentWide),
+          child: child,
+        ),
+      );
 
   // ---- 紧凑·娃娃端：底部导航 ----
   Widget _buildCompactBottomNav(BuildContext context) {
@@ -152,7 +230,7 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
         Expanded(
           child: Container(
             color: scheme.surface,
-            child: widget.body,
+            child: _cappedWidth(_singleColumn),
           ),
         ),
         Container(
@@ -189,7 +267,7 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
             Expanded(
               child: Container(
                 color: scheme.surface,
-                child: widget.body,
+                child: _cappedWidth(_singleColumn),
               ),
             ),
           ],
@@ -207,10 +285,10 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
               ? Duration.zero
               : const Duration(milliseconds: 280),
           curve: Curves.easeOutCubic,
-          left: _drawerOpen ? 0 : -AdaptiveShell.expandedWidth,
+          left: _drawerOpen ? 0 : -AppLayout.sidebarExpanded,
           top: 0,
           bottom: 0,
-          width: AdaptiveShell.expandedWidth,
+          width: AppLayout.sidebarExpanded,
           child: Container(
             decoration: BoxDecoration(
               color: scheme.surfaceContainerHigh,
@@ -218,7 +296,13 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
             ),
             child: Column(
               children: [
-                if (widget.sidebarTop != null) widget.sidebarTop!,
+                // 抽屉无收缩按钮，但仍要给同一份头部内边距——否则 sidebarTop
+                // 会贴边，与下面缩进 8px 的抽屉项对不上（左右两条边缘）。
+                if (widget.sidebarTop != null)
+                  Padding(
+                    padding: AppLayout.sidebarHeaderPadding,
+                    child: widget.sidebarTop!,
+                  ),
                 Expanded(
                   child: ListView(
                     padding: const EdgeInsets.symmetric(
@@ -248,28 +332,25 @@ class _BottomNavItem extends StatelessWidget {
     final scheme = AppTheme.colorsOf(context);
     final color = destination.active ? scheme.accent : scheme.onSurfaceVariant;
     return Expanded(
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
+      child: AppFocusableAction(
         onTap: destination.onTap,
-        child: MouseRegion(
-          cursor: SystemMouseCursors.click,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(destination.icon, size: 22, color: color),
-              const SizedBox(height: 4),
-              Text(
-                destination.label,
-                style: AppTheme.textOf(context).labelSmall?.copyWith(
-                      color: color,
-                      fontWeight:
-                          destination.active ? FontWeight.w600 : FontWeight.w500,
-                    ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-          ),
+        semanticLabel: destination.label,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(destination.icon, size: 22, color: color),
+            const SizedBox(height: 4),
+            Text(
+              destination.label,
+              style: AppTheme.textOf(context).labelSmall?.copyWith(
+                    color: color,
+                    fontWeight:
+                        destination.active ? FontWeight.w600 : FontWeight.w500,
+                  ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
         ),
       ),
     );
@@ -285,14 +366,16 @@ class _DrawerItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = AppTheme.colorsOf(context);
     final text = AppTheme.textOf(context);
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: destination.onTap,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
+    return Padding(
+      // margin 提到焦点环外侧：环必须贴着药丸，而不是把 margin 也圈进去。
+      padding:
+          const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 2),
+      child: AppFocusableAction(
+        onTap: destination.onTap,
+        semanticLabel: destination.label,
+        borderRadius: BorderRadius.circular(AppRadius.chip),
+        hoverHighlight: true,
         child: Container(
-          margin: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.sm, vertical: 2),
           padding: const EdgeInsets.symmetric(
               horizontal: AppSpacing.md, vertical: AppSpacing.sm),
           decoration: BoxDecoration(
@@ -346,17 +429,15 @@ class _CompactTopBar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
+          AppFocusableAction(
             onTap: onMenu,
-            child: MouseRegion(
-              cursor: SystemMouseCursors.click,
-              child: SizedBox(
-                width: 44,
-                height: 44,
-                child: Icon(LucideIcons.menu,
-                    size: 20, color: scheme.onSurfaceVariant),
-              ),
+            semanticLabel: '打开导航菜单',
+            borderRadius: BorderRadius.circular(AppRadius.chip),
+            child: SizedBox(
+              width: AppLayout.tapTarget,
+              height: AppLayout.tapTarget,
+              child: Icon(LucideIcons.menu,
+                  size: 20, color: scheme.onSurfaceVariant),
             ),
           ),
           const SizedBox(width: AppSpacing.sm),
@@ -399,53 +480,58 @@ class AdaptiveUserBlock extends StatelessWidget {
       return Container(
         padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
         decoration: BoxDecoration(
-          border: Border(top: BorderSide(color: scheme.outline, width: AppElevation.borderWidthHairline)),
+          border: Border(
+            top: BorderSide(
+              color: scheme.outline,
+              width: AppElevation.borderWidthHairline,
+            ),
+          ),
         ),
         alignment: Alignment.center,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
+        child: AppFocusableAction(
           onTap: onProfileTap,
-          child: MouseRegion(
-            cursor: SystemMouseCursors.click,
-            child: AvatarSquircle.small(name: name),
-          ),
+          semanticLabel: '$name · $sub',
+          borderRadius: BorderRadius.circular(AppRadius.chip),
+          child: AvatarSquircle.small(name: name),
         ),
       );
     }
 
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
+    return AppFocusableAction(
       onTap: onProfileTap,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: Container(
-          padding: const EdgeInsets.all(AppSpacing.md),
-          decoration: BoxDecoration(
-            border: Border(top: BorderSide(color: scheme.outline, width: AppElevation.borderWidthHairline)),
+      semanticLabel: '$name · $sub',
+      child: Container(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        decoration: BoxDecoration(
+          border: Border(
+            top: BorderSide(
+              color: scheme.outline,
+              width: AppElevation.borderWidthHairline,
+            ),
           ),
-          child: Row(
-            children: [
-              AvatarSquircle.small(name: name),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(name,
-                        style: AppTheme.textOf(context).labelMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                            )),
-                    Text(sub,
-                        style: AppTheme.textOf(context).labelSmall?.copyWith(
-                              color: scheme.onSurfaceVariant,
-                            )),
-                  ],
-                ),
+        ),
+        child: Row(
+          children: [
+            AvatarSquircle.small(name: name),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(name,
+                      style: AppTheme.textOf(context).labelMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          )),
+                  Text(sub,
+                      style: AppTheme.textOf(context).labelSmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                          )),
+                ],
               ),
-              Icon(LucideIcons.chevronRight,
-                  size: 16, color: scheme.onSurfaceVariant),
-            ],
-          ),
+            ),
+            Icon(LucideIcons.chevronRight,
+                size: 16, color: scheme.onSurfaceVariant),
+          ],
         ),
       ),
     );
