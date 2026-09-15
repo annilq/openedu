@@ -50,6 +50,14 @@
 - **守卫测试**：`tests/ai/test_query_tools_contract.py` 有 4 条（证据锚点 / 枚举含 NO_FILTER / 行为级「缺席编码填满 ≡ 不传」/ 非法值仍报错）。改工具 schema 先跑它。
 - genkit **不**校验工具入参（`_core/_action.py:499-500`：`input_schema` 为 dict 时 `_input_type=None`）→ 入参校验只能靠 handler 自己。
 
+## 助手回答泄露：推理与正文在协议层不分（待修）
+
+- **结构性事实**：`agent_core/adapters/genkit.py:524-528`（tools 路径）把**所有**流片段一律 `yield TextDelta`——**包括 `SegmentKind.REASONING`**。`run_with_tools` 又把所有 `TextDelta` 累进 `acc`，于是**模型的内部独白就是「答案」**：模型没产出原生 `ToolCall` 时，`acc` 经 `assistant_message(acc)` 直接下发（前端只渲染 ASSISTANT_MESSAGE，THINKING 一律忽略）。
+- **真机复现**：家长 `annilq` 问「查一下 lsc 的错题本」→ 模型无原生 ToolCall，`acc` 是 1255 字符英文独白 → 原样成为 AI 气泡正文（`<invoke>` 协议本身落在 THINKING 帧）。
+- **现有防护的边界**：`_text_looks_like_tool_call`（`subagent.py:127-142`）只认 `acc` 里的 XML/JSON 调用协议标记，**拦不住「答案是独白」**这一形态。
+- **正确修法（别再堆文本启发式）**：`TextDelta` 加 `kind`（text/reasoning），adapter 按 `SegmentKind` 标注；`run_with_tools` 里 reasoning 只进 `turn_thinking`、不进 `acc`；工具型 subagent「无原生 ToolCall 且正文为空」→ `ERROR(TOOL_UNSUPPORTED)` 硬失败。
+- **待定**：AI 气泡的 Markdown 渲染（推荐 `gpt_markdown`；落点 `shared/widgets/app_markdown.dart` + `assistant_message_list.dart#_BubbleBody` 的 AI 分支；根是 `CupertinoApp`，**别引入依赖 Material 祖先的渲染栈**）。
+
 ## 后端测试约束
 
 - 必须 `cd backend && mv .env .env.hidden` 再跑 pytest（否则 pydantic-settings 读 .env 被 broker 拦），跑完恢复。

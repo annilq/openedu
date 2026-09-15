@@ -101,6 +101,10 @@ class ParentOverviewView extends ConsumerWidget {
           child: LayoutBuilder(
             builder: (context, constraints) {
               final wide = constraints.maxWidth >= 560;
+              final statWidth = wide
+                  ? ((constraints.maxWidth - AppSpacing.md * 3) / 4)
+                      .clamp(120.0, double.infinity)
+                  : 160.0;
               return Wrap(
                 runSpacing: AppSpacing.xl2,
                 spacing: AppSpacing.md,
@@ -108,23 +112,23 @@ class ParentOverviewView extends ConsumerWidget {
                   _StatCard(
                       label: '总题数',
                       value: '${progress.total}',
-                      wide: wide,
+                      cardWidth: statWidth,
                       icon: LucideIcons.listOrdered),
                   _StatCard(
                       label: '答对',
                       value: '${progress.correct}',
-                      wide: wide,
+                      cardWidth: statWidth,
                       icon: LucideIcons.checkCircle2),
                   _StatCard(
                       label: '正确率',
                       value: '${(progress.accuracy * 100).round()}%',
-                      wide: wide,
+                      cardWidth: statWidth,
                       icon: LucideIcons.barChart3,
                       tone: _Tone.positive),
                   _StatCard(
                       label: '连续打卡',
                       value: '${progress.streakDays}天',
-                      wide: wide,
+                      cardWidth: statWidth,
                       icon: LucideIcons.flame,
                       tone: _Tone.warm),
                 ],
@@ -263,13 +267,13 @@ enum _Tone { neutral, positive, warm, alert }
 class _StatCard extends StatelessWidget {
   final String label;
   final String value;
-  final bool wide;
+  final double cardWidth;
   final IconData icon;
   final _Tone tone;
   const _StatCard({
     required this.label,
     required this.value,
-    required this.wide,
+    required this.cardWidth,
     required this.icon,
     this.tone = _Tone.neutral,
   });
@@ -284,17 +288,7 @@ class _StatCard extends StatelessWidget {
       _Tone.neutral => (scheme.surfaceSunken, scheme.onSurface),
     };
     return Container(
-      width: wide ? null : 160,
-      constraints: wide
-          ? BoxConstraints(
-              minWidth: 140,
-              maxWidth: (MediaQuery.of(context).size.width -
-                      AppSpacing.xl2 * 2 -
-                      AppSpacing.lg * 2 -
-                      AppSpacing.md * 3) /
-                  4,
-            )
-          : null,
+      width: cardWidth,
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
         color: scheme.surfaceRaised,

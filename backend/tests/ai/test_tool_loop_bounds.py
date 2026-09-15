@@ -22,7 +22,7 @@ import asyncio
 import json
 
 from agent_core.errors import ToolUnsupportedError
-from agent_core.ports import LLMProvider, TextDelta, ToolCall
+from agent_core.ports import LLMProvider, TextDelta, TextKind, ToolCall
 from agent_core.protocol import (
     EVENT_ASSISTANT_MESSAGE,
     EVENT_DATA,
@@ -178,8 +178,8 @@ def test_loop_stops_when_model_stops_calling_tools():
     assert EVENT_ERROR not in _types(events)
     texts = [ev.text for ev in events if ev.eventType == EVENT_ASSISTANT_MESSAGE]
     assert texts == ["查到了 2 个任务。"]
-    # 首轮的文本增量走 THINKING
-    assert EVENT_THINKING in _types(events)
+    # 正文只走 ASSISTANT_MESSAGE；本轮没有思维链，故不应出现 THINKING 帧（ADR-0041）
+    assert EVENT_THINKING not in _types(events)
 
 
 # ── 回灌契约：assistant.tool_calls → tool 结果成对入 history，且第二轮能看见 ──
@@ -407,3 +407,120 @@ def test_plain_text_answer_without_protocol_marker_passes_through():
     assert EVENT_ERROR not in _types(events)
     texts = [ev.text for ev in events if ev.eventType == EVENT_ASSISTANT_MESSAGE]
     assert texts == ["我只查学习数据，无法帮你写诗。"]
+
+
+# ── 推理与正文分流（ADR-0041）：思维链不进答案、不进历史、外发前过滤伪协议 ──
+def _plain_monologue() -> str:
+    """真机形态的内部独白：**不含**任何调用协议标记的英文思考。
+
+    这是旧防护漏掉的那一类：「只认 ``<invoke name=`` / ``"name": "`` 等协议标记」的启发式
+    对纯自然语言独白完全无效，于是它被当作最终答案下发（用户看到一段英文思考）。
+    """
+    return (
+        "Need child_id for lsc. Then query wrong questions. Let me call the tool. "
+        "What is the tool name? Probably list_x. I shouldn't guess tool names... but I need to."
+    )
+
+
+def test_reasoning_only_turn_with_tools_hard_fails_instead_of_leaking_monologue():
+    """回归（真机形态）：模型不发原生 ToolCall，把调用意图全留在思维链里。
+
+    旧实现：适配器把 REASONING / TEXT 段一律当 ``TextDelta``，``run_with_tools`` 又全部
+    累进 ``acc`` → 模型没产出原生工具调用时，这段**内部独白**被 ``assistant_message(acc)``
+    直接下发给用户。旧防护对此无效——它只认协议标记，而独白是纯自然语言。
+    现在思维链只进思考缓冲，正文为空即硬失败，一个字都不外泄。
+    """
+    leaked = _plain_monologue()
+    provider = _ScriptedProvider([[TextDelta(delta=leaked, kind=TextKind.REASONING)]])
+    agent = _Agent(provider=provider, tools=[_spec()])
+
+    events = asyncio.run(_collect(agent))
+
+    assert [e.code for e in _errors(events)] == ["TOOL_UNSUPPORTED"]
+    assert EVENT_ASSISTANT_MESSAGE not in _types(events), "独白不得作为答案下发"
+    # 关键：整段独白不得出现在任何事件的文本里（含 THINKING 帧）
+    assert leaked not in "".join(ev.text or "" for ev in events)
+    assert len(provider.calls) == 1, "硬失败后不得重试"
+
+
+def test_reasoning_is_echoed_as_thinking_and_excluded_from_answer():
+    """思考走 THINKING 回显、正文走 ASSISTANT_MESSAGE，两者不再混进同一个累加器。"""
+    provider = _ScriptedProvider(
+        [
+            [ToolCall(name="list_x")],
+            [
+                TextDelta(delta="让我看看…", kind=TextKind.REASONING),
+                TextDelta(delta="查到 2 个任务。"),
+            ],
+        ]
+    )
+    agent = _Agent(provider=provider, tools=[_spec()])
+
+    events = asyncio.run(_collect(agent))
+
+    assert [ev.text for ev in events if ev.eventType == EVENT_THINKING] == ["让我看看…"]
+    assert [ev.text for ev in events if ev.eventType == EVENT_ASSISTANT_MESSAGE] == [
+        "查到 2 个任务。"
+    ]
+
+
+def test_reasoning_does_not_enter_replayed_history():
+    """思维链不得回灌给模型：回灌既污染后续轮次，又白烧 token。"""
+    provider = _ScriptedProvider(
+        [
+            [
+                TextDelta(delta="我先想想怎么查", kind=TextKind.REASONING),
+                ToolCall(name="list_x"),
+            ],
+            [TextDelta(delta="done")],
+        ]
+    )
+    agent = _Agent(provider=provider, tools=[_spec()])
+
+    asyncio.run(_collect(agent))
+
+    request = provider.calls[1]["history"][0]
+    assert request["role"] == "assistant"
+    assert request["content"] == "", "工具轮入历史的只能是正文，不含思维链"
+    assert [c["name"] for c in request["tool_calls"]] == ["list_x"]
+
+
+def test_call_draft_in_reasoning_is_never_flushed_to_client():
+    """思维链里的调用草稿即便本轮工具调用**正常**，也不得外发（协议永不出现）。"""
+    provider = _ScriptedProvider(
+        [
+            [ToolCall(name="list_x")],
+            [
+                TextDelta(
+                    delta='正在调用：<invoke name="list_x"></invoke>', kind=TextKind.REASONING
+                ),
+                TextDelta(delta="查到 2 个任务。"),
+            ],
+        ]
+    )
+    agent = _Agent(provider=provider, tools=[_spec()])
+
+    events = asyncio.run(_collect(agent))
+
+    assert EVENT_THINKING not in _types(events), "含调用伪协议的思考须整段丢弃"
+    assert [ev.text for ev in events if ev.eventType == EVENT_ASSISTANT_MESSAGE] == [
+        "查到 2 个任务。"
+    ]
+
+
+def test_lone_reasoning_after_successful_tool_call_does_not_hard_fail():
+    """已成功走过原生 FC 后，收尾轮只回思维链不算能力问题——安静结束，不误报。"""
+    provider = _ScriptedProvider(
+        [
+            [ToolCall(name="list_x")],
+            [TextDelta(delta="嗯，数据已经有了。", kind=TextKind.REASONING)],
+        ]
+    )
+    agent = _Agent(provider=provider, tools=[_spec()])
+
+    events = asyncio.run(_collect(agent))
+
+    # 不报错（能力没问题）、也不给答案（无正文），本轮整轮不外发
+    assert EVENT_ERROR not in _types(events)
+    assert EVENT_ASSISTANT_MESSAGE not in _types(events)
+    assert EVENT_THINKING not in _types(events)

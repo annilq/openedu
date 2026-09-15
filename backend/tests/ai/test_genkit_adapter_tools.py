@@ -36,7 +36,7 @@ from agent_core.adapters.genkit import (
     _placeholder_tool,
 )
 from agent_core.errors import ProviderRequestError, ToolUnsupportedError
-from agent_core.ports import StructuredDone, TextDelta, ToolCall
+from agent_core.ports import StructuredDone, TextDelta, TextKind, ToolCall
 
 
 # ───────────────────────── 假引擎（鸭子类型，不 import genkit） ─────────────────────────
@@ -243,11 +243,19 @@ def test_replay_after_tool_result_includes_request_and_response_messages():
     assert [str(m.role) for m in fake.calls[0]["messages"]] == ["user", "model", "tool"]
 
 
-def test_text_and_reasoning_chunks_are_streamed_as_text_delta():
+def test_reasoning_and_text_chunks_carry_distinct_kinds():
+    """两通道都要流出来，但**语义标注必须分开**（ADR-0041）。
+
+    标注错误的代价实测过：下游把思维链当答复 → 模型不发原生工具调用时，
+    内部独白被当作最终答案下发给用户。
+    """
     fake = _FakeGenkit(chunks=[_chunk(reasoning="先想"), _chunk(text="查到了")])
     events = _collect(_provider(fake), tools=[_SPEC])
 
-    assert [e.delta for e in events if isinstance(e, TextDelta)] == ["先想", "查到了"]
+    assert [(e.kind, e.delta) for e in events if isinstance(e, TextDelta)] == [
+        (TextKind.REASONING, "先想"),
+        (TextKind.TEXT, "查到了"),
+    ]
 
 
 def test_streamed_tool_request_chunks_do_not_leak_as_text():
@@ -391,5 +399,8 @@ def test_schema_path_is_unaffected():
         ]
 
     events = asyncio.run(_run_schema())
-    assert [e.delta for e in events if isinstance(e, TextDelta)] == ["推"]
+    # schema 路流出的只有思维链 → 必须标 REASONING（出题推理面板据此回显）
+    assert [(e.kind, e.delta) for e in events if isinstance(e, TextDelta)] == [
+        (TextKind.REASONING, "推")
+    ]
     assert [e.data for e in events if isinstance(e, StructuredDone)] == [{"stem": "题干"}]

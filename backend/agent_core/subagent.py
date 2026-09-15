@@ -28,6 +28,7 @@ from agent_core.ports import (
     Retriever,
     StructuredDone,
     TextDelta,
+    TextKind,
     ToolCall,
 )
 from agent_core.protocol import (
@@ -129,6 +130,13 @@ _TOOL_CALL_PROTOCOL_RE = re.compile(
     re.IGNORECASE,
 )
 
+# 工具型 subagent 收不到可用答复时的统一提示（两条路径共用：正文即协议 / 只有独白）。
+# 文案必须给出**可执行出路**（换个模型 / 关掉思维链），只说「失败了」用户无从下手。
+_UNSUPPORTED_TOOL_CALL_HINT = (
+    "当前模型未以标准 function calling 返回工具调用（疑似将调用写成了文本/思维链），"
+    "查询无法执行。请使用支持原生工具调用的模型，或在模型配置中关闭思维链后重试。"
+)
+
 
 def _text_looks_like_tool_call(text: str, tool_names: list[str]) -> bool:
     """文本是否伪装成了工具调用：含调用协议标记且点名了已注册工具。
@@ -140,6 +148,18 @@ def _text_looks_like_tool_call(text: str, tool_names: list[str]) -> bool:
     if not _TOOL_CALL_PROTOCOL_RE.search(text):
         return False
     return any(name and name in text for name in tool_names)
+
+
+def _flushable_thinking(buffered: list[str], tool_names: list[str]) -> list[str]:
+    """思考缓冲外发前的最后一道闸：整段命中调用协议则全部丢弃。
+
+    思维链里出现 ``<invoke name="...">`` 这类**调用草稿**时，即便本轮已经正常产出原生
+    ``ToolCall``（内容本身无害），把这些伪协议片段送进 SSE 也是把内部实现暴露给客户端。
+    不变式：**原始调用协议永不出现在任何下发给客户端的事件里**（ADR-0033 / ADR-0041）。
+    """
+    if _text_looks_like_tool_call("".join(buffered), tool_names):
+        return []
+    return buffered
 
 
 async def run_with_tools(
@@ -170,6 +190,12 @@ async def run_with_tools(
     **回灌契约**：每轮先入一条 ``{"role": "assistant", "tool_calls": [...]}`` 再入对应的
     ``{"role": "tool", "name", "ref", "content"}`` 结果（成对出现）——适配器据此重建
     provider 要求的 ToolRequest ↔ ToolResponse 配对。
+
+    **推理与正文分流（ADR-0041）**：``TextDelta.kind`` 决定去向——``REASONING`` 只进
+    思考缓冲（外发为 THINKING，且下发前过滤掉调用伪协议），``TEXT`` 才累进 ``acc``。
+    因此「工具型 subagent 整轮没有原生 ``ToolCall`` 且正文为空」只剩一种解释：模型把调用
+    意图留在了思维链里、没走原生 function calling——此时硬失败（TOOL_UNSUPPORTED），
+    绝不把内部独白当答复下发（这正是真机上「英文独白被当答案」的结构性根因）。
     """
     tools = agent.tools
     if not tools:
@@ -184,12 +210,17 @@ async def run_with_tools(
     user = agent.initial_user(message, ctx)
     max_turns = max(1, int(getattr(agent, "max_turns", 3)))
     ref_seq = 0  # 工具调用关联 id 计数器（provider 侧 tool_call_id，须请求/结果同值）
+    tool_names = [t.name for t in tools]
+    # 是否已见过**原生** ToolCall。用于区分两种「本轮没有工具调用」：
+    # 从没见过 = 模型走不了原生 function calling（能力问题，硬失败）；
+    # 见过 = 模型只是这轮不调工具（如收尾轮没话说），不该误报能力缺陷。
+    native_fc_seen = False
 
     for turn_idx in range(max_turns):
-        acc = ""
+        acc = ""  # 本轮**正文**（只收 kind=TEXT；思维链另走 turn_thinking）
         turn_calls: list[dict] = []  # 本轮模型请求的工具（含 ref，供适配器重建 ToolRequest）
         results: list[dict] = []  # 本轮工具结果（须紧随上面的 assistant 条目入 history）
-        # 本轮回显的思考缓冲：判定为「协议泄露」时整段丢弃，绝不外泄原始工具调用伪协议。
+        # 本轮回显的思考缓冲（只收 kind=REASONING）：判定为「协议泄露」时整段丢弃。
         turn_thinking: list[str] = []
 
         # ── 生命周期钩子（可选，LLM 不可见，P2 extension seam） ──
@@ -215,9 +246,14 @@ async def run_with_tools(
                 system, user, tools=registry.schemas(), history=send_history
             ):
                 if isinstance(ev, TextDelta):
-                    acc += ev.delta
-                    turn_thinking.append(ev.delta)  # 缓冲：轮次结束判定后再决定是否冲刷
+                    if ev.kind is TextKind.REASONING:
+                        # 思维链（含模型写下的调用草稿）只作思考回显：**不进答案**（acc），
+                        # 也**不进回灌历史**——回灌思维链会污染后续轮次（ADR-0041）。
+                        turn_thinking.append(ev.delta)
+                    else:
+                        acc += ev.delta
                 elif isinstance(ev, ToolCall):
+                    native_fc_seen = True
                     ref = f"call_{ref_seq}"
                     ref_seq += 1
                     turn_calls.append({"name": ev.name, "args": ev.args, "ref": ref})
@@ -263,30 +299,35 @@ async def run_with_tools(
 
         # 工具请求轮必须先入 history（成对不变量：assistant.tool_calls → tool 结果），
         # 否则适配器无法重建 provider 要求的 ToolRequest ↔ ToolResponse 配对。
+        # 入历史的 content 是 acc（正文）——思维链不入历史（ADR-0041）。
         if turn_calls:
-            for t in turn_thinking:  # 干净轮：冲刷本轮回显思考
+            for t in _flushable_thinking(turn_thinking, tool_names):
                 yield thinking(t)
             history.append({"role": "assistant", "content": acc, "tool_calls": turn_calls})
             history.extend(results)
             continue
 
-        # 工具型 subagent：本轮模型未产出任何原生 ToolCall 却留下了文本。
-        # 若文本里出现了已注册工具名的「调用式」写法（模型把工具调用写成了文本 /
-        # 思维链里的伪协议，而非标准 function calling），这是模型未走原生 FC 的表现——
-        # 不能把这段原始协议当答案回流给用户（ADR-0033：禁止静默降级为纯文本）。
-        if tools and acc and _text_looks_like_tool_call(acc, [t.name for t in tools]):
-            # 协议泄露：直接丢弃本轮回显思考（含工具调用伪协议），绝不外泄，只给干净错误。
-            yield error(
-                "当前模型未以标准 function calling 返回工具调用（疑似将调用写成了文本/思维链），"
-                "查询无法执行。请使用支持原生工具调用的模型，或在模型配置中关闭思维链后重试。",
-                code="TOOL_UNSUPPORTED",
-            )
+        # 本轮既无原生 ToolCall、也没有任何正文 —— 没有任何内容可答复。
+        if not acc:
+            if not native_fc_seen:
+                # 从未成功走过原生 function calling：模型的「调用意图」全留在思维链里
+                # （真机形态：英文独白 + ``<invoke>`` 草稿），而思维链绝不能当答案下发。
+                # 唯一正确的行为是硬失败，而不是把内部独白当答复（ADR-0033 / ADR-0041）。
+                yield error(_UNSUPPORTED_TOOL_CALL_HINT, code="TOOL_UNSUPPORTED")
+                return
+            # 之前轮次已成功调用过工具（数据卡已下发），本轮只是没有收尾话术——
+            # 能力没问题，安静结束，不误报成「模型不支持工具调用」。
             return
 
-        for t in turn_thinking:  # 干净轮：冲刷本轮回显思考
+        # 有正文，但正文里出现了已注册工具名的「调用式」写法（模型把工具调用写成了
+        # 文本而非原生 ToolCall）：不能把这段原始协议当答案回流给用户（ADR-0033）。
+        if _text_looks_like_tool_call(acc, tool_names):
+            yield error(_UNSUPPORTED_TOOL_CALL_HINT, code="TOOL_UNSUPPORTED")
+            return
+
+        for t in _flushable_thinking(turn_thinking, tool_names):
             yield thinking(t)
-        if acc:
-            yield assistant_message(acc)
+        yield assistant_message(acc)
         return
 
     yield error(

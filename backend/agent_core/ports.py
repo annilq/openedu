@@ -10,15 +10,33 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Any, AsyncIterator, Callable
+
+
+class TextKind(StrEnum):
+    """``TextDelta`` 的**语义通道**（ADR-0041）。
+
+    同一段模型输出里，思维链与正式答复是两回事：前者是模型「想什么」，后者是「答什么」。
+    适配器必须标注、消费方必须分流——把两者混进同一个累加器，就会让「内部独白」在模型
+    不发原生工具调用时被当成最终答案下发给用户。
+
+    - ``TEXT``：正式答复正文，**可**作为最终答案；
+    - ``REASONING``：原生思维链 / 内部独白 / 调用叙述，**只能**当思考回显，**绝不**当答案。
+    """
+
+    TEXT = "text"
+    REASONING = "reasoning"
 
 
 # ───────────────────────── 流式产出原语（provider → runtime） ─────────────────────────
 @dataclass
 class TextDelta:
-    """模型产出的文本增量（推理 / 答复 token）。"""
+    """模型产出的文本增量。"""
 
     delta: str
+    # 语义通道（缺省 ``TEXT``）：老适配器 / 测试替身不标注时，按「正文」处理保持兼容。
+    kind: TextKind = TextKind.TEXT
 
 
 @dataclass
@@ -59,9 +77,14 @@ class LLMProvider(ABC):
     ) -> AsyncIterator[StreamEvent]:
         """流式产出。
 
-        - ``schema`` 给定 → 约束解码，产出 ``TextDelta``（推理）+ 末帧 ``StructuredDone(data=解析字典)``。
+        - ``schema`` 给定 → 约束解码，产出 ``TextDelta(kind=REASONING)``（推理）+
+          末帧 ``StructuredDone(data=解析字典)``。
         - ``tools`` 给定 → 模型可回 ``ToolCall``；runtime 执行后回灌并再请求。
-        - 两者皆无 → 纯文本，逐段 ``TextDelta``，无 ``StructuredDone``。
+        - 两者皆无 → 纯文本，逐段 ``TextDelta(kind=TEXT)``，无 ``StructuredDone``。
+
+        **``kind`` 是必守契约（ADR-0041）**：实现方必须把原生思维链标为 ``REASONING``、把正式
+        答复标为 ``TEXT``；不标注即默认 ``TEXT``。消费方据 ``kind`` 分流——``REASONING``
+        不得进入最终答案，也不得进入回灌给模型的历史（思维链回灌会污染后续轮次）。
 
         ``history`` 为多轮上下文，**必须被实现真正消费**（不消费会导致工具回灌丢失 →
         模型反复重调同一工具 → 死循环）。元素形态：

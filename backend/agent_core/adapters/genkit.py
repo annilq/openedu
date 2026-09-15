@@ -34,6 +34,7 @@ from agent_core.ports import (
     StreamEvent,
     StructuredDone,
     TextDelta,
+    TextKind,
     ToolCall,
 )
 
@@ -46,6 +47,14 @@ class SegmentKind(StrEnum):
 
     REASONING = "reasoning"  # 原生思维链（DeepSeek-R1 / o-series 等）
     TEXT = "text"  # 正式文本
+
+
+# Segment 通道 → TextDelta 语义通道（ADR-0041）。两者取值本就同源，显式映射以免
+# 后续任一侧改名时静默错配（错配的代价是「思维链被当答案」）。
+_TEXT_KIND_OF: dict[SegmentKind, TextKind] = {
+    SegmentKind.REASONING: TextKind.REASONING,
+    SegmentKind.TEXT: TextKind.TEXT,
+}
 
 
 @dataclass(frozen=True)
@@ -455,7 +464,8 @@ class GenkitLLMProvider(LLMProvider):
                 )
                 async for seg in decode_stream(sresp.stream):
                     if seg.kind is SegmentKind.REASONING:
-                        yield TextDelta(delta=seg.text)
+                        # schema 路（出题）流式产出的只有原生思维链——供推理面板回显。
+                        yield TextDelta(delta=seg.text, kind=TextKind.REASONING)
                 resp = await sresp.response
             except Exception as exc:  # noqa: BLE001 — 归类后抛出，绝不静默
                 raise classify_failure(exc) from exc
@@ -502,6 +512,11 @@ class GenkitLLMProvider(LLMProvider):
 
         历史 bug：本处曾把**任意**异常无差别包成 ``ToolUnsupportedError``，导致
         「API Key 无效（401）」被报成「当前模型不支持工具调用」，根因指错方向。
+
+        **语义通道（ADR-0041）**：流式片段一律按 ``SegmentKind`` 标注 ``TextDelta.kind``
+        ——REASONING 段是模型内部思考（常含调用草稿），TEXT 段才是答复。runtime 据此分流，
+        思维链不会被当成答案（历史 bug：两者混流，模型一旦不发原生工具调用，内部独白
+        就直接下发给了用户）。
         """
         try:
             genkit_tools = _build_tools(tools)
@@ -525,7 +540,13 @@ class GenkitLLMProvider(LLMProvider):
                 for seg in _iter_segments(chunk):
                     if seg.kind is SegmentKind.TEXT:
                         streamed_text = True
-                    yield TextDelta(delta=seg.text)
+                    # 按 Segment 通道标注语义（ADR-0041）：REASONING 段是模型「想什么」，
+                    # 交给 runtime 只作思考回显；混进正文会让不出原生工具调用的模型
+                    # 把内部独白当成答案下发给用户。
+                    # 未知通道保守按 TEXT（与旧行为一致），不至于把正文当推理丢掉。
+                    yield TextDelta(
+                        delta=seg.text, kind=_TEXT_KIND_OF.get(seg.kind, TextKind.TEXT)
+                    )
             resp = await sresp.response
         except ToolUnsupportedError:
             raise
@@ -540,10 +561,11 @@ class GenkitLLMProvider(LLMProvider):
 
         # 兜底：未流式产出正文的 provider（只把正文放在末帧）也要把答复给出去，
         # 否则模型答了话而用户看到空回复。已流过正文则不重复（避免正文翻倍）。
+        # ``_response_text`` 已跳过 reasoning / tool_request part，故此处的 tail 必是正文。
         if not streamed_text:
             tail = _response_text(resp)
             if tail:
-                yield TextDelta(delta=tail)
+                yield TextDelta(delta=tail, kind=TextKind.TEXT)
 
         for name, args in _extract_tool_calls(resp):
             yield ToolCall(name=name, args=args)

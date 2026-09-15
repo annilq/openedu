@@ -19,6 +19,7 @@ from agent_core.ports import (
     StreamEvent,
     StructuredDone,
     TextDelta,
+    TextKind,
     ToolCall,
 )
 from agent_core.protocol import (
@@ -73,6 +74,7 @@ __all__ = [
     "RuntimeDeps",
     "StreamEvent",
     "TextDelta",
+    "TextKind",
     "ToolCall",
     "StructuredDone",
     "Chunk",
