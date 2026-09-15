@@ -1,13 +1,14 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../shared/data/remote/network_service.dart';
 import '../../../../shared/presentation/resource.dart';
 import '../../../../shared/domain/models/models.dart';
-import '../../../../shared/domain/providers/core_providers.dart';
 import '../../../../shared/exceptions/app_exception.dart';
-import '../../../assistant/data/assistant_api_client.dart';
+import '../../../assistant/domain/assistant_requests.dart';
 import '../../../assistant/domain/question_gen_fold.dart';
-import '../../../assistant/presentation/provider/assistant_notifier.dart';
+import '../../../assistant/domain/repositories/assistant_repository.dart';
+import '../../../assistant/providers/assistant_provider.dart';
+import '../../domain/repositories/tasks_repository.dart';
+import '../../providers/home_provider.dart';
 
 // —— 家长端：生成任务 ——
 sealed class TaskGenState {
@@ -63,9 +64,9 @@ class TaskGenPreview extends TaskGenState {
 }
 
 class TaskGenNotifier extends StateNotifier<TaskGenState> {
-  final NetworkService _network;
-  final AssistantApiClient _assistant;
-  TaskGenNotifier(this._network, this._assistant) : super(const TaskGenIdle());
+  final TasksRepository _tasks;
+  final AssistantRepository _assistant;
+  TaskGenNotifier(this._tasks, this._assistant) : super(const TaskGenIdle());
 
   /// 把结构化 specs 经 `/tasks/generate` 直传后端（ADR-0034 P1）：服务端据此构造
   /// 出题 prompt 并走 question subagent 流式返回题卡，不再拼自然语言走 /assistant/chat。
@@ -85,7 +86,7 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
     final expected = specs.fold<int>(0, (sum, s) => sum + s.count);
     state = TaskGenPreview(fold.questions, streaming: true);
     try {
-      final stream = _assistant.streamGenerate(
+      final stream = _assistant.generate(
         TaskGenerateReq(
           specs: specs,
           model: model,
@@ -146,11 +147,11 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
     // 落库期间保持流式态：隐藏生成/预览按钮，题卡继续展示（带保存中提示）。
     state = TaskGenPreview(List.from(questions), streaming: true, failures: failures);
     try {
-      final data = await _network.post('/tasks/from-generated', body: body);
+      final task = await _tasks.persistGenerated(body);
       // R3：生成后保持 draft 态，把确认/派发动作交给草稿审核页。
       // 少题信息一并返回：草稿照常落库（不浪费已生成的题），由 UI 醒目提示家长补齐。
       state = TaskGenSuccess(
-        TaskModel.fromJson(data),
+        task,
         expected: expected,
         failures: failures,
       );
@@ -185,18 +186,17 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
 
 final taskGenNotifierProvider =
     StateNotifierProvider<TaskGenNotifier, TaskGenState>((ref) {
-  final network = ref.watch(networkServiceProvider);
-  final assistant = ref.watch(assistantApiClientProvider);
-  return TaskGenNotifier(network, assistant);
+  return TaskGenNotifier(
+    ref.watch(tasksRepositoryProvider),
+    ref.watch(assistantRepositoryProvider),
+  );
 });
 
 // —— 娃娃端：今日任务 ——（GET /tasks/today，纯资源加载）
 final todayTasksNotifierProvider =
     StateNotifierProvider<ResourceNotifier<List<TaskModel>>, Resource<List<TaskModel>>>(
   (ref) => ResourceNotifier(
-    ref.watch(networkServiceProvider),
-    path: '/tasks/today',
-    parse: (d) => decodeList(d, TaskModel.fromJson),
+    () => ref.watch(tasksRepositoryProvider).todayTasks(),
   ),
 );
 
@@ -204,9 +204,7 @@ final todayTasksNotifierProvider =
 final progressNotifierProvider = StateNotifierProvider<
     ParamResourceNotifier<ProgressModel, String>, Resource<ProgressModel>>(
   (ref) => ParamResourceNotifier(
-    ref.watch(networkServiceProvider),
-    pathOf: (childId) => '/tasks/children/$childId/progress',
-    parse: (d) => ProgressModel.fromJson(decodeMap(d)),
+    (childId) => ref.watch(tasksRepositoryProvider).progress(childId),
   ),
 );
 
@@ -214,8 +212,6 @@ final progressNotifierProvider = StateNotifierProvider<
 final masteryNotifierProvider = StateNotifierProvider<
     ParamResourceNotifier<MasteryModel, String>, Resource<MasteryModel>>(
   (ref) => ParamResourceNotifier(
-    ref.watch(networkServiceProvider),
-    pathOf: (childId) => '/tasks/children/$childId/mastery',
-    parse: (d) => MasteryModel.fromJson(decodeMap(d)),
+    (childId) => ref.watch(tasksRepositoryProvider).mastery(childId),
   ),
 );

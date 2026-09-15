@@ -1,8 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../shared/domain/models/models.dart';
-import '../../../../shared/domain/providers/core_providers.dart';
+import '../../domain/models.dart';
 import '../../../../shared/presentation/resource.dart';
+import '../../providers/tutor_provider.dart';
 
 /// 家长端「AI 答疑记录」日志（F-305）：GET /tutor/logs?child_id=
 ///
@@ -13,9 +13,6 @@ final tutorLogsNotifierProvider = StateNotifierProvider<
     ParamResourceNotifier<List<TutorLogModel>, String>,
     Resource<List<TutorLogModel>>>(
   (ref) => ParamResourceNotifier(
-    ref.watch(networkServiceProvider),
-    pathOf: (_) => '/tutor/logs',
-    queryOf: (childId) => {'child_id': childId},
-    parse: (d) => decodeList(d, TutorLogModel.fromJson),
+    (childId) => ref.watch(tutorLogsRepositoryProvider).logs(childId),
   ),
 );

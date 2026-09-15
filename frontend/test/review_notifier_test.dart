@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:kids_learn/features/review/data/repositories/review_repository_impl.dart';
 import 'package:kids_learn/features/review/presentation/providers/review_notifier.dart';
 import 'package:kids_learn/shared/data/remote/network_service.dart';
 import 'package:kids_learn/shared/domain/models/models.dart';
@@ -67,7 +68,7 @@ void main() {
       final network = FakeNetwork(responses: {
         '/review/due': [_reviewItemJson('w1'), _reviewItemJson('w2')],
       });
-      final notifier = DueReviewNotifier(network);
+      final notifier = DueReviewNotifier(ReviewRepositoryImpl(network));
 
       await notifier.load();
 
@@ -84,7 +85,7 @@ void main() {
       final network = FakeNetwork(responses: {
         '/review/due': 'not a list',
       });
-      final notifier = DueReviewNotifier(network);
+      final notifier = DueReviewNotifier(ReviewRepositoryImpl(network));
 
       await notifier.load();
 
@@ -95,7 +96,7 @@ void main() {
       final network = FakeNetwork(responses: {
         '/review/due': [_reviewItemJson('w1'), _reviewItemJson('w2')],
       });
-      final notifier = DueReviewNotifier(network);
+      final notifier = DueReviewNotifier(ReviewRepositoryImpl(network));
       await notifier.load();
 
       final result = await notifier.answer('w1', '68');
@@ -112,7 +113,7 @@ void main() {
 
     test('answer 答错也移除该题（后端重置计时，下一轮到期再进队列）', () async {
       final wrongNetwork = _WrongAnswerNetwork();
-      final n2 = DueReviewNotifier(wrongNetwork);
+      final n2 = DueReviewNotifier(ReviewRepositoryImpl(wrongNetwork));
       await n2.load();
 
       final result = await n2.answer('w1', '10');
@@ -125,7 +126,7 @@ void main() {
 
     test('未加载时 answer 不请求且返回 null', () async {
       final network = FakeNetwork(responses: {});
-      final notifier = DueReviewNotifier(network);
+      final notifier = DueReviewNotifier(ReviewRepositoryImpl(network));
 
       final result = await notifier.answer('w1', '68');
 
@@ -157,9 +158,7 @@ void main() {
         '/tasks/wrong-questions': [wrongJson()],
       });
       final notifier = ResourceNotifier<List<WrongQuestionModel>>(
-        network,
-        path: '/tasks/wrong-questions',
-        parse: (d) => decodeList(d, WrongQuestionModel.fromJson),
+        () => ReviewRepositoryImpl(network).childWrongQuestions(),
       );
 
       await notifier.load();
@@ -177,9 +176,7 @@ void main() {
         ],
       });
       final notifier = ParamResourceNotifier<List<WrongQuestionModel>, String>(
-        network,
-        pathOf: (id) => '/tasks/children/$id/wrong-questions',
-        parse: (d) => decodeList(d, WrongQuestionModel.fromJson),
+        (id) => ReviewRepositoryImpl(network).parentWrongQuestions(id),
       );
 
       await notifier.load('c1');

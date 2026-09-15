@@ -5,7 +5,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/widgets/adaptive_shell.dart';
-import '../../../children/domain/providers/children_provider.dart';
+import '../../../children/providers/children_provider.dart';
 import '../../../children/presentation/screens/child_form_screen.dart';
 import '../../../assistant/presentation/screens/assistant_chat_page.dart';
 import '../../../practice/presentation/screens/practice_screen.dart';

@@ -2,11 +2,12 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-import '../../../../shared/domain/models/models.dart';
+import '../../domain/models.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_chip.dart';
 import '../../../../shared/widgets/app_inputs.dart';
 import '../../../../shared/widgets/app_toast.dart';
+import '../../domain/model_requests.dart';
 import '../providers/models_notifier.dart';
 
 /// 新增 / 编辑模型的对话框（ShadDialog + 表单字段）。

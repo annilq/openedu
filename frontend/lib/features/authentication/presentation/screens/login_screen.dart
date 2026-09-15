@@ -5,7 +5,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_inputs.dart';
 import '../../../../shared/widgets/app_toast.dart';
-import '../../domain/providers/auth_provider.dart';
+import '../../providers/auth_provider.dart';
 import '../providers/auth_notifier.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {

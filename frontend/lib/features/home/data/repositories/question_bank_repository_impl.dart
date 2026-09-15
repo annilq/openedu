@@ -1,12 +1,19 @@
 import '../../../../shared/data/remote/network_service.dart';
 import '../../../../shared/domain/models/models.dart';
+import '../../../../shared/utils/json_decode.dart';
+import '../../domain/repositories/question_bank_repository.dart';
 
-/// 题库数据源：题库浏览 + 从题库组卷（选项 A / 选项 B）。
-/// 端点不包外层（与 /tasks/batch-generate 一致，NetworkService 返回 FastAPI 原响应体）。
-class QuestionBankRemoteDataSource {
+/// 题库实现：端点不包外层（与 /tasks/batch-generate 一致，
+/// [NetworkService] 返回 FastAPI 原响应体）。
+///
+/// 由原 `QuestionBankRemoteDataSource` 升格而来——查询拼装 + 模型映射本就是
+/// repository 该干的活，中间再垫一层只做转发的 datasource 属于 pass-through。
+class QuestionBankRepositoryImpl implements QuestionBankRepository {
+  QuestionBankRepositoryImpl(this._network);
+
   final NetworkService _network;
-  QuestionBankRemoteDataSource(this._network);
 
+  @override
   Future<BankListResp> getQuestions({
     String? subject,
     int? grade,
@@ -28,9 +35,10 @@ class QuestionBankRemoteDataSource {
     if (qtype != null && qtype.isNotEmpty) query['qtype'] = qtype;
     if (keyword != null && keyword.isNotEmpty) query['keyword'] = keyword;
     final data = await _network.get('/questions', query: query);
-    return BankListResp.fromJson(data as Map<String, dynamic>);
+    return BankListResp.fromJson(decodeMap(data));
   }
 
+  @override
   Future<TaskModel> createTaskFromBank({
     required String title,
     required String childId,
@@ -41,9 +49,10 @@ class QuestionBankRemoteDataSource {
       'child_id': childId,
       'question_ids': questionIds,
     });
-    return TaskModel.fromJson(data as Map<String, dynamic>);
+    return TaskModel.fromJson(decodeMap(data));
   }
 
+  @override
   Future<TaskModel> addToTaskFromBank({
     required String taskId,
     required List<String> questionIds,
@@ -52,38 +61,30 @@ class QuestionBankRemoteDataSource {
       '/tasks/$taskId/questions/from-bank',
       body: {'question_ids': questionIds},
     );
-    return TaskModel.fromJson(data as Map<String, dynamic>);
+    return TaskModel.fromJson(decodeMap(data));
   }
 
-  /// 选项 B 草稿选择器：家长草稿列表（GET /tasks?status=draft）。
+  @override
   Future<List<TaskModel>> getDraftTasks() async {
     final data = await _network.get('/tasks', query: {'status': 'draft'});
-    return (data as List)
-        .map((e) => TaskModel.fromJson(e as Map<String, dynamic>))
-        .toList();
+    return decodeList(data, TaskModel.fromJson);
   }
 
-  /// 批量删除题库题：被任务引用的题后端已跳过（返回分组结果）。
+  @override
   Future<DeleteQuestionsResult> deleteQuestions(List<String> ids) async {
-    final data = await _network.delete(
-      '/questions',
-      body: {'ids': ids},
-    );
-    return DeleteQuestionsResult.fromJson(data as Map<String, dynamic>);
+    final data = await _network.delete('/questions', body: {'ids': ids});
+    return DeleteQuestionsResult.fromJson(decodeMap(data));
   }
 
-  /// 反查某题库题被哪些任务引用（GET /questions/{id}/usages）。
-  /// 闭环「用过 N 次 → 在哪里用」。
+  @override
   Future<List<QuestionUsageItem>> getQuestionUsages(String questionId) async {
     final data = await _network.get('/questions/$questionId/usages');
-    return (data as List)
-        .map((e) => QuestionUsageItem.fromJson(e as Map<String, dynamic>))
-        .toList();
+    return decodeList(data, QuestionUsageItem.fromJson);
   }
 
-  /// 按 id 拉取完整任务（GET /tasks/{id}），供引用列表跳转复核页。
+  @override
   Future<TaskModel> getTaskById(String taskId) async {
     final data = await _network.get('/tasks/$taskId');
-    return TaskModel.fromJson(data as Map<String, dynamic>);
+    return TaskModel.fromJson(decodeMap(data));
   }
 }

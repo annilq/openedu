@@ -1,76 +1,10 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../shared/data/remote/network_service.dart';
-import '../../../../shared/domain/models/models.dart';
-import '../../../../shared/domain/providers/core_providers.dart';
+import '../../domain/models.dart';
 import '../../../../shared/exceptions/app_exception.dart';
-
-// ───────── AI 模型管理（仅家长） ─────────
-/// 新增模型请求体。provider 仅允许 ollama / openai_compat。
-/// [apiKey] **必填**（ADR-0039，后端同为必填字段）——类型上不给 `null` 的余地。
-/// [providerPreset] 为服务商预设 key（如 deepseek），后端据此自动补全
-/// provider / base_url；显式传入的 provider / baseUrl 优先。
-class ModelCreateReq {
-  final String label;
-  final String provider;
-  final String? baseUrl;
-  final String modelName;
-  final String apiKey;
-  final bool isDefault;
-  final String? providerPreset;
-
-  const ModelCreateReq({
-    required this.label,
-    required this.provider,
-    this.baseUrl,
-    required this.modelName,
-    required this.apiKey,
-    this.isDefault = false,
-    this.providerPreset,
-  });
-
-  Map<String, dynamic> toJson() => {
-        'label': label,
-        'provider': provider,
-        'base_url': baseUrl,
-        'model_name': modelName,
-        'api_key': apiKey,
-        'is_default': isDefault,
-        if (providerPreset != null) 'provider_preset': providerPreset,
-      };
-}
-
-class ModelUpdateReq {
-  final String? label;
-  final String? provider;
-  final String? baseUrl;
-  final String? modelName;
-  /// 为 null = **不修改**已有密钥（表单留空即为此意）。ADR-0039 起新增必填，
-  /// 但编辑仍允许留空，否则改个名字也得把密钥重打一遍。
-  final String? apiKey;
-  final bool? isDefault;
-  final String? providerPreset;
-
-  const ModelUpdateReq({
-    this.label,
-    this.provider,
-    this.baseUrl,
-    this.modelName,
-    this.apiKey,
-    this.isDefault,
-    this.providerPreset,
-  });
-
-  Map<String, dynamic> toJson() => {
-        if (label != null) 'label': label,
-        if (provider != null) 'provider': provider,
-        if (baseUrl != null) 'base_url': baseUrl,
-        if (modelName != null) 'model_name': modelName,
-        if (apiKey != null) 'api_key': apiKey,
-        if (isDefault != null) 'is_default': isDefault,
-        if (providerPreset != null) 'provider_preset': providerPreset,
-      };
-}
+import '../../domain/model_requests.dart';
+import '../../domain/repositories/models_repository.dart';
+import '../../providers/models_provider.dart';
 
 sealed class ModelsState {
   const ModelsState();
@@ -96,20 +30,14 @@ class ModelsError extends ModelsState {
 }
 
 class ModelsNotifier extends StateNotifier<ModelsState> {
-  final NetworkService _network;
-  ModelsNotifier(this._network) : super(const ModelsInitial());
+  final ModelsRepository _repo;
+  ModelsNotifier(this._repo) : super(const ModelsInitial());
 
   Future<void> load() async {
     if (state is! ModelsLoading) state = const ModelsLoading();
     try {
-      final results = await Future.wait([
-        _network.get('/models'),
-        _network.get('/models/providers'),
-      ]);
-      final resp = ModelListResp.fromJson(results[0] as Map<String, dynamic>);
-      final providers = (results[1] as List)
-          .map((e) => ModelProviderPreset.fromJson(e as Map<String, dynamic>))
-          .toList();
+      final resp = await _repo.list();
+      final providers = await _repo.providers();
       state = ModelsLoaded(resp, providers);
     } catch (e) {
       state = ModelsError(e.toString());
@@ -119,7 +47,7 @@ class ModelsNotifier extends StateNotifier<ModelsState> {
   /// 新增自定义模型；成功后刷新列表。返回 null 表示成功。
   Future<String?> create(ModelCreateReq req) async {
     try {
-      await _network.post('/models', body: req.toJson());
+      await _repo.create(req);
       await load();
       return null;
     } on AppException catch (e) {
@@ -132,7 +60,7 @@ class ModelsNotifier extends StateNotifier<ModelsState> {
   /// 更新自定义模型；成功后刷新列表。返回 null 表示成功。
   Future<String?> update(String id, ModelUpdateReq req) async {
     try {
-      await _network.put('/models/$id', body: req.toJson());
+      await _repo.update(id, req);
       await load();
       return null;
     } on AppException catch (e) {
@@ -145,7 +73,7 @@ class ModelsNotifier extends StateNotifier<ModelsState> {
   /// 删除自定义模型；成功后刷新列表。返回 null 表示成功。
   Future<String?> delete(String id) async {
     try {
-      await _network.delete('/models/$id');
+      await _repo.delete(id);
       await load();
       return null;
     } on AppException catch (e) {
@@ -158,7 +86,7 @@ class ModelsNotifier extends StateNotifier<ModelsState> {
   /// 设为默认模型；成功后刷新列表。返回 null 表示成功。
   Future<String?> setDefault(String id) async {
     try {
-      await _network.put('/models/default', body: {'id': id});
+      await _repo.setDefault(id);
       await load();
       return null;
     } on AppException catch (e) {
@@ -171,6 +99,5 @@ class ModelsNotifier extends StateNotifier<ModelsState> {
 
 final modelsNotifierProvider =
     StateNotifierProvider<ModelsNotifier, ModelsState>((ref) {
-  final network = ref.watch(networkServiceProvider);
-  return ModelsNotifier(network);
+  return ModelsNotifier(ref.watch(modelsRepositoryProvider));
 });

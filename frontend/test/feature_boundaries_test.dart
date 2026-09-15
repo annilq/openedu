@@ -15,6 +15,17 @@ import 'package:flutter_test/flutter_test.dart';
 ///   `features/home/presentation/` 是展示层组合根，装配各 feature 页面（唯一豁免）。
 /// - R3 `App*` 前缀类只定义在 `shared/widgets/`：该前缀 = 通用设计系统组件；
 ///   一旦订阅某个 feature 的 provider，就必须落回该 feature（如 `ModelSelector`）。
+/// - R4 `presentation/` 不得 import 任何 `*/data/`：ViewModel 只认 Repository 接口，
+///   直连 `NetworkService` / DataSource 会让缓存、重试、失效语义无处落。
+/// - R5 `domain/` 不得 import 任何 `*/presentation/`：依赖必须朝内，domain 是最内层，
+///   反向引用意味着「装配代码放错了层」。
+///
+/// R1/R2/R3 是二值断言（历史已清零，见 `docs/frontend-architecture-review.md`）。
+/// R4/R5 用**棘轮**（ratchet）：存量违规记在 `_knownR4` / `_knownR5` 名单里，
+/// 名单**只许变短不许变长**——
+///   * 名单外出现新违规 → 红（防止新增）；
+///   * 名单内某条已修好却忘了删 → 也红（防止名单永久化，逼着逐条收口）。
+/// 两条都清零后，把名单与棘轮逻辑一并删掉，退化为普通二值断言。
 void main() {
   final imports = _collectImports();
 
@@ -51,6 +62,38 @@ void main() {
     );
   });
 
+  test('R4: presentation/ 不得 import */data/（棘轮：名单只许变短）', () {
+    final actual = <String>{
+      for (final ref in imports)
+        if (_inLayer(ref.from, 'presentation') && _inLayer(ref.to, 'data'))
+          '${ref.from} -> ${ref.to}',
+    };
+    _expectRatchet(
+      actual: actual,
+      known: _knownR4,
+      rule: 'R4',
+      why: 'ViewModel 只应依赖 Repository 接口。直连 NetworkService / DataSource '
+          '会让缓存、重试、失效语义无处落，端点字符串也会泄漏到 UI 层。'
+          '补 repository 后请从 _knownR4 删掉对应条目。',
+    );
+  });
+
+  test('R5: domain/ 不得 import */presentation/（棘轮：名单只许变短）', () {
+    final actual = <String>{
+      for (final ref in imports)
+        if (_inLayer(ref.from, 'domain') && _inLayer(ref.to, 'presentation'))
+          '${ref.from} -> ${ref.to}',
+    };
+    _expectRatchet(
+      actual: actual,
+      known: _knownR5,
+      rule: 'R5',
+      why: 'domain 是最内层，依赖必须朝内。出现 domain -> presentation 意味着 '
+          'DI 装配代码放错了层，应挪到 presentation/providers/。'
+          '挪走后请从 _knownR5 删掉对应条目。',
+    );
+  });
+
   test('R3: features/ 下不得定义 App* 前缀类', () {
     final classRe = RegExp(r'^class\s+(App[A-Z]\w*)');
     final offenders = <String>[];
@@ -69,6 +112,44 @@ void main() {
     );
   });
 }
+
+/// R4 存量违规名单。**只许删不许加**：每修好一条，就从这里删一条。
+/// R4 存量违规名单。**只许删不许加**。已清零（2026-09-15）：
+/// 全部 feature 都补上了 repository 接口，presentation 不再直连 `data/`。
+const _knownR4 = <String>{};
+/// R5 存量违规名单。**只许删不许加**。已清零（2026-09-15）：
+/// 两个 DI 装配文件从 `domain/providers/` 挪到了 feature 级的 `providers/`（组合根）。
+const _knownR5 = <String>{};
+
+/// 棘轮断言：两头都红。
+///
+/// - [actual] 里出现 [known] 之外的条目 → 红：**不许新增违规**。
+/// - [known] 里出现 [actual] 之外的条目 → 红：**名单里的已修好了，请删条目**，
+///   防止「先记进名单再说」变成永久豁免。
+void _expectRatchet({
+  required Set<String> actual,
+  required Set<String> known,
+  required String rule,
+  required String why,
+}) {
+  final added = (actual.difference(known).toList()..sort()).join('\n');
+  final stale = (known.difference(actual).toList()..sort()).join('\n');
+  expect(
+    added,
+    isEmpty,
+    reason: '$rule 出现名单外的新违规：\n$added\n\n$why',
+  );
+  expect(
+    stale,
+    isEmpty,
+    reason: '$rule 名单内以下条目已不再违规——请从 _known$rule 中删除，'
+        '别让豁免名单长期挂着：\n$stale',
+  );
+}
+
+/// 相对 `lib/` 的路径是否位于 [layer] 层（路径中存在同名目录段）。
+bool _inLayer(String libRelative, String layer) =>
+    libRelative.split('/').contains(layer);
 
 /// 一条包内相对 import：`from` / `to` 均为相对 `lib/` 的 POSIX 路径。
 class _ImportRef {

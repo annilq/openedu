@@ -5,7 +5,7 @@ import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_inputs.dart';
 import '../../../../shared/widgets/app_top_bar.dart';
-import '../../domain/providers/children_provider.dart';
+import '../../providers/children_provider.dart';
 import '../providers/children_notifier.dart';
 import '../widgets/interest_picker.dart';
 

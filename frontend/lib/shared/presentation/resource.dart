@@ -1,6 +1,14 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../data/remote/network_service.dart';
+/// 取数函数：直接返回**领域模型**（不是原始 JSON）。
+///
+/// 解析（`JSON → Model`）已下沉到 repository；这里只接「一个能取回领域模型的函数」。
+/// 因此本文件不 import 任何 `shared/data/**`——取数实现可以自由替换（HTTP / 缓存 /
+/// 内存假数据），presentation 层与传输方式彻底解耦。
+typedef ResourceFetch<T> = Future<T> Function();
+
+/// 带入参的取数函数，见 [ResourceFetch]。
+typedef ParamResourceFetch<T, A> = Future<T> Function(A arg);
 
 /// 异步资源的四态：**Idle / Loading / Loaded / Error**。
 ///
@@ -50,88 +58,52 @@ extension ResourceX<T> on Resource<T> {
       };
 }
 
-// ───────────────────────── 解析守卫（解析容错收一处） ─────────────────────────
-
-/// 把后端 JSON 解成列表；不是数组就报错，而不是把类型错误甩给 UI 层。
-///
-/// 此前 19 处各自写 `(data as List).map((e) => X.fromJson(e as Map))`，
-/// 无类型守卫：后端返回对象时整页白屏，且每处的容错水平不一致。
-List<M> decodeList<M>(dynamic data, M Function(Map<String, dynamic>) fromJson) {
-  if (data is! List) {
-    throw FormatException('期望数组，实际是 ${data.runtimeType}');
-  }
-  return [
-    for (final e in data)
-      fromJson(e is Map<String, dynamic> ? e : <String, dynamic>{}),
-  ];
-}
-
-/// 把后端 JSON 解成对象；不是 Map 就报错。
-Map<String, dynamic> decodeMap(dynamic data) {
-  if (data is! Map<String, dynamic>) {
-    throw FormatException('期望对象，实际是 ${data.runtimeType}');
-  }
-  return data;
-}
-
 // ───────────────────────── 加载器 ─────────────────────────
 
-/// 共享的「取一次 → 解析 → 落状态」流程。
+/// 共享的「取一次 → 落状态」流程。
 ///
-/// 子类只提供「去哪儿取」和「怎么解析」；`Loading / Error` 的落法、
-/// 异常文案的口径全部在这里定。
+/// `Loading / Error` 的落法、异常文案的口径全部在这里定，子类只提供「去哪儿取」。
 mixin _ResourceLoader<T> on StateNotifier<Resource<T>> {
-  Future<void> _run(Future<dynamic> Function() fetch, T Function(dynamic) parse) async {
-    state = const ResourceLoading();
+  Future<void> _run(Future<T> Function() fetch) async {
+    state = ResourceLoading<T>();
     try {
-      state = ResourceLoaded(parse(await fetch()));
+      state = ResourceLoaded<T>(await fetch());
     } catch (e) {
-      state = ResourceError(e.toString());
+      state = ResourceError<T>(e.toString());
     }
   }
 }
 
-/// 固定路径的 GET 资源。
+/// 「取一次就完事」的只读资源。
+///
+/// 构造只吃一个 [ResourceFetch]，不认识 `NetworkService`、也不做解析——
+/// 去哪儿取、怎么解析都由装配方（repository）决定。示例：
 ///
 /// ```dart
 /// final todayTasksProvider = StateNotifierProvider<ResourceNotifier<List<TaskModel>>,
-///     Resource<List<TaskModel>>>((ref) => ResourceNotifier(
-///           ref.watch(networkServiceProvider),
-///           path: '/tasks/today',
-///           parse: (d) => decodeList(d, TaskModel.fromJson),
-///         ));
+///     Resource<List<TaskModel>>>(
+///   (ref) => ResourceNotifier(
+///     () => ref.watch(tasksRepositoryProvider).todayTasks(),
+///   ),
+/// );
 /// ```
-class ResourceNotifier<T> extends StateNotifier<Resource<T>> with _ResourceLoader<T> {
-  ResourceNotifier(
-    this._network, {
-    required this.path,
-    required this.parse,
-  }) : super(const ResourceIdle());
+class ResourceNotifier<T> extends StateNotifier<Resource<T>>
+    with _ResourceLoader<T> {
+  ResourceNotifier(this._fetch) : super(const ResourceIdle());
 
-  final NetworkService _network;
-  final String path;
-  final T Function(dynamic data) parse;
+  final ResourceFetch<T> _fetch;
 
-  Future<void> load() => _run(() => _network.get(path), parse);
+  Future<void> load() => _run(_fetch);
 }
 
-/// 路径依赖入参的 GET 资源（如 `/tasks/children/{id}/progress`）。
+/// 取数依赖入参的只读资源（如「按 childId 取进度」）。
 ///
 /// [A] 是入参类型；不需要入参时用 [ResourceNotifier]。
 class ParamResourceNotifier<T, A> extends StateNotifier<Resource<T>>
     with _ResourceLoader<T> {
-  ParamResourceNotifier(
-    this._network, {
-    required this.pathOf,
-    this.queryOf,
-    required this.parse,
-  }) : super(const ResourceIdle());
+  ParamResourceNotifier(this._fetch) : super(const ResourceIdle());
 
-  final NetworkService _network;
-  final String Function(A arg) pathOf;
-  final Map<String, dynamic>? Function(A arg)? queryOf;
-  final T Function(dynamic data) parse;
+  final ParamResourceFetch<T, A> _fetch;
 
-  Future<void> load(A arg) =>
-      _run(() => _network.get(pathOf(arg), query: queryOf?.call(arg)), parse);
+  Future<void> load(A arg) => _run(() => _fetch(arg));
 }

@@ -5,7 +5,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../../shared/domain/models/models.dart';
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/widgets/app_loading.dart';
-import '../../../../children/domain/providers/children_provider.dart';
+import '../../../../children/providers/children_provider.dart';
 import '../../../../children/presentation/providers/children_notifier.dart';
 import '../../providers/selected_child_provider.dart';
 

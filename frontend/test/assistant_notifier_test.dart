@@ -2,20 +2,21 @@ import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:kids_learn/features/assistant/data/assistant_api_client.dart';
+import 'package:kids_learn/features/assistant/domain/assistant_requests.dart';
+import 'package:kids_learn/features/assistant/domain/repositories/assistant_repository.dart';
 import 'package:kids_learn/features/assistant/domain/assistant_card.dart';
 import 'package:kids_learn/features/assistant/domain/assistant_event.dart';
 import 'package:kids_learn/features/assistant/presentation/provider/assistant_notifier.dart';
 
-/// 假 AssistantApiClient：按预设逐帧产出 AG-UI 事件。
-class _FakeAssistant extends Fake implements AssistantApiClient {
+/// 假 AssistantRepository：按预设逐帧产出 AG-UI 事件。
+class _FakeAssistant extends Fake implements AssistantRepository {
   _FakeAssistant({this.events = const [], this.error});
 
   final List<AssistantEvent> events;
   final Object? error;
 
   @override
-  Stream<AssistantEvent> streamChat(AssistantChatReq req) =>
+  Stream<AssistantEvent> chat(AssistantChatReq req) =>
       error == null ? Stream.fromIterable(events) : Stream.error(error!);
 }
 
@@ -25,7 +26,7 @@ List<AssistantMessage> _aiBubbles(AssistantState state) =>
 /// 记录每轮请求体的假客户端：用于断言会话 id 与兜底历史的传递（多轮续接）。
 ///
 /// `_scripts` 按调用次序逐条消费，用尽后重复最后一条（便于「同一响应多轮复用」）。
-class _RecordingAssistant extends Fake implements AssistantApiClient {
+class _RecordingAssistant extends Fake implements AssistantRepository {
   _RecordingAssistant(this._scripts);
 
   final List<List<AssistantEvent>> _scripts;
@@ -33,7 +34,7 @@ class _RecordingAssistant extends Fake implements AssistantApiClient {
   int _cursor = 0;
 
   @override
-  Stream<AssistantEvent> streamChat(AssistantChatReq req) {
+  Stream<AssistantEvent> chat(AssistantChatReq req) {
     requests.add(req);
     final idx = _cursor < _scripts.length ? _cursor : _scripts.length - 1;
     _cursor++;

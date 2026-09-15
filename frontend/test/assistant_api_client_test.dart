@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kids_learn/features/assistant/data/assistant_api_client.dart';
+import 'package:kids_learn/features/assistant/domain/assistant_requests.dart';
 import 'package:kids_learn/shared/data/remote/network_service.dart';
 
 /// 按 path 返回预置 SSE 字节流的假 NetworkService，供解析逻辑单测。

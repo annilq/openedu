@@ -1,9 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../shared/data/remote/network_service.dart';
-import '../../../../shared/domain/providers/core_providers.dart';
 import '../../../../shared/presentation/resource.dart';
 import '../../../../shared/domain/models/models.dart';
+import '../../providers/home_provider.dart';
 
 /// 家长任务列表（本家长全部任务，后端已按 created_at 倒序）。
 ///
@@ -13,8 +12,6 @@ import '../../../../shared/domain/models/models.dart';
 final parentTasksNotifierProvider =
     StateNotifierProvider<ResourceNotifier<List<TaskModel>>, Resource<List<TaskModel>>>(
   (ref) => ResourceNotifier(
-    ref.watch(networkServiceProvider),
-    path: '/tasks',
-    parse: (d) => decodeList(d, TaskModel.fromJson),
+    () => ref.watch(tasksRepositoryProvider).parentTasks(),
   ),
 );

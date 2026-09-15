@@ -1,9 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../shared/data/remote/network_service.dart';
 import '../../../../shared/domain/models/models.dart';
-import '../../../../shared/domain/providers/core_providers.dart';
 import '../../../../shared/presentation/resource.dart';
+import '../../domain/repositories/review_repository.dart';
+import '../../providers/review_provider.dart';
 
 /// 复习作答：与练习一致的批改结果（错题调度更新由后端完成）。
 typedef ReviewAnswerResult = AnswerResultModel;
@@ -32,17 +32,13 @@ class DueReviewError extends DueReviewState {
 }
 
 class DueReviewNotifier extends StateNotifier<DueReviewState> {
-  final NetworkService _network;
-  DueReviewNotifier(this._network) : super(const DueReviewInitial());
+  final ReviewRepository _repo;
+  DueReviewNotifier(this._repo) : super(const DueReviewInitial());
 
   Future<void> load() async {
     state = const DueReviewLoading();
     try {
-      final data = await _network.get('/review/due');
-      final items = (data as List)
-          .map((e) => ReviewItemModel.fromJson(e as Map<String, dynamic>))
-          .toList();
-      state = DueReviewLoaded(items);
+      state = DueReviewLoaded(await _repo.dueReview());
     } catch (e) {
       state = DueReviewError(e.toString());
     }
@@ -53,11 +49,7 @@ class DueReviewNotifier extends StateNotifier<DueReviewState> {
     final current = state;
     if (current is! DueReviewLoaded) return null;
     try {
-      final data = await _network.post('/review/answer', body: {
-        'wrong_question_id': wrongQuestionId,
-        'student_answer': studentAnswer,
-      });
-      final result = AnswerResultModel.fromJson(data);
+      final result = await _repo.answer(wrongQuestionId, studentAnswer);
       final remaining = current.items
           .where((i) => i.wrongQuestionId != wrongQuestionId)
           .toList();
@@ -72,29 +64,25 @@ class DueReviewNotifier extends StateNotifier<DueReviewState> {
 
 final dueReviewNotifierProvider =
     StateNotifierProvider<DueReviewNotifier, DueReviewState>((ref) {
-  final network = ref.watch(networkServiceProvider);
-  return DueReviewNotifier(network);
+  return DueReviewNotifier(ref.watch(reviewRepositoryProvider));
 });
 
 // —— 错题本：娃娃自查 / 家长查看 ——
-/// 娃娃自查：GET /tasks/wrong-questions（不含答案）。
+/// 娃娃自查：错题本（不含答案）。
 final childWrongQuestionsProvider =
     StateNotifierProvider<ResourceNotifier<List<WrongQuestionModel>>,
         Resource<List<WrongQuestionModel>>>(
   (ref) => ResourceNotifier(
-    ref.watch(networkServiceProvider),
-    path: '/tasks/wrong-questions',
-    parse: (d) => decodeList(d, WrongQuestionModel.fromJson),
+    () => ref.watch(reviewRepositoryProvider).childWrongQuestions(),
   ),
 );
 
-/// 家长查看：GET /tasks/children/{id}/wrong-questions（含答案）。
+/// 家长查看某娃娃的错题本（含答案）。
 final parentWrongQuestionsProvider = StateNotifierProvider<
     ParamResourceNotifier<List<WrongQuestionModel>, String>,
     Resource<List<WrongQuestionModel>>>(
   (ref) => ParamResourceNotifier(
-    ref.watch(networkServiceProvider),
-    pathOf: (childId) => '/tasks/children/$childId/wrong-questions',
-    parse: (d) => decodeList(d, WrongQuestionModel.fromJson),
+    (childId) =>
+        ref.watch(reviewRepositoryProvider).parentWrongQuestions(childId),
   ),
 );

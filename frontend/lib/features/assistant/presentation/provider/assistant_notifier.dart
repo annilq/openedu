@@ -1,7 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../shared/domain/providers/core_providers.dart';
-import '../../data/assistant_api_client.dart';
+import '../../domain/assistant_requests.dart';
+import '../../domain/repositories/assistant_repository.dart';
+import '../../providers/assistant_provider.dart';
 import '../../domain/ai_text_fold.dart';
 import '../../domain/assistant_card.dart';
 import '../../domain/assistant_event.dart';
@@ -40,9 +41,9 @@ class AssistantActive extends AssistantState {
 }
 
 class AssistantNotifier extends StateNotifier<AssistantState> {
-  final AssistantApiClient _client;
+  final AssistantRepository _repo;
 
-  AssistantNotifier(this._client) : super(const AssistantInitial());
+  AssistantNotifier(this._repo) : super(const AssistantInitial());
 
   bool _submitting = false;
 
@@ -97,7 +98,7 @@ class AssistantNotifier extends StateNotifier<AssistantState> {
     // 事件解释委托 [AiTextFold]（纯模块）：本 notifier 只负责喂事件与落状态。
     var fold = const AiTextFold();
     try {
-      await for (final ev in _client.streamChat(
+      await for (final ev in _repo.chat(
         AssistantChatReq(
           message: message,
           sessionId: _currentSessionId,
@@ -171,13 +172,8 @@ class AssistantNotifier extends StateNotifier<AssistantState> {
   }
 }
 
-final assistantApiClientProvider = Provider<AssistantApiClient>((ref) {
-  final network = ref.watch(networkServiceProvider);
-  return AssistantApiClient(network);
-});
-
 final assistantNotifierProvider =
     StateNotifierProvider<AssistantNotifier, AssistantState>((ref) {
-  final client = ref.watch(assistantApiClientProvider);
-  return AssistantNotifier(client);
+  final repo = ref.watch(assistantRepositoryProvider);
+  return AssistantNotifier(repo);
 });

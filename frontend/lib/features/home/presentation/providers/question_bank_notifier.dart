@@ -1,8 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/domain/models/models.dart';
-import '../../../../shared/domain/providers/core_providers.dart';
-import '../../data/datasource/question_bank_remote_data_source.dart';
+import '../../domain/repositories/question_bank_repository.dart';
+import '../../providers/home_provider.dart';
 
 // ── 题库视图状态机 ──
 sealed class BankState {
@@ -43,8 +43,8 @@ class BankDeleted extends BankState {
 }
 
 class QuestionBankNotifier extends StateNotifier<BankState> {
-  final QuestionBankRemoteDataSource _ds;
-  QuestionBankNotifier(this._ds) : super(const BankIdle());
+  final QuestionBankRepository _repo;
+  QuestionBankNotifier(this._repo) : super(const BankIdle());
 
   Future<void> load({
     int gradeSegment = -1,
@@ -54,7 +54,7 @@ class QuestionBankNotifier extends StateNotifier<BankState> {
   }) async {
     state = const BankLoading();
     try {
-      final data = await _ds.getQuestions(
+      final data = await _repo.getQuestions(
         subject: subject,
         grade: gradeSegment < 0 ? null : gradeSegment,
         qtype: qtype,
@@ -69,17 +69,17 @@ class QuestionBankNotifier extends StateNotifier<BankState> {
 
   /// 选项 B 草稿选择器：拉取家长草稿列表。
   Future<List<TaskModel>> fetchDraftTasks() async {
-    return await _ds.getDraftTasks();
+    return await _repo.getDraftTasks();
   }
 
   /// 反查某题库题被哪些任务引用（闭环「用过 N 次 → 在哪里用」）。
   Future<List<QuestionUsageItem>> fetchQuestionUsages(String questionId) async {
-    return await _ds.getQuestionUsages(questionId);
+    return await _repo.getQuestionUsages(questionId);
   }
 
   /// 按 id 拉取完整任务，供引用列表跳转复核页。
   Future<TaskModel> fetchTaskById(String taskId) async {
-    return await _ds.getTaskById(taskId);
+    return await _repo.getTaskById(taskId);
   }
 
   void reset() => state = const BankIdle();
@@ -91,7 +91,7 @@ class QuestionBankNotifier extends StateNotifier<BankState> {
   }) async {
     state = const BankActionLoading();
     try {
-      final task = await _ds.createTaskFromBank(
+      final task = await _repo.createTaskFromBank(
         title: title,
         childId: childId,
         questionIds: ids,
@@ -108,7 +108,7 @@ class QuestionBankNotifier extends StateNotifier<BankState> {
   }) async {
     state = const BankActionLoading();
     try {
-      final task = await _ds.addToTaskFromBank(taskId: taskId, questionIds: ids);
+      final task = await _repo.addToTaskFromBank(taskId: taskId, questionIds: ids);
       state = BankActionSuccess(task);
     } catch (e) {
       state = BankActionError(e.toString());
@@ -118,7 +118,7 @@ class QuestionBankNotifier extends StateNotifier<BankState> {
   Future<void> deleteQuestions(List<String> ids) async {
     state = const BankActionLoading();
     try {
-      final res = await _ds.deleteQuestions(ids);
+      final res = await _repo.deleteQuestions(ids);
       state = BankDeleted(
         res.deleted.length,
         res.skippedInUse.length,
@@ -132,6 +132,5 @@ class QuestionBankNotifier extends StateNotifier<BankState> {
 
 final questionBankNotifierProvider =
     StateNotifierProvider<QuestionBankNotifier, BankState>((ref) {
-  final ds = QuestionBankRemoteDataSource(ref.watch(networkServiceProvider));
-  return QuestionBankNotifier(ds);
+  return QuestionBankNotifier(ref.watch(questionBankRepositoryProvider));
 });

@@ -1,12 +1,12 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../shared/data/remote/network_service.dart';
 import '../../../../shared/domain/models/models.dart';
-import '../../../../shared/domain/providers/core_providers.dart';
 import '../../../../shared/exceptions/app_exception.dart';
-import '../../../assistant/data/assistant_api_client.dart';
 import '../../../assistant/domain/assistant_event.dart';
-import '../../../assistant/presentation/provider/assistant_notifier.dart';
+import '../../../assistant/domain/repositories/assistant_repository.dart';
+import '../../../assistant/providers/assistant_provider.dart';
+import '../../domain/repositories/task_review_repository.dart';
+import '../../providers/home_provider.dart';
 
 // ───────── 草稿题审核状态机 ─────────
 sealed class ReviewState {
@@ -58,9 +58,9 @@ class ReviewError extends ReviewState {
 }
 
 class ReviewNotifier extends StateNotifier<ReviewState> {
-  final NetworkService _network;
-  final AssistantApiClient _assistant;
-  ReviewNotifier(this._network, this._assistant, {TaskModel? initial})
+  final TaskReviewRepository _review;
+  final AssistantRepository _assistant;
+  ReviewNotifier(this._review, this._assistant, {TaskModel? initial})
       : super(initial == null
             ? const ReviewLoading()
             : ReviewLoaded(initial));
@@ -69,8 +69,7 @@ class ReviewNotifier extends StateNotifier<ReviewState> {
   Future<void> load(String taskId) async {
     state = const ReviewLoading();
     try {
-      final data = await _network.get('/tasks/$taskId');
-      state = ReviewLoaded(TaskModel.fromJson(data));
+      state = ReviewLoaded(await _review.load(taskId));
     } catch (e) {
       state = ReviewError(
         e.toString(),
@@ -88,9 +87,7 @@ class ReviewNotifier extends StateNotifier<ReviewState> {
     if (cur is! ReviewLoaded || cur.anyBusy) return;
     state = ReviewLoaded(cur.task, busyTqId: tqId);
     try {
-      final data = await _network
-          .post('/tasks/$taskId/questions/$tqId/promote');
-      final updatedQ = QuestionModel.fromJson(data);
+      final updatedQ = await _review.promoteOne(taskId: taskId, tqId: tqId);
       state = ReviewLoaded(_replace(cur.task, tqId, updatedQ));
     } catch (e) {
       state = ReviewLoaded(cur.task);
@@ -103,8 +100,7 @@ class ReviewNotifier extends StateNotifier<ReviewState> {
     final cur = state;
     if (cur is! ReviewLoaded || cur.anyBusy) return;
     try {
-      final data = await _network.post('/tasks/$taskId/promote-all');
-      state = ReviewLoaded(TaskModel.fromJson(data));
+      state = ReviewLoaded(await _review.promoteAll(taskId));
     } catch (e) {
       rethrow;
     }
@@ -126,7 +122,7 @@ class ReviewNotifier extends StateNotifier<ReviewState> {
       QuestionModel? updated;
       var live = '';
       await for (final ev
-          in _assistant.streamRegenerateOne(taskId: taskId, tqId: tqId)) {
+          in _assistant.regenerateOne(taskId: taskId, tqId: tqId)) {
         if (ev.eventType == AssistantEventType.error) {
           throw AppException(ev.message ?? '换一题失败，请稍后重试');
         }
@@ -167,7 +163,7 @@ class ReviewNotifier extends StateNotifier<ReviewState> {
       TaskModel? updated;
       var progress = initialProgress;
       var live = '';
-      await for (final ev in _assistant.streamRegenerateAll(taskId: taskId)) {
+      await for (final ev in _assistant.regenerateAll(taskId: taskId)) {
         if (ev.eventType == AssistantEventType.error) {
           throw AppException(ev.message ?? '整卷重生成失败，请稍后重试');
         }
@@ -208,7 +204,7 @@ class ReviewNotifier extends StateNotifier<ReviewState> {
     if (cur is! ReviewLoaded || cur.anyBusy) return;
     state = ReviewLoaded(cur.task, busyTqId: tqId);
     try {
-      await _network.delete('/tasks/$taskId/questions/$tqId');
+      await _review.removeOne(taskId: taskId, tqId: tqId);
       // 允许删到 0 题：草稿清空后走空态引导（整卷重生成 / 返回题库重新组卷），
       // 比「最后一题点不动且无任何提示」更可预期。
       final task = cur.task.copyWith(
@@ -231,11 +227,8 @@ class ReviewNotifier extends StateNotifier<ReviewState> {
     if (cur is! ReviewLoaded || cur.anyBusy) return;
     state = ReviewLoaded(cur.task, busyTqId: tqId);
     try {
-      final data = await _network.put(
-        '/tasks/$taskId/questions/$tqId',
-        body: edits,
-      );
-      final updatedQ = QuestionModel.fromJson(data);
+      final updatedQ =
+          await _review.editOne(taskId: taskId, tqId: tqId, edits: edits);
       state = ReviewLoaded(_replace(cur.task, tqId, updatedQ));
     } catch (e) {
       state = ReviewLoaded(cur.task);
@@ -245,8 +238,7 @@ class ReviewNotifier extends StateNotifier<ReviewState> {
 
   /// 锁定草稿成卷（R-Q1=c 自动 promote-all）。
   Future<TaskModel> confirm(String taskId) async {
-    final data = await _network.post('/tasks/$taskId/confirm');
-    final updated = TaskModel.fromJson(data);
+    final updated = await _review.confirm(taskId);
     state = ReviewLoaded(updated);
     return updated;
   }
@@ -256,17 +248,13 @@ class ReviewNotifier extends StateNotifier<ReviewState> {
     required String taskId,
     required String childId,
   }) async {
-    final data = await _network
-        .post('/tasks/$taskId/assign?child_id=$childId');
-    final updated = TaskModel.fromJson(data);
+    final updated = await _review.assign(taskId: taskId, childId: childId);
     state = ReviewLoaded(updated);
     return updated;
   }
 
   /// 作废草稿（R-Q5=b，级联删 Question）。
-  Future<void> discard(String taskId) async {
-    await _network.delete('/tasks/$taskId');
-  }
+  Future<void> discard(String taskId) => _review.discard(taskId);
 
   // -------- helpers --------
 
@@ -284,7 +272,9 @@ final parentTaskReviewProvider = StateNotifierProvider.family<
     ReviewNotifier,
     ReviewState,
     TaskModel>((ref, initialTask) {
-  final network = ref.watch(networkServiceProvider);
-  final assistant = ref.watch(assistantApiClientProvider);
-  return ReviewNotifier(network, assistant, initial: initialTask);
+  return ReviewNotifier(
+    ref.watch(taskReviewRepositoryProvider),
+    ref.watch(assistantRepositoryProvider),
+    initial: initialTask,
+  );
 });

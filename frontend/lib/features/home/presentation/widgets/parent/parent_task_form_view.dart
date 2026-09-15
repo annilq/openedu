@@ -10,7 +10,7 @@ import '../../../../../shared/widgets/app_inputs.dart';
 import '../../../../../shared/widgets/app_loading.dart';
 import '../../../../../shared/widgets/app_toast.dart';
 import '../../../../../shared/widgets/stream_reasoning_panel.dart';
-import '../../../../children/domain/providers/children_provider.dart';
+import '../../../../children/providers/children_provider.dart';
 import '../../../../children/presentation/providers/children_notifier.dart';
 import '../../../../model_management/presentation/providers/models_notifier.dart';
 import '../../../../model_management/presentation/widgets/model_selector.dart';
