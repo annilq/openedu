@@ -236,6 +236,27 @@ class ReviewNotifier extends StateNotifier<ReviewState> {
     }
   }
 
+  /// 编辑任务元信息（仅 draft 态；当前仅标题）。
+  ///
+  /// busy 用哨兵 id 'meta'：`anyBusy` 生效 → 整卷级操作禁用；但 `busyTqId == q.id`
+  /// 不命中任何题卡 → 各题卡保持可用（元信息编辑与题目内容互不相干）。
+  Future<void> editMeta({
+    required String taskId,
+    required String title,
+  }) async {
+    final cur = state;
+    if (cur is! ReviewLoaded || cur.anyBusy) return;
+    state = ReviewLoaded(cur.task, busyTqId: 'meta');
+    try {
+      final updated = await _review
+          .editMeta(taskId: taskId, edits: {'title': title});
+      state = ReviewLoaded(updated);
+    } catch (e) {
+      state = ReviewLoaded(cur.task);
+      rethrow;
+    }
+  }
+
   /// 锁定草稿成卷（R-Q1=c 自动 promote-all）。
   Future<TaskModel> confirm(String taskId) async {
     final updated = await _review.confirm(taskId);

@@ -133,6 +133,24 @@ def update_task_question(
     return tq
 
 
+def update_task_meta(
+    *,
+    session: Session,
+    task_id: uuid.UUID,
+    edits: dict,
+) -> Task | None:
+    """编辑任务元信息（仅 draft 态，路由层校验；当前仅 title 在可改字段内）。"""
+    task = get_task(session=session, task_id=task_id)
+    if task is None:
+        return None
+    for k, v in edits.items():
+        setattr(task, k, v)
+    session.add(task)
+    session.commit()
+    session.refresh(task)
+    return task
+
+
 def confirm_task(*, session: Session, task_id: uuid.UUID) -> Task:
     """draft → ready：家长确认锁定题集（CONTEXT 草稿/锁定/派发）。
 

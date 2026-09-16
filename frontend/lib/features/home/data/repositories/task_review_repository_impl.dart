@@ -47,6 +47,15 @@ class TaskReviewRepositoryImpl implements TaskReviewRepository {
   }
 
   @override
+  Future<TaskModel> editMeta({
+    required String taskId,
+    required Map<String, dynamic> edits,
+  }) async {
+    final data = await _network.put('/tasks/$taskId', body: edits);
+    return TaskModel.fromJson(decodeMap(data));
+  }
+
+  @override
   Future<TaskModel> confirm(String taskId) async {
     final data = await _network.post('/tasks/$taskId/confirm');
     return TaskModel.fromJson(decodeMap(data));

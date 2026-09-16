@@ -267,7 +267,8 @@ class _ParentTaskReviewScreenState
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _buildSummary(task, app, promoted, total),
+              _buildSummary(task, app, promoted, total,
+                  locked: busyTqId != null || progress != null),
               const SizedBox(height: AppSpacing.xl2),
               if (task.questions.isEmpty)
                 // 允许删到 0 题：空态按「有无生成规格」给不同引导——有规格可整卷
@@ -306,7 +307,13 @@ class _ParentTaskReviewScreenState
     );
   }
 
-  Widget _buildSummary(TaskModel task, dynamic app, int promoted, int total) {
+  Widget _buildSummary(
+    TaskModel task,
+    dynamic app,
+    int promoted,
+    int total, {
+    bool locked = false,
+  }) {
     final statusChip = switch (task.status) {
       'draft' => ('草稿', app.tertiary, app.onTertiary),
       'ready' => ('已锁定', app.primary, app.onPrimary),
@@ -331,6 +338,16 @@ class _ParentTaskReviewScreenState
                       ),
                 ),
               ),
+              // 草稿态允许改卷名：生成一次要等 LLM，标题打错就作废重来代价太大。
+              // 锁定（ready）后标题随卷固定，入口消失。整卷 busy 期间一并禁用。
+              if (task.isDraft) ...[
+                const SizedBox(width: AppSpacing.sm),
+                AppIconAction(
+                  icon: LucideIcons.pencil,
+                  semanticLabel: '编辑标题',
+                  onPressed: locked ? null : () => _onEditMeta(task),
+                ),
+              ],
               const SizedBox(width: AppSpacing.md),
               Container(
                 padding: const EdgeInsets.symmetric(
@@ -451,6 +468,61 @@ class _ParentTaskReviewScreenState
           .editOne(taskId: taskId, tqId: tqId, edits: edits);
       if (!mounted) return;
       AppToast.show(context, '题目已更新');
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.error(context, e);
+    }
+  }
+
+  /// 编辑卷名（仅草稿态）：弹窗内 ShadInput 改标题，确认后 PUT /tasks/{id}。
+  Future<void> _onEditMeta(TaskModel task) async {
+    final controller = TextEditingController(text: task.title);
+    final newTitle = await showShadDialog<String>(
+      context: context,
+      builder: (ctx) {
+        final app = AppTheme.colorsOf(ctx);
+        return ShadDialog(
+          title: const Text('编辑标题'),
+          description: Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.xs),
+            child: Text('仅草稿态可修改，锁定成卷后标题随卷固定。'),
+          ),
+          actions: [
+            ShadButton.ghost(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('取消'),
+            ),
+            ShadButton(
+              onPressed: () {
+                final t = controller.text.trim();
+                if (t.isEmpty) return;
+                Navigator.of(ctx).pop(t);
+              },
+              child: const Text('保存'),
+            ),
+          ],
+          backgroundColor: app.surface,
+          child: Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.md),
+            child: ShadInput(
+              controller: controller,
+              autofocus: true,
+              maxLength: 255,
+              placeholder: const Text('任务标题'),
+            ),
+          ),
+        );
+      },
+    );
+    controller.dispose();
+    if (newTitle == null || newTitle == task.title) return;
+    if (!mounted) return;
+    try {
+      await ref
+          .read(parentTaskReviewProvider(widget.task).notifier)
+          .editMeta(taskId: task.id, title: newTitle);
+      if (!mounted) return;
+      AppToast.show(context, '标题已更新');
     } catch (e) {
       if (!mounted) return;
       AppToast.error(context, e);

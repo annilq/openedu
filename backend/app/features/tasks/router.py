@@ -28,6 +28,7 @@ from app.features.tasks.schemas import (
     QuestionResp,
     TaskFromGenerated,
     TaskGenerateReq,
+    TaskMetaEdit,
     TaskQuestionEdit,
     TaskResp,
     WrongQuestionResp,
@@ -242,6 +243,23 @@ async def regenerate_all_stream(
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.put("/{task_id}", response_model=TaskResp)
+def edit_task_meta(
+    *,
+    session: SessionDep,
+    parent: CurrentParent,
+    task_id: UUID,
+    edits: TaskMetaEdit,
+) -> TaskResp:
+    """编辑任务元信息（仅 draft 态；当前仅 title）。"""
+    return tasks_service.edit_task_meta(
+        session=session,
+        parent=parent,
+        task_id=task_id,
+        edits=edits.model_dump(exclude_unset=True),
     )
 
 

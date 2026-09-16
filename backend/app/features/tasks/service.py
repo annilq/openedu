@@ -66,6 +66,7 @@ from app.features.tasks.repository import (
     regenerate_all_task_questions,
     regenerate_one_task_question,
     remove_task_question,
+    update_task_meta,
     update_task_question,
     upsert_wrong_question,
 )
@@ -992,6 +993,28 @@ def edit_question(
     if updated is None:
         raise AppErrorException(ErrCode.TASK_QUESTION_NOT_FOUND, "题目不存在")
     return question_to_resp(updated, include_answer=True)
+
+
+def edit_task_meta(
+    *, session: Session, parent: User, task_id: UUID, edits: dict
+) -> TaskResp:
+    """编辑任务元信息（仅 draft 态；当前仅 title，见 TaskMetaEdit）。
+
+    specs / status / child_id 有各自的专属流转（重生成 / confirm / assign），
+    本端点刻意不放开——生成产物必须与规格一致，改规格等价于重新生成。
+    """
+    task = _owned_task(session=session, parent=parent, task_id=task_id)
+    _require_draft(task)
+    allowed = {"title"}
+    filtered = {k: v for k, v in edits.items() if k in allowed}
+    updated = update_task_meta(session=session, task_id=task_id, edits=filtered)
+    if updated is None:
+        raise AppErrorException(ErrCode.TASK_NOT_FOUND, "任务不存在")
+    return task_to_resp(
+        updated,
+        get_task_questions(session=session, task_id=updated.id),
+        include_answer=True,
+    )
 
 
 def confirm(*, session: Session, parent: User, task_id: UUID) -> TaskResp:

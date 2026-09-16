@@ -145,4 +145,15 @@ class TaskQuestionEdit(SQLModel):
     options: list[str] | None = None
     answer: str | None = None
     explanation: str | None = None
+
+
+class TaskMetaEdit(SQLModel):
+    """PUT /tasks/{task_id} 元信息编辑请求体（仅 draft 态）。
+
+    可改：title（家长在草稿审核页改卷名）。
+    禁改：status / child_id / specs —— 状态流转走 confirm/assign/discard 专属
+    端点，specs 变更等价于重新生成（生成产物必须与规格一致），不在本端点放开。
+    """
+
+    title: str = Field(max_length=255)
     knowledge_point: str | None = None

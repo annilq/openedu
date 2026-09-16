@@ -26,6 +26,12 @@ abstract class TaskReviewRepository {
     required Map<String, dynamic> edits,
   });
 
+  /// 编辑任务元信息（仅 draft 态；当前仅 title）。
+  Future<TaskModel> editMeta({
+    required String taskId,
+    required Map<String, dynamic> edits,
+  });
+
   /// 锁定草稿成卷（R-Q1=c 自动 promote-all）。
   Future<TaskModel> confirm(String taskId);
 
