@@ -11,9 +11,17 @@ abstract class ReviewRepository {
   /// 提交一道复习作答，返回批改结果（错题调度更新在后端完成）。
   Future<AnswerResultModel> answer(String wrongQuestionId, String studentAnswer);
 
-  /// 娃娃自查错题本（GET /tasks/wrong-questions，不含答案）。
-  Future<List<WrongQuestionModel>> childWrongQuestions();
+  /// 娃娃自查错题本（GET /tasks/wrong-questions，不含答案，游标分页 ADR-0053）。
+  Future<CursorPage<WrongQuestionModel>> childWrongQuestions({
+    String? cursor,
+    int pageSize = 20,
+  });
 
-  /// 家长查看某娃娃的错题本（GET /tasks/children/{id}/wrong-questions，含答案）。
-  Future<List<WrongQuestionModel>> parentWrongQuestions(String childId);
+  /// 家长查看某娃娃的错题本（GET /tasks/children/{id}/wrong-questions，
+  /// 含答案，游标分页 ADR-0053）。
+  Future<CursorPage<WrongQuestionModel>> parentWrongQuestions(
+    String childId, {
+    String? cursor,
+    int pageSize = 20,
+  });
 }

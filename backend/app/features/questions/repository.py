@@ -7,6 +7,7 @@ from sqlmodel import Session, func, select
 
 from app.core.errors import ErrCode
 from app.core.guard import require_owned
+from app.core.pagination import apply_keyset, count_of, order_by_keyset
 from app.db.models import Question, Task, TaskQuestion
 
 
@@ -22,6 +23,7 @@ def list_bank_questions(
     since_days: int | None = None,
     page: int = 1,
     page_size: int = 20,
+    cursor: str | None = None,
 ) -> tuple[list[Question], int, dict[uuid.UUID, int]]:
     """题库浏览（家长作用域）：过滤分页 + 每题被多少 Task 引用的复用度。
 
@@ -29,6 +31,11 @@ def list_bank_questions(
 
     ``since_days``（ADR-0050）：只返回 ``created_at`` 在 ``[now_utc - N 天, now]`` 内的题，
     即「最近添加的题」。0 / None ＝不限时间。
+
+    ``cursor``（ADR-0053）：给了就走 keyset 游标分页（忽略 ``page``），否则退回 offset。
+    两条路径共用同一组过滤条件与同一套稳定排序，只有取页方式不同——REST 列表走游标
+    （新题从顶部插入时 offset 会重复/漏行），AI 查询工具走 offset + 大 ``page_size``
+    一次性取够（对话场景不需要翻页）。
     """
     stmt = select(Question).where(Question.parent_id == parent_id)
     if subject:
@@ -47,12 +54,21 @@ def list_bank_questions(
     if since_days:
         cutoff = datetime.now(timezone.utc) - timedelta(days=since_days)
         stmt = stmt.where(Question.created_at >= cutoff)
-    total = len(session.exec(stmt).all())
-    items = session.exec(
-        stmt.order_by(Question.created_at.desc())
-        .offset((max(1, page) - 1) * page_size)
-        .limit(page_size)
-    ).all()
+    total = count_of(session=session, stmt=stmt)
+    if cursor:
+        page_stmt = apply_keyset(
+            stmt,
+            ts_column=Question.created_at,
+            id_column=Question.id,
+            cursor=cursor,
+        ).limit(page_size)
+    else:
+        page_stmt = (
+            stmt.order_by(*order_by_keyset(Question.created_at, Question.id))
+            .offset((max(1, page) - 1) * page_size)
+            .limit(page_size)
+        )
+    items = list(session.exec(page_stmt).all())
     ids = [q.id for q in items]
     usage: dict[uuid.UUID, int] = {}
     if ids:

@@ -5,10 +5,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../../shared/domain/models/models.dart';
+import '../../../../../shared/presentation/paging.dart';
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/widgets/app_error.dart';
 import '../../../../../shared/widgets/app_inputs.dart';
 import '../../../../../shared/widgets/app_loading.dart';
+import '../../../../../shared/widgets/app_paging_footer.dart';
 import '../../../../../shared/widgets/app_toast.dart';
 import '../../providers/question_bank_notifier.dart';
 import '../../providers/selected_child_provider.dart';
@@ -50,9 +52,18 @@ class _ParentQuestionBankViewState
   final TextEditingController _titleCtrl = TextEditingController(text: '题库组卷');
   Timer? _debounce;
 
+  /// 整页滚动控制器：题库页的筛选区与列表在同一个滚动容器里，触底即追加下一页
+  /// （ADR-0053）。此前列表永远只有第一页 20 条，第 21 条之后的题看不到。
+  late final ScrollController _scroll = ScrollController();
+  VoidCallback? _unbindScroll;
+
   @override
   void initState() {
     super.initState();
+    _unbindScroll = bindPagingOnScroll(
+      _scroll,
+      () => ref.read(questionBankNotifierProvider.notifier).loadMore(),
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) ref.read(questionBankNotifierProvider.notifier).load();
     });
@@ -60,6 +71,8 @@ class _ParentQuestionBankViewState
 
   @override
   void dispose() {
+    _unbindScroll?.call();
+    _scroll.dispose();
     _keywordCtrl.dispose();
     _titleCtrl.dispose();
     _debounce?.cancel();
@@ -360,6 +373,7 @@ class _ParentQuestionBankViewState
     // 与概览 / 布置任务 / 错题本等家长页完全一致的页面骨架：
     // 整页 SingleChildScrollView + 居中约束 maxWidth 1080 + SectionTitle + 内容置于 AppCard。
     return SingleChildScrollView(
+      controller: _scroll,
       padding: const EdgeInsets.fromLTRB(
           AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xl2),
       child: Align(
@@ -498,10 +512,23 @@ class _ParentQuestionBankViewState
       BankDeleted() =>
         const AppLoading(),
       BankError(:final message) => AppError(message: message, onRetry: _reload),
-      BankLoaded(:final data) => data.items.isEmpty
+      BankLoaded(:final page) => page.items.isEmpty
           ? _EmptyHint(onReload: _reload)
           : Column(
-              children: data.items.map((q) => _buildItem(q, app)).toList(),
+              children: [
+                for (final q in page.items) _buildItem(q, app),
+                AppPagingFooter(
+                  hasMore: page.hasMore,
+                  isLoadingMore: state.isLoadingMore,
+                  moreError: state.moreError,
+                  remaining: page.total - page.loaded > 0
+                      ? page.total - page.loaded
+                      : 0,
+                  onLoadMore: () => ref
+                      .read(questionBankNotifierProvider.notifier)
+                      .loadMore(),
+                ),
+              ],
             ),
     };
   }

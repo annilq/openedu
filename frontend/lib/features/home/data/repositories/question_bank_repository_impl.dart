@@ -20,12 +20,12 @@ class QuestionBankRepositoryImpl implements QuestionBankRepository {
     String? knowledgePoint,
     String? qtype,
     String? keyword,
-    int page = 1,
+    String? cursor,
     int pageSize = 20,
   }) async {
     final query = <String, dynamic>{
-      'page': page,
       'page_size': pageSize,
+      if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
     };
     if (subject != null && subject.isNotEmpty) query['subject'] = subject;
     if (grade != null) query['grade'] = grade;
@@ -35,7 +35,10 @@ class QuestionBankRepositoryImpl implements QuestionBankRepository {
     if (qtype != null && qtype.isNotEmpty) query['qtype'] = qtype;
     if (keyword != null && keyword.isNotEmpty) query['keyword'] = keyword;
     final data = await _network.get('/questions', query: query);
-    return BankListResp.fromJson(decodeMap(data));
+    return CursorPage.fromJson(
+      decodeMap(data),
+      BankQuestionItem.fromJson,
+    );
   }
 
   @override
@@ -66,8 +69,9 @@ class QuestionBankRepositoryImpl implements QuestionBankRepository {
 
   @override
   Future<List<TaskModel>> getDraftTasks() async {
+    // GET /tasks 响应在 ADR-0053 后是游标信封（不再内嵌题目），草稿选择器只取 items。
     final data = await _network.get('/tasks', query: {'status': 'draft'});
-    return decodeList(data, TaskModel.fromJson);
+    return TaskPage.fromJson(decodeMap(data)).items;
   }
 
   @override

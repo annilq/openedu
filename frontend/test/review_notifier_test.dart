@@ -6,7 +6,7 @@ import 'package:kids_learn/features/review/data/repositories/review_repository_i
 import 'package:kids_learn/features/review/presentation/providers/review_notifier.dart';
 import 'package:kids_learn/shared/data/remote/network_service.dart';
 import 'package:kids_learn/shared/domain/models/models.dart';
-import 'package:kids_learn/shared/presentation/resource.dart';
+import 'package:kids_learn/shared/presentation/paging.dart';
 
 /// 内存版 NetworkService：按 path 返回预置响应，记录 POST body。
 class FakeNetwork implements NetworkService {
@@ -45,6 +45,10 @@ class FakeNetwork implements NetworkService {
   }) =>
       const Stream<Uint8List>.empty();
 }
+
+/// 后端游标信封（ADR-0053）；`next_cursor` 为 null 表示只有一页。
+Map<String, dynamic> _page(List<Map<String, dynamic>> items) =>
+    {'items': items, 'total': items.length, 'page_size': 20};
 
 Map<String, dynamic> _reviewItemJson(String wrongId, {int stage = 1}) => {
       'wrong_question_id': wrongId,
@@ -155,15 +159,15 @@ void main() {
 
     test('娃娃自查命中 /tasks/wrong-questions', () async {
       final network = FakeNetwork(responses: {
-        '/tasks/wrong-questions': [wrongJson()],
+        '/tasks/wrong-questions': _page([wrongJson()]),
       });
-      final notifier = ResourceNotifier<List<WrongQuestionModel>>(
-        () => ReviewRepositoryImpl(network).childWrongQuestions(),
+      final notifier = PagingNotifier<WrongQuestionModel>(
+        ({cursor}) => ReviewRepositoryImpl(network).childWrongQuestions(),
       );
 
       await notifier.load();
 
-      final items = notifier.state.dataOrNull!;
+      final items = notifier.state.items;
       expect(items.length, 1);
       expect(items.first.answer, isNull);
       expect(items.first.wrongCount, 1);
@@ -171,17 +175,19 @@ void main() {
 
     test('家长查看命中 /tasks/children/{id}/wrong-questions 且含答案', () async {
       final network = FakeNetwork(responses: {
-        '/tasks/children/c1/wrong-questions': [
+        '/tasks/children/c1/wrong-questions': _page([
           {...wrongJson(), 'answer': '56'},
-        ],
+        ]),
       });
-      final notifier = ParamResourceNotifier<List<WrongQuestionModel>, String>(
-        (id) => ReviewRepositoryImpl(network).parentWrongQuestions(id),
+      final notifier =
+          ParamPagingNotifier<WrongQuestionModel, String>(
+        (id, {cursor}) =>
+            ReviewRepositoryImpl(network).parentWrongQuestions(id),
       );
 
       await notifier.load('c1');
 
-      expect(notifier.state.dataOrNull!.single.answer, '56');
+      expect(notifier.state.items.single.answer, '56');
     });
   });
 

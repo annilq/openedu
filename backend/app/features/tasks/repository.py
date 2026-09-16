@@ -7,6 +7,7 @@ from sqlmodel import Session, func, select
 
 from app.core.errors import AppErrorException, ErrCode
 from app.core.guard import require_owned_child
+from app.core.pagination import apply_keyset, count_of, order_by_keyset
 from app.db.models import (
     AnswerRecord,
     Checkin,
@@ -411,17 +412,108 @@ def get_draft_tasks(*, session: Session, parent_id: uuid.UUID) -> list[Task]:
     )
 
 
+def _status_clause(status: str | None):  # noqa: ANN202
+    """状态过滤条件；``status`` 允许逗号分隔的多个状态（家长任务页的 Tab）。
+
+    前端「草稿」Tab 实际是 draft + ready 两个状态——若按单状态过滤，要么把 ready
+    藏在列表里，要么客户端在已加载页里过滤（分页后就不准了）。逗号分隔让 Tab 的
+    语义留在服务端，分页与计数都跟着同一份条件走。
+    """
+    if not status:
+        return None
+    values = [s.strip() for s in status.split(",") if s.strip()]
+    if not values:
+        return None
+    if len(values) == 1:
+        return Task.status == values[0]
+    return Task.status.in_(values)
+
+
 def list_tasks_by_parent(
-    *, session: Session, parent_id: uuid.UUID, status: str | None = None
+    *,
+    session: Session,
+    parent_id: uuid.UUID,
+    status: str | None = None,
+    page_size: int | None = None,
+    cursor: str | None = None,
 ) -> list[Task]:
     """家长名下任务（可选按状态过滤），新建在前。
 
     ``get_draft_tasks`` 是其 ``status="draft"`` 的特例；查询工具走本函数（含各状态）。
+
+    ``cursor`` / ``page_size``（ADR-0053）：给了游标就走 keyset，两者都给 None 则
+    不分页（AI 查询工具与旧调用点行为不变）。
     """
     stmt = select(Task).where(Task.parent_id == parent_id)
-    if status:
-        stmt = stmt.where(Task.status == status)
-    return list(session.exec(stmt.order_by(Task.created_at.desc())))
+    clause = _status_clause(status)
+    if clause is not None:
+        stmt = stmt.where(clause)
+    if page_size is None:
+        return list(session.exec(stmt.order_by(*order_by_keyset(Task.created_at, Task.id))))
+    if cursor:
+        return list(
+            session.exec(
+                apply_keyset(
+                    stmt,
+                    ts_column=Task.created_at,
+                    id_column=Task.id,
+                    cursor=cursor,
+                ).limit(page_size)
+            )
+        )
+    return list(
+        session.exec(
+            stmt.order_by(*order_by_keyset(Task.created_at, Task.id)).limit(page_size)
+        )
+    )
+
+
+def count_tasks_by_parent(
+    *, session: Session, parent_id: uuid.UUID, status: str | None = None
+) -> int:
+    """家长名下任务总数（过滤条件与 :func:`list_tasks_by_parent` 一致）。"""
+    stmt = select(Task).where(Task.parent_id == parent_id)
+    clause = _status_clause(status)
+    if clause is not None:
+        stmt = stmt.where(clause)
+    return count_of(session=session, stmt=stmt)
+
+
+def count_tasks_by_parent_grouped(
+    *, session: Session, parent_id: uuid.UUID
+) -> dict[str, int]:
+    """按状态分组计数（家长任务页三个 Tab 的徽标）。
+
+    一次 group by 取全部分组，不为每个状态发一条查询——四个状态四条查询在列表接口
+    里是纯粹的浪费。
+    """
+    rows = session.exec(
+        select(Task.status, func.count())
+        .where(Task.parent_id == parent_id)
+        .group_by(Task.status)
+    ).all()
+    return {status: n for status, n in rows}
+
+
+def task_question_breakdown(
+    *, session: Session, task_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, list[tuple[str, int]]]:
+    """每任务按学科的题数分布：``task_id -> [(subject, count), ...]``。
+
+    任务列表摘要的题目数与学科标签都从这里派生——**一次查询替代 N+1**
+    （此前列表对每个任务调一次 ``get_task_questions``，只为数个数）。
+    """
+    if not task_ids:
+        return {}
+    rows = session.exec(
+        select(TaskQuestion.task_id, TaskQuestion.subject, func.count())
+        .where(TaskQuestion.task_id.in_(task_ids))
+        .group_by(TaskQuestion.task_id, TaskQuestion.subject)
+    ).all()
+    out: dict[uuid.UUID, list[tuple[str, int]]] = {}
+    for task_id, subject, n in rows:
+        out.setdefault(task_id, []).append((subject, n))
+    return out
 
 
 def discard_draft_task(*, session: Session, task_id: uuid.UUID) -> bool:
@@ -603,13 +695,51 @@ def upsert_wrong_question(
 
 
 def list_wrong_questions(
-    *, session: Session, child_id: uuid.UUID
+    *,
+    session: Session,
+    child_id: uuid.UUID,
+    page_size: int | None = None,
+    cursor: str | None = None,
 ) -> list[tuple[WrongQuestion, Question]]:
-    """错题列表：join Question 取完整题目，按首次错时间倒序。"""
-    rows = session.exec(
+    """错题列表：join Question 取完整题目，按首次错时间倒序。
+
+    ``cursor`` / ``page_size``（ADR-0053）：给了游标就走 keyset，两者都给 None 则
+    不分页（AI 查询工具行为不变）。
+    """
+    stmt = (
         select(WrongQuestion, Question)
         .join(Question, Question.id == WrongQuestion.question_id)
         .where(WrongQuestion.child_id == child_id)
-        .order_by(WrongQuestion.first_wrong_at.desc())
-    ).all()
-    return list(rows)
+    )
+    if page_size is None:
+        return list(
+            session.exec(
+                stmt.order_by(
+                    *order_by_keyset(WrongQuestion.first_wrong_at, WrongQuestion.id)
+                )
+            )
+        )
+    if cursor:
+        return list(
+            session.exec(
+                apply_keyset(
+                    stmt,
+                    ts_column=WrongQuestion.first_wrong_at,
+                    id_column=WrongQuestion.id,
+                    cursor=cursor,
+                ).limit(page_size)
+            )
+        )
+    return list(
+        session.exec(
+            stmt.order_by(
+                *order_by_keyset(WrongQuestion.first_wrong_at, WrongQuestion.id)
+            ).limit(page_size)
+        )
+    )
+
+
+def count_wrong_questions(*, session: Session, child_id: uuid.UUID) -> int:
+    """错题总数（过滤条件与 :func:`list_wrong_questions` 一致）。"""
+    stmt = select(WrongQuestion).where(WrongQuestion.child_id == child_id)
+    return count_of(session=session, stmt=stmt)

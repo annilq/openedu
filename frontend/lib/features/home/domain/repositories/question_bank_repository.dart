@@ -2,13 +2,17 @@ import '../../../../shared/domain/models/models.dart';
 
 /// 题库：浏览 + 从题库组卷（选项 A 新建 / 选项 B 追加到草稿）。
 abstract class QuestionBankRepository {
+  /// 题库浏览（游标分页，ADR-0053）。
+  ///
+  /// [cursor] 为 null 时取第一页；非 null 时必须**原样回传**上一页响应里的
+  /// `next_cursor`，不得自行构造或解析。
   Future<BankListResp> getQuestions({
     String? subject,
     int? grade,
     String? knowledgePoint,
     String? qtype,
     String? keyword,
-    int page = 1,
+    String? cursor,
     int pageSize = 20,
   });
 

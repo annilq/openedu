@@ -15,9 +15,17 @@ class TasksRepositoryImpl implements TasksRepository {
   }
 
   @override
-  Future<List<TaskModel>> parentTasks() async {
-    final data = await _network.get('/tasks');
-    return decodeList(data, TaskModel.fromJson);
+  Future<TaskPage> parentTasks({
+    String? status,
+    String? cursor,
+    int pageSize = 20,
+  }) async {
+    final data = await _network.get('/tasks', query: {
+      'page_size': pageSize,
+      if (status != null && status.isNotEmpty) 'status': status,
+      if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
+    });
+    return TaskPage.fromJson(decodeMap(data));
   }
 
   @override

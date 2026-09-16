@@ -7,6 +7,7 @@ from sqlmodel import Session as DBSession
 
 from app.core.db import engine
 from app.db.models import Task
+from tests.utils.paging import page_items
 from tests.utils.user import auth_headers, register_parent
 
 TASK_URL = "/api/v1/tasks"
@@ -34,9 +35,9 @@ def test_task_list_includes_child_id_and_created_at(client):
 
     r = client.get(TASK_URL, headers=auth_headers(ptoken))
     assert r.status_code == 200, r.text
-    body = r.json()
-    assert isinstance(body, list) and body, "GET /tasks 应返回非空列表"
-    item = next(t for t in body if t["id"] == str(task_id))
+    items = page_items(r)
+    assert items, "GET /tasks 应返回非空列表"
+    item = next(t for t in items if t["id"] == str(task_id))
     # 新字段必须序列化（之前缺失，导致前端无法展示“对应娃娃”与日期）
     assert "child_id" in item
     assert "created_at" in item

@@ -45,6 +45,7 @@ from app.core.ai_plumbing import build_ai_provider
 from app.core.async_bridge import run_async
 from app.core.errors import AppErrorException, ErrCode
 from app.core.guard import require_owned, require_owned_child
+from app.core.pagination import clamp_page_size, encode_cursor
 from app.db.models import Question, Task, TaskQuestion, User, WrongQuestion
 from app.domain import Grader, build_retriever
 from app.domain.provider import GeneratedQuestion, QuestionCard, QuestionStreamEvent
@@ -53,6 +54,9 @@ from app.features.tasks.repository import (
     assign_task,
     batch_generate_task,
     confirm_task,
+    count_tasks_by_parent,
+    count_tasks_by_parent_grouped,
+    count_wrong_questions,
     create_answer_record,
     create_checkin,
     create_task_from_bank,
@@ -66,6 +70,7 @@ from app.features.tasks.repository import (
     regenerate_all_task_questions,
     regenerate_one_task_question,
     remove_task_question,
+    task_question_breakdown,
     update_task_meta,
     update_task_question,
     upsert_wrong_question,
@@ -78,8 +83,12 @@ from app.features.tasks.schemas import (
     CheckinResult,
     ProgressResp,
     QuestionResp,
+    TaskCounts,
     TaskGenerateReq,
+    TaskListResp,
     TaskResp,
+    TaskSummaryResp,
+    WrongQuestionListResp,
     WrongQuestionResp,
 )
 
@@ -156,6 +165,70 @@ def list_parent_tasks(
     ]
 
 
+def list_parent_tasks_page(
+    *,
+    session: Session,
+    parent_id: UUID,
+    status: str | None = None,
+    cursor: str | None = None,
+    page_size: int | None = None,
+) -> TaskListResp:
+    """家长任务列表（REST，ADR-0053）：摘要分页 + 三个 Tab 的状态计数。
+
+    与 :func:`list_parent_tasks` 的区别只有投影：那个返回完整 ``TaskResp``（内嵌题目，
+    供 AI 查询工具一次取够），这个返回摘要（列表卡片只需要题目数与学科）。
+    两者共用同一条 repository 查询，不复制过滤逻辑。
+    """
+    size = clamp_page_size(page_size)
+    tasks = list_tasks_by_parent(
+        session=session,
+        parent_id=parent_id,
+        status=status,
+        cursor=cursor,
+        page_size=size,
+    )
+    breakdown = task_question_breakdown(
+        session=session, task_ids=[t.id for t in tasks]
+    )
+    grouped = count_tasks_by_parent_grouped(session=session, parent_id=parent_id)
+    # 本页取满才可能有下一页：取不满说明已是最后一批（不能拿 total 判断，它是快照）。
+    next_cursor = (
+        encode_cursor(created_at=tasks[-1].created_at, id_=tasks[-1].id)
+        if tasks and len(tasks) == size
+        else None
+    )
+    return TaskListResp(
+        items=[
+            TaskSummaryResp(
+                id=t.id,
+                title=t.title,
+                status=t.status,
+                child_id=t.child_id,
+                created_at=t.created_at,
+                question_count=sum(n for _, n in breakdown.get(t.id, [])),
+                subjects=[
+                    subject
+                    for subject, _ in sorted(
+                        breakdown.get(t.id, []), key=lambda sc: (-sc[1], sc[0])
+                    )
+                ],
+            )
+            for t in tasks
+        ],
+        total=count_tasks_by_parent(
+            session=session, parent_id=parent_id, status=status
+        ),
+        page_size=size,
+        next_cursor=next_cursor,
+        counts=TaskCounts(
+            draft=grouped.get("draft", 0),
+            ready=grouped.get("ready", 0),
+            assigned=grouped.get("assigned", 0),
+            done=grouped.get("done", 0),
+        ),
+    )
+
+
 def list_today_tasks(*, session: Session, child_id: UUID) -> list[TaskResp]:
     """娃娃今日任务（assigned/done；不含答案）。"""
     return [
@@ -177,6 +250,39 @@ def list_wrong_questions(
     return [
         wrong_question_to_resp(wq, q, include_answer=include_answer) for wq, q in rows
     ]
+
+
+def list_wrong_questions_page(
+    *,
+    session: Session,
+    child_id: UUID,
+    include_answer: bool,
+    cursor: str | None = None,
+    page_size: int | None = None,
+) -> WrongQuestionListResp:
+    """错题本（REST，ADR-0053）：游标分页信封。
+
+    ``include_answer`` 由**调用方按角色**决定（家长 True / 娃娃 False），不进查询参数——
+    答案能不能看是鉴权问题，不能让客户端自己选。
+    """
+    size = clamp_page_size(page_size)
+    rows = repo_list_wrong_questions(
+        session=session, child_id=child_id, cursor=cursor, page_size=size
+    )
+    next_cursor = (
+        encode_cursor(created_at=rows[-1][0].first_wrong_at, id_=rows[-1][0].id)
+        if rows and len(rows) == size
+        else None
+    )
+    return WrongQuestionListResp(
+        items=[
+            wrong_question_to_resp(wq, q, include_answer=include_answer)
+            for wq, q in rows
+        ],
+        total=count_wrong_questions(session=session, child_id=child_id),
+        page_size=size,
+        next_cursor=next_cursor,
+    )
 
 
 def child_progress(*, session: Session, child_id: UUID) -> ProgressResp:
@@ -203,6 +309,25 @@ def list_owned_child_wrong_questions(
     """家长查某娃娃错题本（含答案/解析供核查）；先校验归属。"""
     require_owned_child(session=session, owner_id=parent.id, child_id=child_id)
     return list_wrong_questions(session=session, child_id=child_id, include_answer=True)
+
+
+def owned_child_wrong_questions_page(
+    *,
+    session: Session,
+    parent: User,
+    child_id: UUID,
+    cursor: str | None = None,
+    page_size: int | None = None,
+) -> WrongQuestionListResp:
+    """家长查某娃娃错题本（REST 分页版，含答案/解析供核查）；先校验归属。"""
+    require_owned_child(session=session, owner_id=parent.id, child_id=child_id)
+    return list_wrong_questions_page(
+        session=session,
+        child_id=child_id,
+        include_answer=True,
+        cursor=cursor,
+        page_size=page_size,
+    )
 
 
 def owned_child_progress(*, session: Session, parent: User, child_id: UUID) -> ProgressResp:

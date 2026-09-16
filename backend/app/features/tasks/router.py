@@ -28,10 +28,11 @@ from app.features.tasks.schemas import (
     QuestionResp,
     TaskFromGenerated,
     TaskGenerateReq,
+    TaskListResp,
     TaskMetaEdit,
     TaskQuestionEdit,
     TaskResp,
-    WrongQuestionResp,
+    WrongQuestionListResp,
 )
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
@@ -89,16 +90,27 @@ async def generate_task(
     )
 
 
-@router.get("", response_model=list[TaskResp])
+@router.get("", response_model=TaskListResp)
 def list_parent_tasks(
     *,
     session: SessionDep,
     parent: CurrentParent,
     status_filter: str | None = Query(None, alias="status"),
-) -> list[TaskResp]:
-    """家长任务列表（供选项 B 草稿选择器拉取 draft 列表）。"""
-    return tasks_service.list_parent_tasks(
-        session=session, parent_id=parent.id, status=status_filter
+    cursor: str | None = None,
+    page_size: int = Query(20, ge=1, le=100),
+) -> TaskListResp:
+    """家长任务列表（ADR-0053）：摘要游标分页 + 三个 Tab 的状态计数。
+
+    ⚠️ 响应形状由 ``list[TaskResp]`` 改为 ``TaskListResp``：草稿选择器等旧消费方
+    要从 ``.items`` 取列表。完整题目改由 ``GET /tasks/{task_id}`` 提供——列表请求
+    不再为每个任务内嵌全部题目（载荷曾是 O(任务数 × 题数)）。
+    """
+    return tasks_service.list_parent_tasks_page(
+        session=session,
+        parent_id=parent.id,
+        status=status_filter,
+        cursor=cursor,
+        page_size=page_size,
     )
 
 
@@ -110,23 +122,42 @@ def today(*, session: SessionDep, child: CurrentChild) -> list[TaskResp]:
     return tasks_service.list_today_tasks(session=session, child_id=child.id)
 
 
-@router.get("/wrong-questions", response_model=list[WrongQuestionResp])
+@router.get("/wrong-questions", response_model=WrongQuestionListResp)
 def my_wrong_questions(
-    *, session: SessionDep, child: CurrentChild
-) -> list[WrongQuestionResp]:
+    *,
+    session: SessionDep,
+    child: CurrentChild,
+    cursor: str | None = None,
+    page_size: int = Query(20, ge=1, le=100),
+) -> WrongQuestionListResp:
     """娃娃自查错题本：不含答案（复习走 /review/*）。"""
-    return tasks_service.list_wrong_questions(
-        session=session, child_id=child.id, include_answer=False
+    return tasks_service.list_wrong_questions_page(
+        session=session,
+        child_id=child.id,
+        include_answer=False,
+        cursor=cursor,
+        page_size=page_size,
     )
 
 
-@router.get("/children/{child_id}/wrong-questions", response_model=list[WrongQuestionResp])
+@router.get(
+    "/children/{child_id}/wrong-questions", response_model=WrongQuestionListResp
+)
 def child_wrong_questions(
-    *, session: SessionDep, parent: CurrentParent, child_id: UUID
-) -> list[WrongQuestionResp]:
+    *,
+    session: SessionDep,
+    parent: CurrentParent,
+    child_id: UUID,
+    cursor: str | None = None,
+    page_size: int = Query(20, ge=1, le=100),
+) -> WrongQuestionListResp:
     """家长查某娃娃错题本（含答案/解析，供核查）。"""
-    return tasks_service.list_owned_child_wrong_questions(
-        session=session, parent=parent, child_id=child_id
+    return tasks_service.owned_child_wrong_questions_page(
+        session=session,
+        parent=parent,
+        child_id=child_id,
+        cursor=cursor,
+        page_size=page_size,
     )
 
 

@@ -27,15 +27,30 @@ class ReviewRepositoryImpl implements ReviewRepository {
   }
 
   @override
-  Future<List<WrongQuestionModel>> childWrongQuestions() async {
-    final data = await _network.get('/tasks/wrong-questions');
-    return decodeList(data, WrongQuestionModel.fromJson);
+  Future<CursorPage<WrongQuestionModel>> childWrongQuestions({
+    String? cursor,
+    int pageSize = 20,
+  }) async {
+    final data = await _network.get('/tasks/wrong-questions', query: {
+      'page_size': pageSize,
+      if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
+    });
+    return CursorPage.fromJson(decodeMap(data), WrongQuestionModel.fromJson);
   }
 
   @override
-  Future<List<WrongQuestionModel>> parentWrongQuestions(String childId) async {
-    final data =
-        await _network.get('/tasks/children/$childId/wrong-questions');
-    return decodeList(data, WrongQuestionModel.fromJson);
+  Future<CursorPage<WrongQuestionModel>> parentWrongQuestions(
+    String childId, {
+    String? cursor,
+    int pageSize = 20,
+  }) async {
+    final data = await _network.get(
+      '/tasks/children/$childId/wrong-questions',
+      query: {
+        'page_size': pageSize,
+        if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
+      },
+    );
+    return CursorPage.fromJson(decodeMap(data), WrongQuestionModel.fromJson);
   }
 }

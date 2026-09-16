@@ -88,7 +88,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   void _backToHomeFromReview() {
     // 刷新家长侧概览（作废/派发后列表/进度可能变动）
-    ref.read(parentTasksNotifierProvider.notifier).load();
+    // 概览与任务页共用同一份状态，这里按「全部状态」重新拉第一页即可。
+    ref
+        .read(parentTasksNotifierProvider.notifier)
+        .load(kAllTaskStatuses);
     final selected = ref.read(selectedChildProvider);
     if (selected != null) {
       ref.read(progressNotifierProvider.notifier).load(selected.id);
@@ -220,7 +223,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       return ProfileScreen(user: widget.user, onLogout: widget.onLogout);
     }
     return switch (_parentNavIndex) {
-      0 => ParentOverviewView(onNavigateToReview: _navigateToReview),
+      0 => ParentOverviewView(
+          onNavigateToReview: _navigateToReview,
+          // 空态出口：概览与任务页的「去布置任务」都落到同一个目的地。
+          onNavigateToCreate: () => _parentTap(1),
+        ),
       // 生成成功后不直接跳 PracticeScreen，改跳 ParentTaskReviewScreen
       1 => ParentTaskFormView(
           onNavigateToReview: _navigateToReview,
@@ -241,6 +248,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       7 => const ParentModelManagementScreen(),
       8 => ParentTasksView(
           onNavigateToReview: _navigateToReview,
+          onNavigateToCreate: () => _parentTap(1),
         ),
       _ => const SizedBox(),
     };

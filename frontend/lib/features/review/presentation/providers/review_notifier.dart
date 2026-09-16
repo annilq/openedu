@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/domain/models/models.dart';
-import '../../../../shared/presentation/resource.dart';
+import '../../../../shared/presentation/paging.dart';
 import '../../domain/repositories/review_repository.dart';
 import '../../providers/review_provider.dart';
 
@@ -67,22 +67,27 @@ final dueReviewNotifierProvider =
   return DueReviewNotifier(ref.watch(reviewRepositoryProvider));
 });
 
-// —— 错题本：娃娃自查 / 家长查看 ——
+// —— 错题本：娃娃自查 / 家长查看（游标分页，ADR-0053）——
+//
+// 错题本会一直长（答错即入集），一次拉全量会让家长端几百张卡全部构建出来。
+// 改成首屏一页 + 触底追加后，卡片构建与网络载荷都随视口走。
 /// 娃娃自查：错题本（不含答案）。
-final childWrongQuestionsProvider =
-    StateNotifierProvider<ResourceNotifier<List<WrongQuestionModel>>,
-        Resource<List<WrongQuestionModel>>>(
-  (ref) => ResourceNotifier(
-    () => ref.watch(reviewRepositoryProvider).childWrongQuestions(),
+final childWrongQuestionsProvider = StateNotifierProvider<
+    PagingNotifier<WrongQuestionModel>, PagingState<WrongQuestionModel>>(
+  (ref) => PagingNotifier<WrongQuestionModel>(
+    ({cursor}) => ref
+        .watch(reviewRepositoryProvider)
+        .childWrongQuestions(cursor: cursor),
   ),
 );
 
 /// 家长查看某娃娃的错题本（含答案）。
 final parentWrongQuestionsProvider = StateNotifierProvider<
-    ParamResourceNotifier<List<WrongQuestionModel>, String>,
-    Resource<List<WrongQuestionModel>>>(
-  (ref) => ParamResourceNotifier(
-    (childId) =>
-        ref.watch(reviewRepositoryProvider).parentWrongQuestions(childId),
+    ParamPagingNotifier<WrongQuestionModel, String>,
+    PagingState<WrongQuestionModel>>(
+  (ref) => ParamPagingNotifier<WrongQuestionModel, String>(
+    (childId, {cursor}) => ref
+        .watch(reviewRepositoryProvider)
+        .parentWrongQuestions(childId, cursor: cursor),
   ),
 );

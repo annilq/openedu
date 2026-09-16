@@ -86,6 +86,23 @@ def run_migrations() -> None:
                 text("ALTER TABLE task ADD COLUMN IF NOT EXISTS model VARCHAR(255)")
             )
 
+        # —— 列表游标分页的排序索引（ADR-0053）——
+        # 三个长列表都按 (owner, 时间戳倒序) 取页，缺复合索引时深翻会全表排序。
+        # CREATE INDEX IF NOT EXISTS 在 SQLite / Postgres 下都幂等，旧库启动期自动补齐。
+        for ddl in (
+            "CREATE INDEX IF NOT EXISTS ix_question_parent_created "
+            "ON question (parent_id, created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS ix_task_parent_created "
+            "ON task (parent_id, created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS ix_wrongquestion_child_firstwrong "
+            "ON wrongquestion (child_id, first_wrong_at DESC)",
+        ):
+            try:
+                conn.execute(text(ddl))
+            except OperationalError:
+                # 偏序迁移：表还没建（首次启动由 init_db 建表并带索引），跳过即可。
+                pass
+
         # —— model_config（家长自定义模型，ADR-0015）——
         conn.execute(
             text(

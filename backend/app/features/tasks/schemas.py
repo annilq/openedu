@@ -76,6 +76,48 @@ class QuestionResp(SQLModel):
     answer: str | None = None
 
 
+class TaskSummaryResp(SQLModel):
+    """任务列表项（ADR-0053）：**不内嵌题目**。
+
+    列表只需要「这是哪个任务、多少题、什么学科、派给谁」，完整题目走
+    ``GET /tasks/{task_id}``。此前列表直接复用 ``TaskResp``，导致一次列表请求把
+    每个任务的全部题目（含题干/选项/答案/解析）都拉了下来——载荷是 O(任务数 × 题数)，
+    而卡片上只显示「10 题」。
+    """
+
+    id: uuid.UUID
+    title: str
+    status: str
+    child_id: uuid.UUID | None = None
+    created_at: datetime | None = None
+    question_count: int = 0
+    # 本卷涉及的学科（按题数降序），供卡片显示学科色条/标签；不内嵌题目本身。
+    subjects: list[str] = []
+
+
+class TaskCounts(SQLModel):
+    """各状态任务数（家长任务页三个 Tab 的徽标）。
+
+    必须由服务端在分页响应里带出：徽标若靠客户端统计已加载页，就只有第一页的数，
+    分页省下的流量又被徽标吃回去。
+    """
+
+    draft: int = 0
+    ready: int = 0
+    assigned: int = 0
+    done: int = 0
+
+
+class TaskListResp(SQLModel):
+    """任务列表响应：游标分页信封（ADR-0053）。"""
+
+    items: list[TaskSummaryResp]
+    total: int
+    page_size: int
+    next_cursor: str | None = None
+    counts: TaskCounts = TaskCounts()
+
+
 class TaskFromBankCreate(SQLModel):
     """选项 A：从题库新建任务。"""
 
@@ -132,6 +174,18 @@ class WrongQuestionResp(SQLModel):
     first_wrong_at: datetime | None = None
     review_stage: int = 0
     due_at: datetime | None = None
+
+
+class WrongQuestionListResp(SQLModel):
+    """错题本响应：游标分页信封（ADR-0053）。
+
+    家长端与娃娃端共用；``include_answer`` 由服务端按角色裁剪，不进查询参数。
+    """
+
+    items: list[WrongQuestionResp]
+    total: int
+    page_size: int
+    next_cursor: str | None = None
 
 
 class TaskQuestionEdit(SQLModel):

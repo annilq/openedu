@@ -10,6 +10,7 @@ from sqlmodel import Session, select
 
 from app.core.db import engine
 from app.db.models import AnswerRecord, WrongQuestion
+from tests.utils.paging import page_items
 from tests.utils.user import auth_headers, login, register_parent
 
 
@@ -179,8 +180,9 @@ def test_correct_review_advances_stage(client):
 
     # 错题本仍有（未毕业）
     mine = client.get("/api/v1/tasks/wrong-questions", headers=auth_headers(ctoken))
-    assert len(mine.json()) == 1
-    assert mine.json()[0]["review_stage"] == 1
+    mine_items = page_items(mine)
+    assert len(mine_items) == 1
+    assert mine_items[0]["review_stage"] == 1
 
 
 def test_final_correct_review_graduates(client):
@@ -197,7 +199,7 @@ def test_final_correct_review_graduates(client):
     assert r.status_code == 200 and r.json()["correct"] is True
 
     mine = client.get("/api/v1/tasks/wrong-questions", headers=auth_headers(ctoken))
-    assert mine.json() == []  # 已毕业
+    assert page_items(mine) == []  # 已毕业
 
     due = client.get("/api/v1/review/due", headers=auth_headers(ctoken))
     assert due.json() == []
@@ -255,9 +257,10 @@ def test_graduate_then_wrong_again_recollects(client):
     q2, _ = _answer_wrong(client, ctoken, task)
     assert q2["question_id"] == q["question_id"]
     mine = client.get("/api/v1/tasks/wrong-questions", headers=auth_headers(ctoken))
-    assert len(mine.json()) == 1
-    assert mine.json()[0]["wrong_count"] == 1
-    assert mine.json()[0]["review_stage"] == 0
+    mine_items = page_items(mine)
+    assert len(mine_items) == 1
+    assert mine_items[0]["wrong_count"] == 1
+    assert mine_items[0]["review_stage"] == 0
 
 
 def test_review_answer_ownership(client):

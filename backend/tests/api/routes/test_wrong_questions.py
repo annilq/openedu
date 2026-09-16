@@ -2,6 +2,7 @@
 
 覆盖：正确作答不归集、答错归集（家长/娃娃可查）、重复错不建多条（wrong_count 递增）。
 """
+from tests.utils.paging import page_items
 from tests.utils.user import auth_headers, login, register_parent
 
 
@@ -101,14 +102,14 @@ def test_correct_answer_not_collected(client):
     assert result["correct"] is True
 
     mine = client.get("/api/v1/tasks/wrong-questions", headers=auth_headers(ctoken))
-    assert mine.status_code == 200 and mine.json() == []
+    assert mine.status_code == 200 and page_items(mine) == []
 
     # 家长视角同样为空
     by_parent = client.get(
         f"/api/v1/tasks/children/{_child['id']}/wrong-questions",
         headers=auth_headers(ptoken),
     )
-    assert by_parent.status_code == 200 and by_parent.json() == []
+    assert by_parent.status_code == 200 and page_items(by_parent) == []
 
 
 def test_wrong_answer_collected_with_full_fields(client):
@@ -120,7 +121,7 @@ def test_wrong_answer_collected_with_full_fields(client):
 
     mine = client.get("/api/v1/tasks/wrong-questions", headers=auth_headers(ctoken))
     assert mine.status_code == 200
-    items = mine.json()
+    items = page_items(mine)
     assert len(items) == 1
     item = items[0]
     assert item["question_id"] == q["question_id"]
@@ -136,9 +137,10 @@ def test_wrong_answer_collected_with_full_fields(client):
         headers=auth_headers(ptoken),
     )
     assert by_parent.status_code == 200
-    assert len(by_parent.json()) == 1
-    assert by_parent.json()[0]["question_id"] == q["question_id"]
-    assert by_parent.json()[0]["answer"] == q["answer"]  # 家长端含答案
+    parents = page_items(by_parent)
+    assert len(parents) == 1
+    assert parents[0]["question_id"] == q["question_id"]
+    assert parents[0]["answer"] == q["answer"]  # 家长端含答案
 
 
 def test_repeat_wrong_not_duplicated(client):
@@ -150,7 +152,7 @@ def test_repeat_wrong_not_duplicated(client):
 
     mine = client.get("/api/v1/tasks/wrong-questions", headers=auth_headers(ctoken))
     assert mine.status_code == 200
-    items = mine.json()
+    items = page_items(mine)
     assert len(items) == 1  # 不建多条
     assert items[0]["wrong_count"] == 3
     assert items[0]["first_wrong_at"] is not None

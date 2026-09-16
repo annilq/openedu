@@ -3,11 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../../shared/theme/app_theme.dart';
+import '../../../../../shared/widgets/app_empty_state.dart';
 import '../../../../../shared/widgets/app_error.dart';
 import '../../../../../shared/widgets/app_loading.dart';
 import '../../../../../shared/widgets/app_motion.dart';
 import '../../../../../shared/domain/models/models.dart';
 import '../../../../../shared/presentation/resource.dart';
+import '../../../../../shared/presentation/paging.dart';
 import '../../../../children/providers/children_provider.dart';
 import '../../../../children/presentation/providers/children_notifier.dart';
 import '../../providers/home_notifier.dart';
@@ -19,7 +21,15 @@ import '../mastery_board.dart';
 /// 家长概览右栏：学习进度 + 最近任务 + 知识点掌握度。
 class ParentOverviewView extends ConsumerWidget {
   final void Function(TaskModel) onNavigateToReview;
-  const ParentOverviewView({super.key, required this.onNavigateToReview});
+
+  /// 空态出口：跳到「布置任务」页。
+  final VoidCallback? onNavigateToCreate;
+
+  const ParentOverviewView({
+    super.key,
+    required this.onNavigateToReview,
+    this.onNavigateToCreate,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -36,8 +46,9 @@ class ParentOverviewView extends ConsumerWidget {
     // 规范见 docs/agents/frontend.md「Riverpod 反模式清单」。
     ref.loadWhenIdle(
       parentTasksNotifierProvider,
-      (s) => s is ResourceIdle,
-      () => ref.read(parentTasksNotifierProvider.notifier).load(),
+      (s) => s is PagingIdle,
+      () =>
+          ref.read(parentTasksNotifierProvider.notifier).load(kAllTaskStatuses),
     );
 
     return SingleChildScrollView(
@@ -145,21 +156,32 @@ class ParentOverviewView extends ConsumerWidget {
   Widget _buildMastery(BuildContext context) => const MasteryBoard();
 
   Widget _buildRecentTasks(
-      BuildContext context, WidgetRef ref, Resource<List<TaskModel>> tasksState) {
-    if (tasksState is ResourceLoading) {
+      BuildContext context, WidgetRef ref, PagingState<TaskModel> tasksState) {
+    if (tasksState.isLoading) {
       return const AppLoading.skeletonInline(skeletonLines: 2);
     }
-    if (tasksState is! ResourceLoaded) {
+    if (!tasksState.isLoaded) {
       return const SizedBox.shrink();
     }
-    final tasks = (tasksState.dataOrNull ?? const <TaskModel>[]).take(4).toList();
+    // 概览只看最近 4 条：分页后列表可能已有 100 条，这里必须截断，
+    // 不能把整页数据都塞进概览（「最近任务」就不再是「最近」了）。
+    final tasks = tasksState.items.take(4).toList();
     if (tasks.isEmpty) {
+      // 内联空态 + 卡片外壳：这一栏只有约一屏的四分之一，塞 88 大色块会抢走
+      // 「学习进度」的重量；但也不能只剩一行灰字——那样用户看不出这是「空」
+      // 还是「加载失败」。给边界（AppCard）+ 图标 + 行动，才是完整的一句话。
       return Padding(
         padding: const EdgeInsets.only(top: AppSpacing.xs),
-        child: Text('暂无任务记录',
-            style: AppTheme.textOf(context).bodySmall?.copyWith(
-                  color: AppTheme.colorsOf(context).onSurfaceVariant,
-                )),
+        child: AppCard(
+          child: AppEmptyState.inline(
+            icon: LucideIcons.listTodo,
+            title: '还没有任务记录',
+            message: '布置任务后，最近 4 条会显示在这里。',
+            actionLabel: onNavigateToCreate == null ? null : '去布置任务',
+            actionIcon: LucideIcons.plus,
+            onAction: onNavigateToCreate,
+          ),
+        ),
       );
     }
 

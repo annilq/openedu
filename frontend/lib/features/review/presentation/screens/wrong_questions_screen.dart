@@ -3,11 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/domain/models/models.dart';
-import '../../../../shared/presentation/resource.dart';
+import '../../../../shared/presentation/paging.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_error.dart';
 import '../../../../shared/widgets/app_loading.dart';
 import '../../../../shared/widgets/app_motion.dart';
+import '../../../../shared/widgets/app_paging_footer.dart';
 import '../../../../shared/widgets/app_top_bar.dart';
 import '../providers/review_notifier.dart';
 
@@ -28,12 +29,27 @@ class WrongQuestionsScreen extends ConsumerStatefulWidget {
 }
 
 class _WrongQuestionsScreenState extends ConsumerState<WrongQuestionsScreen> {
+  /// 触底自动加载下一页（ADR-0053）：错题本会一直长，一次拉全量不现实。
+  late final ScrollController _scroll = ScrollController();
+  VoidCallback? _unbindScroll;
+
   @override
   void initState() {
     super.initState();
+    _unbindScroll = bindPagingOnScroll(
+      _scroll,
+      () => ref.read(childWrongQuestionsProvider.notifier).loadMore(),
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(childWrongQuestionsProvider.notifier).load();
     });
+  }
+
+  @override
+  void dispose() {
+    _unbindScroll?.call();
+    _scroll.dispose();
+    super.dispose();
   }
 
   Future<void> _refresh() {
@@ -68,42 +84,61 @@ class _WrongQuestionsScreenState extends ConsumerState<WrongQuestionsScreen> {
                 ),
               ),
             ),
-            Expanded(
-              child: switch (state) {
-                ResourceIdle() ||
-                ResourceLoading() =>
-                  const AppLoading(message: '加载错题...'),
-                ResourceError() => AppError(
-                    message: state.message,
-                    onRetry: () =>
-                        ref.read(childWrongQuestionsProvider.notifier).load(),
-                  ),
-                ResourceLoaded() => (state.dataOrNull ?? const []).isEmpty
-                    ? _buildEmptyView()
-                    : ListView.builder(
-                        padding: const EdgeInsets.fromLTRB(AppSpacing.lg,
-                            AppSpacing.md, AppSpacing.lg, AppSpacing.xl2),
-                        itemCount: (state.dataOrNull ??
-                                const <WrongQuestionModel>[])
-                            .length,
-                        // key 稳定 → PopIn 只对「新滑入」的行重放，复用行不闪。
-                        itemBuilder: (ctx, i) => PopIn(
-                          key: ValueKey<int>(i),
-                          // 左侧学科色条由 Row(stretch) 撑满行高；行高随内容，
-                          // ListView 内高度无界，须 IntrinsicHeight 给有界高度。
-                          child: IntrinsicHeight(
-                            child: _WrongQuestionCard(
-                              item: (state.dataOrNull ??
-                                  const <WrongQuestionModel>[])[i],
-                            ),
-                          ),
-                        ),
-                      ),
-              },
-            ),
+            Expanded(child: _buildBody(state)),
           ],
         ),
       ),
+    );
+  }
+
+  void _loadMore() =>
+      ref.read(childWrongQuestionsProvider.notifier).loadMore();
+
+  Widget _buildBody(PagingState<WrongQuestionModel> state) {
+    if (state is PagingIdle || state.isLoading) {
+      return const AppLoading(message: '加载错题...');
+    }
+    final error = state.errorOrNull;
+    if (error != null) {
+      return AppError(
+        message: error,
+        onRetry: () => ref.read(childWrongQuestionsProvider.notifier).load(),
+      );
+    }
+    if (!state.isLoaded) return const AppLoading(message: '加载错题...');
+    if (state.items.isEmpty) return _buildEmptyView();
+
+    final items = state.items;
+    return CustomScrollView(
+      controller: _scroll,
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg, AppSpacing.md, AppSpacing.lg, 0),
+          sliver: SliverList.builder(
+            itemCount: items.length,
+            itemBuilder: (ctx, i) => PopIn(
+              // key 稳定 → PopIn 只对「新滑入」的行重放，复用行不闪。
+              key: ValueKey(items[i].id),
+              // 左侧学科色条由 Row(stretch) 撑满行高；行高随内容，
+              // Sliver 内高度无界，须 IntrinsicHeight 给有界高度。
+              child: IntrinsicHeight(child: _WrongQuestionCard(item: items[i])),
+            ),
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+            child: AppPagingFooter(
+              hasMore: state.hasMore,
+              isLoadingMore: state.isLoadingMore,
+              moreError: state.moreError,
+              remaining: state.remaining,
+              onLoadMore: _loadMore,
+            ),
+          ),
+        ),
+      ],
     );
   }
 

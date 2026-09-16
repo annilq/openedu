@@ -11,6 +11,7 @@ from uuid import UUID
 from fastapi import APIRouter, Query
 
 from app.core.deps import CurrentParent, SessionDep
+from app.core.pagination import clamp_page_size, encode_cursor
 from app.features.questions.repository import (
     delete_bank_questions,
     get_question_usages,
@@ -40,8 +41,14 @@ def list_bank(
     keyword: str | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    cursor: str | None = None,
 ) -> BankListResp:
-    """家长题库浏览（owner 隔离）。学科/年级/知识点/题型/关键词过滤 + 分页。"""
+    """家长题库浏览（owner 隔离）。学科/年级/知识点/题型/关键词过滤 + 游标分页。
+
+    给了 ``cursor`` 就走 keyset 游标（忽略 ``page``）；不给则退回 offset，兼容旧客户端
+    与 AI 查询工具（ADR-0053）。
+    """
+    page_size = clamp_page_size(page_size)
     items, total, usage = list_bank_questions(
         session=session,
         parent_id=parent.id,
@@ -52,6 +59,14 @@ def list_bank(
         keyword=keyword,
         page=page,
         page_size=page_size,
+        cursor=cursor,
+    )
+    # 本页取满才可能有下一页：取不满说明已经是最后一批。
+    # 注意不能拿 total 判断——它是取页时的快照，期间插入新题后必然失真。
+    next_cursor = (
+        encode_cursor(created_at=items[-1].created_at, id_=items[-1].id)
+        if items and len(items) == page_size
+        else None
     )
     return BankListResp(
         items=[
@@ -74,6 +89,7 @@ def list_bank(
         total=total,
         page=page,
         page_size=page_size,
+        next_cursor=next_cursor,
     )
 
 

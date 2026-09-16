@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import DateTime, UniqueConstraint
+from sqlalchemy import DateTime, Index, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 from app.db.models.base import get_datetime_utc, get_review_due_utc
@@ -37,7 +37,12 @@ class WrongQuestion(SQLModel, table=True):
     - due_at：下次复习到期时间
     """
 
-    __table_args__ = (UniqueConstraint("child_id", "question_id"),)
+    # 错题本按 (child_id, first_wrong_at 倒序) 游标取页（ADR-0053）。
+    # 唯一约束保证「同一题只留一条，重复错只累加」。
+    __table_args__ = (
+        UniqueConstraint("child_id", "question_id"),
+        Index("ix_wrongquestion_child_firstwrong", "child_id", "first_wrong_at"),
+    )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     child_id: uuid.UUID = Field(foreign_key="user.id", index=True)

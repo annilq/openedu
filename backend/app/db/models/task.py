@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime
+from sqlalchemy import JSON, DateTime, Index
 from sqlmodel import Field, SQLModel
 
 from app.db.models.base import get_datetime_utc
@@ -15,6 +15,9 @@ class TaskBase(SQLModel):
 
 
 class Task(TaskBase, table=True):
+    # 列表游标分页按 (parent_id, created_at 倒序) 取页（ADR-0053）。
+    __table_args__ = (Index("ix_task_parent_created", "parent_id", "created_at"),)
+
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     parent_id: uuid.UUID = Field(foreign_key="user.id")
     child_id: uuid.UUID | None = Field(default=None, foreign_key="user.id")  # 可空，assigned 时绑

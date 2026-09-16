@@ -24,10 +24,18 @@ class BankQuestionItem(SQLModel):
 
 
 class BankListResp(SQLModel):
+    """题库列表响应（ADR-0053）：游标分页信封。
+
+    ``total`` 只用于「还有 N 条」提示，不参与翻页判定——它是取页那一刻的快照，
+    期间插入新题后必然失真。翻页只看 ``next_cursor``。
+    """
+
     items: list[BankQuestionItem]
     total: int
     page: int
     page_size: int
+    # 下一页游标；None = 已到底。客户端原样回传，不得解析。
+    next_cursor: str | None = None
 
 
 class TaskFromBankCreate(SQLModel):
