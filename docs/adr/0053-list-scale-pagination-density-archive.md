@@ -155,3 +155,24 @@
   `PageResp` + 游标；题库前端接上翻页；家长错题本 `SingleChildScrollView` → `ListView.builder`。
 - **P1（密度）**：错题卡 `maxLines: 2` + 解析折叠；行间距 / 外边距统一；2 列网格。
 - **P2（归档）**：题库 `archived_at` + 三态切换；任务按月分段；错题 `graduated_at` 替换物理删除。
+
+## 实施状态
+
+| 阶段 | 状态 | 说明 |
+|---|---|---|
+| P0 分页 | ✅ 已落地 | `core/pagination.py` 游标原语；`GET /questions` `/tasks` 两个错题端点统一信封；任务改 `TaskSummaryResp` + 服务端 `counts`；前端收口 `CursorPage<T>` / `PagingState<T>`。 |
+| P1 密度 | ✅ 已落地 | 题干 2 行 / 答案 1 行 / 解析默认折叠（`AppTextAction` 展开）；可用宽 ≥ 1048 时两列（`AppCardSliver`）；行距与页边距收口成 `AppLayout.listRowGap` / `listColumnGap` / `listGutter`。 |
+| P2 归档 | ✅ 已落地 | 题库 `archived_at`（显式、可逆）；任务按月分段（不加字段）；错题毕业改打 `graduated_at` 软删除 + 家长端「已掌握」分区与重新加入复习。 |
+
+与本文的偏差（落地时发现的，按实际情况登记）：
+
+- **`PageResp` 没有做成统一类型名**，而是 `CursorPage<T>`（Dart 泛型）+ 各端点的具体
+  响应类继承/特化它（`TaskPage` 带 `counts`、`WrongQuestionPage` 带 `graduated_total`）。
+  原因：分页之外还要带「这一页额外的东西」，统一成扁平信封会逼着每个端点都去读
+  `extra` 字典。
+- **2 列不用 `SliverGrid`**：行高由 `childAspectRatio` 钉死，而卡片高度随题干行数与
+  解析是否展开变化，钉死会裁内容。改成分行 `Row` + `Expanded`，行高取该行最高卡。
+- **任务按月分段的分段边界由前端按已加载的页算**，未新增接口：分页之后「更早」
+  本来就随追加变长，服务端分段要额外传参且收益相同。
+- 迁移一律走启动期偏幂等 DDL（`CREATE INDEX IF NOT EXISTS` / SQLite `PRAGMA table_info`
+  查列后 `ADD COLUMN` / Postgres `ADD COLUMN IF NOT EXISTS`），不引入 alembic。

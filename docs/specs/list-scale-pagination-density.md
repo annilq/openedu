@@ -181,3 +181,17 @@
 - **2 列网格与大屏 detail 的相互作用**：大屏 detail 打开时主栏约 446px，会掉回 1 列——这是符合预期的，不是 bug；两列只在内容宽度的确够时才出现。
 - **顺序建议**：先做 P0 取数（数据可见性 + 载荷），再做 P1 密度。P0 里「任务列表拆摘要」会动到 `TaskResp` 的形状，复核页 / 派发 / 练习都依赖它，先跑通 `flutter analyze` 与后端 `pytest` 再动 P1。
 - **本 spec 落地后**，ADR-0053 的 P2（归档）应另开一份 spec，其中错题那一项（毕业改为打时间戳）会与 `mastery` 的 `active_wrong` / `max_review_stage` 统计口径耦合，需要在那份 spec 里单独处理。
+
+## 执行结果（2026-09-16）
+
+P0 / P1 已全部落地并合入 `main`，三个 commit：
+
+- `f39e29b` P0 分页：`core/pagination.py` 游标原语 + 三个端点信封 + 前端 `CursorPage<T>` / `PagingState<T>`。
+- `11e5665` P1 密度：内容截断 / 解析折叠 / 宽度 ≥1048 时两列（`AppCardSliver`）。
+- P2（归档）未在本 spec 内，后续单独落地并完成：`question.archived_at`、任务按月分段、
+  错题 `graduated_at` 软删除。
+
+落地时与本 spec 的偏差，登记在 ADR-0053「实施状态」一节（统一信封改成了泛型
+`CursorPage<T>` 而非扁平 `PageResp`；两列不用 `SliverGrid`）。守卫测试落在
+`frontend/test/paging_notifier_test.dart`、`list_density_test.dart`、`list_archive_test.dart`
+与 `backend/tests/features/test_pagination.py`、`test_archive.py`。
