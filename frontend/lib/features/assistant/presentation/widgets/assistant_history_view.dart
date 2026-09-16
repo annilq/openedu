@@ -340,7 +340,7 @@ class _ReadOnlyBadge extends StatelessWidget {
 /// 只够放一个图标动作（ADR-0045/0046），而这里是一整条可用宽度，能并排。
 ///
 /// **状态切换**：
-/// - 非勾选态：右侧一个「管理」按钮，调用 [onEnterSelecting]；
+/// - 非勾选态：右侧一个「多选」按钮，调用 [onEnterSelecting]；
 /// - 勾选态：左「已选 N 项」、右「全选 / 取消全选」按钮，调用 [onToggleSelectAll]，
 ///   行为由调用方按「已选 == 全部」决定全清还是全选。
 ///
@@ -391,7 +391,7 @@ class _ManageStrip extends StatelessWidget {
             TextButton(
               onPressed: onEnterSelecting,
               child: Text(
-                '管理',
+                '多选',
                 style: text.labelMedium?.copyWith(color: scheme.onSurface),
               ),
             ),

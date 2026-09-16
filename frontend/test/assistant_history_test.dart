@@ -275,7 +275,7 @@ void main() {
     // 非多选态：行内不应有勾选框。
     expect(find.byIcon(LucideIcons.circle), findsNothing);
 
-    await tester.tap(find.text('管理'));
+    await tester.tap(find.text('多选'));
     await tester.pumpAndSettle();
 
     // 进入多选态：每段一行一个未选中勾选框（默认列表 2 段）。
@@ -303,7 +303,7 @@ void main() {
     await pumpPage(tester, repo);
     await openHistory(tester);
 
-    await tester.tap(find.text('管理'));
+    await tester.tap(find.text('多选'));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('全选'));
@@ -324,7 +324,7 @@ void main() {
     await pumpPage(tester, repo);
     await openHistory(tester);
 
-    await tester.tap(find.text('管理'));
+    await tester.tap(find.text('多选'));
     await tester.pumpAndSettle();
 
     // 选中「我的对话」那段。
@@ -353,7 +353,7 @@ void main() {
     // 退出多选：勾选框消失、恢复「管理」入口、顶栏不再是删除按钮。
     expect(find.byIcon(LucideIcons.circle), findsNothing);
     expect(find.byIcon(LucideIcons.trash2), findsNothing);
-    expect(find.text('管理'), findsOneWidget);
+    expect(find.text('多选'), findsOneWidget);
   });
 
   testWidgets('未选中任何会话时，删除按钮禁用', (tester) async {
@@ -361,7 +361,7 @@ void main() {
     await pumpPage(tester, repo);
     await openHistory(tester);
 
-    await tester.tap(find.text('管理'));
+    await tester.tap(find.text('多选'));
     await tester.pumpAndSettle();
 
     // 没选任何行：顶栏删除按钮存在但不可用（onPressed == null）。
