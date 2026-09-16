@@ -2,7 +2,7 @@
 
 守护三条不变量，全部**静态或确定性**，不接真实模型：
 
-1. **工具集形状**：7 个只读工具、名称唯一、schema 合法、每个参数与工具本身都有
+1. **工具集形状**：8 个只读工具、名称唯一、schema 合法、每个参数与工具本身都有
    描述（模型靠它选型）、handler 是 ``async (args, *, ctx, session)``。
 2. **娃娃端无答案**（ADR-008 硬门槛）：遍历全部工具跑一遍娃娃视角，断言输出中
    **不出现** ``ANSWER_FIELDS``；并有**对照组**证明家长视角确实看得到答案——
@@ -48,9 +48,16 @@ EXPECTED_TOOL_NAMES = [
     "list_today_tasks",
     "list_wrong_questions",
     "list_due_reviews",
+    "list_bank_questions",
     "get_progress",
     "get_mastery",
 ]
+
+# 仅家长可用、且**无 child 维度**的工具：娃娃端调用在 handler 入口即抛
+# ``ToolArgumentError``（题库是家长私有出题池，见 list_bank_questions.py 顶部说明）。
+# 因此「娃娃端不可见答案」这类以 child ctx 跑全工具集的契约对本类工具天然不适用——
+# 它们压根不接 child 调用，下面的循环对其豁免（否则 _run 会抛未捕获的异常）。
+PARENT_ONLY_TOOLS = frozenset({"list_bank_questions"})
 
 KID_PASSWORD = "kid123456"
 
@@ -216,7 +223,7 @@ def _counts() -> dict[str, int]:
 # ───────────────────────── 1. 工具集形状 ─────────────────────────
 
 
-def test_tool_set_is_the_seven_readonly_tools():
+def test_tool_set_is_the_eight_readonly_tools():
     assert [s.name for s in QUERY_TOOLS] == EXPECTED_TOOL_NAMES
     assert len({s.name for s in QUERY_TOOLS}) == len(QUERY_TOOLS)
 
@@ -251,6 +258,9 @@ def test_all_tools_return_clean_payload_for_child(client):
     ctx = _ctx("child", child_id=setup["a"]["id"], parent_id=setup["parent_id"])
 
     for spec in QUERY_TOOLS:
+        if spec.name in PARENT_ONLY_TOOLS:
+            # 仅家长工具：child 调用在入口即被拒，不存在「娃娃视角泄漏」的入口。
+            continue
         leaked = _keys(_run(spec, ctx)) & ANSWER_FIELDS
         assert not leaked, f"{spec.name} 在娃娃视角泄漏字段：{sorted(leaked)}"
 
@@ -306,6 +316,8 @@ def test_child_scoped_queries_only_see_own_data(client):
     ctx = _ctx("child", child_id=setup["a"]["id"], parent_id=setup["parent_id"])
 
     for spec in QUERY_TOOLS:
+        if spec.name in PARENT_ONLY_TOOLS:
+            continue
         blob = json.dumps(_run(spec, ctx), ensure_ascii=False)
         assert "小红" not in blob, f"{spec.name} 泄漏了兄弟娃娃"
         assert "B加法运算" not in blob, f"{spec.name} 泄漏了兄弟任务"
@@ -322,6 +334,10 @@ def test_parent_cannot_reach_other_parent_child(client):
     for spec in QUERY_TOOLS:
         if spec.name == "list_children":
             continue  # 无入参，不需要越权路径
+        if spec.name in PARENT_ONLY_TOOLS:
+            # 无 child_id 维度：parent 作用域只查自己名下的题库，传别家娃娃 id 是无意义的入参，
+            # handler 忽略（本就只按 parent_id 取数），无需抛错——越权门禁在此不构成命题。
+            continue
         with pytest.raises(ToolArgumentError):
             _run(spec, ctx, {"child_id": outsider["id"]})
 
@@ -415,6 +431,8 @@ def test_tools_do_not_write_to_the_database(client):
         _ctx("child", child_id=setup["a"]["id"], parent_id=setup["parent_id"]),
     ):
         for spec in QUERY_TOOLS:
+            if role_ctx.role == "child" and spec.name in PARENT_ONLY_TOOLS:
+                continue  # 仅家长工具：child 调用入口即拒，不计入「只读」轮次
             _run(spec, role_ctx)
 
     assert _counts() == before

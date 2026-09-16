@@ -36,6 +36,7 @@ _KIND: dict[str, str] = {
     "list_today_tasks": "task_list",
     "list_wrong_questions": "wrong_question_list",
     "list_due_reviews": "due_review_list",
+    "list_bank_questions": "question_bank_list",
     "get_progress": "progress",
     "get_mastery": "mastery_list",
 }
@@ -47,6 +48,7 @@ _TITLE: dict[str, str] = {
     "list_today_tasks": "今日任务",
     "list_wrong_questions": "错题",
     "list_due_reviews": "待复习",
+    "list_bank_questions": "题库",
     "get_progress": "学习进度",
     "get_mastery": "掌握度",
 }
@@ -57,6 +59,7 @@ _EMPTY_TEXT: dict[str, str] = {
     "list_today_tasks": "今天没有任务。",
     "list_wrong_questions": "没有错题记录。",
     "list_due_reviews": "今天没有到期复习。",
+    "list_bank_questions": "题库还没有题目。",
 }
 
 # 单张卡最多带多少条明细；超出部分只报 ``total``，由前端渲染「共 N 条」
@@ -142,6 +145,18 @@ def _mastery_item(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _bank_question_item(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": str(item.get("id") or ""),
+        "subject": str(item.get("subject") or ""),
+        "stem": _clip(item.get("stem")),
+        "knowledge_point": str(item.get("knowledge_point") or ""),
+        "qtype": str(item.get("qtype") or ""),
+        "difficulty": _as_int(item.get("difficulty")),
+        "usage_count": _as_int(item.get("usage_count")),
+    }
+
+
 # 明细投影表：工具 → 单条明细的结构化形状。缺登记即降级为「标题 + 文本」。
 _ITEM_SHAPERS = {
     "list_parent_tasks": _task_item,
@@ -149,6 +164,7 @@ _ITEM_SHAPERS = {
     "list_wrong_questions": _wrong_question_item,
     "list_due_reviews": _due_review_item,
     "get_mastery": _mastery_item,
+    "list_bank_questions": _bank_question_item,
 }
 
 

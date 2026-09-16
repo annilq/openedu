@@ -3,7 +3,7 @@
 守护四件事，全部**确定性**、不接真实模型（CI 红线）：
 
 1. **清单与装配**：``query`` 被发现、``tasks`` 已消失、``priority=12``（压住 question 的
-   泛触发词）、SOP 真被读进 prompt；SubAgent 实例携带全部 7 个工具。
+   泛触发词）、SOP 真被读进 prompt；SubAgent 实例携带全部 8 个工具（含题库查询）。
 2. **路由边界**：带查询语境的问句（任务/作业/错题/复习）归 ``query``，
    「出题」意图仍归 ``question``；娃娃端可见 query 但「出题」仍被强制回 tutor。
 3. **展示投影**（决策 11 / ADR-0042）：卡片是**类型化**的——``kind`` 作判别键、
@@ -202,6 +202,49 @@ def test_render_cards_unassigned_items_keep_structure():
     assert cards[0].payload["items"] == [
         {"title": "草稿卷", "status": "draft", "question_count": 2}
     ]
+
+
+def test_render_cards_bank_questions_emits_question_bank_list():
+    """新增种类：题库题目 → ``question_bank_list`` 卡片，明细是结构化字段。"""
+    cards = render_cards(
+        "list_bank_questions",
+        _envelope(
+            [
+                {
+                    "id": "q1",
+                    "subject": "数学",
+                    "stem": "解方程 x^2 - 1 = 0",
+                    "knowledge_point": "一元二次方程",
+                    "qtype": "calc",
+                    "difficulty": 3,
+                    "usage_count": 2,
+                }
+            ]
+        ),
+    )
+    assert len(cards) == 1
+    card = cards[0]
+    assert card.kind == "question_bank_list"
+    assert card.payload["title"] == "题库"
+    assert card.payload["total"] == 1
+    assert card.payload["items"] == [
+        {
+            "id": "q1",
+            "subject": "数学",
+            "stem": "解方程 x^2 - 1 = 0",
+            "knowledge_point": "一元二次方程",
+            "qtype": "calc",
+            "difficulty": 3,
+            "usage_count": 2,
+        }
+    ]
+
+
+def test_render_cards_bank_questions_empty_uses_bank_empty_text():
+    """题库为空时落到专属空文案（区分「查过但没题」与「没查」）。"""
+    cards = render_cards("list_bank_questions", _envelope([]))
+    assert cards[0].kind == "question_bank_list"
+    assert cards[0].payload["text"] == "题库还没有题目。"
 
 
 def test_render_tool_result_emits_typed_data_frames():

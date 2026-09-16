@@ -9,6 +9,7 @@ from agent_core.tools import ToolSpec
 
 from .get_mastery import SPEC as GET_MASTERY
 from .get_progress import SPEC as GET_PROGRESS
+from .list_bank_questions import SPEC as LIST_BANK_QUESTIONS
 from .list_children import SPEC as LIST_CHILDREN
 from .list_due_reviews import SPEC as LIST_DUE_REVIEWS
 from .list_parent_tasks import SPEC as LIST_PARENT_TASKS
@@ -21,6 +22,7 @@ QUERY_TOOLS: list[ToolSpec] = [
     LIST_TODAY_TASKS,
     LIST_WRONG_QUESTIONS,
     LIST_DUE_REVIEWS,
+    LIST_BANK_QUESTIONS,
     GET_PROGRESS,
     GET_MASTERY,
 ]

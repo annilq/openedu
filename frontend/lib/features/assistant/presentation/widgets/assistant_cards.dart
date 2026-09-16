@@ -538,6 +538,19 @@ _Row _rowOf(String kind, Map<String, dynamic> item) {
           if (wrong > 0) ('错题 $wrong', _Tone.warning),
         ],
       );
+    case AssistantCardKind.questionBankList:
+      final kp = _s(item['knowledge_point']);
+      final usage = _i(item['usage_count']);
+      final diff = _i(item['difficulty']);
+      return (
+        primary: _s(item['stem']),
+        tags: [
+          if (subject.isNotEmpty) (subject, _Tone.subject),
+          if (kp.isNotEmpty) (kp, _Tone.info),
+          if (diff > 0) ('难度 $diff', _Tone.normal),
+          if (usage > 0) ('复用 $usage 次', _Tone.success),
+        ],
+      );
     default:
       final primary = _firstOf(item, const ['stem', 'title', 'name', 'knowledge_point']);
       final rest = item.entries
@@ -610,6 +623,7 @@ IconData _iconOf(String kind) => switch (kind) {
       AssistantCardKind.masteryList => LucideIcons.target,
       AssistantCardKind.childList => LucideIcons.user,
       AssistantCardKind.progress => LucideIcons.barChart3,
+      AssistantCardKind.questionBankList => LucideIcons.library,
       _ => LucideIcons.info,
     };
 

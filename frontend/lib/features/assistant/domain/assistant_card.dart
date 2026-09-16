@@ -134,6 +134,9 @@ class AssistantCardKind {
   /// 学习进度指标（`get_progress`）。
   static const progress = 'progress';
 
+  /// 题库题目列表（`list_bank_questions`，仅家长可见）。
+  static const questionBankList = 'question_bank_list';
+
   /// 无结构可言的提示（查询失败等）。
   static const notice = 'notice';
 }
