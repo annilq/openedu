@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/theme/app_theme.dart' hide AppBadge;
+import '../../../../shared/widgets/app_badge.dart';
 import '../../../../shared/widgets/app_select_strip.dart';
 import '../../domain/conversation.dart';
 import '../provider/conversation_history_provider.dart';
@@ -274,7 +275,7 @@ class _ConversationRow extends StatelessWidget {
                     ),
                     if (readOnly) ...[
                       const SizedBox(width: AppSpacing.xs),
-                      const _ReadOnlyBadge(),
+                      const AppBadge(label: '只读'),
                     ],
                   ],
                 ),
@@ -307,31 +308,6 @@ class _ConversationRow extends StatelessWidget {
     final time = _formatTime(c.updatedAt);
     if (time.isNotEmpty) parts.add(time);
     return parts.join(' · ');
-  }
-}
-
-/// 孩子的条目只能只读：把这件事写在行上，而不是等用户点进去才发现输入框没了。
-class _ReadOnlyBadge extends StatelessWidget {
-  const _ReadOnlyBadge();
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = AppTheme.colorsOf(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.xs, vertical: 1),
-      decoration: BoxDecoration(
-        color: scheme.surfaceSunken,
-        borderRadius: BorderRadius.circular(AppRadius.chip),
-        // 密集小色块档（chip / 徽标 / 题号），与结构边的发丝档分开（ADR-0044）。
-        border: Border.all(
-            color: scheme.outline, width: AppElevation.borderWidthSm),
-      ),
-      child: Text('只读',
-          style: AppTheme.textOf(context)
-              .labelSmall
-              ?.copyWith(color: scheme.onSurfaceVariant)),
-    );
   }
 }
 
