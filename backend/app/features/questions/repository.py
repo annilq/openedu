@@ -1,6 +1,7 @@
 """Repository layer for the questions (bank) feature."""
 
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from sqlmodel import Session, func, select
 
@@ -18,12 +19,16 @@ def list_bank_questions(
     knowledge_point: str | None = None,
     qtype: str | None = None,
     keyword: str | None = None,
+    since_days: int | None = None,
     page: int = 1,
     page_size: int = 20,
 ) -> tuple[list[Question], int, dict[uuid.UUID, int]]:
     """题库浏览（家长作用域）：过滤分页 + 每题被多少 Task 引用的复用度。
 
     返回 (items, total, usage)，usage 为 question_id -> 引用次数 映射。
+
+    ``since_days``（ADR-0050）：只返回 ``created_at`` 在 ``[now_utc - N 天, now]`` 内的题，
+    即「最近添加的题」。0 / None ＝不限时间。
     """
     stmt = select(Question).where(Question.parent_id == parent_id)
     if subject:
@@ -39,6 +44,9 @@ def list_bank_questions(
         stmt = stmt.where(
             (Question.stem.ilike(like)) | (Question.knowledge_point.ilike(like))
         )
+    if since_days:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=since_days)
+        stmt = stmt.where(Question.created_at >= cutoff)
     total = len(session.exec(stmt).all())
     items = session.exec(
         stmt.order_by(Question.created_at.desc())

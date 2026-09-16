@@ -46,6 +46,9 @@ async def handler(args: dict[str, Any], *, ctx: SubAgentContext, session: Any = 
     knowledge_point = optional_str(args.get("knowledge_point"))
     qtype = optional_str(args.get("qtype"))
     keyword = optional_str(args.get("keyword"))
+    since_days = optional_int(args.get("since_days"), name="since_days")
+    if since_days is not None and since_days < 0:
+        raise ToolArgumentError("since_days 不能为负数")
     limit = optional_int(args.get("limit"), name="limit")
     if limit is not None:
         limit = min(limit, _MAX_LIMIT)
@@ -58,6 +61,7 @@ async def handler(args: dict[str, Any], *, ctx: SubAgentContext, session: Any = 
         knowledge_point=knowledge_point,
         qtype=qtype,
         keyword=keyword,
+        since_days=since_days,
         limit=limit,
     )
     # 题库是家长私有池、非按娃娃分组的资源：用合成块承载，复用统一信封形状。
@@ -80,7 +84,10 @@ SPEC = ToolSpec(
         "properties": {
             "subject": {
                 "type": "string",
-                "description": "学科过滤，如「数学」「语文」；不传或传空字符串＝全部学科。",
+                "description": (
+                    "学科过滤；取值须与题库里存储的一致（如 数学 / 语文 / 英语），"
+                    "不要加「题」等后缀；不传或传空字符串＝全部学科。"
+                ),
             },
             "grade": {
                 "type": "integer",
@@ -88,15 +95,27 @@ SPEC = ToolSpec(
             },
             "knowledge_point": {
                 "type": "string",
-                "description": "知识点过滤，如「一元二次方程」「分数加减」；空＝不限。",
+                "description": (
+                    "知识点过滤；必须与题库中该知识点的**原文完全一致**（如「一元二次方程」），"
+                    "不要改写、缩写或加修饰语；空＝不限。"
+                ),
             },
             "qtype": {
                 "type": "string",
-                "description": "题型过滤（题库里的 qtype 取值，如 calc / choice）；空＝不限。",
+                "description": (
+                    "题型过滤；填题库里的 qtype 原值（如 calc / choice），不要翻译为中文；空＝不限。"
+                ),
             },
             "keyword": {
                 "type": "string",
                 "description": "关键词模糊匹配题干或知识点；空＝不匹配。",
+            },
+            "since_days": {
+                "type": "integer",
+                "description": (
+                    "相对天数过滤：只返回最近 N 天内创建的题目（按 created_at 推算，含今天）；"
+                    "如「近三天」传 3、「本月」传 30。0 或空＝不限时间。"
+                ),
             },
             "limit": {
                 "type": "integer",

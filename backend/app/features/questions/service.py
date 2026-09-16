@@ -27,6 +27,7 @@ def list_bank_questions(
     knowledge_point: str | None = None,
     qtype: str | None = None,
     keyword: str | None = None,
+    since_days: int | None = None,
     limit: int | None = None,
 ) -> list[dict[str, Any]]:
     """家长题库浏览（owner 隔离），投影为助手卡片友好的结构化字典。"""
@@ -39,6 +40,7 @@ def list_bank_questions(
         knowledge_point=knowledge_point,
         qtype=qtype,
         keyword=keyword,
+        since_days=since_days,
         page=1,
         page_size=page_size,
     )
