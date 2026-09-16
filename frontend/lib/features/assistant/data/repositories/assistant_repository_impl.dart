@@ -52,4 +52,20 @@ class AssistantRepositoryImpl implements AssistantRepository {
     final data = await _network.get('/assistant/conversations/$conversationId');
     return AssistantConversationDetail.fromJson(decodeMap(data));
   }
+
+  @override
+  Future<int> deleteConversations(List<String> ids) async {
+    final data = await _network.delete(
+      '/assistant/conversations',
+      body: {'ids': ids},
+    );
+    return _asInt(data);
+  }
+}
+
+/// 后端返回的是删除条数（int）；`delete` 可能把响应体解成其他类型，安全转 int。
+int _asInt(Object? v) {
+  if (v is int) return v;
+  if (v is num) return v.toInt();
+  return int.tryParse('$v') ?? 0;
 }

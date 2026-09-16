@@ -25,10 +25,30 @@ class AssistantHistoryView extends ConsumerWidget {
   /// 正在打开的那一段的 id（行内显示加载态；同一时刻只会有一个）。
   final String? openingId;
 
+  /// 是否处于「多选管理」态：是则行可勾选、不可点开。
+  final bool selecting;
+
+  /// 已勾选的会话 id 集合（多选删除的来源）。
+  final Set<String> selectedIds;
+
+  /// 勾选态下点行 = 切换选中；非勾选态点行 = 打开。
+  final ValueChanged<AssistantConversation> onToggleSelection;
+
+  /// 进入多选态（列表顶部「管理」入口）。
+  final VoidCallback onEnterSelecting;
+
+  /// 勾选态下「全选 / 取消全选」：由调用方根据已选数量决定行为。
+  final VoidCallback onToggleSelectAll;
+
   const AssistantHistoryView({
     super.key,
     required this.onOpen,
     this.openingId,
+    this.selecting = false,
+    this.selectedIds = const <String>{},
+    required this.onToggleSelection,
+    required this.onEnterSelecting,
+    required this.onToggleSelectAll,
   });
 
   @override
@@ -64,21 +84,40 @@ class AssistantHistoryView extends ConsumerWidget {
               all: all,
               onOpen: onOpen,
               openingId: openingId,
+              selecting: selecting,
+              selectedIds: selectedIds,
+              onToggleSelection: onToggleSelection,
+              onEnterSelecting: onEnterSelecting,
+              onToggleSelectAll: onToggleSelectAll,
             ),
     );
   }
 }
 
 /// 两段式分组的容器：先「我的对话」，再按娃分段的「孩子的对话」。
+///
+/// 顶部还放一条「管理 / 已选 N 项 / 全选」操作条（[ _ManageStrip]）——多选入口与
+/// 全选放在这里而非顶栏，是因为 [AppTopBar] 的 trailing 槽位只有 40px、只够放一个
+/// 图标动作（ADR-0045/0046 的顶栏几何），而这里是一整条可用宽度，能并排放管理 / 全选。
 class _ConversationGroups extends StatelessWidget {
   final List<AssistantConversation> all;
   final ValueChanged<AssistantConversation> onOpen;
   final String? openingId;
+  final bool selecting;
+  final Set<String> selectedIds;
+  final ValueChanged<AssistantConversation> onToggleSelection;
+  final VoidCallback onEnterSelecting;
+  final VoidCallback onToggleSelectAll;
 
   const _ConversationGroups({
     required this.all,
     required this.onOpen,
     this.openingId,
+    this.selecting = false,
+    this.selectedIds = const <String>{},
+    required this.onToggleSelection,
+    required this.onEnterSelecting,
+    required this.onToggleSelectAll,
   });
 
   @override
@@ -104,18 +143,31 @@ class _ConversationGroups extends StatelessWidget {
       kidItems[childId]!.add(conv);
     }
 
-    return ListView(
-      padding: const EdgeInsets.all(AppSpacing.md),
+    return Column(
       children: [
-        if (mine.isNotEmpty)
-          ..._section(context, '我的对话', mine, readOnly: false),
-        for (final childId in kidOrder)
-          ..._section(
-            context,
-            '${kidNames[childId]}的对话',
-            kidItems[childId]!,
-            readOnly: true,
+        _ManageStrip(
+          selecting: selecting,
+          selectedCount: selectedIds.length,
+          totalCount: all.length,
+          onEnterSelecting: onEnterSelecting,
+          onToggleSelectAll: onToggleSelectAll,
+        ),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            children: [
+              if (mine.isNotEmpty)
+                ..._section(context, '我的对话', mine, readOnly: false),
+              for (final childId in kidOrder)
+                ..._section(
+                  context,
+                  '${kidNames[childId]}的对话',
+                  kidItems[childId]!,
+                  readOnly: true,
+                ),
+            ],
           ),
+        ),
       ],
     );
   }
@@ -141,7 +193,11 @@ class _ConversationGroups extends StatelessWidget {
         conversation: conv,
         readOnly: readOnly,
         opening: openingId == conv.id,
-        onTap: () => onOpen(conv),
+        selecting: selecting,
+        selected: selectedIds.contains(conv.id),
+        onTap: selecting
+            ? () => onToggleSelection(conv)
+            : () => onOpen(conv),
       ),
   ];
 }
@@ -151,16 +207,23 @@ class _ConversationGroups extends StatelessWidget {
 /// 用 [AppCard.listRow] 而非标准卡：密集列表逐行套 2px 边 + 硬阴影会让整页过载
 /// （ADR-0044「列表降噪」）。行整体可点 → 走 [AppCard] 的 onTap（内部是
 /// `AppFocusableAction`，所以 Tab / Enter 也能打开，ADR-0045）。
+///
+/// 多选态下左侧出现勾选标记，整行底色切到选中色（[AppColors.surfaceActive]），
+/// 点行 = 切换选中（不打开）。
 class _ConversationRow extends StatelessWidget {
   final AssistantConversation conversation;
   final bool readOnly;
   final bool opening;
+  final bool selecting;
+  final bool selected;
   final VoidCallback onTap;
 
   const _ConversationRow({
     required this.conversation,
     required this.readOnly,
     required this.opening,
+    this.selecting = false,
+    this.selected = false,
     required this.onTap,
   });
 
@@ -168,12 +231,23 @@ class _ConversationRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = AppTheme.colorsOf(context);
     final text = AppTheme.textOf(context);
+    final canTap = !opening;
     return AppCard.listRow(
       padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-      onTap: opening ? null : onTap,
+      // 选中底色：多选态下选中行切到 surfaceActive（ADR-0046 选中语言）。
+      color: selecting && selected ? scheme.surfaceActive : null,
+      onTap: canTap ? onTap : null,
       child: Row(
         children: [
+          if (selecting) ...[
+            Icon(
+              selected ? LucideIcons.checkCircle2 : LucideIcons.circle,
+              size: 20,
+              color: selected ? scheme.primary : scheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: AppSpacing.sm),
+          ],
           Expanded(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -216,7 +290,7 @@ class _ConversationRow extends StatelessWidget {
                 color: scheme.onSurfaceVariant,
               ),
             )
-          else
+          else if (!selecting)
             Icon(LucideIcons.chevronRight,
                 size: 18, color: scheme.onSurfaceVariant),
         ],
@@ -256,6 +330,74 @@ class _ReadOnlyBadge extends StatelessWidget {
           style: AppTheme.textOf(context)
               .labelSmall
               ?.copyWith(color: scheme.onSurfaceVariant)),
+    );
+  }
+}
+
+/// 列表顶部「管理 / 已选 N 项 / 全选」操作条。
+///
+/// 多选入口与全选放在这里而非顶栏，因为 [AppTopBar] 的 trailing 槽位只有 40px、
+/// 只够放一个图标动作（ADR-0045/0046），而这里是一整条可用宽度，能并排。
+///
+/// **状态切换**：
+/// - 非勾选态：右侧一个「管理」按钮，调用 [onEnterSelecting]；
+/// - 勾选态：左「已选 N 项」、右「全选 / 取消全选」按钮，调用 [onToggleSelectAll]，
+///   行为由调用方按「已选 == 全部」决定全清还是全选。
+///
+/// 文案与几何遵循 ADR-0044/0046：文字走 `labelMedium`、主操作取 `primary`、
+/// 计数取 `onSurface`；行内选中态已用 `surfaceActive` 底色 + 勾选标记，这里不再
+/// 叠描边 / 图标，避免与列表行的选中语言撞风格。
+class _ManageStrip extends StatelessWidget {
+  final bool selecting;
+  final int selectedCount;
+  final int totalCount;
+  final VoidCallback onEnterSelecting;
+  final VoidCallback onToggleSelectAll;
+
+  const _ManageStrip({
+    required this.selecting,
+    required this.selectedCount,
+    required this.totalCount,
+    required this.onEnterSelecting,
+    required this.onToggleSelectAll,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = AppTheme.colorsOf(context);
+    final text = AppTheme.textOf(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md, vertical: AppSpacing.xs),
+      child: Row(
+        children: [
+          if (selecting) ...[
+            Text(
+              '已选 $selectedCount 项',
+              style: text.labelMedium?.copyWith(color: scheme.onSurface),
+            ),
+            const Spacer(),
+            TextButton(
+              onPressed: onToggleSelectAll,
+              child: Text(
+                selectedCount == totalCount && totalCount > 0
+                    ? '取消全选'
+                    : '全选',
+                style: text.labelMedium?.copyWith(color: scheme.primary),
+              ),
+            ),
+          ] else ...[
+            const Spacer(),
+            TextButton(
+              onPressed: onEnterSelecting,
+              child: Text(
+                '管理',
+                style: text.labelMedium?.copyWith(color: scheme.onSurface),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

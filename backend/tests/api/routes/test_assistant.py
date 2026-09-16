@@ -473,6 +473,70 @@ def test_my_conversation_replays_as_resumable(client, fake_llm):
     assert len(after["bubbles"]) == 4  # 两轮 → 提问/回答 × 2
 
 
+def test_delete_conversations_removes_sessions_and_messages(client, fake_llm):
+    """多选删除：删掉本家长名下（含孩子的）会话及其关联消息，越权的 id 静默忽略。"""
+    setup = _query_setup(client, "ashist7")
+    ctoken = login(client, "qt_ashist7_a", KID_PASSWORD).json()["access_token"]
+
+    # 家长自己聊两段
+    fake_llm.script("list_children")
+    _s, ev_p1 = _stream(client, setup["parent_token"], "我都有哪些娃")
+    sid_p1 = _of(ev_p1, "DONE")[-1]["session_id"]
+    _s, ev_p2 = _stream(client, setup["parent_token"], "今天有什么作业")
+    sid_p2 = _of(ev_p2, "DONE")[-1]["session_id"]
+
+    # 孩子聊一段（也归家长所有）
+    _s, ev_k = _stream(client, ctoken, "23 + 45 怎么算")
+    sid_k = _of(ev_k, "DONE")[-1]["session_id"]
+
+    # 另一个家长的会话：越权 id 绝不能被删
+    other = register_parent(client, username="ashist7_stranger")
+    _s, ev_o = _stream(client, other.json()["access_token"], "别人的会话")
+    sid_o = _of(ev_o, "DONE")[-1]["session_id"]
+
+    # 删 sid_p1 + sid_k + 一个不存在的 id
+    r = client.request(
+        "DELETE",
+        "/api/v1/assistant/conversations",
+        headers=auth_headers(setup["parent_token"]),
+        json={"ids": [sid_p1, sid_k, str(UUID(int=0))]},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json() == 2, "实际删除 2 段（自己的 1 段 + 孩子的 1 段），不存在的 id 忽略"
+
+    remaining = {row["id"] for row in _conversations(client, setup["parent_token"])}
+    assert remaining == {sid_p2}, "只剩下没被删的那段"
+    assert {sid_p1, sid_k} & remaining == set(), "被删的会话应不在列表"
+
+    # 关联消息一并删除：被删会话在 messages 表里不应再有行
+    with Session(engine) as s:
+        for cid in (sid_p1, sid_k):
+            n = s.exec(
+                select(Message).where(Message.conversation_id == UUID(cid))
+            ).all()
+            assert n == [], "会话删了，关联消息必须跟着删（无 FK 级联，靠 repository 先删消息）"
+
+    # 越权会话完好
+    assert {sid_o} <= {row["id"] for row in _conversations(client, other.json()["access_token"])}
+
+
+def test_delete_conversations_is_parent_only(client):
+    """娃娃端不能删会话：与列表 / 回放同一口径（有意的不对称）。
+
+    与其他用例一样先 `_query_setup` 建好 `ashist8` 这套测试用户——
+    `login` 要拿得到 kid 账号才能拿到 token 触发 403。
+    """
+    _query_setup(client, "ashist8")
+    ctoken = login(client, "qt_ashist8_a", KID_PASSWORD).json()["access_token"]
+    r = client.request(
+        "DELETE",
+        "/api/v1/assistant/conversations",
+        headers=auth_headers(ctoken),
+        json={"ids": [str(UUID(int=1))]},
+    )
+    assert r.status_code == 403, r.text
+
+
 def test_foreign_conversation_is_forbidden(client, fake_llm):
     """越权：另一个家长读不到本家长的会话（403，且不是「不存在」）。"""
     setup = _query_setup(client, "ashist5")

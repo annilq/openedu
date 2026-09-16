@@ -13,7 +13,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 from uuid import UUID
 
-from sqlmodel import Session, func, select
+from sqlmodel import Session, delete, func, select
 
 from app.db.models import Conversation, Message, User
 
@@ -267,6 +267,40 @@ def child_names(session: Session, child_ids: list[UUID]) -> dict[UUID, str]:
     return {uid: name for uid, name in rows}
 
 
+# ── 会话删除（多选，ADR-0048 补充） ───────────────────────────────────────────
+def delete_conversations(*, session: Session, parent_id: UUID, ids: list[UUID]) -> int:
+    """批量删除本家长名下、且在给定 id 集合内的会话，及其全部关联消息。
+
+    归属口径就是 ``parent_id``：孩子的会话也归家长所有（``Conversation.parent_id``
+    是家长），所以一并可删。越权的 id（其他家长 / 不存在）被 ``parent_id`` 过滤掉，
+    静默忽略，不会误删他人数据。
+
+    消息无 FK 级联（ADR-0048 有意不做的缺口），必须先删消息再删会话，否则外键约束
+    会拒绝或留下孤儿行。返回实际删除的会话条数。
+    """
+    if not ids:
+        return 0
+    # 先确认归属：只取本家长名下、且在请求集合内的 id，避免误删。
+    owned_ids = list(
+        session.exec(
+            select(Conversation.id).where(
+                Conversation.id.in_(ids),
+                Conversation.parent_id == parent_id,
+            )
+        ).all()
+    )
+    if not owned_ids:
+        return 0
+    session.exec(
+        delete(Message).where(Message.conversation_id.in_(owned_ids))
+    )
+    session.exec(
+        delete(Conversation).where(Conversation.id.in_(owned_ids))
+    )
+    session.commit()
+    return len(owned_ids)
+
+
 __all__ = [
     "get_conversation_by_id",
     "next_turn",
@@ -278,4 +312,5 @@ __all__ = [
     "list_chat_conversations",
     "conversation_meta",
     "child_names",
+    "delete_conversations",
 ]

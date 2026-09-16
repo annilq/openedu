@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/app_dialog.dart';
 import '../../../../shared/widgets/app_toast.dart';
 import '../../../../shared/widgets/app_top_bar.dart';
 import '../../domain/conversation.dart';
@@ -70,6 +71,12 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
   /// 只读回放的内容（孩子的会话）。家长自己的会话走 [_resumeToChat]，不进这里。
   AssistantConversationDetail? _replay;
 
+  /// 是否处于「多选管理」态：是则历史行可勾选、不可点开。
+  bool _selecting = false;
+
+  /// 已勾选的会话 id（多选删除的来源）。
+  final Set<String> _selectedIds = <String>{};
+
   @override
   void dispose() {
     _ctrl.dispose();
@@ -91,7 +98,80 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
     setState(() {
       _mode = _AssistantMode.history;
       _replay = null;
+      _selecting = false;
+      _selectedIds.clear();
     });
+  }
+
+  /// 进入多选态：清空旧勾选，避免把上一次的选中带进来。
+  void _enterSelecting() => setState(() {
+        _selecting = true;
+        _selectedIds.clear();
+      });
+
+  /// 退出多选态：取消勾选、留在历史列表。
+  void _exitSelecting() => setState(() {
+        _selecting = false;
+        _selectedIds.clear();
+      });
+
+  /// 勾选 / 取消勾选一段会话。
+  void _toggleSelection(AssistantConversation conv) => setState(() {
+        if (_selectedIds.contains(conv.id)) {
+          _selectedIds.remove(conv.id);
+        } else {
+          _selectedIds.add(conv.id);
+        }
+      });
+
+  /// 多选态下「全选 / 取消全选」：已选 == 全部则取消，否则全选。
+  ///
+  /// 由 [AssistantHistoryView] 的 `_ManageStrip` 调用；列表总条数通过
+  /// `conversationHistoryProvider` 取——避免把全量列表再传一遍回调。
+  void _toggleSelectAll() {
+    final all = ref.read(conversationHistoryProvider).asData?.value;
+    if (all == null) return;
+    final allIds = all.map((c) => c.id).toSet();
+    setState(() {
+      if (_selectedIds.length == allIds.length && allIds.isNotEmpty) {
+        _selectedIds.clear();
+      } else {
+        _selectedIds
+          ..clear()
+          ..addAll(allIds);
+      }
+    });
+  }
+
+  /// 删除勾选的会话：先确认，再调后端删会话 + 关联消息，最后刷新列表并退出多选。
+  Future<void> _deleteSelected() async {
+    final ids = _selectedIds.toList();
+    if (ids.isEmpty) return;
+    final ok = await AppDialog.confirm(
+      context,
+      title: const Text('删除会话'),
+      content: Text(
+        '确定删除选中的 ${ids.length} 段会话吗？关联的对话记录会一并删除，且不可恢复。',
+      ),
+      confirmLabel: '删除',
+      destructive: true,
+    );
+    if (ok != true) return;
+    int deleted;
+    try {
+      deleted = await ref.read(assistantRepositoryProvider).deleteConversations(ids);
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.show(context, '删除失败：$e');
+      return;
+    }
+    // 成功：先 toast，再退出多选、再刷新列表。顺序很重要：toast 必须挂在稳定的
+    // context 上（_exitSelecting 触发 setState → 重建 → 老 context 失效），
+    // 所以先弹 toast、退出与刷新紧跟其后。
+    if (!mounted) return;
+    AppToast.show(context, '已删除 $deleted 段会话');
+    _exitSelecting();
+    ref.invalidate(conversationHistoryProvider);
   }
 
   /// 从历史 / 只读回到对话。只切模式，不动会话本身。
@@ -198,6 +278,11 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
                     _AssistantMode.history => AssistantHistoryView(
                         onOpen: _open,
                         openingId: _openingId,
+                        selecting: _selecting,
+                        selectedIds: _selectedIds,
+                        onToggleSelection: _toggleSelection,
+                        onEnterSelecting: _enterSelecting,
+                        onToggleSelectAll: _toggleSelectAll,
                       ),
                     _AssistantMode.reading => replay == null
                         ? const SizedBox.shrink()
@@ -249,16 +334,25 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
         );
       case _AssistantMode.history:
         return AppTopBar(
-          title: '历史会话',
+          // 多选态下 title 始终是「选择会话」——计数由列表顶部的 _ManageStrip 显示，
+          // 避免同一数字在两处出现、改起来不同步（arrange：单一真相源）。
+          title: _selecting ? '选择会话' : '历史会话',
           showBack: true,
-          // 页内返回：`showBack` 的默认行为是 pop 整页，那会把用户直接踢出助手。
-          onBack: _backToChat,
-          trailing: AppIconAction(
-            icon: LucideIcons.squarePen,
-            iconSize: 20,
-            semanticLabel: '新对话',
-            onPressed: _newConversation,
-          ),
+          // 多选态下返回 = 退出多选（留在列表）；非多选态 = 回对话。
+          onBack: _selecting ? _exitSelecting : _backToChat,
+          trailing: _selecting
+              ? AppIconAction(
+                  icon: LucideIcons.trash2,
+                  iconSize: 20,
+                  semanticLabel: '删除选中会话',
+                  onPressed: _selectedIds.isEmpty ? null : _deleteSelected,
+                )
+              : AppIconAction(
+                  icon: LucideIcons.squarePen,
+                  iconSize: 20,
+                  semanticLabel: '新对话',
+                  onPressed: _newConversation,
+                ),
         );
       case _AssistantMode.reading:
         final name = _replay?.conversation.childName;

@@ -72,3 +72,14 @@ class AssistantConversationDetailResp(SQLModel):
 
     conversation: AssistantConversationResp
     bubbles: list[AssistantBubbleResp] = []
+
+
+class AssistantConversationsDeleteReq(SQLModel):
+    """批量删除会话（多选删除，ADR-0048 补充）。
+
+    ``ids`` 只认**本家长名下**的会话：孩子的会话也归家长所有（``parent_id`` 是家长），
+    所以一并可删；越权的 id（其他家长 / 不存在）被后端按归属过滤掉，静默忽略，
+    不会误删他人数据。
+    """
+
+    ids: list[UUID]

@@ -44,6 +44,9 @@ from app.features.assistant.repository import (
     read_conversation_bubbles,
     title_of,
 )
+from app.features.assistant.repository import (
+    delete_conversations as repo_delete_conversations,
+)
 from app.features.assistant.schemas import (
     AssistantBubbleResp,
     AssistantChatReq,
@@ -393,4 +396,17 @@ def conversation_detail(
             bubble_count=len(bubbles),
         ),
         bubbles=bubbles,
+    )
+
+
+def delete_conversations(
+    *, session: Any, parent_id: UUID, ids: list[UUID]
+) -> int:
+    """批量删除本家长名下的会话及其消息（多选删除，ADR-0048 补充）。
+
+    归属校验与消息级联删除都收口在 repository（与读路径同一份可见轮次判定相反，
+    这里只做「按 id + parent_id 删干净」）。返回实际删掉的会话条数。
+    """
+    return repo_delete_conversations(
+        session=session, parent_id=parent_id, ids=ids
     )

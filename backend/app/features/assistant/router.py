@@ -33,6 +33,7 @@ from app.features.assistant.schemas import (
     AssistantChatReq,
     AssistantConversationDetailResp,
     AssistantConversationResp,
+    AssistantConversationsDeleteReq,
 )
 
 router = APIRouter(prefix="/assistant", tags=["assistant"])
@@ -93,3 +94,21 @@ def get_conversation(
         message="Not your conversation",
     )
     return assistant_service.conversation_detail(session=session, conv=conv)
+
+
+@router.delete("/conversations", response_model=int)
+def delete_conversations(
+    *, session: SessionDep, parent: CurrentParent, body: AssistantConversationsDeleteReq
+) -> int:
+    """批量删除本家长名下的会话及其关联消息（多选删除，ADR-0048 补充）。
+
+    **家长专属**（``CurrentParent``，与列表 / 回放同一口径）。``ids`` 只认
+    ``parent_id`` 匹配的会话——孩子的会话也归家长所有，一并可删；越权的 id
+    （其他家长 / 不存在）被归属过滤掉，静默忽略，不会误删他人数据。
+
+    会话与消息是两张表、无 FK 级联（ADR-0048 有意不做的缺口），删除在 repository
+    内按「先消息后会话」的顺序完成。返回实际删除的会话条数。
+    """
+    return assistant_service.delete_conversations(
+        session=session, parent_id=parent.id, ids=body.ids
+    )

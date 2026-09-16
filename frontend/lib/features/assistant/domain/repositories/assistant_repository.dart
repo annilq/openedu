@@ -27,4 +27,10 @@ abstract class AssistantRepository {
 
   /// 一次会话的回放（气泡 + 卡片），只读查看与恢复续接共用。
   Future<AssistantConversationDetail> conversationDetail(String conversationId);
+
+  /// 批量删除本家长名下的会话及其关联消息（多选删除，ADR-0048 补充）。
+  ///
+  /// 后端只认 parent_id 匹配的会话（孩子的会话也归家长，一并可删），
+  /// 越权的 id 静默忽略。返回实际删除的会话条数。
+  Future<int> deleteConversations(List<String> ids);
 }
