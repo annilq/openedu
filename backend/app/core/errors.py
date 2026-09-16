@@ -51,6 +51,7 @@ class ErrCode(str, Enum):
     QUESTION_NOT_FOUND = "TASK_20014"  # 题库题不存在（from-bank 全部越权/缺失）
     QUESTION_ACCESS_DENIED = "TASK_20015"  # 部分题库题无权限（owner 隔离）
     QUESTION_IN_USE = "TASK_20016"  # 题库题已被任务引用，禁止删除
+    WRONG_QUESTION_NOT_FOUND = "TASK_20017"  # 错题不存在 / 非本孩子（重新加入复习）
 
     # Auth 30xxx
     AUTH_INVALID_TOKEN = "AUTH_30001"

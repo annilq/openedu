@@ -186,7 +186,11 @@ def test_correct_review_advances_stage(client):
 
 
 def test_final_correct_review_graduates(client):
-    """末位阶段（15 天档）复习答对：视为掌握，从错题集移除。"""
+    """末位阶段（15 天档）复习答对 = 毕业：退出复习队列，但**不再物理删除**（ADR-0053 P2）。
+
+    「毕业」要的是「不用再复习」，不是「把这行抹掉」。行留着，默认列表过滤掉，
+    家长端「已掌握」分区还能翻出来回顾、或重新加入复习。
+    """
     _ptoken, child, task, ctoken, q = _setup(client, "rv3_parent", "rv3_kid")
     wq = _load_wq(child["id"], q["question_id"])
     _force_state(wq.id, stage=4)
@@ -198,11 +202,22 @@ def test_final_correct_review_graduates(client):
     )
     assert r.status_code == 200 and r.json()["correct"] is True
 
+    # 默认（active）列表看不到它
     mine = client.get("/api/v1/tasks/wrong-questions", headers=auth_headers(ctoken))
     assert page_items(mine) == []  # 已毕业
 
+    # 待复习队列里也不再出现——这才是「毕业」的语义
     due = client.get("/api/v1/review/due", headers=auth_headers(ctoken))
     assert due.json() == []
+
+    # 痕迹还在：家长端「已掌握」分区能翻出来（娃娃端没有这个分区，始终只看未毕业）
+    graduated = client.get(
+        f"/api/v1/tasks/children/{child['id']}/wrong-questions?scope=graduated",
+        headers=auth_headers(_ptoken),
+    )
+    items = page_items(graduated)
+    assert len(items) == 1
+    assert items[0]["graduated_at"] is not None
 
 
 def test_wrong_review_resets_timer(client):
@@ -240,7 +255,12 @@ def test_review_before_due_rejected(client):
 
 
 def test_graduate_then_wrong_again_recollects(client):
-    """毕业移除后再次答错：重新归集为新错题（计时器从头开始）。"""
+    """毕业后再次答错：同一条错题回到复习队列（不再新建一条）。
+
+    ADR-0053 P2 前毕业是删行，再答错会**新建**一条（wrong_count 从 1 重新开始）；
+    现在行还在，再答错是把同一条拉回 stage 0 —— 痕迹（wrong_count / 首次答错时间）
+    连续，这才是「这题错过 5 次」该有的样子。
+    """
     _ptoken, child, task, ctoken, q = _setup(client, "rv7_parent", "rv7_kid")
     wq = _load_wq(child["id"], q["question_id"])
     _force_state(wq.id, stage=4)
@@ -253,14 +273,16 @@ def test_graduate_then_wrong_again_recollects(client):
     assert r.status_code == 200 and r.json()["correct"] is True
     assert client.get("/api/v1/review/due", headers=auth_headers(ctoken)).json() == []
 
-    # 同一题再答错 -> 重新归集
+    # 同一题再答错 -> 拉回复习队列（同一条，次数累加）
     q2, _ = _answer_wrong(client, ctoken, task)
     assert q2["question_id"] == q["question_id"]
     mine = client.get("/api/v1/tasks/wrong-questions", headers=auth_headers(ctoken))
     mine_items = page_items(mine)
     assert len(mine_items) == 1
-    assert mine_items[0]["wrong_count"] == 1
+    assert mine_items[0]["id"] == str(wq.id)  # 同一条，不是新建
+    assert mine_items[0]["wrong_count"] == 2  # 1（首次）+ 1（这次）
     assert mine_items[0]["review_stage"] == 0
+    assert mine_items[0]["graduated_at"] is None  # 毕业状态被清掉
 
 
 def test_review_answer_ownership(client):

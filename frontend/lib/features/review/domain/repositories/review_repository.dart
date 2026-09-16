@@ -19,9 +19,20 @@ abstract class ReviewRepository {
 
   /// 家长查看某娃娃的错题本（GET /tasks/children/{id}/wrong-questions，
   /// 含答案，游标分页 ADR-0053）。
-  Future<CursorPage<WrongQuestionModel>> parentWrongQuestions(
+  ///
+  /// [scope]（ADR-0053 P2）：`active`（默认，未毕业）/ `graduated`（「已掌握」分区）。
+  Future<WrongQuestionPage> parentWrongQuestions(
     String childId, {
     String? cursor,
     int pageSize = 20,
+    String scope = 'active',
   });
+
+  /// 把一条「已掌握」的错题重新加入复习（ADR-0053 P2）。
+  ///
+  /// 清毕业时间戳、阶段归 0、立刻到期；后端保留 wrong_count 与首次答错时间。
+  Future<WrongQuestionModel> rejoinWrongQuestion(
+    String childId,
+    String wrongQuestionId,
+  );
 }

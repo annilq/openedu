@@ -21,6 +21,7 @@ def list_bank_questions(
     qtype: str | None = None,
     keyword: str | None = None,
     since_days: int | None = None,
+    archived: str = "active",
     page: int = 1,
     page_size: int = 20,
     cursor: str | None = None,
@@ -31,6 +32,9 @@ def list_bank_questions(
 
     ``since_days``（ADR-0050）：只返回 ``created_at`` 在 ``[now_utc - N 天, now]`` 内的题，
     即「最近添加的题」。0 / None ＝不限时间。
+
+    ``archived``（ADR-0053 P2）：``active``（默认，只要在用）/ ``archived``（只要已归档）/
+    ``all``（都要）。默认排除已归档——归档的意义就是「不用再看到」。
 
     ``cursor``（ADR-0053）：给了就走 keyset 游标分页（忽略 ``page``），否则退回 offset。
     两条路径共用同一组过滤条件与同一套稳定排序，只有取页方式不同——REST 列表走游标
@@ -54,6 +58,10 @@ def list_bank_questions(
     if since_days:
         cutoff = datetime.now(timezone.utc) - timedelta(days=since_days)
         stmt = stmt.where(Question.created_at >= cutoff)
+    if archived == "active":
+        stmt = stmt.where(Question.archived_at.is_(None))  # type: ignore[union-attr]
+    elif archived == "archived":
+        stmt = stmt.where(Question.archived_at.is_not(None))  # type: ignore[union-attr]
     total = count_of(session=session, stmt=stmt)
     if cursor:
         page_stmt = apply_keyset(
@@ -130,6 +138,44 @@ def delete_bank_questions(
         "skipped_in_use": skipped_in_use,
         "skipped_forbidden": skipped_forbidden,
     }
+
+
+def set_bank_questions_archived(
+    *,
+    session: Session,
+    parent_id: uuid.UUID,
+    question_ids: list[uuid.UUID],
+    archived: bool,
+) -> dict[str, list[uuid.UUID]]:
+    """批量归档 / 恢复题库题（ADR-0053 P2）。
+
+    与 :func:`delete_bank_questions` 的两点差别，正是归档存在的理由：
+    - **被任务引用的题也能归档**：删除会破坏历史任务，归档不会（题还在，只是默认不显示）；
+    - **可逆**：``archived=False`` 即恢复。
+
+    owner 隔离：只处理本家长拥有的题；其余归为 skipped_forbidden。
+    """
+    owned = {
+        q.id: q
+        for q in session.exec(
+            select(Question).where(
+                Question.id.in_(question_ids), Question.parent_id == parent_id
+            )
+        ).all()
+    }
+    now = datetime.now(timezone.utc)
+    done: list[uuid.UUID] = []
+    skipped_forbidden: list[uuid.UUID] = []
+    for qid in question_ids:
+        q = owned.get(qid)
+        if q is None:
+            skipped_forbidden.append(qid)
+            continue
+        q.archived_at = now if archived else None
+        session.add(q)
+        done.append(qid)
+    session.commit()
+    return {"updated": done, "skipped_forbidden": skipped_forbidden}
 
 
 def get_question_usages(

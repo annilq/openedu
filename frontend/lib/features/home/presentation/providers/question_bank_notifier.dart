@@ -74,6 +74,13 @@ class BankDeleted extends BankState {
   const BankDeleted(this.deleted, this.skippedInUse, this.skippedForbidden);
 }
 
+/// 批量归档 / 恢复的结果（ADR-0053 P2）。
+class BankArchived extends BankState {
+  final int updated;
+  final bool archived; // true = 归档，false = 恢复
+  const BankArchived(this.updated, this.archived);
+}
+
 class QuestionBankNotifier extends StateNotifier<BankState> {
   final QuestionBankRepository _repo;
   QuestionBankNotifier(this._repo) : super(const BankIdle());
@@ -84,6 +91,12 @@ class QuestionBankNotifier extends StateNotifier<BankState> {
   String? _qtype;
   String? _keyword;
 
+  /// 归档范围（ADR-0053 P2）：`active`（默认）/ `archived` / `all`。
+  ///
+  /// 与学科 / 年级这些筛选条件同级：改它就重新取第一页，不是「客户端过滤已加载的页」
+  ///（那样只会过滤当前页，归档的题还会混在后面几页里）。
+  String _archived = 'active';
+
   bool _inFlight = false;
 
   Future<void> load({
@@ -91,11 +104,13 @@ class QuestionBankNotifier extends StateNotifier<BankState> {
     String? subject,
     String? qtype,
     String? keyword,
+    String? archived,
   }) async {
     _gradeSegment = gradeSegment;
     _subject = subject;
     _qtype = qtype;
     _keyword = keyword;
+    if (archived != null) _archived = archived;
     _inFlight = true;
     state = const BankLoading();
     try {
@@ -104,6 +119,7 @@ class QuestionBankNotifier extends StateNotifier<BankState> {
         grade: gradeSegment < 0 ? null : gradeSegment,
         qtype: qtype,
         keyword: keyword,
+        archived: _archived,
       );
       state = BankLoaded(page, gradeSegment);
     } catch (e) {
@@ -134,6 +150,7 @@ class QuestionBankNotifier extends StateNotifier<BankState> {
         qtype: _qtype,
         keyword: _keyword,
         cursor: before.page.nextCursor,
+        archived: _archived,
       );
       final current = state;
       if (current is! BankLoaded) return; // 期间筛选条件变了 / 重新加载过
@@ -160,6 +177,21 @@ class QuestionBankNotifier extends StateNotifier<BankState> {
   /// 按 id 拉取完整任务，供引用列表跳转复核页。
   Future<TaskModel> fetchTaskById(String taskId) async {
     return await _repo.getTaskById(taskId);
+  }
+
+  /// 批量归档 / 恢复（ADR-0053 P2）。
+  ///
+  /// 与删除的分工：删除是「彻底不要了」（被任务引用的题删不掉），归档是「先收起来」
+  /// ——被引用也能归档，且随时能恢复。
+  Future<void> archiveQuestions(List<String> ids,
+      {required bool archived}) async {
+    state = const BankActionLoading();
+    try {
+      final res = await _repo.archiveQuestions(ids, archived: archived);
+      state = BankArchived(res.updated.length, archived);
+    } catch (e) {
+      state = BankActionError(e.toString());
+    }
   }
 
   void reset() => state = const BankIdle();

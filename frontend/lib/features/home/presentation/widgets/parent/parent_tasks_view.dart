@@ -39,6 +39,12 @@ class _ParentTasksViewState extends ConsumerState<ParentTasksView> {
   // 0=草稿(draft+ready)  1=进行中(assigned)  2=已完成(done)
   int _tab = 0;
 
+  /// 「已完成」按月分段后，更早的月份是否展开（ADR-0053 P2）。
+  ///
+  /// 默认只展开最近 3 个月：这个 Tab 的用途是「回看最近做完了什么」，
+  /// 半年前的卷子默认铺开只会把最近的东西挤下去。
+  bool _olderExpanded = false;
+
   /// 触底自动加载下一页（ADR-0053）：任务只增不减，一次拉全量会越来越慢。
   late final ScrollController _scroll = ScrollController();
   VoidCallback? _unbindScroll;
@@ -65,7 +71,11 @@ class _ParentTasksViewState extends ConsumerState<ParentTasksView> {
   /// 状态过滤在**服务端**：分页之后客户端过滤只会过滤已加载的页，Tab 会漏数据。
   void _switchTab(int i) {
     if (i == _tab) return;
-    setState(() => _tab = i);
+    setState(() {
+      _tab = i;
+      // 换 Tab 就收起「更早」：上个月展开过不代表这个月也想展开。
+      _olderExpanded = false;
+    });
     _reload();
   }
 
@@ -121,15 +131,29 @@ class _ParentTasksViewState extends ConsumerState<ParentTasksView> {
                                 AppSpacing.sm,
                                 AppLayout.listGutter,
                                 AppSpacing.xl2),
-                            sliver: AppCardSliver(
-                              width: constraints.maxWidth,
-                              itemCount: items.length,
-                              itemBuilder: (_, i) => _TaskCard(
-                                task: items[i],
-                                childName: nameOf(items[i].childId),
-                                onTap: () => widget.onNavigateToReview(items[i]),
-                              ),
-                            ),
+                            sliver: _tab == 2
+                                ? _MonthSections(
+                                    items: items,
+                                    olderExpanded: _olderExpanded,
+                                    onExpandOlder: () =>
+                                        setState(() => _olderExpanded = true),
+                                    cardBuilder: (task) => _TaskCard(
+                                      task: task,
+                                      childName: nameOf(task.childId),
+                                      onTap: () =>
+                                          widget.onNavigateToReview(task),
+                                    ),
+                                  )
+                                : AppCardSliver(
+                                    width: constraints.maxWidth,
+                                    itemCount: items.length,
+                                    itemBuilder: (_, i) => _TaskCard(
+                                      task: items[i],
+                                      childName: nameOf(items[i].childId),
+                                      onTap: () =>
+                                          widget.onNavigateToReview(items[i]),
+                                    ),
+                                  ),
                           ),
                           SliverToBoxAdapter(
                             child: Padding(
@@ -221,6 +245,145 @@ class _ParentTasksViewState extends ConsumerState<ParentTasksView> {
         ),
     };
   }
+}
+
+/// 「已完成」按月分段（ADR-0053 P2）。
+///
+/// 任务**不加归档字段**——`done` 已经是终态，再加 `archived` 会造出「done 但未归档 /
+/// 已归档但非 done」两种重叠状态，而且没人能回答「什么时候该点归档」。这个 Tab 真正
+/// 的痛点不是「怎么归档」，而是「几个月后这里有几千条，找不到最近的那条」。
+///
+/// 于是按月分段：最近 3 个月展开，更早折叠成一行「2026 年 6 月及以前（42）」。
+/// 分段边界由前端按**已加载**的页算，不新增接口——分页之后「更早」本身就随追加
+/// 变长，这里只负责把「更早」收起来。
+class _MonthSections extends StatelessWidget {
+  const _MonthSections({
+    required this.items,
+    required this.olderExpanded,
+    required this.onExpandOlder,
+    required this.cardBuilder,
+  });
+
+  final List<TaskModel> items;
+  final bool olderExpanded;
+  final VoidCallback onExpandOlder;
+  final Widget Function(TaskModel) cardBuilder;
+
+  /// 默认展开的月数。
+  static const int recentMonths = 3;
+
+  static String _monthKey(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}';
+
+  static String _monthLabel(String key) {
+    final parts = key.split('-');
+    return '${parts[0]} 年 ${int.parse(parts[1])} 月';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final groups = <String, List<TaskModel>>{};
+    for (final t in items) {
+      // 没有时间戳的任务（旧数据）归到「更早」，不单独起一段。
+      groups.putIfAbsent(
+        t.createdAt == null ? '' : _monthKey(_parse(t.createdAt!)),
+        () => <TaskModel>[],
+      ).add(t);
+    }
+    final months = groups.keys.toList()..sort((a, b) => b.compareTo(a));
+    final visible =
+        olderExpanded ? months.length : months.take(recentMonths).length;
+
+    final entries = <_Row>[];
+    for (var i = 0; i < visible; i++) {
+      final key = months[i];
+      entries.add(_Row.header(key.isEmpty ? '更早' : _monthLabel(key)));
+      for (final t in groups[key]!) {
+        entries.add(_Row.card(t));
+      }
+    }
+    if (!olderExpanded && months.length > recentMonths) {
+      final older = months.skip(recentMonths);
+      final count = older.fold<int>(0, (s, m) => s + groups[m]!.length);
+      entries.add(_Row.collapsed(
+        '${_monthLabel(older.first)}及以前（$count）',
+        count,
+      ));
+    }
+
+    return SliverList.builder(
+      itemCount: entries.length,
+      itemBuilder: (context, i) {
+        final row = entries[i];
+        return switch (row) {
+          _HeaderRow(:final label) => Padding(
+              padding: EdgeInsets.only(
+                top: i == 0 ? 0 : AppSpacing.md,
+                bottom: AppSpacing.sm,
+              ),
+              child: Text(
+                label,
+                style: AppTheme.textOf(context).titleSmall?.copyWith(
+                      color: AppTheme.colorsOf(context).onSurfaceVariant,
+                    ),
+              ),
+            ),
+          _CardRow(:final task) => Padding(
+              padding: const EdgeInsets.only(bottom: AppLayout.listRowGap),
+              child: cardBuilder(task),
+            ),
+          _CollapsedRow(:final label) => Padding(
+              padding: const EdgeInsets.only(top: AppSpacing.xs),
+              child: AppCard.listRow(
+                margin: EdgeInsets.zero,
+                onTap: onExpandOlder,
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: Row(
+                  children: [
+                    const Icon(LucideIcons.chevronDown, size: 16),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(
+                      child: Text(
+                        label,
+                        style: AppTheme.textOf(context).bodyMedium,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        };
+      },
+    );
+  }
+
+  static DateTime _parse(String iso) =>
+      DateTime.tryParse(iso) ?? DateTime.fromMillisecondsSinceEpoch(0);
+}
+
+/// [_MonthSections] 的一行：月标题 / 卡片 / 「更早」折叠入口。
+sealed class _Row {
+  const _Row();
+
+  const factory _Row.header(String label) = _HeaderRow;
+  const factory _Row.card(TaskModel task) = _CardRow;
+  const factory _Row.collapsed(String label, int count) = _CollapsedRow;
+}
+
+class _HeaderRow extends _Row {
+  final String label;
+  const _HeaderRow(this.label);
+}
+
+class _CardRow extends _Row {
+  final TaskModel task;
+  const _CardRow(this.task);
+}
+
+class _CollapsedRow extends _Row {
+  final String label;
+  final int count;
+  const _CollapsedRow(this.label, this.count);
 }
 
 /// 状态 Tab 栏：选中态实色，未选描边；后缀数量徽标。

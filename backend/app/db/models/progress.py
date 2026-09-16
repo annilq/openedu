@@ -61,3 +61,13 @@ class WrongQuestion(SQLModel, table=True):
         default_factory=get_review_due_utc,
         sa_type=DateTime(timezone=True),  # type: ignore
     )
+    # 毕业（已掌握）时间戳（ADR-0053 P2）：None = 仍在复习队列里。
+    #
+    # 此前末位阶段答对是 `session.delete(wq)`——错题本确实不膨胀了，但代价是
+    # (a) 学习痕迹永久丢失（「这题错过 5 次、现在掌握了」再也查不到）；
+    # (b) mastery 的 active_wrong / max_review_stage 只统计活跃错题，删除会让掌握度掉档。
+    # 改成打时间戳：默认过滤掉（only_active），但痕迹留着、可「重新加入复习」。
+    graduated_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )

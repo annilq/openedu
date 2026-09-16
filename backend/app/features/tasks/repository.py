@@ -700,17 +700,26 @@ def list_wrong_questions(
     child_id: uuid.UUID,
     page_size: int | None = None,
     cursor: str | None = None,
+    scope: str = "active",
 ) -> list[tuple[WrongQuestion, Question]]:
     """错题列表：join Question 取完整题目，按首次错时间倒序。
 
     ``cursor`` / ``page_size``（ADR-0053）：给了游标就走 keyset，两者都给 None 则
     不分页（AI 查询工具行为不变）。
+
+    ``scope``（ADR-0053 P2）：``active``（默认，未毕业）/ ``graduated``（只看已掌握）。
+    毕业（末位阶段答对）不再物理删除，而是打 ``graduated_at`` 时间戳——默认过滤掉，
+    但痕迹留着，家长端「已掌握」分区能翻出来看。
     """
     stmt = (
         select(WrongQuestion, Question)
         .join(Question, Question.id == WrongQuestion.question_id)
         .where(WrongQuestion.child_id == child_id)
     )
+    if scope == "active":
+        stmt = stmt.where(WrongQuestion.graduated_at.is_(None))  # type: ignore[union-attr]
+    elif scope == "graduated":
+        stmt = stmt.where(WrongQuestion.graduated_at.is_not(None))  # type: ignore[union-attr]
     if page_size is None:
         return list(
             session.exec(
@@ -739,7 +748,48 @@ def list_wrong_questions(
     )
 
 
-def count_wrong_questions(*, session: Session, child_id: uuid.UUID) -> int:
-    """错题总数（过滤条件与 :func:`list_wrong_questions` 一致）。"""
+def count_wrong_questions(
+    *, session: Session, child_id: uuid.UUID, scope: str = "active"
+) -> int:
+    """错题总数（过滤条件与 :func:`list_wrong_questions` 一致）。
+
+    ``scope`` 同 :func:`list_wrong_questions`；``graduated`` 即「已掌握」条数，
+    用于家长端「已掌握（N）」分区标题。
+    """
     stmt = select(WrongQuestion).where(WrongQuestion.child_id == child_id)
+    if scope == "active":
+        stmt = stmt.where(WrongQuestion.graduated_at.is_(None))  # type: ignore[union-attr]
+    elif scope == "graduated":
+        stmt = stmt.where(WrongQuestion.graduated_at.is_not(None))  # type: ignore[union-attr]
     return count_of(session=session, stmt=stmt)
+
+
+def rejoin_wrong_question(
+    *, session: Session, child_id: uuid.UUID, wrong_id: uuid.UUID
+) -> WrongQuestion:
+    """把已毕业（已掌握）的错题重新加入复习（ADR-0053 P2）。
+
+    清 ``graduated_at``、阶段归 0、``due_at = now``（立刻可复习），保留 ``wrong_count``
+    与 ``first_wrong_at``——学习痕迹不因为「重新来过」而清零。
+
+    归属判据走 ``child_id`` 作用域查询（不是手写 ``==`` 比较后内联判定）：找不到即
+    抛不存在，避免跨孩子改数据。
+    """
+    wq = session.exec(
+        select(WrongQuestion).where(
+            WrongQuestion.id == wrong_id, WrongQuestion.child_id == child_id
+        )
+    ).first()
+    if wq is None:
+        raise AppErrorException(
+            ErrCode.WRONG_QUESTION_NOT_FOUND, "该错题不存在或无权限"
+        )
+    now = datetime.now(UTC)
+    wq.graduated_at = None
+    wq.review_stage = 0
+    wq.due_at = now
+    wq.last_wrong_at = now
+    session.add(wq)
+    session.commit()
+    session.refresh(wq)
+    return wq

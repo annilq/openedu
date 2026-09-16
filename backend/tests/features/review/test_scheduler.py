@@ -37,6 +37,12 @@ def test_correct_advances_stage(db: Session):
 
 
 def test_final_correct_graduates(db: Session):
+    """末位阶段答对 = 毕业：打 graduated_at 时间戳，**不删行**（ADR-0053 P2）。
+
+    此前是物理删除，代价是「这题错过 5 次、现在掌握了」永久查不到，且 mastery 的
+    active_wrong / max_review_stage 会掉档。毕业要的是「退出复习队列」，
+    不是「抹掉这行」。
+    """
     last = len(REVIEW_INTERVALS_DAYS) - 1
     wq = _make_wq(stage=last)
     db.add(wq)
@@ -45,8 +51,10 @@ def test_final_correct_graduates(db: Session):
 
     out = apply_review_outcome(session=db, wq=wq, correct=True)
 
-    assert out is None  # 末位答对毕业删除
-    assert db.get(WrongQuestion, wq.id) is None
+    assert out is not None
+    assert out.graduated_at is not None
+    # 行还在：痕迹留着，家长端「已掌握」分区能翻出来。
+    assert db.get(WrongQuestion, wq.id) is not None
 
 
 def test_wrong_resets_timer(db: Session):

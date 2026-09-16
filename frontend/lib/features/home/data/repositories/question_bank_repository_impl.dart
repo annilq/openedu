@@ -22,9 +22,11 @@ class QuestionBankRepositoryImpl implements QuestionBankRepository {
     String? keyword,
     String? cursor,
     int pageSize = 20,
+    String archived = 'active',
   }) async {
     final query = <String, dynamic>{
       'page_size': pageSize,
+      'archived': archived,
       if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
     };
     if (subject != null && subject.isNotEmpty) query['subject'] = subject;
@@ -78,6 +80,18 @@ class QuestionBankRepositoryImpl implements QuestionBankRepository {
   Future<DeleteQuestionsResult> deleteQuestions(List<String> ids) async {
     final data = await _network.delete('/questions', body: {'ids': ids});
     return DeleteQuestionsResult.fromJson(decodeMap(data));
+  }
+
+  @override
+  Future<ArchiveQuestionsResult> archiveQuestions(
+    List<String> ids, {
+    required bool archived,
+  }) async {
+    final data = await _network.post(
+      '/questions/archive',
+      body: {'ids': ids, 'archived': archived},
+    );
+    return ArchiveQuestionsResult.fromJson(decodeMap(data));
   }
 
   @override

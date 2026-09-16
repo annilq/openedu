@@ -33,6 +33,7 @@ from app.features.tasks.schemas import (
     TaskQuestionEdit,
     TaskResp,
     WrongQuestionListResp,
+    WrongQuestionResp,
 )
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
@@ -150,14 +151,41 @@ def child_wrong_questions(
     child_id: UUID,
     cursor: str | None = None,
     page_size: int = Query(20, ge=1, le=100),
+    scope: str = Query("active", pattern="^(active|graduated)$"),
 ) -> WrongQuestionListResp:
-    """家长查某娃娃错题本（含答案/解析，供核查）。"""
+    """家长查某娃娃错题本（含答案/解析，供核查）。
+
+    ``scope=graduated`` 即「已掌握」分区（ADR-0053 P2）：毕业不再物理删除，而是打
+    时间戳并默认过滤掉，家长可以在这里翻出来回顾、或「重新加入复习」。
+    """
     return tasks_service.owned_child_wrong_questions_page(
         session=session,
         parent=parent,
         child_id=child_id,
         cursor=cursor,
         page_size=page_size,
+        scope=scope,
+    )
+
+
+@router.post(
+    "/children/{child_id}/wrong-questions/{wrong_id}/rejoin",
+    response_model=WrongQuestionResp,
+)
+def rejoin_wrong(
+    *,
+    session: SessionDep,
+    parent: CurrentParent,
+    child_id: UUID,
+    wrong_id: UUID,
+) -> WrongQuestionResp:
+    """把一条「已掌握」的错题重新加入复习（ADR-0053 P2）。
+
+    清 graduated_at、阶段归 0、due_at = now；保留 wrong_count 与首次答错时间——
+    重新来过不该抹掉学习痕迹。
+    """
+    return tasks_service.rejoin_child_wrong_question(
+        session=session, parent=parent, child_id=child_id, wrong_id=wrong_id
     )
 
 

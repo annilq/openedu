@@ -174,18 +174,25 @@ class WrongQuestionResp(SQLModel):
     first_wrong_at: datetime | None = None
     review_stage: int = 0
     due_at: datetime | None = None
+    # 毕业（已掌握）时间；None = 仍在复习队列里（ADR-0053 P2）。
+    graduated_at: datetime | None = None
 
 
 class WrongQuestionListResp(SQLModel):
     """错题本响应：游标分页信封（ADR-0053）。
 
     家长端与娃娃端共用；``include_answer`` 由服务端按角色裁剪，不进查询参数。
+
+    ``graduated_total``（ADR-0053 P2）：该孩子「已掌握」的错题数。只在 ``scope=active``
+    时随页下发——家长端要在列表底部显示「已掌握（N）」入口，而它是全量计数，
+    不能靠已加载的页统计（那是 P0 刚修掉的老问题）。
     """
 
     items: list[WrongQuestionResp]
     total: int
     page_size: int
     next_cursor: str | None = None
+    graduated_total: int = 0
 
 
 class TaskQuestionEdit(SQLModel):

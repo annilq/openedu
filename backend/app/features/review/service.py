@@ -72,6 +72,10 @@ def submit_answer(
     wq = session.get(WrongQuestion, submit.wrong_question_id)
     if wq is None or wq.child_id != child_id:
         raise ReviewNotFound()
+    # 已毕业（已掌握）的错题不在复习队列里（ADR-0053 P2 起毕业不删行）：
+    # 拿它作答会重复推进一个已经走完的阶段，属于越界请求。
+    if wq.graduated_at is not None:
+        raise ReviewNotFound()
     # 未到期不可作答：防止连对提前毕业绕过遗忘曲线
     now = datetime.now(UTC)
     due = wq.due_at

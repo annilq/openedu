@@ -21,6 +21,8 @@ class BankQuestionItem(SQLModel):
     explanation: str | None = None
     created_at: datetime | None = None
     usage_count: int = 0  # 被多少个 Task 引用（复用度）
+    # 已归档时间；None = 在用（ADR-0053 P2）。前端据此给「已归档」徽标。
+    archived_at: datetime | None = None
 
 
 class BankListResp(SQLModel):
@@ -63,6 +65,24 @@ class DeleteQuestionsResult(SQLModel):
 
     deleted: list[UUID] = []
     skipped_in_use: list[UUID] = []  # 已被任务引用，跳过
+    skipped_forbidden: list[UUID] = []  # 不存在 / 非本家长所有，跳过
+
+
+class ArchiveQuestionsReq(SQLModel):
+    """批量归档 / 恢复题库题（ADR-0053 P2）。
+
+    ``archived=True`` 归档、``False`` 恢复。恢复是归档存在的理由——被任务引用的题
+    删不掉，家长只能堆着；可恢复才敢点。
+    """
+
+    ids: list[UUID]
+    archived: bool = True
+
+
+class ArchiveQuestionsResult(SQLModel):
+    """批量归档 / 恢复结果。"""
+
+    updated: list[UUID] = []
     skipped_forbidden: list[UUID] = []  # 不存在 / 非本家长所有，跳过
 
 

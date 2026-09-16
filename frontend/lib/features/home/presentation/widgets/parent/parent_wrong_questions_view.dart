@@ -10,6 +10,7 @@ import '../../../../../shared/widgets/app_card_list.dart';
 import '../../../../../shared/widgets/app_error.dart';
 import '../../../../../shared/widgets/app_loading.dart';
 import '../../../../../shared/widgets/app_paging_footer.dart';
+import '../../../../../shared/widgets/app_toast.dart';
 import '../../../../review/presentation/providers/review_notifier.dart';
 import '../../providers/selected_child_provider.dart';
 
@@ -31,13 +32,39 @@ class _ParentWrongQuestionsState
   late final ScrollController _scroll = ScrollController();
   VoidCallback? _unbindScroll;
 
+  /// 是否在看「已掌握」分区（ADR-0053 P2）。
+  ///
+  /// 做成模式切换而不是「列表底部再嵌一个列表」：两条列表都要分页、都要触底追加，
+  /// 嵌在一起就得处理两层滚动与两层触底，收益却只是省一次点击。
+  bool _showGraduated = false;
+
   @override
   void initState() {
     super.initState();
-    _unbindScroll = bindPagingOnScroll(
-      _scroll,
-      () => ref.read(parentWrongQuestionsProvider.notifier).loadMore(),
-    );
+    _unbindScroll = bindPagingOnScroll(_scroll, _loadMore);
+  }
+
+  /// 触底追加的是**当前正在看的那一条**列表。
+  void _loadMore() {
+    if (_showGraduated) {
+      ref.read(parentGraduatedWrongQuestionsProvider.notifier).loadMore();
+    } else {
+      ref.read(parentWrongQuestionsProvider.notifier).loadMore();
+    }
+  }
+
+  void _switchGraduated(bool value) {
+    if (value == _showGraduated) return;
+    setState(() => _showGraduated = value);
+    final childId = ref.read(selectedChildProvider)?.id;
+    if (childId == null) return;
+    if (value) {
+      ref
+          .read(parentGraduatedWrongQuestionsProvider.notifier)
+          .load(childId);
+    } else {
+      ref.read(parentWrongQuestionsProvider.notifier).load(childId);
+    }
   }
 
   @override
@@ -52,7 +79,12 @@ class _ParentWrongQuestionsState
     final selected = ref.watch(selectedChildProvider);
     if (selected == null) return _emptyState(context);
 
-    final state = ref.watch(parentWrongQuestionsProvider);
+    // 两个分区各自一份状态：查询条件不同（scope=active / graduated），
+    // 合成一份会让「翻页」和「切分区」互相踩。
+    final state = _showGraduated
+        ? ref.watch(parentGraduatedWrongQuestionsProvider)
+        : ref.watch(parentWrongQuestionsProvider);
+    final graduatedTotal = graduatedTotalOf(ref.watch(parentWrongQuestionsProvider));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -64,7 +96,11 @@ class _ParentWrongQuestionsState
             child: ConstrainedBox(
               constraints:
                   const BoxConstraints(maxWidth: AppLayout.contentWide),
-              child: const SectionTitle('错题本'),
+              child: _Header(
+                showGraduated: _showGraduated,
+                graduatedTotal: graduatedTotal,
+                onSwitch: _switchGraduated,
+              ),
             ),
           ),
         ),
@@ -95,7 +131,11 @@ class _ParentWrongQuestionsState
               itemCount: state.items.length,
               itemBuilder: (_, i) => AppCard.listRow(
                 padding: const EdgeInsets.all(AppSpacing.md),
-                child: _ParentWrongCard(item: state.items[i]),
+                child: _ParentWrongCard(
+                  item: state.items[i],
+                  // 「已掌握」分区只读：可重新加入复习，但不提供「掌握了」之外的解读。
+                  onRejoin: _showGraduated ? () => _rejoin(state.items[i]) : null,
+                ),
               ),
             ),
           ),
@@ -124,8 +164,18 @@ class _ParentWrongQuestionsState
     );
   }
 
-  void _loadMore() =>
-      ref.read(parentWrongQuestionsProvider.notifier).loadMore();
+  /// 重新加入复习：成功后两条列表都会由 provider 刷新（它会从「已掌握」里消失）。
+  Future<void> _rejoin(WrongQuestionModel item) async {
+    final childId = ref.read(selectedChildProvider)?.id;
+    if (childId == null) return;
+    try {
+      await ref
+          .read(rejoinWrongQuestionProvider)(childId, item.id);
+      if (mounted) AppToast.show(context, '已重新加入复习');
+    } catch (e) {
+      if (mounted) AppToast.error(context, e.toString());
+    }
+  }
 
   Widget _buildEmpty() {
     final scheme = AppTheme.colorsOf(context);
@@ -199,9 +249,55 @@ class _ParentWrongQuestionsState
 /// - **题干截到 2 行**：单卡高度不可控的直接原因就是它；
 /// - **答案保留 1 行**：扫一眼就能判断娃娃错在哪，这是列表里最该留下的信息；
 /// - **解析默认折叠**：需要细看时点开，不占列表的默认高度（≈250 → ≈150）。
+/// 标题行 = 分区切换器（ADR-0053 P2）：默认「错题本」，可切到「已掌握（N）」。
+///
+/// 用 chip 而不是文字链：它和题库页的年级 / 归档 chip 是同一种筛选语言，
+/// 键盘可达、有明确的选中态。
+class _Header extends StatelessWidget {
+  const _Header({
+    required this.showGraduated,
+    required this.graduatedTotal,
+    required this.onSwitch,
+  });
+
+  final bool showGraduated;
+  final int graduatedTotal;
+  final void Function(bool) onSwitch;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: AppSpacing.xs,
+      runSpacing: AppSpacing.xs,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        SectionTitle(showGraduated ? '已掌握' : '错题本'),
+        if (graduatedTotal > 0 || showGraduated)
+          Padding(
+            padding: const EdgeInsets.only(left: AppSpacing.xs),
+            child: showGraduated
+                ? ShadButton.outline(
+                    size: ShadButtonSize.sm,
+                    onPressed: () => onSwitch(false),
+                    child: const Text('返回未掌握'),
+                  )
+                : ShadButton.outline(
+                    size: ShadButtonSize.sm,
+                    onPressed: () => onSwitch(true),
+                    child: Text('已掌握（$graduatedTotal）'),
+                  ),
+          ),
+      ],
+    );
+  }
+}
+
 class _ParentWrongCard extends StatefulWidget {
   final WrongQuestionModel item;
-  const _ParentWrongCard({required this.item});
+
+  /// 非空时卡片底部出现「重新加入复习」（只有「已掌握」分区有）。
+  final VoidCallback? onRejoin;
+  const _ParentWrongCard({required this.item, this.onRejoin});
 
   @override
   State<_ParentWrongCard> createState() => _ParentWrongCardState();
@@ -273,6 +369,12 @@ class _ParentWrongCardState extends State<_ParentWrongCard> {
             padding: const EdgeInsets.only(bottom: AppSpacing.xs),
             child: Text('解析：${item.explanation}',
                 style: AppTheme.textOf(context).bodyMedium),
+          ),
+        if (widget.onRejoin != null)
+          AppTextAction(
+            label: '重新加入复习',
+            onPressed: widget.onRejoin,
+            semanticLabel: '重新加入复习',
           ),
       ],
     );

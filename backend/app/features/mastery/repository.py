@@ -58,7 +58,12 @@ def get_knowledge_point_mastery(
     wrong_rows = session.exec(
         select(WrongQuestion, Question)
         .join(Question, Question.id == WrongQuestion.question_id)
-        .where(WrongQuestion.child_id == child_id)
+        .where(
+            WrongQuestion.child_id == child_id,
+            # 已毕业（已掌握）的错题不算「活跃」（ADR-0053 P2 起毕业不删行，
+            # 这里必须显式排除，否则掌握度会被一条已经掌握的错题永久封顶）。
+            WrongQuestion.graduated_at.is_(None),  # type: ignore[union-attr]
+        )
     ).all()
     for wq, q in wrong_rows:
         agg = groups.get(q.knowledge_point)

@@ -48,6 +48,8 @@ class _ParentQuestionBankViewState
   String _selectedSubject = ''; // '' = 全部
   String _selectedQtype = 'all'; // 'all' = 全部
   int _gradeSegment = -1; // -1 = 全部
+  /// 归档范围（ADR-0053 P2）：active = 只看在用（默认），archived = 只看已归档，all = 含已归档。
+  String _archived = 'active';
   final Set<String> _selectedIds = {};
   final TextEditingController _keywordCtrl = TextEditingController();
   final TextEditingController _titleCtrl = TextEditingController(text: '题库组卷');
@@ -88,7 +90,26 @@ class _ParentQuestionBankViewState
           keyword: _keywordCtrl.text.trim().isEmpty
               ? null
               : _keywordCtrl.text.trim(),
+          archived: _archived,
         );
+  }
+
+  /// 切归档范围：与学科 / 年级同级，换了就重新取第一页。
+  ///
+  /// 不在客户端过滤已加载的页——那样只会过滤当前页，后面几页里混着的已归档题
+  /// 又会冒出来（P0 把「客户端过滤」从任务 Tab 里拿掉是同一个理由）。
+  void _switchArchived(String value) {
+    if (value == _archived) return;
+    setState(() => _archived = value);
+    _reload();
+  }
+
+  Future<void> _archiveSelected(bool archived) async {
+    final ids = _selectedIds.toList();
+    if (ids.isEmpty) return;
+    await ref
+        .read(questionBankNotifierProvider.notifier)
+        .archiveQuestions(ids, archived: archived);
   }
 
   void _onKeywordChanged(String v) {
@@ -364,6 +385,18 @@ class _ParentQuestionBankViewState
           _selectedIds.clear();
           _reload();
         });
+      } else if (next is BankArchived) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          AppToast.show(
+            context,
+            next.archived
+                ? '已归档 ${next.updated} 题（可随时恢复）'
+                : '已恢复 ${next.updated} 题',
+          );
+          _selectedIds.clear();
+          _reload();
+        });
       } else if (next is BankActionError) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) AppToast.error(context, next.message);
@@ -453,7 +486,42 @@ class _ParentQuestionBankViewState
             ),
           ],
         ),
+        const SizedBox(height: AppSpacing.md),
+        // 归档三态（ADR-0053 P2）。与年级 chip 同一套语言：选中的实色、未选描边。
+        // ADR 里写的是 AppSelectStrip，但那个组件是「多选模式条」（计数 + 全选），
+        // 与这里的语义不同；复用本页已有的 chip 行才是「全站一种筛选语言」。
+        Wrap(
+          spacing: AppSpacing.xs,
+          runSpacing: AppSpacing.xs,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            for (final opt in const [
+              ('active', '只看在用'),
+              ('all', '含已归档'),
+              ('archived', '只看已归档'),
+            ])
+              _archivedChip(opt.$1, opt.$2),
+          ],
+        ),
       ],
+    );
+  }
+
+  Widget _archivedChip(String value, String label) {
+    final active = _archived == value;
+    return Padding(
+      padding: const EdgeInsets.only(right: AppSpacing.xs),
+      child: active
+          ? ShadButton(
+              size: ShadButtonSize.sm,
+              onPressed: () => _switchArchived(value),
+              child: Text(label),
+            )
+          : ShadButton.outline(
+              size: ShadButtonSize.sm,
+              onPressed: () => _switchArchived(value),
+              child: Text(label),
+            ),
     );
   }
 
@@ -510,7 +578,8 @@ class _ParentQuestionBankViewState
       BankActionLoading() ||
       BankActionSuccess() ||
       BankActionError() ||
-      BankDeleted() =>
+      BankDeleted() ||
+      BankArchived() =>
         const AppLoading(),
       BankError(:final message) => AppError(message: message, onRetry: _reload),
       BankLoaded(:final page) => page.items.isEmpty
@@ -579,6 +648,9 @@ class _ParentQuestionBankViewState
                       _tag(app, '${q.grade}年级'),
                       _tag(app, q.knowledgePoint),
                       _tag(app, _qtypeLabel(q.qtype)),
+                      // 已归档的行必须自己说出来：在「含已归档」视图里，
+                      // 归档题与在用题长得一样，看不出区别。
+                      if (q.archivedAt != null) _tag(app, '已归档'),
                       if (q.usageCount > 0) _usageTag(app, q),
                     ],
                   ),
@@ -652,6 +724,19 @@ class _ParentQuestionBankViewState
       runSpacing: AppSpacing.sm,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
+        // 归档与删除并排：被任务引用的题删不掉，家长只能堆着——归档就是给
+        // 这种情况的出口，所以它必须和删除一样显眼，且可恢复（ADR-0053 P2）。
+        ShadButton.outline(
+          onPressed: busy ? null : () => _archiveSelected(true),
+          leading: const Icon(LucideIcons.archive, size: 16),
+          child: Text('归档选中 (${_selectedIds.length})'),
+        ),
+        if (_archived != 'active')
+          ShadButton.outline(
+            onPressed: busy ? null : () => _archiveSelected(false),
+            leading: const Icon(LucideIcons.archiveRestore, size: 16),
+            child: Text('恢复选中 (${_selectedIds.length})'),
+          ),
         ShadButton.outline(
           onPressed: busy ? null : _deleteSelected,
           leading: const Icon(LucideIcons.trash2, size: 16),

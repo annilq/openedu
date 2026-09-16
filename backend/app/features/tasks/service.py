@@ -69,6 +69,7 @@ from app.features.tasks.repository import (
     promote_task_question,
     regenerate_all_task_questions,
     regenerate_one_task_question,
+    rejoin_wrong_question,
     remove_task_question,
     task_question_breakdown,
     update_task_meta,
@@ -143,6 +144,7 @@ def wrong_question_to_resp(
         first_wrong_at=wq.first_wrong_at,
         review_stage=wq.review_stage,
         due_at=wq.due_at,
+        graduated_at=wq.graduated_at,
     )
 
 
@@ -259,15 +261,22 @@ def list_wrong_questions_page(
     include_answer: bool,
     cursor: str | None = None,
     page_size: int | None = None,
+    scope: str = "active",
 ) -> WrongQuestionListResp:
     """错题本（REST，ADR-0053）：游标分页信封。
 
     ``include_answer`` 由**调用方按角色**决定（家长 True / 娃娃 False），不进查询参数——
     答案能不能看是鉴权问题，不能让客户端自己选。
+
+    ``scope``（ADR-0053 P2）：``active``（默认）/ ``graduated``（只看已掌握）。
     """
     size = clamp_page_size(page_size)
     rows = repo_list_wrong_questions(
-        session=session, child_id=child_id, cursor=cursor, page_size=size
+        session=session,
+        child_id=child_id,
+        cursor=cursor,
+        page_size=size,
+        scope=scope,
     )
     next_cursor = (
         encode_cursor(created_at=rows[-1][0].first_wrong_at, id_=rows[-1][0].id)
@@ -279,9 +288,19 @@ def list_wrong_questions_page(
             wrong_question_to_resp(wq, q, include_answer=include_answer)
             for wq, q in rows
         ],
-        total=count_wrong_questions(session=session, child_id=child_id),
+        total=count_wrong_questions(
+            session=session, child_id=child_id, scope=scope
+        ),
         page_size=size,
         next_cursor=next_cursor,
+        # 「已掌握（N）」是全量计数，不能拿已加载的页统计（P0 刚修掉的老问题）。
+        graduated_total=(
+            count_wrong_questions(
+                session=session, child_id=child_id, scope="graduated"
+            )
+            if scope == "active"
+            else 0
+        ),
     )
 
 
@@ -318,6 +337,7 @@ def owned_child_wrong_questions_page(
     child_id: UUID,
     cursor: str | None = None,
     page_size: int | None = None,
+    scope: str = "active",
 ) -> WrongQuestionListResp:
     """家长查某娃娃错题本（REST 分页版，含答案/解析供核查）；先校验归属。"""
     require_owned_child(session=session, owner_id=parent.id, child_id=child_id)
@@ -327,7 +347,25 @@ def owned_child_wrong_questions_page(
         include_answer=True,
         cursor=cursor,
         page_size=page_size,
+        scope=scope,
     )
+
+
+def rejoin_child_wrong_question(
+    *, session: Session, parent: User, child_id: UUID, wrong_id: UUID
+) -> WrongQuestionResp:
+    """家长把某条「已掌握」的错题重新加入复习（ADR-0053 P2）。
+
+    先校验归属（家长 → 孩子），再由 repository 按 child 作用域改数据。
+    """
+    require_owned_child(session=session, owner_id=parent.id, child_id=child_id)
+    wq = rejoin_wrong_question(
+        session=session, child_id=child_id, wrong_id=wrong_id
+    )
+    question = session.get(Question, wq.question_id)
+    if question is None:
+        raise AppErrorException(ErrCode.QUESTION_NOT_FOUND, "原题不存在")
+    return wrong_question_to_resp(wq, question, include_answer=True)
 
 
 def owned_child_progress(*, session: Session, parent: User, child_id: UUID) -> ProgressResp:

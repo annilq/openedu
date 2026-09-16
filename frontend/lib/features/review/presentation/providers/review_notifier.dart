@@ -91,3 +91,42 @@ final parentWrongQuestionsProvider = StateNotifierProvider<
         .parentWrongQuestions(childId, cursor: cursor),
   ),
 );
+
+/// 家长端「已掌握」分区（ADR-0053 P2）：毕业的错题不再删行，只读回顾 +
+/// 可「重新加入复习」。与上面那份未毕业列表是两条独立的分页状态机——它们的
+/// 查询条件不同，合一条会让「翻页」和「切分区」互相踩。
+final parentGraduatedWrongQuestionsProvider = StateNotifierProvider<
+    ParamPagingNotifier<WrongQuestionModel, String>,
+    PagingState<WrongQuestionModel>>(
+  (ref) => ParamPagingNotifier<WrongQuestionModel, String>(
+    (childId, {cursor}) => ref
+        .watch(reviewRepositoryProvider)
+        .parentWrongQuestions(childId, cursor: cursor, scope: 'graduated'),
+  ),
+);
+
+/// 「已掌握（N）」里的 N：**全量**计数，由服务端随页下发（ADR-0053 P2）。
+///
+/// 不能拿已加载的页统计——那是 P0 刚修掉的老问题（徽标只能统计已加载页）。
+int graduatedTotalOf(PagingState<WrongQuestionModel> state) => switch (state) {
+      PagingLoaded<WrongQuestionModel>(page: final p) =>
+        p is WrongQuestionPage ? p.graduatedTotal : 0,
+      _ => 0,
+    };
+
+/// 把一条「已掌握」的错题重新加入复习，并同步两条列表。
+///
+/// 成功后必须**两边都刷**：它从「已掌握」里消失（清了 graduated_at），
+/// 同时出现在未毕业列表里。只刷一边会让家长点完看不到变化，以为没生效。
+final rejoinWrongQuestionProvider =
+    Provider<Future<void> Function(String childId, String wrongId)>((ref) {
+  return (childId, wrongId) async {
+    await ref
+        .read(reviewRepositoryProvider)
+        .rejoinWrongQuestion(childId, wrongId);
+    await ref.read(parentWrongQuestionsProvider.notifier).load(childId);
+    await ref
+        .read(parentGraduatedWrongQuestionsProvider.notifier)
+        .load(childId);
+  };
+});

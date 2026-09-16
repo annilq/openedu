@@ -16,8 +16,11 @@ from app.features.questions.repository import (
     delete_bank_questions,
     get_question_usages,
     list_bank_questions,
+    set_bank_questions_archived,
 )
 from app.features.questions.schemas import (
+    ArchiveQuestionsReq,
+    ArchiveQuestionsResult,
     BankListResp,
     BankQuestionItem,
     DeleteQuestionsReq,
@@ -39,6 +42,7 @@ def list_bank(
     knowledge_point: str | None = None,
     qtype: str | None = None,
     keyword: str | None = None,
+    archived: str = Query("active", pattern="^(active|archived|all)$"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     cursor: str | None = None,
@@ -47,6 +51,8 @@ def list_bank(
 
     给了 ``cursor`` 就走 keyset 游标（忽略 ``page``）；不给则退回 offset，兼容旧客户端
     与 AI 查询工具（ADR-0053）。
+
+    ``archived``（ADR-0053 P2）：``active``（默认）/ ``archived`` / ``all``。
     """
     page_size = clamp_page_size(page_size)
     items, total, usage = list_bank_questions(
@@ -60,6 +66,7 @@ def list_bank(
         page=page,
         page_size=page_size,
         cursor=cursor,
+        archived=archived,
     )
     # 本页取满才可能有下一页：取不满说明已经是最后一批。
     # 注意不能拿 total 判断——它是取页时的快照，期间插入新题后必然失真。
@@ -83,6 +90,7 @@ def list_bank(
                 explanation=q.explanation,
                 created_at=q.created_at,
                 usage_count=usage.get(q.id, 0),
+                archived_at=q.archived_at,
             )
             for q in items
         ],
@@ -108,6 +116,27 @@ def delete_questions(
         session=session, parent_id=parent.id, question_ids=body.ids
     )
     return DeleteQuestionsResult(**result)
+
+
+@router.post("/archive", response_model=ArchiveQuestionsResult)
+def archive_questions(
+    *,
+    session: SessionDep,
+    parent: CurrentParent,
+    body: ArchiveQuestionsReq,
+) -> ArchiveQuestionsResult:
+    """批量归档 / 恢复题库题（ADR-0053 P2）。
+
+    与 DELETE 的分工：删除是「彻底不要了」（被任务引用的题删不掉），归档是
+    「先收起来」——被引用也能归档，且随时能恢复。
+    """
+    result = set_bank_questions_archived(
+        session=session,
+        parent_id=parent.id,
+        question_ids=body.ids,
+        archived=body.archived,
+    )
+    return ArchiveQuestionsResult(**result)
 
 
 @router.get("/{question_id}/usages", response_model=QuestionUsagesResp)

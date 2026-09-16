@@ -39,18 +39,31 @@ class ReviewRepositoryImpl implements ReviewRepository {
   }
 
   @override
-  Future<CursorPage<WrongQuestionModel>> parentWrongQuestions(
+  Future<WrongQuestionPage> parentWrongQuestions(
     String childId, {
     String? cursor,
     int pageSize = 20,
+    String scope = 'active',
   }) async {
     final data = await _network.get(
       '/tasks/children/$childId/wrong-questions',
       query: {
         'page_size': pageSize,
+        'scope': scope,
         if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
       },
     );
-    return CursorPage.fromJson(decodeMap(data), WrongQuestionModel.fromJson);
+    return WrongQuestionPage.fromJson(decodeMap(data));
+  }
+
+  @override
+  Future<WrongQuestionModel> rejoinWrongQuestion(
+    String childId,
+    String wrongQuestionId,
+  ) async {
+    final data = await _network.post(
+      '/tasks/children/$childId/wrong-questions/$wrongQuestionId/rejoin',
+    );
+    return WrongQuestionModel.fromJson(decodeMap(data));
   }
 }

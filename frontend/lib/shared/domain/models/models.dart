@@ -488,6 +488,44 @@ class TaskPage extends CursorPage<TaskModel> {
   }
 }
 
+/// 错题本响应（ADR-0053 P2）：游标信封 + 「已掌握」全量计数。
+///
+/// 与 [TaskPage] 同理，做成 [CursorPage] 的子类：分页 notifier 只认 [CursorPage]，
+/// 「已掌握（N）」作为这一页额外的东西跟着走，不必为错题再写一套分页状态机。
+class WrongQuestionPage extends CursorPage<WrongQuestionModel> {
+  /// 该孩子已毕业（已掌握）的错题总数；只在「只看未毕业」时由服务端下发。
+  final int graduatedTotal;
+
+  const WrongQuestionPage({
+    required super.items,
+    required super.total,
+    required super.pageSize,
+    super.nextCursor,
+    this.graduatedTotal = 0,
+  });
+
+  @override
+  CursorPage<WrongQuestionModel> append(CursorPage<WrongQuestionModel> next) =>
+      WrongQuestionPage(
+        items: [...items, ...next.items],
+        total: next.total,
+        pageSize: next.pageSize,
+        nextCursor: next.nextCursor,
+        graduatedTotal: next is WrongQuestionPage ? next.graduatedTotal : 0,
+      );
+
+  factory WrongQuestionPage.fromJson(Map<String, dynamic> json) {
+    final page = CursorPage.fromJson(json, WrongQuestionModel.fromJson);
+    return WrongQuestionPage(
+      items: page.items,
+      total: page.total,
+      pageSize: page.pageSize,
+      nextCursor: page.nextCursor,
+      graduatedTotal: json['graduated_total'] as int? ?? 0,
+    );
+  }
+}
+
 // ───────── 题库复用闭环（GET /questions / POST /tasks/from-bank 等） ─────────
 class BankQuestionItem {
   final String id;
@@ -502,6 +540,9 @@ class BankQuestionItem {
   final String? explanation;
   final int usageCount;
 
+  /// 归档时间（ADR-0053 P2）；null = 在用。前端据此给「已归档」徽标。
+  final DateTime? archivedAt;
+
   BankQuestionItem({
     required this.id,
     required this.subject,
@@ -514,6 +555,7 @@ class BankQuestionItem {
     this.answer,
     this.explanation,
     this.usageCount = 0,
+    this.archivedAt,
   });
 
   factory BankQuestionItem.fromJson(Map<String, dynamic> json) => BankQuestionItem(
@@ -528,6 +570,7 @@ class BankQuestionItem {
         answer: json['answer'] as String?,
         explanation: json['explanation'] as String?,
         usageCount: (json['usage_count'] as int?) ?? 0,
+        archivedAt: _parseDate(json['archived_at']),
       );
 }
 
@@ -551,6 +594,31 @@ class DeleteQuestionsResult {
                 ?.map((e) => e.toString())
                 .toList() ??
             const [],
+        skippedForbidden: (json['skipped_forbidden'] as List?)
+                ?.map((e) => e.toString())
+                .toList() ??
+            const [],
+      );
+}
+
+/// 批量归档 / 恢复结果（ADR-0053 P2）。
+///
+/// 与 [DeleteQuestionsResult] 的差别就是归档的意义：没有「被引用所以跳过」这一组——
+/// 被任务引用的题也能归档，因为归档不破坏历史任务、且随时能恢复。
+class ArchiveQuestionsResult {
+  final List<String> updated;
+  final List<String> skippedForbidden;
+
+  const ArchiveQuestionsResult({
+    this.updated = const [],
+    this.skippedForbidden = const [],
+  });
+
+  factory ArchiveQuestionsResult.fromJson(Map<String, dynamic> json) =>
+      ArchiveQuestionsResult(
+        updated:
+            (json['updated'] as List?)?.map((e) => e.toString()).toList() ??
+                const [],
         skippedForbidden: (json['skipped_forbidden'] as List?)
                 ?.map((e) => e.toString())
                 .toList() ??
@@ -672,6 +740,9 @@ class WrongQuestionModel {
   final int reviewStage;
   final DateTime? dueAt;
 
+  /// 毕业（已掌握）时间（ADR-0053 P2）；null = 仍在复习队列里。
+  final DateTime? graduatedAt;
+
   WrongQuestionModel({
     required this.id,
     required this.questionId,
@@ -687,6 +758,7 @@ class WrongQuestionModel {
     this.firstWrongAt,
     this.reviewStage = 0,
     this.dueAt,
+    this.graduatedAt,
   });
 
   factory WrongQuestionModel.fromJson(Map<String, dynamic> json) {
@@ -705,6 +777,7 @@ class WrongQuestionModel {
       firstWrongAt: _parseDate(json['first_wrong_at']),
       reviewStage: json['review_stage'] as int? ?? 0,
       dueAt: _parseDate(json['due_at']),
+      graduatedAt: _parseDate(json['graduated_at']),
     );
   }
 }

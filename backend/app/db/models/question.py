@@ -32,3 +32,12 @@ class Question(SQLModel, table=True):
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore
     )
+    # 显式归档（ADR-0053 P2）：None = 在用。
+    #
+    # 为什么不是「删除」：被任务引用的题删不掉，家长于是「不敢删、只能堆着」——
+    # 题库只增不减的根因就是这个心理。归档必须可恢复，所以它只是一个可空时间戳，
+    # 而不是布尔 + 不可逆删除。
+    archived_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),  # type: ignore
+    )

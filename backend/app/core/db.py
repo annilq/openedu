@@ -86,6 +86,33 @@ def run_migrations() -> None:
                 text("ALTER TABLE task ADD COLUMN IF NOT EXISTS model VARCHAR(255)")
             )
 
+        # —— 归档 / 毕业时间戳（ADR-0053 P2）——
+        # 三个模块共用一套 archived 字段的诱惑在这里被拒绝了：题库是「家长主动弃用」、
+        # 错题是「系统判定已掌握」，同名字段会让「这行为什么归档了」无法回答。
+        for table, column in (("question", "archived_at"), ("wrongquestion", "graduated_at")):
+            try:
+                if is_sqlite:
+                    cols = [
+                        r[1]
+                        for r in conn.execute(
+                            text(f"PRAGMA table_info({table})")
+                        ).fetchall()
+                    ]
+                    if column not in cols:
+                        conn.execute(
+                            text(f"ALTER TABLE {table} ADD COLUMN {column} TIMESTAMP")
+                        )
+                else:
+                    conn.execute(
+                        text(
+                            f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS "
+                            f"{column} TIMESTAMP WITH TIME ZONE"
+                        )
+                    )
+            except OperationalError:
+                # 偏序迁移：表还没建（首次启动由 init_db 建表并带新列），跳过即可。
+                pass
+
         # —— 列表游标分页的排序索引（ADR-0053）——
         # 三个长列表都按 (owner, 时间戳倒序) 取页，缺复合索引时深翻会全表排序。
         # CREATE INDEX IF NOT EXISTS 在 SQLite / Postgres 下都幂等，旧库启动期自动补齐。
