@@ -7,6 +7,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../../shared/domain/models/models.dart';
 import '../../../../../shared/presentation/paging.dart';
 import '../../../../../shared/theme/app_theme.dart';
+import '../../../../../shared/widgets/app_card_list.dart';
 import '../../../../../shared/widgets/app_error.dart';
 import '../../../../../shared/widgets/app_inputs.dart';
 import '../../../../../shared/widgets/app_loading.dart';
@@ -516,7 +517,15 @@ class _ParentQuestionBankViewState
           ? _EmptyHint(onReload: _reload)
           : Column(
               children: [
-                for (final q in page.items) _buildItem(q, app),
+                // 宽度够时排成两列（ADR-0053）：题库一屏能看到的题翻倍。
+                // 列表区在卡片内、外层已有滚动容器，所以用非懒加载版。
+                LayoutBuilder(
+                  builder: (context, constraints) => AppCardList(
+                    width: constraints.maxWidth,
+                    itemCount: page.items.length,
+                    itemBuilder: (_, i) => _buildItem(page.items[i], app),
+                  ),
+                ),
                 AppPagingFooter(
                   hasMore: page.hasMore,
                   isLoadingMore: state.isLoadingMore,
@@ -538,7 +547,8 @@ class _ParentQuestionBankViewState
     return AppCard.listRow(
       // 列表行变体：1px 墨黑描边、无阴影（ADR-0044「列表降噪」）。
       // 选中态描边转为 primary，复用 [AppCard.border] 透传。
-      margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+      // 行距由 AppCardList 统一给，卡片自身零外边距。
+      margin: EdgeInsets.zero,
       border: Border.all(
         color: selected ? app.primary : AppBrutal.ink,
         width: 1,

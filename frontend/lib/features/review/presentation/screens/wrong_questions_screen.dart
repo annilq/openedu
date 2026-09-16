@@ -5,6 +5,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/presentation/paging.dart';
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/app_card_list.dart';
 import '../../../../shared/widgets/app_error.dart';
 import '../../../../shared/widgets/app_loading.dart';
 import '../../../../shared/widgets/app_motion.dart';
@@ -109,36 +110,42 @@ class _WrongQuestionsScreenState extends ConsumerState<WrongQuestionsScreen> {
     if (state.items.isEmpty) return _buildEmptyView();
 
     final items = state.items;
-    return CustomScrollView(
-      controller: _scroll,
-      slivers: [
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(
-              AppSpacing.lg, AppSpacing.md, AppSpacing.lg, 0),
-          sliver: SliverList.builder(
-            itemCount: items.length,
-            itemBuilder: (ctx, i) => PopIn(
-              // key 稳定 → PopIn 只对「新滑入」的行重放，复用行不闪。
-              key: ValueKey(items[i].id),
-              // 左侧学科色条由 Row(stretch) 撑满行高；行高随内容，
-              // Sliver 内高度无界，须 IntrinsicHeight 给有界高度。
-              child: IntrinsicHeight(child: _WrongQuestionCard(item: items[i])),
+    // 列数只看可用宽度（ADR-0045）：不碰 MediaQuery / 方向 / 平台。
+    return LayoutBuilder(
+      builder: (context, constraints) => CustomScrollView(
+        controller: _scroll,
+        slivers: [
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(AppLayout.listGutter,
+                AppLayout.listGutter, AppLayout.listGutter, 0),
+            sliver: AppCardSliver(
+              width: constraints.maxWidth,
+              itemCount: items.length,
+              itemBuilder: (ctx, i) => PopIn(
+                // key 稳定 → PopIn 只对「新滑入」的行重放，复用行不闪。
+                key: ValueKey(items[i].id),
+                // 左侧学科色条由 Row(stretch) 撑满行高；行高随内容，
+                // Sliver 内高度无界，须 IntrinsicHeight 给有界高度。
+                child:
+                    IntrinsicHeight(child: _WrongQuestionCard(item: items[i])),
+              ),
             ),
           ),
-        ),
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-            child: AppPagingFooter(
-              hasMore: state.hasMore,
-              isLoadingMore: state.isLoadingMore,
-              moreError: state.moreError,
-              remaining: state.remaining,
-              onLoadMore: _loadMore,
+          SliverToBoxAdapter(
+            child: Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: AppLayout.listGutter),
+              child: AppPagingFooter(
+                hasMore: state.hasMore,
+                isLoadingMore: state.isLoadingMore,
+                moreError: state.moreError,
+                remaining: state.remaining,
+                onLoadMore: _loadMore,
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -203,7 +210,8 @@ class _WrongQuestionCard extends StatelessWidget {
     final subjectKey = SubjectAccent.fromName(item.subject);
     final subjectColor = SubjectAccent.forContext(subjectKey, context).accent;
     return AppCard.listRow(
-      margin: const EdgeInsets.symmetric(vertical: 6),
+      // 行距由 AppCardSliver 统一给（此前这里是裸数字 6，三个页面三种行距）。
+      margin: EdgeInsets.zero,
       padding: EdgeInsets.zero,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppRadius.card),
@@ -217,8 +225,13 @@ class _WrongQuestionCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(item.stem,
-                        style: AppTheme.textOf(context).titleSmall),
+                    Text(
+                      item.stem,
+                      style: AppTheme.textOf(context).titleSmall,
+                      // 长题干不加行数上限会撑掉半屏（ADR-0053）。
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                     const SizedBox(height: AppSpacing.md),
                     Wrap(
                       spacing: AppSpacing.sm,

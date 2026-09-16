@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../../shared/theme/app_theme.dart';
+import '../../../../../shared/widgets/app_card_list.dart';
 import '../../../../../shared/widgets/app_empty_state.dart';
 import '../../../../../shared/widgets/app_error.dart';
 import '../../../../../shared/widgets/app_loading.dart';
@@ -109,41 +110,45 @@ class _ParentTasksViewState extends ConsumerState<ParentTasksView> {
         Expanded(
           child: items.isEmpty
               ? _buildEmptyState(tabCounts)
-              : CustomScrollView(
-                  controller: _scroll,
-                  slivers: [
-                    SliverPadding(
-                      padding: const EdgeInsets.fromLTRB(AppSpacing.lg,
-                          AppSpacing.sm, AppSpacing.lg, AppSpacing.xl2),
-                      sliver: SliverList.builder(
-                        itemCount: items.length,
-                        itemBuilder: (_, i) => Padding(
-                          padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                          child: _TaskCard(
-                            task: items[i],
-                            childName: nameOf(items[i].childId),
-                            onTap: () => widget.onNavigateToReview(items[i]),
+              : LayoutBuilder(
+                  // 列数只看可用宽度（ADR-0045）：不碰 MediaQuery / 方向 / 平台。
+                  builder: (context, constraints) => CustomScrollView(
+                        controller: _scroll,
+                        slivers: [
+                          SliverPadding(
+                            padding: const EdgeInsets.fromLTRB(
+                                AppLayout.listGutter,
+                                AppSpacing.sm,
+                                AppLayout.listGutter,
+                                AppSpacing.xl2),
+                            sliver: AppCardSliver(
+                              width: constraints.maxWidth,
+                              itemCount: items.length,
+                              itemBuilder: (_, i) => _TaskCard(
+                                task: items[i],
+                                childName: nameOf(items[i].childId),
+                                onTap: () => widget.onNavigateToReview(items[i]),
+                              ),
+                            ),
                           ),
-                        ),
+                          SliverToBoxAdapter(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: AppLayout.listGutter),
+                              child: AppPagingFooter(
+                                hasMore: state.hasMore,
+                                isLoadingMore: state.isLoadingMore,
+                                moreError: state.moreError,
+                                remaining: state.remaining,
+                                onLoadMore: () => ref
+                                    .read(parentTasksNotifierProvider.notifier)
+                                    .loadMore(),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.lg),
-                        child: AppPagingFooter(
-                          hasMore: state.hasMore,
-                          isLoadingMore: state.isLoadingMore,
-                          moreError: state.moreError,
-                          remaining: state.remaining,
-                          onLoadMore: () => ref
-                              .read(parentTasksNotifierProvider.notifier)
-                              .loadMore(),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
         ),
       ],
     );

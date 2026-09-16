@@ -1839,6 +1839,67 @@ class AppIconAction extends StatelessWidget {
   }
 }
 
+/// 行内文字操作：用于卡片 / 列表行里的「编辑 / 删除 / 设为默认」等二次动作。
+///
+/// 与 [AppIconAction] 同属「行内操作」家族：方形命中区换成文字标签 + 水平内边距，
+/// 其余属性（焦点树 / 悬停药丸 / 键盘 Enter 激活）完全一致。
+///
+/// 为什么不用 `CupertinoButton`：它会把 child 套进 Cupertino 主题的
+/// `DefaultTextStyle`，强制使用系统字体（.SF Pro / PingFang），**覆盖**
+/// 我们内嵌的 Inter + Noto Sans SC；中文会变糙、字号也会跳到 Cupertino 默认值。
+/// 这里显式给 `Text` 传 `AppTheme.textOf` 样式，保证字形与字号都走设计系统。
+class AppTextAction extends StatelessWidget {
+  final String label;
+  final VoidCallback? onPressed;
+
+  /// 文字色。不传时走 `onSurfaceVariant`；删除等破坏动作用 `app.error`。
+  final Color? color;
+
+  /// 读屏动作名。文字标签本身可读时通常无需再传。
+  final String? semanticLabel;
+
+  const AppTextAction({
+    super.key,
+    required this.label,
+    this.onPressed,
+    this.color,
+    this.semanticLabel,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final app = AppTheme.colorsOf(context);
+    final text = AppTheme.textOf(context);
+    final tint = onPressed != null
+        ? (color ?? app.onSurfaceVariant)
+        : app.onSurfaceVariant.withValues(alpha: 0.5);
+    final child = Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.sm,
+        vertical: AppSpacing.xs,
+      ),
+      child: Text(
+        label,
+        style: text.labelMedium?.copyWith(color: tint),
+      ),
+    );
+    return AppFocusableAction(
+      onTap: onPressed,
+      semanticLabel: semanticLabel ?? label,
+      hoverHighlight: true,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          minHeight: AppControl.heightSmOf(context),
+        ),
+        child: Center(
+          widthFactor: 1,
+          child: child,
+        ),
+      ),
+    );
+  }
+}
+
 /// 线性进度条：靛蓝填充。
 class AppProgressBar extends StatelessWidget {
   final double value;
@@ -2343,6 +2404,12 @@ class AppLayout {
   /// 单张结果卡 / 居中卡片的内容最大宽度。
   static const double contentCard = 520;
 
+  /// 对话框表单（如「添加模型」）的最大宽度。
+  ///
+  /// 比 [contentCard] 略宽：API Key、Base URL 这类长字符串字段在 520 内
+  /// 依旧局促，560 给输入框更多横向呼吸空间，同时仍小于 [contentReading]。
+  static const double dialogForm = 560;
+
   /// 登录页与表单对话框等窄栏内容最大宽度。
   static const double contentNarrow = 480;
 
@@ -2351,6 +2418,44 @@ class AppLayout {
   /// 注意：曾有第六档 `contentFloat = 380`（悬浮助手面板），ADR-0047 把助手改成整页
   /// 后浮层不复存在，该档已删除——留一个没有消费方的档位只会让人猜「什么该用它」。
   static const double contentEmpty = 440;
+
+  // ───────────── 长列表密度（ADR-0053） ─────────────
+  //
+  // 三个长列表（题库 / 任务 / 错题本）此前各有各的行距与页边距，切换页面时会有
+  // 「这个页面更挤」的突兀感。密度收口在这里，页面不许再写裸数字。
+
+  /// 列表区的左右页边距。
+  static const double listGutter = AppSpacing.lg;
+
+  /// 行间距。
+  ///
+  /// 统一 8：行卡自带 1px 墨黑描边，8 足够分隔。此前三个页面是 8 / 12 / 16 三种值。
+  static const double listRowGap = AppSpacing.sm;
+
+  /// 列间距（两列之间）。
+  ///
+  /// 比行间距 [listRowGap] 大一档：行与行之间还有卡片自己的描边分隔，
+  /// 列与列之间什么都没有，只能靠间距。
+  static const double listColumnGap = AppSpacing.md;
+
+  /// 两列布局中单列的**目标**宽度。
+  static const double listColumnWidth = contentCard;
+
+  /// 自动进两列所需的可用内容宽度（已减左右页边距）。
+  ///
+  /// 取 1048 = [contentWide] 1080 − 2 × [listGutter]，即「大屏、detail 关闭」时
+  /// 列表区实际拿到的宽度。此时两列各 (1048 − 12) / 2 = 518，比 [listColumnWidth]
+  /// 只差 2px——差 2px 就掉回一列会让家长拉窗口时列表在临界点反复跳列，所以阈值
+  /// 取「两列都基本达到目标宽度」而不是「两列都必须 ≥ 520」。
+  static const double listTwoColumnMin = contentWide - 2 * listGutter;
+
+  /// 可用内容宽度 [width] 能放几列。**上限 2 列**：3 列会把列宽压到约 340，
+  /// 远低于 [contentNarrow] 480 的可读下限，而两列已经能换来「一屏两倍」。
+  ///
+  /// 只看可用宽度：不由 `MediaQuery.size`（屏宽）、不由方向、不由平台判断
+  ///（ADR-0045 的硬约束）。大屏打开 detail 时主栏约 446 → 1 列，符合预期。
+  static int listColumnsFor(double width) =>
+      width >= listTwoColumnMin ? 2 : 1;
 }
 
 /// 圆角令牌（ADR-0044：新粗野小圆角 / 大面直角）

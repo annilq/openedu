@@ -6,6 +6,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../../shared/domain/models/models.dart';
 import '../../../../../shared/presentation/paging.dart';
 import '../../../../../shared/theme/app_theme.dart';
+import '../../../../../shared/widgets/app_card_list.dart';
 import '../../../../../shared/widgets/app_error.dart';
 import '../../../../../shared/widgets/app_loading.dart';
 import '../../../../../shared/widgets/app_paging_footer.dart';
@@ -81,43 +82,45 @@ class _ParentWrongQuestionsState
     if (!state.isLoaded) return const AppLoading(message: '加载错题...');
     if (state.items.isEmpty) return _buildEmpty();
 
-    return CustomScrollView(
-      controller: _scroll,
-      slivers: [
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(
-              AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xl2),
-          sliver: SliverList.builder(
-            itemCount: state.items.length,
-            itemBuilder: (_, i) => Padding(
-              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-              child: AppCard.listRow(
+    // 列数只看可用宽度（ADR-0045）：不碰 MediaQuery / 方向 / 平台。
+    return LayoutBuilder(
+      builder: (context, constraints) => CustomScrollView(
+        controller: _scroll,
+        slivers: [
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(AppLayout.listGutter,
+                AppLayout.listGutter, AppLayout.listGutter, AppSpacing.xl2),
+            sliver: AppCardSliver(
+              width: constraints.maxWidth,
+              itemCount: state.items.length,
+              itemBuilder: (_, i) => AppCard.listRow(
                 padding: const EdgeInsets.all(AppSpacing.md),
                 child: _ParentWrongCard(item: state.items[i]),
               ),
             ),
           ),
-        ),
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-            child: Align(
-              alignment: Alignment.topLeft,
-              child: ConstrainedBox(
-                constraints:
-                    const BoxConstraints(maxWidth: AppLayout.contentWide),
-                child: AppPagingFooter(
-                  hasMore: state.hasMore,
-                  isLoadingMore: state.isLoadingMore,
-                  moreError: state.moreError,
-                  remaining: state.remaining,
-                  onLoadMore: _loadMore,
+          SliverToBoxAdapter(
+            child: Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: AppLayout.listGutter),
+              child: Align(
+                alignment: Alignment.topLeft,
+                child: ConstrainedBox(
+                  constraints:
+                      const BoxConstraints(maxWidth: AppLayout.contentWide),
+                  child: AppPagingFooter(
+                    hasMore: state.hasMore,
+                    isLoadingMore: state.isLoadingMore,
+                    moreError: state.moreError,
+                    remaining: state.remaining,
+                    onLoadMore: _loadMore,
+                  ),
                 ),
               ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -189,17 +192,39 @@ class _ParentWrongQuestionsState
   }
 }
 
-class _ParentWrongCard extends StatelessWidget {
+/// 错题卡（ADR-0053 密度）。
+///
+/// 此前一张卡把完整题干 + 标准答案 + 整段解析一次全展开，且题干没有行数上限——
+/// 一道长题干能撑掉半个屏幕，家长一屏只能看三张半。现在的取舍：
+/// - **题干截到 2 行**：单卡高度不可控的直接原因就是它；
+/// - **答案保留 1 行**：扫一眼就能判断娃娃错在哪，这是列表里最该留下的信息；
+/// - **解析默认折叠**：需要细看时点开，不占列表的默认高度（≈250 → ≈150）。
+class _ParentWrongCard extends StatefulWidget {
   final WrongQuestionModel item;
   const _ParentWrongCard({required this.item});
 
   @override
+  State<_ParentWrongCard> createState() => _ParentWrongCardState();
+}
+
+class _ParentWrongCardState extends State<_ParentWrongCard> {
+  /// 展开状态是「这一张卡的事」，不进 provider：翻页后卡片重建，折叠回去是对的。
+  bool _expanded = false;
+
+  @override
   Widget build(BuildContext context) {
+    final item = widget.item;
     final scheme = AppTheme.colorsOf(context);
+    final hasExplanation = item.explanation.trim().isNotEmpty;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(item.stem, style: AppTheme.textOf(context).bodyLarge),
+        Text(
+          item.stem,
+          style: AppTheme.textOf(context).bodyLarge,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
         const SizedBox(height: AppSpacing.md),
         Wrap(
           spacing: AppSpacing.sm,
@@ -226,6 +251,9 @@ class _ParentWrongCard extends StatelessWidget {
               Expanded(
                 child: Text(
                   '标准答案：${item.answer ?? '—'}',
+                  // 答案一行：它是「扫一眼」的信息，长答案点开卡片看全文。
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: AppTheme.textOf(context).bodyMedium?.copyWith(
                         color: scheme.onTertiaryContainer,
                         fontWeight: FontWeight.w600,
@@ -235,9 +263,14 @@ class _ParentWrongCard extends StatelessWidget {
             ],
           ),
         ),
-        if (item.explanation.isNotEmpty)
+        if (hasExplanation)
+          AppTextAction(
+            label: _expanded ? '收起解析' : '查看解析',
+            onPressed: () => setState(() => _expanded = !_expanded),
+          ),
+        if (hasExplanation && _expanded)
           Padding(
-            padding: const EdgeInsets.only(top: AppSpacing.md),
+            padding: const EdgeInsets.only(bottom: AppSpacing.xs),
             child: Text('解析：${item.explanation}',
                 style: AppTheme.textOf(context).bodyMedium),
           ),
