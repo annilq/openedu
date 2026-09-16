@@ -185,7 +185,11 @@ async def chat(
         cards: list[dict] = []
         tool_msgs: list[Message] = []
         conv_status = "done"
-        turn = 1
+        # turn 起点必须接着该会话已有的序号往后排，**不能写死 1**：本生成器每轮都会
+        # 重新进入，续接轮的 routing / tool / output 会与第一轮撞号（user 消息用的是
+        # ``next_turn``，两者不同源）。`_read_history` 按 turn 升序读 → 第二轮的回答
+        # 排到第二轮的提问之前，模型拿到的是倒置的上下文。
+        turn = next_turn(session, conv_id)
         blocked_flag = False
 
         # 复用预航班决策（decision），避免重复路由；run 返回事件流。

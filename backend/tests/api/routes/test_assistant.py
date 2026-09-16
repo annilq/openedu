@@ -277,3 +277,60 @@ def test_client_history_does_not_suppress_query_tool_call(client, fake_llm):
     assert status == 200, events
     assert [e["tool"] for e in _of(events, "TOOL_CALL")] == ["list_children"]
     assert fake_llm.calls == [("list_children", {})]
+
+
+# ───────────────────────── 多轮续接：写入序号与读出顺序 ─────────────────────────
+#
+# 会话历史的**唯一排序键是 ``Message.turn``**：`_read_history` 按它升序读出可见轮次并
+# 拼进下一轮 prompt（会话回放同样按它排序）。因此「turn 全局单调」是一条不变量，而不是
+# 实现细节：一旦同一会话的两轮里出现重复 turn，读出的就是倒置的因果顺序。
+
+
+def _rows_of(session_id: str) -> list[Message]:
+    """按 turn 升序回读某会话的落库轨迹（排序语义与 `_read_history` 一致）。"""
+    with Session(engine) as session:
+        return list(
+            session.exec(
+                select(Message)
+                .where(Message.conversation_id == UUID(session_id))
+                .order_by(Message.turn.asc())
+            ).all()
+        )
+
+
+def _bubbles(rows: list[Message]) -> list[tuple[str, str]]:
+    """把轨迹折回可见轮次（= `_read_history` 的过滤口径）。"""
+    return [
+        (r.role, r.content)
+        for r in rows
+        if r.role in ("user", "assistant") and r.step in ("input", "output")
+    ]
+
+
+def test_multi_turn_history_keeps_causal_order(client):
+    """同一会话连发两轮：turn 不得撞号，读出顺序必须是「提问 → 回答」重复。
+
+    缺陷形态：事件流的 turn 计数器每轮从 1 重启，而续接轮的 user 消息用 `next_turn()`
+    （消息总数）——两者不同源，第二轮起 1/2/3/4 与第一轮完全重叠被撞掉。按 turn 升序读
+    就得到「第一轮回答、**第二轮回答**、第二轮提问」：模型收到的上下文里，回答跑到了
+    提问前面。单轮（0/1/2）不撞号，故既有单轮用例照不出来。
+    """
+    _ptoken, _child, ctoken = _setup(client, "asord_parent", "asord_kid")
+
+    status1, events1 = _stream(client, ctoken, "23 + 45 怎么算")
+    assert status1 == 200, events1
+    sid = _of(events1, "DONE")[-1]["session_id"]
+    assert sid, "首轮 DONE 帧应回写会话 id"
+
+    status2, events2 = _stream(client, ctoken, "那 12 + 30 呢", extra={"session_id": sid})
+    assert status2 == 200, events2
+    assert _of(events2, "DONE")[-1]["session_id"] == sid, "第二轮应续接同一会话，而非另建"
+
+    rows = _rows_of(sid)
+    turns = [r.turn for r in rows]
+    assert len(set(turns)) == len(turns), f"turn 撞号：{turns}"
+
+    bubbles = _bubbles(rows)
+    assert [r for r, _ in bubbles] == ["user", "assistant", "user", "assistant"], bubbles
+    assert bubbles[0][1] == "23 + 45 怎么算"
+    assert bubbles[2][1] == "那 12 + 30 呢"
