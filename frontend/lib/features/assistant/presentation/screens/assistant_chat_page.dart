@@ -143,35 +143,57 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
     });
   }
 
-  /// 删除勾选的会话：先确认，再调后端删会话 + 关联消息，最后刷新列表并退出多选。
+  /// 删除勾选的会话：先确认 → 延后删除（5 秒可撤销）→ 到期才真删后端。
+  ///
+  /// 乐观处理：确认后立刻退出多选并弹「已删除 + 撤销」toast，列表由到期后的
+  /// [ref.invalidate] 刷新；窗口内点「撤销」取消定时器，列表原样保持。
   Future<void> _deleteSelected() async {
     final ids = _selectedIds.toList();
     if (ids.isEmpty) return;
+
     final ok = await AppDialog.confirm(
       context,
       title: const Text('删除会话'),
       content: Text(
-        '确定删除选中的 ${ids.length} 段会话吗？关联的对话记录会一并删除，且不可恢复。',
+        '确认删除 ${ids.length} 段会话？删除后 5 秒内可撤销。',
       ),
       confirmLabel: '删除',
       destructive: true,
     );
     if (ok != true) return;
-    int deleted;
-    try {
-      deleted = await ref.read(assistantRepositoryProvider).deleteConversations(ids);
-    } catch (e) {
-      if (!mounted) return;
-      AppToast.show(context, '删除失败：$e');
-      return;
-    }
-    // 成功：先 toast，再退出多选、再刷新列表。顺序很重要：toast 必须挂在稳定的
-    // context 上（_exitSelecting 触发 setState → 重建 → 老 context 失效），
-    // 所以先弹 toast、退出与刷新紧跟其后。
+
+    final count = ids.length;
+    final handle = ref.read(assistantRepositoryProvider).scheduleDelete(
+      ids,
+      onConfirm: () async {
+        try {
+          await ref.read(assistantRepositoryProvider).deleteConversations(ids);
+          if (!mounted) return;
+          ref.invalidate(conversationHistoryProvider);
+        } catch (e) {
+          if (!mounted) return;
+          AppToast.error(context, e);
+        }
+      },
+    );
+
+    // 乐观更新：先退出多选（列表待到期刷新），再弹撤销 toast。顺序同原实现——
+    // toast 必须挂在稳定 context 上（setState 触发重建会让老 context 失效）。
     if (!mounted) return;
-    AppToast.show(context, '已删除 $deleted 段会话');
-    _exitSelecting();
-    ref.invalidate(conversationHistoryProvider);
+    setState(() {
+      _selectedIds.clear();
+      _selecting = false;
+    });
+
+    AppToast.withAction(
+      context,
+      '已删除 $count 段会话',
+      actionLabel: '撤销',
+      onAction: () {
+        ref.read(assistantRepositoryProvider).cancelScheduledDelete(handle.id);
+        ref.invalidate(conversationHistoryProvider);
+      },
+    );
   }
 
   /// 从历史 / 只读回到对话。只切模式，不动会话本身。

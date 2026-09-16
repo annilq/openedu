@@ -2,6 +2,19 @@ import '../assistant_event.dart';
 import '../assistant_requests.dart';
 import '../conversation.dart';
 
+/// 延后删除的句柄：撤销时凭 [id] 找回到期定时器。
+///
+/// 前端延后删除用——后端无改动，5 秒窗口内可撤销，到期才真删。
+class ScheduledDeleteHandle {
+  const ScheduledDeleteHandle({required this.id, required this.ids});
+
+  /// 句柄 id，传给 [cancelScheduledDelete] 撤销。
+  final String id;
+
+  /// 本次（待）删除的会话 id，方便上层对账。
+  final List<String> ids;
+}
+
 /// AI 能力端口：对话 / 结构化出题 / 重生成，统一以事件流形式返回。
 ///
 /// 刻意不暴露 SSE / HTTP 概念——上层只认 [AssistantEvent] 流。
@@ -33,4 +46,18 @@ abstract class AssistantRepository {
   /// 后端只认 parent_id 匹配的会话（孩子的会话也归家长，一并可删），
   /// 越权的 id 静默忽略。返回实际删除的会话条数。
   Future<int> deleteConversations(List<String> ids);
+
+  /// 延后删除：先不碰后端，[window] 内可凭句柄 [cancelScheduledDelete] 撤销；
+  /// 到期才回调 [onConfirm]（通常由它去真删后端）。返回句柄供撤销用。
+  ///
+  /// 纯前端机制——后端无改动，给 5 秒误删兜底（critique 评估 P1）。
+  ScheduledDeleteHandle scheduleDelete(
+    List<String> ids, {
+    required Future<void> Function() onConfirm,
+    Duration window = const Duration(seconds: 5),
+  });
+
+  /// 撤销延后删除：句柄仍在窗口内（未过期）→ 取消定时器并移除、返回 true；
+  /// 已过期执行（或句柄无效）→ 返回 false。
+  bool cancelScheduledDelete(String handleId);
 }

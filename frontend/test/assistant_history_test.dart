@@ -5,6 +5,8 @@
 // - 孩子的会话点开 → 只读回放（没有输入框），并说明为什么不能输入。
 // 第二条是这套设计的核心约束：拿孩子的 session_id 去续接会被后端归属校验拒掉并
 // 另建一段会话，而屏幕上看起来像续上了。
+import 'dart:async';
+
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -54,13 +56,19 @@ const _kidDetail = AssistantConversationDetail(
   ],
 );
 
-/// 假仓库：只做「列表 + 单段回放 + 删除」，并记下被打开 / 被删除的会话 id。
+/// 假仓库：只做「列表 + 单段回放 + 删除 + 延后删除」，并记下被打开 / 被删除的会话 id。
+///
+/// [scheduleDelete] / [cancelScheduledDelete] 用真 [Timer] 复刻仓库行为，
+/// 这样测试能靠 `tester.pump` 推进假时钟，验证「5 秒窗口内可撤销、到期才真删」。
 class _FakeAssistant extends Fake implements AssistantRepository {
   _FakeAssistant({this.items = const [_kid, _mine]});
 
   final List<AssistantConversation> items;
   final List<String> opened = [];
   final List<String> deletedIds = [];
+
+  final Map<String, _ScheduledDelete> _scheduled = {};
+  int _seq = 0;
 
   @override
   Future<List<AssistantConversation>> conversations() async => items;
@@ -78,7 +86,46 @@ class _FakeAssistant extends Fake implements AssistantRepository {
   }
 
   @override
+  ScheduledDeleteHandle scheduleDelete(
+    List<String> ids, {
+    required Future<void> Function() onConfirm,
+    Duration window = const Duration(seconds: 5),
+  }) {
+    final id = 'sd-${++_seq}';
+    _scheduled[id] = _ScheduledDelete(
+      ids: ids,
+      onConfirm: onConfirm,
+      timer: Timer(window, () {
+        _scheduled.remove(id);
+        onConfirm();
+      }),
+    );
+    return ScheduledDeleteHandle(id: id, ids: ids);
+  }
+
+  @override
+  bool cancelScheduledDelete(String handleId) {
+    final e = _scheduled.remove(handleId);
+    if (e == null) return false;
+    e.timer.cancel();
+    return true;
+  }
+
+  @override
   Stream<AssistantEvent> chat(AssistantChatReq req) => const Stream.empty();
+}
+
+/// 测试用：窗口内待执行的延后删除。
+class _ScheduledDelete {
+  _ScheduledDelete({
+    required this.ids,
+    required this.onConfirm,
+    required this.timer,
+  });
+
+  final List<String> ids;
+  final Future<void> Function() onConfirm;
+  final Timer timer;
 }
 
 /// 只读回放带「题目卡片」的假仓库（Task 2 守卫：回放要连卡片一起显示，不只是 text）。
@@ -319,7 +366,7 @@ void main() {
     expect(find.text('已选 0 项'), findsOneWidget);
   });
 
-  testWidgets('删除选中会话：确认弹窗 → 调仓库删除 → 退出多选', (tester) async {
+  testWidgets('删除选中会话：确认弹窗 → 延后 5 秒才真删后端 → 退出多选', (tester) async {
     final repo = _FakeAssistant();
     await pumpPage(tester, repo);
     await openHistory(tester);
@@ -346,14 +393,74 @@ void main() {
     await tester.tap(find.text('删除'));
     await tester.pumpAndSettle();
 
-    expect(repo.deletedIds, unorderedEquals(['me-1']),
-        reason: '只删选中的那段，且按 id 交给后端（归属校验在服务端）');
-    expect(find.text('已删除 1 段会话'), findsOneWidget,
-        reason: '删除成功要给出口');
+    // 确认后立刻给出口（「已删除 + 撤销」），但窗口内不真删后端。
+    expect(find.text('已删除 1 段会话'), findsOneWidget, reason: '立即给出口');
+    expect(find.text('撤销'), findsOneWidget, reason: '提供 5 秒撤销入口');
+    expect(repo.deletedIds, isEmpty, reason: '窗口内不碰后端，到期才真删');
     // 退出多选：勾选框消失、恢复「管理」入口、顶栏不再是删除按钮。
     expect(find.byIcon(LucideIcons.circle), findsNothing);
     expect(find.byIcon(LucideIcons.trash2), findsNothing);
     expect(find.text('多选'), findsOneWidget);
+
+    // 5 秒到期 → 才真删后端。
+    await tester.pump(Duration(seconds: 5));
+    await tester.pumpAndSettle();
+    expect(repo.deletedIds, unorderedEquals(['me-1']),
+        reason: '到期才把选中的那段按 id 交给后端（归属校验在服务端）');
+  });
+
+  testWidgets('删除后 5 秒内撤销：不真删后端，列表保持原样', (tester) async {
+    final repo = _FakeAssistant();
+    await pumpPage(tester, repo);
+    await openHistory(tester);
+
+    await tester.tap(find.text('多选'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('我都有哪些娃'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(LucideIcons.trash2));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('删除'));
+    await tester.pumpAndSettle();
+
+    expect(repo.deletedIds, isEmpty, reason: '确认后窗口内不真删');
+
+    // 点 toast「撤销」→ 取消定时器。
+    await tester.tap(find.text('撤销'));
+    await tester.pumpAndSettle();
+
+    // 即便等过 5 秒窗口，删除仍不应发生（Timer 已取消）。
+    await tester.pump(Duration(seconds: 5));
+    await tester.pumpAndSettle();
+    expect(repo.deletedIds, isEmpty, reason: '撤销后 Timer 被取消，不真删');
+    // 列表保持原样（项仍在）。
+    expect(find.text('我都有哪些娃'), findsOneWidget, reason: '撤销后列表恢复');
+  });
+
+  testWidgets('删除后 5 秒到期：才真删后端', (tester) async {
+    final repo = _FakeAssistant();
+    await pumpPage(tester, repo);
+    await openHistory(tester);
+
+    await tester.tap(find.text('多选'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('我都有哪些娃'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(LucideIcons.trash2));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('删除'));
+    await tester.pumpAndSettle();
+
+    // 窗口内尚未真删。
+    expect(repo.deletedIds, isEmpty);
+
+    // 推进 5 秒（假时钟）→ 定时器到点，回调真删。
+    await tester.pump(Duration(seconds: 5));
+    await tester.pumpAndSettle();
+    expect(repo.deletedIds, unorderedEquals(['me-1']),
+        reason: '到期才真删后端，给误删兜底');
   });
 
   testWidgets('未选中任何会话时，删除按钮禁用', (tester) async {

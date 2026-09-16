@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import '../../../../shared/data/remote/network_service.dart';
 import '../../../../shared/utils/json_decode.dart';
 import '../../domain/assistant_event.dart';
@@ -20,6 +22,10 @@ class AssistantRepositoryImpl implements AssistantRepository {
 
   final AssistantApiClient _client;
   final NetworkService _network;
+
+  /// 窗口内待执行的延后删除：句柄 id → 定时器 + 回调。
+  final Map<String, _ScheduledDelete> _scheduled = {};
+  int _scheduleSeq = 0;
 
   @override
   Stream<AssistantEvent> chat(AssistantChatReq req) => _client.streamChat(req);
@@ -61,6 +67,46 @@ class AssistantRepositoryImpl implements AssistantRepository {
     );
     return _asInt(data);
   }
+
+  @override
+  ScheduledDeleteHandle scheduleDelete(
+    List<String> ids, {
+    required Future<void> Function() onConfirm,
+    Duration window = const Duration(seconds: 5),
+  }) {
+    final id = 'sd-${++_scheduleSeq}';
+    _scheduled[id] = _ScheduledDelete(
+      ids: ids,
+      onConfirm: onConfirm,
+      // 到期：先移除再执行，确保只真删一次（按时回调此刻句柄已不可撤销）。
+      timer: Timer(window, () {
+        _scheduled.remove(id);
+        onConfirm();
+      }),
+    );
+    return ScheduledDeleteHandle(id: id, ids: ids);
+  }
+
+  @override
+  bool cancelScheduledDelete(String handleId) {
+    final entry = _scheduled.remove(handleId);
+    if (entry == null) return false;
+    entry.timer.cancel();
+    return true;
+  }
+}
+
+/// 窗口内待执行的延后删除：定时器到点回调 [onConfirm]。
+class _ScheduledDelete {
+  _ScheduledDelete({
+    required this.ids,
+    required this.onConfirm,
+    required this.timer,
+  });
+
+  final List<String> ids;
+  final Future<void> Function() onConfirm;
+  final Timer timer;
 }
 
 /// 后端返回的是删除条数（int）；`delete` 可能把响应体解成其他类型，安全转 int。

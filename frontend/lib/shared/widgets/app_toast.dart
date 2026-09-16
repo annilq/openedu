@@ -70,4 +70,45 @@ class AppToast {
     if (err is Exception) return err.toString();
     return err.toString();
   }
+
+  /// 带操作按钮的提示（撤销 / 重试等）。
+  ///
+  /// 点 [actionLabel] → 先关掉本 toast（[hide]），再跑 [onAction]。
+  /// 默认 5 秒自动消退，正好配合「删除撤销」窗口。
+  static void withAction(
+    BuildContext context,
+    String message, {
+    required String actionLabel,
+    required VoidCallback onAction,
+    Duration duration = const Duration(seconds: 5),
+  }) {
+    final app = AppTheme.colorsOf(context);
+    final text = AppTheme.textOf(context);
+    ShadToaster.of(context).show(
+      ShadToast(
+        description: Text(
+          message,
+          style: text.bodyMedium?.copyWith(
+            color: app.onToast,
+            height: 1.3,
+          ),
+        ),
+        action: ShadButton(
+          onPressed: () {
+            ShadToaster.of(context).hide();
+            onAction();
+          },
+          child: Text(
+            actionLabel,
+            style: text.labelMedium?.copyWith(color: app.primary),
+          ),
+        ),
+        backgroundColor: app.toast,
+        closeIconData: LucideIcons.x,
+        alignment: Alignment.bottomCenter,
+        offset: const Offset(32, 32),
+        duration: duration,
+      ),
+    );
+  }
 }
