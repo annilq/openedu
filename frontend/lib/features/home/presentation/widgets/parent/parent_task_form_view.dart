@@ -441,13 +441,25 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
           ),
           if (_rows.length > 1) ...[
             const SizedBox(width: AppSpacing.sm),
-            // 同行有年级 ShadSelect（标准档 40）：图标操作也必须走标准档命中区，
-            // 否则 CupertinoButton 的 44×44 默认 minSize 会把这一行撑高 4px。
-            AppIconAction(
-              icon: LucideIcons.x,
-              iconSize: 20,
-              semanticLabel: '删除第 ${i + 1} 行',
-              onPressed: () => _removeRow(i),
+            // 与左侧字段同构对齐：字段是「label + sm 间距 + 40px 输入盒」的 Column，
+            // 图标直接进 Row（crossAxisAlignment: start）会顶到 label 文字行，
+            // 与输入盒错位（用户报障：删除按钮与学科信息没对齐）。用同款 label
+            // 行高的空 Text 占位镜像结构——而非硬编码 top padding——字体/间距
+            // 令牌变更时仍自动对齐。
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('', style: AppTheme.textOf(context).titleSmall),
+                const SizedBox(height: AppSpacing.sm),
+                // 同行有年级 ShadSelect（标准档 40）：图标操作也必须走标准档命中区，
+                // 否则 CupertinoButton 的 44×44 默认 minSize 会把这一行撑高 4px。
+                AppIconAction(
+                  icon: LucideIcons.x,
+                  iconSize: 20,
+                  semanticLabel: '删除第 ${i + 1} 行',
+                  onPressed: () => _removeRow(i),
+                ),
+              ],
             ),
           ],
         ],
