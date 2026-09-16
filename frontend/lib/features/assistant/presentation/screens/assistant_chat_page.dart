@@ -226,7 +226,7 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _openingId = null);
-      AppToast.show(context, '打开会话失败：$e');
+      AppToast.error(context, e);
     }
   }
 
