@@ -130,10 +130,9 @@ void main() {
         child: ShadApp.custom(
           theme: AppTheme.shadFor(false, AppUserMode.parent, AppDensity.compact),
           appBuilder: (context) => CupertinoApp(
-            // ShadToaster 必须显式装上——主 app 与测试 pumpPage 都漏了，结果
-            // `ShadToaster.of(context)` 找不到 ancestor 抛错，所有 AppToast 在
-            // 整个 app 里都失效。这里包一层让测试断言能 found toast 文本；修主 app
-            // 的同源问题在「待真机」列里挂着（critical：用户实际看不到任何 toast）。
+            // 与线上一致：线上由 CupertinoApp.builder 内的 ShadAppBuilder 提供
+            // `ShadToaster`；测试直接包一层等价的 `ShadToaster`，否则 `AppToast.show`
+            // 会抛「找不到 ShadToaster」，删除成功的提示无法断言。
             builder: (context, child) =>
                 ShadToaster(child: child ?? const SizedBox.shrink()),
             home: AssistantChatPage(showBack: showBack, isParent: isParent),
@@ -289,7 +288,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byIcon(LucideIcons.checkCircle2), findsOneWidget,
         reason: '选中行应切到勾选态');
-    expect(find.text('已选 1 项'), findsOneWidget);
+    // 「已选 N 项」同时出现在顶栏标题与列表操作条，所以文本会命中 2 处；这里只验存在。
+    expect(find.text('已选 1 项'), findsWidgets);
 
     // 再点同一段 → 取消选中。
     await tester.tap(find.text('我都有哪些娃'));
@@ -308,7 +308,8 @@ void main() {
 
     await tester.tap(find.text('全选'));
     await tester.pumpAndSettle();
-    expect(find.text('已选 2 项'), findsOneWidget,
+    // 「已选 N 项」同时出现在顶栏标题与列表操作条，文本命中 2 处；这里只验存在。
+    expect(find.text('已选 2 项'), findsWidgets,
         reason: '默认列表 2 段（我的 + 孩子的），全选应全中');
     expect(find.byIcon(LucideIcons.checkCircle2), findsNWidgets(2));
 
