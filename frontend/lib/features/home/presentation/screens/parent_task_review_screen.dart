@@ -370,6 +370,10 @@ class _ParentTaskReviewScreenState
             ],
           ),
           const SizedBox(height: AppSpacing.lg),
+          // 统计行与规格行刻意分离：数字统计（题目数/已入题库）是一行紧凑的
+          // 「读数」，出题规格是可任意增长的 chip 集合——两者高度、增长方式都
+          // 不同，混在同一个 Wrap 里时规格一多就会把统计行挤成两截、左对齐线
+          // 断裂（且曾经为此给规格块压 45% 宽度上限，治标不治本）。
           Wrap(
             spacing: AppSpacing.xl2,
             runSpacing: AppSpacing.sm,
@@ -385,9 +389,12 @@ class _ParentTaskReviewScreenState
                 icon: LucideIcons.database,
                 tone: promoted == total ? app.primary : app.onSurfaceVariant,
               ),
-              if (task.specs.isNotEmpty) _SpecsSummary(specs: task.specs),
             ],
           ),
+          if (task.specs.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.md),
+            _SpecsSummary(specs: task.specs),
+          ],
         ],
       ),
     );
@@ -690,43 +697,50 @@ class _SpecsSummary extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final app = AppTheme.colorsOf(context);
-    // 用「可用宽度」而非屏宽（ADR-0045）：本组件可能落在 master-detail 的窄详情栏里，
-    // 按屏宽算会让 chip 块宽过所在容器 → 溢出。
-    return LayoutBuilder(
-      builder: (context, constraints) => Row(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(LucideIcons.listChecks, size: 18, color: app.onSurfaceVariant),
-          const SizedBox(width: AppSpacing.sm),
-          ConstrainedBox(
-            constraints:
-                BoxConstraints(maxWidth: constraints.maxWidth * 0.45),
-            child: Wrap(
-              spacing: AppSpacing.xs,
-              runSpacing: AppSpacing.xs,
-              children: specs.map((s) {
-                return Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
-                  decoration: BoxDecoration(
-                    color: app.surfaceContainerHigh,
-                    borderRadius: BorderRadius.circular(AppRadius.sm),
-                    // 小信息 chip = 1.5px 墨黑描边（ADR-0044，与学科 chip 同宽）。
-                    border: Border.all(
-                        color: AppBrutal.ink,
-                        width: AppElevation.borderWidthSm),
+    // 独立成块：小标签 + 通栏 chip 流。chips 拿满卡宽后任意数量都能自然换行，
+    // 不再需要「压 45% 宽度」这类与可用宽度耦合的补丁。
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(LucideIcons.listChecks,
+                size: 16, color: app.onSurfaceVariant),
+            const SizedBox(width: AppSpacing.xs),
+            Text(
+              '出题规格',
+              style: AppTheme.textOf(context).labelMedium?.copyWith(
+                    color: app.onSurfaceVariant,
+                    letterSpacing: 0.2,
                   ),
-                  child: Text(
-                    '${s.subject}·${s.grade}·${s.knowledgePoint} x${s.count}',
-                    style: AppTheme.textOf(context).bodySmall,
-                  ),
-                );
-              }).toList(),
             ),
-          ),
-        ],
-      ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Wrap(
+          spacing: AppSpacing.xs,
+          runSpacing: AppSpacing.xs,
+          children: specs.map((s) {
+            return Container(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
+              decoration: BoxDecoration(
+                color: app.surfaceContainerHigh,
+                borderRadius: BorderRadius.circular(AppRadius.sm),
+                // 小信息 chip = 1.5px 墨黑描边（ADR-0044，与学科 chip 同宽）。
+                border: Border.all(
+                    color: AppBrutal.ink,
+                    width: AppElevation.borderWidthSm),
+              ),
+              child: Text(
+                '${s.subject}·${s.grade}·${s.knowledgePoint} x${s.count}',
+                style: AppTheme.textOf(context).bodySmall,
+              ),
+            );
+          }).toList(),
+        ),
+      ],
     );
   }
 }
