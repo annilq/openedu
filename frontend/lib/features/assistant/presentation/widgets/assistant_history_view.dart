@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/theme/app_theme.dart' hide AppBadge;
+import '../../../../shared/util/datetime_format.dart';
 import '../../../../shared/widgets/app_badge.dart';
 import '../../../../shared/widgets/app_select_strip.dart';
 import '../../domain/conversation.dart';
@@ -305,21 +306,8 @@ class _ConversationRow extends StatelessWidget {
   static String _meta(AssistantConversation c) {
     final parts = <String>[];
     if (c.roundCount > 0) parts.add('${c.roundCount} 轮');
-    final time = _formatTime(c.updatedAt);
+    final time = c.updatedAt == null ? '' : formatLocalDayMinute(c.updatedAt!);
     if (time.isNotEmpty) parts.add(time);
     return parts.join(' · ');
   }
-}
-
-/// ISO 串 → `MM-DD HH:mm`（本地时区）。
-///
-/// 后端返回 UTC（`+00:00`），直接截字符串会把晚上九点显示成下午一点；仓库里
-/// `wrong_questions_screen` 已有 `toLocal()` 的先例，这里沿用。解析不了就返回空串
-/// ——列表宁可少一段元信息，也不该显示一串原始时间戳。
-String _formatTime(String? iso) {
-  if (iso == null || iso.isEmpty) return '';
-  final local = DateTime.tryParse(iso)?.toLocal();
-  if (local == null) return '';
-  String two(int v) => v.toString().padLeft(2, '0');
-  return '${two(local.month)}-${two(local.day)} ${two(local.hour)}:${two(local.minute)}';
 }
