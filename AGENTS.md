@@ -36,7 +36,7 @@ K12 错题复习应用：家长出题 → 儿童答题产生错题 → 间隔重
 
 **新粗野（Neo-Brutalism）**：高饱和原色撞色 + 2px 墨黑描边 + 无模糊硬阴影 + 弹性动效。取代 2026-09 前的 Linear 克制风（1px 描边 / 无阴影 / 中饱和小面积）。
 
-> 渐进披露：本页**只列改视觉代码前必须知道的硬约束**。完整色板、品牌人格、自适应布局与八条设计原则见 `.impeccable.md`；选型过程与八个方向的取舍见 ADR-0044，布局断点 / 宽度令牌 / 键盘可达性见 ADR-0045，选中 / 悬停 / 焦点三态语言见 ADR-0046，家长端助手整页形态见 ADR-0047。术语见 `CONTEXT.md` §设计语言。
+> 渐进披露：本页**只列改视觉代码前必须知道的硬约束**。完整色板、品牌人格、自适应布局与八条设计原则见 `.impeccable.md`；选型过程与八个方向的取舍见 ADR-0044，布局断点 / 宽度令牌 / 键盘可达性见 ADR-0045，选中 / 悬停 / 焦点三态语言见 ADR-0046，家长端助手整页形态见 ADR-0047，助手会话历史（页内切模式 / 孩子只读）见 ADR-0048。术语见 `CONTEXT.md` §设计语言。
 
 - **一个色只有一种合规文字**（AA 实测，不可互换）：亮块 `yellow / lime / cyan / teal / orange / coral / magenta / green` 配**墨黑 `#111110`**；深块 `violet / red / blue` 配**白**。原因：所有高饱和色配白字对比度最高只有 4.78，过不了 4.5。
 - **色块是强调件，不是铺底**：单卡片内彩色填充 ≤ 卡片面积 40%、单屏不同色相 ≤ 3、列表行禁止整行彩色填充（只留 4px 学科色条）。撞色的作用是让人一眼找到重点。
@@ -46,6 +46,7 @@ K12 错题复习应用：家长出题 → 儿童答题产生错题 → 间隔重
 - **悬停走 `AppFocusableAction(hoverHighlight: true)`**（ADR-0046）：底色 `surfaceHover`（比选中浅一档）、画在底层故不会盖住选中态。**不要各组件手搓 `StatefulWidget + MouseRegion`**。焦点环一律 `foregroundDecoration` + `accent`（不参与布局，不跳尺寸）。任何可点区域必须进焦点树——**裸 `GestureDetector` 是 bug**。
 - **布局与结构尺寸禁写裸数字**（ADR-0045/0046）：全部收口 `AppLayout`（断点 / 内容宽度各档 / `tapTarget` / `tapTargetLg` / `sidebarHeaderPadding` / `sidebarMenuWidth` / `popoverChrome` / `menuMaxHeight`）。`sidebarTop` 的内边距由宿主给，**组件自身零外边距**。
 - **AI 助手是整页，不是浮层**（ADR-0047）：家长端右下角浮球 `Navigator.push` 打开 `AssistantChatPage`（`isParent: true`），娃娃端是「问 AI 老师」页签——同一个页面、同一份会话。改它时记住：push 的整页**不在壳的宽度兜底范围内**，页面自己套 `contentWide`。
+- **助手会话历史是页内切模式，不是三层栈**（ADR-0048）：家长端助手页在**页内**切 `chat` / `history` / `reading` 三态（顶栏就是模式切换器，trailing 历史图标进列表、列表态切「返回 + 新对话」），不新增路由。列表分两段——「我的对话」点开**恢复续接**、「孩子的对话」点开**只读回放**（行带「只读」徽标、回放态底栏说明原因）：后者不是 UX 取舍，是后端语义（家长拿孩子的 `session_id` 续接会另建会话并污染 prompt 历史）。读路径是**新开**的家长专属端点 `GET /assistant/conversations` + `/{id}`，**不与** `/ai/debug/conversations` 复用；折叠（哪些行算气泡）归服务端、卡片怎么画归前端（不违反 ADR-0042）。`reset()`（新对话）与 `resume()`（续接）都在 `assistantNotifier`；`Conversation.title` 在建会话时写首条用户消息截断 20 字、读出侧须回落 NULL。
 
 令牌层（`frontend/lib/shared/theme/app_theme.dart`）：`AppBrutal` 撞色原色 + `onColor()` 合规前景配对 · `AppElevation` 描边宽度与无模糊硬阴影 · `AppSprings` 物理弹簧（**取代 `Curves.easeOutBack`**）· `SubjectMark` 学科几何标记。
 
@@ -82,6 +83,6 @@ Issues / PRDs 以 GitHub Issues 承载，全部操作经 `gh` CLI。建读列评
 ## 关键事实源与已知风险
 
 - **领域术语**：`CONTEXT.md`（唯一 glossary）。
-- **架构评审**：`docs/agent-core-architecture-review.md`——**2026-09-11 快照**。其 §7 的 P0/P1/P2 建议均已关闭（P0 补 ADR → `docs/adr/` 现 0001–0047；P1 compaction → `app/features/assistant/repository.py`；P2 extension hooks → ADR-0035），§6 的「前端 SSE 逐帧渲染」后端侧已排除、前端代码层已消解（仅余真机验证）。读它时注意其结论是快照，不代表当前状态。
-- **ADR 索引**：`docs/adr/` 已落地 0001–0047（含 0008/0012/0014/0015/0017/0019/0020/0021–0028/0030–0047）；仅 0006/0007/0009–0011/0013/0016/0018/0029 无文档。新增决策先补 ADR 再在代码中交叉链接引用。
+- **架构评审**：`docs/agent-core-architecture-review.md`——**2026-09-11 快照**。其 §7 的 P0/P1/P2 建议均已关闭（P0 补 ADR → `docs/adr/` 现 0001–0048；P1 compaction → `app/features/assistant/repository.py`；P2 extension hooks → ADR-0035），§6 的「前端 SSE 逐帧渲染」后端侧已排除、前端代码层已消解（仅余真机验证）。读它时注意其结论是快照，不代表当前状态。
+- **ADR 索引**：`docs/adr/` 已落地 0001–0048（含 0008/0012/0014/0015/0017/0019/0020/0021–0028/0030–0048）；仅 0006/0007/0009–0011/0013/0016/0018/0029 无文档。新增决策先补 ADR 再在代码中交叉链接引用。
 - **平台 runner 未纳入版本控制**：`frontend/.gitignore` 第 20–25 行忽略 `android / linux / macos / web / windows / ios`，即**平台目录全是本机生成物**。改桌面窗口尺寸、原生权限、Info.plist 之类只在本机生效，`flutter create` 重新生成或换机器构建都会回退。要做持久改动必须先决定「纳入版本控制 or 打补丁脚本」。

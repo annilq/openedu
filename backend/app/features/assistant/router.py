@@ -12,16 +12,28 @@ TOOL_RESULT / DATA / ASSISTANT_MESSAGE / DONE）。
   鉴权 / 落库，不感知任何路由或 subagent 内部细节。
 
 废弃的旧 AI 端点（统一收敛到此）：``/ai/tutor/ask``、``/ai/tasks/generate``、``/tutor/ask``。
+
+会话历史的**用户面**读端点（ADR-0048）也在此：``GET /assistant/conversations`` 与
+``GET /assistant/conversations/{id}``。它与 ``/ai/debug/conversations`` 是**两个消费者**
+而非两条实现：这边返回对话气泡，那边返回运行轨迹。
 """
 from __future__ import annotations
 
-from fastapi import APIRouter
+from uuid import UUID
+
+from fastapi import APIRouter, Query
 from fastapi.responses import StreamingResponse
 
-from app.core.deps import CallerDep, SessionDep
+from app.core.deps import CallerDep, CurrentParent, SessionDep
 from app.core.errors import AppErrorException, ErrCode
+from app.core.guard import require_owned
+from app.db.models import Conversation
 from app.features.assistant import service as assistant_service
-from app.features.assistant.schemas import AssistantChatReq
+from app.features.assistant.schemas import (
+    AssistantChatReq,
+    AssistantConversationDetailResp,
+    AssistantConversationResp,
+)
 
 router = APIRouter(prefix="/assistant", tags=["assistant"])
 
@@ -42,3 +54,42 @@ async def assistant_chat(req: AssistantChatReq, caller: CallerDep, session: Sess
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.get("/conversations", response_model=list[AssistantConversationResp])
+def list_conversations(
+    *,
+    session: SessionDep,
+    parent: CurrentParent,
+    limit: int = Query(default=50, ge=1, le=200),
+) -> list[AssistantConversationResp]:
+    """家长的历史会话列表（含名下娃娃的），最近活动倒序（ADR-0048）。
+
+    **家长专属**（``CurrentParent``）：娃娃端的会话列表被有意留空——孩子看到自己
+    「被拦过」的记录是负面强化，而「找回我问过的那道题」对孩子是次要需求。
+    这是不对称，不是遗漏。故本轮也没有 child-scoped 的等价路由。
+    """
+    return assistant_service.list_conversations(
+        session=session, parent_id=parent.id, limit=limit
+    )
+
+
+@router.get("/conversations/{conv_id}", response_model=AssistantConversationDetailResp)
+def get_conversation(
+    *, session: SessionDep, parent: CurrentParent, conv_id: UUID
+) -> AssistantConversationDetailResp:
+    """一次会话的概要 + 全部气泡（回放 / 恢复续接）。越权（非本家长）→ 403。
+
+    归属走 ``core.guard`` 单一实现；娃娃的会话也归家长所有（``parent_id`` 是家长），
+    所以孩子那条会话其家长能读到——这正是「家长可查看孩子在问什么」的实现方式，
+    读到的内容与孩子当时看到的一致（工具出参在落库前就按角色剥过答案，ADR-0033）。
+    """
+    conv = require_owned(
+        session=session,
+        owner_id=parent.id,
+        model=Conversation,
+        obj_id=conv_id,
+        code=ErrCode.FORBIDDEN,
+        message="Not your conversation",
+    )
+    return assistant_service.conversation_detail(session=session, conv=conv)

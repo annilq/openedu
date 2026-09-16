@@ -1,5 +1,6 @@
 import '../assistant_event.dart';
 import '../assistant_requests.dart';
+import '../conversation.dart';
 
 /// AI 能力端口：对话 / 结构化出题 / 重生成，统一以事件流形式返回。
 ///
@@ -20,4 +21,10 @@ abstract class AssistantRepository {
 
   /// 整卷重生成的流式版（草稿审核页「整卷重生成」）。
   Stream<AssistantEvent> regenerateAll({required String taskId});
+
+  /// 家长的历史会话列表（含名下娃娃的），最近活动倒序（ADR-0048）。
+  Future<List<AssistantConversation>> conversations();
+
+  /// 一次会话的回放（气泡 + 卡片），只读查看与恢复续接共用。
+  Future<AssistantConversationDetail> conversationDetail(String conversationId);
 }

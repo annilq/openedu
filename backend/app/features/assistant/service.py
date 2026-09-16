@@ -4,6 +4,9 @@
 与编排逻辑。本模块持有：角色解析、subject 探测、RuntimeDeps 构造、会话 upsert、事件流
 折叠为持久化（Message 轨迹 + TutorLog 副作用）。
 
+ADR-0048 起还持有**会话历史的读编排**（列表 / 回放）：端点只做 HTTP 适配，三次查询的
+归并（会话 × 元信息 × 娃娃名）在这一层。
+
 ``runtime`` 以可选参数注入（默认 ``get_runtime()`` 单例），便于单测用桩 ``AgentRuntime``
 替换，无需真实 ``discover()`` 与 HTTP 链路（见 ``tests/features/assistant/test_service.py``）。
 """
@@ -27,15 +30,26 @@ from agent_core.runtime_singleton import get_runtime
 from agent_core.subagent import SubAgentContext
 from app.ai.engine import resolve_engine
 from app.ai.subagents.tutor.agent import detect_subject
-from app.db.models import Conversation, Message
+from app.db.models import Conversation, Message, get_datetime_utc
 from app.domain import build_provider, build_retriever
 from app.domain.safety import ChildSafety
 from app.features.assistant.repository import (
+    child_names,
+    conversation_meta,
+    derive_title,
     get_conversation_by_id,
+    list_chat_conversations,
     load_chat_history_with_summary,
     next_turn,
+    read_conversation_bubbles,
+    title_of,
 )
-from app.features.assistant.schemas import AssistantChatReq
+from app.features.assistant.schemas import (
+    AssistantBubbleResp,
+    AssistantChatReq,
+    AssistantConversationDetailResp,
+    AssistantConversationResp,
+)
 from app.features.tutor.repository import create_tutor_log
 
 # 自动摘要（P2）：compaction 命中预算要丢轮次时，把最旧轮次压成一句摘要注入，
@@ -153,6 +167,9 @@ async def chat(
             parent_id=parent_id,
             child_id=child_id,
             model=req.model,
+            # 会话名取首条用户消息截断（ADR-0048）：它同时是会话列表的行名。
+            # 写入点唯一（会话只在这里建立），值天然稳定——首条消息不会变。
+            title=derive_title(message),
             status="running",
         )
         session.add(conversation)
@@ -274,6 +291,10 @@ async def chat(
                     )
                 )
             conversation.status = conv_status
+            # 最近活动时间：会话列表按它倒序（刚被续接的旧会话应浮到最上面）。
+            # `updated_at` 的 default_factory 只在**构造**时求值，不会随写入自动刷新，
+            # 不显式赋值它就跟 created_at 一样是死字段。
+            conversation.updated_at = get_datetime_utc()
 
             # ADR-008：娃娃端伴学交互落 TutorLog（家长可见，F-305）
             if role == "child" and decision.business == "tutor":
@@ -297,3 +318,79 @@ async def chat(
             session.commit()
 
     return event_stream()
+
+
+# ── 会话历史读编排（用户面，ADR-0048） ────────────────────────────────────────
+#
+# 与「运行轨迹」调试端点（``/api/v1/ai/debug/conversations``）刻意分开：那边返回全部
+# step 与原始 payload，供审计与排障；这边只返回对话气泡与列表元信息。两者读同一批行，
+# 但形状不同——合并会同时伤害两个消费者（用户面被迫拖走工具原始载荷，审计侧丢掉保真度）。
+
+
+def _summary_of(
+    conv: Conversation,
+    *,
+    first_user: str,
+    child_name: str | None,
+    bubble_count: int,
+) -> AssistantConversationResp:
+    """ORM 行 → 列表行契约（title 的回落规则收口在 ``repository.title_of``）。"""
+    return AssistantConversationResp(
+        id=conv.id,
+        title=title_of(conv, first_user),
+        kind=conv.kind,
+        child_id=conv.child_id,
+        child_name=child_name,
+        bubble_count=bubble_count,
+        created_at=conv.created_at,
+        updated_at=conv.updated_at,
+    )
+
+
+def list_conversations(
+    *, session: Any, parent_id: UUID, limit: int = 50
+) -> list[AssistantConversationResp]:
+    """家长的历史会话列表（含名下娃娃的），最近活动倒序。
+
+    「我的 / 孩子的」不在这里分段：分段是展示层决策（ADR-0048 选了按娃分两段），
+    服务端只保证每行带够判别信息（``child_id`` → 是否可续接，``child_name`` → 归属标签）。
+    """
+    convs = list_chat_conversations(session=session, parent_id=parent_id, limit=limit)
+    meta = conversation_meta(session, [c.id for c in convs])
+    names = child_names(session, [c.child_id for c in convs if c.child_id])
+    out: list[AssistantConversationResp] = []
+    for conv in convs:
+        m = meta.get(conv.id, {})
+        out.append(
+            _summary_of(
+                conv,
+                first_user=m.get("first_user", ""),
+                child_name=names.get(conv.child_id) if conv.child_id else None,
+                bubble_count=m.get("bubble_count", 0),
+            )
+        )
+    return out
+
+
+def conversation_detail(
+    *, session: Any, conv: Conversation
+) -> AssistantConversationDetailResp:
+    """一次会话的概要 + 全部气泡。
+
+    只读回放（孩子的会话）与恢复续接（家长自己的会话）拿的是**同一份载荷**：
+    两者只在「加载后能不能继续发消息」上有区别，那是前端的模式状态，不是两种数据。
+    """
+    bubbles = [
+        AssistantBubbleResp(**b) for b in read_conversation_bubbles(session, conv.id)
+    ]
+    first_user = next((b.text for b in bubbles if b.role == "user"), "")
+    names = child_names(session, [conv.child_id] if conv.child_id else [])
+    return AssistantConversationDetailResp(
+        conversation=_summary_of(
+            conv,
+            first_user=first_user,
+            child_name=names.get(conv.child_id) if conv.child_id else None,
+            bubble_count=len(bubbles),
+        ),
+        bubbles=bubbles,
+    )

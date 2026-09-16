@@ -1,9 +1,11 @@
-"""悬浮助手 repository 单测：load_chat_history 的 compaction 与自动摘要行为。
+"""悬浮助手 repository 单测：compaction / 自动摘要 / 会话命名 / 回放折叠。
 
-compaction / 摘要逻辑已抽到纯函数，无需 DB 即可覆盖边界；``load_chat_history_with_summary``
+compaction 与摘要逻辑已抽到纯函数，无需 DB 即可覆盖边界；``load_chat_history_with_summary``
 通过轻量 fake session 驱动（只依赖 ``session.exec(...).all()`` 返回带 role/content 的行）。
+会话命名（ADR-0048）是纯函数；回放折叠同样用 fake session 驱动（多带一个 payload 列）。
 """
 import asyncio
+from types import SimpleNamespace
 from uuid import uuid4
 
 from app.features.assistant import repository as repo
@@ -156,3 +158,65 @@ def test_summary_falls_back_on_exception():
     )
     assert len(result) == 5  # 异常回退纯丢弃
     assert not result[0]["content"].startswith(repo.SUMMARY_PREFIX)
+
+
+# ── 会话命名（ADR-0048） ─────────────────────────────────────────────────
+def test_derive_title_collapses_whitespace_and_truncates():
+    """会话名 = 首条用户消息：折叠空白（否则标题里带换行）+ 截断到上限。"""
+    assert repo.derive_title("  帮我出\n两道   数学题  ") == "帮我出 两道 数学题"
+    assert len(repo.derive_title("题" * 50)) == repo.CONVERSATION_TITLE_MAX
+
+
+def test_title_of_falls_back_when_title_is_null():
+    """历史会话的 title 全为 NULL（该字段自 ADR-0022 起未写入）→ 必须回落首条发言。
+
+    没有这条回落，本次之前建立的会话在列表里会全部显示成空行。
+    """
+    assert (
+        repo.title_of(SimpleNamespace(title=None), "我的错题本里有哪些题")
+        == "我的错题本里有哪些题"
+    )
+    assert repo.title_of(SimpleNamespace(title="落库的标题"), "别的") == "落库的标题"
+    assert (
+        repo.title_of(SimpleNamespace(title=None), "   ") == repo.UNTITLED_CONVERSATION
+    )
+
+
+# ── 回放折叠：轨迹 → 气泡（ADR-0048） ─────────────────────────────────────
+class _BubbleRow:
+    """可见轮次行（只带折气泡用到的三列）。"""
+
+    def __init__(self, role: str, content: str = "", payload=None) -> None:
+        self.role, self.content, self.payload = role, content, payload
+
+
+class _RowSession:
+    def __init__(self, rows) -> None:
+        self._rows = rows
+
+    def exec(self, *args, **kwargs):
+        return _FakeResult(self._rows)
+
+
+def test_read_bubbles_attaches_cards_to_assistant_only():
+    """DATA 整帧随 assistant 气泡带出，判别键在里面（ADR-0042 落库时留的口子）。"""
+    frame = {"type": "wrong_question_list", "result": {"title": "错题", "items": []}}
+    rows = [
+        _BubbleRow("user", "我的错题本里有哪些题"),
+        _BubbleRow("assistant", "已为你列出错题。", {"cards": [frame]}),
+        _BubbleRow("user", "换一题"),
+    ]
+    bubbles = repo.read_conversation_bubbles(_RowSession(rows), uuid4())
+    assert [b["role"] for b in bubbles] == ["user", "assistant", "user"]
+    assert bubbles[0]["cards"] == []  # 卡片只挂在 assistant 上
+    assert bubbles[1]["cards"] == [frame]
+    assert bubbles[2]["text"] == "换一题"
+
+
+def test_read_bubbles_tolerates_malformed_payload():
+    """畸形载荷按「无卡片」处理：回放不该因为一行坏数据整段打不开。"""
+    for payload in ({"cards": "oops"}, {"cards": [1, "x"]}, None, "not-a-dict"):
+        bubbles = repo.read_conversation_bubbles(
+            _RowSession([_BubbleRow("assistant", "有正文", payload)]), uuid4()
+        )
+        assert bubbles == [{"role": "assistant", "text": "有正文", "cards": []}]

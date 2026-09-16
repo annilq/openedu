@@ -3,9 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/theme/app_theme.dart';
-import '../../../../shared/widgets/app_motion.dart';
+import '../../../../shared/widgets/app_toast.dart';
 import '../../../../shared/widgets/app_top_bar.dart';
+import '../../domain/conversation.dart';
+import '../../providers/assistant_provider.dart';
 import '../provider/assistant_notifier.dart';
+import '../provider/conversation_history_provider.dart';
+import '../widgets/assistant_hint_card.dart';
+import '../widgets/assistant_history_view.dart';
 import '../widgets/assistant_message_list.dart';
 
 /// AI 单入口整页形态（ADR-0036 / ADR-0047）：**双端唯一的助手页面**。
@@ -20,13 +25,19 @@ import '../widgets/assistant_message_list.dart';
 /// （ADR-0045），所以整页自带 `contentWide` 上限：消息列表与输入栏同宽同轴，大屏下
 /// 不会出现「气泡收在中间一列、输入框横贯全屏」的错位。
 ///
+/// 家长端在本页内还有「历史会话」与「只读回放」两种模式，**页内切换、不新增路由**：
+/// 本页已经是 push 出来的整页，再叠「列表页 → 回放页」就成三层栈，输入栏逻辑也会
+/// 分到两处（ADR-0048）。
+///
 /// 收敛前的旧 `TutorChatScreen` 自带 `TutorNotifier` 与学科/年级/知识点三个控件，
 /// 但请求体只发 `message`：控件不生效、DATA 帧被丢弃、会话与悬浮助手互不可见。
-/// 这三处已随本次收敛一并消除。
+/// 这三处已随收敛一并消除。
+enum _AssistantMode { chat, history, reading }
+
 class AssistantChatPage extends ConsumerStatefulWidget {
   final bool showBack;
 
-  /// 家长形态：标题与空态引导按家长口径渲染。
+  /// 家长形态：标题与空态引导按家长口径渲染，并开放历史会话入口。
   ///
   /// 家长能出题 / 查任务 / 查学情，娃娃端只暴露伴学答疑（后端
   /// `AgentRuntime.visible_businesses(role)` 是唯一真相源），所以「只讲学习内容」这句
@@ -47,10 +58,23 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
   final _ctrl = TextEditingController();
   final _scroll = ScrollController();
 
+  /// 只读回放用自己的滚动控制器：复用 [_scroll] 会把上一模式的偏移带进来，
+  /// 打开一段旧对话应该是从头看，而不是接着聊天列表的位置。
+  final _replayScroll = ScrollController();
+
+  _AssistantMode _mode = _AssistantMode.chat;
+
+  /// 历史列表里正在打开的那一段（行内加载态）。
+  String? _openingId;
+
+  /// 只读回放的内容（孩子的会话）。家长自己的会话走 [_resumeToChat]，不进这里。
+  AssistantConversationDetail? _replay;
+
   @override
   void dispose() {
     _ctrl.dispose();
     _scroll.dispose();
+    _replayScroll.dispose();
     super.dispose();
   }
 
@@ -59,6 +83,71 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
     if (text.isEmpty) return;
     _ctrl.clear();
     ref.read(assistantNotifierProvider.notifier).send(text);
+  }
+
+  /// 进入历史列表。每次都重新取列表：会话可能刚在别处被建立 / 续接，缓存会过时。
+  void _showHistory() {
+    ref.invalidate(conversationHistoryProvider);
+    setState(() {
+      _mode = _AssistantMode.history;
+      _replay = null;
+    });
+  }
+
+  /// 从历史 / 只读回到对话。只切模式，不动会话本身。
+  void _backToChat() => setState(() {
+        _mode = _AssistantMode.chat;
+        _replay = null;
+      });
+
+  void _backToHistory() => _showHistory();
+
+  /// 新对话：丢弃当前会话身份与气泡。
+  ///
+  /// 后端按 `session_id` 续接，不显式断开的话「新对话」只是一句空话。
+  void _newConversation() {
+    ref.read(assistantNotifierProvider.notifier).reset();
+    _ctrl.clear();
+    setState(() {
+      _mode = _AssistantMode.chat;
+      _replay = null;
+    });
+  }
+
+  /// 打开一段历史会话：我的 → 恢复续接；孩子的 → 只读回放。
+  ///
+  /// 分叉的依据是条目本身的归属（[AssistantConversation.isMine]），不是模式状态：
+  /// 孩子的会话**不能**续接（家长发请求时 child_id 恒为 None，过不了后端归属校验，
+  /// 后端会另建一段而屏幕上像续上了）。
+  Future<void> _open(AssistantConversation conv) async {
+    setState(() => _openingId = conv.id);
+    try {
+      final detail =
+          await ref.read(assistantRepositoryProvider).conversationDetail(conv.id);
+      if (!mounted) return;
+      if (conv.isMine) {
+        ref.read(assistantNotifierProvider.notifier).resume(
+              sessionId: detail.conversation.id,
+              messages: [
+                for (final b in detail.bubbles) AssistantMessage.fromBubble(b),
+              ],
+            );
+        setState(() {
+          _mode = _AssistantMode.chat;
+          _openingId = null;
+        });
+      } else {
+        setState(() {
+          _mode = _AssistantMode.reading;
+          _replay = detail;
+          _openingId = null;
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _openingId = null);
+      AppToast.show(context, '打开会话失败：$e');
+    }
   }
 
   @override
@@ -72,9 +161,9 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
     };
     final streaming = state is AssistantActive && state.streaming;
 
-    // 流式产出时自动滚到底部（逐帧更新）。
+    // 流式产出时自动滚到底部（逐帧更新）。只读回放不参与：它用另一个控制器。
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scroll.hasClients) {
+      if (_mode == _AssistantMode.chat && _scroll.hasClients) {
         _scroll.animateTo(
           _scroll.position.maxScrollExtent,
           duration: const Duration(milliseconds: 160),
@@ -83,15 +172,14 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
       }
     });
 
+    final replay = _replay;
+
     return SizedBox.expand(
       child: ColoredBox(
         color: scheme.surface,
         child: Column(
           children: [
-            AppTopBar(
-              title: widget.isParent ? 'AI 学习助手' : '问 AI 老师',
-              showBack: widget.showBack,
-            ),
+            _topBar(),
             Expanded(
               // 宽度上限 + 贴顶：**不用 `Center`**——它连竖向一起居中，消息少时整列
               // 气泡浮在屏幕中间，与本仓「内容贴顶自然布局」的口径冲突（ADR-0045）。
@@ -100,82 +188,149 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
                 child: ConstrainedBox(
                   constraints:
                       const BoxConstraints(maxWidth: AppLayout.contentWide),
-                  child: messages.isEmpty
-                      ? _WelcomeHint(isParent: widget.isParent)
-                      : AssistantMessageList(
-                          messages: messages,
-                          controller: _scroll,
-                        ),
+                  child: switch (_mode) {
+                    _AssistantMode.chat => messages.isEmpty
+                        ? _WelcomeHint(isParent: widget.isParent)
+                        : AssistantMessageList(
+                            messages: messages,
+                            controller: _scroll,
+                          ),
+                    _AssistantMode.history => AssistantHistoryView(
+                        onOpen: _open,
+                        openingId: _openingId,
+                      ),
+                    _AssistantMode.reading => replay == null
+                        ? const SizedBox.shrink()
+                        : AssistantMessageList(
+                            messages: [
+                              for (final b in replay.bubbles)
+                                AssistantMessage.fromBubble(b),
+                            ],
+                            controller: _replayScroll,
+                          ),
+                  },
                 ),
               ),
             ),
-            Container(height: 1, color: scheme.outline),
-            _InputBar(controller: _ctrl, sending: streaming, onSend: _send),
+            if (_mode == _AssistantMode.chat) ...[
+              _hairline(scheme),
+              _InputBar(controller: _ctrl, sending: streaming, onSend: _send),
+            ],
+            if (_mode == _AssistantMode.reading) ...[
+              _hairline(scheme),
+              _ReadOnlyNotice(childName: replay?.conversation.childName),
+            ],
           ],
         ),
       ),
     );
   }
+
+  /// 顶栏即模式切换器：对话态给「历史」，历史态给「新对话」，回放态给「回列表」。
+  ///
+  /// 两个动作各占一个 40 宽槽位，不额外挤第二个图标：历史态的 trailing 换成「新对话」
+  /// 是有意的——去翻历史的人，下一步常常就是想开一段新的。
+  Widget _topBar() {
+    switch (_mode) {
+      case _AssistantMode.chat:
+        return AppTopBar(
+          title: widget.isParent ? 'AI 学习助手' : '问 AI 老师',
+          showBack: widget.showBack,
+          // 历史入口**只给家长**：后端没有 child-scoped 的会话列表路由，且孩子看到
+          // 自己「被拦过」的记录是负面强化（ADR-0048 记录了这个有意的不对称）。
+          trailing: widget.isParent
+              ? AppIconAction(
+                  icon: LucideIcons.history,
+                  iconSize: 20,
+                  semanticLabel: '历史会话',
+                  onPressed: _showHistory,
+                )
+              : null,
+        );
+      case _AssistantMode.history:
+        return AppTopBar(
+          title: '历史会话',
+          showBack: true,
+          // 页内返回：`showBack` 的默认行为是 pop 整页，那会把用户直接踢出助手。
+          onBack: _backToChat,
+          trailing: AppIconAction(
+            icon: LucideIcons.squarePen,
+            iconSize: 20,
+            semanticLabel: '新对话',
+            onPressed: _newConversation,
+          ),
+        );
+      case _AssistantMode.reading:
+        final name = _replay?.conversation.childName;
+        return AppTopBar(
+          title: name == null ? '会话回放' : '$name的对话',
+          showBack: true,
+          onBack: _backToHistory,
+        );
+    }
+  }
+
+  /// 结构分隔线：发丝档（与顶栏底边、侧栏右缘同一档，ADR-0044）。
+  Widget _hairline(AppColors scheme) => Container(
+        height: AppElevation.borderWidthHairline,
+        color: scheme.outline,
+      );
 }
 
 /// 空态引导：告诉使用者这个入口能问什么、边界在哪。
 ///
 /// 文案按角色分叉（见 [AssistantChatPage.isParent]）：娃娃端强调「只讲学习内容」的
-/// 边界，家长端强调「能出题 / 查任务 / 看学情」的能力。
+/// 边界，家长端强调「能出题 / 查任务 / 看学情」的能力。骨架走 [AssistantHintCard]，
+/// 与历史空态是同一个东西。
 class _WelcomeHint extends StatelessWidget {
   final bool isParent;
 
   const _WelcomeHint({required this.isParent});
 
   @override
+  Widget build(BuildContext context) => AssistantHintCard(
+        icon: LucideIcons.sparkles,
+        title: isParent ? '一句话就能布置任务' : '有问题就问 AI 老师吧',
+        body: isParent ? '可以出题、查任务、看错题与掌握度' : '只讲学习内容，其他问题不回答哦',
+      );
+}
+
+/// 只读回放的底栏：孩子的会话不能续接，输入栏换成一句说明。
+///
+/// **替换而不是隐藏**：直接去掉底栏会让人以为界面坏了，而这里必须说清**为什么**
+/// 不能输入——否则用户会反复点空白处，以为是自己没点对。
+class _ReadOnlyNotice extends StatelessWidget {
+  final String? childName;
+
+  const _ReadOnlyNotice({this.childName});
+
+  @override
   Widget build(BuildContext context) {
     final scheme = AppTheme.colorsOf(context);
     final text = AppTheme.textOf(context);
-    return PopIn(
+    return SafeArea(
+      top: false,
+      // 与消息列表、输入栏同宽同轴（本页可能 push 在壳外）。
       child: Align(
-        alignment: Alignment.topLeft,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(AppSpacing.md),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: AppLayout.contentEmpty),
-            child: AppCard(
-              margin: EdgeInsets.zero,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 空态图标块：yellow 亮块 + 墨黑字（13.25:1），新粗野撞色强调件。
-                  Container(
-                    width: 72,
-                    height: 72,
-                    decoration: BoxDecoration(
-                      color: AppBrutal.yellow,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                          color: AppBrutal.ink, width: AppElevation.borderWidth),
-                      boxShadow: AppElevation.hard(),
-                    ),
-                    alignment: Alignment.center,
-                    child: Icon(LucideIcons.sparkles,
-                        size: 36, color: AppBrutal.ink),
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: AppLayout.contentWide),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+                AppSpacing.xl2, AppSpacing.md, AppSpacing.xl2, AppSpacing.xl),
+            child: Row(
+              children: [
+                Icon(LucideIcons.lock,
+                    size: 18, color: scheme.onSurfaceVariant),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Text(
+                    '这是${childName ?? '孩子'}的对话，只能查看，不能继续提问',
+                    style: text.bodyMedium
+                        ?.copyWith(color: scheme.onSurfaceVariant),
                   ),
-                  const SizedBox(height: AppSpacing.xl),
-                  Text(isParent ? '一句话就能布置任务' : '有问题就问 AI 老师吧',
-                      textAlign: TextAlign.start,
-                      style: text.titleLarge?.copyWith(
-                        color: scheme.onSurface,
-                      )),
-                  const SizedBox(height: AppSpacing.sm),
-                  Text(
-                      isParent
-                          ? '可以出题、查任务、看错题与掌握度'
-                          : '只讲学习内容，其他问题不回答哦',
-                      textAlign: TextAlign.start,
-                      style: text.bodyMedium?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      )),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),

@@ -16,5 +16,9 @@ final assistantApiClientProvider = Provider<AssistantApiClient>((ref) {
 });
 
 final assistantRepositoryProvider = Provider<AssistantRepository>((ref) {
-  return AssistantRepositoryImpl(ref.watch(assistantApiClientProvider));
+  return AssistantRepositoryImpl(
+    ref.watch(assistantApiClientProvider),
+    // 会话历史走普通请求（非流），与事件流共用同一个网络服务实例。
+    ref.watch(networkServiceProvider),
+  );
 });

@@ -6,6 +6,7 @@ import '../../providers/assistant_provider.dart';
 import '../../domain/ai_text_fold.dart';
 import '../../domain/assistant_card.dart';
 import '../../domain/assistant_event.dart';
+import '../../domain/conversation.dart';
 
 /// 一条助手对话气泡。
 class AssistantMessage {
@@ -22,6 +23,17 @@ class AssistantMessage {
     this.cards,
         this.thinking = false,
       });
+
+  /// 从回放气泡重建一条消息（role 换算成 UI 侧口径：`assistant` → `ai`）。
+  ///
+  /// 回放气泡**没有 `blocked`**：`Message` 上那组安全标记列从未被写入（真正的被拦记录
+  /// 在 TutorLog，即 F-305 的「已拦截」徽标），所以历史消息上不会出现安全提示——
+  /// 这是有意的不对称，别用「顺带补个字段」把它掩盖成看起来能用的空值。
+  factory AssistantMessage.fromBubble(AssistantBubble bubble) => AssistantMessage(
+        role: bubble.role == 'assistant' ? 'ai' : 'user',
+        text: bubble.text,
+        cards: bubble.cards.isEmpty ? null : bubble.cards,
+      );
 }
 
 sealed class AssistantState {
@@ -128,10 +140,26 @@ class AssistantNotifier extends StateNotifier<AssistantState> {
     }
   }
 
+  /// 恢复一段历史会话（ADR-0048 的「我的对话」条目）：换掉当前会话身份与气泡，
+  /// 之后的 [send] 会续接到它（后端按 session_id 归属校验后续接，零后端改动）。
+  ///
+  /// **只对家长自己的会话开放**：[AssistantConversation.isMine] 为 false 的（孩子的
+  /// 会话）只能只读回放——家长发请求时 `child_id` 恒为 `None`，拿孩子的 session_id
+  /// 续接必然过不了归属校验，后端会另建一段并回写新 id，屏幕上却像续上了。
+  void resume({
+    required String sessionId,
+    required List<AssistantMessage> messages,
+  }) {
+    _currentSessionId = sessionId;
+    state = AssistantActive(messages, false);
+  }
+
   /// 开启新会话：丢弃当前 session_id 与气泡，下一轮重新在后端建立会话。
   ///
   /// 没有这一步 session_id 会一直续接，历史只增不减（后端仅截最近 20 条喂 prompt，
-  /// 但会话本身不会结束）。UI 需要「新对话」入口时调用。
+  /// 但会话本身不会结束）。入口是助手页历史模式顶栏的「新对话」（ADR-0048）——
+  /// 它必须存在：有了「恢复续接」却没有「开新的一段」，用户就只能靠列表里多出
+  /// 一堆碎会话。
   void reset() {
     _currentSessionId = null;
     state = const AssistantInitial();
