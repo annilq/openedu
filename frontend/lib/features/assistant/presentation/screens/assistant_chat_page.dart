@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/app_content_frame.dart';
 import '../../../../shared/widgets/app_dialog.dart';
 import '../../../../shared/widgets/app_toast.dart';
 import '../../../../shared/widgets/app_top_bar.dart';
@@ -285,12 +286,8 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
             Expanded(
               // 宽度上限 + 贴顶：**不用 `Center`**——它连竖向一起居中，消息少时整列
               // 气泡浮在屏幕中间，与本仓「内容贴顶自然布局」的口径冲突（ADR-0045）。
-              child: Align(
-                alignment: Alignment.topCenter,
-                child: ConstrainedBox(
-                  constraints:
-                      const BoxConstraints(maxWidth: AppLayout.contentWide),
-                  child: switch (_mode) {
+              child: AppContentFrame(
+                child: switch (_mode) {
                     _AssistantMode.chat => messages.isEmpty
                         ? _WelcomeHint(isParent: widget.isParent)
                         : AssistantMessageList(
@@ -316,7 +313,6 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
                             controller: _replayScroll,
                           ),
                   },
-                ),
               ),
             ),
             if (_mode == _AssistantMode.chat) ...[
@@ -427,27 +423,23 @@ class _ReadOnlyNotice extends StatelessWidget {
     return SafeArea(
       top: false,
       // 与消息列表、输入栏同宽同轴（本页可能 push 在壳外）。
-      child: Align(
-        alignment: Alignment.topCenter,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: AppLayout.contentWide),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(
-                AppSpacing.xl2, AppSpacing.md, AppSpacing.xl2, AppSpacing.xl),
-            child: Row(
-              children: [
-                Icon(LucideIcons.lock,
-                    size: 18, color: scheme.onSurfaceVariant),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: Text(
-                    '这是${childName ?? '孩子'}的对话，只能查看，不能继续提问',
-                    style: text.bodyMedium
-                        ?.copyWith(color: scheme.onSurfaceVariant),
-                  ),
+      child: AppContentFrame(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+              AppSpacing.xl2, AppSpacing.md, AppSpacing.xl2, AppSpacing.xl),
+          child: Row(
+            children: [
+              Icon(LucideIcons.lock,
+                  size: 18, color: scheme.onSurfaceVariant),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  '这是${childName ?? '孩子'}的对话，只能查看，不能继续提问',
+                  style: text.bodyMedium
+                      ?.copyWith(color: scheme.onSurfaceVariant),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -477,65 +469,61 @@ class _InputBar extends StatelessWidget {
       top: false,
       // 与消息列表同宽同轴：本页可能 push 在壳外（家长端），不套上限的话大屏下
       // 输入框会横贯全屏、气泡却收在中间一列。
-      child: Align(
-        alignment: Alignment.topCenter,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: AppLayout.contentWide),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(
-                AppSpacing.xl2, AppSpacing.md, AppSpacing.xl2, AppSpacing.xl),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Expanded(
-                  child: ShadInput(
-                    controller: controller,
-                    enabled: !sending,
-                    minLines: 1,
-                    maxLines: 4,
-                    style: text.bodyLarge?.copyWith(color: scheme.onSurface),
-                    placeholder: Text('输入你的学习问题…',
-                        style: text.bodyMedium
-                            ?.copyWith(color: scheme.onSurfaceVariant)),
-                    cursorColor: scheme.primary,
-                    // 单行高度取「主行动档」，与右侧发送按钮同档：两者是同一组
-                    // 控件，必须同高。此前输入框靠 `vertical: 14` 撑到 51px、按钮
-                    // 硬编码 52、再用 `Padding(bottom: 2)` 手工找平——三个魔数互相
-                    // 追着补。现在高度由同一令牌决定，竖向 padding 只负责多行时的
-                    // 呼吸感（8+单行+8 = 37 < 48，单行仍是精确的 48，多行按内容增高）。
-                    constraints: BoxConstraints(
-                        minHeight: AppControl.heightLgOf(context)),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    leading: Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: Icon(LucideIcons.pencil,
-                          color: scheme.onSurfaceVariant, size: 20),
-                    ),
-                    decoration: ShadDecoration(
-                      disableSecondaryBorder: true,
-                      color: scheme.surfaceContainerLow,
-                      border: ShadBorder.all(
-                        color: scheme.outline,
-                        width: 1,
-                        radius: BorderRadius.circular(AppRadius.input),
-                      ),
-                    ),
-                    onSubmitted: (_) => onSend(),
+      child: AppContentFrame(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+              AppSpacing.xl2, AppSpacing.md, AppSpacing.xl2, AppSpacing.xl),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: ShadInput(
+                  controller: controller,
+                  enabled: !sending,
+                  minLines: 1,
+                  maxLines: 4,
+                  style: text.bodyLarge?.copyWith(color: scheme.onSurface),
+                  placeholder: Text('输入你的学习问题…',
+                      style: text.bodyMedium
+                          ?.copyWith(color: scheme.onSurfaceVariant)),
+                  cursorColor: scheme.primary,
+                  // 单行高度取「主行动档」，与右侧发送按钮同档：两者是同一组
+                  // 控件，必须同高。此前输入框靠 `vertical: 14` 撑到 51px、按钮
+                  // 硬编码 52、再用 `Padding(bottom: 2)` 手工找平——三个魔数互相
+                  // 追着补。现在高度由同一令牌决定，竖向 padding 只负责多行时的
+                  // 呼吸感（8+单行+8 = 37 < 48，单行仍是精确的 48，多行按内容增高）。
+                  constraints: BoxConstraints(
+                      minHeight: AppControl.heightLgOf(context)),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  leading: Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Icon(LucideIcons.pencil,
+                        color: scheme.onSurfaceVariant, size: 20),
                   ),
+                  decoration: ShadDecoration(
+                    disableSecondaryBorder: true,
+                    color: scheme.surfaceContainerLow,
+                    border: ShadBorder.all(
+                      color: scheme.outline,
+                      width: 1,
+                      radius: BorderRadius.circular(AppRadius.input),
+                    ),
+                  ),
+                  onSubmitted: (_) => onSend(),
                 ),
-                const SizedBox(width: AppSpacing.md),
-                AppPrimaryButton(
-                  label: '发送',
-                  icon: LucideIcons.send,
-                  loadingLabel: '思考中',
-                  loading: sending,
-                  onPressed: onSend,
-                  height: AppControl.heightLgOf(context),
-                  fullWidth: false,
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              AppPrimaryButton(
+                label: '发送',
+                icon: LucideIcons.send,
+                loadingLabel: '思考中',
+                loading: sending,
+                onPressed: onSend,
+                height: AppControl.heightLgOf(context),
+                fullWidth: false,
+              ),
+            ],
           ),
         ),
       ),

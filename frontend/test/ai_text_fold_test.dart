@@ -147,6 +147,75 @@ void main() {
     });
   });
 
+  group('AiTextFold · 阶段文案（stream_stage）', () {
+    test('路由 THINKING 逐帧更新 stage；模型思维链不改 stage', () {
+      final f = foldAll([
+        AssistantEvent(
+          eventType: AssistantEventType.thinking,
+          text: '正在理解你的需求，并选择最合适的助手…',
+          extra: {'routing': true},
+        ),
+        AssistantEvent(
+          eventType: AssistantEventType.thinking,
+          text: '已选择助手：学习查询',
+          extra: {'routing': true},
+        ),
+        // 模型思维链（无 routing 标记）：绝不当阶段（会高频闪烁）。
+        AssistantEvent(
+          eventType: AssistantEventType.thinking,
+          text: '内部独白片段',
+        ),
+      ]);
+
+      expect(f.stage, '已选择助手：学习查询');
+      expect(f.isEmpty, isTrue, reason: '阶段不等于内容，占位气泡仍在');
+    });
+
+    test('TOOL_CALL 取可读标签；无标签兜底，绝不裸显工具名', () {
+      final labeled = foldAll([
+        AssistantEvent(
+          eventType: AssistantEventType.toolCall,
+          tool: 'get_mastery',
+          label: '查询掌握度',
+        ),
+      ]);
+      expect(labeled.stage, '正在查询掌握度');
+
+      final unlabeled = foldAll([
+        AssistantEvent(eventType: AssistantEventType.toolCall, tool: 'get_mastery'),
+      ]);
+      expect(unlabeled.stage, '正在思考…', reason: '裸英文工具名不能亮给用户');
+    });
+
+    test('TOOL_RESULT 切到整理结果文案', () {
+      final f = foldAll([
+        AssistantEvent(
+          eventType: AssistantEventType.toolCall,
+          tool: 'get_mastery',
+          label: '查询掌握度',
+        ),
+        AssistantEvent(eventType: AssistantEventType.toolResult, tool: 'get_mastery'),
+      ]);
+      expect(f.stage, '正在整理结果…');
+    });
+
+    test('正文到达后 stage 保留但 isEmpty 变 false（占位气泡消失）', () {
+      final f = foldAll([
+        AssistantEvent(
+          eventType: AssistantEventType.thinking,
+          text: '已选择助手：伴学',
+          extra: {'routing': true},
+        ),
+        AssistantEvent(
+          eventType: AssistantEventType.assistantMessage,
+          text: '你好',
+        ),
+      ]);
+      expect(f.stage, '已选择助手：伴学');
+      expect(f.isEmpty, isFalse);
+    });
+  });
+
   group('AiTextFold · 错误与安全兜底', () {
     test('ERROR 帧记录文案，并给出默认兜底文案', () {
       final withMessage = foldAll([

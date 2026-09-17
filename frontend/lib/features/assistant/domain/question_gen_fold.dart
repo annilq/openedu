@@ -1,5 +1,6 @@
 import '../../../shared/domain/models/models.dart';
 import 'assistant_event.dart';
+import 'stream_stage.dart';
 
 /// 把 AG-UI 事件流折成「出题预览态」的纯模块。
 ///
@@ -25,6 +26,11 @@ class QuestionGenFold {
   /// 后端最后一条 ASSISTANT_MESSAGE（count=0 时下发「本次未能生成题目…」）。
   final String lastMessage;
 
+  /// 当前阶段文案（路由 THINKING / TOOL_CALL 提取，见 [stageOfEvent]）：
+  /// 首题 STEP 到达前的死窗（连接 + 预检 + 首题 TTFT）里，表单页的加载区
+  /// 用它替代裸转圈。取「最近一帧」，与 [AiTextFold.stage] 同一语义。
+  final String stage;
+
   /// ERROR 帧文案；非 null 表示流以错误收尾。
   final String? errorText;
 
@@ -41,6 +47,7 @@ class QuestionGenFold {
     this.liveLabel = '',
     this.liveReasoning = '',
     this.lastMessage = '',
+    this.stage = '',
     this.errorText,
     this.failures = const <String>[],
   });
@@ -61,41 +68,41 @@ class QuestionGenFold {
   String get failureMessage => failures.join('；');
 
   /// 消费一帧事件，返回新的 [QuestionGenFold]（纯函数，不改接收者）。
-  QuestionGenFold apply(AssistantEvent ev) => switch (ev.eventType) {
-        AssistantEventType.toolCall => _copy(liveLabel: ev.label ?? _generating),
-        // status == 'error' 的 STEP 是「这一题失败了」（后端 QuestionFailed 转帧），
-        // 不是进度锚点：折叠内联区并留痕，绝不当作「下一题开始」推进 liveIndex。
-        AssistantEventType.step => ev.status == 'error'
-            ? _copy(
-                failures: <String>[...failures, ev.label ?? _genFailed],
-                liveIndex: -1,
-                liveLabel: '',
-                liveReasoning: '',
-              )
-            : _copy(
-                // 新题开始：展开内联区（序号 = 下一题），清空上一题残留的推理文本。
-                liveIndex: questions.length,
-                liveLabel: ev.label ?? _generating,
-                liveReasoning: '',
-              ),
-        AssistantEventType.thinking => _isRouting(ev)
-            ? this
-            : _copy(liveReasoning: liveReasoning + (ev.text ?? '')),
-        AssistantEventType.assistantMessage =>
-          (ev.text?.isNotEmpty ?? false) ? _copy(lastMessage: ev.text!) : this,
-        AssistantEventType.data => _withQuestion(ev),
-        AssistantEventType.toolResult => _copy(liveIndex: -1, liveLabel: ''),
-        AssistantEventType.error =>
-          _copy(errorText: ev.message ?? _genFailed),
-        _ => this,
-      };
-
-  /// 路由帧（extra.business / extra.routing）跳过：那是「正在选择助手…」这类
-  /// 编排状态，不是出题思路，拼进推理区会污染展示。
-  static bool _isRouting(AssistantEvent ev) {
-    final extra = ev.extra;
-    if (extra == null) return false;
-    return extra['business'] != null || extra['routing'] == true;
+  QuestionGenFold apply(AssistantEvent ev) {
+    // 阶段提取先行：路由 THINKING / TOOL_CALL / TOOL_RESULT → 阶段文案；
+    // 其余帧 stage 为 null，保持旧阶段（_copy 的 stage ?? this.stage 语义）。
+    final stage = stageOfEvent(ev);
+    return switch (ev.eventType) {
+      AssistantEventType.toolCall =>
+        _copy(liveLabel: ev.label ?? _generating, stage: stage),
+      // status == 'error' 的 STEP 是「这一题失败了」（后端 QuestionFailed 转帧），
+      // 不是进度锚点：折叠内联区并留痕，绝不当作「下一题开始」推进 liveIndex。
+      AssistantEventType.step => ev.status == 'error'
+          ? _copy(
+              failures: <String>[...failures, ev.label ?? _genFailed],
+              liveIndex: -1,
+              liveLabel: '',
+              liveReasoning: '',
+            )
+          : _copy(
+              // 新题开始：展开内联区（序号 = 下一题），清空上一题残留的推理文本。
+              liveIndex: questions.length,
+              liveLabel: ev.label ?? _generating,
+              liveReasoning: '',
+            ),
+      // 路由帧是「正在选择助手…」这类编排状态 → 进阶段文案；模型思维链
+      // 逐块流入 → 累积进推理区，绝不当阶段（文字会高频闪烁）。
+      AssistantEventType.thinking => stage != null
+          ? _copy(stage: stage)
+          : _copy(liveReasoning: liveReasoning + (ev.text ?? '')),
+      AssistantEventType.assistantMessage =>
+        (ev.text?.isNotEmpty ?? false) ? _copy(lastMessage: ev.text!) : this,
+      AssistantEventType.data => _withQuestion(ev),
+      AssistantEventType.toolResult =>
+        _copy(liveIndex: -1, liveLabel: '', stage: stage),
+      AssistantEventType.error => _copy(errorText: ev.message ?? _genFailed),
+      _ => this,
+    };
   }
 
   QuestionGenFold _withQuestion(AssistantEvent ev) {
@@ -120,6 +127,7 @@ class QuestionGenFold {
     String? liveLabel,
     String? liveReasoning,
     String? lastMessage,
+    String? stage,
     List<String>? failures,
     Object? errorText = _unset,
   }) =>
@@ -129,6 +137,7 @@ class QuestionGenFold {
         liveLabel: liveLabel ?? this.liveLabel,
         liveReasoning: liveReasoning ?? this.liveReasoning,
         lastMessage: lastMessage ?? this.lastMessage,
+        stage: stage ?? this.stage,
         failures: failures ?? this.failures,
         errorText: identical(errorText, _unset)
             ? this.errorText

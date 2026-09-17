@@ -10,14 +10,18 @@ import 'package:kids_learn/features/assistant/presentation/provider/assistant_no
 
 /// 假 AssistantRepository：按预设逐帧产出 AG-UI 事件。
 class _FakeAssistant extends Fake implements AssistantRepository {
-  _FakeAssistant({this.events = const [], this.error});
+  _FakeAssistant({this.events = const [], this.error, Stream<AssistantEvent>? stream})
+      : _stream = stream;
 
   final List<AssistantEvent> events;
   final Object? error;
+  final Stream<AssistantEvent>? _stream;
 
   @override
-  Stream<AssistantEvent> chat(AssistantChatReq req) =>
-      error == null ? Stream.fromIterable(events) : Stream.error(error!);
+  Stream<AssistantEvent> chat(AssistantChatReq req) {
+    if (_stream != null) return _stream;
+    return error == null ? Stream.fromIterable(events) : Stream.error(error!);
+  }
 }
 
 List<AssistantMessage> _aiBubbles(AssistantState state) =>
@@ -78,6 +82,42 @@ void main() {
       // 只剩娃娃那条 user 气泡，AI 占位已清掉。
       expect(state.messages.where((m) => m.thinking), isEmpty);
       expect(state.messages.map((m) => m.role).toList(), ['user']);
+    });
+
+    test('占位气泡携带阶段文案：路由 THINKING 到达后替换默认「思考中…」', () async {
+      // 用可控流：先只发编排帧（不发正文），占位气泡存续期间断言 stage。
+      final controller = StreamController<AssistantEvent>();
+      final notifier = AssistantNotifier(
+        _FakeAssistant(stream: controller.stream),
+      );
+      final future = notifier.send('小明掌握度如何');
+      await Future<void>.delayed(Duration.zero);
+
+      controller.add(AssistantEvent(
+        eventType: AssistantEventType.thinking,
+        text: '已选择助手：学习查询',
+        extra: {'routing': true},
+      ));
+      controller.add(AssistantEvent(
+        eventType: AssistantEventType.toolCall,
+        tool: 'get_mastery',
+        label: '查询掌握度',
+      ));
+      await Future<void>.delayed(Duration.zero);
+
+      final state = notifier.state as AssistantActive;
+      final placeholder = state.messages.where((m) => m.thinking).toList();
+      expect(placeholder, hasLength(1));
+      expect(
+        placeholder.single.stage,
+        '正在查询掌握度',
+        reason: '取最近一帧阶段：TOOL_CALL 在路由 THINKING 之后',
+      );
+
+      await controller.close();
+      await future;
+      final done = notifier.state as AssistantActive;
+      expect(done.messages.where((m) => m.thinking), isEmpty);
     });
 
     test('流异常时也不残留占位气泡，并追加错误提示', () async {

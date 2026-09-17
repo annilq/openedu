@@ -22,6 +22,9 @@ class ToolSpec:
     description: str
     schema: dict[str, Any]  # 参数的 JSON-schema（properties/required 等）
     handler: Callable[..., Any]
+    # 面向用户的可读标签（如「查询娃娃列表」）：仅随 TOOL_CALL 帧下发供前端渲染
+    # 中间状态，不进 to_schema()——模型看到的是 name/description，标签是纯展示。
+    label: str | None = None
 
     def to_schema(self) -> dict[str, Any]:
         """转换为通用工具声明（模型厂商无关）。"""

@@ -284,8 +284,12 @@ async def run_with_tools(
                     ref = f"call_{ref_seq}"
                     ref_seq += 1
                     turn_calls.append({"name": ev.name, "args": ev.args, "ref": ref})
-                    yield tool_call(ev.name, args=ev.args)
+                    # 可读标签随帧下发（纯展示，不进模型 schema）：前端据此渲染
+                    # 「正在查询××」类中间状态，而不是裸思考转圈或英文工具名。
                     spec = registry.get(ev.name)
+                    yield tool_call(
+                        ev.name, label=spec.label if spec else None, args=ev.args
+                    )
                     if spec is None:
                         result: Any = {"error": f"unknown tool: {ev.name}"}
                     else:

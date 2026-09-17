@@ -208,4 +208,32 @@ void main() {
       expect(after.questions.length, 1);
     });
   });
+
+  group('QuestionGenFold · 阶段文案（首题前死窗）', () {
+    test('路由 THINKING 进 stage，不进推理区；首题 STEP 后 stage 不干扰', () {
+      final f = foldAll([
+        AssistantEvent(
+          eventType: AssistantEventType.thinking,
+          text: '正在理解你的需求，并选择最合适的助手…',
+          extra: {'routing': true},
+        ),
+        AssistantEvent(
+          eventType: AssistantEventType.thinking,
+          text: '已选择助手：出题',
+          extra: {'routing': true},
+        ),
+      ]);
+      expect(f.stage, '已选择助手：出题');
+      expect(f.liveReasoning, isEmpty, reason: '路由帧是编排状态，不污染推理区');
+      expect(f.liveIndex, -1);
+    });
+
+    test('无标签 TOOL_CALL 兜底通用文案；TOOL_RESULT 切整理结果', () {
+      final f = foldAll([
+        AssistantEvent(eventType: AssistantEventType.toolCall, tool: 'generate_question'),
+        AssistantEvent(eventType: AssistantEventType.toolResult, tool: 'generate_question'),
+      ]);
+      expect(f.stage, '正在整理结果…');
+    });
+  });
 }

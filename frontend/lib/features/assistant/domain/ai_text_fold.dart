@@ -1,5 +1,6 @@
 import 'assistant_card.dart';
 import 'assistant_event.dart';
+import 'stream_stage.dart';
 
 /// 把 AG-UI 事件流折成「AI 文本 + 结构化卡片 + 安全兜底标记」的纯模块。
 ///
@@ -24,6 +25,11 @@ class AiTextFold {
   /// 是否因安全兜底（ERROR.code == INPUT_UNSAFE）。
   final bool blocked;
 
+  /// 当前阶段文案（路由 THINKING / TOOL_CALL / TOOL_RESULT 提取，见
+  /// [stageOfEvent]）：正文到达前渲染进占位气泡，替代静态「思考中…」。
+  /// 取「最近一帧」而非累积——阶段是瞬时状态，不是日志。
+  final String stage;
+
   /// ERROR 帧文案；非 null 表示流以错误收尾。
   final String? errorText;
 
@@ -31,6 +37,7 @@ class AiTextFold {
     this.text = '',
     this.cards = const <AssistantCard>[],
     this.blocked = false,
+    this.stage = '',
     this.errorText,
   });
 
@@ -42,34 +49,45 @@ class AiTextFold {
   bool get isEmpty => text.isEmpty && cards.isEmpty && !hasError;
 
   /// 消费一帧事件，返回新的 [AiTextFold]（纯函数，不改接收者）。
-  AiTextFold apply(AssistantEvent ev) => switch (ev.eventType) {
-        AssistantEventType.assistantMessage =>
-          _copy(text: text + (ev.text ?? '')),
-        AssistantEventType.data => _withCard(ev),
-        AssistantEventType.error => _copy(
-            blocked: blocked || ev.code == AssistantErrorCode.inputUnsafe,
-            errorText: errorText ?? ev.message ?? _fallbackError,
-          ),
-        _ => this,
-      };
+  AiTextFold apply(AssistantEvent ev) {
+    // 阶段帧与内容帧可能同帧类不同语义：阶段提取先行，内容分支照旧。
+    final stage = stageOfEvent(ev);
+    return switch (ev.eventType) {
+      AssistantEventType.assistantMessage =>
+        _copy(text: text + (ev.text ?? ''), stage: stage),
+      AssistantEventType.data => _withCard(ev, stage: stage),
+      AssistantEventType.error => _copy(
+          blocked: blocked || ev.code == AssistantErrorCode.inputUnsafe,
+          errorText: errorText ?? ev.message ?? _fallbackError,
+        ),
+      _ => stage == null ? this : _copy(stage: stage),
+    };
+  }
 
-  AiTextFold _withCard(AssistantEvent ev) {
+  AiTextFold _withCard(AssistantEvent ev, {String? stage}) {
     final card = AssistantCard.fromData(ev.data);
     // 畸形帧（result 不是对象）与「无任何字段」的卡都不挂：不制造空气泡。
-    if (card == null || !card.hasContent) return this;
-    return _copy(cards: <AssistantCard>[...cards, card]);
+    if (card == null || !card.hasContent) {
+      return stage == null ? this : _copy(stage: stage);
+    }
+    return _copy(
+      cards: <AssistantCard>[...cards, card],
+      stage: stage,
+    );
   }
 
   AiTextFold _copy({
     String? text,
     List<AssistantCard>? cards,
     bool? blocked,
+    String? stage,
     Object? errorText = _unset,
   }) =>
       AiTextFold(
         text: text ?? this.text,
         cards: cards ?? this.cards,
         blocked: blocked ?? this.blocked,
+        stage: stage ?? this.stage,
         errorText: identical(errorText, _unset)
             ? this.errorText
             : errorText as String?,

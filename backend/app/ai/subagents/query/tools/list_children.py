@@ -32,6 +32,7 @@ async def handler(args: dict[str, Any], *, ctx: SubAgentContext, session: Any = 
 
 SPEC = ToolSpec(
     name=NAME,
+    label="查询娃娃列表",
     description=DESCRIPTION,
     schema={"type": "object", "properties": {}, "required": []},
     handler=handler,

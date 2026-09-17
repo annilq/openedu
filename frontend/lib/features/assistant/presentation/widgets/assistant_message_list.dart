@@ -169,6 +169,8 @@ class _BubbleBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (message.thinking) {
+      // 阶段文案：后端编排帧（路由 / 工具调用）到达时替换静态「思考中…」，
+      // 让用户看到推进（AiTextFold.stage）。帧未到或无阶段时回退默认文案。
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -181,7 +183,10 @@ class _BubbleBody extends StatelessWidget {
             ),
           ),
           const SizedBox(width: AppSpacing.sm),
-          Text('思考中…', style: text.bodySmall),
+          Text(
+            message.stage.isEmpty ? '思考中…' : message.stage,
+            style: text.bodySmall,
+          ),
         ],
       );
     }

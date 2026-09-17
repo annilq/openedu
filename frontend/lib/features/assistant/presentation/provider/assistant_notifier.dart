@@ -15,6 +15,7 @@ class AssistantMessage {
   final bool blocked;
   final List<AssistantCard>? cards; // DATA 类型化卡片（题卡 / 任务卡 / 学情卡）
   final bool thinking; // 占位「思考中」气泡（尚无文本）
+  final String stage; // thinking 时的阶段文案（路由/工具帧提取），空 = 默认「思考中…」
 
   const AssistantMessage({
     required this.role,
@@ -22,6 +23,7 @@ class AssistantMessage {
     this.blocked = false,
     this.cards,
         this.thinking = false,
+        this.stage = '',
       });
 
   /// 从回放气泡重建一条消息（role 换算成 UI 侧口径：`assistant` → `ai`）。
@@ -63,7 +65,9 @@ class AssistantNotifier extends StateNotifier<AssistantState> {
   ///
   /// 后端对该 id 做「parent_id + child_id」归属校验（`features/assistant/service.py`）：
   /// 不匹配时不报错，而是**另建会话并回写新 id**，这里随之覆盖（自愈，不会读到他人会话）。
-  /// 进程内有效；重启 App 会重新建会话（持久化另议）。
+  /// 只存内存——**有意如此**（产品决策 2026-09-16）：打开助手默认空态，不自动续接
+  /// 历史会话；首轮发消息才新建会话。要接着上次聊就点「历史会话」里的对应行
+  /// （resume 会接管该行的 session id，后续消息落回原会话）。
   String? _currentSessionId;
 
   /// 兜底历史上限，对齐后端 `load_chat_history(limit=20)`。
@@ -177,7 +181,13 @@ class AssistantNotifier extends StateNotifier<AssistantState> {
     final out = List<AssistantMessage>.from(history);
     if (fold.isEmpty) {
       if (streaming) {
-        out.add(const AssistantMessage(role: 'ai', thinking: true));
+        // 占位气泡带上阶段文案：路由/工具帧到达时把「思考中…」换成
+        // 「已选择助手：X / 正在查询××」，用户能看到推进而不是干等。
+        out.add(AssistantMessage(
+          role: 'ai',
+          thinking: true,
+          stage: fold.stage,
+        ));
       }
       return out;
     }
