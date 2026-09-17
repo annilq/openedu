@@ -21,6 +21,7 @@ dependencies = [
     "genkit-openai>=0.10.0",
     "genkit-ollama>=0.10.0",
     "cryptography>=50.0.1",
+    "typst>=0.15.0",
 ]
 
 [dependency-groups]

@@ -44,6 +44,10 @@ class FakeNetwork implements NetworkService {
     Duration? receiveTimeout,
   }) =>
       const Stream<Uint8List>.empty();
+
+  @override
+  Future<Uint8List> postBytes(String path, {Map<String, dynamic>? body}) async =>
+      throw UnimplementedError('本测试的替身不涉及二进制下载');
 }
 
 /// 后端游标信封（ADR-0053）；`next_cursor` 为 null 表示只有一页。

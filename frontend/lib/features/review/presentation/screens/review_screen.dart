@@ -1,5 +1,6 @@
-import 'package:flutter/widgets.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/theme/app_theme.dart';
@@ -17,7 +18,15 @@ import '../../../../shared/widgets/app_motion.dart';
 /// v2 redesign：与 practice_screen 视觉一致（选项卡式答案、禁用提交、主题色弹窗）。
 class ReviewScreen extends ConsumerStatefulWidget {
   final bool showBack;
-  const ReviewScreen({super.key, this.showBack = true});
+
+  /// 导出「今日复习」卷（ADR-0052 复习页入口）。
+  ///
+  /// 不在这里直接 push 导出预览页：按 ADR-0037，feature 之间不得横向互引，
+  /// `features/review` 导入不了 `features/export`。由组合根（home）注入——
+  /// 传 null 时不显示该入口。
+  final VoidCallback? onExportDue;
+
+  const ReviewScreen({super.key, this.showBack = true, this.onExportDue});
 
   @override
   ConsumerState<ReviewScreen> createState() => _ReviewScreenState();
@@ -151,27 +160,44 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
             AppTopBar(
               title: '复习',
               showBack: widget.showBack,
-              trailing: state is DueReviewLoaded && !_done && _totalCount > 0
-                  ? Center(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.md, vertical: AppSpacing.xs),
-                        decoration: BoxDecoration(
-                          color: scheme.surfaceSunken,
-                          borderRadius: BorderRadius.circular(999),
-                          // 色块 = 2px 墨黑描边 + 硬阴影（ADR-0044）。
-                          border: Border.all(
-                              color: AppBrutal.ink,
-                              width: AppElevation.borderWidth),
-                          boxShadow: AppElevation.hard(),
-                        ),
-                        child: Text(
-                          '${_currentIndex + 1}/$_totalCount',
-                          style: AppTheme.textOf(context).labelMedium?.copyWith(
-                            fontFeatures: const [FontFeature.tabularFigures()],
+              trailing: state is DueReviewLoaded && state.items.isNotEmpty
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (widget.onExportDue != null)
+                          AppIconAction(
+                            icon: LucideIcons.printer,
+                            semanticLabel: '打印今日复习卷',
+                            onPressed: widget.onExportDue,
                           ),
-                        ),
-                      ),
+                        if (!_done && _totalCount > 0) ...[
+                          const SizedBox(width: AppSpacing.xs),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: AppSpacing.md,
+                                vertical: AppSpacing.xs),
+                            decoration: BoxDecoration(
+                              color: scheme.surfaceSunken,
+                              borderRadius: BorderRadius.circular(999),
+                              // 色块 = 2px 墨黑描边 + 硬阴影（ADR-0044）。
+                              border: Border.all(
+                                  color: AppBrutal.ink,
+                                  width: AppElevation.borderWidth),
+                              boxShadow: AppElevation.hard(),
+                            ),
+                            child: Text(
+                              '${_currentIndex + 1}/$_totalCount',
+                              style: AppTheme.textOf(context)
+                                  .labelMedium
+                                  ?.copyWith(
+                                    fontFeatures: const [
+                                      FontFeature.tabularFigures()
+                                    ],
+                                  ),
+                            ),
+                          ),
+                        ],
+                      ],
                     )
                   : null,
             ),

@@ -11,6 +11,7 @@ from app.core.config import settings
 from app.core.db import engine, init_db
 from app.core.errors import register_error_handlers
 from app.core.secrets import check_runtime_secrets_health
+from app.features.export.fonts import check_export_font_health
 
 
 @asynccontextmanager
@@ -20,6 +21,9 @@ async def lifespan(app: FastAPI):
     # 启动期密钥健康检查：尽早暴露密钥轮换 / 缺配，而非提问时才 401（ADR-0041）
     with Session(engine) as s:
         check_runtime_secrets_health(s)
+    # 打印导出的中文字体同口径：生产缺失阻断启动，开发告警（ADR-0052）。
+    # 缺字体不会崩其他功能，但导出会产出豆腐块——那种废纸不能等家长打出来才发现。
+    check_export_font_health()
     yield
 
 

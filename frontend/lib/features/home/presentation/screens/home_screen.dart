@@ -8,6 +8,8 @@ import '../../../../shared/widgets/adaptive_shell.dart';
 import '../../../children/providers/children_provider.dart';
 import '../../../children/presentation/screens/child_form_screen.dart';
 import '../../../assistant/presentation/screens/assistant_chat_page.dart';
+import '../../../export/domain/export_repository.dart';
+import '../../../export/presentation/export_preview_page.dart';
 import '../../../practice/presentation/screens/practice_screen.dart';
 import '../../../profile/presentation/screens/profile_screen.dart';
 import '../../../review/presentation/providers/review_notifier.dart';
@@ -254,6 +256,33 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     };
   }
 
+  /// 娃娃端复习页的导出入口（ADR-0052）：屏幕上到期的是哪些题，纸上就是哪些题。
+  ///
+  /// 注入而非页内自建的原因见 [ReviewScreen.onExportDue]——按 ADR-0037，
+  /// `features/review` 不得 import `features/export`，关联只能在 home 组合根建立。
+  ///
+  /// 请求不带 `childId`：娃娃端的作用域由服务端按调用者 token 钉死
+  /// （来源 = wrong_book、娃娃 = 自己），客户端无从越过自己的错题本。
+  void _exportDueReviews() {
+    final state = ref.read(dueReviewNotifierProvider);
+    if (state is! DueReviewLoaded || state.items.isEmpty) return;
+    Navigator.of(context).push(
+      CupertinoPageRoute(
+        builder: (_) => ExportPreviewPage(
+          request: const ExportSheetRequest(
+            source: 'wrong_book',
+            dueOnly: true,
+          ),
+          title: '今日复习',
+          downgradedCount: countDowngradedQuestions(
+            stems: state.items.map((e) => e.stem),
+            optionLists: state.items.map((e) => e.options),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildChildView() {
     if (_showProfile) {
       return ProfileScreen(user: widget.user, onLogout: widget.onLogout);
@@ -268,7 +297,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           onNavigateToWrongQuestions: () => _switchChildTab(2),
           onNavigateToTutor: () => _switchChildTab(3),
         ),
-        const ReviewScreen(showBack: false),
+        ReviewScreen(
+          showBack: false,
+          onExportDue: _exportDueReviews,
+        ),
         const WrongQuestionsScreen(showBack: false),
         const AssistantChatPage(showBack: false),
         ChildMasteryScreen(user: widget.user),

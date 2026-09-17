@@ -65,6 +65,10 @@ class _RecordingNetwork implements NetworkService {
   Stream<Uint8List> streamPost(String path,
           {Map<String, dynamic>? body, Duration? receiveTimeout}) =>
       const Stream<Uint8List>.empty();
+
+  @override
+  Future<Uint8List> postBytes(String path, {Map<String, dynamic>? body}) async =>
+      throw UnimplementedError('本测试的替身不涉及二进制下载');
 }
 
 Map<String, dynamic> bankPage(List<Map<String, dynamic>> items) => {

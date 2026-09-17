@@ -111,6 +111,16 @@ class Settings(BaseSettings):
     # vector（预留）= 后续接入 embedding 向量库；未知值回退 mock 并告警。
     RETRIEVER_PROVIDER: str = "mock"
 
+    # —— 打印导出（ADR-0052）——
+    # 中文字体目录：**不在代码里硬编码**——它的取值取决于部署形态
+    # （本地仓库 → backend/assets/fonts；容器 → 镜像内的同一路径，见 Dockerfile）。
+    # 缺字体时启动冒烟会告警（开发环境）/ 报错（生产环境），端点返回明确错误——
+    # 绝不静默渲染出一堆豆腐块。
+    EXPORT_FONT_DIR: str = str(_BACKEND_DIR / "assets" / "fonts")
+    # 单次导出的题量硬边界：防 CPU 密集排版把请求拖超时。
+    # 软提示（建议分批）在客户端给，服务端不拦「家长要印 100 题」这种合理需求。
+    EXPORT_MAX_QUESTIONS: int = 200
+
     def _check_default_secret(self, var_name: str, value: str | None) -> None:
         if value in (None, "", "changeme"):
             message = (

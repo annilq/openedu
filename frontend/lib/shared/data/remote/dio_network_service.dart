@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -182,6 +183,43 @@ class DioNetworkService implements NetworkService {
         yield chunk;
       }
     } on DioException catch (e) {
+      _handleError(e);
+    }
+  }
+
+  @override
+  Future<Uint8List> postBytes(String path, {Map<String, dynamic>? body}) async {
+    final options = Options(
+      method: 'POST',
+      responseType: ResponseType.bytes,
+      receiveTimeout: _streamReceiveTimeout, // 60 题的排版耗时远超普通 JSON 请求
+    ).compose(_dio.options, path, data: body);
+    try {
+      final resp = await _dio.fetch<List<int>>(options);
+      return Uint8List.fromList(resp.data ?? const []);
+    } on DioException catch (e) {
+      // 二进制响应的错误体是 UTF-8 JSON 文本，默认解析（data is Map）拿不到，
+      // 必须先解码再走统一错误体——否则 403 / 503 的具体原因全被抹掉。
+      final data = e.response?.data;
+      if (data is List<int>) {
+        try {
+          final decoded = utf8.decode(data);
+          final map = jsonDecode(decoded);
+          if (map is Map && map['message'] != null) {
+            if (e.response?.statusCode == 401) {
+              _onUnauthorized?.call();
+              throw UnauthorizedException();
+            }
+            throw HttpException(
+              map['message'].toString(),
+              statusCode: e.response?.statusCode,
+              code: map['code']?.toString(),
+            );
+          }
+        } on FormatException {
+          // 错误体不是 JSON：落回统一处理
+        }
+      }
       _handleError(e);
     }
   }

@@ -20,6 +20,8 @@ dependencies:
   # 此前仅经 shadcn_ui 传递引入（pubspec.lock:145），app_theme.dart 已直接用
   # `.animate()`；上游一旦摘掉该依赖即构建失败，故显式声明（ADR-0044）。
   flutter_animate: ^4.5.2
+  printing: ^5.15.0
+  pdfx: ^2.11.0
 
 dev_dependencies:
   flutter_test:

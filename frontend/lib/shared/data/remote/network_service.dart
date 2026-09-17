@@ -16,4 +16,11 @@ abstract class NetworkService {
   /// 沿用 BaseOptions 的短超时会在生成中途掐断流，表现为「少题」且难以定位。
   Stream<Uint8List> streamPost(String path,
       {Map<String, dynamic>? body, Duration? receiveTimeout});
+
+  /// 二进制 POST：返回原始字节（如打印导出的 PDF）。
+  ///
+  /// 非 2xx 时必须保留后端错误体里的 code / message——二进制响应的错误体
+  /// 仍是 JSON 文本，吞掉它会把「越权 403」和「字体缺失 503」都挤成
+  /// 「请求失败 (xxx)」，家长无法判断该重试还是该找人。
+  Future<Uint8List> postBytes(String path, {Map<String, dynamic>? body});
 }

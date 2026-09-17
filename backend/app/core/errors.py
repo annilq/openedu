@@ -64,6 +64,15 @@ class ErrCode(str, Enum):
     # Assistant chat 40xxx（复用对话类）
     CHAT_EMPTY_MESSAGE = "CHAT_40001"  # 空消息（400）
 
+    # 打印导出 80xxx（ADR-0052）
+    EXPORT_TOO_MANY = "EXPORT_80001"  # 超出单次导出题量硬边界（400）
+    EXPORT_FONT_MISSING = "EXPORT_80002"  # 中文字体不可用（503）
+    EXPORT_EMPTY = "EXPORT_80003"  # 选中的题全部取不到内容（400）
+    EXPORT_SOURCE_UNKNOWN = "EXPORT_80004"  # 未知导出来源（400）
+    EXPORT_CHILD_REQUIRED = "EXPORT_80005"  # 错题来源未指定娃娃（400）
+    # 娃娃端只能导出**自己的**错题；出现任何「给别人导出」的意图都是请求非法。
+    EXPORT_CHILD_SCOPE = "EXPORT_80006"  # 娃娃端导出越过了自己的范围（400）
+
 
 _HTTP_DEFAULT_STATUS: dict[ErrCode, int] = {
     ErrCode.UNAUTHORIZED: status.HTTP_401_UNAUTHORIZED,
@@ -99,6 +108,13 @@ _HTTP_DEFAULT_STATUS: dict[ErrCode, int] = {
     ErrCode.AUTH_CHILD_ONLY: status.HTTP_403_FORBIDDEN,
     ErrCode.AUTH_USERNAME_TAKEN: status.HTTP_400_BAD_REQUEST,
     ErrCode.CHAT_EMPTY_MESSAGE: status.HTTP_400_BAD_REQUEST,
+    ErrCode.EXPORT_TOO_MANY: status.HTTP_400_BAD_REQUEST,
+    # 字体缺失是「服务端没配好」，不是用户请求错也不是服务崩溃 —— 明确不可重试语义。
+    ErrCode.EXPORT_FONT_MISSING: status.HTTP_503_SERVICE_UNAVAILABLE,
+    ErrCode.EXPORT_EMPTY: status.HTTP_400_BAD_REQUEST,
+    ErrCode.EXPORT_SOURCE_UNKNOWN: status.HTTP_400_BAD_REQUEST,
+    ErrCode.EXPORT_CHILD_REQUIRED: status.HTTP_400_BAD_REQUEST,
+    ErrCode.EXPORT_CHILD_SCOPE: status.HTTP_400_BAD_REQUEST,
 }
 
 

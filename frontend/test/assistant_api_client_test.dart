@@ -30,6 +30,10 @@ class FakeSseNetwork implements NetworkService {
       null;
   @override
   Future<dynamic> delete(String path, {Map<String, dynamic>? body}) async => null;
+
+  @override
+  Future<Uint8List> postBytes(String path, {Map<String, dynamic>? body}) async =>
+      throw UnimplementedError('本测试的替身不涉及二进制下载');
 }
 
 /// 把事件 map 编码成一段 SSE 帧（含尾随 `\n\n`）。
