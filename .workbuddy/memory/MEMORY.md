@@ -10,6 +10,7 @@
 - ⚠️ **多会话并行改共享文件**（`app_theme.dart`/`MEMORY.md`/`AGENTS.md`/`.impeccable.md`）：先 `git status` + 看 mtime；长文件**定点 Edit**，写完回读（本文件被并发整写覆盖过两次）。
 - ⚠️ **`flutter test` 异常慢先查游离进程**：挂死探针占住 `build/test_cache` 锁 → 后续等锁假失败。`ps | grep flutter_tester` → kill + 删探针。
 - ⚠️ **新增原生插件必须完整重跑 App**：Hot Restart 不补原生注册 → pigeon `PlatformException(channel-error)`，改代码修不了。判据：进程启动时间 vs `pubspec.lock` mtime。真含插件代码的是 `Contents/MacOS/<app>.debug.dylib`（`strings | grep -i pdfx`），60KB 的 `MacOS/<app>` 只是壳。
+- ⚠️ **本机 `grep` 是 BSD 版，不支持 BRE 的 `\|` 交替**（那是 GNU 扩展）→ `grep "a\|b"` **静默返回空**，看着像「文件里没有」。一律 `grep -E "a|b"`；并且**`grep -c` 得 0 不能当作「没有 X」的证据**（要用 `Grep` 工具或 `grep -E` 复核）。本轮因此误判过两次。
 
 ## 1. 前端分层（ADR-0036/0037）
 - AI 唯一入口 `assistantNotifierProvider` + `AssistantMessageList`；后端唯一端点 `POST /api/v1/assistant/chat`。业务字段不前端预填（subject 后端算、grade 取 JWT）。
@@ -26,7 +27,9 @@
 - ⚠️ **`ShadButton` 不可放进会压缩它的容器**（`Expanded`/固定宽）→ `RenderFlex overflowed`；并排按钮一律 `Wrap`。
 - ⚠️ **`ShadCard` 比内容高时内容贴顶不居中**（实测卡片 44/内容 28 → 上 1 下 15）；钉高的调用点**自己包 `Center`**，别改 `AppCard`。
 - ⚠️ **`Row(crossAxisAlignment: stretch)` 必须包 `IntrinsicHeight`**，否则无界高父级抛 `BoxConstraints forces an infinite height`；`Column(stretch)` 安全（守卫 `test/stretch_row_guard_test.dart`）。
-- ⚠️ **两条语义色通道长期没接上**（2026-09-17 审计）：① `SubjectMarkIcon`/`SubjectKey.mark`（`app_theme.dart:131-196`）**零业务调用** → 学科三重编码实际只有颜色一重（`AppTags.subject` 不渲染形状），红绿色盲下语文/英语趋同；② `assistant_cards.dart` 内 `AppBrutal` 零命中 → 9 种助手卡片全是同款白板，只靠 15px 灰图标区分。清单见 `.scratch/design-amplification-audit-2026-09-17.md`。
+- ⚠️ **两条语义色通道已接线**（2026-09-17 审计 + 落地）：① `SubjectMarkIcon`/`SubjectKey.mark`（`app_theme.dart:131-196`）**由 `_TagChip` 渲染**（`AppTags.subject` 返回的私有组件内部），三重编码是通的——**只读工厂函数就断言「零业务调用」是错的，会漏掉工厂返回的私有组件**；唯一真缺口是 `mastery_board.dart` 的纯色点，已改 `SubjectMarkIcon`。② 助手卡片 `_CardHeader` 已接类别色（cyan=待办/复习、magenta=错题/掌握，其余中性，守「单屏色相 ≤ 3」），前景走 `AppBrutal.onColor`。清单见 `.scratch/design-amplification-audit-2026-09-17.md`。
+- **动效（批次 D 落地）**：`AppProgressBar` 有填充过渡（`TweenAnimationBuilder`，`begin == end` → **首帧直接落终值**，只有挂载后的值变化才过渡；`ShadProgress` 的 determinate 分支是裸 `FractionallySizedBox`，内部零动画）；`PopIn.delay` 已存在（`Timer` + dispose 取消，延迟期按 `fromScale` 全透明就位），错峰步长 `AppMotion.interaction * min(i, 4)`。
+- ⚠️ **`reducedMotionOf` 事实源在 `shared/theme/app_theme.dart`**（不是 `app_motion.dart`）：主题层的隐式过渡也要读它，反向 import 会成 theme↔widgets 循环。**别用 `export ... show reducedMotionOf` 转出**——会让 6 个调用点的 `app_motion` import 全变 `unnecessary_import`（analyze 零 issue 硬要求）。守卫 `test/pop_in_stagger_test.dart` 静态断言 `disableAnimations` 只出现一次。
 
 ## 3. 自适应布局（ADR-0045）· 令牌表见 `AppLayout`
 - `AdaptiveShell` 三档：紧凑 700 = 娃娃底栏 / 家长汉堡抽屉；中屏 = 侧栏单栏；≥1200 有 `detail` → `body | 发丝线 | detail`。
@@ -42,6 +45,8 @@
 - **`ShadCard` 的可见外框不是 `ShadDecorator`** → 找「子树里第一个 `Container` 且 `BoxDecoration && border != null`」。
 - ⚠️ **widget 测试里不要直接调 pdfx 的 `PdfDocument.openData`**：无原生一侧时 Future **既不完成也不报错** → `flutter_tester` 挂死。走 `pdfDocumentOpenerProvider` 接缝注入抛错替身。
 - ⚠️ **catch 掉的异常也要 `debugPrint` 留痕**（接住 + 友好文案会让控制台一句话没有，排障失去唯一线索）。
+- ⚠️ **`pumpAndSettle` 只按「还有没有下一帧」推进**：悬挂的 `Timer` 不排帧 → 单靠它计时器永不触发（必须显式 `pump(delay)`）；**含不确定态 spinner 的子树它必然超时**（永远排下一帧）→ 用显式 `pump(时长)`。`AnimatedSwitcher` 退场在「整档时长 + 再一帧」处才摘节点，且 ticker 要等第一个 tick 才开始计时 → 测试推**两档时长**，不要写死「第几帧」。
+- ⚠️ **`pumpWidget` 的根之上没有 MediaQuery 祖先** → 注入 reduce-motion 必须把 `MediaQuery` 放在 `CupertinoApp`/`ShadApp` **之内**（`home` 包 `Builder` + `copyWith(disableAnimations:)`，保留 size）；直接 `MediaQueryData(disableAnimations: true)` 会把 size 变成 `Size.zero`。
 
 ## 5. Git / 后端 / 长列表
 - ✅ `git push origin main` 可通；⚠️ 常输出 `Everything up-to-date` 但其实已成功 → 以 `git ls-remote origin main` 比对 HEAD 为准。push 走环境代理（端口每会话变）。提交按**逻辑批次**拆、正文写「为什么」；`chore(memory):` 单独提交；`backend/.agents/` 未跟踪，别顺手 commit。
