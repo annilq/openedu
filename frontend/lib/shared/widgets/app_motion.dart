@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/physics.dart';
@@ -14,16 +15,20 @@ import '../theme/app_theme.dart';
 /// - 尊重系统减弱动画设置：`MediaQuery.disableAnimations == true` 时退化为静态，
 ///   但**手势回调必须保留**——历史上在减弱动画分支里直接 `return child`，把
 ///   `GestureDetector` 一起丢了，按钮会点不动。
-
-/// 判断系统是否「减弱动态效果」。
-bool reducedMotionOf(BuildContext context) =>
-    MediaQuery.maybeOf(context)?.disableAnimations ?? false;
+///
+/// [reducedMotionOf] 由 `shared/theme/app_theme.dart` 提供（那里也需要它做隐式过渡，
+/// 反向 import 会成 theme ↔ widgets 循环）。**不要在本文件再写一份**——两份判据
+/// 迟早分叉，而分叉的表现正是上面那条「按钮点不动」。
 
 /// 弹簧入场：缩放 + 淡入，一次执行（initState 触发，不随重建重放）。
 /// 用于成就图标、结果卡片、首页 Banner 等「登场」时刻。
 ///
 /// 时长由 [spring] 的物理参数决定（阻尼比 ≈0.73，轻微超调），不再接受
 /// `Duration`——固定时长表达不了弹簧的质量感。
+///
+/// **同屏多个 [PopIn] 必须错峰**：默认 `delay` 为零，列表里连排的卡片会
+/// 用同一条弹簧同时起跳，正是本文件开头要消灭的「齐步走」。给第 i 项传
+/// `delay: AppMotion.interaction * i`（并夹一个上限）即可依次登场。
 class PopIn extends StatefulWidget {
   final Widget child;
   final double fromScale;
@@ -31,11 +36,18 @@ class PopIn extends StatefulWidget {
   /// 覆盖默认弹簧（庆祝场景可传 [AppSprings.celebrate] 加强回弹）。
   final SpringDescription spring;
 
+  /// 入场延迟。默认零（单个元素登场不必等待）。
+  ///
+  /// 延迟期间**不是白屏**：控件已按 [fromScale] + 全透明就位，时间一到立刻起跳。
+  /// [reducedMotionOf] 为真时整个延迟被跳过（直接呈现最终态）。
+  final Duration delay;
+
   const PopIn({
     super.key,
     required this.child,
     this.fromScale = 0.88,
     this.spring = AppSprings.state,
+    this.delay = Duration.zero,
   });
 
   @override
@@ -45,6 +57,7 @@ class PopIn extends StatefulWidget {
 class _PopInState extends State<PopIn>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
+  Timer? _delay;
 
   @override
   void initState() {
@@ -52,18 +65,28 @@ class _PopInState extends State<PopIn>
     // unbounded：允许弹簧超调越过 1.0。用有界 controller 会把超调 clamp 掉，
     // 结果就是「没有回弹」——正是旧 easeOutBack 想模拟却模拟不像的东西。
     _controller = AnimationController.unbounded(vsync: this);
+    if (widget.delay > Duration.zero) {
+      _delay = Timer(widget.delay, _spring);
+    } else {
+      _spring();
+    }
+  }
+
+  void _spring() {
+    if (!mounted) return;
     _controller.animateWith(SpringSimulation(widget.spring, 0, 1, 0));
   }
 
   @override
   void dispose() {
+    _delay?.cancel();
     _controller.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    // 减弱动态效果：呈现最终态（不重放）
+    // 减弱动态效果：呈现最终态（不重放，也不等待 delay）。
     if (reducedMotionOf(context)) return widget.child;
     return AnimatedBuilder(
       animation: _controller,

@@ -5,7 +5,6 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_inputs.dart';
-import '../../../../shared/widgets/app_motion.dart';
 
 /// 兴趣分类词表（WF-1 定稿）：15 个一级 → 可选二级叶子。
 /// 取值语义见 wayfinder/tickets/01-兴趣分类词表.md。

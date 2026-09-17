@@ -117,6 +117,11 @@ class _Bubble extends StatelessWidget {
                         const SizedBox(height: AppSpacing.sm),
                       PopIn(
                         key: ValueKey<int>(i),
+                        // 同一条消息的多张卡必须错峰：默认弹簧是同一条，
+                        // 齐步起跳就是 app_motion.dart 开头点名要消灭的「齐步走」。
+                        // 夹到第 5 张为止——再往后延迟已经超过人的感知窗口，
+                        // 排队等待只会显得卡。
+                        delay: AppMotion.interaction * math.min(i, 4),
                         child: AssistantCardTile(card: cards[i]),
                       ),
                     ],
@@ -171,6 +176,7 @@ class _BubbleBody extends StatelessWidget {
     if (message.thinking) {
       // 阶段文案：后端编排帧（路由 / 工具调用）到达时替换静态「思考中…」，
       // 让用户看到推进（AiTextFold.stage）。帧未到或无阶段时回退默认文案。
+      final label = message.stage.isEmpty ? '思考中…' : message.stage;
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -183,9 +189,31 @@ class _BubbleBody extends StatelessWidget {
             ),
           ),
           const SizedBox(width: AppSpacing.sm),
-          Text(
-            message.stage.isEmpty ? '思考中…' : message.stage,
-            style: text.bodySmall,
+          // 阶段**切换**而不是「第一次出现」才是常态：一次问答里路由帧、每个工具
+          // 调用帧都会改写它（「正在检索错题」→「正在汇总」）。直接换文本是硬切，
+          // 恰恰把「又推进了一步」读成了闪烁。换成淡入 + 轻微上浮，推进变成可见的。
+          //
+          // key 必须绑文本：AnimatedSwitcher 靠 key 判别「换了一个孩子」，
+          // 用 const key 会让整段动画静默失效。
+          AnimatedSwitcher(
+            duration: reducedMotionOf(context) ? Duration.zero : AppMotion.state,
+            switchInCurve: AppCurves.state,
+            switchOutCurve: AppCurves.state,
+            transitionBuilder: (child, animation) => FadeTransition(
+              opacity: animation,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0, 0.22),
+                  end: Offset.zero,
+                ).animate(animation),
+                child: child,
+              ),
+            ),
+            child: Text(
+              label,
+              key: ValueKey<String>(label),
+              style: text.bodySmall,
+            ),
           ),
         ],
       );

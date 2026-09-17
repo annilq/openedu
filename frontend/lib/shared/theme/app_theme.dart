@@ -1918,11 +1918,24 @@ class AppProgressBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final app = AppTheme.colorsOf(context);
-    return ShadProgress(
-      value: value.clamp(0.0, 1.0),
-      minHeight: height,
-      color: color ?? app.accent,
-      backgroundColor: trackColor ?? app.surfaceContainerHighest,
+    final target = value.clamp(0.0, 1.0);
+    // 值变化 =「状态切换」，补一档隐式过渡。直接换 `ShadProgress.value` 会让条子
+    // 硬跳：它的 determinate 实现是裸 `FractionallySizedBox`（零内部动画），
+    // 「答完题看着掌握度条长出来」这个时刻的**进步信号本身就丢了**。
+    //
+    // begin == end：**首帧直接落在终值**，不扫一遍。掌握度表里每行都从 0 长出来
+    // 会变成满屏噪声，何况列表滚动/回收会不断重放。只有挂载**之后**的值变化才过渡。
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: target, end: target),
+      // ⚠️ 隐式动画不自动尊重系统设置（见 [reducedMotionOf]）。
+      duration: reducedMotionOf(context) ? Duration.zero : AppMotion.state,
+      curve: AppCurves.state,
+      builder: (context, animated, _) => ShadProgress(
+        value: animated,
+        minHeight: height,
+        color: color ?? app.accent,
+        backgroundColor: trackColor ?? app.surfaceContainerHighest,
+      ),
     );
   }
 }
@@ -2664,6 +2677,23 @@ class AppCurves {
   /// 庆祝：回弹（仅 Child Mode）。新代码请用 [AppSprings.celebrate]。
   static const Curve celebrate = Curves.easeOutBack;
 }
+
+/// 系统是否开启了「减弱动态效果」。
+///
+/// reduce-motion 判据的**唯一事实源**：`shared/widgets/app_motion.dart` 用
+/// `export '../theme/app_theme.dart' show reducedMotionOf;` 把它转出去，
+/// 所以既有的 `import '../shared/widgets/app_motion.dart'` 调用点无需改动。
+///
+/// 定义在本文件而非 `shared/widgets/`：那里反向 import 会形成
+/// theme ↔ widgets 循环依赖（与 [AppFocusableAction] 留在本文件同一原因）。
+/// 改判据时只改这里——转出的是同一个声明，不会出现两份实现。
+///
+/// ⚠️ **隐式动画不会自动尊重系统设置**：`AnimatedContainer` / `AnimatedScale` /
+/// `AnimatedRotation` / `AnimatedSize` / `TweenAnimationBuilder` 照动不误。
+/// 凡是用到 [AppMotion] / [AppCurves] 的隐式动画，调用点必须显式写
+/// `duration: reducedMotionOf(context) ? Duration.zero : <令牌>`。
+bool reducedMotionOf(BuildContext context) =>
+    MediaQuery.maybeOf(context)?.disableAnimations ?? false;
 
 // =====================================================================
 // §用户模式作用域（双模式切换，ADR-0014）

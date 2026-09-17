@@ -2,7 +2,6 @@ import 'package:flutter/widgets.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../theme/app_theme.dart';
-import 'app_motion.dart';
 
 /// 加载状态展示模式。
 enum _LoadingMode { spinner, skeleton, skeletonInline }

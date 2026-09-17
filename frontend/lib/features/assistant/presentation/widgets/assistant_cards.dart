@@ -519,36 +519,51 @@ class _ReasoningDisclosureState extends State<_ReasoningDisclosure> {
                 '出题思路',
                 style: text.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
               ),
-              Icon(
-                _open ? LucideIcons.chevronUp : LucideIcons.chevronDown,
-                size: 14,
-                color: scheme.onSurfaceVariant,
+              // 固定 chevronDown + turns 旋转，取代原先 `_open ? chevronUp :
+              // chevronDown` 的硬切换：硬切换没有过渡，箭头会「跳」一下。
+              AnimatedRotation(
+                turns: _open ? 0.5 : 0,
+                duration: _openDuration(context),
+                child: Icon(LucideIcons.chevronDown,
+                    size: 14, color: scheme.onSurfaceVariant),
               ),
             ],
           ),
         ),
-        if (_open) ...[
-          const SizedBox(height: AppSpacing.xs),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(AppSpacing.sm),
-            decoration: BoxDecoration(
-              color: scheme.surfaceSunken,
-              borderRadius: BorderRadius.circular(AppRadius.card),
-            ),
-            child: Text(
-              widget.reasoning,
-              style: text.bodySmall?.copyWith(
-                color: scheme.onSurfaceVariant,
-                height: 1.5,
-              ),
-            ),
-          ),
-        ],
+        // 展开/收起走高度过渡，不再是 `if (_open)` 的瞬时增删。
+        AnimatedSize(
+          duration: _openDuration(context),
+          curve: AppCurves.state,
+          alignment: Alignment.topCenter,
+          child: _open
+              ? Padding(
+                  padding: const EdgeInsets.only(top: AppSpacing.xs),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(AppSpacing.sm),
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceSunken,
+                      borderRadius: BorderRadius.circular(AppRadius.card),
+                    ),
+                    child: Text(
+                      widget.reasoning,
+                      style: text.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                        height: 1.5,
+                      ),
+                    ),
+                  ),
+                )
+              : const SizedBox(width: double.infinity),
+        ),
       ],
     );
   }
 }
+
+/// 折叠过渡时长：隐式动画**不自动尊重** reduce-motion，必须显式归零（ADR-0044）。
+Duration _openDuration(BuildContext context) =>
+    reducedMotionOf(context) ? Duration.zero : AppMotion.state;
 
 // ───────────────────────── 明细行投影（视觉 + 复制共用一份）─────────────────────────
 
