@@ -11,6 +11,7 @@ import '../../domain/assistant_card.dart';
 /// - [AssistantCardKind.question] → 题目卡（学科/题型/难度 + 题干 + 选项 + 答案 + 解析 + 出题思路）
 /// - [AssistantCardKind.progress] → 指标卡（答对 / 正确率 / 打卡）
 /// - [AssistantCardKind.notice] → 提示卡（标题 + 文本）
+/// - [AssistantCardKind.guide] → 引导卡（说明 + 受控跳转出口）
 /// - 其余列表类 → 列表卡（标题 + 归属 + 明细行）
 ///
 /// **降级不丢内容**：认不出的种类若带 `items` 走列表卡的「通用行」，否则走提示卡。
@@ -22,7 +23,14 @@ import '../../domain/assistant_card.dart';
 class AssistantCardTile extends StatelessWidget {
   final AssistantCard card;
 
-  const AssistantCardTile({super.key, required this.card});
+  /// 卡片动作出口（目前只有引导卡的 [AssistantCard.actions] 会用）。
+  ///
+  /// 由页面注入而不是卡片自己去 `Navigator.push`：同一条卡片在家长端是 push 的
+  /// 整页、在娃娃端是壳内页签，**怎么退、退到哪只有宿主知道**。
+  /// 传 null（如只读回放）时按钮不渲染——点不动的按钮比没有按钮更糟。
+  final void Function(AssistantCardAction action)? onAction;
+
+  const AssistantCardTile({super.key, required this.card, this.onAction});
 
   @override
   Widget build(BuildContext context) {
@@ -34,6 +42,7 @@ class AssistantCardTile extends StatelessWidget {
           IntrinsicHeight(child: _QuestionCard(card: card)),
       AssistantCardKind.progress => _StatsCard(card: card),
       AssistantCardKind.notice => _TextCard(card: card),
+      AssistantCardKind.guide => _GuideCard(card: card, onAction: onAction),
       _ => card.items.isEmpty ? _TextCard(card: card) : _ListCard(card: card),
     };
     return _CardShell(child: body);
@@ -100,15 +109,19 @@ class _CardShell extends StatelessWidget {
 ///
 /// | 族 | kind | 色 |
 /// |---|---|---|
-/// | 待办 / 复习（要做的事） | `taskList` · `dueReviewList` | `cyan` |
+/// | 待办 / 复习（要做的事） | `taskList` · `dueReviewList` · `guide` | `cyan` |
 /// | 错题 / 掌握（要看的问题） | `wrongQuestionList` · `masteryList` · `questionBankList` | `magenta` |
 /// | 结构 / 对话（无行动压力） | `question` · `progress` · `notice` · `childList` · 未登记 | 中性灰 |
+///
+/// `guide` 归「待办」族：它是**要用户去做一件事**的卡（去布置任务），
+/// 与任务列表同一语义，不该长得像一条中性说明。
 ///
 /// 两个族色都是**亮块**，前景一律由 [AppBrutal.onColor] 判成墨黑——不得手写黑/白。
 /// 返回 `null` 表示走中性底座（`surfaceSunken` + `onSurfaceVariant`）。
 Color? _familyFillOf(String kind) => switch (kind) {
       AssistantCardKind.taskList ||
-      AssistantCardKind.dueReviewList =>
+      AssistantCardKind.dueReviewList ||
+      AssistantCardKind.guide =>
         AppBrutal.cyan,
       AssistantCardKind.wrongQuestionList ||
       AssistantCardKind.masteryList ||
@@ -340,6 +353,75 @@ class _TextCard extends StatelessWidget {
                   : scheme.onSurfaceVariant,
             ),
           ),
+      ],
+    );
+  }
+}
+
+// ───────────────────────── 引导卡（guide）─────────────────────────
+
+/// 引导卡：一句「为什么不能」+ 一个（或几个）**受控跳转出口**。
+///
+/// 这张卡补的是这条链路上唯一真正断掉的一环：助手是只读的（不是缺陷，是边界），
+/// 但「你不能做」不该是终点——用户需要下一步。在此之前后端只能回一句
+/// 「请到『任务/作业』页面操作」，而卡片协议里**没有任何位置**能放那个入口，
+/// 于是用户被告知去别处、却拿不到别处。
+///
+/// [onAction] 为 null 时不渲染出口：只读回放里没人接这个动作，
+/// 给一个点不动的按钮比不给更糟（会让人以为界面坏了）。
+class _GuideCard extends StatelessWidget {
+  final AssistantCard card;
+  final void Function(AssistantCardAction action)? onAction;
+
+  const _GuideCard({required this.card, this.onAction});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = AppTheme.colorsOf(context);
+    final text = AppTheme.textOf(context);
+    // 出口按「宿主给没给处理器」决定要不要画：给不出落点的按钮不如不画。
+    final buttons = <Widget>[];
+    final handler = onAction;
+    if (handler != null) {
+      for (final action in card.actions) {
+        buttons.add(
+          AppPrimaryButton(
+            label: action.label,
+            fullWidth: false,
+            onPressed: () => handler(action),
+          ),
+        );
+      }
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _CardHeader(
+          icon: _iconOf(card.kind),
+          title: card.title,
+          subject: card.subject,
+          kind: card.kind,
+        ),
+        if (card.text.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            card.text,
+            style: text.bodyMedium?.copyWith(
+              color: scheme.onSurface,
+              height: 1.5,
+            ),
+          ),
+        ],
+        if (buttons.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.md),
+          // 并排按钮一律 Wrap：ShadButton 放进会压缩它的容器（Row/Expanded）
+          // 会 RenderFlex overflowed——卡片在消息流里宽度有限，尤其容易撞上。
+          Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
+            children: buttons,
+          ),
+        ],
       ],
     );
   }
@@ -699,6 +781,7 @@ IconData _iconOf(String kind) => switch (kind) {
       AssistantCardKind.childList => LucideIcons.user,
       AssistantCardKind.progress => LucideIcons.barChart3,
       AssistantCardKind.questionBankList => LucideIcons.library,
+      AssistantCardKind.guide => LucideIcons.cornerDownRight,
       _ => LucideIcons.info,
     };
 

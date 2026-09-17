@@ -280,7 +280,9 @@ void main() {
 
     expect(find.text('我都有哪些娃'), findsNothing,
         reason: '不显式断开 session_id 的话，「新对话」只是一句空话');
-    expect(find.text('一句话就能布置任务'), findsOneWidget, reason: '回到家长口径的空态');
+    // 家长口径空态：文案在 ADR-0054 里改成「只说做得到的」——原文案
+    // 「一句话就能布置任务」是做不到的承诺（助手只读），正是那次报障的预期来源。
+    expect(find.text('可以出题、查学情、看错题'), findsOneWidget, reason: '回到家长口径的空态');
   });
 
   testWidgets('历史入口键盘可达：Tab 到它、Enter 进入列表', (tester) async {

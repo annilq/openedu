@@ -2,11 +2,13 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+import '../../../../shared/presentation/shell_navigation.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_content_frame.dart';
 import '../../../../shared/widgets/app_dialog.dart';
 import '../../../../shared/widgets/app_toast.dart';
 import '../../../../shared/widgets/app_top_bar.dart';
+import '../../domain/assistant_card.dart';
 import '../../domain/conversation.dart';
 import '../../providers/assistant_provider.dart';
 import '../provider/assistant_notifier.dart';
@@ -203,6 +205,22 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
         _replay = null;
       });
 
+  /// 引导卡出口：把「要去哪」交给壳，再关掉自己（若本页是 push 出来的整页）。
+  ///
+  /// 家长端本页是 `Navigator.push` 的整页，壳在它**下面**——所以不能自己 push，
+  /// 得先退回去、由 [HomeScreen] 消费意图切到目标页。娃娃端本页是壳内页签
+  /// （[showBack] = false），原地不动等壳自己切。
+  ///
+  /// 认不出的 target 什么也不做：后端的 target 是受控枚举，前端猜一个近似落点
+  /// 只会把「协议新增了值、前端还没跟上」变成一个莫名其妙的跳转，
+  /// 而不是一个能被守卫测出来的失败。
+  void _handleCardAction(AssistantCardAction action) {
+    final destination = ShellDestination.fromTarget(action.target);
+    if (destination == null) return;
+    ref.read(shellNavigationProvider.notifier).request(destination);
+    if (widget.showBack) Navigator.of(context).maybePop();
+  }
+
   void _backToHistory() => _showHistory();
 
   /// 新对话：丢弃当前会话身份与气泡。
@@ -293,6 +311,7 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
                         : AssistantMessageList(
                             messages: messages,
                             controller: _scroll,
+                            onCardAction: _handleCardAction,
                           ),
                     _AssistantMode.history => AssistantHistoryView(
                         onOpen: _open,
@@ -394,6 +413,10 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
 /// 文案按角色分叉（见 [AssistantChatPage.isParent]）：娃娃端强调「只讲学习内容」的
 /// 边界，家长端强调「能出题 / 查任务 / 看学情」的能力。骨架走 [AssistantHintCard]，
 /// 与历史空态是同一个东西。
+///
+/// ⚠️ 家长端那句曾是「一句话就能布置任务」——**它做不到**：助手是只读的（写操作
+/// 一律引导到对应页面）。空态是承诺最密集的位置，写一句做不到的话，用户只会在
+/// 试过之后觉得「这助手坏了」。空态只说**真能做的**，「布置任务」由引导卡给出口。
 class _WelcomeHint extends StatelessWidget {
   final bool isParent;
 
@@ -402,8 +425,8 @@ class _WelcomeHint extends StatelessWidget {
   @override
   Widget build(BuildContext context) => AssistantHintCard(
         icon: LucideIcons.sparkles,
-        title: isParent ? '一句话就能布置任务' : '有问题就问 AI 老师吧',
-        body: isParent ? '可以出题、查任务、看错题与掌握度' : '只讲学习内容，其他问题不回答哦',
+        title: isParent ? '可以出题、查学情、看错题' : '有问题就问 AI 老师吧',
+        body: isParent ? '布置与派发任务请到「布置任务」页' : '只讲学习内容，其他问题不回答哦',
       );
 }
 

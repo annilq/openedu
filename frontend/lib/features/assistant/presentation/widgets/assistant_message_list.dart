@@ -29,6 +29,12 @@ class AssistantMessageList extends StatelessWidget {
   /// 气泡最大宽度占屏幕比例；实际再夹一个像素上限，避免平板上气泡过宽。
   final double maxBubbleWidthFactor;
 
+  /// 卡片动作出口（引导卡用），透传给 [AssistantCardTile]。
+  ///
+  /// 由页面注入：同一条卡片在家长端是 push 的整页、在娃娃端是壳内页签，
+  /// 「动作之后怎么走」只有宿主知道（见 `assistant_chat_page.dart`）。
+  final void Function(AssistantCardAction action)? onCardAction;
+
   static const double _maxBubbleWidthPx = 760;
 
   const AssistantMessageList({
@@ -36,6 +42,7 @@ class AssistantMessageList extends StatelessWidget {
     required this.messages,
     this.controller,
     this.maxBubbleWidthFactor = 0.7,
+    this.onCardAction,
   });
 
   @override
@@ -48,6 +55,7 @@ class AssistantMessageList extends StatelessWidget {
       itemBuilder: (_, i) => _Bubble(
         message: messages[i],
         maxWidthFactor: maxBubbleWidthFactor,
+        onCardAction: onCardAction,
       ),
     );
   }
@@ -56,8 +64,13 @@ class AssistantMessageList extends StatelessWidget {
 class _Bubble extends StatelessWidget {
   final AssistantMessage message;
   final double maxWidthFactor;
+  final void Function(AssistantCardAction action)? onCardAction;
 
-  const _Bubble({required this.message, required this.maxWidthFactor});
+  const _Bubble({
+    required this.message,
+    required this.maxWidthFactor,
+    this.onCardAction,
+  });
 
   /// 气泡与卡片共用的宽度上限：可用宽度 × [maxWidthFactor]，再夹一个像素上限，
   /// 避免平板上过宽（1400px 屏 × 0.7 = 980px 一行太长）。
@@ -122,7 +135,10 @@ class _Bubble extends StatelessWidget {
                         // 夹到第 5 张为止——再往后延迟已经超过人的感知窗口，
                         // 排队等待只会显得卡。
                         delay: AppMotion.interaction * math.min(i, 4),
-                        child: AssistantCardTile(card: cards[i]),
+                        child: AssistantCardTile(
+                          card: cards[i],
+                          onAction: onCardAction,
+                        ),
                       ),
                     ],
                   ],

@@ -2,6 +2,7 @@ import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+import '../../../../shared/presentation/shell_navigation.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/widgets/adaptive_shell.dart';
@@ -395,8 +396,34 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         onTap: _onProfileTap,
       );
 
+  /// 壳目的地 → 家长端侧栏索引；娃娃端没有这些目的地（返回 null，意图被丢弃）。
+  ///
+  /// 索引值必须与 [_parentDestinations] 里的 `onTap` 一致——这里是那套索引的
+  /// **第二个写入口**（第一个是侧栏点击），所以只在此处做映射，不把编号散出去。
+  int? _parentIndexFor(ShellDestination destination) {
+    if (!widget.user.isParent) return null;
+    return switch (destination) {
+      ShellDestination.parentCreateTask => 1,
+      ShellDestination.parentTaskList => 8,
+      ShellDestination.parentQuestionBank => 6,
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
+    // 壳外页面（push 出来的助手整页）请求的跳转：翻成侧栏索引后走 [_parentTap]，
+    // 与点侧栏是同一条路径（含覆盖层清理）。
+    //
+    // 无条件注册监听（不放进 `isParent` 分支）：ref.listen 的调用次数在多次 build
+    // 之间必须一致，条件注册会让「角色分支变化」时的订阅数量对不上。
+    ref.listen(shellNavigationProvider, (_, next) {
+      if (next == null) return;
+      // 先消费再执行：不清空的话下一次 rebuild 会重复触发同一次跳转。
+      ref.read(shellNavigationProvider.notifier).consume();
+      final index = _parentIndexFor(next);
+      if (index != null) _parentTap(index);
+    });
+
     if (widget.user.isParent) {
       // 复核覆盖层期间，侧栏高亮跟随来源页（_parentNavIndex 保持不变）。
       final activeIndex = _parentNavIndex;
