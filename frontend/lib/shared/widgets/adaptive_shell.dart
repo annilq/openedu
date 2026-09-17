@@ -6,6 +6,7 @@ import '../../shared/domain/models/models.dart';
 import '../../shared/theme/app_theme.dart';
 import '../../shared/widgets/app_sidebar.dart';
 import '../domain/providers/core_providers.dart';
+import 'app_content_frame.dart';
 import 'app_motion.dart';
 
 /// 导航目的地（数据驱动）：同一份定义同时喂给侧栏 / 底栏 / 抽屉三种形态，
@@ -206,18 +207,17 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
 
   /// 内容宽度上限 + 水平居中：大屏下避免文本行过长、卡片被无限拉宽。
   ///
-  /// 用 [Align] 的 `topCenter` 而**不是** [Center]：这里只想约束横向。`Center` 的竖向
+  /// 壳只用 [AppContentFrame]（ADR-0045 的唯一出口），各pages 也用同一个组件，
+  /// 免得 width token 散在十几处各写一份。
+  ///
+  /// 为什么是 `topCenter` 而**不是** [Center]：这里只想约束横向。`Center` 的竖向
   /// 居中会让「内容不足一屏」的页面（表单、错误态）整块浮到屏幕中间——本仓刻意要
   /// 「内容贴顶自然布局」。`Align` 横向传下松约束，贪心子项（ListView / scroll view）
   /// 仍会取满 `contentWide`，与 `Center` 等效。
   ///
   /// 紧凑宽度下 1080 不生效，等价于无包裹（不改变手机 / 小平板的现有排布）。
-  Widget _cappedWidth(Widget child) => Align(
-        alignment: Alignment.topCenter,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: AppLayout.contentWide),
-          child: child,
-        ),
+  Widget _cappedWidth(Widget child) => AppContentFrame(
+        child: child,
       );
 
   // ---- 紧凑·娃娃端：底部导航 ----

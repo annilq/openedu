@@ -7,7 +7,7 @@ import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_answer_result_dialog.dart';
 import '../../../../shared/widgets/app_error.dart';
 import '../../../../shared/widgets/app_loading.dart';
-import '../../../../shared/widgets/app_top_bar.dart';
+import '../../../../shared/widgets/app_pushed_page.dart';
 import '../providers/practice_notifier.dart';
 import '../widgets/practice_question_view.dart';
 import '../widgets/practice_review_view.dart';
@@ -192,84 +192,91 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
       return _buildCorrecting(state);
     }
 
-    return SizedBox.expand(
-      child: ColoredBox(
-        color: scheme.surface,
-        child: Column(
-          children: [
-            AppTopBar(
-              title: widget.task.title,
-              showBack: true,
-              trailing: state is Practicing
-                  ? Center(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.md, vertical: AppSpacing.xs),
-                        decoration: BoxDecoration(
-                          // 题号 chip：violet 深块配白字（5.55:1），2px 墨黑描边。
-                          color: AppBrutal.violet,
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(
-                              color: AppBrutal.ink,
-                              width: AppElevation.borderWidthSm),
-                        ),
-                        child: Text(
-                          '${state.currentIndex + 1}/${widget.task.questions.length}',
-                          style: AppTheme.textOf(context).labelMedium?.copyWith(
-                                color: AppBrutal.onDark,
-                                fontFeatures: const [
-                                  FontFeature.tabularFigures()
-                                ],
-                              ),
-                        ),
+    // push 出来的整页：宽度兜底与「出路」都不由 AdaptiveShell 给，得自己记住
+    // ——而「自己记住 showBack」正是 ExportPreviewPage 上线时漏掉、把人锁死一屏的
+    // 那种约定。改由骨架默认提供：返回 + Esc。
+    //
+    // maxWidth 刻意传 infinity（不加宽度上限）：本页的预览/回顾里有一条**通栏底部
+    // 行动条**（practice_review_view 明确写着「底部行动条刻意留在约束外——它该通栏」），
+    // 一旦在这里钉 1080，那条会跟着缩到 1080。是否改用 contentWide 是个视觉取舍，
+    // 留到单独一轮，不与这次「退路结构化」混在一起。
+    return AppPushedPage(
+      title: widget.task.title,
+      maxWidth: double.infinity,
+      background: scheme.surface,
+      trailing: state is Practicing
+          ? Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.md, vertical: AppSpacing.xs),
+                decoration: BoxDecoration(
+                  // 题号 chip：violet 深块配白字（5.55:1），2px 墨黑描边。
+                  color: AppBrutal.violet,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                      color: AppBrutal.ink,
+                      width: AppElevation.borderWidthSm),
+                ),
+                child: Text(
+                  '${state.currentIndex + 1}/${widget.task.questions.length}',
+                  style: AppTheme.textOf(context).labelMedium?.copyWith(
+                        color: AppBrutal.onDark,
+                        fontFeatures: const [FontFeature.tabularFigures()],
                       ),
-                    )
-                  : null,
-            ),
-            if (_preview) _buildPreviewBanner(),
-            Expanded(
-              child: switch (state) {
-                PracticeIdle() => const AppLoading(message: '准备中...'),
-                Practicing() => PracticeQuestionView(
-                    question: state.currentQuestion,
-                    task: widget.task,
-                    selectedOption: _selectedOption,
-                    answerController: _answerController,
-                    answerReady: _answerReady,
-                    preview: _preview,
-                    onOptionTap: (v) => setState(() {
-                      _selectedOption = v;
-                      _answerController.text = v;
-                    }),
-                    onAnswerChanged: () => setState(() {}),
-                    onSubmit: _preview ? () {} : () => _submit(state.currentQuestion.id),
-                    onNext: _preview ? () => _goTo(state.currentIndex + 1) : null,
-                  ),
-                PracticeReview() => PracticeReviewView(
-                    task: state.task,
-                    results: state.results,
-                    onCorrect: (id) {
-                      setState(() {
-                        _selectedOption = null;
-                        _answerController.clear();
-                      });
-                      ref
-                          .read(practiceNotifierProvider.notifier)
-                          .startCorrection(id);
-                    },
-                    onCommit: _checkin,
-                  ),
-                PracticeError() => AppError(
-                    message: state.message,
-                    onRetry: () => ref
-                        .read(practiceNotifierProvider.notifier)
-                        .startTask(widget.task),
-                  ),
-              },
-            ),
-          ],
+                ),
+              ),
+            )
+          : null,
+      child: _buildBody(state),
+    );
+  }
+
+  Widget _buildBody(PracticeState state) {
+    return Column(
+      children: [
+        if (_preview) _buildPreviewBanner(),
+        Expanded(
+          child: switch (state) {
+            PracticeIdle() => const AppLoading(message: '准备中...'),
+            Practicing() => PracticeQuestionView(
+                question: state.currentQuestion,
+                task: widget.task,
+                selectedOption: _selectedOption,
+                answerController: _answerController,
+                answerReady: _answerReady,
+                preview: _preview,
+                onOptionTap: (v) => setState(() {
+                  _selectedOption = v;
+                  _answerController.text = v;
+                }),
+                onAnswerChanged: () => setState(() {}),
+                onSubmit:
+                    _preview ? () {} : () => _submit(state.currentQuestion.id),
+                onNext: _preview ? () => _goTo(state.currentIndex + 1) : null,
+              ),
+            PracticeReview() => PracticeReviewView(
+                task: state.task,
+                results: state.results,
+                onCorrect: (id) {
+                  setState(() {
+                    _selectedOption = null;
+                    _answerController.clear();
+                  });
+                  ref
+                      .read(practiceNotifierProvider.notifier)
+                      .startCorrection(id);
+                },
+                onCommit: _checkin,
+              ),
+            PracticeError() => AppError(
+                message: state.message,
+                onRetry: () => ref
+                    .read(practiceNotifierProvider.notifier)
+                    .startTask(widget.task),
+              ),
+          },
         ),
-      ),
+      ],
     );
   }
 
@@ -278,48 +285,29 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
     final scheme = AppTheme.colorsOf(context);
     final q = state.correctingQuestion;
     if (q == null) return const SizedBox.shrink();
-    return SizedBox.expand(
-      child: ColoredBox(
-        color: scheme.surface,
-        child: Column(
-          children: [
-            AppTopBar(
-              title: '订正',
-              leading: ShadButton.ghost(
-                width: 40,
-                height: 40,
-                padding: EdgeInsets.zero,
-                backgroundColor: const Color(0x00000000),
-                hoverBackgroundColor: scheme.surfaceSunken,
-                pressedBackgroundColor: scheme.surfaceRaised,
-                onPressed: () =>
-                    ref.read(practiceNotifierProvider.notifier).exitCorrection(),
-                child: Icon(
-                  LucideIcons.chevronLeft,
-                  color: scheme.onSurface,
-                  size: 24,
-                ),
-              ),
-            ),
-            Expanded(
-              child: PracticeQuestionView(
-                question: q,
-                task: state.task,
-                selectedOption: _selectedOption,
-                answerController: _answerController,
-                answerReady: _answerReady,
-                preview: false,
-                onOptionTap: (v) => setState(() {
-                  _selectedOption = v;
-                  _answerController.text = v;
-                }),
-                onAnswerChanged: () => setState(() {}),
-                onSubmit: () => _submitCorrection(q.id),
-                onNext: null,
-              ),
-            ),
-          ],
-        ),
+    // 订正子页也是同一屏里的「整页」，出路一并交给骨架。
+    return AppPushedPage(
+      title: '订正',
+      maxWidth: double.infinity,
+      background: scheme.surface,
+      // 订正走的是**状态机回退**而不是路由出栈（错题列表在同一页，没有 second route）。
+      // 骨架的 onBack 同时接管返回按钮与 Esc，两条路落到同一个动作上。
+      onBack: () =>
+          ref.read(practiceNotifierProvider.notifier).exitCorrection(),
+      child: PracticeQuestionView(
+        question: q,
+        task: state.task,
+        selectedOption: _selectedOption,
+        answerController: _answerController,
+        answerReady: _answerReady,
+        preview: false,
+        onOptionTap: (v) => setState(() {
+          _selectedOption = v;
+          _answerController.text = v;
+        }),
+        onAnswerChanged: () => setState(() {}),
+        onSubmit: () => _submitCorrection(q.id),
+        onNext: null,
       ),
     );
   }

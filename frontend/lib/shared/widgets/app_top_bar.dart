@@ -40,10 +40,16 @@ class AppTopBar extends StatelessWidget {
       pressedBackgroundColor: app.surfaceRaised,
       onPressed: () =>
           onBack != null ? onBack!() : Navigator.of(context).maybePop(),
-      child: Icon(
-        LucideIcons.chevronLeft,
-        color: app.onSurface,
-        size: 24,
+      // 只有图标、没有文字的按钮，读屏用户听到的是「按钮」，不知道它是返回。
+      // （只补名字，不动画面：命中区仍是 40×40。）
+      child: Semantics(
+        button: true,
+        label: '返回',
+        child: Icon(
+          LucideIcons.chevronLeft,
+          color: app.onSurface,
+          size: 24,
+        ),
       ),
     );
 

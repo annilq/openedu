@@ -47,7 +47,41 @@
 
 - **不引入 `GridView` 做多列重排。** 静态扫描 `Wrap(` 共 29 处，逐处核对后全是**流式 chip 组**（学科标签、元信息 chip、兴趣标签、按钮组）或**内容自适应高度的卡片组**；这类内容的正确原语就是 `Wrap`，`GridView` 的等宽等格反而会把它挤变形。唯一像「卡片墙」的 `parent_overview_view` 统计卡已有自己的 `LayoutBuilder` 分栏，改成 `GridView` 会引入固定 `childAspectRatio`，在大字号的 Child Mode 下有裁字风险。**结论：本仓不存在「该用 GridView 却用了 Wrap」的站点**——审计里「0 处 GridView」是症状级观察，不是缺陷。
 
+## 实现期补充决策（2026-09-17）：宽度与「出路」各收一个口
+
+起因是 `ExportPreviewPage`（打印预览）上线时把人**锁死在一屏**：它是 `Navigator.push` 的整页，
+拿不到壳的任何兜底，而它既没写返回按钮、也没有 Esc——桌面端没有系统返回手势，
+`CupertinoPageRoute` 的滑动返回只有 iOS 有。补一行 `showBack: true` 就能修，但**破的是两件
+更基本的事**：
+
+- **宽度出口：`AppContentFrame`（`shared/widgets/`）。**
+  此前全仓 **14 处**手抄同一段 `Align` + `ConstrainedBox(maxWidth: contentWide)`，且口径不一致
+  ——壳写 `topCenter`、塞进壳里的页面写 `topLeft`。收成一个组件后，宽度令牌只有一处定义；
+  `alignment` 仍是调用方参数（迁移时**照抄原值**，不顺手统一）。壳自己 (`AdaptiveShell._cappedWidth`)
+  也走同一个组件，于是「只有它是定义，其余都是使用者」。
+  ⚠️ 迁移时最容易伤到的是「故意留在框外的兄弟节点」：`practice_review_view` 的底部行动条
+  刻意留在约束**外**（它该通栏），一旦把整页钉到 1080，那条会跟着缩窄。看手抄块时必须同时
+  看它的 siblings，别只盯着那一段本身。
+
+- **退路出口：`AppPushedPage`（同上）。**
+  把「退路」从**每页自觉**改成**结构默认**：`showBack` 默认 **true**（与裸 `AppTopBar` 的 false 相反）、
+  Esc 默认可返回（`Shortcuts` 必须是焦点节点的**祖先**且要 `autofocus`，否则桌面端刚进页面时
+  焦点树为空、Esc 是死的）、`onBack` 同时接管返回按钮与 Esc（订正子页用它做状态机回退而非路由出栈）。
+  `ExportPreviewPage` / `PracticeScreen`（含订正子页）已迁入。
+
+- **为什么助手页没用整页骨架**：`AssistantChatPage` 是**双宿主**（既可 push 也可作壳内页签），
+  套 `AppPushedPage` 会在页签形态下长出第二个顶栏。它只迁了宽度部分（三处 → `AppContentFrame`），
+  退路由调用方按形态传 `showBack`。
+- **`PracticeScreen` 传 `maxWidth: double.infinity`**（不加宽度上限）是有意的保留：本页的回顾阶段
+  有一条通栏底部行动条，在此钉 1080 会把它一起缩窄。这是视觉取舍，不属于本轮「退路结构化」的范围。
+
 ## 守卫
+
+- `test/content_frame_guard_test.dart` —— 静态扫描 `lib/`，禁止再手写 `Align` + `ConstrainedBox(contentWide)`
+  （此前的 14 处已全部迁入，棘轮从「已清零」起算；已验证会咬人）。
+- `test/app_pushed_page_test.dart` —— push 整页的**出路**：返回按钮有语义标签、`maybePop`
+  真的能离开、**Esc** 能离开、宽度仍守 `contentWide` 且贴顶；`AppContentFrame` 的对齐由调用方决定。
+  逐个退化验证过会变红（退回旧写法 / 去掉 `autofocus`）。
 
 - `test/adaptive_shell_layout_test.dart` —— 内容宽度上限 + 水平居中 + **竖向贴顶**、三档断点的行为测试（6 例）。
 - `test/app_focusable_keyboard_test.dart` —— Tab 可达 + Enter/Space 激活 + 不可点项不进焦点树 + 键盘补齐按压反馈（4 例）。

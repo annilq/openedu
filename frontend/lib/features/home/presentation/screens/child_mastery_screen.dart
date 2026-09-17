@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/app_content_frame.dart';
 import '../providers/home_notifier.dart';
 import '../widgets/mastery_board.dart';
 
@@ -30,17 +31,14 @@ class _ChildMasteryScreenState extends ConsumerState<ChildMasteryScreen> {
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(
           AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xl2),
-      child: Align(
+      child: AppContentFrame(
         alignment: Alignment.topLeft,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: AppLayout.contentWide),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SectionTitle('我的学科掌握度'),
-              MasteryBoard(isChild: true),
-            ],
-          ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SectionTitle('我的学科掌握度'),
+            MasteryBoard(isChild: true),
+          ],
         ),
       ),
     );
