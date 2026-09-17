@@ -53,6 +53,10 @@ class TaskGenPreview extends TaskGenState {
   /// 单题失败原因（STEP status == 'error'），非空表示本次有题没生成出来。
   final List<String> failures;
 
+  /// 首题 STEP 到达前的阶段文案（路由/工具帧提取）：连接 + 预检 + 首题 TTFT
+  /// 这段死窗里，加载区用它替代裸转圈。空串 = 尚无阶段帧，用默认文案。
+  final String stage;
+
   const TaskGenPreview(
     this.questions, {
     this.streaming = false,
@@ -60,6 +64,7 @@ class TaskGenPreview extends TaskGenState {
     this.liveLabel = '',
     this.liveReasoning = '',
     this.failures = const [],
+    this.stage = '',
   });
 }
 
@@ -107,6 +112,7 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
           liveLabel: fold.liveLabel,
           liveReasoning: fold.liveReasoning,
           failures: fold.failures,
+          stage: fold.stage,
         );
       }
       // UX 修正：流结束若 0 题，直接回显后端说明并跳过必败的落库请求，

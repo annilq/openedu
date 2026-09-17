@@ -2,12 +2,13 @@ import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+import '../../../../shared/domain/models/models.dart';
+import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/app_content_frame.dart';
 import '../../../../shared/widgets/app_error.dart';
 import '../../../../shared/widgets/app_loading.dart';
 import '../../../../shared/widgets/app_toast.dart';
 import '../../../../shared/widgets/stream_reasoning_panel.dart';
-import '../../../../shared/domain/models/models.dart';
-import '../../../../shared/theme/app_theme.dart';
 import '../providers/parent_task_review_notifier.dart';
 import '../widgets/parent/parent_question_card.dart';
 
@@ -42,8 +43,40 @@ class ParentTaskReviewScreen extends ConsumerStatefulWidget {
 class _ParentTaskReviewScreenState
     extends ConsumerState<ParentTaskReviewScreen> {
   @override
+  void initState() {
+    super.initState();
+    _loadDetail();
+  }
+
+  @override
+  void didUpdateWidget(ParentTaskReviewScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 同一位置换成另一条任务：provider 以 taskId 为 key，新 key 拿到的是一个停在
+    // Loading 的新 notifier。不在这里补取数，页面就会永远转圈。
+    if (oldWidget.task.id != widget.task.id) _loadDetail();
+  }
+
+  /// 进页面补取一次完整任务——**详情数据一律以服务端为准**。
+  ///
+  /// 入参 `widget.task` 只是个「要打开哪条」的信封：ADR-0053 之后列表接口
+  /// （`GET /tasks`）只回摘要（`question_count` + 学科，**不内嵌题目**），家长从任务
+  /// 列表或概览点进来时它 `questions` 恒为空。此前页面直接拿它当 state，于是渲染出
+  /// 「草稿暂未包含任何题目」，与卡片上的「N 题」当场打架——题一直在库里，只是没人取。
+  ///
+  /// 放 post-frame 而非 build 内：在 build 里同步改被本组件 watch 的 provider 会触发
+  /// 重入重建循环（见 `shared/utils/load_once.dart` 的反模式说明）。
+  void _loadDetail() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref
+          .read(parentTaskReviewProvider(widget.task.id).notifier)
+          .load(widget.task.id);
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final state = ref.watch(parentTaskReviewProvider(widget.task));
+    final state = ref.watch(parentTaskReviewProvider(widget.task.id));
     final app = AppTheme.colorsOf(context);
     final content = switch (state) {
       ReviewLoading() => const AppLoading(),
@@ -51,7 +84,7 @@ class _ParentTaskReviewScreenState
           message: message,
           onRetry: () {
             ref
-                .read(parentTaskReviewProvider(widget.task).notifier)
+                .read(parentTaskReviewProvider(widget.task.id).notifier)
                 .load(widget.task.id);
           },
         ),
@@ -184,19 +217,16 @@ class _ParentTaskReviewScreenState
               color: AppBrutal.ink, width: AppElevation.borderWidth),
         ),
       ),
-      child: Align(
+      child: AppContentFrame(
         alignment: Alignment.topLeft,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: AppLayout.contentWide),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(
-                AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.md),
-            child: Wrap(
-              spacing: AppSpacing.sm,
-              runSpacing: AppSpacing.sm,
-              alignment: WrapAlignment.end,
-              children: buttons,
-            ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.md),
+          child: Wrap(
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.sm,
+            alignment: WrapAlignment.end,
+            children: buttons,
           ),
         ),
       ),
@@ -205,42 +235,39 @@ class _ParentTaskReviewScreenState
 
   /// 整卷重生成进度条 + 模型实时文本：细条 + 文案，避免用全屏 loading 盖住整页内容。
   Widget _buildProgress(String progress, String liveText, AppColors app) {
-    return Align(
+    return AppContentFrame(
       alignment: Alignment.topLeft,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: AppLayout.contentWide),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(
-              AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.sm),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  // 与题卡「处理中」同款：Lucide 图标转圈，不引入 Material 组件
-                  // （整棵 widget 树基于 ShadApp/CupertinoApp，无 Material 祖先）。
-                  Icon(LucideIcons.loaderCircle, size: 14, color: app.primary)
-                      .animate(onPlay: (c) => c.repeat())
-                      .rotate(duration: const Duration(milliseconds: 900)),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: Text(
-                      progress,
-                      style: AppTheme.textOf(context).bodySmall?.copyWith(
-                            color: app.onSurfaceVariant,
-                          ),
-                    ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+            AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.sm),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                // 与题卡「处理中」同款：Lucide 图标转圈，不引入 Material 组件
+                // （整棵 widget 树基于 ShadApp/CupertinoApp，无 Material 祖先）。
+                Icon(LucideIcons.loaderCircle, size: 14, color: app.primary)
+                    .animate(onPlay: (c) => c.repeat())
+                    .rotate(duration: const Duration(milliseconds: 900)),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Text(
+                    progress,
+                    style: AppTheme.textOf(context).bodySmall?.copyWith(
+                          color: app.onSurfaceVariant,
+                        ),
                   ),
-                ],
-              ),
-              if (liveText.isNotEmpty)
-                StreamReasoningPanel(
-                  label: progress,
-                  reasoning: liveText,
-                  streaming: true,
                 ),
-            ],
-          ),
+              ],
+            ),
+            if (liveText.isNotEmpty)
+              StreamReasoningPanel(
+                label: progress,
+                reasoning: liveText,
+                streaming: true,
+              ),
+          ],
         ),
       ),
     );
@@ -260,48 +287,45 @@ class _ParentTaskReviewScreenState
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(
           AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xl2),
-      child: Align(
+      child: AppContentFrame(
         alignment: Alignment.topLeft,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: AppLayout.contentWide),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _buildSummary(task, app, promoted, total,
-                  locked: busyTqId != null || progress != null),
-              const SizedBox(height: AppSpacing.xl2),
-              if (task.questions.isEmpty)
-                // 允许删到 0 题：空态按「有无生成规格」给不同引导——有规格可整卷
-                // 重生成，题库组卷的草稿（specs 为空）只能回题库重新选。
-                _EmptyHint(
-                  onRegen: task.specs.isNotEmpty
-                      ? () => _onRegenerateAll(task.id)
-                      : null,
-                )
-              else
-                ...List.generate(task.questions.length, (i) {
-                  final q = task.questions[i];
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: AppSpacing.lg),
-                    child: ParentQuestionCard(
-                      key: ValueKey(q.id),
-                      index: i + 1,
-                      question: q,
-                      isDraft: task.isDraft,
-                      // 进行中：按钮全禁 + spinner，杜绝连点并发。
-                      // 整卷重生成期间所有题卡一并锁住（题目会被全量替换）。
-                      busy: busyTqId == q.id || progress != null,
-                      // 单题动作的实时文本只给当前这张卡（整卷的走顶部进度区）。
-                      liveText: busyTqId == q.id ? liveText : '',
-                      onPromote: () => _onPromoteOne(task.id, q.id),
-                      onDelete: () => _onDelete(task.id, q.id),
-                      onRegenerate: () => _onRegenerateOne(task.id, q.id),
-                      onEdit: (edits) => _onEdit(task.id, q.id, edits),
-                    ),
-                  );
-                }),
-            ],
-          ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _buildSummary(task, app, promoted, total,
+                locked: busyTqId != null || progress != null),
+            const SizedBox(height: AppSpacing.xl2),
+            if (task.questions.isEmpty)
+              // 允许删到 0 题：空态按「有无生成规格」给不同引导——有规格可整卷
+              // 重生成，题库组卷的草稿（specs 为空）只能回题库重新选。
+              _EmptyHint(
+                onRegen: task.specs.isNotEmpty
+                    ? () => _onRegenerateAll(task.id)
+                    : null,
+              )
+            else
+              ...List.generate(task.questions.length, (i) {
+                final q = task.questions[i];
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.lg),
+                  child: ParentQuestionCard(
+                    key: ValueKey(q.id),
+                    index: i + 1,
+                    question: q,
+                    isDraft: task.isDraft,
+                    // 进行中：按钮全禁 + spinner，杜绝连点并发。
+                    // 整卷重生成期间所有题卡一并锁住（题目会被全量替换）。
+                    busy: busyTqId == q.id || progress != null,
+                    // 单题动作的实时文本只给当前这张卡（整卷的走顶部进度区）。
+                    liveText: busyTqId == q.id ? liveText : '',
+                    onPromote: () => _onPromoteOne(task.id, q.id),
+                    onDelete: () => _onDelete(task.id, q.id),
+                    onRegenerate: () => _onRegenerateOne(task.id, q.id),
+                    onEdit: (edits) => _onEdit(task.id, q.id, edits),
+                  ),
+                );
+              }),
+          ],
         ),
       ),
     );
@@ -405,7 +429,7 @@ class _ParentTaskReviewScreenState
   Future<void> _onPromoteOne(String taskId, String tqId) async {
     try {
       await ref
-          .read(parentTaskReviewProvider(widget.task).notifier)
+          .read(parentTaskReviewProvider(widget.task.id).notifier)
           .promoteOne(taskId: taskId, tqId: tqId);
       if (!mounted) return;
       AppToast.show(context, '已加入题库');
@@ -418,7 +442,7 @@ class _ParentTaskReviewScreenState
   Future<void> _onPromoteAll(String taskId) async {
     try {
       await ref
-          .read(parentTaskReviewProvider(widget.task).notifier)
+          .read(parentTaskReviewProvider(widget.task.id).notifier)
           .promoteAll(taskId);
       if (!mounted) return;
       AppToast.show(context, '全部加入题库成功');
@@ -431,7 +455,7 @@ class _ParentTaskReviewScreenState
   Future<void> _onDelete(String taskId, String tqId) async {
     try {
       await ref
-          .read(parentTaskReviewProvider(widget.task).notifier)
+          .read(parentTaskReviewProvider(widget.task.id).notifier)
           .removeOne(taskId: taskId, tqId: tqId);
       if (!mounted) return;
       AppToast.show(context, '已删除');
@@ -444,7 +468,7 @@ class _ParentTaskReviewScreenState
   Future<void> _onRegenerateOne(String taskId, String tqId) async {
     try {
       await ref
-          .read(parentTaskReviewProvider(widget.task).notifier)
+          .read(parentTaskReviewProvider(widget.task.id).notifier)
           .regenerateOne(taskId: taskId, tqId: tqId);
       if (!mounted) return;
       AppToast.show(context, '已生成新题目');
@@ -457,7 +481,7 @@ class _ParentTaskReviewScreenState
   Future<void> _onRegenerateAll(String taskId) async {
     try {
       await ref
-          .read(parentTaskReviewProvider(widget.task).notifier)
+          .read(parentTaskReviewProvider(widget.task.id).notifier)
           .regenerateAll(taskId);
       if (!mounted) return;
       AppToast.show(context, '整卷已按原规格重生成');
@@ -471,7 +495,7 @@ class _ParentTaskReviewScreenState
       String taskId, String tqId, Map<String, dynamic> edits) async {
     try {
       await ref
-          .read(parentTaskReviewProvider(widget.task).notifier)
+          .read(parentTaskReviewProvider(widget.task.id).notifier)
           .editOne(taskId: taskId, tqId: tqId, edits: edits);
       if (!mounted) return;
       AppToast.show(context, '题目已更新');
@@ -526,7 +550,7 @@ class _ParentTaskReviewScreenState
     if (!mounted) return;
     try {
       await ref
-          .read(parentTaskReviewProvider(widget.task).notifier)
+          .read(parentTaskReviewProvider(widget.task.id).notifier)
           .editMeta(taskId: task.id, title: newTitle);
       if (!mounted) return;
       AppToast.show(context, '标题已更新');
@@ -539,7 +563,7 @@ class _ParentTaskReviewScreenState
   Future<void> _onConfirm(TaskModel task) async {
     try {
       final confirmed = await ref
-          .read(parentTaskReviewProvider(widget.task).notifier)
+          .read(parentTaskReviewProvider(widget.task.id).notifier)
           .confirm(task.id);
       if (!mounted) return;
       AppToast.show(context, '已锁定成卷');
@@ -557,7 +581,7 @@ class _ParentTaskReviewScreenState
   Future<void> _onAssign(TaskModel task, String childId) async {
     try {
       await ref
-          .read(parentTaskReviewProvider(widget.task).notifier)
+          .read(parentTaskReviewProvider(widget.task.id).notifier)
           .assign(taskId: task.id, childId: childId);
       if (!mounted) return;
       // 方案 A：派发后回到家长工作台，不自动跳进娃娃做题页（避免误代答/代打卡）。
@@ -581,7 +605,7 @@ class _ParentTaskReviewScreenState
     if (confirmed != true) return;
     try {
       await ref
-          .read(parentTaskReviewProvider(widget.task).notifier)
+          .read(parentTaskReviewProvider(widget.task.id).notifier)
           .discard(taskId);
       if (!mounted) return;
       AppToast.show(context, '草稿已作废');

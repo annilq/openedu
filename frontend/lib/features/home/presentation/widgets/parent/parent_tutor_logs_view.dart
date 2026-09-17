@@ -2,14 +2,15 @@ import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-import '../../../../tutor/domain/models.dart';
+import '../../../../../shared/presentation/resource.dart';
 import '../../../../../shared/theme/app_theme.dart';
+import '../../../../../shared/widgets/app_content_frame.dart';
 import '../../../../../shared/widgets/app_error.dart';
 import '../../../../../shared/widgets/app_loading.dart';
 import '../../../../../shared/widgets/app_motion.dart';
+import '../../../../tutor/domain/models.dart';
 import '../../../../tutor/presentation/providers/tutor_logs_notifier.dart';
 import '../../providers/selected_child_provider.dart';
-import '../../../../../shared/presentation/resource.dart';
 
 /// AI 答疑记录右栏（F-305）：家长查看选中娃娃的 AI 问答日志。
 class ParentTutorLogsView extends ConsumerWidget {
@@ -24,44 +25,41 @@ class ParentTutorLogsView extends ConsumerWidget {
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(
           AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xl2),
-      child: Align(
+      child: AppContentFrame(
         alignment: Alignment.topLeft,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: AppLayout.contentWide),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SectionTitle('AI 答疑记录'),
-              switch (state) {
-                ResourceIdle() ||
-                ResourceLoading() =>
-                  const AppLoading(message: '加载答疑记录...'),
-                ResourceError() => AppError(message: state.errorOrNull ?? ''),
-                ResourceLoaded() => (state.dataOrNull ?? const []).isEmpty
-                    ? AppCard(
-                        padding: const EdgeInsets.all(AppSpacing.md),
-                        child: Align(alignment: Alignment.topLeft,
-                          child: Text('这个娃娃还没有问过 AI 老师',
-                              style: AppTheme.textOf(context).bodyLarge),
-                        ),
-                      )
-                    : Column(
-                        children: (state.dataOrNull ?? const <TutorLogModel>[])
-                            .map((log) => PopIn(
-                                  key: ValueKey(log.id),
-                                  child: AppCard.listRow(
-                                    margin: const EdgeInsets.only(
-                                        bottom: AppSpacing.sm),
-                                    padding:
-                                        const EdgeInsets.all(AppSpacing.md),
-                                    child: _TutorLogCard(log: log),
-                                  ),
-                                ))
-                            .toList(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SectionTitle('AI 答疑记录'),
+            switch (state) {
+              ResourceIdle() ||
+              ResourceLoading() =>
+                const AppLoading(message: '加载答疑记录...'),
+              ResourceError() => AppError(message: state.errorOrNull ?? ''),
+              ResourceLoaded() => (state.dataOrNull ?? const []).isEmpty
+                  ? AppCard(
+                      padding: const EdgeInsets.all(AppSpacing.md),
+                      child: Align(alignment: Alignment.topLeft,
+                        child: Text('这个娃娃还没有问过 AI 老师',
+                            style: AppTheme.textOf(context).bodyLarge),
                       ),
-              },
-            ],
-          ),
+                    )
+                  : Column(
+                      children: (state.dataOrNull ?? const <TutorLogModel>[])
+                          .map((log) => PopIn(
+                                key: ValueKey(log.id),
+                                child: AppCard.listRow(
+                                  margin: const EdgeInsets.only(
+                                      bottom: AppSpacing.sm),
+                                  padding:
+                                      const EdgeInsets.all(AppSpacing.md),
+                                  child: _TutorLogCard(log: log),
+                                ),
+                              ))
+                          .toList(),
+                    ),
+            },
+          ],
         ),
       ),
     );

@@ -18,8 +18,16 @@ import 'package:kids_learn/features/home/providers/home_provider.dart';
 import 'package:kids_learn/shared/domain/models/models.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
 
-/// 本测试只渲染初始状态，任何仓库方法都不该被调用。
+/// 页面进来自动补取一次详情（见 task_review_detail_fetch_test.dart 的守卫），
+/// 所以 `load` 必须给得出内容；其余仓库方法本测试不该碰。
 class _StubReview implements TaskReviewRepository {
+  _StubReview(this.task);
+
+  final TaskModel task;
+
+  @override
+  Future<TaskModel> load(String taskId) async => task;
+
   @override
   dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError();
 }
@@ -79,10 +87,13 @@ void main() {
     // 必须显式设视口：test surface 默认 800×600，`SizedBox(width: ...)` 会被静默裁掉。
     await tester.binding.setSurfaceSize(size);
     addTearDown(() => tester.binding.setSurfaceSize(null));
+    // 入参的 task 与 `load` 返回的是同一份内容：页面以服务端为准，但两者一致，
+    // 几何断言不受影响。
+    final task = _taskWithSpecs();
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          taskReviewRepositoryProvider.overrideWithValue(_StubReview()),
+          taskReviewRepositoryProvider.overrideWithValue(_StubReview(task)),
           assistantRepositoryProvider.overrideWithValue(_StubAssistant()),
         ],
         child: ShadApp.custom(
@@ -90,7 +101,7 @@ void main() {
           theme: AppTheme.shadFor(false, AppUserMode.parent, AppDensity.compact),
           appBuilder: (context) => CupertinoApp(
             home: ParentTaskReviewScreen(
-              task: _taskWithSpecs(),
+              task: task,
               onBackToHome: () {},
             ),
           ),

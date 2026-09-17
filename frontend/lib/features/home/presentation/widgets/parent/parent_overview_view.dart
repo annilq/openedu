@@ -2,20 +2,21 @@ import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+import '../../../../../shared/domain/models/models.dart';
+import '../../../../../shared/presentation/paging.dart';
+import '../../../../../shared/presentation/resource.dart';
 import '../../../../../shared/theme/app_theme.dart';
+import '../../../../../shared/utils/load_once.dart';
+import '../../../../../shared/widgets/app_content_frame.dart';
 import '../../../../../shared/widgets/app_empty_state.dart';
 import '../../../../../shared/widgets/app_error.dart';
 import '../../../../../shared/widgets/app_loading.dart';
 import '../../../../../shared/widgets/app_motion.dart';
-import '../../../../../shared/domain/models/models.dart';
-import '../../../../../shared/presentation/resource.dart';
-import '../../../../../shared/presentation/paging.dart';
-import '../../../../children/providers/children_provider.dart';
 import '../../../../children/presentation/providers/children_notifier.dart';
+import '../../../../children/providers/children_provider.dart';
 import '../../providers/home_notifier.dart';
 import '../../providers/parent_tasks_notifier.dart';
 import '../../providers/selected_child_provider.dart';
-import '../../../../../shared/utils/load_once.dart';
 import '../mastery_board.dart';
 
 /// 家长概览右栏：学习进度 + 最近任务 + 知识点掌握度。
@@ -54,21 +55,18 @@ class ParentOverviewView extends ConsumerWidget {
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(
           AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xl2),
-      child: Align(
+      child: AppContentFrame(
         alignment: Alignment.topLeft,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: AppLayout.contentWide),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SectionTitle('学习进度'),
-              _buildProgress(context, ref),
-              const SectionTitle('最近任务'),
-              _buildRecentTasks(context, ref, tasksState),
-              const SectionTitle('知识点掌握度'),
-              _buildMastery(context),
-            ],
-          ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SectionTitle('学习进度'),
+            _buildProgress(context, ref),
+            const SectionTitle('最近任务'),
+            _buildRecentTasks(context, ref, tasksState),
+            const SectionTitle('知识点掌握度'),
+            _buildMastery(context),
+          ],
         ),
       ),
     );

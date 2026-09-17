@@ -137,6 +137,9 @@
 - `backend/tests/`（新）：两次翻页之间插入一条新数据时不重不漏；`GET /tasks` 列表项
   `questions` 为空且 `question_count` 正确；`counts` 与实际一致；归档过滤默认生效；
   错题毕业写 `graduated_at` 而非删除。
+- `frontend/test/task_review_detail_fetch_test.dart`（新）：把「列表摘要」当入参渲染审核页，
+  页面必须补取一次 `GET /tasks/{id}` 并渲染出题目（修复前该测试红灯：不取数 → 空态）；
+  同一位置换 taskId 必须重新取数（provider 以 id 为 key，不重取会永远停在加载态）。
 - 既有守卫不得回归：`adaptive_shell_layout_test.dart`、`app_focusable_keyboard_test.dart`
   ——新增的「加载更多」按钮与归档切换必须走 `AppFocusableAction`，裸 `GestureDetector` 是 bug。
 
@@ -176,3 +179,15 @@
   本来就随追加变长，服务端分段要额外传参且收益相同。
 - 迁移一律走启动期偏幂等 DDL（`CREATE INDEX IF NOT EXISTS` / SQLite `PRAGMA table_info`
   查列后 `ADD COLUMN` / Postgres `ADD COLUMN IF NOT EXISTS`），不引入 alembic。
+- **列表摘要不得被当作完整任务消费**（P0 落地后发现，属本条 ADR 引入的回归）：
+  `GET /tasks` 不再内嵌题目后，家长从任务列表 / 概览点进「草稿审核」页时手里那份
+  `TaskModel` 的 `questions` 恒为空，而审核页当时是**拿它当初始 state** 的（从不调用
+  `load()`），于是渲染出「草稿暂未包含任何题目」——题一直在 `task_question` 表里，
+  列表卡片上的「N 题」也是每次请求对同一张表现算的（`task_question_breakdown`），
+  两者不可能不同步；断的是「详情页没去取」。
+  定下的契约：**详情 / 审核页一律自己回后端取一次完整任务，入参只当「要打开哪条」的信封**。
+  实现上 `ReviewNotifier` 删掉了 `initial` 参数（起始态恒 `ReviewLoading`，让「进页面必须
+  取数」成为类型上绕不过的事），`parentTaskReviewProvider` 的 family key 从 `TaskModel`
+  改成 `taskId`（该类没有覆写 `==`，拿 identity 相等当缓存键迟早造出第二个 notifier）。
+  副作用：从生成流进入审核页会多一次 `GET /tasks/{id}`——换取「页面上看到的题目一定来自
+  服务端」。

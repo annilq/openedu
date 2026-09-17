@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/presentation/resource.dart';
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/app_empty_state.dart';
 import '../../../../shared/widgets/app_error.dart';
 import '../../../../shared/widgets/app_loading.dart';
 import '../../../../shared/widgets/app_motion.dart';
@@ -78,41 +79,17 @@ class ChildHome extends ConsumerWidget {
                     ],
                   ResourceLoaded() => (state.dataOrNull ?? const []).isEmpty
                       ? [
-                          Padding(
-                            padding: const EdgeInsets.only(
-                                top: AppSpacing.xl5,
-                                left: AppSpacing.xl2,
-                                right: AppSpacing.xl2),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Container(
-                                  width: 88,
-                                  height: 88,
-                                  decoration: BoxDecoration(
-                                    color: AppBrutal.yellow,
-                                    borderRadius: BorderRadius.circular(
-                                        AppRadius.card),
-                                    border: Border.all(
-                                        color: AppBrutal.ink,
-                                        width: AppElevation.borderWidth),
-                                    boxShadow: AppElevation.hard(),
-                                  ),
-                                  alignment: Alignment.center,
-                                  child: Icon(CupertinoIcons.sun_max,
-                                      size: 44, color: AppBrutal.ink),
-                                ),
-                                const SizedBox(height: AppSpacing.xl2),
-                                Text('今天还没有任务哦',
-                                    textAlign: TextAlign.start,
-                                    style:
-                                        AppTheme.textOf(context).titleMedium),
-                                const SizedBox(height: AppSpacing.sm),
-                                Text('等爸爸妈妈布置吧～',
-                                    textAlign: TextAlign.start,
-                                    style: AppTheme.textOf(context).bodyMedium),
-                              ],
+                          const Padding(
+                            padding: EdgeInsets.only(top: AppSpacing.xl5),
+                            // 空态是全站唯一的「没有内容」场景，视觉语言必须与
+                            // 家长端一致（88 色块 + 标题 + 说明），否则同一个 App
+                            // 里两套空态。娃娃端只多给一个 [tone]：撞色黄块提供
+                            // 情绪价值，别的地方不加，一屏最多 3 个色相。
+                            child: AppEmptyState(
+                              icon: CupertinoIcons.sun_max,
+                              tone: AppBrutal.yellow,
+                              title: '今天还没有任务哦',
+                              message: '等爸爸妈妈布置吧～',
                             ),
                           ),
                         ]

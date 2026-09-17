@@ -1,23 +1,27 @@
 import 'package:cupertino_ui/cupertino_ui.dart';
-import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/widgets/app_card_list.dart';
+import '../../../../../shared/widgets/app_dialog.dart';
 import '../../../../../shared/widgets/app_empty_state.dart';
 import '../../../../../shared/widgets/app_error.dart';
 import '../../../../../shared/widgets/app_loading.dart';
 import '../../../../../shared/widgets/app_motion.dart';
 import '../../../../../shared/widgets/app_paging_footer.dart';
+import '../../../../../shared/widgets/app_select_strip.dart';
 import '../../../../../shared/domain/models/models.dart';
 import '../../../../../shared/presentation/paging.dart';
 import '../../../../children/providers/children_provider.dart';
 import '../../../../children/presentation/providers/children_notifier.dart';
+import '../../../../export/domain/export_repository.dart';
+import '../../../../export/presentation/export_preview_page.dart';
 import '../../providers/parent_tasks_notifier.dart';
 
 /// 家长「任务」管理页：按状态分 Tab（草稿 / 进行中 / 已完成），
 /// 列表复用后端 GET /tasks 全量数据，卡片点击深链到复核页。
+/// 支持多选导出打印（ADR-0052）：勾选若干任务，纸上按任务分节印快照。
 class ParentTasksView extends ConsumerStatefulWidget {
   final void Function(TaskModel task) onNavigateToReview;
 
@@ -38,6 +42,10 @@ class ParentTasksView extends ConsumerStatefulWidget {
 class _ParentTasksViewState extends ConsumerState<ParentTasksView> {
   // 0=草稿(draft+ready)  1=进行中(assigned)  2=已完成(done)
   int _tab = 0;
+
+  /// 多选导出态（ADR-0052）：勾选若干任务 → 一份 PDF 按任务分节。
+  bool _selecting = false;
+  final Set<String> _selectedIds = {};
 
   /// 「已完成」按月分段后，更早的月份是否展开（ADR-0053 P2）。
   ///
@@ -75,8 +83,62 @@ class _ParentTasksViewState extends ConsumerState<ParentTasksView> {
       _tab = i;
       // 换 Tab 就收起「更早」：上个月展开过不代表这个月也想展开。
       _olderExpanded = false;
+      // 换 Tab = 换一批数据，选择态随之清空——勾选的是「这批任务」，
+      // 列表内容变了还留着旧勾选只会让人误印。
+      _selecting = false;
+      _selectedIds.clear();
     });
     _reload();
+  }
+
+  void _toggleSelect(String id) => setState(() {
+        _selectedIds.contains(id)
+            ? _selectedIds.remove(id)
+            : _selectedIds.add(id);
+      });
+
+  void _toggleSelectAll() {
+    final state = ref.read(parentTasksNotifierProvider);
+    final allSelected =
+        state.items.isNotEmpty && _selectedIds.length == state.items.length;
+    setState(() {
+      allSelected ? _selectedIds.clear() : _selectedIds.addAll(
+        state.items.map((t) => t.id),
+      );
+    });
+  }
+
+  void _exitSelecting() => setState(() {
+        _selecting = false;
+        _selectedIds.clear();
+      });
+
+  /// 导出勾选的任务（ADR-0052）：单一来源、永远一份、按任务分节印快照。
+  Future<void> _exportSelectedTasks(List<TaskModel> items) async {
+    final selected = [
+      for (final t in items)
+        if (_selectedIds.contains(t.id)) t,
+    ];
+    if (selected.isEmpty) return;
+    if (selected.length > kExportSoftLimit) {
+      // 软提示不硬拦：服务端另有硬边界，客户端只提醒排版耗时。
+      final confirmed = await AppDialog.confirm(
+        context,
+        title: const Text('题目较多'),
+        content: const Text('一次导出的任务较多，打印预览可能变慢，建议分批导出。'),
+        confirmLabel: '继续导出',
+      );
+      if (confirmed != true || !mounted) return;
+    }
+    final title = selected.length == 1 ? selected.first.title : '任务练习';
+    Navigator.of(context).push(
+      CupertinoPageRoute(
+        builder: (_) => ExportPreviewPage(
+          request: ExportSheetRequest(source: 'task', ids: _selectedIds.toList()),
+          title: title,
+        ),
+      ),
+    );
   }
 
   void _reload() => ref
@@ -117,6 +179,36 @@ class _ParentTasksViewState extends ConsumerState<ParentTasksView> {
             onTap: _switchTab,
           ),
         ),
+        // 多选导出条（ADR-0052）：入口放在这里而非顶栏——AppTopBar 的
+        // trailing 槽位只有 40px，且导出动作在选中后才出现。
+        AppSelectStrip(
+          selecting: _selecting,
+          selectedCount: _selectedIds.length,
+          totalCount: items.length,
+          onEnterSelecting: () => setState(() => _selecting = true),
+          onToggleSelectAll: _toggleSelectAll,
+          hintText: '勾选要打印的任务',
+        ),
+        if (_selecting && _selectedIds.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+            child: Wrap(
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.sm,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                ShadButton(
+                  onPressed: () => _exportSelectedTasks(items),
+                  leading: const Icon(LucideIcons.printer, size: 16),
+                  child: Text('导出打印 (${_selectedIds.length})'),
+                ),
+                ShadButton.outline(
+                  onPressed: _exitSelecting,
+                  child: const Text('退出多选'),
+                ),
+              ],
+            ),
+          ),
         Expanded(
           child: items.isEmpty
               ? _buildEmptyState(tabCounts)
@@ -137,21 +229,19 @@ class _ParentTasksViewState extends ConsumerState<ParentTasksView> {
                                     olderExpanded: _olderExpanded,
                                     onExpandOlder: () =>
                                         setState(() => _olderExpanded = true),
-                                    cardBuilder: (task) => _TaskCard(
-                                      task: task,
-                                      childName: nameOf(task.childId),
-                                      onTap: () =>
-                                          widget.onNavigateToReview(task),
+                                    cardBuilder: (task) => _buildTaskCard(
+                                      context,
+                                      task,
+                                      nameOf(task.childId),
                                     ),
                                   )
                                 : AppCardSliver(
                                     width: constraints.maxWidth,
                                     itemCount: items.length,
-                                    itemBuilder: (_, i) => _TaskCard(
-                                      task: items[i],
-                                      childName: nameOf(items[i].childId),
-                                      onTap: () =>
-                                          widget.onNavigateToReview(items[i]),
+                                    itemBuilder: (_, i) => _buildTaskCard(
+                                      context,
+                                      items[i],
+                                      nameOf(items[i].childId),
                                     ),
                                   ),
                           ),
@@ -175,6 +265,21 @@ class _ParentTasksViewState extends ConsumerState<ParentTasksView> {
                     ),
         ),
       ],
+    );
+  }
+
+  /// 任务卡：多选态下点击 = 切换勾选（选中描边转 primary，与题库页同语言），
+  /// 普通态下点击 = 进复核页。
+  Widget _buildTaskCard(BuildContext context, TaskModel task, String? childName) {
+    final selected = _selectedIds.contains(task.id);
+    return _TaskCard(
+      task: task,
+      childName: childName,
+      selected: _selecting && selected,
+      showCheckbox: _selecting,
+      onTap: _selecting
+          ? () => _toggleSelect(task.id)
+          : () => widget.onNavigateToReview(task),
     );
   }
 
@@ -426,7 +531,17 @@ class _TaskCard extends StatelessWidget {
   final TaskModel task;
   final String? childName;
   final VoidCallback onTap;
-  const _TaskCard({required this.task, this.childName, required this.onTap});
+
+  /// 多选态（ADR-0052）：勾选框 + 选中描边转 primary（与题库页同语言）。
+  final bool showCheckbox;
+  final bool selected;
+  const _TaskCard({
+    required this.task,
+    this.childName,
+    required this.onTap,
+    this.showCheckbox = false,
+    this.selected = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -436,38 +551,57 @@ class _TaskCard extends StatelessWidget {
       child: AppCard.listRow(
         onTap: onTap,
         padding: const EdgeInsets.all(AppSpacing.md),
-        child: Column(
+        border: Border.all(
+          color: selected ? app.primary : AppBrutal.ink,
+          width: 1,
+        ),
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Text(
-                  task.title,
-                  style: AppTheme.textOf(context).titleMedium,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          task.title,
+                          style: AppTheme.textOf(context).titleMedium,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: AppSpacing.sm),
+                      _statusTag(task.status),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  Wrap(
+                    spacing: AppSpacing.md,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      _meta(context, app, '${task.displayQuestionCount} 题'),
+                      if (childName != null)
+                        _meta(context, app, '派给 $childName'),
+                      if (task.createdAt != null)
+                        _meta(context, app, _formatDate(task.createdAt!)),
+                    ],
+                  ),
+                ],
               ),
+            ),
+            if (showCheckbox) ...[
               const SizedBox(width: AppSpacing.sm),
-              _statusTag(task.status),
+              ShadCheckbox(
+                value: selected,
+                onChanged: (_) => onTap(),
+              ),
             ],
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          Wrap(
-            spacing: AppSpacing.md,
-            runSpacing: 4,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              _meta(context, app, '${task.displayQuestionCount} 题'),
-              if (childName != null) _meta(context, app, '派给 $childName'),
-              if (task.createdAt != null)
-                _meta(context, app, _formatDate(task.createdAt!)),
-            ],
-          ),
-        ],
-      ),
+          ],
+        ),
       ),
     );
   }

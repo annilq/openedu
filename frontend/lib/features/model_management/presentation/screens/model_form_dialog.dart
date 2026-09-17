@@ -168,6 +168,7 @@ class _ModelFormDialogState extends ConsumerState<ModelFormDialog> {
     final preset = _preset;
     return ShadDialog(
       closeIcon: const SizedBox.shrink(),
+      constraints: const BoxConstraints(maxWidth: AppLayout.dialogForm),
       title: Text(
         widget.initial == null ? '添加模型' : '编辑模型',
         style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700),
@@ -187,7 +188,7 @@ class _ModelFormDialogState extends ConsumerState<ModelFormDialog> {
       ],
       child: PopIn(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: AppLayout.contentNarrow),
+          constraints: const BoxConstraints(maxWidth: AppLayout.dialogForm),
           child: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,

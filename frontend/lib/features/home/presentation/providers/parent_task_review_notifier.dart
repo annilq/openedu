@@ -60,10 +60,16 @@ class ReviewError extends ReviewState {
 class ReviewNotifier extends StateNotifier<ReviewState> {
   final TaskReviewRepository _review;
   final AssistantRepository _assistant;
-  ReviewNotifier(this._review, this._assistant, {TaskModel? initial})
-      : super(initial == null
-            ? const ReviewLoading()
-            : ReviewLoaded(initial));
+
+  /// 起始态恒为 [ReviewLoading]：完整任务**只能**由 [load] 从服务端取。
+  ///
+  /// 曾经这里接一个 `initial` —— 调用方把自己的 `TaskModel` 直接当初始 state，
+  /// 于是数据新鲜度取决于「调用方手里那份对象是不是完整的」。ADR-0053 把列表接口
+  /// 改成只回摘要（`question_count` + 学科，不内嵌题目）之后，从任务列表/概览点进来
+  /// 的这份对象 `questions` 恒为空，页面就渲染成「草稿暂未包含任何题目」——题还在库里
+  /// （列表卡片上的「N 题」也是现算的），只是没人去取。删掉这个入口参数，让
+  /// 「进页面必须取数」成为类型上无法绕过的事。
+  ReviewNotifier(this._review, this._assistant) : super(const ReviewLoading());
 
   /// 从后端刷新当前 Task（含完整题目列表）。
   Future<void> load(String taskId) async {
@@ -72,8 +78,8 @@ class ReviewNotifier extends StateNotifier<ReviewState> {
       state = ReviewLoaded(await _review.load(taskId));
     } catch (e) {
       state = ReviewError(
-        e.toString(),
-        code: e is Exception ? null : null,
+        e is AppException ? e.titledMessage : e.toString(),
+        code: e is AppException ? e.code : null,
       );
     }
   }
@@ -288,14 +294,17 @@ class ReviewNotifier extends StateNotifier<ReviewState> {
   }
 }
 
-/// 以 taskId 为 key 的 Family 提供器，避免多个草稿页共享状态。
+/// 以 **taskId** 为 key 的 Family 提供器：同一任务共用一份审核状态，多个草稿页互不影响。
+///
+/// key 曾经是 `TaskModel`，而这个类没有覆写 `==`/`hashCode`（identity 相等）——
+/// 拿身份相等当缓存键，只要上游哪天换成一个内容相同的新实例，就会静默造出第二个
+/// notifier、状态各写各的。taskId 是稳定值，也是这条数据的真实主键。
 final parentTaskReviewProvider = StateNotifierProvider.family<
     ReviewNotifier,
     ReviewState,
-    TaskModel>((ref, initialTask) {
+    String>((ref, taskId) {
   return ReviewNotifier(
     ref.watch(taskReviewRepositoryProvider),
     ref.watch(assistantRepositoryProvider),
-    initial: initialTask,
   );
 });

@@ -8,11 +8,15 @@ import '../../../../../shared/domain/models/models.dart';
 import '../../../../../shared/presentation/paging.dart';
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/widgets/app_card_list.dart';
+import '../../../../../shared/widgets/app_content_frame.dart';
+import '../../../../../shared/widgets/app_dialog.dart';
 import '../../../../../shared/widgets/app_error.dart';
 import '../../../../../shared/widgets/app_inputs.dart';
 import '../../../../../shared/widgets/app_loading.dart';
 import '../../../../../shared/widgets/app_paging_footer.dart';
 import '../../../../../shared/widgets/app_toast.dart';
+import '../../../../export/domain/export_repository.dart';
+import '../../../../export/presentation/export_preview_page.dart';
 import '../../providers/question_bank_notifier.dart';
 import '../../providers/selected_child_provider.dart';
 
@@ -110,6 +114,45 @@ class _ParentQuestionBankViewState
     await ref
         .read(questionBankNotifierProvider.notifier)
         .archiveQuestions(ids, archived: archived);
+  }
+
+  /// 导出打印（ADR-0052）：题库来源，服务端按 id 装配、按学科分节。
+  ///
+  /// 装配在服务端——客户端只传「选了谁」；降级题数（含公式 / 图片、
+  /// 按纯文本打印）由客户端自算并如实提示，因为题面数据本来就在手上。
+  Future<void> _exportSelected() async {
+    final state = ref.read(questionBankNotifierProvider);
+    final selected = state is BankLoaded
+        ? [
+            for (final item in state.page.items)
+              if (_selectedIds.contains(item.id)) item,
+          ]
+        : <BankQuestionItem>[];
+    final downgraded = countDowngradedQuestions(
+      stems: selected.map((e) => e.stem),
+      optionLists: selected.map((e) => e.options),
+    );
+
+    if (_selectedIds.length > kExportSoftLimit) {
+      // 软提示不硬拦：家长要印 100 题的复习卷是合理需求（服务端另有硬边界）。
+      final confirmed = await AppDialog.confirm(
+        context,
+        title: const Text('题目较多'),
+        content: const Text('一次导出的题较多，打印预览可能变慢，建议分批导出。'),
+        confirmLabel: '继续导出',
+      );
+      if (confirmed != true || !mounted) return;
+    }
+    if (!mounted) return;
+    Navigator.of(context).push(
+      CupertinoPageRoute(
+        builder: (_) => ExportPreviewPage(
+          request: ExportSheetRequest(source: 'bank', ids: _selectedIds.toList()),
+          title: '题库练习',
+          downgradedCount: downgraded,
+        ),
+      ),
+    );
   }
 
   void _onKeywordChanged(String v) {
@@ -410,20 +453,17 @@ class _ParentQuestionBankViewState
       controller: _scroll,
       padding: const EdgeInsets.fromLTRB(
           AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xl2),
-      child: Align(
+      child: AppContentFrame(
         alignment: Alignment.topLeft,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: AppLayout.contentWide),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SectionTitle('题库'),
-              AppCard(
-                padding: const EdgeInsets.all(AppSpacing.md),
-                child: _buildCardContent(state, app, busy),
-              ),
-            ],
-          ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SectionTitle('题库'),
+            AppCard(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              child: _buildCardContent(state, app, busy),
+            ),
+          ],
         ),
       ),
     );
@@ -741,6 +781,12 @@ class _ParentQuestionBankViewState
           onPressed: busy ? null : _deleteSelected,
           leading: const Icon(LucideIcons.trash2, size: 16),
           child: Text('删除选中 (${_selectedIds.length})'),
+        ),
+        // 打印导出（ADR-0052）：复用本页多选，出口与删除/组卷并排。
+        ShadButton.outline(
+          onPressed: busy ? null : _exportSelected,
+          leading: const Icon(LucideIcons.printer, size: 16),
+          child: Text('导出打印 (${_selectedIds.length})'),
         ),
         ShadButton(
           onPressed: busy ? null : _generate,

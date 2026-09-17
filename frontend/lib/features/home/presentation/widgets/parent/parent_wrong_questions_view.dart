@@ -1,5 +1,4 @@
 import 'package:cupertino_ui/cupertino_ui.dart';
-import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -7,10 +6,14 @@ import '../../../../../shared/domain/models/models.dart';
 import '../../../../../shared/presentation/paging.dart';
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/widgets/app_card_list.dart';
+import '../../../../../shared/widgets/app_content_frame.dart';
+import '../../../../../shared/widgets/app_empty_state.dart';
 import '../../../../../shared/widgets/app_error.dart';
 import '../../../../../shared/widgets/app_loading.dart';
 import '../../../../../shared/widgets/app_paging_footer.dart';
 import '../../../../../shared/widgets/app_toast.dart';
+import '../../../../export/domain/export_repository.dart';
+import '../../../../export/presentation/export_preview_page.dart';
 import '../../../../review/presentation/providers/review_notifier.dart';
 import '../../providers/selected_child_provider.dart';
 
@@ -91,16 +94,14 @@ class _ParentWrongQuestionsState
         Padding(
           padding: const EdgeInsets.fromLTRB(
               AppSpacing.lg, AppSpacing.md, AppSpacing.lg, 0),
-          child: Align(
+          child: AppContentFrame(
             alignment: Alignment.topLeft,
-            child: ConstrainedBox(
-              constraints:
-                  const BoxConstraints(maxWidth: AppLayout.contentWide),
-              child: _Header(
-                showGraduated: _showGraduated,
-                graduatedTotal: graduatedTotal,
-                onSwitch: _switchGraduated,
-              ),
+            child: _Header(
+              showGraduated: _showGraduated,
+              graduatedTotal: graduatedTotal,
+              onSwitch: _switchGraduated,
+              onExportAll: () => _exportWrongBook(dueOnly: false),
+              onExportDue: () => _exportWrongBook(dueOnly: true),
             ),
           ),
         ),
@@ -143,18 +144,14 @@ class _ParentWrongQuestionsState
             child: Padding(
               padding:
                   const EdgeInsets.symmetric(horizontal: AppLayout.listGutter),
-              child: Align(
+              child: AppContentFrame(
                 alignment: Alignment.topLeft,
-                child: ConstrainedBox(
-                  constraints:
-                      const BoxConstraints(maxWidth: AppLayout.contentWide),
-                  child: AppPagingFooter(
-                    hasMore: state.hasMore,
-                    isLoadingMore: state.isLoadingMore,
-                    moreError: state.moreError,
-                    remaining: state.remaining,
-                    onLoadMore: _loadMore,
-                  ),
+                child: AppPagingFooter(
+                  hasMore: state.hasMore,
+                  isLoadingMore: state.isLoadingMore,
+                  moreError: state.moreError,
+                  remaining: state.remaining,
+                  onLoadMore: _loadMore,
                 ),
               ),
             ),
@@ -177,38 +174,68 @@ class _ParentWrongQuestionsState
     }
   }
 
+  /// 导出错题卷（ADR-0052）：错题来源按娃娃取数，归属校验在服务端。
+  ///
+  /// 两个动作共用一个 source、一个开关：**「今日到期」与复习页的当前到期集合
+  /// 是同一份查询**（同一张错题表 + 到期时间过滤），所以复习入口不单列端点。
+  /// 「已掌握」分区不提供导出——毕业的题不该再出现在要做的卷子上。
+  Future<void> _exportWrongBook({required bool dueOnly}) async {
+    final childId = ref.read(selectedChildProvider)?.id;
+    if (childId == null) return;
+    final state = ref.read(parentWrongQuestionsProvider);
+    // 降级题数由客户端自算（题面数据在手上）；只统计已加载的页——
+    // 未加载的页没有题面，宁缺勿假。
+    var downgraded = 0;
+    if (state.isLoaded) {
+      downgraded = countDowngradedQuestions(
+        stems: state.items.map((e) => e.stem),
+        optionLists: state.items.map((e) => e.options),
+      );
+    }
+    Navigator.of(context).push(
+      CupertinoPageRoute(
+        builder: (_) => ExportPreviewPage(
+          request: ExportSheetRequest(
+            source: 'wrong_book',
+            childId: childId,
+            dueOnly: dueOnly,
+          ),
+          title: dueOnly ? '今日复习' : '错题练习',
+          downgradedCount: downgraded,
+        ),
+      ),
+    );
+  }
+
+  /// 空态（ADR-0051）：必须回答「为什么是空的」与「下一步做什么」。
+  ///
+  /// 两个分区的空含义不同——未掌握为空是**好事**（错题本会随着做任务长出来），
+  /// 已掌握为空则意味着「还没跑完一轮复习」，所以给的解释不一样。
   Widget _buildEmpty() {
-    final scheme = AppTheme.colorsOf(context);
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(
           AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xl2),
-      child: Align(
-        alignment: Alignment.topLeft,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: AppLayout.contentWide),
-          child: AppCard(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            child: Row(
-              children: [
-                Container(
-                  width: 52,
-                  height: 52,
-                  decoration: BoxDecoration(
-                    color: scheme.errorContainer,
-                    borderRadius: BorderRadius.circular(AppRadius.card),
-                  ),
-                  alignment: Alignment.center,
-                  child: Icon(LucideIcons.bookOpen,
-                      size: 28, color: scheme.onErrorContainer),
-                ),
-                const SizedBox(width: AppSpacing.lg),
-                Text('暂无错题，继续保持～',
-                    style: AppTheme.textOf(context).bodyLarge),
+      child: _showGraduated
+          ? AppEmptyState(
+              icon: LucideIcons.graduationCap,
+              title: '还没有已掌握的错题',
+              message: '错题连续答对几次、复习间隔拉长到毕业后就会移到这里。',
+              steps: const [
+                '娃娃在复习里答对一道错题',
+                '这道题的下次复习间隔变长',
+                '连续通过后自动标记为已掌握',
+              ],
+            )
+          : AppEmptyState(
+              icon: LucideIcons.bookOpen,
+              title: '错题本是空的',
+              message: '娃娃做题时答错的题目会自动进到这里，到期了就会提醒复习。',
+              steps: const [
+                '派发一套任务给娃娃',
+                '娃娃答错的题自动进错题本',
+                '到期后在「今日复习」里导出或直接练',
               ],
             ),
-          ),
-        ),
-      ),
     );
   }
 
@@ -258,11 +285,17 @@ class _Header extends StatelessWidget {
     required this.showGraduated,
     required this.graduatedTotal,
     required this.onSwitch,
+    required this.onExportAll,
+    required this.onExportDue,
   });
 
   final bool showGraduated;
   final int graduatedTotal;
   final void Function(bool) onSwitch;
+
+  /// 导出全部未毕业错题 / 只导今日到期（ADR-0052）。
+  final VoidCallback onExportAll;
+  final VoidCallback onExportDue;
 
   @override
   Widget build(BuildContext context) {
@@ -287,6 +320,29 @@ class _Header extends StatelessWidget {
                     child: Text('已掌握（$graduatedTotal）'),
                   ),
           ),
+        // 导出入口（ADR-0052）：只在「错题本」分区提供——已掌握的题
+        // 不该再出现在要做的卷子上。两个按钮对应两种筛选语义：
+        // 全部未毕业 = 阶段性错题汇总卷；今日到期 = 当天的复习卷。
+        if (!showGraduated) ...[
+          Padding(
+            padding: const EdgeInsets.only(left: AppSpacing.xs),
+            child: ShadButton.outline(
+              size: ShadButtonSize.sm,
+              onPressed: onExportDue,
+              leading: const Icon(LucideIcons.printer, size: 14),
+              child: const Text('导出今日到期'),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: AppSpacing.xs),
+            child: ShadButton.outline(
+              size: ShadButtonSize.sm,
+              onPressed: onExportAll,
+              leading: const Icon(LucideIcons.printer, size: 14),
+              child: const Text('导出错题卷'),
+            ),
+          ),
+        ],
       ],
     );
   }
