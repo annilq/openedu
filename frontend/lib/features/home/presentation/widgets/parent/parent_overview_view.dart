@@ -99,44 +99,45 @@ class ParentOverviewView extends ConsumerWidget {
         const AppLoading.skeletonInline(skeletonLines: 2),
       _ => PopIn(
           child: AppCard(
-          padding: const EdgeInsets.all(AppSpacing.md),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final wide = constraints.maxWidth >= 560;
-              final statWidth = wide
-                  ? ((constraints.maxWidth - AppSpacing.md * 3) / 4)
-                      .clamp(120.0, double.infinity)
-                  : 160.0;
-              return Wrap(
-                runSpacing: AppSpacing.xl2,
-                spacing: AppSpacing.md,
-                children: [
-                  _StatCard(
-                      label: '总题数',
-                      value: '${progress.total}',
-                      cardWidth: statWidth,
-                      icon: LucideIcons.listOrdered),
-                  _StatCard(
-                      label: '答对',
-                      value: '${progress.correct}',
-                      cardWidth: statWidth,
-                      icon: LucideIcons.checkCircle2),
-                  _StatCard(
-                      label: '正确率',
-                      value: '${(progress.accuracy * 100).round()}%',
-                      cardWidth: statWidth,
-                      icon: LucideIcons.barChart3,
-                      tone: _Tone.positive),
-                  _StatCard(
-                      label: '连续打卡',
-                      value: '${progress.streakDays}天',
-                      cardWidth: statWidth,
-                      icon: LucideIcons.flame,
-                      tone: _Tone.warm),
-                ],
-              );
-            },
-          ),
+            padding: const EdgeInsets.all(AppSpacing.md),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                // 「连续打卡」是这一栏唯一的焦点（hero）：撞色底 + 硬阴影 + 最大字号；
+                // 其余三个数字降为安静行（无卡片壳、无彩色块），把重量让给焦点。
+                // 四张等大等重、三张还是中性灰的卡片等于没有主次——用户扫一眼不知道
+                // 该看哪个（`.impeccable.md`「色块是强调件，不是背景纸」）。
+                final hero = _StreakHero(days: progress.streakDays);
+                final quiet = _QuietStats(
+                  total: progress.total,
+                  correct: progress.correct,
+                  accuracy: progress.accuracy,
+                );
+
+                if (constraints.maxWidth < 560) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      hero,
+                      const SizedBox(height: AppSpacing.md),
+                      quiet,
+                    ],
+                  );
+                }
+                // ⚠️ Row(stretch) 必须包 IntrinsicHeight：本 Row 落在高度无界的
+                // LayoutBuilder 里，否则抛 `BoxConstraints forces an infinite height`
+                // （守卫 test/stretch_row_guard_test.dart）。
+                return IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(flex: 2, child: hero),
+                      const SizedBox(width: AppSpacing.md),
+                      Expanded(flex: 3, child: quiet),
+                    ],
+                  ),
+                );
+              },
+            ),
           ),
         ),
     };
@@ -267,61 +268,139 @@ String? Function(String?) _childNameResolver(ChildrenState state) {
 
 // —— 私有组件 ——
 
-enum _Tone { neutral, positive, warm, alert }
+/// 焦点指标：连续打卡。撞色底 + 硬阴影 + 全屏最大字号，是这一栏唯一被强调的数字。
+///
+/// **为什么是打卡而不是正确率**：正确率是结果指标，天天盯着会焦虑；打卡是连续行为，
+/// 对娃娃是游戏化、对家长是动力——是家长端情绪目标「一眼看清、有掌控感、不焦虑」
+/// 下唯一适合被庆祝的指标。
+///
+/// ⚠️ 字号取 [AppText.displayLarge]，即现有类型阶梯的**顶格**（22px）。
+/// 本仓 `AppText._typeScale` 的区间只有 12–22px，所以 `bolder` 那条「3–5× 阶差」
+/// 在现有令牌下**物理上做不到**（22 / 13 ≈ 1.7×）。真要做大字焦点需给 `_typeScale`
+/// 新增一档展示字号——那是设计系统单一事实源的改动，应先记 ADR，不在本次范围。
+/// 这里靠**撞色底 + 硬阴影 + 字重 w800** 补足对比度。
+class _StreakHero extends StatelessWidget {
+  final int days;
 
-class _StatCard extends StatelessWidget {
-  final String label;
-  final String value;
-  final double cardWidth;
-  final IconData icon;
-  final _Tone tone;
-  const _StatCard({
-    required this.label,
-    required this.value,
-    required this.cardWidth,
-    required this.icon,
-    this.tone = _Tone.neutral,
+  const _StreakHero({required this.days});
+
+  @override
+  Widget build(BuildContext context) {
+    final text = AppTheme.textOf(context);
+    // 撞色底只能配 [AppBrutal.onColor]，不得手写黑/白（.impeccable.md 原则 3）。
+    // orange 是亮块 → onColor 返回墨黑（实测 7.61:1）。选它是因为「火焰 / 连续」
+    // 的暖色语义，且学科色板只占用 blue / coral / yellow，与它不冲突。
+    const fill = AppBrutal.orange;
+    final fg = AppBrutal.onColor(fill);
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: fill,
+        borderRadius: BorderRadius.circular(AppRadius.card),
+        border: Border.all(
+          color: AppBrutal.ink,
+          width: AppElevation.borderWidth,
+        ),
+        boxShadow: AppElevation.hard(),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Icon(LucideIcons.flame, size: 20, color: fg),
+              const SizedBox(width: AppSpacing.xs),
+              Text(
+                '连续打卡',
+                style: text.labelMedium?.copyWith(
+                  color: fg,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(
+                '$days',
+                style: text.displayLarge?.copyWith(
+                  color: fg,
+                  fontWeight: FontWeight.w800,
+                  height: 1,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xs2),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 2),
+                child: Text('天', style: text.titleSmall?.copyWith(color: fg)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 安静指标组：焦点之外的三个数字。
+///
+/// 去卡片壳、去彩色块，只留「图标 + 标签 + 数字」三行——它们是**陪衬**，不再是
+/// 三个与 hero 等重的方块。原先总题数 / 答对 / 正确率走 `_Tone.neutral` 落到
+/// `surfaceSunken`，在白卡上几乎看不见（正是 `MEMORY.md` 记的「白物体在纸底
+/// 没边界」同族问题）。
+class _QuietStats extends StatelessWidget {
+  final int total;
+  final int correct;
+  final double accuracy;
+
+  const _QuietStats({
+    required this.total,
+    required this.correct,
+    required this.accuracy,
   });
 
   @override
   Widget build(BuildContext context) {
-    final scheme = AppTheme.colorsOf(context);
-    final (bg, fg) = switch (tone) {
-      _Tone.positive => (scheme.tertiaryContainer, scheme.onTertiaryContainer),
-      _Tone.warm => (scheme.secondaryContainer, scheme.onSecondaryContainer),
-      _Tone.alert => (scheme.errorContainer, scheme.onErrorContainer),
-      _Tone.neutral => (scheme.surfaceSunken, scheme.onSurface),
-    };
-    return SizedBox(
-      width: cardWidth,
-      child: AppCard(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: bg,
-                borderRadius: BorderRadius.circular(AppRadius.card),
-                border: Border.all(color: AppBrutal.ink, width: 1.5),
+    final app = AppTheme.colorsOf(context);
+    final text = AppTheme.textOf(context);
+
+    Widget row(IconData icon, String label, String value) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+          child: Row(
+            children: [
+              Icon(icon, size: 16, color: app.onSurfaceVariant),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  label,
+                  style: text.bodySmall?.copyWith(color: app.onSurfaceVariant),
+                ),
               ),
-              alignment: Alignment.center,
-              child: Icon(icon, size: 20, color: fg),
-            ),
-          const SizedBox(height: AppSpacing.md),
-          Text(value,
-              style: AppTheme.textOf(context).headlineMedium?.copyWith(
-                color: scheme.onSurface,
-                fontFeatures: const [FontFeature.tabularFigures()],
-              )),
-          const SizedBox(height: AppSpacing.xs),
-          Text(label, style: AppTheme.textOf(context).bodySmall),
-        ],
-      ),
-      ),
+              Text(
+                value,
+                style: text.titleMedium?.copyWith(
+                  color: app.onSurface,
+                  fontWeight: FontWeight.w700,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            ],
+          ),
+        );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        row(LucideIcons.listOrdered, '总题数', '$total'),
+        row(LucideIcons.checkCircle2, '答对', '$correct'),
+        row(LucideIcons.barChart3, '正确率', '${(accuracy * 100).round()}%'),
+      ],
     );
   }
 }
