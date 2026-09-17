@@ -140,7 +140,12 @@ class ParentQuestionCardState extends ConsumerState<ParentQuestionCard> {
           decoration: BoxDecoration(
             color: AppBrutal.violet,
             borderRadius: BorderRadius.circular(AppRadius.bubble),
-            border: Border.all(color: AppBrutal.ink, width: 2),
+            // 题号徽标 = 密集小色块档（[AppElevation.borderWidthSm]），
+            // 见 AppElevation 的三档口径。
+            border: Border.all(
+              color: AppBrutal.ink,
+              width: AppElevation.borderWidthSm,
+            ),
           ),
           alignment: Alignment.center,
           child: Text(

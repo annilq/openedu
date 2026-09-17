@@ -348,8 +348,12 @@ class _ParentQuestionBankViewState
             itemBuilder: (_, i) {
               final t = drafts[i];
               final app = AppTheme.colorsOf(ctx);
-              return GestureDetector(
+              // 走 AppFocusableAction：裸 GestureDetector 不进焦点树，
+              // 桌面端 Tab 跳不过来、Enter 选不中（ADR-0046）。
+              return AppFocusableAction(
                 onTap: () => Navigator.of(ctx).pop(t.id),
+                hoverHighlight: true,
+                semanticLabel: '用《${t.title}》出题',
                 child: Container(
                   padding: const EdgeInsets.symmetric(
                       vertical: AppSpacing.sm, horizontal: AppSpacing.xs),
@@ -725,9 +729,15 @@ class _ParentQuestionBankViewState
   }
 
   /// 「用过 N 次」标签：可点击，弹出引用任务列表（闭环「用过 → 在哪里用」）。
+  ///
+  /// 走 [AppFocusableAction] 而非裸 `GestureDetector`——后者不进焦点树
+  /// （ADR-0046）。焦点环圆角跟随标签自身的 [AppRadius.sm]。
   Widget _usageTag(dynamic app, BankQuestionItem q) {
-    return GestureDetector(
+    return AppFocusableAction(
       onTap: () => _showUsages(q),
+      hoverHighlight: true,
+      borderRadius: BorderRadius.circular(AppRadius.sm),
+      semanticLabel: '查看引用过 ${q.usageCount} 次的任务',
       child: Container(
         padding:
             const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 2),

@@ -72,28 +72,19 @@ class ParentOverviewView extends ConsumerWidget {
     );
   }
 
+  /// 未选娃娃时的引导态。
+  ///
+  /// 收敛到 [AppEmptyState.inline]（原先手搓 52 色块 + 单行字，与本文件里
+  /// `_buildRecentTasks` 的空态是两套画法，违反 ADR-0051「三态同骨架」）。
+  /// 走**安静态**：家长端工作区不该用撞色抢重量（`.impeccable.md` §Empty State）。
   Widget _emptyState(BuildContext context) {
-    return Align(alignment: Alignment.topLeft,
+    return Align(
+      alignment: Alignment.topLeft,
       child: AppCard(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                color: AppBrutal.yellow,
-                borderRadius: BorderRadius.circular(AppRadius.card),
-                border: Border.all(color: AppBrutal.ink, width: 2),
-              ),
-              alignment: Alignment.center,
-              child: Icon(LucideIcons.layoutDashboard,
-                  size: 28, color: AppBrutal.ink),
-            ),
-            const SizedBox(width: AppSpacing.xl),
-            Text('请先在侧栏选择娃娃', style: AppTheme.textOf(context).bodyLarge),
-          ],
+        child: AppEmptyState.inline(
+          icon: LucideIcons.userRound,
+          title: '还没有选娃娃',
+          message: '在侧栏选一个娃娃，这里就会显示他的学习进度、最近任务和知识点掌握度。',
         ),
       ),
     );

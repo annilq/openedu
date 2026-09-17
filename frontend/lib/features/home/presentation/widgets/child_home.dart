@@ -206,6 +206,11 @@ class _BrutalBanner extends StatelessWidget {
 }
 
 /// 方形图标按钮（次级入口）：纸底 + 墨黑描边，不与撞色 CTA 抢层级。
+///
+/// 走 [AppFocusableAction] 而非 `Semantics + 裸 GestureDetector`：
+/// `Semantics(button: true)` 只给读屏语义，**不进键盘焦点树**——桌面端 Tab
+/// 跳不过来、Enter 点不动（ADR-0046）。`AppFocusableAction` 内部已含
+/// `Semantics(button: true, label:)`，所以不必再套一层。
 class _SquareIconButton extends StatelessWidget {
   final IconData icon;
   final String tooltip;
@@ -217,25 +222,23 @@ class _SquareIconButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final app = AppTheme.colorsOf(context);
-    return Semantics(
-      button: true,
-      label: tooltip,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Container(
-          width: AppControl.heightOf(context),
-          height: AppControl.heightOf(context),
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: app.surfaceContainerLow,
-            borderRadius:
-                const BorderRadius.all(Radius.circular(AppRadius.button)),
-            border: Border.all(
-                color: AppBrutal.ink, width: AppElevation.borderWidth),
-          ),
-          child: Icon(icon, size: 20, color: app.onSurface),
+    return AppFocusableAction(
+      onTap: onTap,
+      semanticLabel: tooltip,
+      hoverHighlight: true,
+      borderRadius: const BorderRadius.all(Radius.circular(AppRadius.button)),
+      child: Container(
+        width: AppControl.heightOf(context),
+        height: AppControl.heightOf(context),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: app.surfaceContainerLow,
+          borderRadius:
+              const BorderRadius.all(Radius.circular(AppRadius.button)),
+          border: Border.all(
+              color: AppBrutal.ink, width: AppElevation.borderWidth),
         ),
+        child: Icon(icon, size: 20, color: app.onSurface),
       ),
     );
   }

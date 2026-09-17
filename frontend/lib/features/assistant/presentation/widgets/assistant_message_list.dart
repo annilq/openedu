@@ -244,21 +244,17 @@ class _CopyButtonState extends State<_CopyButton> {
   Widget build(BuildContext context) {
     final scheme = AppTheme.colorsOf(context);
     // 不用 InkWell：本 App 根是 CupertinoApp，子树内没有 Material 祖先，会抛
-    // 「No Material widget found」。沿用仓库既有的 GestureDetector 写法。
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: _copy,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.xs,
-          vertical: AppSpacing.xs2,
-        ),
-        child: Icon(
-          _copied ? LucideIcons.check : LucideIcons.copy,
-          size: 15,
-          color: _copied ? scheme.primary : scheme.onSurfaceVariant,
-        ),
-      ),
+    // 「No Material widget found」。走 [AppIconAction]——图标按钮的唯一出口，
+    // 自带焦点树 / 悬停底色 / Enter 激活。
+    //
+    // 收敛前是裸 `GestureDetector`：键盘永远 Tab 不到，且命中区只有 ~23×19，
+    // 低于 `.impeccable.md` §Accessibility 的 32px 下限；平板上尤其难点。
+    return AppIconAction(
+      icon: _copied ? LucideIcons.check : LucideIcons.copy,
+      iconSize: 15,
+      color: _copied ? scheme.primary : scheme.onSurfaceVariant,
+      onPressed: _copy,
+      semanticLabel: _copied ? '已复制' : '复制这条回复',
     );
   }
 }

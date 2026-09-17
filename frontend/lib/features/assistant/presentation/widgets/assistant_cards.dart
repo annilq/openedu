@@ -448,9 +448,12 @@ class _ReasoningDisclosureState extends State<_ReasoningDisclosure> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // 不用 InkWell：App 根是 CupertinoApp/ShadApp，子树无 Material 祖先。
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
+        // 也不留裸 GestureDetector——它不进焦点树，桌面端 Tab 跳不过来、Enter
+        // 点不动，而 `flutter analyze` 照不出来（ADR-0046）。标题文字本身可读，
+        // 故不另传 semanticLabel。
+        AppFocusableAction(
           onTap: () => setState(() => _open = !_open),
+          hoverHighlight: true,
           child: Row(
             children: [
               Icon(LucideIcons.info, size: 14, color: scheme.onSurfaceVariant),

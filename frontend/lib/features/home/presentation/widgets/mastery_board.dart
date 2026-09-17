@@ -5,6 +5,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/presentation/resource.dart';
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/app_empty_state.dart';
 import '../../../../shared/widgets/app_error.dart';
 import '../../../../shared/widgets/app_loading.dart';
 import '../providers/home_notifier.dart';
@@ -28,52 +29,10 @@ class MasteryBoard extends ConsumerWidget {
         const AppLoading.skeletonInline(skeletonLines: 3),
       _ => mastery.items.isEmpty
           ? AppCard(
-              padding: const EdgeInsets.all(AppSpacing.md),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final narrow = constraints.maxWidth < 220;
-                  final iconBox = Container(
-                    width: 52,
-                    height: 52,
-                    decoration: BoxDecoration(
-                      color: scheme.tertiaryContainer,
-                      borderRadius: BorderRadius.circular(AppRadius.card),
-                    ),
-                    alignment: Alignment.center,
-                    child: Icon(LucideIcons.lightbulb,
-                        size: 28, color: scheme.onTertiaryContainer),
-                  );
-                  final texts = Column(
-                    crossAxisAlignment: narrow
-                        ? CrossAxisAlignment.center
-                        : CrossAxisAlignment.start,
-                    children: [
-                      Text(isChild ? '你还没有作答记录' : '还没有作答记录',
-                          style: AppTheme.textOf(context).titleSmall),
-                      const SizedBox(height: AppSpacing.xs),
-                      Text(
-                        isChild ? '去做几道题，看看你掌握了什么吧～' : '先布置任务吧～',
-                        style: AppTheme.textOf(context).bodyMedium,
-                        textAlign: narrow ? TextAlign.center : TextAlign.start,
-                      ),
-                    ],
-                  );
-                  if (narrow) {
-                    return Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        iconBox,
-                        const SizedBox(height: AppSpacing.md),
-                        texts,
-                      ],
-                    );
-                  }
-                  return Row(children: [
-                    iconBox,
-                    const SizedBox(width: AppSpacing.xl),
-                    Expanded(child: texts),
-                  ]);
-                },
+              child: AppEmptyState.inline(
+                icon: LucideIcons.lightbulb,
+                title: isChild ? '你还没有作答记录' : '还没有作答记录',
+                message: isChild ? '去做几道题，看看你掌握了什么吧～' : '先布置任务吧～',
               ),
             )
           : AppCard(
@@ -146,22 +105,24 @@ class _MasteryBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = AppTheme.colorsOf(context);
-    // 学科色：进度条 + 行首色点均按学科着色（ADR-0014 学科色消费）。
-    final sc =
-        SubjectAccent.forContext(SubjectAccent.fromName(item.subject), context);
+    // 学科色：进度条 + 行首标记均按学科着色（ADR-0014 学科色消费）。
+    final subjectKey = SubjectAccent.fromName(item.subject);
+    final sc = SubjectAccent.forContext(subjectKey, context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         LayoutBuilder(
           builder: (context, constraints) {
             final subjectRow = Row(children: [
-              Container(
-                width: 10,
-                height: 10,
-                decoration: BoxDecoration(
-                  color: sc.accent,
-                  borderRadius: BorderRadius.circular(3),
-                ),
+              // 行首标记走 [SubjectMarkIcon]（数学■ / 语文● / 英语▲）而非纯色圆点。
+              // 同一行里进度条已按学科着色（见下方 AppProgressBar），再放一个纯色点
+              // 就是「两条颜色通道、零形状通道」——红绿色盲下语文(coral)与英语(yellow)
+              // 同属暖色系会趋同（.impeccable.md §Design Principles 4）。
+              // 尺寸 10 与原先的色点一致：改的是编码方式，不是版式。
+              SubjectMarkIcon(
+                mark: subjectKey.mark,
+                color: sc.accent,
+                size: 10,
               ),
               const SizedBox(width: AppSpacing.sm),
               Expanded(

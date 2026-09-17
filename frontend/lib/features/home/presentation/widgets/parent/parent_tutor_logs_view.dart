@@ -5,6 +5,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../../shared/presentation/resource.dart';
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/widgets/app_content_frame.dart';
+import '../../../../../shared/widgets/app_empty_state.dart';
 import '../../../../../shared/widgets/app_error.dart';
 import '../../../../../shared/widgets/app_loading.dart';
 import '../../../../../shared/widgets/app_motion.dart';
@@ -65,28 +66,20 @@ class ParentTutorLogsView extends ConsumerWidget {
     );
   }
 
+  /// 未选娃娃时的引导态。
+  ///
+  /// 收敛到 [AppEmptyState.inline]：此前与 `parent_overview_view.dart` /
+  /// `mastery_board.dart` 各手搓了一份「52 色块 + 单行字」，三份画法的撞色、
+  /// 描边、色块尺寸互不相同（这里是 cyan 且描边 2px），违反 ADR-0051
+  /// 「加载 / 错误 / 空三态共用同一骨架」。
   Widget _emptyState(BuildContext context) {
-    return Align(alignment: Alignment.topLeft,
+    return Align(
+      alignment: Alignment.topLeft,
       child: AppCard(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                color: AppBrutal.cyan,
-                borderRadius: BorderRadius.circular(AppRadius.card),
-                border: Border.all(color: AppBrutal.ink, width: 2),
-              ),
-              alignment: Alignment.center,
-              child: Icon(LucideIcons.sparkles,
-                  size: 28, color: AppBrutal.ink),
-            ),
-            const SizedBox(width: AppSpacing.xl),
-            Text('请先在侧栏选择娃娃', style: AppTheme.textOf(context).bodyLarge),
-          ],
+        child: AppEmptyState.inline(
+          icon: LucideIcons.sparkles,
+          title: '还没有选娃娃',
+          message: '在侧栏选一个娃娃，这里就会显示他的答疑记录。',
         ),
       ),
     );

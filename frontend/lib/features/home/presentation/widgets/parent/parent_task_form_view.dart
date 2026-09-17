@@ -622,9 +622,11 @@ class _ThemeToggle extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = AppTheme.colorsOf(context);
     final text = AppTheme.textOf(context);
-    return GestureDetector(
+    return AppFocusableAction(
       onTap: onTap,
-      behavior: HitTestBehavior.opaque,
+      hoverHighlight: true,
+      borderRadius: BorderRadius.circular(AppRadius.chip),
+      semanticLabel: label,
       child: AnimatedContainer(
         // 隐式动画**不会**自动尊重 reduce-motion，必须显式归零（ADR-0044）。
         duration: reducedMotionOf(context)
