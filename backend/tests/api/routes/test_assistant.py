@@ -199,8 +199,13 @@ def test_parent_query_streams_tool_chain_and_persists_trace(client, fake_llm):
     assert str(conv.parent_id) == setup["parent_id"] and conv.child_id is None
     assert [r.step for r in rows] == ["input", "routing", "tool_call", "tool_result", "output"]
     assert rows[1].content == "学情查询"
-    assert rows[2].content == "list_wrong_questions"
+    # tool_call 落的是**可读标签**（ev.label or ev.tool，service.py）：
+    # 轨迹是给人回看的投影，不是给机器反解的标识——英文工具名跟着 frame 走，
+    # 落到库里的是「查询错题本」这种能读的句子。tool_result 没有标签，仍落工具名。
+    assert rows[2].content == "查询错题本"
     assert rows[3].content == "list_wrong_questions"
+    # 标签必须随 TOOL_CALL 帧下发到客户端（前端据此渲染「正在查××」而不是转圈）
+    assert [e.get("label") for e in _of(events, "TOOL_CALL")] == ["查询错题本"]
     out = rows[-1]
     assert out.content == fake_llm.tool_text
     assert out.payload and out.payload["cards"][0]["type"] == "wrong_question_list"
