@@ -7,6 +7,7 @@ import '../../../assistant/domain/assistant_requests.dart';
 import '../../../assistant/domain/question_gen_fold.dart';
 import '../../../assistant/domain/repositories/assistant_repository.dart';
 import '../../../assistant/providers/assistant_provider.dart';
+import '../../domain/expected_question_count.dart';
 import '../../domain/repositories/tasks_repository.dart';
 import '../../providers/home_provider.dart';
 
@@ -28,16 +29,18 @@ class TaskGenSuccess extends TaskGenState {
   const TaskGenSuccess(this.task, {this.expected = 0, this.failures = const []});
 
   /// 本次是否少题：应出题数已知且落库题数不足。
-  bool get isShort => expected > 0 && task.questions.length < expected;
+  bool get isShort =>
+      isUnderdelivered(expected: expected, actualCount: task.questions.length);
 
   /// 少题提示文案（供 UI 直接展示）。
   ///
-  /// 少题的补齐手段在草稿页是**单题换一题**——整卷重生成已移除（ADR-0056），
-  /// 它等价于「整份推翻重来」，与闸门处的「重新生成」重复且要全量重跑。
+  /// ⚠️ 出口只能指向真实存在的入口：草稿页没有「添加题目」、「换一题」也**不能加题**
+  /// （ADR-0056 的硬约束：它只是维持题数不变地换掉一道题），整卷重生成同样已移除。
+  /// 于是补齐的唯一路径是「回生成页重来一份」——此前这里指向一个不存在的按钮。
   String get shortMessage => failures.isNotEmpty
       ? '应出 $expected 题，实际只生成 ${task.questions.length} 题：${failures.first}。'
-          '可在草稿页逐题「换一题」补齐。'
-      : '应出 $expected 题，实际只生成 ${task.questions.length} 题，可在草稿页逐题「换一题」补齐。';
+          '可回生成页重来一份。'
+      : '应出 $expected 题，实际只生成 ${task.questions.length} 题，可回生成页重来一份。';
 }
 class TaskGenError extends TaskGenState {
   final String message;
@@ -107,7 +110,8 @@ class TaskGenReady extends TaskGenState {
   });
 
   /// 本次是否少题：确认前就告知，别等落库后才发现残缺。
-  bool get isShort => expected > 0 && questions.length < expected;
+  bool get isShort =>
+      isUnderdelivered(expected: expected, actualCount: questions.length);
 }
 
 class TaskGenNotifier extends StateNotifier<TaskGenState> {
@@ -135,7 +139,7 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
     var fold = const QuestionGenFold();
     // 应出题数：各条规格 count 之和。流结束后据此校验「少题」——逐题串行出题时
     // 单题失败只会丢一条 STEP(status=error)，不做校验就会静默落库残缺任务。
-    final expected = specs.fold<int>(0, (sum, s) => sum + s.count);
+    final expected = expectedQuestionCount(specs);
     state = TaskGenPreview(fold.questions, streaming: true);
     try {
       final stream = _assistant.generate(
