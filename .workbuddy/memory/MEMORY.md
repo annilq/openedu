@@ -48,6 +48,7 @@
 - **「测试连接」（2026-09-20）**：`POST /models/test` + `app/features/model_management/probe.py`。① **必须走后端**（密钥密文只在后端，编辑态「密钥留空=不修改」只有后端能补）；② **与生产同源**——经 `app.ai.engine.build_engine`（原私有 `_get_or_build` 改公开）构造，另起 HTTP 直连会造「测试过、出题挂」的假绿灯；③ **失败一律 200 + `ok=false`**，`error_kind` 沿用 ADR-0038 枚举 + `timeout`，detail 回显前抹密钥明文。超时 `MODEL_PROBE_TIMEOUT_S=20`（前端 Dio `receiveTimeout=30`，须留余量）。守卫 `tests/api/routes/test_model_probe.py`。
 - ⚠️ **探针必须「首帧即停」，绝不读完整个流**（实测 `qwen3:1.7b` 带 thinking：一句「ping」要 **6.4s** 才把 330 token 思维链+回答吐完，首个 chunk 却 <1s；读完整个流 = 把一次握手做成一次完整生成，还会吃掉 20s 超时、报出「连接超时」假阴性）。收尾两步缺一不可：先 `future.cancel()`（genkit 已把生成派发成后台 task，撒手会留悬挂流）；再**判 `future.done()` 后 await**——401 时一帧都没有、channel 只静默 `StopAsyncIteration`，不 await 就变成「认证失败被判成连接成功」。
 - **本地 Ollama 慢 ≠ 探针慢**（实测归因）：同一模型直连 curl 只要 **81ms**，探针却 16.8s；服务端日志（GIN）证实 Ollama **真的**花了 16s——那是把 2.9GB 权重**换入内存**（连续切模型会挤掉上一个：qwen3 1.35GB + ministral 2.9GB），同一模型紧接着再测 **0.67s**。SDK 请求参数很干净（`options:{}`，无 `num_ctx`/`keep_alive`），别去怪 genkit。结论：**真实出题同样要付这个冷加载**，不是探针独有；20s 超时对 7B+ 偏紧 → 超时文案按 provider 分化，ollama 提示「首次调用要加载权重，第二次通常很快」。
+- ⚠️ **新建 ADR 取号前先查 `.workbuddy/memory/` 日志有无预留**（多会话各按目录空位取号会撞：2026-09-20 两轮同时占 0055，按「先预留者优先」后写的改 0056）。
 - **长列表（ADR-0053）**：keyset 游标（非 offset）；⚠️ 追加在途换条件会拼回旧页 → await 后重读最新 state；⚠️ 两列不用 `SliverGrid`（行高被钉死会裁卡）→ `Row`+`Expanded`，阈值 `listTwoColumnMin 1048`；⚠️ 读错题每处都要加 `graduated_at IS NULL`；归档三套语义禁共用；迁移走启动期幂等 DDL，不引入 alembic。
 
 ## 6. AI Agent 架构学习教材
