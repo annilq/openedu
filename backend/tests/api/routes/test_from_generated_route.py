@@ -8,6 +8,12 @@
 """
 from __future__ import annotations
 
+import uuid
+
+from sqlmodel import select
+
+from app.db.models.task import TaskQuestion
+from app.features.tasks import service as tasks_service
 from tests.utils.user import auth_headers, register_parent
 
 
@@ -121,3 +127,92 @@ def test_from_generated_rejects_other_child(client):
         },
     )
     assert r.status_code == 403, r.text
+
+
+# ───────────────────── 不变量：reasoning（出题思路）永不落库 ─────────────────────
+# ADR-0056：QuestionOut.reasoning 仅用于流式预览态展示，不落库。
+# /tasks/from-generated 落库端点不论入参是否带 reasoning，都必须成功，且落库结果
+# 里不能有任何 reasoning 痕迹（不写进 TaskQuestion 表、也不出现在响应里）。
+
+
+def _questions_with_reasoning() -> list[dict]:
+    qs = [dict(q) for q in _SAMPLE_QUESTIONS]
+    for i, q in enumerate(qs):
+        q["reasoning"] = f"这是第 {i + 1} 题的出题思路，仅用于预览，不应落库。"
+    return qs
+
+
+def test_from_generated_without_reasoning_succeeds(client):
+    """基线：入参不含 reasoning 字段时，正常落库成功。"""
+    r = register_parent(client, username="fg_parent_nr").json()["access_token"]
+    cid = _create_child(client, r, username="fg_kid_nr")["id"]
+
+    resp = client.post(
+        "/api/v1/tasks/from-generated",
+        headers=auth_headers(r),
+        json={
+            "title": "无 reasoning 卷",
+            "child_id": cid,
+            "specs": [
+                {"subject": "数学", "grade": 2, "knowledge_point": "加法", "qtype": "calc", "difficulty": "easy", "count": 1}
+            ],
+            "questions": _SAMPLE_QUESTIONS,
+        },
+    )
+    assert resp.status_code == 201, resp.text
+
+
+def test_from_generated_with_reasoning_drops_it(client, db):
+    """重点：入参带 reasoning（模拟前端把预览题原样回传）→ 落库成功，
+    且 reasoning 被白名单丢弃，不写进 TaskQuestion 表、也不出现在响应里。"""
+    r = register_parent(client, username="fg_parent_r").json()["access_token"]
+    cid = _create_child(client, r, username="fg_kid_r")["id"]
+
+    resp = client.post(
+        "/api/v1/tasks/from-generated",
+        headers=auth_headers(r),
+        json={
+            "title": "含 reasoning 卷",
+            "child_id": cid,
+            "specs": [
+                {"subject": "数学", "grade": 2, "knowledge_point": "加法", "qtype": "calc", "difficulty": "easy", "count": 1}
+            ],
+            "questions": _questions_with_reasoning(),
+        },
+    )
+    # 不能为了让「不该存」成立而让整个请求 400/失败。
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+
+    # 响应层：落库返回的题目里不能出现 reasoning 键。
+    assert len(body["questions"]) == 2
+    for q in body["questions"]:
+        assert "reasoning" not in q, q
+
+    # 库表层：直接读 TaskQuestion 行，确认 reasoning 没进表。
+    task_id = uuid.UUID(body["id"])
+    rows = db.exec(select(TaskQuestion).where(TaskQuestion.task_id == task_id)).all()
+    assert len(rows) == 2
+    for row in rows:
+        dumped = row.model_dump()
+        assert "reasoning" not in dumped, dumped
+
+
+def test_question_fields_whitelist_drops_reasoning():
+    """锁住 _question_fields 白名单：reasoning 必须被排除。"""
+    payload = {
+        "subject": "数学",
+        "grade": 2,
+        "knowledge_point": "加法",
+        "qtype": "calc",
+        "stem": "1+2=?",
+        "options": None,
+        "answer": "3",
+        "explanation": "1+2=3",
+        "difficulty": "easy",
+        "reasoning": "不应被采集的出题思路",
+        "ai_note": "也不该以别的名字落库",
+    }
+    fields = tasks_service._question_fields(payload)
+    assert "reasoning" not in fields
+    assert "ai_note" not in fields
