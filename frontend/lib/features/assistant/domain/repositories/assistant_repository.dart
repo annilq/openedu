@@ -32,9 +32,6 @@ abstract class AssistantRepository {
     required String tqId,
   });
 
-  /// 整卷重生成的流式版（草稿审核页「整卷重生成」）。
-  Stream<AssistantEvent> regenerateAll({required String taskId});
-
   /// 家长的历史会话列表（含名下娃娃的），最近活动倒序（ADR-0048）。
   Future<List<AssistantConversation>> conversations();
 

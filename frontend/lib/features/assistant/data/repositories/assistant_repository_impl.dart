@@ -42,10 +42,6 @@ class AssistantRepositoryImpl implements AssistantRepository {
       _client.streamRegenerateOne(taskId: taskId, tqId: tqId);
 
   @override
-  Stream<AssistantEvent> regenerateAll({required String taskId}) =>
-      _client.streamRegenerateAll(taskId: taskId);
-
-  @override
   Future<List<AssistantConversation>> conversations() async {
     final data = await _network.get('/assistant/conversations');
     return decodeList(data, AssistantConversation.fromJson);

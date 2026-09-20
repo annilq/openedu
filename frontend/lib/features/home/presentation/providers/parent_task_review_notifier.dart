@@ -27,12 +27,6 @@ class ReviewLoaded extends ReviewState {
   /// 会用它自己开始时那份快照覆盖 state（丢更新）。
   final String? busyTqId;
 
-  /// 整卷级动作（整卷重生成）的进行中进度文案，如「正在生成第 2/5 题…」。
-  ///
-  /// 非空时整页进入整卷 busy：操作栏与所有题卡一并禁用。此前整卷重生成只切到
-  /// 整页 ReviewLoading——整页白屏转圈，家长既看不到进度也看不到原题。
-  final String? progress;
-
   /// 模型正在产出的实时文本（THINKING 帧累加），如「先定情境…再配干扰项…」。
   ///
   /// 只有进度文案没有它，家长看到的就是「生成中」三个字干等十几秒——这也是这次
@@ -43,12 +37,11 @@ class ReviewLoaded extends ReviewState {
   const ReviewLoaded(
     this.task, {
     this.busyTqId,
-    this.progress,
     this.liveText = '',
   });
 
-  /// 任一题目正在处理：顶部整卷级操作（整卷重生成/一键入库/作废/锁定）也应禁用。
-  bool get anyBusy => busyTqId != null || progress != null;
+  /// 任一题目正在处理（单题换一题/加入题库/删除/编辑）：顶部整卷级操作也应禁用。
+  bool get anyBusy => busyTqId != null;
 }
 
 class ReviewError extends ReviewState {
@@ -155,53 +148,6 @@ class ReviewNotifier extends StateNotifier<ReviewState> {
         throw AppException('换一题失败：本次没有生成新题目');
       }
       state = ReviewLoaded(_replace(cur.task, tqId, updated));
-    } catch (e) {
-      state = ReviewLoaded(cur.task);
-      rethrow;
-    }
-  }
-
-  /// 整卷重生成（按 Task.specs 原规格，流式）。
-  ///
-  /// 同步版要把整卷 N 道题全部出完才返回（2 题就 19–36 秒），必然撞上普通请求的
-  /// 30 秒 receiveTimeout。改走 `POST /tasks/{id}/regenerate-stream` 后：复用流式
-  /// 端点的长超时，并把后端的 STEP 进度帧（「正在生成第 i/N 题…」）直接透到
-  /// [ReviewLoaded.progress]，家长能实时看到推进而不是整页白屏转圈。
-  Future<void> regenerateAll(String taskId) async {
-    final cur = state;
-    if (cur is! ReviewLoaded || cur.anyBusy) return;
-    const initialProgress = '正在重生成整卷…';
-    state = ReviewLoaded(cur.task, progress: initialProgress);
-    try {
-      TaskModel? updated;
-      var progress = initialProgress;
-      var live = '';
-      await for (final ev in _assistant.regenerateAll(taskId: taskId)) {
-        if (ev.eventType == AssistantEventType.error) {
-          throw AppException(ev.message ?? '整卷重生成失败，请稍后重试');
-        }
-        if (ev.eventType == AssistantEventType.step && ev.label != null) {
-          // 新阶段（下一题 / 落库）清空上一题的推理文本，避免越堆越长。
-          progress = ev.label!;
-          live = '';
-          state = ReviewLoaded(cur.task, progress: progress);
-        }
-        if (ev.eventType == AssistantEventType.thinking) {
-          live += ev.text ?? '';
-          state = ReviewLoaded(cur.task, progress: progress, liveText: live);
-        }
-        if (ev.eventType == AssistantEventType.data &&
-            ev.data?['type'] == 'task') {
-          final result = ev.data?['result'];
-          if (result is Map<String, dynamic>) {
-            updated = TaskModel.fromJson(result);
-          }
-        }
-      }
-      if (updated == null) {
-        throw AppException('整卷重生成失败：本次没有返回题目');
-      }
-      state = ReviewLoaded(updated);
     } catch (e) {
       state = ReviewLoaded(cur.task);
       rethrow;

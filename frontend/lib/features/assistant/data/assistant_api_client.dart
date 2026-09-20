@@ -83,14 +83,4 @@ extension TaskGenerateClient on AssistantApiClient {
     required String tqId,
   }) =>
       _streamSse('/tasks/$taskId/questions/$tqId/regenerate-stream', const {});
-
-  /// 整卷重生成的流式版（草稿审核页「整卷重生成」）。
-  ///
-  /// 同步版 `POST /tasks/{id}/regenerate` 要等整卷 N 道题全出完（实测 2 题就要
-  /// 19–36 秒），必然撞上 30 秒超时。这里同样改走 SSE：逐帧收 STEP
-  /// 「正在生成第 i/N 题…」进度 + DATA(task)，协议与 `/tasks/generate` 一致。
-  Stream<AssistantEvent> streamRegenerateAll({
-    required String taskId,
-  }) =>
-      _streamSse('/tasks/$taskId/regenerate-stream', const {});
 }

@@ -8,7 +8,6 @@ import '../../../../shared/widgets/app_content_frame.dart';
 import '../../../../shared/widgets/app_error.dart';
 import '../../../../shared/widgets/app_loading.dart';
 import '../../../../shared/widgets/app_toast.dart';
-import '../../../../shared/widgets/stream_reasoning_panel.dart';
 import '../providers/parent_task_review_notifier.dart';
 import '../widgets/parent/parent_question_card.dart';
 
@@ -92,10 +91,9 @@ class _ParentTaskReviewScreenState
       ReviewLoaded(
         task: final task,
         busyTqId: final busyTqId,
-        progress: final progress,
         liveText: final liveText,
       ) =>
-        _buildBody(task, busyTqId, progress, liveText),
+        _buildBody(task, busyTqId, liveText),
     };
     return CupertinoPageScaffold(
       backgroundColor: app.surface,
@@ -114,10 +112,6 @@ class _ParentTaskReviewScreenState
           ? Column(
               children: [
                 _buildActionBar(state.task, app, state.anyBusy),
-                // 整卷重生成进行中：把后端推来的「第 i/N 题」进度贴在操作栏下方，
-                // 家长能看到推进，而不是整页白屏干等。
-                if (state.progress != null)
-                  _buildProgress(state.progress!, state.liveText, app),
                 Expanded(child: content),
               ],
             )
@@ -225,52 +219,11 @@ class _ParentTaskReviewScreenState
     );
   }
 
-  /// 整卷重生成进度条 + 模型实时文本：细条 + 文案，避免用全屏 loading 盖住整页内容。
-  Widget _buildProgress(String progress, String liveText, AppColors app) {
-    return AppContentFrame(
-      alignment: Alignment.topLeft,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-            AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.sm),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                // 与题卡「处理中」同款：Lucide 图标转圈，不引入 Material 组件
-                // （整棵 widget 树基于 ShadApp/CupertinoApp，无 Material 祖先）。
-                Icon(LucideIcons.loaderCircle, size: 14, color: app.primary)
-                    .animate(onPlay: (c) => c.repeat())
-                    .rotate(duration: const Duration(milliseconds: 900)),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: Text(
-                    progress,
-                    style: AppTheme.textOf(context).bodySmall?.copyWith(
-                          color: app.onSurfaceVariant,
-                        ),
-                  ),
-                ),
-              ],
-            ),
-            if (liveText.isNotEmpty)
-              StreamReasoningPanel(
-                label: progress,
-                reasoning: liveText,
-                streaming: true,
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
   // ============ Body ============
 
   Widget _buildBody(
     TaskModel task,
     String? busyTqId,
-    String? progress,
     String liveText,
   ) {
     final app = AppTheme.colorsOf(context);
@@ -285,7 +238,7 @@ class _ParentTaskReviewScreenState
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _buildSummary(task, app, promoted, total,
-                locked: busyTqId != null || progress != null),
+                locked: busyTqId != null),
             const SizedBox(height: AppSpacing.xl2),
             if (task.questions.isEmpty)
               // 允许删到 0 题：整卷重生成已移除（ADR-0056），故空态只给指路文案——
@@ -302,8 +255,7 @@ class _ParentTaskReviewScreenState
                     question: q,
                     isDraft: task.isDraft,
                     // 进行中：按钮全禁 + spinner，杜绝连点并发。
-                    // 整卷重生成期间所有题卡一并锁住（题目会被全量替换）。
-                    busy: busyTqId == q.id || progress != null,
+                    busy: busyTqId == q.id,
                     // 单题动作的实时文本只给当前这张卡（整卷的走顶部进度区）。
                     liveText: busyTqId == q.id ? liveText : '',
                     onPromote: () => _onPromoteOne(task.id, q.id),
