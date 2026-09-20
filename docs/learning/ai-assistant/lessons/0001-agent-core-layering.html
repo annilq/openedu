@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 1 课 · AI 助手的分层与内核 — openedu 架构课</title>
+<link rel="stylesheet" href="../assets/lesson.css">
+</head>
+<body>
+<div class="wrap">
+
+<span class="kicker">第 1 课 / 共 3 课</span>
+<h1>分层与内核：为什么内核不认识「数学题」</h1>
+<p class="lede">openedu 的 AI 助手把一个「能出题、能答疑、能查学情」的助手拆成了<b>业务无关的内核</b>与<b>业务集成层</b>两半。这一课讲清这条缝画在哪、为什么画在这里。</p>
+<p class="meta">事实源：<code>backend/agent_core/</code> · <code>backend/app/ai/subagents/</code> · ADR-0024 / 0031 / 0032 / 0021 / 0033 / 0026 · 建议先读 <code>docs/agents/architecture.md</code> §1</p>
+
+<div class="toc">
+  <h2>本课知识点</h2>
+  <ol>
+    <li><a href="#kp1">所有 AI 能力走一个端点</a></li>
+    <li><a href="#kp2">内核 / 集成层二分</a></li>
+    <li><a href="#kp3">端口与适配器：依赖指向抽象</a></li>
+    <li><a href="#kp4">发现即注册：文件夹化 SubAgent</a></li>
+    <li><a href="#kp5">意图路由：确定性优先</a></li>
+    <li><a href="#kp6">角色可见性是唯一真相源</a></li>
+  </ol>
+</div>
+
+<figure>
+<svg viewBox="0 0 680 340" role="img" aria-label="分层架构图">
+  <defs>
+    <marker id="ar" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 z" fill="#111110"/>
+    </marker>
+  </defs>
+  <rect x="20" y="14" width="640" height="42" fill="#FFD43B" stroke="#111110" stroke-width="2"/>
+  <text x="340" y="40" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="14" font-weight="700" fill="#111110">Flutter 客户端 · 家长端 / 娃娃端</text>
+
+  <line x1="340" y1="56" x2="340" y2="74" stroke="#111110" stroke-width="2" marker-end="url(#ar)"/>
+
+  <rect x="170" y="76" width="340" height="34" fill="#FFFFFF" stroke="#111110" stroke-width="2"/>
+  <text x="340" y="98" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="13" fill="#111110">POST /api/v1/assistant/chat（SSE 单流）</text>
+
+  <line x1="340" y1="110" x2="340" y2="128" stroke="#111110" stroke-width="2" marker-end="url(#ar)"/>
+
+  <rect x="20" y="132" width="300" height="150" fill="#FFFFFF" stroke="#111110" stroke-width="2"/>
+  <rect x="20" y="132" width="300" height="28" fill="#22B8CF" stroke="#111110" stroke-width="2"/>
+  <text x="170" y="151" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="13" font-weight="700" fill="#111110">app · 业务集成层</text>
+  <text x="36" y="178" font-family="Inter,PingFang SC,sans-serif" font-size="12" fill="#111110">features/assistant · router + service</text>
+  <text x="36" y="198" font-family="Inter,PingFang SC,sans-serif" font-size="12" fill="#111110">ai/subagents/{question,tutor,query,guide}</text>
+  <text x="36" y="218" font-family="Inter,PingFang SC,sans-serif" font-size="12" fill="#111110">domain/ · core/guard · db/models</text>
+  <text x="36" y="246" font-family="Inter,PingFang SC,sans-serif" font-size="11" fill="#6B6862">认识「家长 / 娃娃 / 错题 / 学科」</text>
+  <text x="36" y="264" font-family="Inter,PingFang SC,sans-serif" font-size="11" fill="#6B6862">认识 FastAPI、SQLModel、ORM</text>
+
+  <rect x="360" y="132" width="300" height="150" fill="#FFFFFF" stroke="#111110" stroke-width="2"/>
+  <rect x="360" y="132" width="300" height="28" fill="#7048E8" stroke="#111110" stroke-width="2"/>
+  <text x="510" y="151" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="13" font-weight="700" fill="#FFFFFF">agent_core · 框架无关内核</text>
+  <text x="376" y="178" font-family="Inter,PingFang SC,sans-serif" font-size="12" fill="#111110">ports（抽象）· runtime（编排）</text>
+  <text x="376" y="198" font-family="Inter,PingFang SC,sans-serif" font-size="12" fill="#111110">subagent（tool loop）· protocol（事件）</text>
+  <text x="376" y="218" font-family="Inter,PingFang SC,sans-serif" font-size="12" fill="#111110">router（意图路由）· registry（发现）</text>
+  <text x="376" y="246" font-family="Inter,PingFang SC,sans-serif" font-size="11" fill="#6B6862">零 app 依赖 · 零第三方依赖</text>
+  <text x="376" y="264" font-family="Inter,PingFang SC,sans-serif" font-size="11" fill="#6B6862">不认识任何教育语义</text>
+
+  <line x1="322" y1="196" x2="358" y2="196" stroke="#111110" stroke-width="2" marker-end="url(#ar)"/>
+  <text x="340" y="189" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="10" fill="#6B6862">注入抽象</text>
+
+  <rect x="360" y="294" width="300" height="38" fill="#E9E4F8" stroke="#111110" stroke-width="2"/>
+  <text x="510" y="311" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="12" fill="#111110">adapters/ · genkit 唯一落点</text>
+  <text x="510" y="326" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="10" fill="#6B6862">换引擎只改这一个模块</text>
+  <line x1="510" y1="282" x2="510" y2="292" stroke="#111110" stroke-width="2" marker-end="url(#ar)"/>
+
+  <rect x="20" y="294" width="300" height="38" fill="#F1EDE4" stroke="#111110" stroke-width="2"/>
+  <text x="170" y="318" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="12" fill="#111110">SQLite（默认）/ PostgreSQL</text>
+</svg>
+<figcaption>图 1：客户端只面对一条 SSE 流；<code>app</code> 懂业务与存储，<code>agent_core</code> 只懂编排。依赖方向恒为 app → agent_core → adapters。</figcaption>
+</figure>
+
+<h2 class="chapter">一、入口与分层</h2>
+
+<div class="kp" id="kp1">
+<h3><span class="n">1</span>所有 AI 能力收敛到一个 SSE 端点</h3>
+<p>出题、伴学答疑、学情查询、写意图引导——四类能力对客户端只暴露 <code>POST /api/v1/assistant/chat</code> 一个地址，响应是一条 Server-Sent Events 流。旧的三条端点（<code>/ai/tutor/ask</code>、<code>/ai/tasks/generate</code>、<code>/tutor/ask</code>）已废弃收敛。</p>
+
+<div class="view win"><span class="h">架构优点</span>
+<p>新增一种 AI 能力 = 新增一个 SubAgent 文件夹，端点零改动、客户端零改动。鉴权、缓冲头（<code>X-Accel-Buffering: no</code>）、空消息校验这些 HTTP 关注点也只有一处可审计。</p></div>
+
+<div class="view dec"><span class="h">当时的设计决策</span>
+<p>早期是每个能力一个端点，客户端要为「出题」「答疑」「批改」各写一套解析。ADR-0024 把它收成一条流，并强制 <b>router 只做 HTTP 适配</b>——编排不许留在 HTTP 层，否则 ORM 与领域类型会泄漏进路由文件（评审时那个文件已膨胀到 700+ 行）。</p></div>
+
+<div class="view alt"><span class="h">同类主流实现方式</span>
+<p>① <b>每能力一端点</b>（传统 REST：/generate、/explain）：简单直观，端点即文档，但客户端要为每种能力写一份解析与重试。<br>
+② <b>服务端托管会话的 run 模型</b>：OpenAI Assistants / Responses 的 threads + runs，LangChain 的 <a href="https://langchain-ai.github.io/agent-protocol">Agent Protocol</a>（<code>/threads</code> + <code>/runs/stream</code>）——把多轮状态放到服务端，本仓的会话表是同一思路的自建轻量版。<br>
+③ <b>通用 agent 交互协议</b>：<a href="https://docs.ag-ui.com/spec/draft/architecture">AG-UI</a> 用「一条有序类型化事件流」把任意框架接到前端（注意：其规范目前仍是 draft）。openedu 的事件帧是 AG-UI 式，但不是它的完整实现。</p></div>
+
+<div class="view cost"><span class="h">代价 / 遗留</span>
+<p>「一个端点」意味着协议要在帧里自解释：客户端必须靠 <code>eventType</code> 判别，任何新增语义都得走 <code>extra</code> 扩展而不是加新帧类型，否则协议会膨胀。</p></div>
+<div class="adr">ADR 锚点：<b>ADR-0024</b>（统一 SSE 端点）· <b>ADR-0025</b>（事件帧契约）</div>
+</div>
+
+<div class="kp" id="kp2">
+<h3><span class="n">2</span>内核 / 集成层二分：内核不认识「数学题」</h3>
+<p><code>agent_core</code> 是与业务、与 FastAPI、与具体 LLM SDK 解耦的纯 Python 内核；<code>app</code> 是 FastAPI 集成层。两者同发一个 wheel，但在 import 层面被硬切开。业务字段（学科、年级、孩子 id）一律走 <code>SubAgentContext.extra</code> 透传，内核只搬运不解读。</p>
+
+<div class="view win"><span class="h">架构优点</span>
+<p>内核可独立发包、可被另一套业务复用；业务语义变化（新增学科、新增题型）不触达内核；内核的 9 条不变量由 CI 用 <b>AST 静态扫描</b>守住，不是靠 review 纪律。</p></div>
+
+<div class="view dec"><span class="h">当时的设计决策</span>
+<p>ADR-0031 把 <code>LLMProvider</code> 端口上移到内核时明确否掉了「在 app 层直接持有 provider 实现」——那样内核就不可移植。边界被写成可测的不变量：<code>agent_core</code>（除 <code>adapters/</code>）不得 import <code>app.*</code>、不得 import 任何三方库；<code>service</code> 不得反向依赖 router/FastAPI；归属判定只经 <code>core.guard</code>。</p></div>
+
+<div class="view alt"><span class="h">同类主流实现方式</span>
+<p>① <b>单一全栈框架</b>（LangGraph / AutoGen / OpenAI Agents SDK）：编排、状态、工具、持久化由框架一起提供，起步快，但框架概念会渗进业务代码，换框架＝重写。<br>
+② <b>纯库式内核 + 业务自写编排</b>：Pydantic AI、Vercel AI SDK 这类，抽象薄、可控，但限流 / 轮次 / 回灌这些边界要自己补。<br>
+③ <b>本仓</b>：自写极薄内核 + 显式不变量扫描。适合「能力种类少、但对确定性与儿童安全要求高」的场景。</p></div>
+
+<div class="view cost"><span class="h">代价 / 遗留</span>
+<p>自写内核意味着框架生态（可视化调试、持久化 checkpointer、现成的 human-in-the-loop）都没有，context compaction、后台钩子等能力要自己补（ADR-0035 的钩子 seam 就是补的一条）。</p></div>
+<div class="adr">ADR 锚点：<b>ADR-0031</b>（端口上移）· <b>ADR-0032</b>（wheel 打包）· 守卫 <code>tests/ai/test_layering_invariants.py</code></div>
+</div>
+
+<div class="kp" id="kp3">
+<h3><span class="n">3</span>端口与适配器：依赖方向恒指向抽象</h3>
+<p>内核只定义四个抽象端口：<code>LLMProvider</code>（消息级大模型）、<code>Retriever</code>（检索）、<code>Safety</code>（安全闸门）、<code>RuntimeDeps</code>（一次请求的依赖包）。具体实现落在 <code>agent_core/adapters/genkit.py</code>——<b>全工程唯一 <code>import genkit</code> 的地方</b>，且是函数体内延迟导入。</p>
+
+<div class="view win"><span class="h">架构优点</span>
+<p>换模型厂商只改适配器一个模块；没装 genkit 也能 import 内核（测试可用替身 provider 跑通整条编排）；「引擎解析」与「引擎构造」分离——密钥解密、模型目录在 app 层，构造在适配器层。</p></div>
+
+<div class="view dec"><span class="h">当时的设计决策</span>
+<p>ADR-0030 把引擎解析收成单一链 <code>resolve_engine</code>（家长 <code>ModelConfig</code> → 解密 → 中性参数 → 适配器构造），否掉了「各 service 各自解析引擎」——后者会让「批改忽略所选模型」这类分裂反复出现。ADR-0039 进一步取消内置模型目录，唯一配置源是家长在客户端录入的 <code>ModelConfig</code>。</p></div>
+
+<div class="view alt"><span class="h">同类主流实现方式</span>
+<p>① <b>直接依赖 SDK</b>（各处 <code>import openai</code>）：最常见也最省事，代价是换厂商要全仓改、单测必须打桩网络。<br>
+② <b>统一网关 / 代理</b>：LiteLLM、OpenRouter 在做「一个接口对多家」，把差异吃掉；但多一层运行时依赖与故障面。<br>
+③ <b>多适配器并列</b>：LangChain 的 provider 生态就是这条路，本仓只留一个适配器，是因为当前只有 ollama 与 openai_compat 两种形态。</p></div>
+
+<div class="view cost"><span class="h">代价 / 遗留</span>
+<p>「唯一落点」是静态扫描守出来的，任何人手抖在别处 import 一下就红；同时适配器的延迟导入让类型检查变弱，需要契约测试补位。</p></div>
+<div class="adr">ADR 锚点：<b>ADR-0030</b>（引擎单一解析链）· <b>ADR-0034</b>（<code>build_ai_provider</code> 归一封装）· <b>ADR-0039</b>（模型来源单点化）</div>
+</div>
+
+<h2 class="chapter">二、能力怎么长出来</h2>
+
+<div class="kp" id="kp4">
+<h3><span class="n">4</span>发现即注册：新增能力 = 丢一个文件夹</h3>
+<p>每个 SubAgent 是一个文件夹：<code>agent.py</code>（执行体）+ <code>manifest.py</code>（声明）+ <code>tools/</code>（可选工具）+ <code>skills/</code>（SOP 提示词）。启动时扫描目录自动注册，没有任何手工登记表。</p>
+
+<pre style="background:#F1EDE4;border:1px solid #E3DED4;border-radius:4px;padding:12px 14px;font-size:13px;overflow:auto"><code>app/ai/subagents/
+├── guide/      priority 20 · roles[parent]        「创建/派发任务」→ 引导卡
+├── query/      priority 12 · roles[parent,child]  只读查询（8 个工具）
+├── question/   priority  0 · roles[parent]        流式出题（schema 约束解码）
+└── tutor/      priority -10· roles[parent,child]  伴学答疑（单调用）</code></pre>
+
+<div class="view win"><span class="h">架构优点</span>
+<p>能力清单在文件系统里即可读全；新增能力不触碰任何注册代码；manifest 同时承载路由词表、可见角色、优先级与 SOP，**一个文件即是该能力的全部对外契约**。</p></div>
+
+<div class="view dec"><span class="h">当时的设计决策</span>
+<p>「业务维度 = SubAgent，学科维度 = Persona，二者正交组合」——否掉了「每学科每业务各建一个 Agent」（组合爆炸），也否掉了「一个通用 Agent 靠 system prompt 切换」（seam 难维护）。同理 RAG 命中与学科人格由<b>调用方注入</b>，出题管线只消费不持有，保证流式与落库两路 prompt 口径一致。</p></div>
+
+<div class="view alt"><span class="h">同类主流实现方式</span>
+<p>① <b>显式图构造</b>：LangGraph 的 <code>add_node</code>/<code>add_edge</code>，节点与边一清二楚、可可视化，但每加一个能力要改构图代码。<br>
+② <b>装饰器注册</b>：OpenAI Agents SDK、CrewAI 的 <code>@agent</code>/<code>@tool</code>，注册点分散在模块里。<br>
+③ <b>目录约定 + 自动发现</b>：本仓与 Claude Skills、各类插件系统同路，约定优于配置。</p></div>
+
+<div class="view cost"><span class="h">代价 / 遗留</span>
+<p>路由词表写在 manifest 里，改词表等于改路由行为，必须有守卫测试；文件夹命名与 <code>business</code> 字段不一致时会静默错位（靠发现时打印告警，不阻断）。</p></div>
+<div class="adr">ADR 锚点：<b>ADR-0021</b>（业务 × 学科正交）· <b>ADR-0033</b>（文件夹化 SubAgent）</div>
+</div>
+
+<div class="kp" id="kp5">
+<h3><span class="n">5</span>意图路由：确定性优先的三段式</h3>
+<p>输入先按角色过滤出「可见业务集」，过安全闸门，然后按 priority 降序做<b>子串规则匹配</b>（<code>triggers</code>）；全不中才用更宽的 <code>hints</code> 启发式；再不中就落到 priority 最低者（<code>tutor</code>）。分类器接口预留了 LLM 兜底，但默认不启用。</p>
+
+<figure>
+<svg viewBox="0 0 680 280" role="img" aria-label="意图路由三段式">
+  <defs>
+    <marker id="a2" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 z" fill="#111110"/>
+    </marker>
+  </defs>
+  <rect x="255" y="12" width="170" height="38" fill="#FFFFFF" stroke="#111110" stroke-width="2"/>
+  <text x="340" y="36" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="13" fill="#111110">用户消息</text>
+  <line x1="340" y1="50" x2="340" y2="66" stroke="#111110" stroke-width="2" marker-end="url(#a2)"/>
+
+  <rect x="255" y="68" width="170" height="38" fill="#FFFFFF" stroke="#111110" stroke-width="2"/>
+  <text x="340" y="92" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="13" fill="#111110">角色可见集</text>
+  <line x1="340" y1="106" x2="340" y2="122" stroke="#111110" stroke-width="2" marker-end="url(#a2)"/>
+
+  <rect x="255" y="124" width="170" height="38" fill="#FFFFFF" stroke="#111110" stroke-width="2"/>
+  <text x="340" y="148" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="13" fill="#111110">输入安全闸门</text>
+
+  <path d="M340,162 L340,180 L120,180 L120,204" fill="none" stroke="#111110" stroke-width="2" marker-end="url(#a2)"/>
+  <path d="M340,162 L340,180 L340,204" fill="none" stroke="#111110" stroke-width="2" marker-end="url(#a2)"/>
+  <path d="M340,162 L340,180 L560,180 L560,204" fill="none" stroke="#111110" stroke-width="2" marker-end="url(#a2)"/>
+
+  <rect x="30" y="206" width="180" height="58" fill="#FFD43B" stroke="#111110" stroke-width="2"/>
+  <text x="120" y="228" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="13" font-weight="700" fill="#111110">① 规则匹配</text>
+  <text x="120" y="248" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="11" fill="#111110">triggers · priority 降序</text>
+
+  <rect x="250" y="206" width="180" height="58" fill="#FFFFFF" stroke="#111110" stroke-width="2"/>
+  <text x="340" y="228" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="13" font-weight="700" fill="#111110">② 启发式兜底</text>
+  <text x="340" y="248" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="11" fill="#111110">hints 子串命中</text>
+
+  <rect x="470" y="206" width="180" height="58" fill="#FFFFFF" stroke="#111110" stroke-width="2"/>
+  <text x="560" y="228" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="13" font-weight="700" fill="#111110">③ 最终兜底</text>
+  <text x="560" y="248" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="11" fill="#111110">priority 最低者（tutor）</text>
+
+  <line x1="212" y1="235" x2="248" y2="235" stroke="#111110" stroke-width="2" marker-end="url(#a2)"/>
+  <line x1="432" y1="235" x2="468" y2="235" stroke="#111110" stroke-width="2" marker-end="url(#a2)"/>
+</svg>
+<figcaption>图 2：三段式路由。越靠前确定性越高，越靠后越宽。LLM 分类器是可选插槽，默认不插。</figcaption>
+</figure>
+
+<div class="view win"><span class="h">架构优点</span>
+<p>路由结果可预测、可单测、零延迟、零 token。对儿童产品这是硬要求：同一个问句每次必须落到同一个助手，不能因为模型心情不同而走不同分支。</p></div>
+
+<div class="view dec"><span class="h">当时的设计决策</span>
+<p>真机教训（ADR-0054）：家长说「帮我创建一个任务」被只读的 <code>query</code> 接走，因为 query 的词表含泛词「任务」且优先级最高。修法是新开 <code>guide</code>（priority 20）专接写意图——<b>优先级不是调参，是功能本身</b>。同时 guide 的词表只收「动作+对象」完整短语、<code>hints</code> 故意留空：写意图要精度，宁可漏给 query 也不误抢查询。</p></div>
+
+<div class="view alt"><span class="h">同类主流实现方式</span>
+<p>① <b>LLM 意图分类</b>：一次小模型调用打标签，覆盖面广、能处理改写与口语，但引入延迟、成本与非确定性。<br>
+② <b>语义路由</b>：embedding 相似度匹配（semantic-router 一类），比子串更抗措辞变化，仍需阈值调参。<br>
+③ <b>supervisor / handoff 模式</b>：让主 agent 自己决定分发给哪个子 agent（LangGraph supervisor、OpenAI Agents SDK 的 handoffs），灵活但完全交给模型。<br>
+④ <b>混合</b>（本仓）：规则打底 + 可选 LLM 插槽，是儿童产品里常见的稳妥解。</p></div>
+
+<div class="view cost"><span class="h">代价 / 遗留</span>
+<p>词表要人工维护，泛词会互相抢；priority 成了隐式耦合——新增能力必须先想清楚它压过谁。所以 ADR-0054 要求「优先级结构」本身被测试钉死。</p></div>
+<div class="adr">ADR 锚点：<b>ADR-0030</b>（规则 + 启发式）· <b>ADR-0054</b>（写意图 guide 与优先级即功能）</div>
+</div>
+
+<div class="kp" id="kp6">
+<h3><span class="n">6</span>角色可见性是唯一真相源</h3>
+<p>每个 manifest 声明 <code>roles</code>，runtime 用 <code>visible_businesses(role)</code> 过滤，<b>分类器只在可见集内决策</b>——不可见的能力在路由阶段就不可达，而不是「路由到了再靠提示词拒绝」。娃娃端说「帮我创建任务」会落到只读答复，这不是遗漏，是边界。</p>
+
+<div class="view win"><span class="h">架构优点</span>
+<p>安全边界落在<b>结构</b>上而非提示词上：娃娃端拿不到出题、拿不到答案，不是因为模型「听话」，而是因为那个 SubAgent 根本不在可见集里。这一条可以被单测断言。</p></div>
+
+<div class="view dec"><span class="h">当时的设计决策</span>
+<p>ADR-0026 最初把娃娃端强制收敛到伴学；ADR-0033 放宽为「可见学情查询，但工具侧恒查自己、去答案」。放宽的前提是<b>裁剪下沉到工具侧</b>（<code>project_for_role</code>）——统一收口，新增工具忘了裁剪会被契约测试拦下，不靠 review。另一条：SOP 文本本身含「越狱/暴力」等安全词，所以 SOP 必须在输入闸门<b>之后</b>注入，否则每条娃娃提问都被自己的 SOP 判为不安全。</p></div>
+
+<div class="view alt"><span class="h">同类主流实现方式</span>
+<p>① <b>提示词里写「不要告诉孩子答案」</b>：最常见的软约束，模型一被诱导就破防。<br>
+② <b>工具层 RBAC / 租户隔离</b>：在取数层做权限过滤，与业务强耦合但最硬；本仓的 <code>core.guard</code> + 工具侧裁剪是这条路。<br>
+③ <b>协议层能力协商</b>：MCP 的 roots / sampling 让服务端声明可见范围，思路相近但面向跨进程。</p></div>
+
+<div class="view cost"><span class="h">代价 / 遗留</span>
+<p>「可见性」分散在两处（manifest 的 roles、工具侧的裁剪），新增能力要同时想清楚两层；跨层越权只能靠测试发现。</p></div>
+<div class="adr">ADR 锚点：<b>ADR-0026</b>（娃娃端收敛）· <b>ADR-0033</b> 决策 8/9（角色裁剪只在工具侧）</div>
+</div>
+
+<h2 class="chapter">推荐一手资料</h2>
+<ul>
+<li><a href="https://alistair.cockburn.us/hexagonal-architecture/">Hexagonal Architecture（Alistair Cockburn）</a>——「端口与适配器」的原始表述，本课 KP2/KP3 的理论底。</li>
+<li><a href="https://langchain-ai.github.io/langgraph/tutorials/introduction/">LangGraph 概览</a>——对照「框架即编排」这条路，看清本仓自写内核放弃了什么。</li>
+<li><a href="https://docs.ag-ui.com/spec/draft/architecture">AG-UI · Architecture</a>——「单一有序事件流」的协议级论述（规范目前仍是 draft）。</li>
+<li>仓库内：<code>docs/agents/architecture.md</code> §1（内核九条不变量）、<code>backend/tests/ai/test_layering_invariants.py</code>（这些不变量是怎么被 CI 钉住的）。</li>
+</ul>
+
+<div class="quiz">
+<h3>检索练习（先想再看）</h3>
+<p class="q">1. 为什么「新增一种 AI 能力」在本仓不需要改端点和客户端？</p>
+<button onclick="this.nextElementSibling.classList.toggle('open')">显示答案</button>
+<div class="a">因为能力差异被封装进 SubAgent 文件夹 + 统一事件帧：端点只认一条 SSE 流，客户端只认 <code>eventType</code>，种类信息走帧里的字段而不是新的 URL 或新协议。</div>
+
+<p class="q">2. 把安全规则写进提示词，和写进 manifest 的 roles，差别在哪？</p>
+<button onclick="this.nextElementSibling.classList.toggle('open')">显示答案</button>
+<div class="a">提示词是软约束，模型可能被诱导绕过，且不可断言；<code>roles</code> 是路由前的集合过滤——不可见的能力在结构上不可达，可以写成单测断言。</div>
+
+<p class="q">3. 什么时候该放弃「规则路由」改用 LLM 分类？</p>
+<button onclick="this.nextElementSibling.classList.toggle('open')">显示答案</button>
+<div class="a">当意图种类多、措辞变化大、且<b>路由错了不会造成安全问题</b>时；反过来，儿童产品、强合规场景、可预测的低成本路径，规则优先更合适。本仓把 LLM 分类器留成可选插槽，就是为这个判断留口子。</div>
+</div>
+
+<div class="callout">
+<b>课后一问</b>
+如果你的产品要接进第二个客户端（比如 Web 端），本课哪三条设计会让这件事变简单，哪一条会变成新的负担？把答案讲给 agent 听，它会纠正你。
+</div>
+
+<div class="nav">
+<a href="./0002-request-lifecycle.html">下一课：一次请求的全链路 →</a>
+<a href="../reference/cheatsheet.html">速查表</a>
+<a href="../MISSION.md">为什么学这个</a>
+</div>
+
+</div>
+<script>
+document.querySelectorAll('.quiz button').forEach(function (b) {
+  b.addEventListener('click', function () {
+    var a = b.nextElementSibling;
+    a.classList.toggle('open');
+  });
+});
+</script>
+</body>
+</html>

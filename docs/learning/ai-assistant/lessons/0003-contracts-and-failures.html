@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 3 课 · 契约与失败边界 — openedu 架构课</title>
+<link rel="stylesheet" href="../assets/lesson.css">
+</head>
+<body>
+<div class="wrap">
+
+<span class="kicker">第 3 课 / 共 3 课</span>
+<h1>契约与失败边界：出错时系统怎么说话</h1>
+<p class="lede">一个 AI 系统真正的成熟度，不看它顺利时多流畅，而看它<b>出错时说什么、泄露什么、还能不能继续</b>。本课讲 openedu 在卡片、思维链、失败归因、工具 schema、扩展点、历史回放这六条边界上定的规矩。</p>
+<p class="meta">事实源：<code>agent_core/{protocol,ports,subagent}.py</code> · <code>adapters/genkit.py</code> · <code>query/{render.py,tools/_shared.py}</code> · ADR-0042 / 0043 / 0038 / 0040 / 0035 / 0048 / 0054</p>
+
+<div class="toc">
+  <h2>本课知识点</h2>
+  <ol>
+    <li><a href="#kp12">呈现双轨与类型化卡片（不做 GenUI）</a></li>
+    <li><a href="#kp13">推理与正文分流</a></li>
+    <li><a href="#kp14">失败归因：能力问题 ≠ 厂商问题</a></li>
+    <li><a href="#kp15">strict schema 与缺席编码</a></li>
+    <li><a href="#kp16">扩展钩子：LLM 不可见的干预点</a></li>
+    <li><a href="#kp17">会话历史与只读回放</a></li>
+  </ol>
+</div>
+
+<h2 class="chapter">一、对客户端的契约</h2>
+
+<div class="kp" id="kp12">
+<h3><span class="n">12</span>呈现双轨：TOOL_RESULT 存原始，DATA 供渲染</h3>
+<p>同一份工具结果走两条轨：<code>TOOL_RESULT</code> 存原始载荷（喂给模型的上下文 + 落库回放），<code>DATA</code> 帧携带<b>类型化卡片</b>（<code>data.type</code> 是种类判别键，<code>data.result</code> 只放结构化字段）。前端按 kind 分派渲染器，未登记的 kind 走降级卡。</p>
+
+<figure>
+<svg viewBox="0 0 680 230" role="img" aria-label="呈现双轨">
+  <defs>
+    <marker id="d1" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 z" fill="#111110"/>
+    </marker>
+  </defs>
+  <rect x="250" y="14" width="180" height="40" fill="#FFFFFF" stroke="#111110" stroke-width="2"/>
+  <text x="340" y="39" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="13" fill="#111110">工具执行结果</text>
+
+  <path d="M250,34 L90,34 L90,72" fill="none" stroke="#111110" stroke-width="2" marker-end="url(#d1)"/>
+  <path d="M430,34 L590,34 L590,72" fill="none" stroke="#111110" stroke-width="2" marker-end="url(#d1)"/>
+
+  <rect x="20" y="74" width="220" height="60" fill="#F1EDE4" stroke="#111110" stroke-width="2"/>
+  <text x="130" y="96" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="12" font-weight="700" fill="#111110">轨道 A · TOOL_RESULT</text>
+  <text x="130" y="115" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="10.5" fill="#6B6862">原始 JSON · 回灌模型 · 落库回放</text>
+
+  <rect x="440" y="74" width="220" height="60" fill="#22B8CF" stroke="#111110" stroke-width="2"/>
+  <text x="550" y="96" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="12" font-weight="700" fill="#111110">轨道 B · DATA 帧</text>
+  <text x="550" y="115" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="10.5" fill="#111110">kind + {title, items, stats, total}</text>
+
+  <line x1="130" y1="134" x2="130" y2="164" stroke="#111110" stroke-width="2" marker-end="url(#d1)"/>
+  <line x1="550" y1="134" x2="550" y2="164" stroke="#111110" stroke-width="2" marker-end="url(#d1)"/>
+
+  <rect x="20" y="166" width="220" height="46" fill="#FFFFFF" stroke="#111110" stroke-width="2"/>
+  <text x="130" y="194" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="12" fill="#111110">模型看得懂即可</text>
+
+  <rect x="440" y="166" width="220" height="46" fill="#FFFFFF" stroke="#111110" stroke-width="2"/>
+  <text x="550" y="186" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="12" fill="#111110">前端按 kind 分派渲染器</text>
+  <text x="550" y="203" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="10.5" fill="#6B6862">未登记 → 降级卡（不丢内容）</text>
+</svg>
+<figcaption>图 5：一条结果，两种消费者。给模型的是「够用的原始」，给人的是「可分派的结构」。</figcaption>
+</figure>
+
+<div class="view win"><span class="h">架构优点</span>
+<p>模型上下文与人类展示解耦：为了好看而裁剪数据不会污染模型上下文，为了省 token 而压缩也不会让卡片缺字段。落库整帧存 <code>data</code>（含 kind），payload 自描述，将来做回放能分派回正确渲染器。</p></div>
+
+<div class="view dec"><span class="h">当时的设计决策</span>
+<p>改动前 <code>render_cards</code> 把结果压成 <code>{type: 标签, subject, stem}</code> 一行展示串，于是「<code>result.type</code> 是标签、<code>data.type</code> 是种类」同名异义，前端只能二选一地误读；出题卡甚至没有 type 字段，题型/选项/解析全部不可见。ADR-0042 把判别键统一成一个，并<b>明确不做通用 GenUI</b>（服务端下发 UI schema）——消费者只有一个 Flutter 客户端 + 一套设计系统，让服务端描述布局等于把设计系统与可达性契约从客户端搬到服务端，而服务端不该知道现在是家长端还是娃娃端。</p></div>
+
+<div class="view alt"><span class="h">同类主流实现方式</span>
+<p>① <b>服务端生成 UI（GenUI）</b>：CopilotKit 的 generative UI、Vercel AI SDK 的 RSC streaming、以及 A2UI / MCP-UI 一类「用 JSON 描述组件树」的方案——跨端复用强，代价是服务端承担设计系统一致性。<br>
+② <b>纯文本 + Markdown</b>：最省事，前端一个渲染器通吃；代价是没有结构化交互（点不了、跳不动）。<br>
+③ <b>类型化卡片 + 受控动作</b>：本仓路线；ADR-0054 再加一条 <code>actions: [{label, target}]</code>，<code>target</code> 是<b>枚举不是 URL</b>——导航在客户端，服务端只说「去布置任务」，不说「跳哪个路由」。</p></div>
+
+<div class="view cost"><span class="h">代价 / 遗留</span>
+<p>两端各持一份 kind / target 常量表，跨语言无法直接断言一致，只能两端各守一半；新增 target 必须同时改后端常量与前端映射，否则按钮变成「点了没反应」。学科颜色由前端从 <code>subject</code> 推，颜色不进线协议。</p></div>
+<div class="adr">ADR 锚点：<b>ADR-0042</b>（类型化卡片）· <b>ADR-0054</b>（受控跳转动作 · target 是枚举）</div>
+</div>
+
+<div class="kp" id="kp13">
+<h3><span class="n">13</span>推理与正文分流：思维链永不当答案</h3>
+<p>适配器给每个文本增量打上语义通道（<code>TextKind.TEXT</code> / <code>REASONING</code>）。runtime 只把 <code>TEXT</code> 累进最终答案；<code>REASONING</code> 只作思考回显，<b>不进答案、也不进回灌历史</b>。外发前还会过滤掉命中调用协议的片段。</p>
+
+<div class="view win"><span class="h">架构优点</span>
+<p>把「流向」与「语义」对齐：语义在端口层标注，去向在 runtime 决策，适配器不替 runtime 决定。于是「模型没走原生 function calling、把调用写进思维链」这一整类事故在结构上被消灭。</p></div>
+
+<div class="view dec"><span class="h">当时的设计决策</span>
+<p>真机：家长问「查一下 lsc 的错题本」，模型不发原生 ToolCall，1255 字符英文独白被当成答案下发到儿童端。根因是协议层不分通道。ADR-0043 的取舍有三条：<b>协议层分离</b>而非继续堆正则（启发式永远追不上措辞）；<b>kind 放端口层</b>而非留在适配器（流向决策在 runtime）；<b>无调用且正文空 → 硬失败</b>而非降级纯文本。判据还拆成强弱两档：强标记（<code>&lt;invoke name=</code> 这类调用外壳）命中即判泄露、<b>不要求点名已注册工具</b>——因为模型最常见的形态恰恰是<b>编造工具名</b>。</p></div>
+
+<div class="view alt"><span class="h">同类主流实现方式</span>
+<p>① <b>厂商原生分通道</b>：OpenAI Responses API 的 reasoning summary、Anthropic 的 thinking block，由 API 直接给出独立字段，最干净，前提是用这几家。<br>
+② <b>框架层约定</b>：Vercel AI SDK 的 reasoning part、LangGraph 的 custom stream 通道，思路相同、落点不同。<br>
+③ <b>后置正则过滤</b>：不改协议，只在出口筛掉 <code>&lt;invoke&gt;</code> 一类标记；拦得住「有标记的」，拦不住「答案本身就是独白」。</p></div>
+
+<div class="view cost"><span class="h">代价 / 遗留</span>
+<p>纯自然语言叙述（「我去查一下」，无协议标记、正文非空）仍会作为普通正文流出——危害已消除，根治要靠模型侧原生 FC。前端目前还没消费 THINKING 与正文的区别，思维链回显未落地。</p></div>
+<div class="adr">ADR 锚点：<b>ADR-0043</b>（<code>TextDelta.kind</code> 语义通道分流）</div>
+</div>
+
+<h2 class="chapter">二、出错时怎么说话</h2>
+
+<div class="kp" id="kp14">
+<h3><span class="n">14</span>失败归因：能力问题 ≠ 厂商问题</h3>
+<p>引擎失败被分成两类、各说各的话：<b>模型缺 function calling 能力</b> → <code>TOOL_UNSUPPORTED</code>；<b>厂商拒绝请求</b>（认证 / 限流 / 网络 / 参数被拒）→ <code>PROVIDER_ERROR</code>。分类<b>默认落在后者</b>。用户看到的是策展文案（「API Key 无效，请在模型管理里重填」），原始厂商报文只进日志。</p>
+
+<figure>
+<svg viewBox="0 0 680 200" role="img" aria-label="失败归因分流">
+  <defs>
+    <marker id="f1" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 z" fill="#111110"/>
+    </marker>
+  </defs>
+  <rect x="250" y="12" width="180" height="40" fill="#FFFFFF" stroke="#111110" stroke-width="2"/>
+  <text x="340" y="37" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="13" fill="#111110">引擎抛异常</text>
+  <line x1="340" y1="52" x2="340" y2="68" stroke="#111110" stroke-width="2" marker-end="url(#f1)"/>
+  <rect x="230" y="70" width="220" height="34" fill="#FFFFFF" stroke="#111110" stroke-width="2"/>
+  <text x="340" y="92" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="12" fill="#111110">classify_failure（按标记词归类）</text>
+
+  <path d="M230,87 L100,87 L100,116" fill="none" stroke="#111110" stroke-width="2" marker-end="url(#f1)"/>
+  <path d="M450,87 L580,87 L580,116" fill="none" stroke="#111110" stroke-width="2" marker-end="url(#f1)"/>
+
+  <rect x="20" y="118" width="220" height="62" fill="#E64980" stroke="#111110" stroke-width="2"/>
+  <text x="130" y="140" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="12" font-weight="700" fill="#111110">ToolUnsupportedError</text>
+  <text x="130" y="158" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="10.5" fill="#111110">→ TOOL_UNSUPPORTED</text>
+  <text x="130" y="173" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="10" fill="#6B6862">出路：换支持 FC 的模型</text>
+
+  <rect x="440" y="118" width="220" height="62" fill="#F08C00" stroke="#111110" stroke-width="2"/>
+  <text x="550" y="140" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="12" font-weight="700" fill="#111110">ProviderRequestError</text>
+  <text x="550" y="158" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="10.5" fill="#111110">→ PROVIDER_ERROR（auth/限流/网络）</text>
+  <text x="550" y="173" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="10" fill="#6B6862">出路：重填密钥 / 稍后重试</text>
+</svg>
+<figcaption>图 6：两类失败都<b>硬失败</b>（不降级、不重试、不继续），区别只在「话怎么说」——指错方向比报错本身更糟。</figcaption>
+</figure>
+
+<div class="view win"><span class="h">架构优点</span>
+<p>用户拿到的是<b>可执行</b>的下一步，而不是一整段厂商 JSON；归因逻辑只有一个函数（<code>classify_failure</code>），三条分支（schema / tools / 纯文本）与旁路（批改）都复用它，同一个 401 不会在不同路径被说成两种话。</p></div>
+
+<div class="view dec"><span class="h">当时的设计决策</span>
+<p>事故形态：密钥解不开 → 密文被当成 API Key 发给厂商（401），而旧实现把工具路径上<b>任意</b>异常包成「模型不支持工具调用」，于是用户去换模型，真问题却是密钥。ADR-0038 定了两条硬契约：<code>decrypt()</code> 解不开只返回 <code>None</code>（<b>密文永不出门</b>）；失败分类默认落 <code>PROVIDER_ERROR</code>。同时要求上层不得用 <code>except Exception</code> 把引擎失败抹成「请添加模型」。</p></div>
+
+<div class="view alt"><span class="h">同类主流实现方式</span>
+<p>① <b>通用重试库</b>：tenacity / OpenAI SDK 内置重试，解决抖动，但会把认证失败也一起重试、还会抹掉归因。<br>
+② <b>框架重试策略</b>：LangGraph 的 retry policy 按节点配置，粒度好，但默认话术仍是框架给的。<br>
+③ <b>可观测性平台兜底</b>：LangSmith / OpenTelemetry 记录原始错误，用户面仍要自己策展文案——本仓是「策展文案 + 日志原文」的组合。</p></div>
+
+<div class="view cost"><span class="h">代价 / 遗留</span>
+<p>标记词表是<b>启发式</b>，新厂商可能要补词；未命中一律落 <code>unknown</code> 并带原始原因，绝不误报成能力问题。启动期密钥健康检查尚未做——家长要等提问失败才知道密钥失效。</p></div>
+<div class="adr">ADR 锚点：<b>ADR-0038</b>（失败归因与密文契约）· <b>ADR-0033</b>（硬失败不降级）</div>
+</div>
+
+<div class="kp" id="kp15">
+<h3><span class="n">15</span>strict schema 与缺席编码：模型被迫填值时怎么办</h3>
+<p>工具参数在 OpenAI strict 模式下会被<b>无条件改写成「所有 property 必填」</b>——源码里写的 <code>"required": []</code> 在 wire 上根本不存在。于是每个可省略参数都必须有一个类型合法的<b>缺席编码</b>：字符串 <code>""</code>、整数 <code>0</code>、枚举必须含 <code>NO_FILTER="all"</code>，并在 handler 归一为「未提供」。</p>
+
+<div class="view win"><span class="h">架构优点</span>
+<p>把「模型被迫为每个参数编值」这个结构性前提显式化：模型有合法方式表达「不过滤」，就不必靠猜；归一收口在 <code>resolve_children</code> 一个函数，7 个工具一次性受益，新增工具忘了改会被<b>行为级</b>测试拦下（用缺席编码填满全部参数必须与「不传」出参一致）。</p></div>
+
+<div class="view dec"><span class="h">当时的设计决策</span>
+<p>真机：strict 强迫填 <code>status</code>，枚举里却没有「不过滤」，模型填 <code>""</code> → handler 报错 → 模型反复试探 → 撞上「不要重复调用同一工具」的 SOP → 空转并把调用写进正文，用户看到原始协议。第二例是<b>文本化缺席</b>：模型传字符串 <code>"null"</code> 表示「没有目标娃娃」。所以 <code>UNSET_TOKENS</code> 覆盖了 <code>"" / all / none / null / nil / n/a…</code> 多语言口径，且回灌给模型的错误消息要带<b>可执行出路</b>（「按昵称定位请改用 child_name」），光说「不是 uuid」模型只会换个猜法重试。</p></div>
+
+<div class="view alt"><span class="h">同类主流实现方式</span>
+<p>① <b>关掉 strict</b>：genkit 未暴露开关，走不通；OpenAI 原生 API 可以 <code>strict: false</code>，代价是参数结构不再保证。<br>
+② <b>砍掉过滤参数</b>（工具恒定查全部）：彻底消除陷阱，但丢掉「只查数学错题」「最近 5 道」这类能力。<br>
+③ <b>让模型多问一轮</b>（必填 + 缺失时反问）：交互更啰嗦，儿童产品不可接受。<br>
+④ <b>缺席编码 + 收口归一</b>（本仓）：最小改动，代价是 <code>0</code> 的语义被占用（=不设限）、<code>"all"</code> 成为保留词。</p></div>
+
+<div class="view cost"><span class="h">代价 / 遗留</span>
+<p>依赖外部私有行为（<code>openai.lib._pydantic</code> 的改写），升级 SDK 时要重新评估——所以留了一条<b>证据锚点测试</b>：断言「必填陷阱」依然存在，SDK 变了它会先失败，提醒你重新评估而不是删补丁。</p></div>
+<div class="adr">ADR 锚点：<b>ADR-0040</b>（缺席编码与 <code>NO_FILTER</code>）</div>
+</div>
+
+<h2 class="chapter">三、可扩展性与读路径</h2>
+
+<div class="kp" id="kp16">
+<h3><span class="n">16</span>扩展钩子：模型看不见的干预点</h3>
+<p>内核在 tool loop 上固定三个挂载点：<code>before_turn</code>（改写 system/prompt/history）、<code>after_tool</code>（改写工具结果）、<code>rewrite_messages</code>（发送前统一改写，不写回 canonical history）。默认零行为，钩子抛异常被吞掉，不影响主链路。</p>
+
+<div class="view win"><span class="h">架构优点</span>
+<p>审计、截断超大结果、注入租户级约束这类需求不必改内核或每个 SubAgent；与「SOP 注入 system prompt」这条 LLM 可见通道互补——一条改模型的想法，一条改送出去的数据。</p></div>
+
+<div class="view dec"><span class="h">当时的设计决策</span>
+<p>架构评审指出「可扩展性全靠 SOP 注入」不够：SOP 是 LLM 可见的提示词，做不了不可见的裁剪与审计。ADR-0035 参照参考架构（pi-coding-agent 的 lifecycle hooks）在内核加 seam，并明确约束：钩子必须<b>幂等、轻量</b>，且改写消息必须保持 <code>role/tool_calls/ref</code> 成对不变量，否则会破坏厂商的 ToolRequest↔ToolResponse 配对。</p></div>
+
+<div class="view alt"><span class="h">同类主流实现方式</span>
+<p>① <b>中间件</b>：LangGraph 的 middleware / deepagents 的 <code>SubAgentMiddleware</code>（含上下文隔离、rubric 自评），能力最全。<br>
+② <b>生命周期 hooks</b>：OpenAI Agents SDK 的 <code>RunHooks</code>（on_agent_start / on_tool_end 等），形态与本仓最接近。<br>
+③ <b>协议级中间件</b>：AG-UI 的 middleware「在 enforcement 之前运行」，让兼容层先翻译再剥离。</p></div>
+
+<div class="view cost"><span class="h">代价 / 遗留</span>
+<p>只有跑 tool loop 的 SubAgent 会触发三个固定点（tutor/question 是单调用，无挂载点）；钩子故障被静默吞掉，排查时要靠日志。</p></div>
+<div class="adr">ADR 锚点：<b>ADR-0035</b>（扩展钩子 seam）</div>
+</div>
+
+<div class="kp" id="kp17">
+<h3><span class="n">17</span>会话历史：页内切模式，孩子的会话只读</h3>
+<p>读路径新开家长专属端点（列表 + 详情），与调试端点 <code>/ai/debug/conversations</code> <b>刻意不复用</b>。列表分两段：家长的会话点开是<b>恢复续接</b>，孩子的会话点开是<b>只读回放</b>（带「只读」徽标）。页面内切 <code>chat / history / reading</code> 三态，不新增路由。</p>
+
+<div class="view win"><span class="h">架构优点</span>
+<p>两个消费者各自得到贴合的形状：用户面拿到可渲染的气泡，审计面保留全部 step 与原始 payload；合并会同时伤害两边。折叠（哪些行算气泡）放服务端，卡片怎么画仍归前端——不违反「服务端不拼展示串」。</p></div>
+
+<div class="view dec"><span class="h">当时的设计决策</span>
+<p>孩子的会话<b>必须</b>只读，这不是 UX 取舍而是后端语义：家长发请求时 <code>child_id</code> 恒为 <code>None</code>，拿孩子的 <code>session_id</code> 续接必然过不了归属校验，后端会<b>另建一段会话</b>，屏幕上却像续上了——更糟的是校验失败后会启用客户端历史兜底，孩子的消息会被当成家长的 prompt 灌进新会话。另外：不调模型生成标题（首轮多一次调用 + 失败回退不值得）；读出侧必须回落 <code>title</code>（历史数据全为 NULL）；先修 turn 撞号缺陷再做回放（两者共用同一个排序键）。</p></div>
+
+<div class="view alt"><span class="h">同类主流实现方式</span>
+<p>① <b>统一 thread API</b>：Agent Protocol 的 <code>/threads</code> + <code>/threads/{id}/history</code>，一个抽象覆盖运行与会话。<br>
+② <b>服务端托管线程</b>：OpenAI Assistants 的 threads（含消息列表），客户端完全不存历史。<br>
+③ <b>本地持久化</b>：多数桌面 / 移动 Chat 应用把会话存本地库，跨设备靠同步；本仓因为要跨家长与娃娃两个角色共享，必须放服务端。</p></div>
+
+<div class="view cost"><span class="h">代价 / 遗留</span>
+<p>无删除、无保留策略、无 FK 级联；无分页（只有 limit 上限 200）；孩子的会话组排序取「该组第一段在整体倒序中的位置」（零额外查询、确定性），不是按娃娃固有顺序。</p></div>
+<div class="adr">ADR 锚点：<b>ADR-0048</b>（会话历史与只读回放）</div>
+</div>
+
+<h2 class="chapter">推荐一手资料</h2>
+<ul>
+<li><a href="https://docs.ag-ui.com/spec/draft/architecture">AG-UI · Architecture</a>——「一切可见行为都在一条流里，没有旁道」的协议级表述（注意仍是 draft）。</li>
+<li><a href="https://arxiv.org/abs/2210.03629">ReAct: Synergizing Reasoning and Acting</a>——所有 tool loop 的思想源头。</li>
+<li><a href="https://modelcontextprotocol.io/">Model Context Protocol</a>——把工具外置到独立进程的另一条路线。</li>
+<li><a href="https://platform.openai.com/docs/guides/function-calling">OpenAI Function Calling 指南</a>——strict 模式与工具消息配对的官方口径。</li>
+<li>仓库内：<code>docs/agent-core-architecture-review.md</code> §4–§7（本课多个知识点都源自这份评审的 P1/P2 条目）。</li>
+</ul>
+
+<div class="quiz">
+<h3>检索练习（先想再看）</h3>
+<p class="q">1. 「DATA 帧」和「TOOL_RESULT 帧」为什么要分成两条轨？</p>
+<button>显示答案</button>
+<div class="a">消费者不同：一个给模型（要够用的原始上下文），一个给人（要可分派的结构）。合成一条会让「为了好看而裁剪」污染模型上下文，或让「为了省 token 而压缩」导致卡片缺字段。</div>
+
+<p class="q">2. 为什么把 401 说成「模型不支持工具调用」比直接报 401 更糟？</p>
+<button>显示答案</button>
+<div class="a">因为它指向错误的修复动作：用户会去换模型，而真问题是密钥失效。失败分类默认落 PROVIDER_ERROR，正是为了让「不确定」时至少不指错方向。</div>
+
+<p class="q">3. strong/weak 两档协议判据，为什么强标记不要求点名已注册工具？</p>
+<button>显示答案</button>
+<div class="a">因为模型最常见的形态恰恰是<b>编造工具名</b>（把 list_wrong_questions 写成 get_mistakes）。若要求点名，这一形态必然逃逸，整段原始协议就会被当答案下发。</div>
+
+<p class="q">4. 孩子的会话为什么不能让家长续接，只能只读回放？</p>
+<button>显示答案</button>
+<div class="a">家长的 child_id 恒为 None，续接过不了归属校验 → 后端另建会话；更糟的是会启用客户端历史兜底，把孩子的消息当成家长的 prompt 历史灌进去，造成语义污染。</div>
+</div>
+
+<div class="callout">
+<b>课后一问</b>
+挑本课任意一条「硬失败」规则，设想把它改成「静默降级为纯文本」：用户会看到什么？哪一类 bug 会从可观测变成不可观测？讲给 agent 听。
+</div>
+
+<div class="nav">
+<a href="./0002-request-lifecycle.html">← 上一课：一次请求的全链路</a>
+<a href="../reference/cheatsheet.html">速查表</a>
+<a href="../RESOURCES.md">资料清单</a>
+</div>
+
+</div>
+<script>
+document.querySelectorAll('.quiz button').forEach(function (b) {
+  b.addEventListener('click', function () {
+    b.nextElementSibling.classList.toggle('open');
+  });
+});
+</script>
+</body>
+</html>

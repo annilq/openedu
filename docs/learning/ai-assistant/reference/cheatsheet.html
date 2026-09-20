@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>速查表 · openedu AI 助手架构</title>
+<link rel="stylesheet" href="../assets/lesson.css">
+</head>
+<body>
+<div class="wrap">
+
+<span class="kicker">Reference</span>
+<h1>openedu AI 助手 · 架构速查表</h1>
+<p class="lede">一页看完：谁在哪一层、帧有哪些、错有哪些、要改某件事该动哪个文件。<b>打印友好</b>。</p>
+<p class="meta">事实源以代码为准；本表仅作索引，细节见各 ADR（<code>docs/adr/</code>）。</p>
+
+<h2 class="chapter">1 · 分层与职责</h2>
+<table>
+<thead><tr><th>层</th><th>位置</th><th>认识什么</th><th>不认识什么</th></tr></thead>
+<tbody>
+<tr><td>客户端</td><td><code>frontend/lib/features/assistant/</code></td><td>SSE 帧、卡片 kind、跳转 target</td><td>路由规则、工具、模型</td></tr>
+<tr><td>HTTP 适配</td><td><code>app/features/assistant/router.py</code></td><td>鉴权、空校验、SSE 响应头</td><td>ORM、编排</td></tr>
+<tr><td>编排</td><td><code>app/features/assistant/service.py</code></td><td>角色、会话、依赖装配、落库</td><td>事件帧怎么产生</td></tr>
+<tr><td>内核</td><td><code>agent_core/{runtime,subagent,router,registry,protocol}.py</code></td><td>事件、路由、tool loop、轮次</td><td>学科、家长、错题、SQL</td></tr>
+<tr><td>端口</td><td><code>agent_core/ports.py</code></td><td>抽象契约（provider/retriever/safety/hooks）</td><td>任何实现</td></tr>
+<tr><td>适配器</td><td><code>agent_core/adapters/genkit.py</code></td><td>genkit SDK、工具消息映射</td><td>业务</td></tr>
+</tbody>
+</table>
+
+<h2 class="chapter">2 · 事件帧</h2>
+<table>
+<thead><tr><th>eventType</th><th>谁产生</th><th>客户端怎么用</th></tr></thead>
+<tbody>
+<tr><td>RUN_STARTED</td><td>runtime</td><td>开一轮</td></tr>
+<tr><td>USER_MESSAGE</td><td>runtime</td><td>回声（可选）</td></tr>
+<tr><td>THINKING</td><td>模型思维链 / 路由阶段</td><td>阶段文案（取最近一帧，不累积）</td></tr>
+<tr><td>TOOL_CALL / TOOL_RESULT</td><td>runtime（内核执行）</td><td>阶段文案；落库回放</td></tr>
+<tr><td>STEP</td><td>subagent</td><td>进度标签</td></tr>
+<tr><td>DATA</td><td>subagent 的 <code>render_tool_result</code></td><td><b>按 <code>data.type</code> 分派卡片渲染器</b></td></tr>
+<tr><td>ASSISTANT_MESSAGE</td><td>subagent 收尾</td><td>正文累加</td></tr>
+<tr><td>ERROR</td><td>任意层</td><td>按 <code>code</code> 分派文案；<code>INPUT_UNSAFE</code> 标「已拦截」</td></tr>
+<tr><td>DONE / RUN_FINISHED</td><td>runtime</td><td>收尾，带 <code>session_id</code></td></tr>
+</tbody>
+</table>
+
+<h2 class="chapter">3 · SubAgent 一览</h2>
+<table>
+<thead><tr><th>business</th><th>priority</th><th>roles</th><th>是否跑 tool loop</th><th>产出</th></tr></thead>
+<tbody>
+<tr><td>guide</td><td>20</td><td>parent</td><td>否（无工具、不调模型）</td><td>带 actions 的引导卡 + 说明</td></tr>
+<tr><td>query</td><td>12</td><td>parent, child</td><td>是（8 个只读工具）</td><td>工具结果 → 类型化卡片</td></tr>
+<tr><td>question</td><td>0</td><td>parent</td><td>否（schema 约束解码 + 流式）</td><td>题卡</td></tr>
+<tr><td>tutor</td><td>-10</td><td>parent, child</td><td>否（单调用 + 安全闸门）</td><td>讲解正文 + TutorLog</td></tr>
+</tbody>
+</table>
+<p style="font-size:14px;color:#6B6862">路由顺序 = priority 降序做 triggers 子串匹配 → hints 启发式 → 落到 priority 最低者（tutor）。<b>改 priority = 改功能</b>。</p>
+
+<h2 class="chapter">4 · 错误码</h2>
+<table>
+<thead><tr><th>code</th><th>含义</th><th>给用户的话</th></tr></thead>
+<tbody>
+<tr><td>INPUT_UNSAFE</td><td>输入被安全闸门拦下</td><td>「已拦截」而非「出错」</td></tr>
+<tr><td>TOOL_UNSUPPORTED</td><td>模型缺原生 function calling / 把调用写成了文本</td><td>换支持工具调用的模型，或关掉思维链</td></tr>
+<tr><td>PROVIDER_ERROR</td><td>厂商拒绝（auth 401 / 限流 429 / 网络 / 400）</td><td>策展文案，指明重填密钥或稍后重试</td></tr>
+<tr><td>TOOL_TURN_LIMIT</td><td>超过 max_turns（默认 3）</td><td>已中止，请缩小问题范围</td></tr>
+<tr><td>NO_AGENT</td><td>业务键没有对应实现</td><td>未找到可用助手（装配问题）</td></tr>
+<tr><td>AGENT_ERROR</td><td>兜底</td><td>助手执行出错</td></tr>
+</tbody>
+</table>
+<p style="font-size:14px;color:#6B6862">三类失败一律<b>硬失败</b>：不降级为纯文本、不重试、不继续。厂商失败的分类<b>默认落 PROVIDER_ERROR</b>。</p>
+
+<h2 class="chapter">5 · 卡片 kind（DATA 帧判别键）</h2>
+<table>
+<thead><tr><th>kind</th><th>来源工具</th><th>载荷要点</th></tr></thead>
+<tbody>
+<tr><td>question</td><td>出题管线</td><td>题型/难度/选项/答案/解析</td></tr>
+<tr><td>task_list</td><td>list_parent_tasks / list_today_tasks</td><td>items + total（截断时报真实条数）</td></tr>
+<tr><td>wrong_question_list</td><td>list_wrong_questions</td><td>items（娃娃端去答案与解析）</td></tr>
+<tr><td>due_review_list</td><td>list_due_reviews</td><td>items</td></tr>
+<tr><td>mastery_list</td><td>get_mastery</td><td>items / stats</td></tr>
+<tr><td>child_list</td><td>list_children</td><td>items</td></tr>
+<tr><td>progress</td><td>get_progress</td><td>stats</td></tr>
+<tr><td>question_bank_list</td><td>list_bank_questions</td><td>items + total</td></tr>
+<tr><td>guide</td><td><b>非工具产出</b>（guide subagent 直接给）</td><td>text + actions[{label, target}]</td></tr>
+<tr><td>notice</td><td>未登记 / 查询失败</td><td>title + text（降级卡，不丢内容）</td></tr>
+</tbody>
+</table>
+
+<h2 class="chapter">6 · 被机制守住的不变量</h2>
+<ul>
+<li>内核不 import <code>app.*</code>、不 import 三方库（<code>tests/ai/test_layering_invariants.py</code>）</li>
+<li><code>import genkit</code> 全仓唯一落点，且延迟导入（同上）</li>
+<li>归属判定只经 <code>core.guard</code>；service 不反向依赖 router/FastAPI（同上）</li>
+<li>query 工具的缺席编码 ≡ 不传；枚举必含 <code>NO_FILTER</code>（<code>tests/ai/test_query_tools_contract.py</code>）</li>
+<li>思维链不当答案、不进历史；协议标记命中即硬失败（<code>tests/ai/test_tool_loop_bounds.py</code>）</li>
+<li>401 不说成「不支持工具调用」；密文永不作为参数传给引擎（<code>tests/ai/test_provider_failure_attribution.py</code>）</li>
+<li>写意图归 guide 且优先级高于 query；guide 无工具（<code>tests/ai/test_guide_subagent.py</code>）</li>
+<li>前端分层 <code>main → features → shared</code> 单向（<code>frontend/test/feature_boundaries_test.dart</code>）</li>
+</ul>
+
+<h2 class="chapter">7 · 要改某件事，动哪里</h2>
+<table>
+<thead><tr><th>目标</th><th>落点</th><th>别忘了</th></tr></thead>
+<tbody>
+<tr><td>新增一种 AI 能力</td><td><code>app/ai/subagents/&lt;biz&gt;/{agent,manifest}.py</code></td><td>想清楚 priority 压过谁；前端登记 kind</td></tr>
+<tr><td>新增查询工具</td><td><code>query/tools/</code> + registry</td><td>角色裁剪、缺席编码、<code>render.py</code> 登记 kind</td></tr>
+<tr><td>新增卡片种类</td><td><code>query/render.py#_KIND</code> + 前端 <code>AssistantCardKind</code></td><td>两端各加一次；漏了走降级卡</td></tr>
+<tr><td>新增跳转出口</td><td><code>guide/agent.py</code> 的 target 常量 + 前端 <code>ShellDestination.fromTarget</code></td><td><b>必须两端同改</b>，否则按钮点了没反应</td></tr>
+<tr><td>换模型厂商</td><td><code>agent_core/adapters/</code> 新增适配器</td><td>保留中性 history 契约与成对不变量</td></tr>
+<tr><td>换路由策略</td><td><code>agent_core/router.py</code>（LLM 分类器是可选插槽）</td><td>确定性优先；新增能力要重排 priority</td></tr>
+</tbody>
+</table>
+
+<div class="nav">
+<a href="../lessons/0001-agent-core-layering.html">第 1 课</a>
+<a href="../lessons/0002-request-lifecycle.html">第 2 课</a>
+<a href="../lessons/0003-contracts-and-failures.html">第 3 课</a>
+<a href="../MISSION.md">学习目标</a>
+</div>
+
+</div>
+</body>
+</html>

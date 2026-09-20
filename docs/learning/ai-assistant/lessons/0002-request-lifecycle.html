@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 2 课 · 一次请求的全链路 — openedu 架构课</title>
+<link rel="stylesheet" href="../assets/lesson.css">
+</head>
+<body>
+<div class="wrap">
+
+<span class="kicker">第 2 课 / 共 3 课</span>
+<h1>一次请求的全链路：从一句话到一张卡</h1>
+<p class="lede">家长说「查一下小明的错题本」，这句话要走过 HTTP、编排、路由、模型、工具、落库六站。这一课把这条链路一步一步摊开，并说明每一步为什么这么切。</p>
+<p class="meta">事实源：<code>app/features/assistant/{router,service}.py</code> · <code>agent_core/{runtime,subagent}.py</code> · <code>app/ai/subagents/query/</code> · ADR-0024 / 0025 / 0022 / 0048 / 0033</p>
+
+<div class="toc">
+  <h2>本课知识点</h2>
+  <ol>
+    <li><a href="#kp7">编排下沉：router 只做 HTTP 适配</a></li>
+    <li><a href="#kp8">预路由：一次决策，两处复用</a></li>
+    <li><a href="#kp9">会话与上下文：谁在记你聊过什么</a></li>
+    <li><a href="#kp10">统一事件帧与前端折叠</a></li>
+    <li><a href="#kp11">tool loop：执行权归内核</a></li>
+  </ol>
+</div>
+
+<figure>
+<svg viewBox="0 0 680 470" role="img" aria-label="一次请求的全链路时序图">
+  <defs>
+    <marker id="s1" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 z" fill="#111110"/>
+    </marker>
+  </defs>
+
+  <rect x="10" y="14" width="100" height="30" fill="#FFD43B" stroke="#111110" stroke-width="2"/>
+  <text x="60" y="33" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="12" font-weight="700" fill="#111110">客户端</text>
+  <rect x="150" y="14" width="110" height="30" fill="#22B8CF" stroke="#111110" stroke-width="2"/>
+  <text x="205" y="33" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="12" font-weight="700" fill="#111110">编排 service</text>
+  <rect x="290" y="14" width="120" height="30" fill="#7048E8" stroke="#111110" stroke-width="2"/>
+  <text x="350" y="33" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="12" font-weight="700" fill="#FFFFFF">runtime / agent</text>
+  <rect x="440" y="14" width="110" height="30" fill="#F08C00" stroke="#111110" stroke-width="2"/>
+  <text x="495" y="33" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="12" font-weight="700" fill="#111110">模型 / 工具</text>
+  <rect x="580" y="14" width="90" height="30" fill="#F1EDE4" stroke="#111110" stroke-width="2"/>
+  <text x="625" y="33" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="12" font-weight="700" fill="#111110">数据库</text>
+
+  <line x1="60" y1="44" x2="60" y2="452" stroke="#111110" stroke-width="1" stroke-dasharray="3 3"/>
+  <line x1="205" y1="44" x2="205" y2="452" stroke="#111110" stroke-width="1" stroke-dasharray="3 3"/>
+  <line x1="350" y1="44" x2="350" y2="452" stroke="#111110" stroke-width="1" stroke-dasharray="3 3"/>
+  <line x1="495" y1="44" x2="495" y2="452" stroke="#111110" stroke-width="1" stroke-dasharray="3 3"/>
+  <line x1="625" y1="44" x2="625" y2="452" stroke="#111110" stroke-width="1" stroke-dasharray="3 3"/>
+
+  <g font-family="Inter,PingFang SC,sans-serif" font-size="10.5" fill="#111110">
+    <line x1="62" y1="72" x2="203" y2="72" stroke="#111110" stroke-width="2" marker-end="url(#s1)"/>
+    <text x="132" y="66" text-anchor="middle">1 · POST /assistant/chat（message + session_id）</text>
+
+    <line x1="207" y1="104" x2="623" y2="104" stroke="#111110" stroke-width="2" marker-end="url(#s1)"/>
+    <text x="415" y="98" text-anchor="middle">2 · 会话 upsert（归属校验）+ 载入历史</text>
+
+    <line x1="207" y1="136" x2="348" y2="136" stroke="#111110" stroke-width="2" marker-end="url(#s1)"/>
+    <text x="277" y="130" text-anchor="middle">3 · decide() 预路由（不流式）</text>
+
+    <path d="M352,168 L400,168 L400,184 L352,184" fill="none" stroke="#111110" stroke-width="2" marker-end="url(#s1)"/>
+    <text x="410" y="180">4 · 角色过滤 → 闸门 → 规则/启发式</text>
+
+    <line x1="207" y1="216" x2="348" y2="216" stroke="#111110" stroke-width="2" marker-end="url(#s1)"/>
+    <text x="277" y="210" text-anchor="middle">5 · run(message, business) 开流</text>
+
+    <line x1="352" y1="248" x2="493" y2="248" stroke="#111110" stroke-width="2" marker-end="url(#s1)"/>
+    <text x="422" y="242" text-anchor="middle">6 · stream(system + prompt + tools + history)</text>
+
+    <line x1="491" y1="280" x2="354" y2="280" stroke="#111110" stroke-width="2" marker-end="url(#s1)"/>
+    <text x="422" y="274" text-anchor="middle">7 · TextDelta(TEXT/REASONING) 与 ToolCall 回流</text>
+
+    <path d="M352,312 L400,312 L400,328 L352,328" fill="none" stroke="#111110" stroke-width="2" marker-end="url(#s1)"/>
+    <text x="410" y="324">8 · 内核执行工具 → 结果回灌（成对）→ 再请求</text>
+
+    <line x1="348" y1="360" x2="207" y2="360" stroke="#111110" stroke-width="2" marker-end="url(#s1)"/>
+    <text x="277" y="354" text-anchor="middle">9 · 事件帧流：THINKING / TOOL_* / DATA / ANSWER / DONE</text>
+
+    <line x1="203" y1="392" x2="62" y2="392" stroke="#111110" stroke-width="2" marker-end="url(#s1)"/>
+    <text x="132" y="386" text-anchor="middle">10 · SSE 帧逐帧下推（边流边推）</text>
+
+    <line x1="207" y1="424" x2="623" y2="424" stroke="#111110" stroke-width="2" marker-end="url(#s1)"/>
+    <text x="415" y="418" text-anchor="middle">11 · 收尾落库：正文 + 卡片 + 工具步骤 + 会话状态</text>
+  </g>
+  <text x="340" y="462" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="10" fill="#6B6862">步骤 6–8 是一个循环，最多跑 max_turns 轮（默认 3）</text>
+</svg>
+<figcaption>图 3：全链路时序。注意 <b>编排</b>（service）是唯一同时碰「HTTP 语义之外的一切」的那一层：它构造依赖、管会话、管落库，runtime 只产出事件帧。</figcaption>
+</figure>
+
+<h2 class="chapter">一、编排与路由</h2>
+
+<div class="kp" id="kp7">
+<h3><span class="n">7</span>编排下沉到 service，router 只做 HTTP 适配</h3>
+<p><code>router.py</code> 只做三件事：空消息校验、鉴权、把 service 返回的异步迭代器包进 <code>StreamingResponse</code>（外加 <code>X-Accel-Buffering: no</code> 禁代理缓冲）。角色解析、依赖构造、会话 upsert、事件流折叠持久化全在 <code>assistant_service.chat</code>。</p>
+
+<div class="view win"><span class="h">架构优点</span>
+<p>编排可被单测直接调用（注入桩 runtime，不需要 HTTP 链路）；HTTP 关注点集中在一处，安全审计只看一个文件；协议升级与编排升级互不干扰。</p></div>
+
+<div class="view dec"><span class="h">当时的设计决策</span>
+<p>ADR-0033 明确否决了「编排留在 router/FastAPI」：那个文件曾膨胀到 700+ 行，ORM 对象与领域类型泄漏到 HTTP 层，且无法在不开服务的情况下测。同一个 ADR 还定了一条<b>跨层规则</b>：REST 路由与 AI 查询工具<b>共用同一套领域规则</b>（决策 13）——「今日任务」在页面上和 AI 回答里必须是同一份口径、同一套错误文案，否则两个入口会各自漂移。</p></div>
+
+<div class="view alt"><span class="h">同类主流实现方式</span>
+<p>① <b>框架即编排</b>：LangGraph 里图本身就是编排，节点里写业务，天然可复用、可持久化；代价是业务与框架概念绑死。<br>
+② <b>控制器里写编排</b>（多数 MVC 项目的现状）：最快，但难测、易膨胀。<br>
+③ <b>编排下沉 + 薄控制器</b>：本仓与多数企业级后端的做法，service 是唯一可测的编排单元。</p></div>
+
+<div class="view cost"><span class="h">代价 / 遗留</span>
+<p>service 承担了「编排 + 持久化 + 副作用（TutorLog）」三件事，文件本身会变大；落库失败不能破坏已流的响应，所以副作用要 try/except 包住并留痕。</p></div>
+<div class="adr">ADR 锚点：<b>ADR-0024</b>（router 只做 HTTP 适配）· <b>ADR-0033</b> 决策 13（REST 与工具共用领域规则）</div>
+</div>
+
+<div class="kp" id="kp8">
+<h3><span class="n">8</span>预路由：一次决策，两处复用</h3>
+<p>开流之前先跑一次 <code>rt.decide()</code>——纯计算、不流式、不构建 provider，返回结构化的 <code>RouteDecision(business, name)</code>。这个决策随后被用了两次：写进会话的 <code>kind</code> 字段，和传给 <code>run()</code> 复用（避免重复路由）。</p>
+
+<div class="view win"><span class="h">架构优点</span>
+<p>消除「端点靠解析 THINKING 帧的 extra 才能知道路由结果」这种隐式契约；决策可在流式前做<b>预航班</b>（配额判定、灰度拦截）；落库的 <code>kind</code> 有了确定的来源，不再依赖帧序列。</p></div>
+
+<div class="view dec"><span class="h">当时的设计决策</span>
+<p>早期实现是「先流后知」：runtime 在 THINKING 帧里塞 <code>extra={"routing": True}</code>，端点从帧里反读业务类型。ADR-0024 后期把它改成显式返回值——隐式契约的代价是<b>顺序耦合</b>（帧顺序一变就读不到），而结构化决策可以直接断言。</p></div>
+
+<div class="view alt"><span class="h">同类主流实现方式</span>
+<p>① <b>边流边决定</b>：多数流式实现把「路由中」也做成一帧，前端显示「正在选择助手」，简单但把判别逻辑塞进了展示通道。<br>
+② <b>两阶段 API</b>：先 <code>/classify</code> 再 <code>/run</code>，清晰但多一次往返。<br>
+③ <b>框架内部路由</b>：LangGraph 的条件边在流内分流，等价于边流边决定，只是它由图结构描述。</p></div>
+
+<div class="view cost"><span class="h">代价 / 遗留</span>
+<p>多了一个需要两端/两层对齐的结构（<code>RouteDecision</code>）；若将来要在流中<b>改判</b>（先 query 后发现该 question），预路由的模型要重新设计。</p></div>
+<div class="adr">ADR 锚点：<b>ADR-0024</b>（预路由消除隐式契约）</div>
+</div>
+
+<h2 class="chapter">二、上下文与协议</h2>
+
+<div class="kp" id="kp9">
+<h3><span class="n">9</span>会话与上下文：谁在记你聊过什么</h3>
+<p>多轮上下文由<b>服务端</b>持有：<code>Conversation</code> + <code>Message</code> 两张表，客户端只拿一个 <code>session_id</code>。续接时按归属校验后载入历史；历史超预算时不是硬截断，而是把最旧的轮次压成一句摘要注入（compaction）。每条消息有 <code>turn</code> 序号，是回放与 prompt 共用的排序键。</p>
+
+<div class="view win"><span class="h">架构优点</span>
+<p>换设备 / 重启 App 都能续上；历史可被审计与回放；上下文拼装在服务端，客户端无法伪造历史（也就无法用「假历史」诱导模型）。</p></div>
+
+<div class="view dec"><span class="h">当时的设计决策</span>
+<p>① <b>不调模型生成会话标题</b>：标题取首条用户消息截断 20 字，写入点唯一、值稳定——省掉首轮一次模型调用与失败回退（ADR-0048）。<br>
+② <b>turn 必须接着已有序号</b>：曾出现两个计数器不同源（生成器的 turn=1 与 <code>next_turn()</code>），第二轮起回答排到提问之前，模型拿到倒置上下文。这类缺陷只能靠<b>端到端</b>守卫测出来（单轮不撞号、repository 单测绕开排序）。<br>
+③ <b>压缩用摘要而非丢弃</b>：长对话连续性的必需项，失败则回退纯丢弃，不阻断主链路。</p></div>
+
+<div class="view alt"><span class="h">同类主流实现方式</span>
+<p>① <b>客户端持有历史</b>：每轮把整个 messages 数组回传（Vercel AI SDK、多数 Chat 应用的做法），服务端无状态、易扩展；代价是包体大、可被伪造、跨设备不共享。<br>
+② <b>服务端线程 / 检查点</b>：OpenAI Assistants 的 threads、LangGraph 的 checkpointer + thread_id，与本仓同一思路，框架化程度更高。<br>
+③ <b>上下文工程中间件</b>：LangChain 的 <code>SummarizationNode</code>、mem0 一类专门做压缩与长期记忆，可作为本仓 compaction 的升级方向。</p></div>
+
+<div class="view cost"><span class="h">代价 / 遗留</span>
+<p>已写入的历史数据不回填（撞号已发生，排序无唯一解）；会话只增不删、无 FK 级联、无保留策略（ADR-0048 记为已知缺口）。</p></div>
+<div class="adr">ADR 锚点：<b>ADR-0022</b>（Conversation/Message 模型）· <b>ADR-0048</b>（会话历史与只读回放）</div>
+</div>
+
+<div class="kp" id="kp10">
+<h3><span class="n">10</span>统一事件帧：一条流解释所有事</h3>
+<p>整条流由 <code>AssistantEvent</code> 帧组成，前端按 <code>eventType</code> 分发：<code>RUN_STARTED / USER_MESSAGE / THINKING / ASSISTANT_MESSAGE / TOOL_CALL / TOOL_RESULT / STEP / DATA / ERROR / DONE</code>。业务语义走 <code>extra</code> 扩展，内核不认识任何业务字段。客户端侧有一个<b>纯函数折叠器</b>（<code>AiTextFold</code>）：喂一帧返回新的「文本 + 卡片 + 阶段 + 错误」不可变值。</p>
+
+<div class="view win"><span class="h">架构优点</span>
+<p>新增语义加 <code>extra</code> 不加帧类型，协议不膨胀；折叠逻辑是纯函数，可以脱离 Riverpod 直接断言；「思考中」占位气泡能显示真实阶段（正在查询…）而不是静态转圈。</p></div>
+
+<div class="view dec"><span class="h">当时的设计决策</span>
+<p>折叠逻辑原先写在 notifier 的 <code>await for</code> 循环里，夹在状态管理与 SSE 之间无法测试；ADR-0036 之后只剩一个消费方，于是把它抽成不可变值 + <code>apply</code>，测试直接喂事件列表。前端还定了「未登记的 kind 走降级卡」——宁可降级也不丢内容（v1 曾因 <code>stem</code> 为空直接 <code>SizedBox.shrink()</code>，新卡片整张消失）。</p></div>
+
+<div class="view alt"><span class="h">同类主流实现方式</span>
+<p>① <b>AG-UI</b>（CopilotKit 主导）：把 agent→UI 的交互标准化为一条事件流，理念与本仓一致，规范目前仍是 draft。<br>
+② <b>Vercel AI SDK 的流式协议</b>：以 <code>0:"text"</code>、<code>2:data</code> 这类前置数字编码帧，紧凑且与 React 生态深度绑定。<br>
+③ <b>框架原生事件</b>：LangGraph 的 <code>stream_mode="messages|updates|custom"</code>，能力丰富但与框架耦合。<br>
+④ <b>自建 JSON Lines / SSE</b>：最常见的务实选择，本仓即此路 + 对齐 AG-UI 的命名习惯。</p></div>
+
+<div class="view cost"><span class="h">代价 / 遗留</span>
+<p>前后端各持一份事件常量与卡片 kind 常量，跨语言无法直接断言一致，只能「两端各守自己那一半」+ 契约测试。前端目前只渲染 <code>ASSISTANT_MESSAGE</code>、忽略 <code>THINKING</code>，思维链回显尚未落地。</p></div>
+<div class="adr">ADR 锚点：<b>ADR-0025</b>（事件帧契约）· <b>ADR-0036</b>（前端单一入口与折叠）· <b>ADR-0042</b>（类型化卡片）</div>
+</div>
+
+<div class="kp" id="kp11">
+<h3><span class="n">11</span>tool loop：模型选型，内核执行</h3>
+<p>声明了工具的 SubAgent 才跑 tool loop：把工具 schema 随请求发给模型 → 模型回 <code>ToolCall</code> → <b>内核</b>执行 handler → 结果回灌成对（<code>assistant(tool_calls)</code> + <code>tool(ref)</code>）→ 再请求，直到模型不再要工具。同轮多个工具全部执行后再回灌。</p>
+
+<figure>
+<svg viewBox="0 0 680 300" role="img" aria-label="tool loop 与硬失败出口">
+  <defs>
+    <marker id="t1" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 z" fill="#111110"/>
+    </marker>
+  </defs>
+  <rect x="250" y="10" width="180" height="40" fill="#FFFFFF" stroke="#111110" stroke-width="2"/>
+  <text x="340" y="35" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="13" fill="#111110">第 n 轮 · 请求模型</text>
+  <line x1="340" y1="50" x2="340" y2="66" stroke="#111110" stroke-width="2" marker-end="url(#t1)"/>
+
+  <rect x="250" y="68" width="180" height="40" fill="#FFFFFF" stroke="#111110" stroke-width="2"/>
+  <text x="340" y="86" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="12" fill="#111110">模型回了什么？</text>
+  <text x="340" y="101" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="10" fill="#6B6862">TextDelta · ToolCall · 什么都没有</text>
+
+  <path d="M250,88 L120,88 L120,120" fill="none" stroke="#111110" stroke-width="2" marker-end="url(#t1)"/>
+  <path d="M430,88 L560,88 L560,120" fill="none" stroke="#111110" stroke-width="2" marker-end="url(#t1)"/>
+  <line x1="340" y1="108" x2="340" y2="120" stroke="#111110" stroke-width="2" marker-end="url(#t1)"/>
+
+  <rect x="30" y="122" width="180" height="52" fill="#FFFFFF" stroke="#111110" stroke-width="2"/>
+  <text x="120" y="143" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="12" fill="#111110">有 ToolCall</text>
+  <text x="120" y="161" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="10.5" fill="#6B6862">内核执行 → 回灌（成对）</text>
+
+  <rect x="250" y="122" width="180" height="52" fill="#FFFFFF" stroke="#111110" stroke-width="2"/>
+  <text x="340" y="143" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="12" fill="#111110">有正文，无工具</text>
+  <text x="340" y="161" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="10.5" fill="#6B6862">收尾作答 → 结束</text>
+
+  <rect x="470" y="122" width="180" height="52" fill="#FFFFFF" stroke="#111110" stroke-width="2"/>
+  <text x="560" y="143" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="12" fill="#111110">既无工具也无正文</text>
+  <text x="560" y="161" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="10.5" fill="#6B6862">模型能力问题 → 硬失败</text>
+
+  <path d="M120,174 L120,196 L60,196 L60,222" fill="none" stroke="#111110" stroke-width="2" marker-end="url(#t1)"/>
+  <text x="128" y="192" font-family="Inter,PingFang SC,sans-serif" font-size="10" fill="#6B6862">n+1 轮</text>
+
+  <rect x="30" y="224" width="180" height="46" fill="#FFD43B" stroke="#111110" stroke-width="2"/>
+  <text x="120" y="244" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="12" fill="#111110">超过 max_turns（默认 3）</text>
+  <text x="120" y="261" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="11" fill="#111110">→ TOOL_TURN_LIMIT</text>
+
+  <rect x="250" y="224" width="180" height="46" fill="#12B886" stroke="#111110" stroke-width="2"/>
+  <text x="340" y="252" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="13" font-weight="700" fill="#FFFFFF">正常结束 · DONE</text>
+
+  <rect x="470" y="224" width="180" height="46" fill="#E64980" stroke="#111110" stroke-width="2"/>
+  <text x="560" y="244" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="12" fill="#111110">TOOL_UNSUPPORTED</text>
+  <text x="560" y="261" text-anchor="middle" font-family="Inter,PingFang SC,sans-serif" font-size="11" fill="#111110">绝不降级为纯文本</text>
+</svg>
+<figcaption>图 4：tool loop 的三个出口。左路循环有上限，中路是正常收尾，右路是硬失败——它刻意<b>不</b>退化成「假装答一句」。</figcaption>
+</figure>
+
+<div class="view win"><span class="h">架构优点</span>
+<p>工具执行权不在模型侧、也不在框架侧，而在内核——于是权限校验、角色裁剪、结果裁剪都能在唯一一处做；回灌格式是中性契约，换厂商只改适配器的映射。</p></div>
+
+<div class="view dec"><span class="h">当时的设计决策</span>
+<p>① <b>opt-in</b>：只有声明 <code>tools</code> 的 SubAgent 才跑 loop（tutor/question 是单调用），避免所有能力都被套上多轮开销。<br>
+② <b>轮次上限默认 3</b>：查询场景通常 1–2 跳，上限是防「回灌丢失 → 模型反复重调」的烧钱死循环。<br>
+③ <b>回灌成对</b>：<code>assistant(tool_calls)</code> 与 <code>tool(ref)</code> 必须成对，否则 OpenAI 兼容端点直接拒绝；缺 ref 时适配器用 FIFO 队列补配。</p></div>
+
+<div class="view alt"><span class="h">同类主流实现方式</span>
+<p>① <b>预编译图</b>：LangGraph 的 <code>ToolNode</code> + 条件边，循环是图结构，可可视化、可持久化、可 human-in-the-loop。<br>
+② <b>框架内置循环</b>：OpenAI Agents SDK 的 Runner loop（带 handoffs）、Pydantic AI 的 run loop，写起来最省事，边界由框架定。<br>
+③ <b>ReAct 范式</b>：<a href="https://arxiv.org/abs/2210.03629">ReAct 论文</a>提出的 Thought-Action-Observation 循环，是上述所有 loop 的思想源头。<br>
+④ <b>工具外置</b>：<a href="https://modelcontextprotocol.io/">MCP</a> 把工具放到独立进程，与本仓「工具即进程内函数」相反——跨应用复用强，代价是多一层协议与部署。</p></div>
+
+<div class="view cost"><span class="h">代价 / 遗留</span>
+<p>轮次上限是<b>启发式</b>：需要更多跳的能力要自己覆写 <code>max_turns</code>；回灌格式与厂商协议强相关（成对不变量），写错会在厂商侧报 400，本地难复现。</p></div>
+<div class="adr">ADR 锚点：<b>ADR-0033</b>（轮次上限 / 硬失败 / 回灌契约 / 同轮多工具）</div>
+</div>
+
+<h2 class="chapter">推荐一手资料</h2>
+<ul>
+<li><a href="https://langchain-ai.github.io/langgraph/tutorials/introduction/">LangGraph 概览</a>——持久化、human-in-the-loop、durable execution，是「框架替你做编排」的对照面。</li>
+<li><a href="https://langchain-ai.github.io/agent-protocol">Agent Protocol</a>——threads + runs 的服务端会话建模，与 KP9 直接可比。</li>
+<li><a href="https://platform.openai.com/docs/guides/function-calling">OpenAI Function Calling 指南</a>——tool 消息为什么必须与前一条 assistant 的 tool_calls 配对。</li>
+<li><a href="https://arxiv.org/abs/2210.03629">ReAct 论文</a>——Thought-Action-Observation 循环的原点。</li>
+<li>仓库内：<code>backend/app/features/assistant/service.py</code> 的 docstring 与行内注释（每一步「为什么」都写在代码里）。</li>
+</ul>
+
+<div class="quiz">
+<h3>检索练习（先想再看）</h3>
+<p class="q">1. 为什么路由要在「开流之前」算完，而不是边流边算？</p>
+<button>显示答案</button>
+<div class="a">流内算等于把判别逻辑塞进展示通道，端点要反读某一帧的字段才能知道结果，形成顺序耦合；预路由返回结构化决策，可被断言、可被落库复用、还能在流式前做配额预航班。</div>
+
+<p class="q">2. 多轮上下文放服务端，最大的收益是什么？最大的代价是什么？</p>
+<button>显示答案</button>
+<div class="a">收益：跨设备续接、可审计回放、客户端无法伪造历史。代价：服务端要有会话表与归属校验，且排序键（turn）一旦写错就是全局性的数据缺陷——还无法靠回填修复。</div>
+
+<p class="q">3. tool loop 里「既没工具也没正文」为什么必须硬失败，而不是让模型再说一句？</p>
+<button>显示答案</button>
+<div class="a">因为那意味着模型把调用意图留在了思维链里、没走原生 function calling；此时「再说一句」只会把内部独白（含调用草稿）当成答案下发，既不是用户要的结果，也泄露内部协议。</div>
+</div>
+
+<div class="callout">
+<b>课后一问</b>
+「轮次上限 = 3」是个魔法数字。如果你的查询场景稳定需要 4 跳，你会改上限、拆工具、还是改 SOP？说出你的取舍。
+</div>
+
+<div class="nav">
+<a href="./0001-agent-core-layering.html">← 上一课：分层与内核</a>
+<a href="./0003-contracts-and-failures.html">下一课：契约与失败边界 →</a>
+<a href="../reference/cheatsheet.html">速查表</a>
+</div>
+
+</div>
+<script>
+document.querySelectorAll('.quiz button').forEach(function (b) {
+  b.addEventListener('click', function () {
+    b.nextElementSibling.classList.toggle('open');
+  });
+});
+</script>
+</body>
+</html>
