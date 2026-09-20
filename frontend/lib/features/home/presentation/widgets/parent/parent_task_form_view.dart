@@ -805,35 +805,6 @@ class _PreviewCard extends StatelessWidget {
             Text('解析：${q.explanation}',
                 style: text.bodySmall?.copyWith(color: app.onSurfaceVariant)),
           ],
-          // 出题思路：题卡落定后持久可见（不再只藏在右上角 info icon / 生成期一闪而过），
-          // 让「生成中」闪现的推理在卡片上也能看清（ADR-0017 落地）。
-          if (q.reasoning.isNotEmpty) ...[
-            const SizedBox(height: AppSpacing.sm),
-                         Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(AppSpacing.md),
-                decoration: BoxDecoration(
-                  color: AppBrutal.paper,
-                  borderRadius: BorderRadius.circular(AppRadius.chip),
-                  border: Border.all(
-                      color: AppBrutal.ink,
-                      width: AppElevation.borderWidthSm),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('出题思路',
-                        style: text.labelSmall?.copyWith(
-                            color: AppBrutal.violet,
-                            fontWeight: FontWeight.w700)),
-                  const SizedBox(height: 4),
-                  Text(q.reasoning,
-                      style: text.bodySmall?.copyWith(
-                          color: app.onSurfaceVariant)),
-                ],
-              ),
-            ),
-          ],
         ],
       ),
     );
