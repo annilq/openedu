@@ -14,9 +14,10 @@ import '../widgets/parent/parent_question_card.dart';
 
 /// 家长草稿审核页（R-Q1=c / R-Q3 / R-Q4 / R-Q5=b）。
 ///
-/// 入口：ParentTaskFormView 生成成功后跳转。
-/// 动作：单题/批量加入题库、删除、单题/整卷重生成、题干/选项/答案/解析
-/// 内联编辑、锁定确认、派发、作废。
+/// 入口：ParentTaskFormView 生成、家长在审阅闸门点「确认」后跳转（ADR-0056）。
+/// 动作：单题/批量加入题库、删除、单题换一题、题干/选项/答案/解析
+/// 内联编辑、锁定确认、派发、作废。整卷重生成已移除——它等价于整份重来，与闸门处的
+/// 「重新生成」重复（ADR-0056）。
 class ParentTaskReviewScreen extends ConsumerStatefulWidget {
   final TaskModel task;
 
@@ -132,17 +133,8 @@ class _ParentTaskReviewScreenState
   Widget _buildActionBar(TaskModel task, AppColors app, bool locked) {
     final buttons = <Widget>[];
     if (task.isDraft) {
-      // 题库组卷任务 specs 为空，无 AI 生成规格，故不展示「整卷重生成」
-      if (task.specs.isNotEmpty) {
-        buttons.add(
-          ShadButton.outline(
-
-            onPressed: locked ? null : () => _onRegenerateAll(task.id),
-            leading: const Icon(LucideIcons.rotateCw, size: 16),
-            child: const Text('整卷重生成'),
-          ),
-        );
-      }
+      // 「整卷重生成」已移除（ADR-0056）：它等价于「这份推翻重来」，与生成页审阅闸门处的
+      // 「重新生成」重复，且要全量重跑。草稿页只保留逐题精修（含单题「换一题」）。
       buttons.add(
         ShadButton.outline(
           
@@ -296,13 +288,9 @@ class _ParentTaskReviewScreenState
                 locked: busyTqId != null || progress != null),
             const SizedBox(height: AppSpacing.xl2),
             if (task.questions.isEmpty)
-              // 允许删到 0 题：空态按「有无生成规格」给不同引导——有规格可整卷
-              // 重生成，题库组卷的草稿（specs 为空）只能回题库重新选。
-              _EmptyHint(
-                onRegen: task.specs.isNotEmpty
-                    ? () => _onRegenerateAll(task.id)
-                    : null,
-              )
+              // 允许删到 0 题：整卷重生成已移除（ADR-0056），故空态只给指路文案——
+              // 草稿页不能加题，删空之后只能回生成页/题库重来，或作废这份草稿。
+              const _EmptyHint()
             else
               ...List.generate(task.questions.length, (i) {
                 final q = task.questions[i];
@@ -478,19 +466,6 @@ class _ParentTaskReviewScreenState
     }
   }
 
-  Future<void> _onRegenerateAll(String taskId) async {
-    try {
-      await ref
-          .read(parentTaskReviewProvider(widget.task.id).notifier)
-          .regenerateAll(taskId);
-      if (!mounted) return;
-      AppToast.show(context, '整卷已按原规格重生成');
-    } catch (e) {
-      if (!mounted) return;
-      AppToast.error(context, e);
-    }
-  }
-
   Future<void> _onEdit(
       String taskId, String tqId, Map<String, dynamic> edits) async {
     try {
@@ -618,10 +593,12 @@ class _ParentTaskReviewScreenState
 }
 
 
+/// 草稿被删到 0 题时的空态。
+///
+/// 整卷重生成移除后（ADR-0056）这里**不再给按钮**：草稿页没有「添加题目」入口，
+/// 删空即无法在页内补齐，给一个点不了的按钮比不给更糟。只指路：回「布置任务」或题库重来。
 class _EmptyHint extends StatelessWidget {
-  /// 为 null 表示当前草稿没有生成规格（题库组卷），无法整卷重生成。
-  final VoidCallback? onRegen;
-  const _EmptyHint({this.onRegen});
+  const _EmptyHint();
 
   @override
   Widget build(BuildContext context) {
@@ -648,21 +625,13 @@ class _EmptyHint extends StatelessWidget {
           Text('草稿暂未包含任何题目', style: AppTheme.textOf(context).titleMedium),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            onRegen != null
-                ? '点击「整卷重生成」按原规格重新出题'
-                : '本题库组卷草稿无生成规格，请返回题库重新选题组卷',
+            '草稿页不能新增题目，请回「布置任务」重新生成，或到题库选题组卷；'
+            '不需要这份草稿可直接作废。',
+            textAlign: TextAlign.center,
             style: AppTheme.textOf(context)
                 .bodyMedium
                 ?.copyWith(color: app.onSurfaceVariant),
           ),
-          if (onRegen != null) ...[
-            const SizedBox(height: AppSpacing.lg),
-            ShadButton(
-              onPressed: onRegen,
-              leading: const Icon(LucideIcons.rotateCw, size: 18),
-              child: const Text('整卷重生成'),
-            ),
-          ],
         ],
       ),
     );

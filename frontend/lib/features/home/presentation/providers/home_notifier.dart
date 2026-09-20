@@ -31,10 +31,13 @@ class TaskGenSuccess extends TaskGenState {
   bool get isShort => expected > 0 && task.questions.length < expected;
 
   /// 少题提示文案（供 UI 直接展示）。
+  ///
+  /// 少题的补齐手段在草稿页是**单题换一题**——整卷重生成已移除（ADR-0056），
+  /// 它等价于「整份推翻重来」，与闸门处的「重新生成」重复且要全量重跑。
   String get shortMessage => failures.isNotEmpty
       ? '应出 $expected 题，实际只生成 ${task.questions.length} 题：${failures.first}。'
-          '可在草稿页整卷重生成补齐。'
-      : '应出 $expected 题，实际只生成 ${task.questions.length} 题，可在草稿页整卷重生成补齐。';
+          '可在草稿页逐题「换一题」补齐。'
+      : '应出 $expected 题，实际只生成 ${task.questions.length} 题，可在草稿页逐题「换一题」补齐。';
 }
 class TaskGenError extends TaskGenState {
   final String message;
@@ -68,9 +71,53 @@ class TaskGenPreview extends TaskGenState {
   });
 }
 
+/// 待确认的预览批次：题卡 + 落库请求体 + 少题元信息。纯内存，随 [TaskGenReady] 一起存在。
+class _Pending {
+  final Map<String, dynamic> body;
+  final List<QuestionPreview> questions;
+  final int expected;
+  final List<String> failures;
+
+  const _Pending({
+    required this.body,
+    required this.questions,
+    required this.expected,
+    required this.failures,
+  });
+}
+
+/// 生成结束、**尚未落库**，停在生成页等家长确认（ADR-0056 审阅闸门）。
+///
+/// 这一态的存在意义是「落库时机后移」：题卡只在内存里，数据库里没有任何行。
+/// 因此此态下家长可以安全地「重新生成」（不会留下第二份草稿）或「放弃」
+/// （不需要调任何删除接口）。确认后才 [TaskGenNotifier.confirm] 落库为 draft。
+class TaskGenReady extends TaskGenState {
+  final List<QuestionPreview> questions;
+
+  /// 应出题数；0 表示未知。
+  final int expected;
+
+  /// 单题失败原因；非空表示本次有题没生成出来。
+  final List<String> failures;
+
+  const TaskGenReady(
+    this.questions, {
+    this.expected = 0,
+    this.failures = const [],
+  });
+
+  /// 本次是否少题：确认前就告知，别等落库后才发现残缺。
+  bool get isShort => expected > 0 && questions.length < expected;
+}
+
 class TaskGenNotifier extends StateNotifier<TaskGenState> {
   final TasksRepository _tasks;
   final AssistantRepository _assistant;
+
+  /// 待确认的一批预览题（ADR-0056）：非空即处于 [TaskGenReady]，
+  /// 确认后清空。**纯内存，不落库**——这是「放弃无需删除」的前提。
+  _Pending? _pending;
+
   TaskGenNotifier(this._tasks, this._assistant) : super(const TaskGenIdle());
 
   /// 把结构化 specs 经 `/tasks/generate` 直传后端（ADR-0034 P1）：服务端据此构造
@@ -121,15 +168,23 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
         state = TaskGenError(fold.emptyMessage);
         return;
       }
-      await _persist(
-        fold.questions,
-        _buildBody(
+      // 审阅闸门（ADR-0056）：**流结束不落库**，只把题卡与请求体留在内存里等确认。
+      // 后果有三：① 重新生成不会产出第二份 draft；② 放弃无需任何删除调用；
+      // ③ 后端少一次必然发生的聚合写入——被放弃的生成在库里不留痕迹。
+      _pending = _Pending(
+        body: _buildBody(
           childId: childId,
           title: title,
           specs: specs,
           focusInterest: focusInterest,
           model: model,
         ),
+        questions: fold.questions,
+        expected: expected,
+        failures: fold.failures,
+      );
+      state = TaskGenReady(
+        fold.questions,
         expected: expected,
         failures: fold.failures,
       );
@@ -138,6 +193,27 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
     } catch (e) {
       state = TaskGenError('⚠️ 网络异常，请稍后重试');
     }
+  }
+
+  /// 确认并落库：把预览题卡 POST 到 /tasks/from-generated 落库为 draft 任务。
+  ///
+  /// 这是 [TaskGenReady] 之后的唯一出口。此前不存在任何数据库行，
+  /// 故此调用失败时家长仍停留在生成页，题卡未丢，可重试。
+  Future<void> confirm() async {
+    final pending = _pending;
+    if (pending == null) return;
+    await _persist(
+      pending.questions,
+      pending.body,
+      expected: pending.expected,
+      failures: pending.failures,
+    );
+  }
+
+  /// 放弃这批预览题：预览纯内存，无需任何删除调用，直接回空闲态。
+  void discard() {
+    _pending = null;
+    state = const TaskGenIdle();
   }
 
   /// 把已生成题卡 POST 到 /tasks/from-generated 落库为 draft 任务。
@@ -187,7 +263,11 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
     return body;
   }
 
-  void reset() => state = const TaskGenIdle();
+  /// 回到空闲态。确认成功后由 UI 调用，同时丢弃待确认批次（已落库，不再需要）。
+  void reset() {
+    _pending = null;
+    state = const TaskGenIdle();
+  }
 }
 
 final taskGenNotifierProvider =

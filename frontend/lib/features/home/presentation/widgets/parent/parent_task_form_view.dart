@@ -22,6 +22,9 @@ import '../../providers/selected_child_provider.dart';
 
 /// 布置练习任务右栏：多学科行表单 + 一键均分 + 生成（ADR-0004）。
 /// R3：生成成功后不直接跳娃娃练习页，回调 `onNavigateToReview` 进草稿审核页。
+///
+/// ADR-0056 审阅闸门：生成结束**停在生成页**等家长确认，此时题卡只在内存里、尚未落库；
+/// 只有点「确认」才会 POST /tasks/from-generated 并在成功后跳转。
 class ParentTaskFormView extends ConsumerStatefulWidget {
   final void Function(TaskModel task) onNavigateToReview;
   const ParentTaskFormView({super.key, required this.onNavigateToReview});
@@ -206,7 +209,7 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
           if (next.isShort) {
             AppToast.error(context, next.shortMessage);
           } else {
-            AppToast.show(context, '已生成 ${next.task.questions.length} 道题');
+            AppToast.show(context, '已保存草稿，共 ${next.task.questions.length} 道题');
           }
           ref.read(taskGenNotifierProvider.notifier).reset();
           final selected = ref.read(selectedChildProvider);
@@ -280,7 +283,8 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
                   // 之后仅展示题卡（题卡逐张浮现），不重复显示 spinner。
                   _buildActionArea(genState),
                   const SizedBox(height: AppSpacing.lg),
-                  if (genState is TaskGenPreview) _buildPreview(genState),
+                  if (genState is TaskGenPreview || genState is TaskGenReady)
+                    _buildPreview(genState),
                 ],
               ),
             ),
@@ -465,12 +469,47 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
     );
   }
 
-  /// 流式生成 / 落库期间的操作区：隐藏按钮；首题 STEP 到达前（尚无题卡也无内联推理区）
-  /// 显示加载动画——带上阶段文案（路由/工具帧提取），把「连接 + 预检 + 首题
-  /// 生成」这段死窗从裸转圈变成可读的推进状态。之后仅展示题卡/生成中面板
-  /// （题卡逐张浮现），不再重复 spinner。
-  /// 非忙碌态显示「生成任务」按钮。
+  /// 审阅闸门（ADR-0056）：生成结束**不自动落库、不自动跳转**，停在生成页等家长拍板。
+  ///
+  /// 三个出口各有明确语义：确认 = 落库为 draft 并进草稿页；重新生成 = 丢弃内存里的题卡重跑
+  /// （数据库里还没有任何行，不会产生第二份草稿）；放弃 = 回空闲态（同样无需删除调用）。
+  ///
+  /// 并排按钮一律走 `Wrap`：窄栏（<700）下 `Row` + 固定宽会压缩 [ShadButton]
+  /// 的内容盒导致 overflow（描边画在盒外，可见高 = 声明高 + 2×描边宽）。
+  Widget _buildReviewGate() {
+    return Wrap(
+      spacing: AppSpacing.md,
+      runSpacing: AppSpacing.sm,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        AppPrimaryButton(label: '确认并进入草稿', onPressed: _confirm),
+        ShadButton.outline(
+          onPressed: _generate,
+          leading: const Icon(LucideIcons.rotateCw, size: 16),
+          child: const Text('重新生成'),
+        ),
+        ShadButton.outline(
+          onPressed: _discard,
+          leading: const Icon(LucideIcons.x, size: 16),
+          child: const Text('放弃'),
+        ),
+      ],
+    );
+  }
+
+  /// 确认：把内存里的题卡落库为 draft 任务，成功后由 [ref.listen] 跳草稿页。
+  void _confirm() {
+    ref.read(taskGenNotifierProvider.notifier).confirm();
+  }
+
+  /// 放弃：题卡只在内存里，丢弃即可，不需要调任何删除接口（ADR-0056）。
+  void _discard() {
+    ref.read(taskGenNotifierProvider.notifier).discard();
+  }
+
   Widget _buildActionArea(TaskGenState genState) {
+    // 生成结束、等待确认：优先于忙碌判定——此时不该隐藏按钮，反而必须给出口。
+    if (genState is TaskGenReady) return _buildReviewGate();
     final busy = genState is TaskGenLoading ||
         (genState is TaskGenPreview && genState.streaming);
     final showSpinner = busy &&
@@ -495,8 +534,39 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
     );
   }
 
-  Widget _buildPreview(TaskGenPreview s) {
+  /// 预览区。[TaskGenPreview]（流式/落库中）与 [TaskGenReady]（待确认）共用同一套渲染，
+  /// 后者只是「不再有流式推理区」的同构形态。
+  Widget _buildPreview(TaskGenState genState) {
+    final app = AppTheme.colorsOf(context);
     final text = AppTheme.textOf(context);
+    final List<QuestionPreview> questions;
+    final bool streaming;
+    final List<String> failures;
+    final int liveIndex;
+    final String liveLabel;
+    final String liveReasoning;
+    final bool awaitingConfirm = genState is TaskGenReady;
+    if (genState is TaskGenPreview) {
+      questions = genState.questions;
+      streaming = genState.streaming;
+      failures = genState.failures;
+      liveIndex = genState.liveIndex;
+      liveLabel = genState.liveLabel;
+      liveReasoning = genState.liveReasoning;
+    } else {
+      final r = genState as TaskGenReady;
+      questions = r.questions;
+      streaming = false;
+      failures = r.failures;
+      liveIndex = -1;
+      liveLabel = '';
+      liveReasoning = '';
+    }
+    final status = streaming
+        ? '生成中…'
+        : awaitingConfirm
+            ? '待确认'
+            : '已完成';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -504,30 +574,39 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
           children: [
             Expanded(
               child: Text(
-                '预览（${s.questions.length} 题'
-                '${s.streaming ? ' · 生成中…' : ' · 已完成'}）',
+                '预览（${questions.length} 题 · $status）',
                 style: text.titleSmall?.copyWith(fontWeight: FontWeight.w700),
               ),
             ),
           ],
         ),
+        // 边界文案（ADR-0056）：思路不落库是设计，但若不说清楚，进入草稿页后
+        // 「思路不见了」会被当成 bug 再报一次。行为与文案互相印证。
+        if (questions.any((q) => q.reasoning.isNotEmpty))
+          Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.xs),
+            child: Text(
+              '出题思路仅在生成过程中展示，确认后不会随任务保存。',
+              style: text.bodySmall?.copyWith(color: app.onSurfaceVariant),
+            ),
+          ),
         const SizedBox(height: AppSpacing.sm),
         // 有单题失败：醒目提示「少题」，避免家长以为题已出齐。
-        if (s.failures.isNotEmpty)
+        if (failures.isNotEmpty)
           _FailureBanner(
-            text: '有 ${s.failures.length} 道题生成失败：${s.failures.join('；')}',
+            text: '有 ${failures.length} 道题生成失败：${failures.join('；')}',
           ),
         // 生成中：当前题的内联推理区（题卡到达后折叠，见 _PreviewCard 的 info icon）。
-        if (s.streaming && s.liveIndex >= 0)
+        if (streaming && liveIndex >= 0)
           StreamReasoningPanel(
-            index: s.liveIndex + 1,
-            label: s.liveLabel,
-            reasoning: s.liveReasoning,
-            streaming: s.streaming,
+            index: liveIndex + 1,
+            label: liveLabel,
+            reasoning: liveReasoning,
+            streaming: streaming,
           ),
         // key 用序号（列表只追加）→ PopIn 的 State 不重建，已在屏上的题卡
         // 不会因下一张到达而重放弹簧入场。
-        ...s.questions.asMap().entries.map(
+        ...questions.asMap().entries.map(
               (e) => PopIn(
                 key: ValueKey<int>(e.key),
                 child: _PreviewCard(index: e.key + 1, q: e.value),
