@@ -6,6 +6,7 @@ import '../../../../shared/presentation/shell_navigation.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/widgets/adaptive_shell.dart';
+import '../../../../shared/widgets/app_toast.dart';
 import '../../../children/providers/children_provider.dart';
 import '../../../children/presentation/screens/child_form_screen.dart';
 import '../../../assistant/presentation/screens/assistant_chat_page.dart';
@@ -231,10 +232,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           // 空态出口：概览与任务页的「去布置任务」都落到同一个目的地。
           onNavigateToCreate: () => _parentTap(1),
         ),
-      // 生成成功后不直接跳 PracticeScreen，改跳 ParentTaskReviewScreen
-      1 => ParentTaskFormView(
-          onNavigateToReview: _navigateToReview,
-        ),
+      // ADR-0057：生成页不再接跳转回调——收尾（含进草稿页）由本页的监听统一负责。
+      1 => const ParentTaskFormView(),
       2 => const ParentWrongQuestionsView(),
       3 => const ParentTutorLogsView(),
       5 => ChildFormScreen(
@@ -422,6 +421,41 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ref.read(shellNavigationProvider.notifier).consume();
       final index = _parentIndexFor(next);
       if (index != null) _parentTap(index);
+    });
+
+    // ADR-0057：出题的**收尾动作**放在这一层，不放生成页。
+    //
+    // 生成页（`ParentTaskFormView`）只在该侧栏索引挂载，家长一切走它就被卸载；
+    // 而本页不会。凡是「任务结束了总得有人收尾」的事（提示、重置、刷新、进草稿页）
+    // 都必须挂在生命周期更长的那一层——挂在页面里，人一走就成了无人区：
+    // 成功不提示、失败静默，落库倒是照常发生。生成页只负责渲染 state。
+    ref.listen(taskGenNotifierProvider, (_, next) {
+      // 推迟到下一帧（沿用生成页旧实现的理由）：避免在 build 阶段同步弹 toast +
+      // 跳转，导致 widget tree 在 shadcn_ui toast SlideEffect 动画中途销毁，
+      // padding 计算拿到 NaN 触发 isNonNegative 断言。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (next is TaskGenError) {
+          AppToast.error(context, next.message);
+          return;
+        }
+        if (next is! TaskGenSuccess) return;
+        // 少题必须说清楚：逐题串行出题时某题失败会产生残缺草稿，静默当成功会让
+        // 家长以为「语文没出」是系统漏了，而不是生成失败。
+        if (next.isShort) {
+          AppToast.error(context, next.shortMessage);
+        } else {
+          AppToast.show(context, '已保存草稿，共 ${next.task.questions.length} 道题');
+        }
+        ref.read(taskGenNotifierProvider.notifier).reset();
+        final selected = ref.read(selectedChildProvider);
+        if (selected != null) {
+          ref.read(progressNotifierProvider.notifier).load(selected.id);
+          ref.read(masteryNotifierProvider.notifier).load(selected.id);
+          ref.read(parentWrongQuestionsProvider.notifier).load(selected.id);
+        }
+        _navigateToReview(next.task);
+      });
     });
 
     if (widget.user.isParent) {

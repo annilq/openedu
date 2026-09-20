@@ -16,18 +16,19 @@ import '../../../../children/presentation/providers/children_notifier.dart';
 import '../../../../children/providers/children_provider.dart';
 import '../../../../model_management/presentation/providers/models_notifier.dart';
 import '../../../../model_management/presentation/widgets/model_selector.dart';
-import '../../../../review/presentation/providers/review_notifier.dart';
 import '../../providers/home_notifier.dart';
 import '../../providers/selected_child_provider.dart';
 
 /// 布置练习任务右栏：多学科行表单 + 一键均分 + 生成（ADR-0004）。
-/// R3：生成成功后不直接跳娃娃练习页，回调 `onNavigateToReview` 进草稿审核页。
 ///
 /// ADR-0056 审阅闸门：生成结束**停在生成页**等家长确认，此时题卡只在内存里、尚未落库；
-/// 只有点「确认」才会 POST /tasks/from-generated 并在成功后跳转。
+/// 只有点「确认」才会 POST /tasks/from-generated。
+///
+/// ADR-0057：本页只渲染 state，**不承担任何收尾动作**。确认成功后的提示、重置、
+/// 刷新与进草稿页全部由 `HomeScreen` 负责——本页只在「布置任务」这一个侧栏索引挂载，
+/// 家长一切走就被卸载，挂在这里的收尾逻辑会连人一起消失（成功不提示、失败静默）。
 class ParentTaskFormView extends ConsumerStatefulWidget {
-  final void Function(TaskModel task) onNavigateToReview;
-  const ParentTaskFormView({super.key, required this.onNavigateToReview});
+  const ParentTaskFormView({super.key});
 
   @override
   ConsumerState<ParentTaskFormView> createState() => _ParentTaskFormViewState();
@@ -196,38 +197,6 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
   @override
   Widget build(BuildContext context) {
     final genState = ref.watch(taskGenNotifierProvider);
-
-    ref.listen<TaskGenState>(taskGenNotifierProvider, (prev, next) {
-      // 推迟到下一帧：避免在 build 阶段同步弹 toast + 跳转，
-      // 导致 widget tree 在 shadcn_ui toast SlideEffect 动画中途销毁，
-      // padding 计算拿到 NaN 触发 isNonNegative 断言。
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        if (next is TaskGenSuccess) {
-          // 少题必须说清楚：逐题串行出题时某题失败会产生残缺草稿，
-          // 静默当成功会让人以为「语文没出」是系统漏了而不是生成失败。
-          if (next.isShort) {
-            AppToast.error(context, next.shortMessage);
-          } else {
-            AppToast.show(context, '已保存草稿，共 ${next.task.questions.length} 道题');
-          }
-          ref.read(taskGenNotifierProvider.notifier).reset();
-          final selected = ref.read(selectedChildProvider);
-          if (selected != null) {
-            ref.read(progressNotifierProvider.notifier).load(selected.id);
-            ref.read(masteryNotifierProvider.notifier).load(selected.id);
-            ref
-                .read(parentWrongQuestionsProvider.notifier)
-                .load(selected.id);
-          }
-          widget.onNavigateToReview(next.task);
-        }
-        if (next is TaskGenError) {
-          AppToast.error(context, next.message);
-        }
-      });
-    });
-
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(
           AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xl2),
