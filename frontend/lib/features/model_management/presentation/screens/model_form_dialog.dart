@@ -42,6 +42,8 @@ class _ModelFormDialogState extends ConsumerState<ModelFormDialog> {
   final _providerCtrl = TextEditingController();
   bool _isDefault = false;
   bool _saving = false;
+  bool _probing = false;
+  ModelProbeResult? _probe;
 
   /// 当前选中的服务商预设 key；null 表示未匹配到（手动模式）。
   String? _presetKey;
@@ -72,6 +74,21 @@ class _ModelFormDialogState extends ConsumerState<ModelFormDialog> {
       if (first != null) _baseUrlCtrl.text = first.baseUrl ?? '';
       _providerCtrl.text = widget.initial?.provider ?? (first?.provider ?? '');
     }
+    // 任一字段被改动后，上一次的测试结论即失效——留着「连接成功」的绿灯再改密钥，
+    // 正是本功能要消灭的那种假象。
+    for (final c in <TextEditingController>[
+      _labelCtrl,
+      _baseUrlCtrl,
+      _modelNameCtrl,
+      _apiKeyCtrl,
+      _providerCtrl,
+    ]) {
+      c.addListener(_invalidateProbe);
+    }
+  }
+
+  void _invalidateProbe() {
+    if (_probe != null && mounted) setState(() => _probe = null);
   }
 
   String? _matchPreset(String provider, String? baseUrl) {
@@ -103,36 +120,90 @@ class _ModelFormDialogState extends ConsumerState<ModelFormDialog> {
     super.dispose();
   }
 
+  /// 表单当前值 → 一组模型参数。
+  ///
+  /// 保存与「测试连接」**共用**这一个出口：provider 的回落逻辑（预设 > 手填 >
+  /// 编辑态 > openai_compat）若在两处各写一遍，迟早试的是 A、存的是 B。
+  ({
+    String label,
+    String provider,
+    String? baseUrl,
+    String modelName,
+    String apiKey,
+  }) _formParams() {
+    final manualProvider = _providerCtrl.text.trim();
+    final baseUrl = _baseUrlCtrl.text.trim();
+    return (
+      label: _labelCtrl.text.trim(),
+      provider: _preset?.provider ??
+          (manualProvider.isEmpty
+              ? (widget.initial?.provider ?? 'openai_compat')
+              : manualProvider),
+      baseUrl: baseUrl.isEmpty ? null : baseUrl,
+      modelName: _modelNameCtrl.text.trim(),
+      apiKey: _apiKeyCtrl.text.trim(),
+    );
+  }
+
+  /// 「测试连接」：拿表单里（可能尚未保存的）参数去后端真发一次请求。
+  ///
+  /// 走后端而不是前端直连厂商——密钥密文只在后端，编辑时密钥留空更是只有后端
+  /// 才知道该用哪一份去试。结果一律以 [ModelProbeResult] 呈现（连不上也是 200）。
+  Future<void> _testConnection() async {
+    final p = _formParams();
+    if (p.modelName.isEmpty) {
+      AppToast.show(context, '请先填写模型名');
+      return;
+    }
+    // 编辑态留空 = 沿用库里那份密钥（后端据此解密）；新增态则必须先填。
+    if (widget.initial == null && p.apiKey.isEmpty) {
+      AppToast.show(context, '请先填写 API Key');
+      return;
+    }
+    setState(() {
+      _probing = true;
+      _probe = null;
+    });
+    final result = await ref
+        .read(modelsNotifierProvider.notifier)
+        .testConnection(
+          ModelProbeReq(
+            modelId: widget.initial?.id,
+            provider: p.provider,
+            baseUrl: p.baseUrl,
+            modelName: p.modelName,
+            apiKey: p.apiKey.isEmpty ? null : p.apiKey,
+            providerPreset: _presetKey,
+          ),
+        );
+    if (!mounted) return;
+    setState(() {
+      _probing = false;
+      _probe = result;
+    });
+  }
+
   Future<void> _save() async {
-    final label = _labelCtrl.text.trim();
-    final modelName = _modelNameCtrl.text.trim();
-    if (label.isEmpty || modelName.isEmpty) {
+    final p = _formParams();
+    if (p.label.isEmpty || p.modelName.isEmpty) {
       AppToast.show(context, '名称与模型名不能为空');
       return;
     }
     // ADR-0039：新增必须带 API Key（后端也强制校验，这里前置拦截以免白跑一趟）；
     // 编辑留空 = 不修改已有密钥，故仅在新增时必填。
-    final apiKey = _apiKeyCtrl.text.trim();
-    if (widget.initial == null && apiKey.isEmpty) {
+    if (widget.initial == null && p.apiKey.isEmpty) {
       AppToast.show(context, '请填写 API Key');
       return;
     }
-    // provider 优先取所选服务商预设；无预设（手动模式）取手动填写值，再回退到编辑态/默认。
-    final manualProvider = _providerCtrl.text.trim();
-    final provider = _preset?.provider ??
-        (manualProvider.isEmpty
-            ? (widget.initial?.provider ?? 'openai_compat')
-            : manualProvider);
-    final baseUrl = _baseUrlCtrl.text.trim().isEmpty ? null : _baseUrlCtrl.text.trim();
     setState(() => _saving = true);
     final err = widget.initial == null
         ? await ref.read(modelsNotifierProvider.notifier).create(
               ModelCreateReq(
-                label: label,
-                provider: provider,
-                baseUrl: baseUrl,
-                modelName: modelName,
-                apiKey: apiKey,
+                label: p.label,
+                provider: p.provider,
+                baseUrl: p.baseUrl,
+                modelName: p.modelName,
+                apiKey: p.apiKey,
                 isDefault: _isDefault,
                 providerPreset: _presetKey,
               ),
@@ -140,12 +211,12 @@ class _ModelFormDialogState extends ConsumerState<ModelFormDialog> {
         : await ref.read(modelsNotifierProvider.notifier).update(
               widget.initial!.id,
               ModelUpdateReq(
-                label: label,
-                provider: provider,
-                baseUrl: baseUrl,
-                modelName: modelName,
+                label: p.label,
+                provider: p.provider,
+                baseUrl: p.baseUrl,
+                modelName: p.modelName,
                 // 编辑时 api_key 留空表示不修改；非空则覆盖。
-                apiKey: apiKey.isEmpty ? null : apiKey,
+                apiKey: p.apiKey.isEmpty ? null : p.apiKey,
                 isDefault: _isDefault,
                 providerPreset: _presetKey,
               ),
@@ -158,6 +229,44 @@ class _ModelFormDialogState extends ConsumerState<ModelFormDialog> {
     }
     Navigator.of(context).pop();
     widget.onDone();
+  }
+
+  /// 测试结果条：撞色填充 + 墨黑描边（ADR-0044），前景走 [AppBrutal.onColor]
+  /// ——亮块配墨黑、深块配白，不得自配色。
+  Widget _probeStrip(BuildContext context, ModelProbeResult r) {
+    final text = AppTheme.textOf(context);
+    final fill = r.ok ? AppBrutal.green : AppBrutal.red;
+    final fg = AppBrutal.onColor(fill);
+    final detail = r.detail;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: fill,
+        borderRadius: BorderRadius.circular(AppRadius.card),
+        border: Border.all(color: AppBrutal.ink, width: AppElevation.borderWidth),
+        boxShadow: AppElevation.hard(),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            r.ok ? LucideIcons.checkCircle2 : LucideIcons.alertTriangle,
+            size: 16,
+            color: fg,
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Text(
+              detail == null || detail.isEmpty ? r.message : '${r.message}\n$detail',
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
+              style: text.bodySmall?.copyWith(color: fg, height: 1.35),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -241,6 +350,29 @@ class _ModelFormDialogState extends ConsumerState<ModelFormDialog> {
                     ? '••••••••（不改请留空）'
                     : (preset?.apiKeyHint ?? '必填：填入该服务的 API Key'),
               ),
+              const SizedBox(height: AppSpacing.md),
+              Row(
+                children: [
+                  AppBrutalButton(
+                    label: _probing ? '测试中…' : '测试连接',
+                    icon: LucideIcons.plug,
+                    fill: AppBrutal.cyan,
+                    fullWidth: false,
+                    onPressed: _probing ? null : _testConnection,
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: Text(
+                      '真实调用一次：收到首个响应即结束，用于确认密钥、地址与模型名都对。',
+                      style: text.bodySmall?.copyWith(color: app.onSurfaceVariant),
+                    ),
+                  ),
+                ],
+              ),
+              if (_probe != null) ...[
+                const SizedBox(height: AppSpacing.md),
+                _probeStrip(context, _probe!),
+              ],
               const SizedBox(height: AppSpacing.md),
               Row(
                 children: [

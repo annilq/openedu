@@ -105,6 +105,9 @@ class Settings(BaseSettings):
     #   未配置任何模型时引擎解析返回 None，上层下发「未配置模型」提示，出题/答疑/批改不可用。
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     MODEL_APIKEY_SECRET: str = ""  # Fernet 密钥，用于加密 ModelConfig.api_key（建议显式固定，见 ADR-0038）
+    # 「测试连接」的单次超时（秒）：家长在表单里点一下就该有结论，厂商侧挂住
+    # 不能把整个请求线程拖死（本地 Ollama 首次拉模型可能长达数十秒，故给足 20s）。
+    MODEL_PROBE_TIMEOUT_S: float = 20.0
 
     # —— 三期 教材知识库检索（T11 / AC-305 检索能力）——
     # mock/builtin = 内置自编知识点库（无版权风险，闭环可用）；

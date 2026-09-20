@@ -3,14 +3,15 @@
 GET  /models           列出本家长自建模型（不含 api_key）
 GET  /models/providers 服务商目录（deepseek/openai/... 默认 base_url + 模型名建议）
 POST /models           新增模型（api_key 必填，写入前加密；支持 provider_preset 自动补全）
+POST /models/test      「测试连接」：拿一组（可能未落库的）参数真发一次请求，200 + ok=false
 GET  /models/default   查本家长默认模型
 PUT  /models/default   设本家长默认模型（body: {id}）
 GET  /models/{id}      查单个模型（越权 / 不存在 → 404）
 PUT  /models/{id}      改模型（支持 provider_preset 自动补全）
 DELETE /models/{id}    删模型
 
-注意路由顺序：/default、/providers 必须排在 /{model_id} 之前，否则会被 /{model_id}
-捕获（model_id="default"/"providers" 不是合法 UUID → 422/405）。
+注意路由顺序：/default、/providers、/test 必须排在 /{model_id} 之前，否则会被 /{model_id}
+捕获（model_id="default"/"providers"/"test" 不是合法 UUID → 422/405）。
 """
 from __future__ import annotations
 
@@ -19,8 +20,10 @@ import uuid
 from fastapi import APIRouter, HTTPException, status
 
 from app.ai.model_catalog import get_provider_preset, list_provider_presets
+from app.core.crypto import decrypt
 from app.core.deps import CurrentParent, SessionDep
 from app.core.errors import AppErrorException, ErrCode
+from app.features.model_management.probe import probe_model
 from app.features.model_management.repository import (
     create_model_config,
     delete_model_config,
@@ -35,6 +38,8 @@ from app.features.model_management.schemas import (
     ModelConfigResp,
     ModelConfigUpdate,
     ModelListResp,
+    ModelProbeReq,
+    ModelProbeResp,
     ProviderPreset,
     _to_resp,
 )
@@ -83,6 +88,58 @@ def create_model(
         is_default=payload.is_default,
     )
     return _to_resp(mc)
+
+
+@router.post("/test", response_model=ModelProbeResp)
+async def test_model(
+    *, session: SessionDep, parent: CurrentParent, payload: ModelProbeReq
+) -> ModelProbeResp:
+    """「测试连接」：用一组（可能尚未落库的）模型参数真发一次请求。
+
+    - 带 ``model_id``：以库里已存配置与**加密密钥**为底，其余字段作覆盖
+      （编辑时密钥留空 = 用原来那份试，这正是前端自己做不到的那一半）；
+    - 不带 ``model_id``：纯用表单里刚填的参数试（新增场景）。
+
+    结果与判定都返回 200（``ok`` 区分），只有「参数不合法 / 模型不属于你」走 4xx。
+    """
+    provider = payload.provider
+    base_url = payload.base_url
+    model_name = payload.model_name
+    api_key = payload.api_key or None
+
+    if payload.model_id is not None:
+        mc = get_model_config(
+            session=session, id=payload.model_id, parent_id=parent.id
+        )
+        if mc is None:
+            raise AppErrorException(ErrCode.NOT_FOUND, "模型不存在或不属于你的账号")
+        provider = provider or mc.provider
+        base_url = base_url or mc.base_url
+        model_name = model_name or mc.model_name
+        # 未显式提供新密钥 → 用库里解密出来的那份（编辑「留空=不修改」的真实语义）
+        if api_key is None:
+            api_key = decrypt(mc.api_key_enc) if mc.api_key_enc else None
+
+    if payload.provider_preset:
+        preset = get_provider_preset(payload.provider_preset)
+        if preset is None:
+            raise AppErrorException(ErrCode.VALIDATION, f"未知服务商预设: {payload.provider_preset}")
+        provider = provider or preset["provider"]
+        base_url = base_url or preset["base_url"]
+
+    if provider not in ("ollama", "openai_compat"):
+        raise AppErrorException(
+            ErrCode.VALIDATION, "provider 或 provider_preset 必须提供，且 provider 仅支持 ollama / openai_compat"
+        )
+    if not model_name:
+        raise AppErrorException(ErrCode.VALIDATION, "model_name 不能为空")
+
+    return await probe_model(
+        provider=provider,
+        base_url=base_url,
+        model_name=model_name,
+        api_key=api_key,
+    )
 
 
 @router.get("/default", response_model=ModelConfigResp)

@@ -64,3 +64,34 @@ class ModelUpdateReq {
         if (providerPreset != null) 'provider_preset': providerPreset,
       };
 }
+
+/// 「测试连接」请求（POST /models/test）：一组**可能还没保存**的模型参数。
+///
+/// [modelId] 非空时以后台已存配置与加密密钥为底，其余字段只作覆盖——编辑表单
+/// 里 API Key 留空（= 不修改）时正是靠它拿库里那份去试。
+class ModelProbeReq {
+  final String? modelId;
+  final String? provider;
+  final String? baseUrl;
+  final String? modelName;
+  final String? apiKey;
+  final String? providerPreset;
+
+  const ModelProbeReq({
+    this.modelId,
+    this.provider,
+    this.baseUrl,
+    this.modelName,
+    this.apiKey,
+    this.providerPreset,
+  });
+
+  Map<String, dynamic> toJson() => {
+        if (modelId != null) 'model_id': modelId,
+        if (provider != null) 'provider': provider,
+        if (baseUrl != null) 'base_url': baseUrl,
+        if (modelName != null) 'model_name': modelName,
+        if (apiKey != null && apiKey!.isNotEmpty) 'api_key': apiKey,
+        if (providerPreset != null) 'provider_preset': providerPreset,
+      };
+}

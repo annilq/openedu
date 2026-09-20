@@ -90,6 +90,42 @@ class DefaultModelReq(BaseModel):
     id: uuid.UUID
 
 
+class ModelProbeReq(BaseModel):
+    """「测试连接」请求：一组**可能还没落库**的模型参数。
+
+    两种用法：
+    - 新增表单：只带 provider / base_url / model_name / api_key（parent 刚敲进去的明文）；
+    - 编辑表单或列表页：带 ``model_id``，以库里已存的配置与**加密密钥**为底，
+      其余字段只作覆盖（编辑时 API Key 留空 = 不修改，故必须用库里的那份去试）。
+
+    ⚠️ ``api_key`` 是本端点唯一会收到明文密钥的入口：只在本次请求内使用，
+    不落库、不进日志、不回显（响应体里没有任何密钥字段）。
+    """
+
+    model_id: uuid.UUID | None = None
+    provider: str | None = Field(default=None, max_length=32)
+    base_url: str | None = Field(default=None, max_length=512)
+    model_name: str | None = Field(default=None, max_length=128)
+    api_key: str | None = Field(default=None, max_length=2048)
+    provider_preset: str | None = Field(default=None, max_length=32)
+
+
+class ModelProbeResp(BaseModel):
+    """「测试连接」结果：**结果即数据**，故连通失败也返回 200 + ``ok=false``。
+
+    用 200 而不是 502，是因为「测不通」正是本端点要回答的正常结论之一——
+    只有「参数不合法 / 模型不属于你」才走 4xx。``error_kind`` 直接沿用
+    ADR-0038 的归因枚举（auth / rate_limit / network / bad_request / unknown）
+    + ``timeout``，前端据此给出可操作的下一步（换密钥 / 改地址 / 换模型名）。
+    """
+
+    ok: bool
+    latency_ms: int
+    message: str  # 面向家长的单句结论
+    error_kind: str | None = None
+    detail: str | None = None  # 厂商原始原因（已脱敏、截断），供家长自行核对
+
+
 def _to_resp(mc: ModelConfig) -> ModelConfigResp:
     """把 ModelConfig ORM 行转为对外响应（不含 api_key 明文）。"""
     return ModelConfigResp(

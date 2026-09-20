@@ -9,4 +9,5 @@ abstract class ModelsRepository {
   Future<void> update(String id, ModelUpdateReq req);
   Future<void> delete(String id);
   Future<void> setDefault(String id);
+  Future<ModelProbeResult> testConnection(ModelProbeReq req);
 }

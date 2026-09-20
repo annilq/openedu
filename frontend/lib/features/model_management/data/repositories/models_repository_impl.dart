@@ -35,4 +35,10 @@ class ModelsRepositoryImpl implements ModelsRepository {
   @override
   Future<void> setDefault(String id) =>
       _network.put('/models/default', body: {'id': id});
+
+  @override
+  Future<ModelProbeResult> testConnection(ModelProbeReq req) async {
+    final data = await _network.post('/models/test', body: req.toJson());
+    return ModelProbeResult.fromJson(decodeMap(data));
+  }
 }

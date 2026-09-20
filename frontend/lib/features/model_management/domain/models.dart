@@ -74,6 +74,40 @@ class ModelInfo {
   }
 }
 
+/// 「测试连接」结果（POST /models/test）。
+///
+/// 注意**测不通也是 200**：后端把「连不上」当作要回答的正常结论之一（`ok=false`），
+/// 只有参数不合法 / 模型不属于你才走 4xx。所以前端不能靠「有没有抛异常」判断成败，
+/// 必须看 [ok]。
+///
+/// [errorKind] 沿用后端 ADR-0038 的归因枚举（auth / rate_limit / network /
+/// bad_request / unknown）+ `timeout`，用于给出可操作的下一步。
+class ModelProbeResult {
+  final bool ok;
+  final int latencyMs;
+  final String message;
+  final String? errorKind;
+  final String? detail;
+
+  const ModelProbeResult({
+    required this.ok,
+    required this.latencyMs,
+    required this.message,
+    this.errorKind,
+    this.detail,
+  });
+
+  factory ModelProbeResult.fromJson(Map<String, dynamic> json) {
+    return ModelProbeResult(
+      ok: json['ok'] as bool? ?? false,
+      latencyMs: json['latency_ms'] as int? ?? 0,
+      message: json['message'] as String? ?? '',
+      errorKind: json['error_kind'] as String?,
+      detail: json['detail'] as String?,
+    );
+  }
+}
+
 class ModelListResp {
   final List<ModelInfo> custom;
 

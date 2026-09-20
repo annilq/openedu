@@ -67,13 +67,18 @@ def _as_uuid(value: object) -> uuid.UUID | None:
         return None
 
 
-def _get_or_build(
+def build_engine(
     provider: str,
     base_url: str | None,
     api_key: str | None,
     model_name: str,
 ) -> EngineResolution:
-    """把中性参数交给适配器工厂构造引擎（构造与缓存都在 ``agent_core`` 适配器内）。"""
+    """把中性参数交给适配器工厂构造引擎（构造与缓存都在 ``agent_core`` 适配器内）。
+
+    **公开**而非私有：真实出题与「模型管理 → 测试连接」必须走同一条构造链，
+    否则探针通过而真调用失败（两份默认值 / 两份缓存）就成了假绿灯——测试连接
+    的全部价值就在于它与生产路径同源。
+    """
     if provider == "ollama":
         base_url = base_url or settings.OLLAMA_BASE_URL
     engine = build_genkit_engine(
@@ -111,14 +116,14 @@ def resolve_engine(
             mc = session.get(ModelConfig, mc_id)
             if mc is not None and str(mc.parent_id) == str(parent_id):
                 api_key = decrypt(mc.api_key_enc) if mc.api_key_enc else None
-                return _get_or_build(mc.provider, mc.base_url, api_key, mc.model_name)
+                return build_engine(mc.provider, mc.base_url, api_key, mc.model_name)
 
     # 2) 未指定模型 → 回落本家长在「模型管理」中设为默认的 ModelConfig
     if model_ref is None and session is not None and parent_id is not None:
         mc = _default_model_config(session, parent_id)
         if mc is not None:
             api_key = decrypt(mc.api_key_enc) if mc.api_key_enc else None
-            return _get_or_build(mc.provider, mc.base_url, api_key, mc.model_name)
+            return build_engine(mc.provider, mc.base_url, api_key, mc.model_name)
 
     # 3) 无可用模型（未配置）→ None
     return None

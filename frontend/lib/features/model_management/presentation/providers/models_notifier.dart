@@ -83,6 +83,25 @@ class ModelsNotifier extends StateNotifier<ModelsState> {
     }
   }
 
+  /// 「测试连接」：拿一组（可能尚未保存的）参数去后端真发一次请求。
+  ///
+  /// **不抛异常**：连不上是本功能要回答的正常结论之一（后端 200 + `ok=false`），
+  /// 故一律包成 [ModelProbeResult] 交 UI 渲染；只有网络层/鉴权类异常才在此兜底。
+  Future<ModelProbeResult> testConnection(ModelProbeReq req) async {
+    try {
+      return await _repo.testConnection(req);
+    } on AppException catch (e) {
+      return ModelProbeResult(
+          ok: false, latencyMs: 0, message: e.message, errorKind: 'client');
+    } catch (e) {
+      return ModelProbeResult(
+          ok: false,
+          latencyMs: 0,
+          message: '测试失败：${e.toString()}',
+          errorKind: 'client');
+    }
+  }
+
   /// 设为默认模型；成功后刷新列表。返回 null 表示成功。
   Future<String?> setDefault(String id) async {
     try {
