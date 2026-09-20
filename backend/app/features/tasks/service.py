@@ -958,8 +958,8 @@ async def regenerate_one_stream(
     家长只能干等进度文案；现在逐帧透传，前端能打字机式渲染。
     落库与同步版完全一致（同一 ``_swap_question``），不引入第二条写路径。
 
-    前置校验同样在流内收口（越权 / 非草稿 / 题不存在 → ERROR 帧），理由同
-    ``regenerate_all_stream``：异步生成器里抛异常只会给客户端留一个 200 + 空正文。
+    前置校验同样在流内收口（越权 / 非草稿 / 题不存在 → ERROR 帧）：异步生成器里
+    抛异常只会给客户端留一个 200 + 空正文，比一句人话错误更难排查。
     """
     try:
         tq, engine, interests_pool, focus = _regenerate_one_inputs(
@@ -1068,78 +1068,6 @@ def regenerate_all(*, session: Session, parent: User, task_id: UUID) -> TaskResp
         for idx, item in enumerate(spec_items)
     ]
     return _commit_regenerated(session=session, task=task, new_tqs=new_tqs)
-
-
-async def regenerate_all_stream(
-    *, session: Session, parent: User, task_id: UUID
-) -> AsyncIterator[str]:
-    """整卷重生成的流式版：与 ``/tasks/generate`` 同一套 AG-UI 事件协议。
-
-    同步版要把整卷 N 道题一次性出完才返回，实测远超前端普通请求的 30 秒
-    receiveTimeout（模型出 2 题就要 19–36 秒），卷子越大必挂；家长点了只剩整页
-    转圈，超时后一句「请求超时」。流式版复用流式端点的长超时，并且**逐题推 STEP
-    进度帧**（「正在生成第 i/N 题…」），落库与同步版同一 ``_commit_regenerated``，
-    不引入第二条写路径。
-
-    帧序：RUN_STARTED → STEP(共 N 题) → [STEP(第 i/N 题)] × N → DATA(task) 或 ERROR → DONE。
-    每题的生成（阻塞 LLM 调用）offload 到线程，避免卡住事件循环。
-
-    前置校验也在流内收口：异步生成器里抛异常只会让客户端拿到「200 + 空正文」，
-    比一句人话错误更难排查，所以越权/非草稿/无规格统一转成 ERROR 帧。
-    """
-    try:
-        task, spec_items, interests_pool, engine = _regenerate_all_inputs(
-            session=session, parent=parent, task_id=task_id
-        )
-    except AppErrorException as e:
-        yield error_event(e.message, code=getattr(e.code, "value", str(e.code))).to_sse()
-        yield done_event().to_sse()
-        return
-    total = len(spec_items)
-    yield run_started().to_sse()
-    yield step_event(f"正在重生成整卷，共 {total} 题…").to_sse()
-
-    new_tqs: list[TaskQuestion] = []
-    failed = False
-    for idx, item in enumerate(spec_items, start=1):
-        yield step_event(f"正在生成第 {idx}/{total} 题…").to_sse()
-        sink: list[dict] = []
-        # 逐题透传 THINKING：模型在写什么，家长就能看到什么（不再只有进度文案跳变）。
-        async for frame in _stream_question_frames(
-            engine=engine,
-            subject=item["subject"],
-            grade=item["grade"],
-            knowledge_point=item["knowledge_point"],
-            qtype=item["qtype"],
-            difficulty=item["difficulty"],
-            interests=interests_pool,
-            focus_interest=_round_robin_focus(task.focus_interest, idx - 1),
-            sink=sink,
-        ):
-            yield frame
-        if not sink:
-            failed = True
-            break
-        new_tqs.append(_task_question_from_payload(sink[0]))
-
-    if failed:
-        # ERROR 帧已由 _stream_question_frames 发出（引擎不可用 / 安全校验未过）。
-        yield done_event().to_sse()
-        return
-    yield step_event("正在保存…").to_sse()
-    try:
-        resp = await asyncio.to_thread(
-            _commit_regenerated, session=session, task=task, new_tqs=new_tqs
-        )
-    except AppErrorException as e:
-        # 业务错误（非草稿 / 题不存在）转成 ERROR 帧：流已开，不能改 HTTP 状态码。
-        yield error_event(e.message, code=getattr(e.code, "value", str(e.code))).to_sse()
-        yield done_event().to_sse()
-        return
-    yield data_event(
-        resp.model_dump(mode="json"), status="done", extra={"type": "task"}
-    ).to_sse()
-    yield done_event().to_sse()
 
 
 def edit_question(

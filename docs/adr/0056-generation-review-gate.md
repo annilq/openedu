@@ -132,11 +132,13 @@
 
 ### 已知遗留
 
-- `parentTaskReviewNotifier.regenerateAll` 及其下的 repository / api client / 后端端点
-  `POST /tasks/{id}/regenerate-all` **仍保留但已无调用方**（草稿页入口是本仓唯一使用者）。
-  同理 `ReviewLoaded.progress` 现在恒为 null，草稿页顶部进度区成为死分支。
-  未一并删除的原因：跨 4 层的删除面较大且可能波及既有测试，留待单独一轮清理——
-  **别把它当成"还有别的入口在用"**。
+- **前端整卷重生成全链已删除**（2026-09-20 收尾）：`parentTaskReviewNotifier.regenerateAll`、
+  repository / api client 的 `regenerateAll` / `streamRegenerateAll`，以及 `ReviewLoaded.progress`
+  与草稿页顶部进度区 —— 草稿页只保留单题「换一题」。
+- **后端**：同步版 `POST /{id}/regenerate` **保留**——它是 ADR-0023「重生成复用共享核心、尊重所选模型」
+  回归测试的载体（`tests/api/routes/test_batch_generate_model.py`），删了会丢掉这条守卫；流式版
+  `POST /{id}/regenerate-stream`（整卷）已无调用方，连同其 3 个测试一并删除。下层的
+  `regenerate_all_task_questions` 是批量落库共享 helper（落库路径也用），保留。
 
 ## 后果
 

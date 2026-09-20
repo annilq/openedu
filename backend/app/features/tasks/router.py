@@ -286,25 +286,6 @@ def regenerate_all(
     return tasks_service.regenerate_all(session=session, parent=parent, task_id=task_id)
 
 
-@router.post("/{task_id}/regenerate-stream")
-async def regenerate_all_stream(
-    *, session: SessionDep, parent: CurrentParent, task_id: UUID
-) -> StreamingResponse:
-    """整卷重生成的流式版（SSE，事件协议同 /tasks/generate）。
-
-    同步版要等整卷 N 道题全出完（实测 2 题就 19–36 秒），远超前端 30 秒
-    receiveTimeout；流式版复用长超时并逐题推「第 i/N 题」进度。落库与同步版同一
-    service 路径（``_commit_regenerated``）。
-    """
-    return StreamingResponse(
-        tasks_service.regenerate_all_stream(
-            session=session, parent=parent, task_id=task_id
-        ),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
-
-
 @router.put("/{task_id}", response_model=TaskResp)
 def edit_task_meta(
     *,
