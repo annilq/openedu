@@ -256,6 +256,52 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     };
   }
 
+  /// 家长端主栏 + 常驻「出题进行中」指示条（ADR-0057 P1）。
+  ///
+  /// 出题的 SSE 在 [taskGenNotifierProvider]（非 autoDispose）里跑，切 Tab 不中断；
+  /// 但旧实现里指示 UI 全在生成页，家长一走就看不见、回来也不知道进度。这里把进度条
+  /// 挂在壳层、跨 Tab 常驻，并带一个随时可点的停止按钮（强制关闭后台生成，保留已出题）。
+  Widget _buildParentBody() {
+    final gen = ref.watch(taskGenNotifierProvider);
+    final preview = gen is TaskGenPreview && gen.streaming ? gen : null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (preview != null)
+          _GenerationBanner(
+            state: preview,
+            onStop: () =>
+                ref.read(taskGenNotifierProvider.notifier).stop(),
+          ),
+        Expanded(child: _buildParentPage()),
+      ],
+    );
+  }
+
+  /// 出题进行中的常驻指示条（跨 Tab），带停止按钮。
+  Widget? _genTrailing(TaskGenState gen) {
+    if (gen is! TaskGenPreview || !gen.streaming) return null;
+    final app = AppTheme.colorsOf(context);
+    final text = AppTheme.textOf(context);
+    final label = gen.expected > 0
+        ? '${gen.questions.length}/${gen.expected}'
+        : '${gen.questions.length}';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: app.accent,
+        borderRadius: BorderRadius.circular(AppRadius.chip),
+      ),
+      child: Text(
+        label,
+        style: text.labelSmall?.copyWith(
+          color: app.onAccent,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
   /// 娃娃端复习页的导出入口（ADR-0052）：屏幕上到期的是哪些题，纸上就是哪些题。
   ///
   /// 注入而非页内自建的原因见 [ReviewScreen.onExportDue]——按 ADR-0037，
@@ -310,7 +356,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   // 家长端导航目的地：与旧 ParentSidebar 同序（0-4 + 6 题库）。
   // 审核覆盖层存在时先关层再切换（复用旧侧栏 onNavTap 行为）。
-  List<AdaptiveNavDestination> _parentDestinations(int activeIndex) => [
+  List<AdaptiveNavDestination> _parentDestinations(int activeIndex, TaskGenState gen) => [
     AdaptiveNavDestination(
         icon: LucideIcons.layoutDashboard,
         label: '概览',
@@ -325,7 +371,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         icon: LucideIcons.pencil,
         label: '布置任务',
         active: activeIndex == 1,
-        onTap: () => _parentTap(1)),
+        onTap: () => _parentTap(1),
+        // ADR-0057 P1：出题进行中在侧栏也亮一个进度徽标，点它即回生成页。
+        trailing: _genTrailing(gen)),
     AdaptiveNavDestination(
         icon: LucideIcons.bookOpen,
         label: '错题本',
@@ -461,9 +509,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (widget.user.isParent) {
       // 复核覆盖层期间，侧栏高亮跟随来源页（_parentNavIndex 保持不变）。
       final activeIndex = _parentNavIndex;
+      // ADR-0057 P1：出题在壳这一层 watch，跨 Tab 常驻可见。
+      final gen = ref.watch(taskGenNotifierProvider);
       return AdaptiveShell(
         mode: AppUserMode.parent,
-        destinations: _parentDestinations(activeIndex),
+        destinations: _parentDestinations(activeIndex, gen),
         profileDestination: _profileDestination(),
         sidebarTop: ParentChildSelector(
           onNavigateToAddChild: _onNavigateToAddChild,
@@ -474,7 +524,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           onProfileTap: _onProfileTap,
           subtitle: '家长账号',
         ),
-        body: _buildParentPage(),
+        body: _buildParentBody(),
         detail: _buildParentDetail(),
       );
     }
@@ -489,6 +539,70 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         subtitle: '${widget.user.grade ?? '?'}年级',
       ),
       body: _buildChildView(),
+    );
+  }
+}
+
+/// 出题进行中的常驻指示条（跨 Tab），带停止按钮。
+///
+/// 进度文案优先级：首题 STEP 前的阶段帧 > 当前题进度标签 > 兜底「生成中…」。
+/// 停止 = [TaskGenNotifier.stop]：在当前题边界中断、保留已出题（ADR-0057 Q1=B）。
+class _GenerationBanner extends StatelessWidget {
+  final TaskGenPreview state;
+  final VoidCallback onStop;
+
+  const _GenerationBanner({required this.state, required this.onStop});
+
+  @override
+  Widget build(BuildContext context) {
+    final app = AppTheme.colorsOf(context);
+    final text = AppTheme.textOf(context);
+    final label = state.stage.isNotEmpty
+        ? state.stage
+        : state.liveLabel.isNotEmpty
+            ? state.liveLabel
+            : '生成中…';
+    final count = state.expected > 0
+        ? '已出 ${state.questions.length}/${state.expected} 题'
+        : '已出 ${state.questions.length} 题';
+    return Container(
+      decoration: BoxDecoration(
+        color: app.surfaceActive,
+        border: Border(
+          bottom: BorderSide(
+            color: app.outline,
+            width: AppElevation.borderWidthHairline,
+          ),
+        ),
+      ),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.sm,
+      ),
+      child: Row(
+        children: [
+          Icon(LucideIcons.loaderCircle, size: 16, color: app.accent),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label,
+                    style: text.labelMedium
+                        ?.copyWith(fontWeight: FontWeight.w600)),
+                Text(count,
+                    style: text.labelSmall
+                        ?.copyWith(color: app.onSurfaceVariant)),
+              ],
+            ),
+          ),
+          AppIconAction(
+            icon: LucideIcons.x,
+            semanticLabel: '停止生成',
+            onPressed: onStop,
+          ),
+        ],
+      ),
     );
   }
 }
