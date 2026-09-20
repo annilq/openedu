@@ -72,7 +72,14 @@ class ReviewNotifier extends StateNotifier<ReviewState> {
   ReviewNotifier(this._review, this._assistant) : super(const ReviewLoading());
 
   /// 从后端刷新当前 Task（含完整题目列表）。
+  ///
+  /// ADR-0057：在途动作优先于刷新。本 notifier 活过页面（非 autoDispose 的 family），
+  /// 而页面会被侧栏切换卸载、重进时 `initState` 又调一次 `load()`——无条件覆盖会把
+  /// 正在跑的单题「换一题」进度（`ReviewLoaded.busyTqId` / `liveText`）抹成整页转圈，
+  /// 家长看到的是失真状态。在途时让位：进度照旧推给下一任监听者。
   Future<void> load(String taskId) async {
+    final cur = state;
+    if (cur is ReviewLoaded && cur.anyBusy) return;
     state = const ReviewLoading();
     try {
       state = ReviewLoaded(await _review.load(taskId));
