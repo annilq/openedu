@@ -63,6 +63,10 @@ class TaskGenPreview extends TaskGenState {
   /// 这段死窗里，加载区用它替代裸转圈。空串 = 尚无阶段帧，用默认文案。
   final String stage;
 
+  /// 应出题数（各条规格 count 之和）；0 表示未知（不校验少题）。跨 Tab 的常驻指示条
+  /// 用它显示「已出 N/M」进度，故预览态也带这个数字。
+  final int expected;
+
   const TaskGenPreview(
     this.questions, {
     this.streaming = false,
@@ -71,6 +75,7 @@ class TaskGenPreview extends TaskGenState {
     this.liveReasoning = '',
     this.failures = const [],
     this.stage = '',
+    this.expected = 0,
   });
 }
 
@@ -103,10 +108,15 @@ class TaskGenReady extends TaskGenState {
   /// 单题失败原因；非空表示本次有题没生成出来。
   final List<String> failures;
 
+  /// 是否由家长主动停止（ADR-0057 Q1=B）：是则中性陈述「已停止 · 保留 N 题」，
+  /// 不当成故障报警——自己按的停止不该被渲染成系统出错。
+  final bool stopped;
+
   const TaskGenReady(
     this.questions, {
     this.expected = 0,
     this.failures = const [],
+    this.stopped = false,
   });
 
   /// 本次是否少题：确认前就告知，别等落库后才发现残缺。
@@ -122,6 +132,16 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
   /// 确认后清空。**纯内存，不落库**——这是「放弃无需删除」的前提。
   _Pending? _pending;
 
+  /// 出题过程中累计的折叠态（逐帧 apply 的纯模块）；[stop] 需要在循环外快照当前进度，
+  /// 故提升为实例字段而非局部变量。
+  QuestionGenFold _fold = const QuestionGenFold();
+
+  /// 本次应出题数（各规格 count 之和），供 [stop] 在停止时原样带入待确认态。
+  int _expected = 0;
+
+  /// 主动停止标志：循环每帧开头检测，置位即 break，从而保留已出题目（ADR-0057 Q1=B）。
+  bool _stopped = false;
+
   TaskGenNotifier(this._tasks, this._assistant) : super(const TaskGenIdle());
 
   /// 把结构化 specs 经 `/tasks/generate` 直传后端（ADR-0034 P1）：服务端据此构造
@@ -136,11 +156,12 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
     // 结构化 specs → /tasks/generate（服务端构造 prompt，AG-UI 事件协议，ADR-0025）；
     // 流结束后再把题卡落库为草稿任务。事件解释委托 [QuestionGenFold]（纯模块）：
     // 本 notifier 只负责喂事件、落状态与落库，逐帧规则全部收敛到那个模块并可单测。
-    var fold = const QuestionGenFold();
+    _fold = const QuestionGenFold();
     // 应出题数：各条规格 count 之和。流结束后据此校验「少题」——逐题串行出题时
     // 单题失败只会丢一条 STEP(status=error)，不做校验就会静默落库残缺任务。
-    final expected = expectedQuestionCount(specs);
-    state = TaskGenPreview(fold.questions, streaming: true);
+    _expected = expectedQuestionCount(specs);
+    _stopped = false;
+    state = TaskGenPreview(_fold.questions, streaming: true, expected: _expected);
     try {
       final stream = _assistant.generate(
         TaskGenerateReq(
@@ -151,25 +172,30 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
         ),
       );
       await for (final ev in stream) {
-        fold = fold.apply(ev);
-        if (fold.hasError) {
-          state = TaskGenError(fold.errorText!);
+        // ADR-0057 Q1=B：家长主动停止 → 立即停在当前题边界，已出的题原样保留。
+        // `await for` 的订阅会随之取消，底层 SSE 的 HTTP 连接被关闭（best-effort；
+        // 服务端断连感知为已知缺口，见 ADR-0057 后端事项）。
+        if (_stopped) break;
+        _fold = _fold.apply(ev);
+        if (_fold.hasError) {
+          state = TaskGenError(_fold.errorText!);
           return;
         }
         state = TaskGenPreview(
-          fold.questions,
+          _fold.questions,
           streaming: true,
-          liveIndex: fold.liveIndex,
-          liveLabel: fold.liveLabel,
-          liveReasoning: fold.liveReasoning,
-          failures: fold.failures,
-          stage: fold.stage,
+          expected: _expected,
+          liveIndex: _fold.liveIndex,
+          liveLabel: _fold.liveLabel,
+          liveReasoning: _fold.liveReasoning,
+          failures: _fold.failures,
+          stage: _fold.stage,
         );
       }
       // UX 修正：流结束若 0 题，直接回显后端说明并跳过必败的落库请求，
       // 避免误触发后端 TASK_EMPTY_SPECS「请先生成题目再保存」。
-      if (fold.questions.isEmpty) {
-        state = TaskGenError(fold.emptyMessage);
+      if (_fold.questions.isEmpty) {
+        state = TaskGenError(_fold.emptyMessage);
         return;
       }
       // 审阅闸门（ADR-0056）：**流结束不落库**，只把题卡与请求体留在内存里等确认。
@@ -183,20 +209,36 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
           focusInterest: focusInterest,
           model: model,
         ),
-        questions: fold.questions,
-        expected: expected,
-        failures: fold.failures,
+        questions: _fold.questions,
+        expected: _expected,
+        failures: _fold.failures,
       );
       state = TaskGenReady(
-        fold.questions,
-        expected: expected,
-        failures: fold.failures,
+        _fold.questions,
+        expected: _expected,
+        failures: _fold.failures,
+        // 流自然结束：未主动停止（即便中途某题失败，也走上面的 hasError 分支）。
+        stopped: _stopped,
       );
     } on AppException catch (e) {
       state = TaskGenError(e.message);
     } catch (e) {
       state = TaskGenError('⚠️ 网络异常，请稍后重试');
     }
+  }
+
+  /// 主动停止生成（ADR-0057）：客户端侧中断——保留已出题目并转为待确认态，
+  /// 不再喂事件、不落库。与服务端是否立刻掐断当前那次 LLM 调用无关：本端只负责
+  /// 立即停在当前题边界，已出的题交给家长决定确认或放弃。
+  void stop() {
+    if (state is! TaskGenPreview || !(state as TaskGenPreview).streaming) return;
+    _stopped = true;
+    state = TaskGenReady(
+      _fold.questions,
+      expected: _expected,
+      failures: _fold.failures,
+      stopped: true,
+    );
   }
 
   /// 确认并落库：把预览题卡 POST 到 /tasks/from-generated 落库为 draft 任务。
