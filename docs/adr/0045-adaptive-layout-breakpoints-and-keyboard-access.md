@@ -11,7 +11,7 @@
 - **三档断点收敛到 `AppLayout`，值是 700 / 1200。**
   - `< compactMax (700)` **紧凑**：娃娃端底部导航；家长端顶部汉堡 + 左抽屉。
   - `[700, largeMin)` **中屏**：侧栏 240 ↔ 64 可收起。
-  - `≥ largeMin (1200)` **大屏**：同上，且 `AdaptiveShell.detail` 非空时展开 master-detail 双栏。
+  - `≥ largeMin (1200)` **大屏**：与中屏同布局。曾在此档展开 master-detail 双栏，**已由 ADR-0059 移除**；`largeMin` 常量保留以便将来编排，但当前**无代码消费者**。
   - **订正**：`adaptive_shell.dart` 的类注释此前写「在三档断点间切换」，但代码只有 compact / 非 compact 两个分支。现在注释与实现一致。
 
 - **内容宽度收敛到 `AppLayout` 的六个语义档，禁止再写裸数字。** 原先散着 1080 / 820 / 520 / 480 / 440 / 380 六个魔法值、19 处调用，无「哪一档才是我该用的」依据。现在按语义命名：`contentWide 1080`（家长端工作区）/ `contentReading 820`（答题阅读区）/ `contentCard 520`（居中结果卡）/ `contentNarrow 480`（登录、表单对话框）/ `contentEmpty 440`（空态 / 提示卡）/ `contentFloat 380`（浮层）。**取值一律沿用原数字**，本次只做收敛命名，不改观感。
@@ -24,14 +24,10 @@
   - 紧凑宽度下 1080 不生效，等价于无包裹——手机与小平板排布**零变化**。
   - **例外：`PracticeScreen` 由 `Navigator` 推入，不在壳的兜底范围内**，必须自带约束（其 `PracticeReviewView` 是本仓唯一漏掉的页面，已补）。新增 `Navigator.push` 的整页时，记得同样自查。
 
-- **master-detail 的宽度配比用 Flex（5 : 8），不用固定像素。** `AdaptiveShell.detail` 是新的公开入参：
-  - 大屏 + detail → `body`（master）| 发丝分隔线 | `detail`，两侧各自撑满、独立滚动；
-  - 中屏 / 紧凑 + detail → detail **整幅顶替** body（沿用「详情是整页」的既有行为，平板竖屏与手机不硬塞双栏）；
-  - 无 detail → 单栏。
-  - 用配比而非固定宽：内容区已被 `contentWide` 钉死，配比在实机宽度区间内变化很小；而主栏可能是表单页，固定 380px 会把它压成一条窄缝。
-  - 该 `Row(crossAxisAlignment: stretch)` 的 `stretch` 是**必需**的（让两侧独立滚动、分隔线撑满高度）。**绝不可改用 `IntrinsicHeight`** —— 两个子项都是滚动视图，其固有高度会退化成「所有子项高度之和」，既昂贵又算错。安全性已登记进 `test/stretch_row_guard_test.dart` 的棘轮（第 2 类：父级高度本身有界）。
+- ~~**master-detail 的宽度配比用 Flex（5 : 8）**~~ **已废弃，见 ADR-0059。** ~~`AdaptiveShell.detail` 是新的公开入参：大屏 + detail → 双栏；中屏 / 紧凑 + detail → 整幅顶替 body；无 detail → 单栏。~~
+  废弃原因（不重述细节，只留结论）：`detail` 让「当前该看哪个页面」变成**两个状态的优先级裁决**，而裁决散落在各个回调里——侧栏点击记得清掉详情、底部「我的」忘了清，于是审核期间点「我的」看到的仍是审核页。ADR-0059 用「单一页面状态 + 删除 `detail`」根治，本条及 `AppLayout.masterFlex` / `detailFlex` 随之删除。
 
-- **`home_screen` 拆成「主栏 + 详情」两个构建函数**，而不是让详情覆盖层吃掉整页。`_buildParentDetail()` 返回详情（草稿审核 > 编辑娃娃资料），`_buildParentPage()` 返回侧栏选中页；优先级与拆分前完全一致。大屏下两者并排，家长可以在左侧直接换一条继续看。
+- ~~**`home_screen` 拆成「主栏 + 详情」两个构建函数**~~ **已废弃，见 ADR-0059。** 详情不再是独立的构建产物，而是与侧栏页并列的一个页面状态，由同一个 `switch` 产出。
 
 - **桌面端可点区域统一走 `AppFocusableAction`**（`app_theme.dart`，与 `AppCard` / `AppBrutalButton` 同处）。它补齐三件事：进焦点树（`FocusableActionDetector` + `Shortcuts`/`Actions`）、`Enter`/`Space`/小键盘回车激活（与鼠标点击**同一个** `onTap`）、焦点可见。
   - 焦点环用 `foregroundDecoration` 而非 `decoration` 绘制：前者覆盖绘制、**不参与布局**，聚焦/失焦不会让元素尺寸跳动。
@@ -40,7 +36,7 @@
   - 已接入：导航项（侧栏 / 轨 / 抽屉 / 底栏）、侧栏收起按钮、汉堡按钮、用户区、**`AppCard` 的可点路径**。后者最重要——只修菜单不修卡片，等于「Tab 得到菜单却打不开任何东西」。
   - `AppCard` 的按压反馈（整卡下沉 + 硬阴影收拢）改由 `onPressedChanged` 驱动；键盘激活时补齐一次 `true→false`，使键盘与鼠标的反馈一致。
 
-- **App 根挂 `FocusTraversalGroup(policy: ReadingOrderTraversalPolicy())`**，让 Tab 顺序按「侧栏 → 主栏 → 详情栏」可预期。这里显式声明策略而不依赖缺省，是为了让「顺序可预期」有据可查。
+- **App 根挂 `FocusTraversalGroup(policy: ReadingOrderTraversalPolicy())`**，让 Tab 顺序按「侧栏 → 主栏」可预期（ADR-0059 前写的是「侧栏 → 主栏 → 详情栏」，详情栏已不存在）。这里显式声明策略而不依赖缺省，是为了让「顺序可预期」有据可查。
 
 - **桌面窗口最小尺寸 = 320×568**（macOS `minSize` / Windows `SetMinimumSize` / Linux `gtk_widget_set_size_request`）。
   - **2026-09-17 修订**：旧值 ~~800×600~~ 被推翻，理由见下方「最小窗口尺寸下移」。取值 320×568 = **iPhone SE 竖屏**，即 `frontend/test/device_size_fit_test.dart` 认证过的**最窄真实设备**。地板必须落在被守卫覆盖的集合之内，否则「能拖到的尺寸」与「被测过的尺寸」是两个集合，等于在没人看过的地方跑。
@@ -121,8 +117,8 @@
 
 ## 后果
 
-- 手机与小平板**零变化**（断点以下 1080 不生效、`detail` 走整幅顶替）。
-- 大屏（≥1200）行为变化：家长端复核/编辑详情以右侧栏呈现，而非整页；所有页面内容居中且不超过 1080。
+- 手机与小平板**零变化**（断点以下 1080 不生效）。
+- 大屏（≥1200）行为变化：所有页面内容居中且不超过 1080。**2026-09-21 修订**：家长端复核/编辑曾以右侧详情栏呈现，ADR-0059 改为整页（删除 `detail`），本条随之作废。
 - 桌面端从「只有鼠标可用」变为「Tab + Enter 全流程可用」。
 - 桌面端窗口可拖到 320×568，**紧凑档在桌面上可达**（这是 2026-09-17 修订的目的）。
 - **未解决**：平台 runner 目录仍被 gitignore。原生最小窗口尺寸与「桌面 runner 是 `flutter create` 默认模板」这件事在换机/重建后会回退。彻底解法（纳入版本控制或补丁脚本）另开一张单。
