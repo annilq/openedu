@@ -4,7 +4,6 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/theme/app_theme.dart';
-import '../../../../shared/widgets/app_content_frame.dart';
 import '../../../../shared/widgets/app_scroll_page.dart';
 import '../../../../shared/widgets/app_empty_state.dart';
 import '../../../../shared/widgets/app_error.dart';
@@ -12,8 +11,10 @@ import '../../../../shared/widgets/app_loading.dart';
 import '../../../../shared/widgets/app_toast.dart';
 import '../providers/parent_task_review_notifier.dart';
 import '../widgets/parent/parent_question_card.dart';
-import '../../../../shared/widgets/app_actions.dart';
+import '../widgets/parent/parent_task_review_action_bar.dart';
+import '../widgets/parent/parent_task_review_summary.dart';
 import '../../../../shared/widgets/app_card.dart';
+import '../../../../shared/widgets/app_dialog.dart';
 
 /// 家长草稿审核页（R-Q1=c / R-Q3 / R-Q4 / R-Q5=b）。
 ///
@@ -115,111 +116,21 @@ class _ParentTaskReviewScreenState
       child: state is ReviewLoaded
           ? Column(
               children: [
-                _buildActionBar(state.task, app, state.anyBusy),
+                TaskReviewActionBar(
+                  task: state.task,
+                  locked: state.anyBusy,
+                  defaultChildId: widget.defaultChildId,
+                  onPromoteAll: _onPromoteAll,
+                  onDiscard: _onDiscard,
+                  onConfirm: _onConfirm,
+                  onAssign: _onAssign,
+                  onBackToHome: widget.onBackToHome,
+                  onNavigateToPractice: widget.onNavigateToPractice,
+                ),
                 Expanded(child: content),
               ],
             )
           : content,
-    );
-  }
-
-  // ============ 顶部操作栏 ============
-
-  /// 顶部操作栏：与正文同边距（xl2）的固定头部，统一所有按钮高度（40），
-  /// 主操作（锁定并派发 / 派发）用实心 primary，次操作描边，作废用 destructive。
-  /// [locked] 为 true 表示某题正在执行单题动作，整卷级操作一并禁用。
-  Widget _buildActionBar(TaskModel task, AppColors app, bool locked) {
-    final buttons = <Widget>[];
-    if (task.isDraft) {
-      // 「整卷重生成」已移除（ADR-0056）：它等价于「这份推翻重来」，与生成页审阅闸门处的
-      // 「重新生成」重复，且要全量重跑。草稿页只保留逐题精修（含单题「换一题」）。
-      buttons.add(
-        ShadButton.outline(
-          
-          onPressed: locked || task.promotedCount == task.questions.length
-              ? null
-              : () => _onPromoteAll(task.id),
-          leading: const Icon(LucideIcons.database, size: 16),
-          child: Text('一键加入题库 '
-              '(${task.promotedCount}/${task.questions.length})'),
-        ),
-      );
-      buttons.add(
-        ShadButton.destructive(
-          
-          onPressed: locked ? null : () => _onDiscard(task.id),
-          leading: const Icon(LucideIcons.trash2, size: 16),
-          child: const Text('作废'),
-        ),
-      );
-      buttons.add(
-        ShadButton(
-          
-          onPressed: locked || task.questions.isEmpty
-              ? null
-              : () => _onConfirm(task),
-          leading: const Icon(LucideIcons.lock, size: 18),
-          child: const Text('锁定并派发'),
-        ),
-      );
-    } else if (task.isReady) {
-      buttons.add(
-        ShadButton(
-          
-          onPressed: locked
-              ? null
-              : widget.defaultChildId != null
-                  ? () => _onAssign(task, widget.defaultChildId!)
-                  : () {
-                      AppToast.show(context, '请在首页选择娃娃后再派发');
-                    },
-          leading: const Icon(LucideIcons.send, size: 18),
-          child: Text(widget.defaultChildId != null ? '派发任务' : '派发'),
-        ),
-      );
-    } else if (task.isAssigned) {
-      buttons.add(
-        ShadButton.secondary(
-          
-          onPressed: widget.onNavigateToPractice == null
-              ? null
-              : () => widget.onNavigateToPractice!(task),
-          leading: const Icon(LucideIcons.eye, size: 18),
-          child: const Text('查看练习'),
-        ),
-      );
-    } else {
-      buttons.add(
-        ShadButton.secondary(
-          
-          onPressed: widget.onBackToHome,
-          child: const Text('返回首页'),
-        ),
-      );
-    }
-
-    return Container(
-      decoration: BoxDecoration(
-        color: app.surface,
-        border: Border(
-          // 头部分隔 = 2px 墨黑描边（ADR-0044）。
-          bottom: BorderSide(
-              color: AppBrutal.ink, width: AppElevation.borderWidth),
-        ),
-      ),
-      child: AppContentFrame(
-        alignment: Alignment.topLeft,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(
-              AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.md),
-          child: Wrap(
-            spacing: AppSpacing.sm,
-            runSpacing: AppSpacing.sm,
-            alignment: WrapAlignment.end,
-            children: buttons,
-          ),
-        ),
-      ),
     );
   }
 
@@ -230,133 +141,42 @@ class _ParentTaskReviewScreenState
     String? busyTqId,
     String liveText,
   ) {
-    final app = AppTheme.colorsOf(context);
-    final total = task.questions.length;
-    final promoted = task.promotedCount;
     return AppScrollPage(
       children: [
-        _buildSummary(task, app, promoted, total,
-            locked: busyTqId != null),
+        TaskReviewSummary(
+          task: task,
+          // 草稿态才给改卷名入口；整卷 busy 期间一并禁用（locked 由外部表达为 null）。
+          onEditTitle: task.isDraft && busyTqId == null
+              ? () => _onEditMeta(task)
+              : null,
+        ),
         const SizedBox(height: AppSpacing.xl2),
         if (task.questions.isEmpty)
           // 允许删到 0 题：整卷重生成已移除（ADR-0056），故空态只给指路文案——
           // 草稿页不能加题，删空之后只能回生成页/题库重来，或作废这份草稿。
           const _EmptyHint()
         else
-          ...List.generate(task.questions.length, (i) {
-            final q = task.questions[i];
-            return Padding(
+          for (var i = 0; i < task.questions.length; i++)
+            Padding(
               padding: const EdgeInsets.only(bottom: AppSpacing.lg),
               child: ParentQuestionCard(
-                key: ValueKey(q.id),
+                key: ValueKey(task.questions[i].id),
                 index: i + 1,
-                question: q,
+                question: task.questions[i],
                 isDraft: task.isDraft,
                 // 进行中：按钮全禁 + spinner，杜绝连点并发。
-                busy: busyTqId == q.id,
+                busy: busyTqId == task.questions[i].id,
                 // 单题动作的实时文本只给当前这张卡（整卷的走顶部进度区）。
-                liveText: busyTqId == q.id ? liveText : '',
-                onPromote: () => _onPromoteOne(task.id, q.id),
-                onDelete: () => _onDelete(task.id, q.id),
-                onRegenerate: () => _onRegenerateOne(task.id, q.id),
-                onEdit: (edits) => _onEdit(task.id, q.id, edits),
+                liveText: busyTqId == task.questions[i].id ? liveText : '',
+                onPromote: () => _onPromoteOne(task.id, task.questions[i].id),
+                onDelete: () => _onDelete(task.id, task.questions[i].id),
+                onRegenerate: () =>
+                    _onRegenerateOne(task.id, task.questions[i].id),
+                onEdit: (edits) =>
+                    _onEdit(task.id, task.questions[i].id, edits),
               ),
-            );
-          }),
+            ),
       ],
-    );
-  }
-
-  Widget _buildSummary(
-    TaskModel task,
-    dynamic app,
-    int promoted,
-    int total, {
-    bool locked = false,
-  }) {
-    final statusChip = switch (task.status) {
-      'draft' => ('草稿', app.tertiary, app.onTertiary),
-      'ready' => ('已锁定', app.primary, app.onPrimary),
-      'assigned' => ('已派发', app.secondary, app.onSecondary),
-      'done' => ('已完成', app.onSurface, app.surface),
-      _ => ('未知', app.surfaceSunken, app.onSurface),
-    } as (String, Color, Color);
-
-    return AppCard(
-      padding: const EdgeInsets.all(AppSpacing.xl),
-      margin: EdgeInsets.zero,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  task.title,
-                  style: AppTheme.textOf(context).headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                ),
-              ),
-              // 草稿态允许改卷名：生成一次要等 LLM，标题打错就作废重来代价太大。
-              // 锁定（ready）后标题随卷固定，入口消失。整卷 busy 期间一并禁用。
-              if (task.isDraft) ...[
-                const SizedBox(width: AppSpacing.sm),
-                AppIconAction(
-                  icon: LucideIcons.pencil,
-                  semanticLabel: '编辑标题',
-                  onPressed: locked ? null : () => _onEditMeta(task),
-                ),
-              ],
-              const SizedBox(width: AppSpacing.md),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.md, vertical: AppSpacing.xs),
-                decoration: BoxDecoration(
-                  color: statusChip.$2,
-                  borderRadius: BorderRadius.circular(AppRadius.bubble),
-                  // 状态 chip = 实心色块 + 2px 墨黑描边（ADR-0044）。
-                  border: Border.all(
-                      color: AppBrutal.ink, width: AppElevation.borderWidth),
-                ),
-                child: Text(
-                  statusChip.$1,
-                  style: AppTheme.textOf(context).labelMedium?.copyWith(
-                        color: statusChip.$3,
-                        letterSpacing: 0.2,
-                      ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          // 统计行与规格行刻意分离：数字统计（题目数/已入题库）是一行紧凑的
-          // 「读数」，出题规格是可任意增长的 chip 集合——两者高度、增长方式都
-          // 不同，混在同一个 Wrap 里时规格一多就会把统计行挤成两截、左对齐线
-          // 断裂（且曾经为此给规格块压 45% 宽度上限，治标不治本）。
-          Wrap(
-            spacing: AppSpacing.xl2,
-            runSpacing: AppSpacing.sm,
-            children: [
-              _Stat(
-                label: '题目数',
-                value: total.toString(),
-                icon: LucideIcons.fileQuestion,
-              ),
-              _Stat(
-                label: '已入题库',
-                value: '$promoted / $total',
-                icon: LucideIcons.database,
-                tone: promoted == total ? app.primary : app.onSurfaceVariant,
-              ),
-            ],
-          ),
-          if (task.specs.isNotEmpty) ...[
-            const SizedBox(height: AppSpacing.md),
-            _SpecsSummary(specs: task.specs),
-          ],
-        ],
-      ),
     );
   }
 
@@ -518,11 +338,13 @@ class _ParentTaskReviewScreenState
   }
 
   Future<void> _onDiscard(String taskId) async {
-    final confirmed = await _showConfirmDialog(
-      context: context,
-      title: '确定作废草稿?',
-      desc: '作废后已加入题库的题目会一并删除，且无法恢复。',
-      confirmText: '作废',
+    // 走 AppDialog.confirm：本页自己那份 `_showConfirmDialog` 是它的第三份抄写
+    // （ADR-0058 Rule of Two），且当时只剩一个调用点。
+    final confirmed = await AppDialog.confirm(
+      context,
+      title: const Text('确定作废草稿?'),
+      content: const Text('作废后已加入题库的题目会一并删除，且无法恢复。'),
+      confirmLabel: '作废',
       destructive: true,
     );
     if (confirmed != true) return;
@@ -566,143 +388,3 @@ class _EmptyHint extends StatelessWidget {
   }
 }
 
-class _Stat extends StatelessWidget {
-  final String label;
-  final String value;
-  final IconData icon;
-  final Color? tone;
-  const _Stat({
-    required this.label,
-    required this.value,
-    required this.icon,
-    this.tone,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final app = AppTheme.colorsOf(context);
-    final color = tone ?? app.primary;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 18, color: color),
-        const SizedBox(width: AppSpacing.sm),
-        RichText(
-          text: TextSpan(
-            children: [
-              TextSpan(
-                text: '$value  ',
-                style: AppTheme.textOf(context).titleSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: app.onSurface,
-                    ),
-              ),
-              TextSpan(
-                text: label,
-                style: AppTheme.textOf(context)
-                    .bodySmall
-                    ?.copyWith(color: app.onSurfaceVariant),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _SpecsSummary extends StatelessWidget {
-  final List<TaskSpecModel> specs;
-  const _SpecsSummary({required this.specs});
-
-  @override
-  Widget build(BuildContext context) {
-    final app = AppTheme.colorsOf(context);
-    // 独立成块：小标签 + 通栏 chip 流。chips 拿满卡宽后任意数量都能自然换行，
-    // 不再需要「压 45% 宽度」这类与可用宽度耦合的补丁。
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(LucideIcons.listChecks,
-                size: 16, color: app.onSurfaceVariant),
-            const SizedBox(width: AppSpacing.xs),
-            Text(
-              '出题规格',
-              style: AppTheme.textOf(context).labelMedium?.copyWith(
-                    color: app.onSurfaceVariant,
-                    letterSpacing: 0.2,
-                  ),
-            ),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.sm),
-        Wrap(
-          spacing: AppSpacing.xs,
-          runSpacing: AppSpacing.xs,
-          children: specs.map((s) {
-            return Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
-              decoration: BoxDecoration(
-                color: app.surfaceContainerHigh,
-                borderRadius: BorderRadius.circular(AppRadius.sm),
-                // 小信息 chip = 1.5px 墨黑描边（ADR-0044，与学科 chip 同宽）。
-                border: Border.all(
-                    color: AppBrutal.ink,
-                    width: AppElevation.borderWidthSm),
-              ),
-              child: Text(
-                '${s.subject}·${s.grade}·${s.knowledgePoint} x${s.count}',
-                style: AppTheme.textOf(context).bodySmall,
-              ),
-            );
-          }).toList(),
-        ),
-      ],
-    );
-  }
-}
-
-// ============ Confirm Dialog ============
-
-Future<bool?> _showConfirmDialog({
-  required BuildContext context,
-  required String title,
-  required String desc,
-  String confirmText = '确定',
-  bool destructive = false,
-}) async {
-  return showShadDialog<bool>(
-    context: context,
-    builder: (ctx) {
-      final app = AppTheme.colorsOf(ctx);
-      return ShadDialog.alert(
-        title: Text(title),
-        description: Padding(
-          padding: const EdgeInsets.only(top: AppSpacing.xs),
-          child: Text(desc),
-        ),
-        actions: [
-          ShadButton.ghost(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('取消'),
-          ),
-          if (destructive)
-            ShadButton.destructive(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: Text(confirmText),
-            )
-          else
-            ShadButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: Text(confirmText),
-            ),
-        ],
-        backgroundColor: app.surface,
-      );
-    },
-  );
-}
