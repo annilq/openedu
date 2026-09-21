@@ -28,11 +28,13 @@
 - ⚠️ **`reducedMotionOf` 事实源在 `shared/theme/app_theme.dart`**（主题层也读它 → 反向 import 成循环）；**别用 `export ... show` 转出**（会让 6 个调用点的 `app_motion` import 变 `unnecessary_import`）。
 
 ## 3. 自适应布局（ADR-0045，令牌表见 `AppLayout`）
-- `AdaptiveShell` 三档：紧凑 700 = 娃娃底栏 / 家长汉堡抽屉；中屏 = 侧栏单栏；≥1200 有 `detail`。✅ 适配层实测完好（九档 × 两模式零溢出，守卫 `test/device_size_fit_test.dart`）——**「没适配 device」类报障先怀疑「看不见」**。
+- `AdaptiveShell` 实为两档（ADR-0059 删了 `detail` 与双栏）：紧凑 <700 = 娃娃底栏 / 家长汉堡抽屉；≥700 = 侧栏 240↔64。`largeMin 1200` 常量留着但**无消费者**。✅ 适配层实测完好（九档 × 两模式零溢出，守卫 `test/device_size_fit_test.dart`）——**「没适配 device」类报障先怀疑「看不见」**。
+- ⚠️ **导航状态必须单一**（ADR-0059）：家长端「当前页面」只有 `sealed _ParentPage _parentPage`，所有入口只调 `_go(page)`。并列状态（索引 + 覆盖层 + 布尔）⇒ 必然要「谁压谁」的裁决，裁决散在各回调里必漏清（实测：审核中点底部「我的」→ `detail` 整幅顶替 body，个人信息**没进渲染树**），且 analyze 照不出来。守卫 `test/parent_nav_single_source_test.dart`。⚠️ **`_onProfileTap` 等回调是两个角色共用的**，娃娃端仍走 `_showProfile`，改时必须两端各走一遍（曾只写家长端那份 → 娃娃端点「我的」无反应）。
+- ⚠️ **共享大文件有规模棘轮**：`test/file_size_guard_test.dart` 的 `_baseline` 只许下调，改动前先查基线值（`home_screen` 656 / `app_theme` 2740），超了必须压回去。
 - ✅ **桌面窗口地板 320×568**（修订 ADR-0045，推翻 800×600；旧值 800 > `compactMax` 700 使紧凑档从未渲染）：三处同改 macOS `MainFlutterWindow.swift` / Windows `runner/main.cpp` / Linux `my_application.cc`。⚠️ **六个平台目录从未进版本控制**（`frontend/.gitignore:20–25`）→ 配置 git 里查不到，**改完必须 `flutter build` 重跑**。本机只有 macOS + Chrome。
 - ⚠️ **内容兜底必须 `Align(topCenter)` + `ConstrainedBox`，不可 `Center`**（否则不足一屏的页面浮到屏中）。守卫 `test/adaptive_shell_layout_test.dart`。
 - ⚠️ **`Navigator.push` 整页不在壳兜底内**：宽度走 `AppContentFrame`（全仓唯一出口，守卫 `test/content_frame_guard_test.dart`）、退路走 `AppPushedPage`（`showBack` 默认 true）；别手写 `AppTopBar(showBack:)`（默认 `false` + 桌面无返回手势 = 锁死一屏）。`alignment` 照抄原值；勿把「故意留在框外的兄弟节点」（`practice_review_view` 通栏行动条）一起钉窄。
-- ⚠️ **浮层宽度令牌指「外框宽」**：`popoverTheme.padding` + 2px 描边在内容**之外** → 内容侧须减 `popoverChrome`（写 224 得 244）。`AppFocusableAction` **定义在 app_theme.dart**（放 shared/widgets 成循环）。
+- ⚠️ **浮层宽度令牌指「外框宽」**：`popoverTheme.padding` + 2px 描边在内容**之外** → 内容侧须减 `popoverChrome`（写 224 得 244）。`AppFocusableAction` 在 `app_theme.dart`：**单个搬去 shared/widgets 成环；12 个 widget 一起搬不成环**（AppTheme 只在注释里提它们）。
 
 ## 4. 测试与截图探针（多为「像 bug 实为测试替身假象」）
 - ⚠️ **`toImage()` 与 `FontLoader` 前的 `readAsBytes()` 必须包 `tester.runAsync`**，否则 fake-async 区 await 永不返回 → 挂死 exit 137。真字形需 `assets/fonts/{Inter,NotoSansSC}.ttf`。
