@@ -17,6 +17,8 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:kids_learn/shared/theme/app_theme.dart';
 import 'package:kids_learn/shared/widgets/app_inputs.dart';
+import 'package:kids_learn/shared/widgets/app_actions.dart';
+import 'package:kids_learn/shared/widgets/app_buttons.dart';
 
 const _k = ValueKey('control-height-guard');
 

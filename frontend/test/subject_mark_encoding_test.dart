@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:kids_learn/shared/theme/app_theme.dart';
+import 'package:kids_learn/shared/widgets/app_tags.dart';
+import 'package:kids_learn/shared/widgets/subject_mark_icon.dart';
 
 /// 学科三重编码的**形状层**守卫（`.impeccable.md` §Design Principles 4）。
 ///

@@ -23,6 +23,10 @@ import 'package:kids_learn/shared/widgets/adaptive_shell.dart'
     show AdaptiveShell, AdaptiveNavDestination;
 import 'package:kids_learn/shared/widgets/app_sidebar.dart'
     show AppSidebar, AppSidebarItem;
+import 'package:kids_learn/shared/widgets/app_avatar.dart';
+import 'package:kids_learn/shared/widgets/app_buttons.dart';
+import 'package:kids_learn/shared/widgets/app_card.dart';
+import 'package:kids_learn/shared/widgets/app_focusable_action.dart';
 
 /// 只为构造 notifier 存在；本测试不经它取数（状态由构造器直接种入）。
 class _UnusedChildrenRepo implements ChildrenRepository {

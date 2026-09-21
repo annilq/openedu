@@ -3,6 +3,8 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../theme/app_theme.dart';
 import 'app_motion.dart';
+import 'app_card.dart';
+import 'app_progress_bar.dart';
 
 /// 做题完成卡：内置 [ResultTone] 分档、icon、正确率、进度条（practice/review 逐行一致）。
 ///

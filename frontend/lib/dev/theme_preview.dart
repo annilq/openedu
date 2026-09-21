@@ -30,6 +30,10 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../shared/theme/app_theme.dart';
 import '../shared/widgets/app_chip.dart';
 import '../shared/widgets/app_inputs.dart';
+import '../shared/widgets/app_buttons.dart';
+import '../shared/widgets/app_card.dart';
+import '../shared/widgets/app_progress_bar.dart';
+import '../shared/widgets/app_tags.dart';
 
 void main() => runApp(const ThemePreviewApp());
 

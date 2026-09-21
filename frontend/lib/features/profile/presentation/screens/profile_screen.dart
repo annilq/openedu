@@ -7,6 +7,10 @@ import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/theme/theme_provider.dart';
 import '../../../../shared/widgets/app_dialog.dart';
 import '../../../../shared/widgets/app_motion.dart';
+import '../../../../shared/widgets/app_avatar.dart';
+import '../../../../shared/widgets/app_card.dart';
+import '../../../../shared/widgets/app_section_title.dart';
+import '../../../../shared/widgets/app_tags.dart';
 
 class ProfileScreen extends ConsumerWidget {
   final UserModel user;

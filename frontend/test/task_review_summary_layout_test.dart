@@ -17,6 +17,7 @@ import 'package:kids_learn/features/home/presentation/screens/parent_task_review
 import 'package:kids_learn/features/home/providers/home_provider.dart';
 import 'package:kids_learn/shared/domain/models/models.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
+import 'package:kids_learn/shared/widgets/app_card.dart';
 
 /// 页面进来自动补取一次详情（见 task_review_detail_fetch_test.dart 的守卫），
 /// 所以 `load` 必须给得出内容；其余仓库方法本测试不该碰。

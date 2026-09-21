@@ -16,6 +16,8 @@ import '../provider/conversation_history_provider.dart';
 import '../widgets/assistant_hint_card.dart';
 import '../widgets/assistant_history_view.dart';
 import '../widgets/assistant_message_list.dart';
+import '../../../../shared/widgets/app_actions.dart';
+import '../../../../shared/widgets/app_buttons.dart';
 
 /// AI 单入口整页形态（ADR-0036 / ADR-0047）：**双端唯一的助手页面**。
 ///

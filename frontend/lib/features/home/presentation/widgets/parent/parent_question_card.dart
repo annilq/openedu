@@ -7,6 +7,9 @@ import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/utils/question_labels.dart';
 import '../../../../../shared/widgets/app_motion.dart';
 import '../../../../../shared/widgets/stream_reasoning_panel.dart';
+import '../../../../../shared/widgets/app_actions.dart';
+import '../../../../../shared/widgets/app_card.dart';
+import '../../../../../shared/widgets/app_tags.dart';
 
 /// 草稿审核页的单题卡片：只读展示 / 内联编辑 / 单题动作（入库、删除、换一题）。
 ///

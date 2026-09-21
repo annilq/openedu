@@ -8,7 +8,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-import 'package:kids_learn/shared/theme/app_theme.dart';
+import 'package:kids_learn/shared/widgets/app_card.dart';
+import 'package:kids_learn/shared/widgets/app_focusable_action.dart';
 
 void main() {
   /// ShadApp 提供 ShadTheme（AppCard / AppTheme.colorsOf 需要），

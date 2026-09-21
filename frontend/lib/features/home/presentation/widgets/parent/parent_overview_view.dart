@@ -18,6 +18,9 @@ import '../../providers/home_notifier.dart';
 import '../../providers/parent_tasks_notifier.dart';
 import '../../providers/selected_child_provider.dart';
 import '../mastery_board.dart';
+import '../../../../../shared/widgets/app_card.dart';
+import '../../../../../shared/widgets/app_section_title.dart';
+import '../../../../../shared/widgets/app_tags.dart';
 
 /// 家长概览右栏：学习进度 + 最近任务 + 知识点掌握度。
 class ParentOverviewView extends ConsumerWidget {

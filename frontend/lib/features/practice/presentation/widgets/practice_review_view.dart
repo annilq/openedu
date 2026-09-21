@@ -6,6 +6,10 @@ import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_content_frame.dart';
 import '../../../../shared/widgets/app_motion.dart';
 import '../widgets/practice_done_view.dart';
+import '../../../../shared/widgets/app_buttons.dart';
+import '../../../../shared/widgets/app_card.dart';
+import '../../../../shared/widgets/app_progress_bar.dart';
+import '../../../../shared/widgets/app_tags.dart';
 
 /// 提交后的订正阶段：汇总正确率 + 列出待订正错题 + 当场订正入口。
 /// 无错题时复用 [PracticeDoneView] 成功态；有错题时提供「去订正」与最终「完成打卡」。

@@ -31,6 +31,7 @@ import '../widgets/parent/parent_question_bank_view.dart';
 import '../widgets/parent/parent_tasks_view.dart';
 import '../widgets/parent/parent_wrong_questions_view.dart';
 import 'child_mastery_screen.dart';
+import '../../../../shared/widgets/app_actions.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   final UserModel user;

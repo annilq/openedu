@@ -3,6 +3,8 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/theme/app_theme.dart';
 import '../screens/assistant_chat_page.dart';
+import '../../../../shared/widgets/app_card.dart';
+import '../../../../shared/widgets/app_focusable_action.dart';
 
 /// 家长端 AI 助手宿主（ADR-0036 单入口 / ADR-0047 整页形态）。
 ///

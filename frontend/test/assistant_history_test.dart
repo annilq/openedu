@@ -21,6 +21,7 @@ import 'package:kids_learn/features/assistant/domain/repositories/assistant_repo
 import 'package:kids_learn/features/assistant/presentation/screens/assistant_chat_page.dart';
 import 'package:kids_learn/features/assistant/providers/assistant_provider.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
+import 'package:kids_learn/shared/widgets/app_actions.dart';
 
 const _mine = AssistantConversation(
   id: 'me-1',

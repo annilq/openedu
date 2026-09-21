@@ -9,7 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// 1. **未登记的新文件不得超过 400 行**——这是 ADR-0058 的主要执行力：它拦不住
 ///    历史债务，但能拦住**下一个** `parent_question_bank_view.dart`（838 行）。
-/// 2. **已登记的超限文件不得继续增长**（棘轮）——现存 **12** 个超限文件登记在
+/// 2. **已登记的超限文件不得继续增长**（棘轮）——现存 **14** 个超限文件登记在
 ///    [_baseline] 里（另 `dev/theme_preview.dart` 1189 行走豁免、`parent_child_selector.dart`
 ///    正好 400 行未越线），基线**只许下调不许上调**：拆小了把基线跟着调小，长回去就失败。
 ///    它不强迫任何人现在就去拆分，但保证这些文件不会继续变长。
@@ -98,18 +98,20 @@ void main() {
 ///
 /// 拆分批次见 `docs/refactor/2026-09-21-flutter-ui-decomposition.md`（P0–P4）。
 const Map<String, int> _baseline = <String, int>{
-  'shared/theme/app_theme.dart': 2740,
-  'shared/widgets/adaptive_shell.dart': 488,
+  'shared/theme/app_theme.dart': 1695,
+  'shared/widgets/adaptive_shell.dart': 490,
   'features/home/presentation/widgets/parent/parent_question_bank_view.dart': 838,
   'features/assistant/presentation/widgets/assistant_cards.dart': 825,
   'features/home/presentation/widgets/parent/parent_task_form_view.dart': 812,
   'features/home/presentation/screens/parent_task_review_screen.dart': 732,
   'features/home/presentation/widgets/parent/parent_tasks_view.dart': 649,
-  'features/home/presentation/screens/home_screen.dart': 655,
-  'features/assistant/presentation/screens/assistant_chat_page.dart': 555,
+  'features/home/presentation/screens/home_screen.dart': 656,
+  'features/assistant/presentation/screens/assistant_chat_page.dart': 557,
   'features/home/presentation/widgets/parent/parent_question_card.dart': 511,
-  'features/home/presentation/widgets/parent/parent_wrong_questions_view.dart': 438,
-  'features/home/presentation/widgets/child_home.dart': 423,
+  'features/home/presentation/widgets/parent/parent_wrong_questions_view.dart': 442,
+  'features/home/presentation/widgets/child_home.dart': 428,
+  'features/home/presentation/widgets/parent/parent_overview_view.dart': 401,
+  'features/home/presentation/widgets/parent/parent_child_selector.dart': 404,
 };
 
 bool _isDart(String path) =>

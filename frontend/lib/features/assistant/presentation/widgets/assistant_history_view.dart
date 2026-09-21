@@ -2,13 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-import '../../../../shared/theme/app_theme.dart' hide AppBadge;
+import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/util/datetime_format.dart';
 import '../../../../shared/widgets/app_badge.dart';
 import '../../../../shared/widgets/app_select_strip.dart';
 import '../../domain/conversation.dart';
 import '../provider/conversation_history_provider.dart';
 import 'assistant_hint_card.dart';
+import '../../../../shared/widgets/app_buttons.dart';
+import '../../../../shared/widgets/app_card.dart';
 
 /// 助手页内的「历史会话」视图（ADR-0048）。
 ///

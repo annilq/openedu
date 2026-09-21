@@ -18,6 +18,12 @@ import '../../../../model_management/presentation/providers/models_notifier.dart
 import '../../../../model_management/presentation/widgets/model_selector.dart';
 import '../../providers/home_notifier.dart';
 import '../../providers/selected_child_provider.dart';
+import '../../../../../shared/widgets/app_actions.dart';
+import '../../../../../shared/widgets/app_buttons.dart';
+import '../../../../../shared/widgets/app_card.dart';
+import '../../../../../shared/widgets/app_focusable_action.dart';
+import '../../../../../shared/widgets/app_section_title.dart';
+import '../../../../../shared/widgets/app_tags.dart';
 
 /// 布置练习任务右栏：多学科行表单 + 一键均分 + 生成（ADR-0004）。
 ///

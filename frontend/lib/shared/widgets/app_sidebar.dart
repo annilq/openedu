@@ -2,6 +2,7 @@ import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../theme/app_theme.dart';
+import 'app_focusable_action.dart';
 
 /// 向侧栏子树广播收缩态 + 切换回调的 InheritedWidget。
 ///

@@ -3,6 +3,8 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_motion.dart';
+import '../../../../shared/widgets/app_buttons.dart';
+import '../../../../shared/widgets/app_card.dart';
 
 /// 复习页空态：今天没有到期错题。
 class ReviewEmptyView extends StatelessWidget {

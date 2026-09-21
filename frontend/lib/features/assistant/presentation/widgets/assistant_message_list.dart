@@ -12,6 +12,8 @@ import '../../../../shared/widgets/app_toast.dart';
 import '../../domain/assistant_card.dart';
 import '../provider/assistant_notifier.dart';
 import 'assistant_cards.dart';
+import '../../../../shared/widgets/app_actions.dart';
+import '../../../../shared/widgets/app_card.dart';
 
 /// 统一的 AI 消息列表渲染（ADR-0036 单入口 / ADR-0042 卡片协议）。
 ///

@@ -10,6 +10,11 @@ import '../../../../shared/widgets/app_loading.dart';
 import '../../../../shared/widgets/app_motion.dart';
 import '../../../review/presentation/providers/review_notifier.dart';
 import '../providers/home_notifier.dart';
+import '../../../../shared/widgets/app_buttons.dart';
+import '../../../../shared/widgets/app_card.dart';
+import '../../../../shared/widgets/app_focusable_action.dart';
+import '../../../../shared/widgets/app_section_title.dart';
+import '../../../../shared/widgets/app_tags.dart';
 
 /// 娃娃端首页：复习入口 + 今日任务列表 + 做题入口 + 打卡
 /// v2 redesign：Banner 大圆角 24、Chip→AppTags、章节标题加左侧色条、

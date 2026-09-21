@@ -9,6 +9,8 @@ import '../../../../shared/widgets/app_top_bar.dart';
 import '../../providers/children_provider.dart';
 import '../providers/children_notifier.dart';
 import '../widgets/interest_picker.dart';
+import '../../../../shared/widgets/app_buttons.dart';
+import '../../../../shared/widgets/app_card.dart';
 
 /// 娃娃资料表单模式：创建 or 编辑（WF-5，新增与编辑共用同一页）。
 enum ChildFormMode { create, edit }

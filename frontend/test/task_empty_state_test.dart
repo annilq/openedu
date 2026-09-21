@@ -21,6 +21,7 @@ import 'package:kids_learn/features/home/providers/home_provider.dart';
 import 'package:kids_learn/shared/domain/models/models.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
 import 'package:kids_learn/shared/widgets/app_empty_state.dart';
+import 'package:kids_learn/shared/widgets/app_card.dart';
 
 /// 只为构造 notifier 存在；本测试不经它取数（状态由仓库桩直接返回）。
 class _UnusedChildrenRepo implements ChildrenRepository {

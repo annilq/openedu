@@ -18,6 +18,8 @@ import '../../../../export/domain/export_repository.dart';
 import '../../../../export/presentation/export_confirm.dart';
 import '../../../../export/presentation/export_preview_page.dart';
 import '../../providers/parent_tasks_notifier.dart';
+import '../../../../../shared/widgets/app_card.dart';
+import '../../../../../shared/widgets/app_tags.dart';
 
 /// 家长「任务」管理页：按状态分 Tab（草稿 / 进行中 / 已完成），
 /// 列表复用后端 GET /tasks 全量数据，卡片点击深链到复核页。

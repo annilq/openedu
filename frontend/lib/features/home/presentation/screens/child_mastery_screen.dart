@@ -2,10 +2,10 @@ import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/domain/models/models.dart';
-import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_scroll_page.dart';
 import '../providers/home_notifier.dart';
 import '../widgets/mastery_board.dart';
+import '../../../../shared/widgets/app_section_title.dart';
 
 /// 娃娃端「我的学科掌握度」：用自身 id 拉取掌握度看板，按学科色着色。
 class ChildMasteryScreen extends ConsumerStatefulWidget {

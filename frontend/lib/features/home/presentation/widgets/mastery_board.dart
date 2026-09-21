@@ -9,6 +9,10 @@ import '../../../../shared/widgets/app_empty_state.dart';
 import '../../../../shared/widgets/app_error.dart';
 import '../../../../shared/widgets/app_loading.dart';
 import '../providers/home_notifier.dart';
+import '../../../../shared/widgets/app_card.dart';
+import '../../../../shared/widgets/app_progress_bar.dart';
+import '../../../../shared/widgets/app_tags.dart';
+import '../../../../shared/widgets/subject_mark_icon.dart';
 
 /// 知识点掌握度看板（家长 / 娃娃共用）。
 ///

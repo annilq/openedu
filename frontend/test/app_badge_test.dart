@@ -2,8 +2,9 @@ import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-import 'package:kids_learn/shared/theme/app_theme.dart' hide AppBadge;
+import 'package:kids_learn/shared/theme/app_theme.dart';
 import 'package:kids_learn/shared/widgets/app_badge.dart';
+
 
 /// 守卫 AppBadge 的渲染：label 显示、outlined 默认底色、自定义底色/前景生效。
 Widget _host(Widget child) => ShadApp.custom(

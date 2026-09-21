@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_motion.dart';
+import '../../../../shared/widgets/app_card.dart';
 
 /// 助手内的空态 / 引导卡（对话空态与历史空态共用同一副骨架）。
 ///

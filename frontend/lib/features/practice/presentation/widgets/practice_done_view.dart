@@ -4,6 +4,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_motion.dart';
 import '../../../../shared/widgets/app_quiz_result_card.dart';
+import '../../../../shared/widgets/app_buttons.dart';
 
 /// 做题完成页：全对时背景彩带 + PopIn 入场。
 /// checkin（打卡 + reset + onDone）逻辑由调用方持有，经 [onCheckin] 回调。

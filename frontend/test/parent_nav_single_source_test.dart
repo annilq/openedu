@@ -12,6 +12,7 @@ import 'package:kids_learn/shared/domain/models/models.dart';
 import 'package:kids_learn/shared/domain/providers/core_providers.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
 import 'package:kids_learn/shared/widgets/app_sidebar.dart' show AppSidebarItem;
+import 'package:kids_learn/shared/widgets/app_focusable_action.dart';
 
 /// 家长端导航「单一事实源」守卫（ADR-0059）。
 ///

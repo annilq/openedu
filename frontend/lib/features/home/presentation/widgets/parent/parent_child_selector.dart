@@ -9,6 +9,10 @@ import '../../../../../shared/widgets/app_sidebar.dart';
 import '../../../../children/providers/children_provider.dart';
 import '../../../../children/presentation/providers/children_notifier.dart';
 import '../../providers/selected_child_provider.dart';
+import '../../../../../shared/widgets/app_avatar.dart';
+import '../../../../../shared/widgets/app_buttons.dart';
+import '../../../../../shared/widgets/app_card.dart';
+import '../../../../../shared/widgets/app_focusable_action.dart';
 
 /// 侧栏顶部娃娃选择器：显示当前选中娃娃，点击弹出列表切换。
 /// 娃娃列表加载完成时自动选中第一个。

@@ -12,6 +12,8 @@ import '../../../../shared/widgets/app_motion.dart';
 import '../../../../shared/widgets/app_paging_footer.dart';
 import '../../../../shared/widgets/app_top_bar.dart';
 import '../providers/review_notifier.dart';
+import '../../../../shared/widgets/app_card.dart';
+import '../../../../shared/widgets/app_tags.dart';
 
 String _fmtDate(DateTime? dt) {
   if (dt == null) return '—';

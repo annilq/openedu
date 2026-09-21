@@ -5,6 +5,9 @@ import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_inputs.dart';
 import '../../../../shared/widgets/app_option_tile.dart';
+import '../../../../shared/widgets/app_buttons.dart';
+import '../../../../shared/widgets/app_card.dart';
+import '../../../../shared/widgets/app_tags.dart';
 
 /// 复习页单题作答区：题干标签 + 选项/输入 + 提交。
 /// 纯展示：选中态/答案/提交由调用方（屏幕 State）持有并回调。

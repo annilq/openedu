@@ -4,6 +4,10 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/utils/question_labels.dart';
 import '../../domain/assistant_card.dart';
+import '../../../../shared/widgets/app_buttons.dart';
+import '../../../../shared/widgets/app_card.dart';
+import '../../../../shared/widgets/app_focusable_action.dart';
+import '../../../../shared/widgets/app_tags.dart';
 
 /// AI 消息里的结构化卡片（ADR-0042）：按 [AssistantCard.kind] 分派版式。
 ///

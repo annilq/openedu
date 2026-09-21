@@ -11,6 +11,10 @@ import '../../../../shared/widgets/app_toast.dart';
 import '../../domain/models.dart';
 import '../providers/models_notifier.dart';
 import 'model_form_dialog.dart';
+import '../../../../shared/widgets/app_actions.dart';
+import '../../../../shared/widgets/app_buttons.dart';
+import '../../../../shared/widgets/app_card.dart';
+import '../../../../shared/widgets/app_section_title.dart';
 
 /// 家长端 AI 模型管理页：列出、增删改本家长录入的模型，并支持设默认。
 ///

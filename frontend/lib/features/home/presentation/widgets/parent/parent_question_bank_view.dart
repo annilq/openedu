@@ -21,6 +21,9 @@ import '../../../../export/presentation/export_confirm.dart';
 import '../../../../export/presentation/export_preview_page.dart';
 import '../../providers/question_bank_notifier.dart';
 import '../../providers/selected_child_provider.dart';
+import '../../../../../shared/widgets/app_card.dart';
+import '../../../../../shared/widgets/app_focusable_action.dart';
+import '../../../../../shared/widgets/app_section_title.dart';
 
 /// 题库视图（产品闭环）：年级 segment 切换 + 学科/题型/关键词过滤 + 多选，
 /// 支持「用这些题生成任务」（选项 A）与「加入已有草稿」（选项 B）。

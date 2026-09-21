@@ -12,6 +12,9 @@ import '../../../../../shared/widgets/app_motion.dart';
 import '../../../../tutor/domain/models.dart';
 import '../../../../tutor/presentation/providers/tutor_logs_notifier.dart';
 import '../../providers/selected_child_provider.dart';
+import '../../../../../shared/widgets/app_card.dart';
+import '../../../../../shared/widgets/app_section_title.dart';
+import '../../../../../shared/widgets/app_tags.dart';
 
 /// AI 答疑记录右栏（F-305）：家长查看选中娃娃的 AI 问答日志。
 class ParentTutorLogsView extends ConsumerWidget {
