@@ -186,47 +186,22 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
         child: Column(
           children: [
             AppTopBar(
-              title: '复习',
+              // 进度跟着标题走，不塞进 trailing：顶栏尾部槽位只有 40px、按 ADR-0046
+              // 只放得下**一个**图标行动。原写法把「打印图标 + 题号 chip」并排放进去，
+              // 横向溢出 32px——超出的部分落在屏幕右缘之外被裁掉，等于这个计数根本
+              // 没显示出来（溢出是渲染错误，不是「挤一点还能看」）。
+              title: !_done && _totalCount > 0
+                  ? '复习 ${_currentIndex + 1}/$_totalCount'
+                  : '复习',
               showBack: widget.showBack,
               onBack: widget.onExit,
-              trailing: state is DueReviewLoaded && state.items.isNotEmpty
-                  ? Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (widget.onExportDue != null)
-                          AppIconAction(
-                            icon: LucideIcons.printer,
-                            semanticLabel: '打印今日复习卷',
-                            onPressed: widget.onExportDue,
-                          ),
-                        if (!_done && _totalCount > 0) ...[
-                          const SizedBox(width: AppSpacing.xs),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: AppSpacing.md,
-                                vertical: AppSpacing.xs),
-                            decoration: BoxDecoration(
-                              color: scheme.surfaceSunken,
-                              borderRadius: BorderRadius.circular(999),
-                              // 色块 = 2px 墨黑描边 + 硬阴影（ADR-0044）。
-                              border: Border.all(
-                                  color: AppBrutal.ink,
-                                  width: AppElevation.borderWidth),
-                              boxShadow: AppElevation.hard(),
-                            ),
-                            child: Text(
-                              '${_currentIndex + 1}/$_totalCount',
-                              style: AppTheme.textOf(context)
-                                  .labelMedium
-                                  ?.copyWith(
-                                    fontFeatures: const [
-                                      FontFeature.tabularFigures()
-                                    ],
-                                  ),
-                            ),
-                          ),
-                        ],
-                      ],
+              trailing: widget.onExportDue != null &&
+                      state is DueReviewLoaded &&
+                      state.items.isNotEmpty
+                  ? AppIconAction(
+                      icon: LucideIcons.printer,
+                      semanticLabel: '打印今日复习卷',
+                      onPressed: widget.onExportDue,
                     )
                   : null,
             ),
