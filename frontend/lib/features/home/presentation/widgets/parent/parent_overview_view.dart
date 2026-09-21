@@ -7,7 +7,7 @@ import '../../../../../shared/presentation/paging.dart';
 import '../../../../../shared/presentation/resource.dart';
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/utils/load_once.dart';
-import '../../../../../shared/widgets/app_content_frame.dart';
+import '../../../../../shared/widgets/app_scroll_page.dart';
 import '../../../../../shared/widgets/app_empty_state.dart';
 import '../../../../../shared/widgets/app_error.dart';
 import '../../../../../shared/widgets/app_loading.dart';
@@ -52,23 +52,15 @@ class ParentOverviewView extends ConsumerWidget {
           ref.read(parentTasksNotifierProvider.notifier).load(kAllTaskStatuses),
     );
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(
-          AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xl2),
-      child: AppContentFrame(
-        alignment: Alignment.topLeft,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const SectionTitle('学习进度'),
-            _buildProgress(context, ref),
-            const SectionTitle('最近任务'),
-            _buildRecentTasks(context, ref, tasksState),
-            const SectionTitle('知识点掌握度'),
-            _buildMastery(context),
-          ],
-        ),
-      ),
+    return AppScrollPage(
+      children: [
+        const SectionTitle('学习进度'),
+        _buildProgress(context, ref),
+        const SectionTitle('最近任务'),
+        _buildRecentTasks(context, ref, tasksState),
+        const SectionTitle('知识点掌握度'),
+        _buildMastery(context),
+      ],
     );
   }
 

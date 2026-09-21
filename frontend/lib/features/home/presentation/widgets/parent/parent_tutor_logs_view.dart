@@ -4,7 +4,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../../shared/presentation/resource.dart';
 import '../../../../../shared/theme/app_theme.dart';
-import '../../../../../shared/widgets/app_content_frame.dart';
+import '../../../../../shared/widgets/app_scroll_page.dart';
 import '../../../../../shared/widgets/app_empty_state.dart';
 import '../../../../../shared/widgets/app_error.dart';
 import '../../../../../shared/widgets/app_loading.dart';
@@ -23,46 +23,38 @@ class ParentTutorLogsView extends ConsumerWidget {
     if (selected == null) return _emptyState(context);
 
     final state = ref.watch(tutorLogsNotifierProvider);
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(
-          AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xl2),
-      child: AppContentFrame(
-        alignment: Alignment.topLeft,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const SectionTitle('AI 答疑记录'),
-            switch (state) {
-              ResourceIdle() ||
-              ResourceLoading() =>
-                const AppLoading(message: '加载答疑记录...'),
-              ResourceError() => AppError(message: state.errorOrNull ?? ''),
-              ResourceLoaded() => (state.dataOrNull ?? const []).isEmpty
-                  ? AppCard(
-                      padding: const EdgeInsets.all(AppSpacing.md),
-                      child: Align(alignment: Alignment.topLeft,
-                        child: Text('这个娃娃还没有问过 AI 老师',
-                            style: AppTheme.textOf(context).bodyLarge),
-                      ),
-                    )
-                  : Column(
-                      children: (state.dataOrNull ?? const <TutorLogModel>[])
-                          .map((log) => PopIn(
-                                key: ValueKey(log.id),
-                                child: AppCard.listRow(
-                                  margin: const EdgeInsets.only(
-                                      bottom: AppSpacing.sm),
-                                  padding:
-                                      const EdgeInsets.all(AppSpacing.md),
-                                  child: _TutorLogCard(log: log),
-                                ),
-                              ))
-                          .toList(),
-                    ),
-            },
-          ],
-        ),
-      ),
+    return AppScrollPage(
+      children: [
+        const SectionTitle('AI 答疑记录'),
+        switch (state) {
+          ResourceIdle() ||
+          ResourceLoading() =>
+            const AppLoading(message: '加载答疑记录...'),
+          ResourceError() => AppError(message: state.errorOrNull ?? ''),
+          ResourceLoaded() => (state.dataOrNull ?? const []).isEmpty
+              ? AppCard(
+                  padding: const EdgeInsets.all(AppSpacing.md),
+                  child: Align(alignment: Alignment.topLeft,
+                    child: Text('这个娃娃还没有问过 AI 老师',
+                        style: AppTheme.textOf(context).bodyLarge),
+                  ),
+                )
+              : Column(
+                  children: (state.dataOrNull ?? const <TutorLogModel>[])
+                      .map((log) => PopIn(
+                            key: ValueKey(log.id),
+                            child: AppCard.listRow(
+                              margin: const EdgeInsets.only(
+                                  bottom: AppSpacing.sm),
+                              padding:
+                                  const EdgeInsets.all(AppSpacing.md),
+                              child: _TutorLogCard(log: log),
+                            ),
+                          ))
+                      .toList(),
+                ),
+        },
+      ],
     );
   }
 

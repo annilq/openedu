@@ -5,6 +5,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_content_frame.dart';
+import '../../../../shared/widgets/app_scroll_page.dart';
 import '../../../../shared/widgets/app_empty_state.dart';
 import '../../../../shared/widgets/app_error.dart';
 import '../../../../shared/widgets/app_loading.dart';
@@ -230,45 +231,37 @@ class _ParentTaskReviewScreenState
     final app = AppTheme.colorsOf(context);
     final total = task.questions.length;
     final promoted = task.promotedCount;
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(
-          AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xl2),
-      child: AppContentFrame(
-        alignment: Alignment.topLeft,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildSummary(task, app, promoted, total,
-                locked: busyTqId != null),
-            const SizedBox(height: AppSpacing.xl2),
-            if (task.questions.isEmpty)
-              // 允许删到 0 题：整卷重生成已移除（ADR-0056），故空态只给指路文案——
-              // 草稿页不能加题，删空之后只能回生成页/题库重来，或作废这份草稿。
-              const _EmptyHint()
-            else
-              ...List.generate(task.questions.length, (i) {
-                final q = task.questions[i];
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: AppSpacing.lg),
-                  child: ParentQuestionCard(
-                    key: ValueKey(q.id),
-                    index: i + 1,
-                    question: q,
-                    isDraft: task.isDraft,
-                    // 进行中：按钮全禁 + spinner，杜绝连点并发。
-                    busy: busyTqId == q.id,
-                    // 单题动作的实时文本只给当前这张卡（整卷的走顶部进度区）。
-                    liveText: busyTqId == q.id ? liveText : '',
-                    onPromote: () => _onPromoteOne(task.id, q.id),
-                    onDelete: () => _onDelete(task.id, q.id),
-                    onRegenerate: () => _onRegenerateOne(task.id, q.id),
-                    onEdit: (edits) => _onEdit(task.id, q.id, edits),
-                  ),
-                );
-              }),
-          ],
-        ),
-      ),
+    return AppScrollPage(
+      children: [
+        _buildSummary(task, app, promoted, total,
+            locked: busyTqId != null),
+        const SizedBox(height: AppSpacing.xl2),
+        if (task.questions.isEmpty)
+          // 允许删到 0 题：整卷重生成已移除（ADR-0056），故空态只给指路文案——
+          // 草稿页不能加题，删空之后只能回生成页/题库重来，或作废这份草稿。
+          const _EmptyHint()
+        else
+          ...List.generate(task.questions.length, (i) {
+            final q = task.questions[i];
+            return Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.lg),
+              child: ParentQuestionCard(
+                key: ValueKey(q.id),
+                index: i + 1,
+                question: q,
+                isDraft: task.isDraft,
+                // 进行中：按钮全禁 + spinner，杜绝连点并发。
+                busy: busyTqId == q.id,
+                // 单题动作的实时文本只给当前这张卡（整卷的走顶部进度区）。
+                liveText: busyTqId == q.id ? liveText : '',
+                onPromote: () => _onPromoteOne(task.id, q.id),
+                onDelete: () => _onDelete(task.id, q.id),
+                onRegenerate: () => _onRegenerateOne(task.id, q.id),
+                onEdit: (edits) => _onEdit(task.id, q.id, edits),
+              ),
+            );
+          }),
+      ],
     );
   }
 

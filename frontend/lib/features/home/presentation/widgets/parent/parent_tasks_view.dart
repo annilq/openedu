@@ -4,7 +4,6 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/widgets/app_card_list.dart';
-import '../../../../../shared/widgets/app_dialog.dart';
 import '../../../../../shared/widgets/app_empty_state.dart';
 import '../../../../../shared/widgets/app_error.dart';
 import '../../../../../shared/widgets/app_loading.dart';
@@ -16,6 +15,7 @@ import '../../../../../shared/presentation/paging.dart';
 import '../../../../children/providers/children_provider.dart';
 import '../../../../children/presentation/providers/children_notifier.dart';
 import '../../../../export/domain/export_repository.dart';
+import '../../../../export/presentation/export_confirm.dart';
 import '../../../../export/presentation/export_preview_page.dart';
 import '../../providers/parent_tasks_notifier.dart';
 
@@ -120,16 +120,13 @@ class _ParentTasksViewState extends ConsumerState<ParentTasksView> {
         if (_selectedIds.contains(t.id)) t,
     ];
     if (selected.isEmpty) return;
-    if (selected.length > kExportSoftLimit) {
-      // 软提示不硬拦：服务端另有硬边界，客户端只提醒排版耗时。
-      final confirmed = await AppDialog.confirm(
-        context,
-        title: const Text('题目较多'),
-        content: const Text('一次导出的任务较多，打印预览可能变慢，建议分批导出。'),
-        confirmLabel: '继续导出',
-      );
-      if (confirmed != true || !mounted) return;
-    }
+    // 软提示不硬拦：服务端另有硬边界，客户端只提醒排版耗时。
+    final proceed = await confirmLargeExport(
+      context,
+      count: selected.length,
+      unit: '任务',
+    );
+    if (!proceed || !mounted) return;
     final title = selected.length == 1 ? selected.first.title : '任务练习';
     Navigator.of(context).push(
       CupertinoPageRoute(

@@ -10,7 +10,6 @@ import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/utils/question_labels.dart';
 import '../../../../../shared/widgets/app_card_list.dart';
 import '../../../../../shared/widgets/app_content_frame.dart';
-import '../../../../../shared/widgets/app_dialog.dart';
 import '../../../../../shared/widgets/app_empty_state.dart';
 import '../../../../../shared/widgets/app_error.dart';
 import '../../../../../shared/widgets/app_inputs.dart';
@@ -18,6 +17,7 @@ import '../../../../../shared/widgets/app_loading.dart';
 import '../../../../../shared/widgets/app_paging_footer.dart';
 import '../../../../../shared/widgets/app_toast.dart';
 import '../../../../export/domain/export_repository.dart';
+import '../../../../export/presentation/export_confirm.dart';
 import '../../../../export/presentation/export_preview_page.dart';
 import '../../providers/question_bank_notifier.dart';
 import '../../providers/selected_child_provider.dart';
@@ -135,17 +135,13 @@ class _ParentQuestionBankViewState
       optionLists: selected.map((e) => e.options),
     );
 
-    if (_selectedIds.length > kExportSoftLimit) {
-      // 软提示不硬拦：家长要印 100 题的复习卷是合理需求（服务端另有硬边界）。
-      final confirmed = await AppDialog.confirm(
-        context,
-        title: const Text('题目较多'),
-        content: const Text('一次导出的题较多，打印预览可能变慢，建议分批导出。'),
-        confirmLabel: '继续导出',
-      );
-      if (confirmed != true || !mounted) return;
-    }
-    if (!mounted) return;
+    // 软提示不硬拦：家长要印 100 题的复习卷是合理需求（服务端另有硬边界）。
+    final proceed = await confirmLargeExport(
+      context,
+      count: _selectedIds.length,
+      unit: '题目',
+    );
+    if (!proceed || !mounted) return;
     Navigator.of(context).push(
       CupertinoPageRoute(
         builder: (_) => ExportPreviewPage(

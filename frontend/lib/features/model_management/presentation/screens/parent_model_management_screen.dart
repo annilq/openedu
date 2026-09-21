@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/theme/app_theme.dart';
-import '../../../../shared/widgets/app_content_frame.dart';
+import '../../../../shared/widgets/app_scroll_page.dart';
 import '../../../../shared/widgets/app_dialog.dart';
 import '../../../../shared/widgets/app_loading.dart';
 import '../../../../shared/widgets/app_motion.dart';
@@ -74,52 +74,44 @@ class _ParentModelManagementScreenState
     final app = AppTheme.colorsOf(context);
     final text = AppTheme.textOf(context);
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(
-          AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xl2),
-      child: AppContentFrame(
-        alignment: Alignment.topLeft,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const SectionTitle('AI 模型管理'),
-            const SizedBox(height: AppSpacing.sm),
-            Text(
-              '选择用于出题 / 答疑的模型。模型需你手动添加（DeepSeek / Ollama / OpenAI 兼容），'
-              '添加时必须填写 API Key，密钥由后端加密存储、仅你可见。',
-              style: text.bodySmall?.copyWith(color: app.onSurfaceVariant),
-            ),
-            const SizedBox(height: AppSpacing.xl),
-            SectionTitle(
-              '我的模型',
-              trailing: AppPrimaryButton(
-                label: '添加模型',
-                icon: LucideIcons.plus,
-                fullWidth: false,
-                onPressed: () => _openForm(context, null),
+    return AppScrollPage(
+      children: [
+        const SectionTitle('AI 模型管理'),
+        const SizedBox(height: AppSpacing.sm),
+        Text(
+          '选择用于出题 / 答疑的模型。模型需你手动添加（DeepSeek / Ollama / OpenAI 兼容），'
+          '添加时必须填写 API Key，密钥由后端加密存储、仅你可见。',
+          style: text.bodySmall?.copyWith(color: app.onSurfaceVariant),
+        ),
+        const SizedBox(height: AppSpacing.xl),
+        SectionTitle(
+          '我的模型',
+          trailing: AppPrimaryButton(
+            label: '添加模型',
+            icon: LucideIcons.plus,
+            fullWidth: false,
+            onPressed: () => _openForm(context, null),
+          ),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        if (state is ModelsLoaded) ...[
+          if (state.resp.custom.isEmpty)
+            _emptyHint('还没有模型，点「添加模型」接入 DeepSeek、本地 Ollama 或其他 OpenAI 兼容服务')
+          else
+            ...state.resp.custom.map(
+              (m) => PopIn(
+                key: ValueKey<String>(m.id),
+                child: _modelCard(context, m),
               ),
             ),
-            const SizedBox(height: AppSpacing.md),
-            if (state is ModelsLoaded) ...[
-              if (state.resp.custom.isEmpty)
-                _emptyHint('还没有模型，点「添加模型」接入 DeepSeek、本地 Ollama 或其他 OpenAI 兼容服务')
-              else
-                ...state.resp.custom.map(
-                  (m) => PopIn(
-                    key: ValueKey<String>(m.id),
-                    child: _modelCard(context, m),
-                  ),
-                ),
-            ] else if (state is ModelsLoading) ...[
-              const AppLoading(),
-            ] else if (state is ModelsError) ...[
-              _emptyHint('加载失败：${(state).message}'),
-            ] else ...[
-              _emptyHint('加载中…'),
-            ],
-          ],
-        ),
-      ),
+        ] else if (state is ModelsLoading) ...[
+          const AppLoading(),
+        ] else if (state is ModelsError) ...[
+          _emptyHint('加载失败：${(state).message}'),
+        ] else ...[
+          _emptyHint('加载中…'),
+        ],
+      ],
     );
   }
 

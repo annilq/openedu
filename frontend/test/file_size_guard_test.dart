@@ -9,7 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// 1. **未登记的新文件不得超过 400 行**——这是 ADR-0058 的主要执行力：它拦不住
 ///    历史债务，但能拦住**下一个** `parent_question_bank_view.dart`（838 行）。
-/// 2. **已登记的超限文件不得继续增长**（棘轮）——现存 **13** 个超限文件登记在
+/// 2. **已登记的超限文件不得继续增长**（棘轮）——现存 **12** 个超限文件登记在
 ///    [_baseline] 里（另 `dev/theme_preview.dart` 1189 行走豁免、`parent_child_selector.dart`
 ///    正好 400 行未越线），基线**只许下调不许上调**：拆小了把基线跟着调小，长回去就失败。
 ///    它不强迫任何人现在就去拆分，但保证这些文件不会继续变长。
@@ -110,7 +110,6 @@ const Map<String, int> _baseline = <String, int>{
   'features/home/presentation/widgets/parent/parent_question_card.dart': 511,
   'features/home/presentation/widgets/parent/parent_wrong_questions_view.dart': 438,
   'features/home/presentation/widgets/child_home.dart': 423,
-  'features/home/presentation/widgets/parent/parent_overview_view.dart': 406,
 };
 
 bool _isDart(String path) =>

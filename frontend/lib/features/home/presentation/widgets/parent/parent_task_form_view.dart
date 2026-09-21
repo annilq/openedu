@@ -6,7 +6,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../../shared/domain/models/models.dart';
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/utils/question_labels.dart';
-import '../../../../../shared/widgets/app_content_frame.dart';
+import '../../../../../shared/widgets/app_scroll_page.dart';
 import '../../../../../shared/widgets/app_inputs.dart';
 import '../../../../../shared/widgets/app_loading.dart';
 import '../../../../../shared/widgets/app_motion.dart';
@@ -197,69 +197,61 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
   @override
   Widget build(BuildContext context) {
     final genState = ref.watch(taskGenNotifierProvider);
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(
-          AppSpacing.lg, AppSpacing.md, AppSpacing.lg, AppSpacing.xl2),
-      child: AppContentFrame(
-        alignment: Alignment.topLeft,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const SectionTitle('布置练习任务'),
-            AppCard(
-              padding: const EdgeInsets.all(AppSpacing.md),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+    return AppScrollPage(
+      children: [
+        const SectionTitle('布置练习任务'),
+        AppCard(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AppTextField(label: '试卷标题', controller: _titleCtrl),
+              const SizedBox(height: AppSpacing.md),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  AppTextField(label: '试卷标题', controller: _titleCtrl),
-                  const SizedBox(height: AppSpacing.md),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Expanded(
-                        child: AppTextField(
-                          label: '总题数',
-                          controller: _totalCtrl,
-                          keyboardType: TextInputType.number,
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.md),
-                      ShadButton.outline(
-                      
-                        onPressed: _evenSplit,
-                        child: const Text('一键均分'),
-                      ),
-                      const SizedBox(width: AppSpacing.sm),
-                      ShadButton.outline(
-                      
-                        onPressed: _addRow,
-                        child: const Text('+ 加学科'),
-                      ),
-                    ],
+                  Expanded(
+                    child: AppTextField(
+                      label: '总题数',
+                      controller: _totalCtrl,
+                      keyboardType: TextInputType.number,
+                    ),
                   ),
-                  const SizedBox(height: AppSpacing.lg),
-                  ...List.generate(_rows.length, _buildRow),
-                  const SizedBox(height: AppSpacing.xl),
-                  ModelSelector(
-                    selected: _modelId,
-                    onChanged: (v) => setState(() => _modelId = v),
-                    showDefaultOption: false,
+                  const SizedBox(width: AppSpacing.md),
+                  ShadButton.outline(
+                  
+                    onPressed: _evenSplit,
+                    child: const Text('一键均分'),
                   ),
-                  const SizedBox(height: AppSpacing.xl),
-                  _buildInterestSection(),
-                  const SizedBox(height: AppSpacing.xl),
-                  // 流式生成 / 落库期间：隐藏按钮；首张题卡到达前显示加载动画，
-                  // 之后仅展示题卡（题卡逐张浮现），不重复显示 spinner。
-                  _buildActionArea(genState),
-                  const SizedBox(height: AppSpacing.lg),
-                  if (genState is TaskGenPreview || genState is TaskGenReady)
-                    _buildPreview(genState),
+                  const SizedBox(width: AppSpacing.sm),
+                  ShadButton.outline(
+                  
+                    onPressed: _addRow,
+                    child: const Text('+ 加学科'),
+                  ),
                 ],
               ),
-            ),
-          ],
+              const SizedBox(height: AppSpacing.lg),
+              ...List.generate(_rows.length, _buildRow),
+              const SizedBox(height: AppSpacing.xl),
+              ModelSelector(
+                selected: _modelId,
+                onChanged: (v) => setState(() => _modelId = v),
+                showDefaultOption: false,
+              ),
+              const SizedBox(height: AppSpacing.xl),
+              _buildInterestSection(),
+              const SizedBox(height: AppSpacing.xl),
+              // 流式生成 / 落库期间：隐藏按钮；首张题卡到达前显示加载动画，
+              // 之后仅展示题卡（题卡逐张浮现），不重复显示 spinner。
+              _buildActionArea(genState),
+              const SizedBox(height: AppSpacing.lg),
+              if (genState is TaskGenPreview || genState is TaskGenReady)
+                _buildPreview(genState),
+            ],
+          ),
         ),
-      ),
+      ],
     );
   }
 
