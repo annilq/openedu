@@ -345,6 +345,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ),
         ReviewScreen(
           showBack: false,
+          // 复习页是页签、不是 push 出来的路由，「返回」只能由壳翻译成切页签。
+          onExit: () => _switchChildTab(0),
           onExportDue: _exportDueReviews,
         ),
         const WrongQuestionsScreen(showBack: false),

@@ -26,7 +26,24 @@ class ReviewScreen extends ConsumerStatefulWidget {
   /// 传 null 时不显示该入口。
   final VoidCallback? onExportDue;
 
-  const ReviewScreen({super.key, this.showBack = true, this.onExportDue});
+  /// 离开本页的出口（「返回」/「返回首页」），由组合根注入。
+  ///
+  /// ⚠️ **本页不是 `Navigator.push` 出来的路由**：娃娃端它是导航空壳的一个页签
+  /// （`IndexedStack` 常驻），底下压根没有可 pop 的路由。此时 `Navigator.pop`
+  /// 弹的是**根导航栈的最后一条路由（整个 App）**——按一下就白屏，下一次重建还会
+  /// 撞上 `NavigatorState.build` 的 `assert(_history.isNotEmpty)`。
+  /// 所以「回哪儿」只能由壳说了算（切回首页页签），本页不许自己 pop。
+  ///
+  /// 没注入时退回 `Navigator.maybePop`：它在无可 pop 路由时是 no-op，
+  /// 不会把根栈弹空（这也是 `AppTopBar` / `AppPushedPage` 的默认退路）。
+  final VoidCallback? onExit;
+
+  const ReviewScreen({
+    super.key,
+    this.showBack = true,
+    this.onExportDue,
+    this.onExit,
+  });
 
   @override
   ConsumerState<ReviewScreen> createState() => _ReviewScreenState();
@@ -136,7 +153,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
       note: '记住的题会自动升级，错的题明天再来',
       trailing: AppPrimaryButton(
         label: '返回首页',
-        onPressed: () => Navigator.of(context).pop(true),
+        onPressed: widget.onExit ?? () => Navigator.of(context).maybePop(),
       ),
     );
   }
@@ -160,6 +177,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
             AppTopBar(
               title: '复习',
               showBack: widget.showBack,
+              onBack: widget.onExit,
               trailing: state is DueReviewLoaded && state.items.isNotEmpty
                   ? Row(
                       mainAxisSize: MainAxisSize.min,
@@ -214,7 +232,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
                 DueReviewLoaded() => _done
                     ? _buildDoneView(context)
                     : (state.items.isEmpty
-                        ? const ReviewEmptyView()
+                        ? ReviewEmptyView(onBack: widget.onExit)
                         : PopIn(
                             // key 稳定 → 切到下一题时重放弹簧入场，已在屏上的不重放。
                             key: ValueKey<int>(_currentIndex),

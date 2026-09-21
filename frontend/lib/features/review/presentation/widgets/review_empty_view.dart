@@ -6,7 +6,14 @@ import '../../../../shared/widgets/app_motion.dart';
 
 /// 复习页空态：今天没有到期错题。
 class ReviewEmptyView extends StatelessWidget {
-  const ReviewEmptyView({super.key});
+  /// 「返回」的出口，由组合根注入。
+  ///
+  /// 与 `ReviewScreen.onExit` 同一条理由：本页挂在壳的页签里、不在 push 路由上，
+  /// 自己 `Navigator.pop` 会把根导航栈弹空（白屏 + `_history.isNotEmpty` 断言）。
+  /// 没注入时退回 `maybePop`（无可 pop 路由即 no-op）。
+  final VoidCallback? onBack;
+
+  const ReviewEmptyView({super.key, this.onBack});
 
   @override
   Widget build(BuildContext context) {
@@ -51,7 +58,7 @@ class ReviewEmptyView extends StatelessWidget {
                   const SizedBox(height: AppSpacing.xl4),
                   AppPrimaryButton(
                     label: '返回',
-                    onPressed: () => Navigator.of(context).pop(),
+                    onPressed: onBack ?? () => Navigator.of(context).maybePop(),
                   ),
                 ],
               ),
