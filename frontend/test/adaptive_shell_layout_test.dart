@@ -1,6 +1,10 @@
-// 守住 ADR-0045 的两条布局契约：
+// 守住 ADR-0045 / ADR-0059 的布局契约：
 //   1. 内容区统一套 AppLayout.contentWide 上限并居中（大屏下不再无限拉宽）；
-//   2. 三档断点：大屏 + detail 走 master-detail 双栏，中屏 / 紧凑时 detail 整幅顶替。
+//   2. 断点分档：紧凑（< compactMax）走底栏 / 抽屉，其余走侧栏。
+//
+// 曾经还有「大屏 + detail 走 master-detail 双栏、中屏 detail 整幅顶替 body」一组
+// 用例——detail 已在 ADR-0059 移除（壳只认一个 body），那组用例随之删除。
+// 若有人把 detail 加回来，test/parent_nav_single_source_test.dart 会红。
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -17,7 +21,6 @@ import 'package:kids_learn/shared/widgets/app_sidebar.dart' show AppSidebar;
 
 void main() {
   const bodyKey = ValueKey('body-pane');
-  const detailKey = ValueKey('detail-pane');
 
   Future<StorageService> makeStorage() async {
     SharedPreferences.setMockInitialValues({});
@@ -31,9 +34,8 @@ void main() {
   Future<void> pumpShell(
     WidgetTester tester,
     StorageService storage,
-    double width, {
-    Widget? detail,
-  }) async {
+    double width,
+  ) async {
     await tester.binding.setSurfaceSize(Size(width, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
@@ -48,7 +50,6 @@ void main() {
                   icon: LucideIcons.house, label: '首页', active: true),
             ],
             body: const Placeholder(key: bodyKey),
-            detail: detail,
           ),
         ),
       ),
@@ -78,44 +79,6 @@ void main() {
     expect(tester.getSize(find.byKey(bodyKey)).width, 400,
         reason: '400 < contentWide，约束不应生效，body 铺满可用宽度');
     expect(find.byType(AppSidebar), findsNothing, reason: '紧凑档不应出现侧栏');
-  });
-
-  testWidgets('大屏 + detail：master-detail 双栏，详情栏更宽', (tester) async {
-    final storage = await makeStorage();
-    await pumpShell(tester, storage, 1600,
-        detail: const Placeholder(key: detailKey));
-
-    expect(find.byKey(bodyKey), findsOneWidget);
-    expect(find.byKey(detailKey), findsOneWidget);
-
-    final master = tester.getSize(find.byKey(bodyKey)).width;
-    final detail = tester.getSize(find.byKey(detailKey)).width;
-    expect(master, closeTo(AppLayout.contentWide * 5 / 13, 2));
-    expect(detail, closeTo(AppLayout.contentWide * 8 / 13, 2));
-    expect(detail, greaterThan(master), reason: '详情是要读的内容，应更宽');
-
-    // 两栏并排：详情在主栏右侧，且两栏合计不超出 contentWide。
-    expect(tester.getTopLeft(find.byKey(detailKey)).dx,
-        greaterThan(tester.getTopLeft(find.byKey(bodyKey)).dx));
-    expect(master + detail, lessThanOrEqualTo(AppLayout.contentWide));
-  });
-
-  testWidgets('中屏 + detail：详情整幅顶替 body，不硬塞双栏', (tester) async {
-    final storage = await makeStorage();
-    await pumpShell(tester, storage, 900,
-        detail: const Placeholder(key: detailKey));
-
-    expect(find.byKey(detailKey), findsOneWidget);
-    expect(find.byKey(bodyKey), findsNothing,
-        reason: '中屏下 detail 应整幅顶替 body（沿用「详情是整页」的既有行为）');
-  });
-
-  testWidgets('大屏无 detail：单栏，不出现双栏', (tester) async {
-    final storage = await makeStorage();
-    await pumpShell(tester, storage, 1600);
-
-    expect(find.byKey(bodyKey), findsOneWidget);
-    expect(find.byKey(detailKey), findsNothing);
   });
 
   testWidgets('宽度上限只约束横向：内容不足一屏时仍贴顶，不竖向居中', (tester) async {

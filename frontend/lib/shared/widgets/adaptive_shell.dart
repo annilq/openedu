@@ -32,7 +32,7 @@ class AdaptiveNavDestination {
 /// |---|---|
 /// | `< [AppLayout.compactMax]`（紧凑） | 娃娃端底部导航；家长端顶部汉堡 + 左抽屉 |
 /// | `[compactMax, largeMin)`（中屏） | 侧栏 240 ↔ 64 可收起 |
-/// | `≥ [AppLayout.largeMin]`（大屏） | 同上，且 [detail] 非空时展开 master-detail 双栏 |
+/// | `≥ [AppLayout.largeMin]`（大屏） | 同上 |
 ///
 /// 另（ADR-0045）：内容区统一套 [AppLayout.contentWide] 宽度上限并居中——大屏下
 /// 防止文本行过长、卡片被无限拉宽。页面若需更窄（登录 480 / 答题 820），自带
@@ -44,14 +44,10 @@ class AdaptiveShell extends ConsumerStatefulWidget {
   final List<AdaptiveNavDestination> destinations;
   final Widget body;
 
-  /// 详情面板（master-detail 的 detail）。
-  ///
-  /// - 大屏（≥ [AppLayout.largeMin]）：与 [body]（master）并排双栏；
-  /// - 中屏 / 紧凑：整幅顶替 [body]——保持「详情是整页」的既有行为，同时避免在
-  ///   平板竖屏或手机上硬塞双栏。
-  ///
-  /// 为空时只渲染 [body]。宽度判定由本壳负责，调用方无需自己测量宽度。
-  final Widget? detail;
+  /// [body] 是唯一的页面宿主：曾经还有个 [detail] 覆盖层（master-detail，
+  /// `detail ?? body`），已在 ADR-0059 移除——它让「当前该看哪个页面」变成两个
+  /// 状态的优先级裁决，而裁决散落在各个导航回调里，漏清一个就整幅顶替掉 body。
+  /// 现在壳只认一个 body，页面互斥由调用方的单一导航状态保证。
 
   final AppUserMode mode;
   final Widget? sidebarTop;
@@ -62,7 +58,6 @@ class AdaptiveShell extends ConsumerStatefulWidget {
     super.key,
     required this.destinations,
     required this.body,
-    this.detail,
     required this.mode,
     this.sidebarTop,
     this.sidebarBottom,
@@ -96,7 +91,6 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
       builder: (context, constraints) {
         final width = constraints.maxWidth;
         final isCompact = width < AppLayout.compactMax;
-        final isLarge = width >= AppLayout.largeMin;
 
         if (isCompact) {
           return widget.mode == AppUserMode.child
@@ -150,57 +144,13 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
               Expanded(
                 child: Container(
                   color: scheme.surface,
-                  child: _buildContent(context, isLarge: isLarge),
+                  child: _cappedWidth(widget.body),
                 ),
               ),
             ],
           ),
         );
       },
-    );
-  }
-
-  /// 单栏内容：详情存在时整幅顶替 body（紧凑 / 中屏沿用「详情是整页」的既有行为）。
-  Widget get _singleColumn => widget.detail ?? widget.body;
-
-  /// 内容区（非紧凑路径）。
-  ///
-  /// - 大屏且有详情：[AppLayout.masterFlex] : [AppLayout.detailFlex] 双栏；
-  /// - 其余：单栏。
-  ///
-  /// 两条路径都套 [AppLayout.contentWide] 上限并居中（ADR-0045）。
-  Widget _buildContent(BuildContext context, {required bool isLarge}) {
-    final detail = widget.detail;
-    if (detail == null || !isLarge) {
-      return _cappedWidth(_singleColumn);
-    }
-
-    final scheme = AppTheme.colorsOf(context);
-    return _cappedWidth(
-      Row(
-        // stretch 让两侧各自撑满、独立滚动。安全性已登记在
-        // test/stretch_row_guard_test.dart：本 Row 位于 Expanded 之下，可用高度由
-        // 窗口钉死；**不要**改用 IntrinsicHeight——子项都是滚动视图，固有高度无意义。
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // 主栏 : 详情栏 = 5 : 8（详情是要读的内容，给它更多横向空间）。
-          // 用 Flex 配比而非固定像素：内容区已被 contentWide 钉死，配比在实机区间内
-          // 变化很小，同时避免主栏是表单页时被压成一条窄缝。
-          Expanded(
-            flex: AppLayout.masterFlex,
-            child: widget.body,
-          ),
-          // 主 / 详之间的结构分隔线：与侧栏右缘同档（发丝边，禁写裸数字）。
-          Container(
-            width: AppElevation.borderWidthHairline,
-            color: scheme.outline,
-          ),
-          Expanded(
-            flex: AppLayout.detailFlex,
-            child: detail,
-          ),
-        ],
-      ),
     );
   }
 
@@ -229,7 +179,7 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
         Expanded(
           child: Container(
             color: scheme.surface,
-            child: _cappedWidth(_singleColumn),
+            child: _cappedWidth(widget.body),
           ),
         ),
         Container(
@@ -266,7 +216,7 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
             Expanded(
               child: Container(
                 color: scheme.surface,
-                child: _cappedWidth(_singleColumn),
+                child: _cappedWidth(widget.body),
               ),
             ),
           ],

@@ -2341,7 +2341,11 @@ class AppLayout {
   /// 紧凑档上界：`width < compactMax` 走紧凑布局（娃娃端底栏 / 家长端汉堡抽屉）。
   static const double compactMax = 700;
 
-  /// 大屏档下界：`width >= largeMin` 时由页面提供 master-detail 双栏编排。
+  /// 大屏档下界。
+  ///
+  /// ADR-0059 移除 master-detail 后，大屏不再有独立的编排行为（内容区与非紧凑档
+  /// 一样只是套 [contentWide] 上限并居中）。断点值保留：它是设计系统里被 ADR-0045
+  /// 与多份文档引用的档位标记，删掉会让「大屏」在文档里无处安放。
   static const double largeMin = 1200;
 
   /// 侧栏展开宽度。
@@ -2400,14 +2404,6 @@ class AppLayout {
   /// 侧栏菜单最大高度；超出后菜单内部滚动。
   static const double menuMaxHeight = 400;
 
-  /// master-detail 双栏的宽度配比（主栏 : 详情栏 = 5 : 8）。
-  ///
-  /// 详情栏更宽：主栏是列表（行文本短），详情栏是要读的题面 / 解析。用配比而非固定
-  /// 像素——内容区已被 [contentWide] 钉死，配比在实机宽度区间内变化很小，同时避免
-  /// 主栏是表单页时被压成一条窄缝。
-  static const int masterFlex = 5;
-  static const int detailFlex = 8;
-
   /// 家长端工作区内容最大宽度（列表 / 仪表盘 / 表单页）。
   static const double contentWide = 1080;
 
@@ -2456,8 +2452,8 @@ class AppLayout {
 
   /// 自动进两列所需的可用内容宽度（已减左右页边距）。
   ///
-  /// 取 1048 = [contentWide] 1080 − 2 × [listGutter]，即「大屏、detail 关闭」时
-  /// 列表区实际拿到的宽度。此时两列各 (1048 − 12) / 2 = 518，比 [listColumnWidth]
+  /// 取 1048 = [contentWide] 1080 − 2 × [listGutter]，即大屏下列表区实际拿到的
+  /// 宽度。此时两列各 (1048 − 12) / 2 = 518，比 [listColumnWidth]
   /// 只差 2px——差 2px 就掉回一列会让家长拉窗口时列表在临界点反复跳列，所以阈值
   /// 取「两列都基本达到目标宽度」而不是「两列都必须 ≥ 520」。
   static const double listTwoColumnMin = contentWide - 2 * listGutter;
@@ -2466,7 +2462,7 @@ class AppLayout {
   /// 远低于 [contentNarrow] 480 的可读下限，而两列已经能换来「一屏两倍」。
   ///
   /// 只看可用宽度：不由 `MediaQuery.size`（屏宽）、不由方向、不由平台判断
-  ///（ADR-0045 的硬约束）。大屏打开 detail 时主栏约 446 → 1 列，符合预期。
+  ///（ADR-0045 的硬约束）。
   static int listColumnsFor(double width) =>
       width >= listTwoColumnMin ? 2 : 1;
 }

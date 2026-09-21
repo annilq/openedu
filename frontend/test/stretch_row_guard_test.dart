@@ -16,11 +16,12 @@ import 'package:flutter_test/flutter_test.dart';
 /// 1. **行内已包 IntrinsicHeight**（5 处）：左侧学科色条靠 Row(stretch) 撑满卡片，
 ///    已在**调用点**用 `IntrinsicHeight` 包住了对应 widget（见各处注释）。这类内容
 ///    高度有界，IntrinsicHeight 是合适解法。
-/// 2. **父级高度本身有界**（[adaptive_shell.dart] 的 master-detail 双栏）：该 Row 位于
-///    `Expanded` 之下，可用高度已被窗口钉死，`stretch` 正是「两侧各自撑满、独立滚动」
-///    想要的效果。**这里绝不能改用 IntrinsicHeight**——两个子项都是滚动视图
-///    （ListView / SingleChildScrollView），它们的固有高度会退化成「所有子项高度之和」，
-///    既昂贵又算错。
+///
+/// ~~2. **父级高度本身有界**（[adaptive_shell.dart] 的 master-detail 双栏）~~
+/// **该站点已随 ADR-0059 消失**（壳不再有双栏，只剩「侧栏 | 内容」的
+/// `Row(crossAxisAlignment: start)`，本来就不在棘轮集合里）。若将来再引入「父级高度
+/// 已有界」的裸站点，登记到此处并注明依据——这类**绝不能改用 IntrinsicHeight**：
+/// 子项是滚动视图时，固有高度会退化成「所有子项高度之和」，既昂贵又算错。
 ///
 /// 新增裸站点会直接红 → 内容高度有界的场景请在**行内**用 `IntrinsicHeight` 包住 Row；
 /// 父级高度已有界的场景请登记到此处并注明依据。
@@ -30,7 +31,6 @@ const _knownBareRowStretch = <String>{
   'features/practice/presentation/widgets/practice_review_view.dart::_WrongToFixCard',
   'features/review/presentation/screens/wrong_questions_screen.dart::_WrongQuestionCard',
   'features/assistant/presentation/widgets/assistant_cards.dart::_QuestionCard',
-  'shared/widgets/adaptive_shell.dart::_AdaptiveShellState',
 };
 
 void main() {

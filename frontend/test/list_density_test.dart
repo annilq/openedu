@@ -76,7 +76,7 @@ void main() {
       // 1080 = contentWide，减左右页边距后 1048，两列各 518。
       expect(AppLayout.listColumnsFor(1080 - 2 * AppLayout.listGutter), 2);
       expect(AppLayout.listColumnsFor(700 - 2 * AppLayout.listGutter), 1);
-      // 大屏 detail 打开时主栏约 446 → 掉回 1 列，符合预期，不是 bug。
+      // 侧栏展开后剩余可用宽度约 446 → 掉回 1 列，符合预期，不是 bug。
       expect(AppLayout.listColumnsFor(446), 1);
       // 上限 2 列：再宽也不排 3 列（3 列会把列宽压到 340，低于可读下限）。
       expect(AppLayout.listColumnsFor(3000), 2);
