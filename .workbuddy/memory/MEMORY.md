@@ -15,6 +15,7 @@
 - **助手路由优先级即功能**（ADR-0054）：写意图走 `guide`（`priority=20`，无工具/不调模型）；**不高于 `query`(12) 就被只读查询接走**（query triggers 含泛词「任务/作业」）。守卫 `tests/ai/test_guide_subagent.py`。
 - **卡片动作是受控枚举**：`actions=[{label,target}]`，target 如 `parent_create_task`（**不是 URL**），前端 `ShellDestination.fromTarget` 解读、认不出即不动；**新增 target 两端同改**（`guide/agent.py` + `fromTarget`），否则按钮「点了没反应」。跨页导航走 `shared/presentation/shell_navigation.dart` → `HomeScreen` 的 `ref.listen` → `_parentTap(index)`。
 - 单向 `main/ → features/* → shared/*`；`shared/` 不 import `features/`；`App*` 只给 `shared/widgets/`；各 feature 有 repository、**刻意不建 datasource**。features 可 import `app.ai`。相对 import 越过 `lib/` 根时分析器不报错 → 层数自己数准。守卫 `test/feature_boundaries_test.dart`。
+- ⚠️ **非 push 路由的页面（壳页签 / 覆盖层）禁裸 `Navigator.pop`**：底下没有可弹的路由，弹的是根栈最后一条＝整个 App → 白屏，下次重建撞 `NavigatorState.build` 的 `_history.isNotEmpty`（热重启才炸）。走注入回调或 `maybePop`（根栈单条时 no-op）。守卫 `test/tab_screen_no_root_pop_test.dart` + `review_tab_exit_test.dart`。
 
 ## 2. 视觉与控件实测事实（取值见 `.impeccable.md`）
 - 描边三档禁裸数字：2 `borderWidth`（卡/弹窗/浮层）· 1.5 `borderWidthSm`（chip/徽标/题号）· 1 `borderWidthHairline`（顶栏底边/侧栏右缘/分隔线/`listRow`）。
