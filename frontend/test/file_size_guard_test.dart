@@ -105,7 +105,7 @@ const Map<String, int> _baseline = <String, int>{
   'features/home/presentation/widgets/parent/parent_task_form_view.dart': 812,
   'features/home/presentation/screens/parent_task_review_screen.dart': 732,
   'features/home/presentation/widgets/parent/parent_tasks_view.dart': 649,
-  'features/home/presentation/screens/home_screen.dart': 656,
+  'features/home/presentation/screens/home_screen.dart': 586,
   'features/assistant/presentation/screens/assistant_chat_page.dart': 557,
   'features/home/presentation/widgets/parent/parent_question_card.dart': 511,
   'features/home/presentation/widgets/parent/parent_wrong_questions_view.dart': 442,

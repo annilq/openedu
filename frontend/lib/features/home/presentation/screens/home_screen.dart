@@ -21,6 +21,7 @@ import '../../../model_management/presentation/screens/parent_model_management_s
 import '../providers/home_notifier.dart';
 import '../providers/parent_tasks_notifier.dart';
 import '../providers/selected_child_provider.dart';
+import '../parent_pages.dart';
 import '../screens/parent_task_review_screen.dart';
 import '../widgets/child_home.dart';
 import '../widgets/parent/parent_child_selector.dart';
@@ -50,7 +51,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   /// 就需要「谁压谁」的裁决，而裁决散在各回调里（侧栏点击记得清覆盖层、底部「我的」
   /// 忘了清 → 审核中看到的是审核页，个人信息压根没进渲染树）。合成 `sealed` 后各入口
   /// 天然互斥，且 `switch` 穷尽性由编译器保证。
-  _ParentPage _parentPage = const _Overview();
+  ParentPage _parentPage = const OverviewPage();
 
   int _childNavIndex = 0;
   bool _showProfile = false;
@@ -89,11 +90,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   /// 统一的导航出口：所有入口（侧栏 / 底部「我的」/ 侧栏头部 / 助手卡片跳转）都只
   /// 做这一件事——替换当前页面。没有第二个状态需要顺带清理。
-  void _go(_ParentPage page) => setState(() => _parentPage = page);
+  void _go(ParentPage page) => setState(() => _parentPage = page);
 
   /// R3：生成草稿后进审核页。[back] 记下从哪儿进来，退出时回来源页而非一律回概览。
   void _navigateToReview(TaskModel draft) {
-    _go(_TaskReview(draft, back: _highlightFor(_parentPage)));
+    _go(TaskReviewPage(draft, back: highlightFor(_parentPage)));
   }
 
   void _backToHomeFromReview() {
@@ -110,7 +111,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           .read(parentWrongQuestionsProvider.notifier)
           .load(selected.id);
     }
-    _go(_highlightFor(_parentPage));
+    _go(highlightFor(_parentPage));
   }
 
   /// ChildFormScreen 保存后的统一回调（创建 + 编辑共用）。
@@ -120,28 +121,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (sel == null) {
       ref.read(selectedChildProvider.notifier).select(saved.id, saved.grade ?? 2);
     }
-    _go(const _Overview());
+    _go(const OverviewPage());
   }
 
   void _onNavigateToEditChild(UserModel child) {
-    _go(_EditChild(child));
+    _go(EditChildPage(child));
   }
 
   /// 「我的」入口——**两个角色共用**（侧栏底部用户区 / 紧凑档底栏）。
   ///
-  /// 必须按角色分派：家长端是 [_ParentPage] 的一个分支，娃娃端仍是「页签 +
+  /// 必须按角色分派：家长端是 [ParentPage] 的一个分支，娃娃端仍是「页签 +
   /// [_showProfile] 布尔」的二选一（见 [_buildChildView]）。⚠️ 只写家长端那份，
   /// 娃娃端点「我的」就毫无反应。守卫 `test/parent_nav_single_source_test.dart`。
   void _onProfileTap() {
     if (widget.user.isParent) {
-      _go(const _Profile());
+      _go(const ProfilePage());
       return;
     }
     setState(() => _showProfile = true);
   }
 
   /// 侧栏头部「添加娃娃」。
-  void _onNavigateToAddChild() => _go(const _AddChild());
+  void _onNavigateToAddChild() => _go(const AddChildPage());
 
   /// 切换娃娃端 Tab：改变 IndexedStack 索引，并在该页「变为可见」时重新拉取最新数据。
   ///
@@ -179,35 +180,35 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget _buildParentPage() {
     final page = _parentPage;
     return switch (page) {
-      _Overview() => ParentOverviewView(
+      OverviewPage() => ParentOverviewView(
           onNavigateToReview: _navigateToReview,
           // 空态出口：概览与任务页的「去布置任务」都落到同一个目的地。
-          onNavigateToCreate: () => _go(const _CreateTask()),
+          onNavigateToCreate: () => _go(const CreateTaskPage()),
         ),
       // ADR-0057：生成页不再接跳转回调——收尾（含进草稿页）由本页的监听统一负责。
-      _CreateTask() => const ParentTaskFormView(),
-      _WrongQuestions() => const ParentWrongQuestionsView(),
-      _TutorLogs() => const ParentTutorLogsView(),
-      _AddChild() => ChildFormScreen(
+      CreateTaskPage() => const ParentTaskFormView(),
+      WrongQuestionsPage() => const ParentWrongQuestionsView(),
+      TutorLogsPage() => const ParentTutorLogsView(),
+      AddChildPage() => ChildFormScreen(
           mode: ChildFormMode.create,
           onSaved: _onChildFormSaved,
-          onBack: () => _go(const _Overview()),
+          onBack: () => _go(const OverviewPage()),
         ),
-      _EditChild(child: final child) => ChildFormScreen(
+      EditChildPage(child: final child) => ChildFormScreen(
           mode: ChildFormMode.edit,
           child: child,
           onSaved: _onChildFormSaved,
-          onBack: () => _go(const _Overview()),
+          onBack: () => _go(const OverviewPage()),
         ),
-      _QuestionBank() => ParentQuestionBankView(
+      QuestionBankPage() => ParentQuestionBankView(
           onNavigateToReview: _navigateToReview,
         ),
-      _Models() => const ParentModelManagementScreen(),
-      _TaskList() => ParentTasksView(
+      ModelsPage() => const ParentModelManagementScreen(),
+      TaskListPage() => ParentTasksView(
           onNavigateToReview: _navigateToReview,
-          onNavigateToCreate: () => _go(const _CreateTask()),
+          onNavigateToCreate: () => _go(const CreateTaskPage()),
         ),
-      _TaskReview(task: final task) => ParentTaskReviewScreen(
+      TaskReviewPage(task: final task) => ParentTaskReviewScreen(
           task: task,
           defaultChildId: task.childId ?? ref.watch(selectedChildProvider)?.id,
           onBackToHome: _backToHomeFromReview,
@@ -218,7 +219,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             _navigateToPractice(t, preview: true);
           },
         ),
-      _Profile() => ProfileScreen(user: widget.user, onLogout: widget.onLogout),
+      ProfilePage() => ProfileScreen(user: widget.user, onLogout: widget.onLogout),
     };
   }
 
@@ -325,49 +326,49 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   // 家长端导航目的地：与旧 ParentSidebar 同序（0-4 + 6 题库）。
   // 审核覆盖层存在时先关层再切换（复用旧侧栏 onNavTap 行为）。
   List<AdaptiveNavDestination> _parentDestinations(
-    _ParentPage page,
+    ParentPage page,
     TaskGenState gen,
   ) {
     // 审核页高亮「进来时的那一页」——审核是任务的延续，不是一个新的侧栏入口。
-    final active = _highlightFor(page);
+    final active = highlightFor(page);
     return [
       AdaptiveNavDestination(
           icon: LucideIcons.layoutDashboard,
           label: '概览',
-          active: active is _Overview,
-          onTap: () => _go(const _Overview())),
+          active: active is OverviewPage,
+          onTap: () => _go(const OverviewPage())),
       AdaptiveNavDestination(
           icon: LucideIcons.listTodo,
           label: '任务',
-          active: active is _TaskList,
-          onTap: () => _go(const _TaskList())),
+          active: active is TaskListPage,
+          onTap: () => _go(const TaskListPage())),
       AdaptiveNavDestination(
           icon: LucideIcons.pencil,
           label: '布置任务',
-          active: active is _CreateTask,
-          onTap: () => _go(const _CreateTask()),
+          active: active is CreateTaskPage,
+          onTap: () => _go(const CreateTaskPage()),
           // ADR-0057 P1：出题进行中在侧栏也亮一个进度徽标，点它即回生成页。
           trailing: _genTrailing(gen)),
       AdaptiveNavDestination(
           icon: LucideIcons.bookOpen,
           label: '错题本',
-          active: active is _WrongQuestions,
-          onTap: () => _go(const _WrongQuestions())),
+          active: active is WrongQuestionsPage,
+          onTap: () => _go(const WrongQuestionsPage())),
       AdaptiveNavDestination(
           icon: LucideIcons.sparkles,
           label: 'AI 答疑记录',
-          active: active is _TutorLogs,
-          onTap: () => _go(const _TutorLogs())),
+          active: active is TutorLogsPage,
+          onTap: () => _go(const TutorLogsPage())),
       AdaptiveNavDestination(
           icon: LucideIcons.library,
           label: '题库',
-          active: active is _QuestionBank,
-          onTap: () => _go(const _QuestionBank())),
+          active: active is QuestionBankPage,
+          onTap: () => _go(const QuestionBankPage())),
       AdaptiveNavDestination(
           icon: LucideIcons.cpu,
           label: '模型管理',
-          active: active is _Models,
-          onTap: () => _go(const _Models())),
+          active: active is ModelsPage,
+          onTap: () => _go(const ModelsPage())),
     ];
   }
 
@@ -414,22 +415,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   ///
   /// 这里是 [_parentDestinations] 之外**第二个**写入口（助手卡片跳转），所以映射
   /// 只此一处，不把编号散出去。
-  _ParentPage? _parentPageFor(ShellDestination destination) {
+  ParentPage? _parentPageFor(ShellDestination destination) {
     if (!widget.user.isParent) return null;
     return switch (destination) {
-      ShellDestination.parentCreateTask => const _CreateTask(),
-      ShellDestination.parentTaskList => const _TaskList(),
-      ShellDestination.parentQuestionBank => const _QuestionBank(),
+      ShellDestination.parentCreateTask => const CreateTaskPage(),
+      ShellDestination.parentTaskList => const TaskListPage(),
+      ShellDestination.parentQuestionBank => const QuestionBankPage(),
     };
   }
 
   @override
-  Widget build(BuildContext context) {
-    // 壳外页面（push 出来的助手整页）请求的跳转：翻成页面后走 [_go]，与点侧栏
-    // 是同一条路径（同一个状态，没有需要额外清理的覆盖层）。
-    //
-    // 无条件注册监听（不放进 `isParent` 分支）：ref.listen 的调用次数在多次 build
-    // 之间必须一致，条件注册会让「角色分支变化」时的订阅数量对不上。
+  /// 壳外页面（push 出来的助手整页）请求的跳转：翻成页面后走 [_go]，与点侧栏
+  /// 是同一条路径（同一个状态，没有需要额外清理的覆盖层）。
+  ///
+  /// 无条件注册（不放进 `isParent` 分支）：ref.listen 的调用次数在多次 build
+  /// 之间必须一致，条件注册会让「角色分支变化」时的订阅数量对不上。
+  void _listenShellNavigation() {
     ref.listen(shellNavigationProvider, (_, next) {
       if (next == null) return;
       // 先消费再执行：不清空的话下一次 rebuild 会重复触发同一次跳转。
@@ -437,13 +438,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       final page = _parentPageFor(next);
       if (page != null) _go(page);
     });
+  }
 
-    // ADR-0057：出题的**收尾动作**放在这一层，不放生成页。
-    //
-    // 生成页（`ParentTaskFormView`）只在该侧栏索引挂载，家长一切走它就被卸载；
-    // 而本页不会。凡是「任务结束了总得有人收尾」的事（提示、重置、刷新、进草稿页）
-    // 都必须挂在生命周期更长的那一层——挂在页面里，人一走就成了无人区：
-    // 成功不提示、失败静默，落库倒是照常发生。生成页只负责渲染 state。
+  /// ADR-0057：出题的**收尾动作**放在这一层，不放生成页。
+  ///
+  /// 生成页（`ParentTaskFormView`）只在该侧栏索引挂载，家长一切走它就被卸载；
+  /// 而本页不会。凡是「任务结束了总得有人收尾」的事（提示、重置、刷新、进草稿页）
+  /// 都必须挂在生命周期更长的那一层——挂在页面里，人一走就成了无人区：
+  /// 成功不提示、失败静默，落库倒是照常发生。生成页只负责渲染 state。
+  void _listenTaskGen() {
     ref.listen(taskGenNotifierProvider, (_, next) {
       // 推迟到下一帧（沿用生成页旧实现的理由）：避免在 build 阶段同步弹 toast +
       // 跳转，导致 widget tree 在 shadcn_ui toast SlideEffect 动画中途销毁，
@@ -472,6 +475,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         _navigateToReview(next.task);
       });
     });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    _listenShellNavigation();
+    _listenTaskGen();
 
     if (widget.user.isParent) {
       // ADR-0057 P1：出题在壳这一层 watch，跨 Tab 常驻可见。
@@ -479,7 +488,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       return AdaptiveShell(
         mode: AppUserMode.parent,
         destinations: _parentDestinations(_parentPage, gen),
-        profileDestination: _profileDestination(active: _parentPage is _Profile),
+        profileDestination: _profileDestination(active: _parentPage is ProfilePage),
         sidebarTop: ParentChildSelector(
           onNavigateToAddChild: _onNavigateToAddChild,
           onNavigateToEditChild: _onNavigateToEditChild,
@@ -575,82 +584,3 @@ class _GenerationBanner extends StatelessWidget {
 // ---------------------------------------------------------------------------
 // 家长端导航状态（ADR-0059）
 // ---------------------------------------------------------------------------
-
-/// 家长端页面：导航的**唯一**事实源（ADR-0059）。
-///
-/// 取代「索引 + 审核 / 编辑覆盖层 + `_showProfile`」三个并列状态——那套写法谁盖谁
-/// 要靠每个回调自己记得清理。合成 `sealed` 后：各入口天然互斥、无需优先级裁决；
-/// `_buildParentPage()` 的 `switch` 由编译器保证穷尽，漏登记会编译失败。
-sealed class _ParentPage {
-  const _ParentPage();
-}
-
-/// 概览。
-class _Overview extends _ParentPage {
-  const _Overview();
-}
-
-/// 布置任务（生成页）。
-class _CreateTask extends _ParentPage {
-  const _CreateTask();
-}
-
-/// 任务列表。
-class _TaskList extends _ParentPage {
-  const _TaskList();
-}
-
-/// 错题本。
-class _WrongQuestions extends _ParentPage {
-  const _WrongQuestions();
-}
-
-/// AI 答疑记录。
-class _TutorLogs extends _ParentPage {
-  const _TutorLogs();
-}
-
-/// 添加娃娃（ChildFormScreen 创建态）。
-class _AddChild extends _ParentPage {
-  const _AddChild();
-}
-
-/// 编辑娃娃资料（ChildFormScreen 编辑态）。
-class _EditChild extends _ParentPage {
-  final UserModel child;
-
-  const _EditChild(this.child);
-}
-
-/// 题库。
-class _QuestionBank extends _ParentPage {
-  const _QuestionBank();
-}
-
-/// 模型管理。
-class _Models extends _ParentPage {
-  const _Models();
-}
-
-/// 草稿审核。
-class _TaskReview extends _ParentPage {
-  final TaskModel task;
-
-  /// 退出审核后回到的页面——保留「从哪儿进来就回哪儿」的既有行为
-  /// （从概览点进来回概览，从任务列表点进来回列表）。
-  final _ParentPage back;
-
-  const _TaskReview(this.task, {required this.back});
-}
-
-/// 个人信息（「我的」）。
-class _Profile extends _ParentPage {
-  const _Profile();
-}
-
-/// 侧栏高亮用的「基础页」：审核页沿用它进来的那一页的高亮。
-///
-/// 审核不是一个侧栏入口（否则「任务」会在用户从概览进来时错位高亮），而是某一页
-/// 的延续，所以高亮取 [back]。
-_ParentPage _highlightFor(_ParentPage page) =>
-    page is _TaskReview ? page.back : page;

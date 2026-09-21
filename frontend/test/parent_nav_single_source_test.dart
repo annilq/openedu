@@ -22,7 +22,7 @@ import 'package:kids_learn/shared/widgets/app_focusable_action.dart';
 /// 自己记得清理：侧栏点击记得清覆盖层、底部「我的」忘了清 —— 从任务列表进审核后
 /// 点「我的」，看到的仍是审核页，个人信息页压根没进渲染树。
 ///
-/// 现在三者合成一个 `sealed _ParentPage`，壳也不再有 `detail`。本文件守两件事：
+/// 现在三者合成一个 `sealed ParentPage`，壳也不再有 `detail`。本文件守两件事：
 ///   1. **静态**：`detail` / 并列状态不许回来（这类洞 `flutter analyze` 照不出来）；
 ///   2. **行为**：任一时刻侧栏最多只有一个高亮项，且「我的」不与任何页签同时高亮
 ///      ——这正是「状态不唯一」在界面上唯一能被观测到的痕迹。
@@ -61,17 +61,19 @@ void main() {
           inCode,
           isEmpty,
           reason: '$banned 不应再出现在 $_homeFile 的代码里：家长端导航状态必须是'
-              '单一的 `_ParentPage`（ADR-0059）。\n${inCode.join('\n')}',
+              '单一的 `ParentPage`（ADR-0059）。\n${inCode.join('\n')}',
         );
       }
-      expect(src.contains('_ParentPage _parentPage'), isTrue,
-          reason: '家长端当前页面应由 `_ParentPage _parentPage` 单独承载');
+      // P4 后页面层级迁到 `parent_pages.dart` 并改为公开（`ParentPage`），
+      // 私有名不能跨 library——这里断言的是「仍由单一字段承载」，不绑私有名。
+      expect(src.contains('ParentPage _parentPage'), isTrue,
+          reason: '家长端当前页面应由 `ParentPage _parentPage` 单独承载');
     });
   });
 
   group('行为：「我的」对两个角色都要真的打开个人信息', () {
     // ⚠️ 这组用例的存在理由：`_onProfileTap()` 是**两个角色共用**的回调，而两端
-    // 「当前页面」的载体不同（家长端 = `_ParentPage` 的一个分支，娃娃端 =
+    // 「当前页面」的载体不同（家长端 = `ParentPage` 的一个分支，娃娃端 =
     // 「页签 + `_showProfile` 布尔」的二选一）。只写家长端那一份，娃娃端点「我的」
     // 就毫无反应——而 `flutter analyze` 完全照不出来。
     testWidgets('娃娃端：点「我的」渲染个人信息页，且页签不再高亮', (tester) async {
