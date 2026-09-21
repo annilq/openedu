@@ -30,7 +30,7 @@ const _knownBareRowStretch = <String>{
   'features/practice/presentation/widgets/practice_question_view.dart::PracticeQuestionView',
   'features/practice/presentation/widgets/practice_review_view.dart::_WrongToFixCard',
   'features/review/presentation/screens/wrong_questions_screen.dart::_WrongQuestionCard',
-  'features/assistant/presentation/widgets/assistant_cards.dart::_QuestionCard',
+  'features/assistant/presentation/widgets/assistant_question_card.dart::AssistantQuestionCard',
 };
 
 void main() {

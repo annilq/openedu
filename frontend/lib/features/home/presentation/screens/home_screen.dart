@@ -424,7 +424,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     };
   }
 
-  @override
   /// 壳外页面（push 出来的助手整页）请求的跳转：翻成页面后走 [_go]，与点侧栏
   /// 是同一条路径（同一个状态，没有需要额外清理的覆盖层）。
   ///

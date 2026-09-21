@@ -11,6 +11,7 @@ import '../../../../shared/widgets/app_motion.dart';
 import '../../../../shared/widgets/app_toast.dart';
 import '../../domain/assistant_card.dart';
 import '../provider/assistant_notifier.dart';
+import 'assistant_card_plain_text.dart';
 import 'assistant_cards.dart';
 import '../../../../shared/widgets/app_actions.dart';
 import '../../../../shared/widgets/app_card.dart';
