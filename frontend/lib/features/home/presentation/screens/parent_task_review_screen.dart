@@ -5,6 +5,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_content_frame.dart';
+import '../../../../shared/widgets/app_empty_state.dart';
 import '../../../../shared/widgets/app_error.dart';
 import '../../../../shared/widgets/app_loading.dart';
 import '../../../../shared/widgets/app_toast.dart';
@@ -549,42 +550,22 @@ class _ParentTaskReviewScreenState
 ///
 /// 整卷重生成移除后（ADR-0056）这里**不再给按钮**：草稿页没有「添加题目」入口，
 /// 删空即无法在页内补齐，给一个点不了的按钮比不给更糟。只指路：回「布置任务」或题库重来。
+///
+/// 走 [AppEmptyState]（ADR-0051）而非手搓色块：`tone` 给撞色底 = 强调态（带硬阴影），
+/// 与原来 88 黄块 + 墨黑描边的观感一致，但文案/间距/动画都归设计系统管。
 class _EmptyHint extends StatelessWidget {
   const _EmptyHint();
 
   @override
   Widget build(BuildContext context) {
-    final app = AppTheme.colorsOf(context);
     return AppCard(
       margin: EdgeInsets.zero,
-      child: Column(
-        children: [
-          Container(
-            width: 88,
-            height: 88,
-            decoration: BoxDecoration(
-              color: AppBrutal.yellow,
-              borderRadius: BorderRadius.circular(AppRadius.card),
-              border: Border.all(
-                  color: AppBrutal.ink, width: AppElevation.borderWidth),
-              boxShadow: AppElevation.hard(),
-            ),
-            alignment: Alignment.center,
-            child:
-                const Icon(LucideIcons.inbox, size: 44, color: AppBrutal.ink),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Text('草稿暂未包含任何题目', style: AppTheme.textOf(context).titleMedium),
-          const SizedBox(height: AppSpacing.xs),
-          Text(
-            '草稿页不能新增题目，请回「布置任务」重新生成，或到题库选题组卷；'
+      child: AppEmptyState(
+        icon: LucideIcons.inbox,
+        tone: AppBrutal.yellow,
+        title: '草稿暂未包含任何题目',
+        message: '草稿页不能新增题目，请回「布置任务」重新生成，或到题库选题组卷；'
             '不需要这份草稿可直接作废。',
-            textAlign: TextAlign.center,
-            style: AppTheme.textOf(context)
-                .bodyMedium
-                ?.copyWith(color: app.onSurfaceVariant),
-          ),
-        ],
       ),
     );
   }

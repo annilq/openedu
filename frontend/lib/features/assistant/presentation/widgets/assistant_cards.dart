@@ -663,7 +663,7 @@ _Row _rowOf(String kind, Map<String, dynamic> item) {
       return (
         primary: _s(item['title']),
         tags: [
-          (_statusLabel(status), _statusTone(status)),
+          (statusLabel(status), _statusTone(status)),
           if (count > 0) ('$count 题', _Tone.info),
         ],
       );
@@ -783,14 +783,6 @@ IconData _iconOf(String kind) => switch (kind) {
       AssistantCardKind.questionBankList => LucideIcons.library,
       AssistantCardKind.guide => LucideIcons.cornerDownRight,
       _ => LucideIcons.info,
-    };
-
-/// 任务状态枚举 → 文案 / 色调（与 `parent_question_bank_view.dart#_statusLabel` 同口径）。
-String _statusLabel(String status) => switch (status) {
-      'draft' => '草稿',
-      'assigned' => '已派发',
-      'done' => '已完成',
-      _ => status,
     };
 
 _Tone _statusTone(String status) => switch (status) {

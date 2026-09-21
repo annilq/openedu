@@ -7,9 +7,11 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../../shared/domain/models/models.dart';
 import '../../../../../shared/presentation/paging.dart';
 import '../../../../../shared/theme/app_theme.dart';
+import '../../../../../shared/utils/question_labels.dart';
 import '../../../../../shared/widgets/app_card_list.dart';
 import '../../../../../shared/widgets/app_content_frame.dart';
 import '../../../../../shared/widgets/app_dialog.dart';
+import '../../../../../shared/widgets/app_empty_state.dart';
 import '../../../../../shared/widgets/app_error.dart';
 import '../../../../../shared/widgets/app_inputs.dart';
 import '../../../../../shared/widgets/app_loading.dart';
@@ -300,7 +302,7 @@ class _ParentQuestionBankViewState
                       borderRadius: BorderRadius.circular(AppRadius.sm),
                     ),
                     child: Text(
-                      _statusLabel(u.status),
+                      statusLabel(u.status),
                       style: AppTheme.textOf(context).labelSmall?.copyWith(
                             color: app.onSecondaryContainer,
                           ),
@@ -370,7 +372,7 @@ class _ParentQuestionBankViewState
                       Text(t.title, style: AppTheme.textOf(ctx).bodyMedium),
                       const SizedBox(height: AppSpacing.xs),
                       Text(
-                        '${t.questions.length} 题 · ${_statusLabel(t.status)}',
+                        '${t.questions.length} 题 · ${statusLabel(t.status)}',
                         style: AppTheme.textOf(ctx)
                             .labelSmall
                             ?.copyWith(color: app.onSurfaceVariant),
@@ -391,22 +393,6 @@ class _ParentQuestionBankViewState
       ),
     );
   }
-
-  String _statusLabel(String s) => switch (s) {
-        'draft' => '草稿',
-        'ready' => '已锁定',
-        'assigned' => '已派发',
-        'done' => '已完成',
-        _ => s,
-      };
-
-  String _qtypeLabel(String t) => switch (t) {
-        'calc' => '计算题',
-        'choice' => '选择题',
-        'fill' => '填空题',
-        'open' => '应用题',
-        _ => t,
-      };
 
   @override
   Widget build(BuildContext context) {
@@ -627,7 +613,13 @@ class _ParentQuestionBankViewState
         const AppLoading(),
       BankError(:final message) => AppError(message: message, onRetry: _reload),
       BankLoaded(:final page) => page.items.isEmpty
-          ? _EmptyHint(onReload: _reload)
+          ? AppEmptyState(
+              icon: LucideIcons.library,
+              title: '题库还是空的',
+              message: '去「布置任务」生成题目并加入题库，这里就会积累你的专属题集',
+              actionLabel: '刷新',
+              onAction: _reload,
+            )
           : Column(
               children: [
                 // 宽度够时排成两列（ADR-0053）：题库一屏能看到的题翻倍。
@@ -691,7 +683,7 @@ class _ParentQuestionBankViewState
                       _tag(app, q.subject),
                       _tag(app, '${q.grade}年级'),
                       _tag(app, q.knowledgePoint),
-                      _tag(app, _qtypeLabel(q.qtype)),
+                      _tag(app, qtypeLabelFull(q.qtype)),
                       // 已归档的行必须自己说出来：在「含已归档」视图里，
                       // 归档题与在用题长得一样，看不出区别。
                       if (q.archivedAt != null) _tag(app, '已归档'),
@@ -813,26 +805,3 @@ class _ParentQuestionBankViewState
   }
 }
 
-class _EmptyHint extends StatelessWidget {
-  final VoidCallback onReload;
-  const _EmptyHint({required this.onReload});
-
-  @override
-  Widget build(BuildContext context) {
-    final app = AppTheme.colorsOf(context);
-    return Column(
-      children: [
-        Icon(LucideIcons.library, size: 48, color: app.onSurfaceVariant),
-        const SizedBox(height: AppSpacing.md),
-        Text('题库还是空的', style: AppTheme.textOf(context).titleMedium),
-        const SizedBox(height: AppSpacing.xs),
-        Text('去「布置任务」生成题目并加入题库，这里就会积累你的专属题集',
-            style: AppTheme.textOf(context)
-                .bodyMedium
-                ?.copyWith(color: app.onSurfaceVariant)),
-        const SizedBox(height: AppSpacing.lg),
-        ShadButton(onPressed: onReload, child: const Text('刷新')),
-      ],
-    );
-  }
-}

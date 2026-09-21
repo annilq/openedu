@@ -4,6 +4,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../../shared/domain/models/models.dart';
 import '../../../../../shared/theme/app_theme.dart';
+import '../../../../../shared/utils/question_labels.dart';
 import '../../../../../shared/widgets/app_motion.dart';
 import '../../../../../shared/widgets/stream_reasoning_panel.dart';
 
@@ -160,7 +161,7 @@ class ParentQuestionCardState extends ConsumerState<ParentQuestionCard> {
         AppTags.subject(SubjectAccent.fromName(q.subject), label: q.subject),
         const SizedBox(width: AppSpacing.xs),
         Text(
-          '${q.grade}年级·${q.knowledgePoint}·${_qtypeLabel(q.qtype)}·${_diffLabel(q.difficulty)}',
+          '${q.grade}年级·${q.knowledgePoint}·${qtypeLabelFull(q.qtype)}·${_diffLabel(q.difficulty)}',
           style: AppTheme.textOf(context).bodySmall?.copyWith(
                 color: app.onSurfaceVariant,
               ),
@@ -489,14 +490,6 @@ class ParentQuestionCardState extends ConsumerState<ParentQuestionCard> {
       ],
     );
   }
-
-  String _qtypeLabel(String t) => switch (t) {
-        'calc' => '计算题',
-        'choice' => '选择题',
-        'fill' => '填空题',
-        'word' => '应用题',
-        _ => t,
-      };
 
   String _diffLabel(String d) => switch (d) {
         'easy' => '易',
