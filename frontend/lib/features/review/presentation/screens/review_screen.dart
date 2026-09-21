@@ -164,6 +164,17 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
     final state = ref.watch(dueReviewNotifierProvider);
 
     ref.listen<DueReviewState>(dueReviewNotifierProvider, (prev, next) {
+      // 重新拉取 = 新一轮复习：清掉上一轮的进度。不清的话 `_done` 一旦为真就
+      // 永久为真——页签常驻不重建，之后就算有新题到期也只会停在上一次那张完成卡。
+      // （`answer()` 直接给 `DueReviewLoaded`，不会经过 `DueReviewLoading`，
+      //   所以答完最后一题不会被这里误清。）
+      if (next is DueReviewLoading) {
+        _done = false;
+        _currentIndex = 0;
+        _correctCount = 0;
+        _totalCount = 0;
+        return;
+      }
       if (next is DueReviewLoaded && !_done && _totalCount == 0) {
         _totalCount = next.items.length;
       }
