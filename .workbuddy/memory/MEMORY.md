@@ -50,5 +50,6 @@
 - ⚠️ **探针「首帧即停」，绝不读完整个流**（qwen3:1.7b 带 thinking：一句 ping 要 6.4s 吐完 330 token，首 chunk <1s）。收尾两步：先 `future.cancel()`；再判 `future.done()` 后 await——401 时一帧都没有、channel 只静默 `StopAsyncIteration`，不 await 会把认证失败判成连接成功。
 - **本地 Ollama 慢 ≠ 探针慢**：直连 curl 81ms vs 探针 16.8s，服务端日志证实 Ollama 真花了 16s——2.9GB 权重换入内存（切模型会挤掉上一个），同模型紧接着再测 0.67s。真实出题同样要付这个冷加载。
 - **产品定位（2026-09-21 拍板）**：家庭自用为主 + 轻量开源（他人可自部署）；**已放弃跨家庭内容分享**（ADR-0019 版权红线对自用/自部署归零）。⚠️「开源给多人用」≠「内容跨家庭流通」。文档分工：**README 只放产品，技术内容在 `CONTRIBUTING.md`**。
+- ⚠️ **「AI 编造数据」≠ 越权**：先查会话 message 轨迹有没有 `tool_call`/`tool_result` 步（有就一定落库）——没有＝工具根本没执行，模型凭空编。**流式与否会改变模型的 FC 行为**：`ministral-3:3b` 在 `stream=true` 下零 tool_calls 直接编正文，`stream=false` 却正确返回 `list_children`；`qwen3:1.7b` 流式正常。排障用 curl ollama `/api/chat` 同参数切 `stream` 对比。⚠️ 已修（ADR-0033 第四档）：`BaseSubAgent.requires_tool_data`（query=True），整轮零工具调用却有正文 → 硬失败，不放行。⚠️ `probe.py` 不带 tools → 无 FC 模型照样测试绿灯（未修）。
 - **学习闭环六段只有一段通**（详见 `2026-09-21.md` §业务拓展盘问）：仅「答错即建错题」通（`tasks/service.py:1236`）；出题**不消费**错题与掌握度（`question/pipeline.py:45-111` 零引用）。修法 ADR-0060：掌握度 → 显式出题入口 + 以代表错题（上限 3）仿写**同类题**；`Question` 无 origin 字段，仿写有版权遗留。
 - **长列表（ADR-0053）**：keyset 游标（非 offset）；⚠️ 追加在途换条件会拼回旧页 → await 后重读最新 state；⚠️ 两列不用 `SliverGrid`（行高被钉死会裁卡）→ `Row`+`Expanded`（阈值 `listTwoColumnMin 1048`）；⚠️ 读错题每处都要加 `graduated_at IS NULL`；归档三套语义禁共用；迁移走启动期幂等 DDL，不引入 alembic。
