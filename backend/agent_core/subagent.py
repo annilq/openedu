@@ -85,6 +85,19 @@ class BaseSubAgent(ABC):
     # 查询场景通常 1–2 跳（先定位孩子 → 再查明细）；需要更多跳的 subagent 自行覆写。
     max_turns: int = 3
 
+    # 结论必须有据（ADR-0033）：为 True 时，本 subagent 的结论**必须**建立在工具数据之上
+    # ——整轮结束时若从未成功执行过任何工具却产出了正文，判为硬失败而非下发（见
+    # ``run_with_tools`` 末段与 ``_UNVERIFIED_ANSWER_HINT``）。
+    #
+    # 触发真机案例（2026-09-22）：本地小模型在「流式 + 长 system + 8 个工具」下不产出原生
+    # ``ToolCall``，直接编造「你有 3 个娃娃：小明 / 小红 / 小华」并给出明细数字——权限层
+    # 根本没被调用（不是越权，是未查先答），而旧的三档硬失败分别守的是「无正文」「正文即
+    # 协议」「引擎报错」，编造恰好从中间漏出去。
+    #
+    # 代价：本 subagent 不再能「不查就答」（如回答「你能查什么」这类元问题也会被视为无据
+    # 结论）。故默认 False，只由**结论必须是业务数据**的 subagent（如 query）显式开启。
+    requires_tool_data: bool = False
+
     # ── 协议助手：把 tool_call/tool_result 同名成对不变量收口到基类 ──
     def _tool(self, name: str, *, label: str | None = None, args: dict | None = None) -> ToolCallPair:
         """创建工具调用句柄：已构造 TOOL_CALL 帧，result() 产出同名 TOOL_RESULT。"""
@@ -156,6 +169,14 @@ _UNSUPPORTED_TOOL_CALL_HINT = (
 _PARTIAL_TOOL_CALL_HINT = (
     "本轮回答未能完成：模型把工具调用写成了文本而非标准 function calling，已中止本轮。"
     "上方已给出本次查到的数据；如需更完整的结论，请重试或改用支持原生工具调用的模型。"
+)
+
+# 「未查先答」（ADR-0033）：整轮零工具调用却给了结论——结论没有任何数据支撑。
+# 与上面两条的区别：上面拦的是「拿不到数据」，这条拦的是「根本没去拿、却装作拿到了」。
+# 文案必须说清**拦的是什么**（缺少数据支撑），否则用户会以为「真查了、没查到」。
+_UNVERIFIED_ANSWER_HINT = (
+    "当前模型没有调用任何查询工具就给出了结论，该回答缺少数据支撑，已拦截不下发。"
+    "请重试；若反复出现，请改用支持原生工具调用的模型（本地小模型在流式下常见此问题）。"
 )
 
 
@@ -359,6 +380,14 @@ async def run_with_tools(
                 _PARTIAL_TOOL_CALL_HINT if native_fc_seen else _UNSUPPORTED_TOOL_CALL_HINT,
                 code="TOOL_UNSUPPORTED",
             )
+            return
+
+        # 未查先答（ADR-0033）：声明了「结论必须有据」却整轮没执行过任何工具 → 硬失败。
+        # 这里是**最后一道闸**：模型没有崩溃、没有把调用写成文本、正文也干干净净，
+        # 但它的结论从未经过任何一次查询——此时下发等于把编造的业务数据递给用户
+        # （小模型在流式下尤其常见）。``native_fc_seen`` 为真说明前面确实查过数据，放行。
+        if not native_fc_seen and getattr(agent, "requires_tool_data", False):
+            yield error(_UNVERIFIED_ANSWER_HINT, code="TOOL_UNSUPPORTED")
             return
 
         for t in _flushable_thinking(turn_thinking, tool_names):

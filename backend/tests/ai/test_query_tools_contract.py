@@ -23,6 +23,7 @@ import pytest
 from sqlmodel import Session, func, select
 
 from agent_core.subagent import SubAgentContext
+from app.ai.subagents.query.agent import QuerySubAgent
 from app.ai.subagents.query.tools._shared import (
     ANSWER_FIELDS,
     NO_FILTER,
@@ -237,6 +238,16 @@ def test_every_tool_documents_itself_and_its_args():
         for arg, prop in spec.schema["properties"].items():
             assert prop.get("description", "").strip(), f"{spec.name}.{arg} 缺参数描述"
             assert prop.get("type"), f"{spec.name}.{arg} 缺类型"
+
+
+def test_query_subagent_requires_tool_data():
+    """「未查先答」闸门必须开着（ADR-0033）。
+
+    真机教训（2026-09-22）：本地小模型在流式下不产出原生 ``ToolCall``，直接编造
+    「你有 3 个娃娃：小明 / 小红 / 小华」——工具一个都没执行，权限层自然无从生效。
+    这条断言防止有人为了「让模型能回答元问题」把闸门悄悄关掉。
+    """
+    assert QuerySubAgent.requires_tool_data is True
 
 
 def test_handlers_match_runtime_signature():

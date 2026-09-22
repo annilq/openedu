@@ -65,11 +65,21 @@ class _Agent(BaseSubAgent):
 
     business = "loop_test"
 
-    def __init__(self, *, provider, tools=(), max_turns=None, rendered=None) -> None:
+    def __init__(
+        self,
+        *,
+        provider,
+        tools=(),
+        max_turns=None,
+        rendered=None,
+        requires_tool_data=None,
+    ) -> None:
         super().__init__(provider=provider)
         self.tools = list(tools)
         if max_turns is not None:
             self.max_turns = max_turns
+        if requires_tool_data is not None:
+            self.requires_tool_data = requires_tool_data
         self._rendered = rendered
         self.rendered_calls: list[tuple[str, object]] = []
 
@@ -595,6 +605,61 @@ def test_call_draft_in_reasoning_is_never_flushed_to_client():
     assert EVENT_THINKING not in _types(events), "含调用伪协议的思考须整段丢弃"
     assert [ev.text for ev in events if ev.eventType == EVENT_ASSISTANT_MESSAGE] == [
         "查到 2 个任务。"
+    ]
+
+
+# ── 未查先答（ADR-0033）：模型零工具调用却给出结论 → 硬失败，不下发 ──
+def test_unverified_answer_is_blocked_when_subagent_requires_tool_data():
+    """回归（真机 2026-09-22）：本地小模型流式下不产出原生 ToolCall，直接编造业务结论。
+
+    形态与「把调用写成文本」**不同**：正文干干净净、没有任何协议标记，就是一段像模像样的
+    答复（「你有 3 个娃娃：小明 / 小红 / 小华」）。旧的四档硬失败（引擎不支持 / 无正文 /
+    正文即协议 / 轮次超限）一档都命中不了，编造内容被当作查询结论下发——数据权限其实没
+    被绕过（工具根本没执行），但用户看到的是假的。
+    """
+    fabricated = "当前名下的娃娃有3个，分别是：小明、小红、小华。"
+    provider = _ScriptedProvider([[TextDelta(delta=fabricated)]])
+    agent = _Agent(provider=provider, tools=[_spec()], requires_tool_data=True)
+
+    events = asyncio.run(_collect(agent))
+
+    errs = _errors(events)
+    assert [e.code for e in errs] == ["TOOL_UNSUPPORTED"]
+    assert "缺少数据支撑" in (errs[0].message or "")
+    assert EVENT_ASSISTANT_MESSAGE not in _types(events), "编造结论不得作为答案下发"
+    assert fabricated not in "".join(ev.text or "" for ev in events)
+    assert len(provider.calls) == 1, "硬失败后不得重试"
+
+
+def test_unverified_answer_gate_is_off_by_default():
+    """默认关闭：普通 subagent 不查就答（如说明能力范围）仍照常放行，本闸不误伤。"""
+    answer = "我只查学习数据，无法帮你写诗。"
+    provider = _ScriptedProvider([[TextDelta(delta=answer)]])
+    agent = _Agent(provider=provider, tools=[_spec()])
+
+    events = asyncio.run(_collect(agent))
+
+    assert _Agent(provider=provider).requires_tool_data is False
+    assert EVENT_ERROR not in _types(events)
+    assert [ev.text for ev in events if ev.eventType == EVENT_ASSISTANT_MESSAGE] == [answer]
+
+
+def test_verified_answer_passes_after_successful_tool_call():
+    """已成功调过工具（数据已有）后的收尾正文不算「未查先答」——不得拦。
+
+    ``requires_tool_data`` 判的是「整轮从未查过」，不是「本轮没查」：第一轮查、第二轮概括
+    是正常的 tool loop 收尾，拦了就等于每次都报假故障。
+    """
+    provider = _ScriptedProvider(
+        [[ToolCall(name="list_x", args={})], [TextDelta(delta="查到 1 个娃娃：lsc。")]]
+    )
+    agent = _Agent(provider=provider, tools=[_spec()], requires_tool_data=True)
+
+    events = asyncio.run(_collect(agent))
+
+    assert EVENT_ERROR not in _types(events)
+    assert [ev.text for ev in events if ev.eventType == EVENT_ASSISTANT_MESSAGE] == [
+        "查到 1 个娃娃：lsc。"
     ]
 
 

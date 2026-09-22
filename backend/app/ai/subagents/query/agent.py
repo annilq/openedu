@@ -49,6 +49,12 @@ _PARENT_HINT = "当前提问者是**家长**：可以查询名下所有娃娃的
 class QuerySubAgent(BaseSubAgent):
     business = "query"
 
+    # 结论必须有据（ADR-0033）：本 subagent 的每一句结论都得来自工具数据。整轮零工具调用
+    # 却给出正文＝模型在编（真机：本地小模型流式下直接编出「3 个娃娃 / 掌握度 85%」），
+    # 此时由 runtime 硬失败拦截，而不是把编造内容下发给用户。
+    # 代价：「你能查什么」这类元问题也会被拦（它同样是不查就答）——安全优先于体验。
+    requires_tool_data = True
+
     def __init__(self, *, provider, retriever=None) -> None:
         super().__init__(provider=provider, retriever=retriever)
         # opt-in 真实工具：非空即触发 runtime 的 tool loop（agent_core.subagent.run_with_tools）。
