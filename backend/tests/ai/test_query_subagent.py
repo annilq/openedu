@@ -102,6 +102,20 @@ def test_tutor_intent_unaffected():
     assert _route("为什么天空是蓝色的？帮我讲解", "parent") == "tutor"
 
 
+def test_wrong_question_phrasing_goes_to_query_not_tutor():
+    """回归（2026-09-22）：『我错了哪些题』原落 tutor 兜底（无取数工具，让用户发题目），
+
+    现已在 query triggers 覆盖——只加带『哪些/错过』的精确短语，不抢伴学答疑。"""
+    assert _route("我错了哪些题", "parent") == "query"
+    assert _route("我错过的题", "parent") == "query"
+    assert _route("做错了哪些题", "parent") == "query"
+    # 伴学答疑句仍归 tutor，不被新词抢走（ADR-0024/0030）
+    assert _route("这道题我哪里做错了，为什么", "parent") == "tutor"
+    assert _route("为什么天空是蓝色的？帮我讲解", "parent") == "tutor"
+    # 娃娃端同样归 query（查自己错题，ADR-008），不被角色拦回 tutor
+    assert _route("我错了哪些题", "child") == "query"
+
+
 def test_child_out_of_scope_stays_tutor():
     """娃娃问「出题」依旧被角色可见性拦到 tutor（ADR-0026 不变量未破）。"""
     assert _route("帮我出几道数学题", "child") == "tutor"
