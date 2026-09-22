@@ -42,6 +42,7 @@ def build_mastery(*, session: Session, child_id: UUID) -> MasteryResp:
                 else 0.0,
                 active_wrong=agg.active_wrong,
                 max_review_stage=agg.max_review_stage,
+                representative_wrong_question_ids=agg.representative_wrong_ids,
                 score=score,
                 level=mastery_level(
                     total_answers=agg.total_answers,

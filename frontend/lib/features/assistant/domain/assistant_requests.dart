@@ -33,12 +33,15 @@ class TaskGenerateReq {
   final String? model;
   final List<String>? focusInterest;
   final String? childId;
+  // 反馈边（ADR-0060 D4）：掌握度看板下发的代表错题 id，服务端据此做同类题仿写。
+  final List<String>? weakExampleIds;
 
   const TaskGenerateReq({
     required this.specs,
     this.model,
     this.focusInterest,
     this.childId,
+    this.weakExampleIds,
   });
 
   Map<String, dynamic> toJson() => {
@@ -46,5 +49,6 @@ class TaskGenerateReq {
         if (model != null) 'model': model,
         if (focusInterest != null) 'focus_interest': focusInterest,
         if (childId != null) 'child_id': childId,
+        if (weakExampleIds != null) 'weak_example_ids': weakExampleIds,
       };
 }

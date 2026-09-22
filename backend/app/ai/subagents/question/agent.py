@@ -264,6 +264,8 @@ class QuestionSubAgent(BaseSubAgent):
         # WF-4 兴趣题模式：focus_interest 是主题列表，按题序轮转分配（与旧 flow 行为一致）。
         focuses = ctx.extra.get("focus_interest") or []
         n_focus = len(focuses)
+        # 反馈边（ADR-0060 D4）：掌握度看板下发的代表错题样例，注入每题 prompt 做同类题仿写。
+        weak_examples = ctx.extra.get("weak_examples")
 
         generated: list[dict] = []
         # 单题失败原因（按题序）：引擎未配置 / 解析或安全闸门未过。
@@ -290,6 +292,7 @@ class QuestionSubAgent(BaseSubAgent):
                 rag_context=rag_context,
                 persona_hint=persona_hint,
                 history=ctx.history,
+                weak_examples=weak_examples,
             )
             yield step(
                 step_label(

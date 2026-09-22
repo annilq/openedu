@@ -1285,6 +1285,35 @@ async def generate_task_stream(
     retriever = build_retriever()
     deps = RuntimeDeps(provider=provider, retriever=retriever, safety=None)
 
+    # 反馈边（ADR-0060 D4）：把看板下发的代表错题解析为题干样例，注入出题 prompt。
+    # 仅取本家长且 AI 生成的题（parent_id + origin="ai"），避免把家长从教辅录入的
+    # 题当仿写样例（版权红线，ADR-0020）。解析后在 ctx.extra 透传给 question subagent。
+    weak_examples: list[dict] | None = None
+    if req.weak_example_ids:
+        from sqlmodel import select
+
+        from app.db.models import Question
+        from app.db.models.question import QUESTION_ORIGIN_AI
+
+        rows = session.exec(
+            select(Question).where(
+                Question.id.in_(req.weak_example_ids),  # type: ignore[union-attr]
+                Question.parent_id == parent_id,
+                Question.origin == QUESTION_ORIGIN_AI,
+            )
+        ).all()
+        weak_examples = [
+            {
+                "knowledge_point": q.knowledge_point,
+                "qtype": q.qtype,
+                "stem": q.stem,
+                "options": q.options,
+                "answer": q.answer,
+                "difficulty": q.difficulty,
+            }
+            for q in rows
+        ]
+
     subject = req.specs[0].subject
     ctx = SubAgentContext(
         role="parent",
@@ -1299,6 +1328,7 @@ async def generate_task_stream(
             "grade": 0,
             "focus_interest": req.focus_interest,
             "session_id": None,
+            "weak_examples": weak_examples,
             "specs": [s.model_dump() for s in req.specs],
         },
     )

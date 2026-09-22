@@ -16,6 +16,7 @@ import '../../../../model_management/presentation/providers/models_notifier.dart
 import '../../../../model_management/presentation/widgets/model_selector.dart';
 import '../../providers/home_notifier.dart';
 import '../../providers/selected_child_provider.dart';
+import '../../providers/task_form_prefill.dart';
 import 'parent_task_interest_section.dart';
 import 'parent_task_preview_section.dart';
 import 'parent_task_spec_row.dart';
@@ -87,9 +88,22 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
   // 多模型（票据 08）：出题时自选模型；null = 后端自动（默认/全局）。
   String? _modelId;
 
+  // 反馈边（ADR-0060 D1）：从掌握度看板「就这个知识点出题」带过来的代表错题 id，
+  // 用于同类题仿写；null = 普通出题。
+  List<String>? _weakExampleIds;
+
   @override
   void initState() {
     super.initState();
+    // 反馈边预填：掌握度看板 CTA 写入 taskFormPrefillProvider 后请求跳转，
+    // 本页挂载时读取、套用到首行知识点、消费后清空，避免残留到下次手动出题。
+    final prefill = ref.read(taskFormPrefillProvider);
+    if (prefill != null) {
+      _rows[0].knowledgePoint.text = prefill.knowledgePoint;
+      _weakExampleIds =
+          prefill.weakExampleIds.isNotEmpty ? prefill.weakExampleIds : null;
+      ref.read(taskFormPrefillProvider.notifier).state = null;
+    }
     // 预拉取可选模型列表，供模型选择器展示（仅家长可见自定义模型）。
     Future.microtask(
       () => ref.read(modelsNotifierProvider.notifier).load(),
@@ -178,6 +192,7 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
           specs: specs,
           focusInterest: _currentFocus(),
           model: _modelId,
+          weakExampleIds: _weakExampleIds,
         );
   }
 

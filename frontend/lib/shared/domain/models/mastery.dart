@@ -43,6 +43,9 @@ class KnowledgeMasteryModel {
   final int maxReviewStage;
   final double score;
   final String level;
+  // 代表错题（Question.id），最多 3 条（ADR-0060 D4）。家长据此走
+  // 「就这个知识点出题」的同类题仿写；空列表 = 该知识点暂无活跃错题。
+  final List<String> representativeWrongQuestionIds;
 
   KnowledgeMasteryModel({
     required this.knowledgePoint,
@@ -55,6 +58,7 @@ class KnowledgeMasteryModel {
     required this.maxReviewStage,
     required this.score,
     required this.level,
+    this.representativeWrongQuestionIds = const [],
   });
 
   factory KnowledgeMasteryModel.fromJson(Map<String, dynamic> json) {
@@ -69,6 +73,11 @@ class KnowledgeMasteryModel {
       maxReviewStage: json['max_review_stage'] as int? ?? 0,
       score: (json['score'] as num?)?.toDouble() ?? 0.0,
       level: json['level'] as String? ?? '',
+      representativeWrongQuestionIds: (json['representative_wrong_question_ids']
+                  as List?)
+              ?.map((e) => e as String)
+              .toList() ??
+          const [],
     );
   }
 }

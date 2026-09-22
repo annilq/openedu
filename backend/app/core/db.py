@@ -33,6 +33,19 @@ def run_migrations() -> None:
             conn.execute(
                 text("ALTER TABLE question ADD COLUMN IF NOT EXISTS parent_id UUID")
             )
+
+        # —— question.origin（题目来源：ai / parent，ADR-0060）——
+        # 存量行无 origin：默认 "ai"（历史题目皆为 AI 生成）。新增行由创建点显式赋值。
+        if is_sqlite:
+            q_cols = [r[1] for r in conn.execute(text("PRAGMA table_info(question)")).fetchall()]
+            if "origin" not in q_cols:
+                conn.execute(
+                    text("ALTER TABLE question ADD COLUMN origin VARCHAR(16) DEFAULT 'ai'")
+                )
+        else:
+            conn.execute(
+                text("ALTER TABLE question ADD COLUMN IF NOT EXISTS origin VARCHAR(16) DEFAULT 'ai'")
+            )
         # 回填：通过 task_question -> task 找到原题归属家长；孤儿行保持 NULL。
         # 旧库若尚未建 task_question 表（偏序迁移），跳过回填（owner 隔离降级，dev 可重置）。
         try:

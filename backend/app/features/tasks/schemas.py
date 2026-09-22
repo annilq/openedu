@@ -28,6 +28,9 @@ class TaskGenerateReq(SQLModel):
     model: str | None = None
     child_id: uuid.UUID | None = None
     focus_interest: list[str] | None = None
+    # 反馈边（ADR-0060 D4）：随掌握度看板下发的代表错题 Question.id，服务端按
+    # parent_id + origin="ai" 解析为题干样例，注入出题 prompt 做同类题仿写。
+    weak_example_ids: list[uuid.UUID] | None = None
 
 
 class TaskFromGenerated(SQLModel):

@@ -7,6 +7,13 @@ from sqlmodel import Field, SQLModel
 from app.db.models.base import get_datetime_utc
 
 
+# 题目来源（ADR-0060）：区分 AI 生成与家长度录，是版权门禁（ADR-0020）判定
+# 「仿写是否放大侵权风险」的前提——仿写只应作用于 AI 生成题，不会把家长从
+# 教辅录入的题再繁衍成 N 道。存量行经 run_migrations 回填为 "ai"。
+QUESTION_ORIGIN_AI = "ai"
+QUESTION_ORIGIN_PARENT = "parent"
+
+
 class Question(SQLModel, table=True):
     """题库层（ADR-0004 D2）：Question 表本身即题库，删 task_id 独立实体，可跨 Task 复用。
 
@@ -19,6 +26,7 @@ class Question(SQLModel, table=True):
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     parent_id: uuid.UUID = Field(foreign_key="user.id")  # 题库 owner 隔离（闭环）
+    origin: str = Field(default=QUESTION_ORIGIN_AI, max_length=16)
     subject: str
     grade: int
     knowledge_point: str

@@ -12,7 +12,10 @@ import '../providers/home_notifier.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/app_progress_bar.dart';
 import '../../../../shared/widgets/app_tags.dart';
+import '../../../../shared/widgets/app_actions.dart';
+import '../../../../shared/presentation/shell_navigation.dart';
 import '../../../../shared/widgets/subject_mark_icon.dart';
+import '../providers/task_form_prefill.dart';
 
 /// 知识点掌握度看板（家长 / 娃娃共用）。
 ///
@@ -78,7 +81,25 @@ class MasteryBoard extends ConsumerWidget {
                   const SizedBox(height: AppSpacing.xl),
                   ...mastery.items.map((m) => Padding(
                         padding: const EdgeInsets.only(bottom: AppSpacing.md),
-                        child: _MasteryBar(item: m),
+                        child: _MasteryBar(
+                          item: m,
+                          // 反馈边入口（ADR-0060 D1）：仅家长、且仅当该知识点有活跃
+                          // 错题时，提供「就这个知识点出题」——把薄弱点直接喂回出题。
+                          onGenerate: (!isChild && m.activeWrong > 0)
+                              ? () {
+                                  ref
+                                      .read(taskFormPrefillProvider.notifier)
+                                      .state = TaskFormPrefill(
+                                    knowledgePoint: m.knowledgePoint,
+                                    weakExampleIds:
+                                        m.representativeWrongQuestionIds,
+                                  );
+                                  ref
+                                      .read(shellNavigationProvider.notifier)
+                                      .request(ShellDestination.parentCreateTask);
+                                }
+                              : null,
+                        ),
                       )),
                 ],
               ),
@@ -104,7 +125,10 @@ Widget _levelBadge(String level) {
 
 class _MasteryBar extends StatelessWidget {
   final KnowledgeMasteryModel item;
-  const _MasteryBar({required this.item});
+  // 反馈边入口（ADR-0060 D1）：点击跳到出题表单并预填本知识点 + 代表错题。
+  // 仅在家长端且有活跃错题时由父级传入（见 [MasteryBoard]）。
+  final VoidCallback? onGenerate;
+  const _MasteryBar({required this.item, this.onGenerate});
 
   @override
   Widget build(BuildContext context) {
@@ -179,6 +203,15 @@ class _MasteryBar extends StatelessWidget {
               : '正确率 ${(item.accuracy * 100).round()}% · 无待复习错题',
           style: AppTheme.textOf(context).bodySmall,
         ),
+        if (onGenerate != null)
+          Align(
+            alignment: Alignment.centerRight,
+            child: AppTextAction(
+              label: '就这个出题',
+              semanticLabel: '就${item.knowledgePoint}出题',
+              onPressed: onGenerate,
+            ),
+          ),
       ],
     );
   }

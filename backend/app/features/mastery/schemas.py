@@ -17,6 +17,9 @@ class KnowledgeMasteryResp(SQLModel):
     max_review_stage: int
     score: float
     level: str
+    # 代表错题（Question.id），最多 3 条（ADR-0060 D4）。前端据此走
+    # 「就这个知识点出题」的同类题仿写；空列表 = 该知识点暂无活跃错题。
+    representative_wrong_question_ids: list[str] = []
 
 
 class MasteryResp(SQLModel):

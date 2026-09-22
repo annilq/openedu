@@ -139,6 +139,9 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
   /// 本次应出题数（各规格 count 之和），供 [stop] 在停止时原样带入待确认态。
   int _expected = 0;
 
+  /// 反馈边（ADR-0060 D4）：本次出题是否携带代表错题 id（同类题仿写）。
+  List<String>? _weakExampleIds;
+
   /// 主动停止标志：循环每帧开头检测，置位即 break，从而保留已出题目（ADR-0057 Q1=B）。
   bool _stopped = false;
 
@@ -152,6 +155,7 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
     required List<TaskSpecModel> specs,
     List<String>? focusInterest,
     String? model,
+    List<String>? weakExampleIds,
   }) async {
     // 结构化 specs → /tasks/generate（服务端构造 prompt，AG-UI 事件协议，ADR-0025）；
     // 流结束后再把题卡落库为草稿任务。事件解释委托 [QuestionGenFold]（纯模块）：
@@ -161,6 +165,7 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
     // 单题失败只会丢一条 STEP(status=error)，不做校验就会静默落库残缺任务。
     _expected = expectedQuestionCount(specs);
     _stopped = false;
+    _weakExampleIds = weakExampleIds;
     state = TaskGenPreview(_fold.questions, streaming: true, expected: _expected);
     try {
       final stream = _assistant.generate(
@@ -169,6 +174,7 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
           model: model,
           focusInterest: focusInterest,
           childId: childId,
+          weakExampleIds: weakExampleIds,
         ),
       );
       await for (final ev in stream) {
@@ -208,6 +214,7 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
           specs: specs,
           focusInterest: focusInterest,
           model: model,
+          weakExampleIds: _weakExampleIds,
         ),
         questions: _fold.questions,
         expected: _expected,
@@ -296,6 +303,7 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
     required List<TaskSpecModel> specs,
     List<String>? focusInterest,
     String? model,
+    List<String>? weakExampleIds,
   }) {
     final body = <String, dynamic>{
       'child_id': childId,
@@ -306,6 +314,8 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
     if (focusInterest != null) body['focus_interest'] = focusInterest;
     // 多模型（票据 08）：家长可选模型；null = 后端自动（默认/全局）。
     if (model != null) body['model'] = model;
+    // 反馈边（ADR-0060 D4）：代表错题 id，服务端据此做同类题仿写。
+    if (weakExampleIds != null) body['weak_example_ids'] = weakExampleIds;
     return body;
   }
 

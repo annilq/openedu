@@ -86,6 +86,7 @@ def _build_question_prompt(
     rag_context: str | None = None,
     persona_hint: str | None = None,
     history: list[dict] | None = None,
+    weak_examples: list[dict] | None = None,
 ) -> str:
     """出题 prompt（流式与落库**同一份**，模型产出受 ``QuestionSchema`` 约束）。"""
     clause = _build_question_clause(
@@ -104,6 +105,27 @@ def _build_question_prompt(
             for m in history[-6:]
         )
         clause += f"\n\n【前面已聊过的内容，供参考】\n{lines}"
+    # ADR-0060 D4：同类题仿写——把该孩子此前做错的同类题作为样例塞进 prompt，
+    # 让模型参考其考查角度与表述风格，出一道**全新**的同类题，而非凭空出题。
+    # 这是「反馈边」廉价的实现：不引入向量检索/相似度算法，只把原题题干当上下文。
+    # 仿写只作用于 AI 生成题（origin="ai"），不会把家长从教辅录入的题再繁衍（ADR-0020）。
+    if weak_examples:
+        samples = []
+        for i, ex in enumerate(weak_examples[:3], 1):
+            sample = (
+                f"【错例 {i}】（{ex.get('qtype', '题')}，"
+                f"知识点「{ex.get('knowledge_point', '')}」）\n题干：{ex.get('stem', '')}"
+            )
+            if ex.get("options"):
+                sample += f"\n选项：{ex['options']}"
+            if ex.get("answer"):
+                sample += f"\n答案：{ex['answer']}"
+            samples.append(sample)
+        clause += (
+            "\n\n以下是这个孩子此前做错的同类题样例，仅供你参考其考查角度与常见表述，"
+            "不要照抄或改写原题，而要据此出一道**全新的、同知识点同难度**的题，"
+            "考查角度可与样例互补：\n" + "\n\n".join(samples)
+        )
     return (
         clause + "\n\n"
         "另外用 1-3 句写出你的出题思路（情境如何选取、干扰项/答案如何设计、难度如何把控，"
@@ -123,6 +145,7 @@ def build_question_prompts(
     rag_context: str | None = None,
     persona_hint: str | None = None,
     history: list[dict] | None = None,
+    weak_examples: list[dict] | None = None,
 ) -> tuple[str, str, QuestionSpec]:
     """组装出题 prompt（ADR-0030 收口 #4：prompt 组装从 provider 搬到调用方）。
 
@@ -139,6 +162,7 @@ def build_question_prompts(
         subject=subject, grade=grade, knowledge_point=knowledge_point, qtype=qtype,
         difficulty=difficulty, interests=interests, focus_interest=focus_interest,
         rag_context=rag_context, persona_hint=persona_hint, history=history,
+        weak_examples=weak_examples,
     )
     spec = QuestionSpec(
         subject=subject,
