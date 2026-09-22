@@ -23,12 +23,12 @@ class AppDialog {
     await showShadDialog(
       context: context,
       barrierColor: app.scrim,
-      builder: (_) => ShadDialog(
+      builder: (ctx) => ShadDialog(
         closeIcon: const SizedBox.shrink(),
         title: title,
         actions: [
           ShadButton(
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () => Navigator.of(ctx).pop(),
             child: Text(
               confirmLabel,
               style: text.labelMedium?.copyWith(color: app.onPrimary),
@@ -54,12 +54,12 @@ class AppDialog {
     return showShadDialog<bool>(
       context: context,
       barrierColor: app.scrim,
-      builder: (_) => ShadDialog(
+      builder: (ctx) => ShadDialog(
         closeIcon: const SizedBox.shrink(),
         title: title,
         actions: [
           ShadButton.outline(
-            onPressed: () => Navigator.of(context).pop(false),
+            onPressed: () => Navigator.of(ctx).pop(false),
             child: Text(
               cancelLabel,
               style: text.labelMedium?.copyWith(color: app.onSurface),
@@ -67,7 +67,7 @@ class AppDialog {
           ),
           ShadButton(
             backgroundColor: destructive ? app.error : null,
-            onPressed: () => Navigator.of(context).pop(true),
+            onPressed: () => Navigator.of(ctx).pop(true),
             child: Text(
               confirmLabel,
               style: text.labelMedium?.copyWith(

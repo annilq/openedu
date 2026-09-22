@@ -102,7 +102,12 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
       _rows[0].knowledgePoint.text = prefill.knowledgePoint;
       _weakExampleIds =
           prefill.weakExampleIds.isNotEmpty ? prefill.weakExampleIds : null;
-      ref.read(taskFormPrefillProvider.notifier).state = null;
+      // 消费后清空，避免残留到下次手动出题。Riverpod 禁止在 initState 构建期改
+      // provider（_debugCanModifyProviders），延后到本帧构建结束后再清；mounted
+      // 守卫防表单恰在此时卸载后操作已释放的 ref。
+      Future.microtask(() {
+        if (mounted) ref.read(taskFormPrefillProvider.notifier).state = null;
+      });
     }
     // 预拉取可选模型列表，供模型选择器展示（仅家长可见自定义模型）。
     Future.microtask(

@@ -75,7 +75,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         builder: (_) => PracticeScreen(
           task: task,
           onDone: () {
-            Navigator.of(context).pop();
+            // maybePop 而非 pop：onDone 在 PracticeScreen 仍是栈顶时弹出它本身；
+            // 若练习路由已被其他方式移除（例如系统返回手势先把它 pop 了），
+            // 这里就只是 no-op，绝不会去弹根导航栈的 home（否则 _history.isNotEmpty 断言）。
+            Navigator.of(context).maybePop();
             // 完成做题后统一刷新所有受影响的娃娃端数据：今日任务 / 待复习 /
             // 错题本 / 掌握度。否则回到各页仍显示做题前的旧（空）快照。
             ref.read(todayTasksNotifierProvider.notifier).load();
