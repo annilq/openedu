@@ -1,6 +1,10 @@
 # 娃娃学习 App — Flutter 前端
 
-> Clean Architecture + Riverpod + Dio，平板优先
+> Feature-first 架构 + Riverpod + Dio + shadcn_ui，平板优先（家长端 / 娃娃端双模式）
+
+设计语言为 **新粗野（Neo-Brutalism，ADR-0044）**：高饱和撞色 + 2px 墨黑描边 + 无模糊硬阴影 + 弹性动效；
+全站颜色 / 间距 / 字号 / 转场时长只走设计令牌（`.impeccable.md`），禁止硬编码。视觉与交互细节见
+`docs/agents/frontend.md` 与 `.impeccable.md`，不要在此重复。
 
 ## 快速开始
 
@@ -9,72 +13,44 @@
 cd frontend
 flutter pub get
 
-# 2. 启动后端（另开终端）
+# 2. 启动后端（另开终端，需放开监听 + 局域网 IP）
 cd ../backend
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e .
-cp ../.env.example ../.env
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
-# 3. 运行 App（改 lib/configs/app_config.dart 中的 apiBase 为电脑局域网 IP）
-flutter run
+# 3. 运行 App（API_BASE 填电脑局域网 IP，不要用 127.0.0.1）
+flutter run --dart-define=API_BASE=http://<电脑局域网IP>:8000
 ```
+
+> 后端依赖用 `uv` 管理（见根 `CONTRIBUTING.md`）；`AppConfig.apiBase` 经 `--dart-define=API_BASE` 注入，默认 `127.0.0.1:8000`。
 
 ## 架构分层
 
 ```
 lib/
-├── configs/          # 环境配置 (API Base URL)
-├── main/             # App 入口 + ProviderScope
-├── shared/           # 跨 feature 复用
-│   ├── data/         # local(StorageService) + remote(Dio+拦截器)
-│   ├── domain/       # models + core_providers
-│   ├── exceptions/   # AppException / HttpException
-│   ├── theme/        # 护眼暖色主题 (≥20sp, 大圆角)
-│   └── widgets/      # AppLoading / AppError
-├── services/
-│   └── auth_session/ # 全局登录态 (token + UserModel)
-├── features/         # 按业务模块隔离
-│   ├── authentication/  # 登录/注册 (→ /auth/me 获取用户)
-│   ├── home/            # 家长端(娃娃列表+生成任务+进度) / 娃娃端(今日任务)
-│   ├── practice/        # 做题闭环 (出题→作答→即时批改→解析→下一题)
-│   ├── children/        # 娃娃账号管理
-│   └── profile/        # 个人设置/退出
+├── main/             # 入口 + AdaptiveShell（响应式壳，家长/儿童双模式作用域）
+├── configs/          # AppConfig：apiBase 经 --dart-define=API_BASE 注入
+├── features/         # 按业务模块隔离（assistant / auth / children / home / practice /
+│                    #   review / tutor / export / model_management / profile）
+├── services/         # auth_session（token 持久化）
+├── shared/           # data / domain / exceptions / presentation / theme(设计令牌) / widgets
+└── dev/              # theme_preview.dart（设计系统自检，CI 外本地跑）
 ```
 
-每个 feature 内部三层：
-- `data/` — DataSource (调 NetworkService) + Repository 实现
-- `domain/` — Repository 抽象 + Provider (接线)
-- `presentation/` — Notifier(状态机) + Screen(UI)
+分层与依赖方向（ADR-0037）：`main/ → features/* → shared/*` 单向；`shared/` 不得 import `features/`，
+feature 之间不得横向互引（唯一豁免 `features/home/presentation/` 组合根）。feature 与后端 `app/features/*` 一一对应。
+`App*` 前缀只给 `shared/widgets/` 通用组件——组件一旦订阅某 feature 的 provider 就落回该 feature。
 
-## 状态管理
+## 状态与网络
 
-Riverpod `StateNotifierProvider` + sealed class 状态机：
-
-```
-Idle → Loading → Success(data) / Error(message)
-```
-
-各 feature 的 Notifier 独立管理状态，UI 通过 `ref.watch` 监听、`ref.read(notifierProvider.notifier).method()` 触发。
-
-## 网络层
-
-Dio + 双拦截器：
-1. **Token 拦截器**：从 StorageService 取 JWT，注入 Authorization header
-2. **错误拦截器**：非 2xx 转 HttpException，401 转 UnauthorizedException
+- **状态管理**：Riverpod（`Notifier` / `AsyncNotifier` + sealed class 状态机）。各 feature 的 Notifier 独立管理状态，
+  UI 通过 `ref.watch` 监听、`ref.read(notifierProvider.notifier).method()` 触发。
+- **网络层**：Dio + 双拦截器——Token 拦截器（注入 `Authorization`）+ 错误拦截器（非 2xx 转 `HttpException`，401 转 `UnauthorizedException`）。
 
 ## 后端 API 契约
 
-| 端点 | 方法 | 角色 | 说明 |
-|---|---|---|---|
-| `/api/v1/auth/register` | POST | 公开 | 注册家长账号，返回 Token |
-| `/api/v1/auth/login` | POST | 公开 | 登录，返回 Token |
-| `/api/v1/auth/me` | GET | 已登录 | 获取当前用户信息 (role/grade) |
-| `/api/v1/children` | POST | 家长 | 创建娃娃账号 |
-| `/api/v1/children` | GET | 家长 | 列出娃娃 |
-| `/api/v1/tasks` | POST | 家长 | 生成任务 (含答案，家长可见) |
-| `/api/v1/tasks/today` | GET | 娃娃 | 今日任务 (不含答案，防作弊) |
-| `/api/v1/tasks/{id}/answer` | POST | 娃娃 | 提交答案，返回批改结果 |
-| `/api/v1/tasks/{id}/checkin` | POST | 娃娃 | 打卡 |
-| `/api/v1/tasks/children/{id}/progress` | GET | 家长 | 正确率+连续打卡 |
+所有路径带 `/api/v1` 前缀；交互式文档 `http://localhost:8000/docs`。完整端点见根 `CONTRIBUTING.md` 的
+「API 速览」。要点：
 
+- 出题 / 伴学 / 查询统一走 **`POST /api/v1/assistant/chat`**（SSE 流式），按角色 + 触发词路由；
+  旧的 `/ai/tutor/ask`、`/ai/tasks/generate` 已收敛到此。
+- 其余 REST：`/auth/*`、`/children`、`/tasks/*`、`/review/*`、`/export/sheet`、`/assistant/conversations` 等。
