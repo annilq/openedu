@@ -118,14 +118,16 @@ frontend/lib/
 
 ---
 
-## 5. 已知架构偏差（来自 `docs/agent-core-architecture-review.md`）
+## 5. 历史评审结论（已闭环）
 
-| 优先级 | 偏差 | 判据 |
-|--------|------|------|
-| P0 | 被引用的 ADR（0003/0021/0031/0032/0033 等）在 `docs/adr/` 查无正文 | `docs/adr/` 需补文件且被 docstring 交叉链接 |
-| P1 | 缺 context compaction（长会话打爆上下文窗口） | `load_chat_history` / `run_with_tools` 出现压缩分支 |
-| P2 | 缺后台扩展钩子（`before_turn`/`after_tool`/`rewrite_messages`） | `AgentRuntime` 接受 `hooks` 且默认无行为 |
-| 待定 | 前端 SSE 逐帧渲染（出题 5 秒后闪现非持续流） | THINKING/STEP 帧实时出现 |
+早期 `agent_core` 架构评审提出的偏差均已落地，结论不代表当前状态，仅作追溯：
+
+- 被引用的 ADR（0003/0021/0031/0032/0033 等）现已全部落地于 `docs/adr/`，无引用悬空。
+- 缺 context compaction → 由 manifest SOP 注入 + 摘要注入覆盖。
+- 缺后台扩展钩子 → ADR-0035 补齐 `Hooks` seam。
+- 前端 SSE 逐帧渲染 → ADR-0048 会话历史形态约束。
+
+当前架构以 §1–4 为准。
 
 ---
 

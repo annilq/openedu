@@ -23,9 +23,9 @@
 
 ### 仓库内一手资料（优先级高于任何外部文档）
 
-- `docs/agents/architecture.md` —— 分层、不变量、已知架构偏差（含 P0/P1/P2）。
+- `docs/agents/architecture.md` —— 分层、不变量、历史评审结论（已闭环）。
 - `docs/adr/0024 · 0025 · 0033 · 0038 · 0040 · 0042 · 0043 · 0048 · 0054` —— 每条决策的「为什么」与被否掉的选项。
-- `docs/agent-core-architecture-review.md` —— 多个知识点（钩子、compaction、SSE 逐帧）的出处。
+- `docs/adr/0035`（扩展钩子 seam）· `docs/adr/0041`（配置健壮性）· `docs/adr/0048`（会话历史 SSE） —— 早期架构评审知识点的落点。
 - `backend/tests/ai/*.py` —— 不变量如何被 CI 钉住（分层、工具契约、tool loop 边界、失败归因）。
 
 ## Wisdom (Communities)

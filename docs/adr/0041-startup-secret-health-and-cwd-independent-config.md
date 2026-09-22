@@ -2,7 +2,7 @@
 
 ## 背景
 
-架构评审（见 `docs/agent-core-architecture-review.md` §4）与 401 密钥事故（ADR-0038）暴露两类配置脆弱点：
+早期架构评审与 401 密钥事故（ADR-0038）暴露两类配置脆弱点：
 
 - `SECRET_KEY` 长期沿用默认 `changeme`，JWT 签名密钥不安全；换密钥会使已有登录态失效，于是长期不敢改。
 - 密钥问题（密钥轮换 / `MODEL_APIKEY_SECRET` 缺失）只在用户提问时才以 401 暴露，且密文曾被当凭据外泄（`xOOR` 现场）。

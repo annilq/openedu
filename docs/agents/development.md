@@ -78,7 +78,7 @@ Tri标签字符串见 `docs/agents/triage-labels.md`：`needs-triage` / `needs-i
 
 ### 3.3 ADR 与领域词汇
 
-- **决策记录**：落地决策写 `docs/adr/`（编号 `0001-` 递增）。被代码 docstring 引用的 ADR **必须有可定位正文**——当前存在「引用悬空」风险（代码引用 0003/0021/0031/0032/0033 等，但 `docs/adr/` 仅 0001–0005 落地，见 `architecture.md` §5 P0）。新增决策先补 ADR 再交叉链接。
+- **决策记录**：落地决策写 `docs/adr/`（编号 `0001-` 递增，当前已落地至 0060）。被代码 docstring 引用的 ADR **必须有可定位正文**，新增决策先补 ADR 再交叉链接。
 - **领域词汇**：以根 `CONTEXT.md` 为唯一术语事实源。输出（issue 标题、重构提案、测试名）必须用 glossary 术语，勿漂移其明确 avoid 的同义词（如「题目」≠「试题」；「错题」≠「错题库」；「儿童账户」≠「学生」）。
 - **单 context 懒创建**：`CONTEXT.md` + `docs/adr/` 按需创建，非强制预建；缺失时 proceed silently，不主动建议预建。
 

@@ -93,8 +93,7 @@ Issues / PRDs 以 GitHub Issues 承载，全部操作经 `gh` CLI。建读列评
 - **领域术语**：`CONTEXT.md`（唯一 glossary）。
 - **ADR**：决策记 `docs/adr/`，被代码引用即需有可定位正文。**取号前先看目录最大号**，并查
   `.workbuddy/memory/` 有无已被其他会话预留的号（历史上撞过两次）。
-- **架构评审**：`docs/agent-core-architecture-review.md`——**2026-09-11 快照**，其 §7 的 P0/P1/P2
-  建议均已关闭，结论不代表当前状态。
+- **历史架构评审**：早期 `agent_core` 评审的 P0/P1/P2 建议均已落地（扩展钩子见 ADR-0035、配置健壮性见 ADR-0041），结论不代表当前状态。
 - **平台 runner 未纳入版本控制**：`frontend/.gitignore` 第 20–25 行忽略
   `android / linux / macos / web / windows / ios`，即**平台目录全是本机生成物**。改桌面窗口尺寸、
   原生权限、Info.plist 之类只在本机生效，`flutter create` 重新生成或换机器构建都会回退。

@@ -1,6 +1,6 @@
 # ADR-0035 扩展钩子（extension seam，生命周期钩子）
 
-> 决策日期：2026-09-14 ｜ 关联评审：`docs/agent-core-architecture-review.md` §4.2（P2 缺后台扩展钩子）
+> 决策日期：2026-09-14 ｜ 背景：早期架构评审发现缺后台扩展钩子（P2），本 ADR 补齐该 seam
 
 ## 背景
 
@@ -45,7 +45,7 @@ LLM 不可见钩子。据此在 `agent_core` 增加**可选** `Hooks` 接口。
 
 ## Consequences
 
-- 正向：业务可注入审计/裁剪/约束而不碰内核；`AgentRuntime` 接受 `hooks` 且默认无行为（评审 §7 P2 判据满足）。
+- 正向：业务可注入审计/裁剪/约束而不碰内核；`AgentRuntime` 接受 `hooks` 且默认无行为（早期评审 P2 判据满足）。
 - 约束：钩子实现须**幂等、轻量**——避免在其中发起额外 LLM 调用或阻塞主链路；重写消息须保持
   `role`/`tool_calls`/`ref` 成对不变量（ADR-0033），否则破坏 provider 的 ToolRequest↔ToolResponse 配对。
 - 取舍：仅 query（声明 tools 走 tool loop 的 subagent）会触发三个固定点；纯文本/单调用 subagent（tutor/question）
