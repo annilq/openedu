@@ -173,24 +173,26 @@ def run_migrations() -> None:
 
         # —— 知识点学期维度（ADR-0055 §4 补）——
         # 学期是第四维范围（'' = 整学年/不限；'上学期' / '下学期'），旧库无此列时补齐。
+        # ⚠️ 表名必须匹配 KnowledgePoint 模型默认生成的 `knowledgepoint`（无下划线），
+        # 否则 PRAGMA 查错表被下方 except 静默吞掉、列永远加不上。
         try:
             if is_sqlite:
                 cols = [
                     r[1]
                     for r in conn.execute(
-                        text("PRAGMA table_info(knowledge_point)")
+                        text("PRAGMA table_info(knowledgepoint)")
                     ).fetchall()
                 ]
                 if "semester" not in cols:
                     conn.execute(
                         text(
-                            "ALTER TABLE knowledge_point ADD COLUMN semester VARCHAR(8) DEFAULT ''"
+                            "ALTER TABLE knowledgepoint ADD COLUMN semester VARCHAR(8) DEFAULT ''"
                         )
                     )
             else:
                 conn.execute(
                     text(
-                        "ALTER TABLE knowledge_point ADD COLUMN IF NOT EXISTS "
+                        "ALTER TABLE knowledgepoint ADD COLUMN IF NOT EXISTS "
                         "semester VARCHAR(8) NOT NULL DEFAULT ''"
                     )
                 )
