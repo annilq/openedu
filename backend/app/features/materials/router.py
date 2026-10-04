@@ -21,6 +21,7 @@ from app.features.materials.schemas import (
     KnowledgePointListResp,
     MaterialResp,
     UploadResult,
+    MaterialMove,
 )
 
 router = APIRouter(prefix="/materials", tags=["materials"])
@@ -128,6 +129,17 @@ def delete_material(
     session: SessionDep, user: CurrentParent, material_id: UUID
 ) -> dict:
     return service.delete_material(session, parent_id=user.id, material_id=material_id)
+
+
+@router.patch("/{material_id}", response_model=MaterialResp)
+def move_material_endpoint(
+    session: SessionDep, user: CurrentParent, material_id: UUID, req: MaterialMove
+) -> MaterialResp:
+    """移动资料到指定目录（``folder_id=None`` = 移回根目录，ADR-0055 B6 补全）。"""
+    material = service.move_material(
+        session, parent_id=user.id, material_id=material_id, folder_id=req.folder_id
+    )
+    return service.material_resp(material)
 
 
 @router.post("/{material_id}/vectorize", response_model=MaterialResp)

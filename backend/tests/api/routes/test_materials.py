@@ -184,6 +184,48 @@ class TestMaterialLifecycle:
             == 403
         )
 
+    def test_move_material_to_folder_and_back(self, client, ptoken, upload_root):
+        folder = _create_folder(client, ptoken, subject="语文", grade=2)
+        r = _upload(
+            client,
+            ptoken,
+            filename="生词.txt",
+            content="比喻、拟人。".encode(),
+            folder_id=folder["id"],
+        )
+        mat_id = r.json()["material"]["id"]
+        # 移回根目录（folder_id=null）
+        r = client.patch(
+            f"/api/v1/materials/{mat_id}",
+            headers=auth_headers(ptoken),
+            json={"folder_id": None},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["folder_id"] is None
+        # 移到另一个目录
+        other = _create_folder(client, ptoken, name="其它")
+        r = client.patch(
+            f"/api/v1/materials/{mat_id}",
+            headers=auth_headers(ptoken),
+            json={"folder_id": other["id"]},
+        )
+        assert r.status_code == 200 and r.json()["folder_id"] == other["id"]
+        # 列表按目录过滤：only this material in `other`
+        r = client.get(
+            f"/api/v1/materials?folder_id={other['id']}",
+            headers=auth_headers(ptoken),
+        )
+        assert r.status_code == 200 and len(r.json()) == 1
+        # 越权目录被拒（403，不降级成 404）
+        register_parent(client, username="mat_move_other", password="pw123456")
+        other_p = login(client, "mat_move_other", "pw123456").json()["access_token"]
+        r = client.patch(
+            f"/api/v1/materials/{mat_id}",
+            headers=auth_headers(other_p),
+            json={"folder_id": folder["id"]},
+        )
+        assert r.status_code == 403
+
 
 class TestKnowledgePoints:
     def test_skeleton_fallback_and_confirm(self, client, ptoken, upload_root):

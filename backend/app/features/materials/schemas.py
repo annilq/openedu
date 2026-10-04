@@ -63,6 +63,12 @@ class MaterialResp(SQLModel):
     indexed_at: datetime | None = None
 
 
+class MaterialMove(SQLModel):
+    """移动资料到目录：``folder_id`` 为 null = 移回根目录（全部）。"""
+
+    folder_id: UUID | None = None
+
+
 class UploadResult(SQLModel):
     """上传响应：资料本体 + 元数据提取结果（提取失败不阻塞入库）。"""
 

@@ -20,6 +20,7 @@ from app.core.ai_plumbing import build_ai_provider
 from app.core.config import settings
 from app.core.errors import AppErrorException, ErrCode
 from app.db.models import KnowledgePoint, Material, MaterialFolder
+from app.db.models.material import INDEX_STATE_READY, INDEX_STATE_STALE
 from app.domain.safety import check_input
 from app.domain.subjects import SUBJECTS
 from app.features.materials import indexing
@@ -211,6 +212,20 @@ def _resolve_inherited(
     return subject, grade, semester
 
 
+def _semester_from_name(name: str) -> str | None:
+    """文件名兜底推断学期（ADR-0055 §2 补，最低优先级）。
+
+    教材文件名常带「上册 / 下册」→ 映射「上学期 / 下学期」。仅作**兜底**，
+    不覆盖家长显式选择或目录继承（调用方须把本结果放在 ``semester or
+    inherited_semester or _semester_from_name(...)`` 链最末）。命中不了返回 ``None``。
+    """
+    if "上册" in name:
+        return "上学期"
+    if "下册" in name:
+        return "下学期"
+    return None
+
+
 def _store_file(*, parent_id: uuid.UUID, filename: str, data: bytes) -> str:
     root = Path(settings.MATERIAL_UPLOAD_ROOT) / str(parent_id)
     root.mkdir(parents=True, exist_ok=True)
@@ -246,6 +261,10 @@ async def upload_material(
     inherited_subject, inherited_grade, inherited_semester = _resolve_inherited(
         session, folder_id
     )
+    # 学期兜底链：显式指定 > 目录继承 > 文件名推断（上册/下册）
+    effective_semester = (
+        semester or inherited_semester or _semester_from_name(filename)
+    )
     material = Material(
         parent_id=parent_id,
         folder_id=folder_id,
@@ -254,10 +273,10 @@ async def upload_material(
         mime="",
         size_bytes=len(data),
         text=text,
-        # 覆盖优先级：显式指定 > 目录继承（AI 只补空白，见模块 docstring）
+        # 覆盖优先级：显式指定 > 目录继承 > 文件名推断（AI 只补空白，见模块 docstring）
         subject=subject or inherited_subject,
         grade=grade or inherited_grade,
-        semester=semester or inherited_semester,
+        semester=effective_semester,
     )
     session.add(material)
     session.commit()
@@ -336,6 +355,12 @@ async def _extract_and_align(
         material.subject = subject
     if grade and not material.grade:
         material.grade = grade
+    # 学期兜底：资料名含上册/下册且当前未设学期时自动带（最低优先级，不覆盖家长意图）。
+    # 既覆盖旧资料重抽（入库时尚未有文件名推断），也兜底 upload_material 之外直建的行。
+    if not material.semester:
+        inferred = _semester_from_name(material.name)
+        if inferred:
+            material.semester = inferred
     names: list[str] = []
     for raw in meta.knowledge_points:
         name = raw.strip()[:128]
@@ -399,6 +424,40 @@ def delete_material(
     except OSError:
         pass
     return {"deleted": True, "chunks_removed": chunk_count}
+
+
+def move_material(
+    session: Session,
+    *,
+    parent_id: uuid.UUID,
+    material_id: uuid.UUID,
+    folder_id: uuid.UUID | None,
+) -> Material:
+    """把已有资料移到指定目录（``folder_id=None`` = 移回根目录）。
+
+    只改归属指针；不触发重新提取 / 向量化（移动是纯组织操作）。若资料当前
+    无学科 / 年级，且目标目录能提供，则顺手补齐继承值，避免移入带学科的目录
+    后检索按学科过滤却命中不到（chunk 的 subject 取自 material.subject）。
+    """
+    material = repo.get_owned_material(
+        session, parent_id=parent_id, material_id=material_id
+    )
+    if folder_id is not None:
+        repo.get_owned_folder(session, parent_id=parent_id, folder_id=folder_id)
+    material.folder_id = folder_id
+    if material.subject is None or material.grade is None or material.semester is None:
+        inh_subject, inh_grade, inh_semester = _resolve_inherited(session, folder_id)
+        material.subject = material.subject or inh_subject
+        material.grade = material.grade or inh_grade
+        material.semester = material.semester or inh_semester
+        # 仅补空白：若仍缺学科/年级，标记为 stale 让其重向量化时再确认
+        if material.subject is None or material.grade is None:
+            if material.index_state == INDEX_STATE_READY:
+                material.index_state = INDEX_STATE_STALE
+    session.add(material)
+    session.commit()
+    session.refresh(material)
+    return material
 
 
 # ── 知识点选择器（目录优先 + 骨架兜底，ADR-0055 §4）────────────────────
