@@ -37,7 +37,10 @@ from app.db.models.material import (  # noqa: E402
     INDEX_STATE_READY,
 )
 from app.features.materials import indexing  # noqa: E402
-from app.features.materials.service import upload_material  # noqa: E402
+from app.features.materials.service import (  # noqa: E402
+    reextract_metadata,
+    upload_material,
+)
 
 _CN2NUM = {c: i for i, c in enumerate("一二三四五六七八九", start=1)}
 SUBJECT = "数学"
@@ -113,8 +116,28 @@ async def main() -> None:
                     and existing.embed_model == settings.EMBEDDING_MODEL
                     and existing.chunker_ver == CHUNKER_VERSION
                 ):
-                    print(f"[已就绪·跳过] {name}  g{grade}  ({time.time()-t0:.1f}s)")
-                    skipped += 1
+                    if args.extract:
+                        # 已入库且就绪：批量模式下仍重提取知识点（不重向量化）。
+                        # reextract_metadata 全量刷新 knowledge_points，并把新点进
+                        # 「待审」目录；学科/年级只补空白，不会覆盖我们已写死的数学/年级。
+                        try:
+                            res = await reextract_metadata(
+                                session, parent_id=parent_id, material_id=existing.id
+                            )
+                            kps = res.material.knowledge_points or []
+                            print(
+                                f"[重提取] {name}  g{grade}  kp={len(kps)}  "
+                                f"({time.time()-t0:.1f}s)"
+                            )
+                            ok += 1
+                        except Exception as e:  # noqa: BLE001
+                            print(
+                                f"[提取异常] {name}  —— {type(e).__name__}: {e}"
+                            )
+                            failed += 1
+                    else:
+                        print(f"[已就绪·跳过] {name}  g{grade}  ({time.time()-t0:.1f}s)")
+                        skipped += 1
                     continue
 
                 mat = await upload_material(
