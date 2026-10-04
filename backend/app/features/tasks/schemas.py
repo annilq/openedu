@@ -3,11 +3,19 @@
 import uuid
 from datetime import date, datetime
 
+from pydantic import field_validator
 from sqlmodel import Field, SQLModel
+
+from app.domain.subjects import is_supported_subject, qtypes_for
 
 
 class TaskSpec(SQLModel):
-    """多学科一卷批量生成的一条规格（ADR-0004 D4）。"""
+    """多学科一卷批量生成的一条规格（ADR-0004 D4）。
+
+    学科 / 题型校验（ADR-0055 §11/§12）：后端开始校验——学科必须是收敛后的
+    3 科之一；题型必须在学科白名单内（英语不再接受 calc）。存量其他学科的
+    任务 / 题目冻结展示，不受影响。
+    """
 
     subject: str = Field(max_length=32)
     grade: int
@@ -15,6 +23,22 @@ class TaskSpec(SQLModel):
     qtype: str = Field(max_length=16)  # choice|fill|calc|open
     difficulty: str = Field(max_length=16, default="medium")
     count: int = Field(default=1, ge=1)
+
+    @field_validator("subject")
+    @classmethod
+    def _subject_supported(cls, v: str) -> str:
+        if not is_supported_subject(v):
+            allowed = " / ".join(["数学", "语文", "英语"])
+            raise ValueError(f"暂不支持学科「{v}」，请从 {allowed} 中选择")
+        return v
+
+    @field_validator("qtype")
+    @classmethod
+    def _qtype_in_whitelist(cls, v: str, info) -> str:
+        subject = info.data.get("subject")
+        if subject and v not in qtypes_for(subject):
+            raise ValueError(f"学科「{subject}」不支持题型「{v}」")
+        return v
 
 
 class TaskGenerateReq(SQLModel):

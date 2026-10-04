@@ -29,6 +29,8 @@ class SubjectPersona:
 
 
 # 归一化别名 → 标准学科键（覆盖常见写法与英文，匹配时不区分大小写）。
+# 学科收敛到 3 科（ADR-0055 §11）：科学 persona 删除，存量科学题照常展示复习
+# （冻结语义），新出题不再接受科学——归一化后无 persona，走通用兜底。
 _SUBJECT_ALIASES: dict[str, str] = {
     "数学": "数学",
     "math": "数学",
@@ -39,9 +41,6 @@ _SUBJECT_ALIASES: dict[str, str] = {
     "英语": "英语",
     "english": "英语",
     "yingyu": "英语",
-    "科学": "科学",
-    "science": "科学",
-    "kexue": "科学",
 }
 
 
@@ -66,13 +65,6 @@ SUBJECT_PERSONAS: dict[str, SubjectPersona] = {
         tone="轻松、口语化，多用简单句与重复",
         age_guidance="结合听说情境，避免长难句；低年级重发音与拼读",
         conventions="注意时态/单复数/大小写，鼓励情景会话",
-    ),
-    "科学": SubjectPersona(
-        subject="科学",
-        display="科学",
-        tone="好奇驱动、动手观察，鼓励提问",
-        age_guidance="用自然现象与生活实验引导，避免术语轰炸",
-        conventions="重观察-假设-验证，表述现象与原因，注意单位与安全",
     ),
 }
 
