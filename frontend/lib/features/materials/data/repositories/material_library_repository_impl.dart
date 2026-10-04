@@ -80,4 +80,39 @@ class MaterialLibraryRepositoryImpl implements MaterialLibraryRepository {
   @override
   Future<void> deleteMaterial(String materialId) =>
       _network.delete('/materials/$materialId');
+
+  @override
+  Future<MaterialItemModel> moveMaterial(
+    String materialId,
+    String? folderId,
+  ) async {
+    final data = await _network.patch(
+      '/materials/$materialId',
+      body: {if (folderId != null) 'folder_id': folderId},
+    );
+    return MaterialItemModel.fromJson(
+        Map<String, dynamic>.from((data as Map)));
+  }
+
+  @override
+  Future<MaterialFolderModel> updateFolder(
+    String folderId, {
+    String? name,
+    String? subject,
+    int? grade,
+    String? semester,
+    String? parentFolderId,
+  }) async {
+    // 只传非空字段：PATCH 语义下，后端按「出现即改写」处理（含显式 null）。
+    // 本客户端不提供「清空某字段」入口，故 null 一律省略，避免误清空既有值。
+    final body = <String, dynamic>{};
+    if (name != null) body['name'] = name;
+    if (subject != null) body['subject'] = subject;
+    if (grade != null) body['grade'] = grade;
+    if (semester != null) body['semester'] = semester;
+    if (parentFolderId != null) body['parent_folder_id'] = parentFolderId;
+    final data = await _network.patch('/folders/$folderId', body: body);
+    return MaterialFolderModel.fromJson(
+        Map<String, dynamic>.from((data as Map)));
+  }
 }

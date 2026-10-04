@@ -11,6 +11,9 @@ abstract class NetworkService {
       {Map<String, dynamic>? query, Map<String, dynamic>? body});
   Future<dynamic> delete(String path, {Map<String, dynamic>? body});
 
+  /// PATCH 请求（如资料库目录重命名 / 移动、资料移动到目录，ADR-0055 B6）。
+  Future<dynamic> patch(String path, {Map<String, dynamic>? body});
+
   /// multipart 文件上传（如资料库上传，ADR-0055）。FormData 由调用方组装
   /// （file + 表单字段），本层只负责发送与错误归一。
   Future<dynamic> postForm(String path, FormData form);

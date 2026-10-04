@@ -8,12 +8,20 @@ import '../../../shared/domain/providers/core_providers.dart';
 final materialLibraryRepositoryProvider = Provider<MaterialLibraryRepository>(
     (ref) => MaterialLibraryRepositoryImpl(ref.watch(networkServiceProvider)));
 
+/// copyWith 里区分「调用方未传该字段」与「显式传 null」的哨兵（避免 null 歧义）。
+const Object _kUnset = Object();
+
 /// 资料库页状态：目录 + 当前目录下的资料 + 动作提示。
 class MaterialLibraryState {
   final List<MaterialFolderModel> folders;
 
   /// null = 根目录（显示全部资料，含未归目录的）。
   final String? currentFolderId;
+
+  /// 当前目录的父级 id（null = 当前就在根目录）。与 currentFolderId 一并写入，
+  /// 返回按钮直接读它，不再依赖从 [folders] 反查——避免并发刷新时序下
+  /// folders 未含当前目录导致返回失效（ADR-0055 B6 修复）。
+  final String? parentFolderId;
   final List<MaterialItemModel> materials;
   final bool loading;
   final String? error;
@@ -24,6 +32,7 @@ class MaterialLibraryState {
   const MaterialLibraryState({
     this.folders = const [],
     this.currentFolderId,
+    this.parentFolderId,
     this.materials = const [],
     this.loading = false,
     this.error,
@@ -42,6 +51,7 @@ class MaterialLibraryState {
     List<MaterialFolderModel>? folders,
     String? currentFolderId,
     bool clearFolder = false,
+    Object? parentFolderId = _kUnset,
     List<MaterialItemModel>? materials,
     bool? loading,
     String? error,
@@ -53,6 +63,9 @@ class MaterialLibraryState {
         folders: folders ?? this.folders,
         currentFolderId:
             clearFolder ? null : (currentFolderId ?? this.currentFolderId),
+        parentFolderId: identical(parentFolderId, _kUnset)
+            ? this.parentFolderId
+            : parentFolderId as String?,
         materials: materials ?? this.materials,
         loading: loading ?? this.loading,
         error: clearError ? null : (error ?? this.error),
@@ -65,19 +78,35 @@ class MaterialLibraryNotifier extends StateNotifier<MaterialLibraryState> {
 
   final MaterialLibraryRepository _repo;
 
+  /// 并发 load 守卫：每次 load 递增序号，await 后若已被更新的 load 取代则丢弃结果，
+  /// 避免慢的早发请求回写旧 state 把目录卡在错误层级（ADR-0055 B6）。
+  int _loadSeq = 0;
+
   Future<void> load({String? folderId, bool keepFolder = false}) async {
     final target = keepFolder ? state.currentFolderId : folderId;
+    final seq = ++_loadSeq;
     state = state.copyWith(loading: true, clearError: true, clearNotice: true);
     try {
       final folders = await _repo.getFolders();
+      if (seq != _loadSeq) return; // 已有更新的 load 发起，丢弃本次陈旧结果
       final materials = await _repo.getMaterials(folderId: target);
+      if (seq != _loadSeq) return;
+      MaterialFolderModel? current;
+      for (final f in folders) {
+        if (f.id == target) {
+          current = f;
+          break;
+        }
+      }
       state = state.copyWith(
         folders: folders,
         currentFolderId: target,
+        parentFolderId: current?.parentFolderId,
         materials: materials,
         loading: false,
       );
     } catch (e) {
+      if (seq != _loadSeq) return;
       state = state.copyWith(loading: false, error: '加载失败：$e');
     }
   }
@@ -96,7 +125,9 @@ class MaterialLibraryNotifier extends StateNotifier<MaterialLibraryState> {
         grade: grade,
         semester: semester,
       );
-      await load();
+      // 保持当前所在目录：若在某目录内新建子目录，建完应停留并看到新子目录，
+      // 而不是被弹回根目录（否则新建的子目录会“消失”，ADR-0055 B6 修复）。
+      await load(keepFolder: true);
       state = state.copyWith(notice: '目录「$name」已创建');
     } catch (e) {
       state = state.copyWith(error: '创建目录失败：$e');
@@ -172,7 +203,56 @@ class MaterialLibraryNotifier extends StateNotifier<MaterialLibraryState> {
     }
   }
 
-  void openFolder(String? folderId) => load(folderId: folderId);
+  /// 移动资料到指定目录（[folderId] 为 null = 移回根目录）。停留当前目录以刷新视图。
+  Future<void> moveMaterial(String materialId, String? folderId) async {
+    try {
+      await _repo.moveMaterial(materialId, folderId);
+      await load(keepFolder: true);
+      state = state.copyWith(
+        notice: folderId == null ? '资料已移回根目录' : '资料已移动到指定目录',
+      );
+    } catch (e) {
+      state = state.copyWith(error: '移动资料失败：$e');
+    }
+  }
+
+  /// 重命名 / 改目录元数据（学科 / 年级 / 学期）。
+  Future<void> renameFolder(
+    String folderId, {
+    required String name,
+    String? subject,
+    int? grade,
+    String? semester,
+  }) async {
+    try {
+      await _repo.updateFolder(
+        folderId,
+        name: name,
+        subject: subject,
+        grade: grade,
+        semester: semester,
+      );
+      await load(keepFolder: true);
+      state = state.copyWith(notice: '目录已更新');
+    } catch (e) {
+      state = state.copyWith(error: '更新目录失败：$e');
+    }
+  }
+
+  /// 移动目录到其它目录（[parentFolderId] 为 null = 移到根目录）。
+  Future<void> moveFolder(String folderId, String? parentFolderId) async {
+    try {
+      await _repo.updateFolder(folderId, parentFolderId: parentFolderId);
+      await load(keepFolder: true);
+      state = state.copyWith(
+        notice: parentFolderId == null ? '目录已移到根目录' : '目录已移动',
+      );
+    } catch (e) {
+      state = state.copyWith(error: '移动目录失败：$e');
+    }
+  }
+
+  Future<void> openFolder(String? folderId) => load(folderId: folderId);
 
   void consumeNotice() => state = state.copyWith(clearNotice: true);
 }

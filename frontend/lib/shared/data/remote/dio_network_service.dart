@@ -151,6 +151,16 @@ class DioNetworkService implements NetworkService {
   }
 
   @override
+  Future<dynamic> patch(String path, {Map<String, dynamic>? body}) async {
+    try {
+      final r = await _dio.patch(path, data: body);
+      return r.data;
+    } on DioException catch (e) {
+      _handleError(e);
+    }
+  }
+
+  @override
   Future<dynamic> postForm(String path, FormData form) async {
     try {
       final r = await _dio.post(path, data: form);

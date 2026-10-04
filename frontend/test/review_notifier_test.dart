@@ -39,6 +39,9 @@ class FakeNetwork implements NetworkService {
   Future<dynamic> delete(String path, {Map<String, dynamic>? body}) async => null;
 
   @override
+  Future<dynamic> patch(String path, {Map<String, dynamic>? body}) async => null;
+
+  @override
   Future<dynamic> postForm(String path, FormData form) async =>
       throw UnimplementedError();
 

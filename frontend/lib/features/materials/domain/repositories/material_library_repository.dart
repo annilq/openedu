@@ -125,4 +125,17 @@ abstract class MaterialLibraryRepository {
   Future<MaterialItemModel> reextract(String materialId);
 
   Future<void> deleteMaterial(String materialId);
+
+  /// 移动资料到指定目录（[folderId] 为 null = 移回根目录，ADR-0055 B6 补全）。
+  Future<MaterialItemModel> moveMaterial(String materialId, String? folderId);
+
+  /// 改目录：重命名 / 改元数据 / 移动到其它目录。只传非空字段（PATCH 语义）。
+  Future<MaterialFolderModel> updateFolder(
+    String folderId, {
+    String? name,
+    String? subject,
+    int? grade,
+    String? semester,
+    String? parentFolderId,
+  });
 }
