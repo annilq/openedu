@@ -59,6 +59,11 @@ class QuestionBankPage extends ParentPage {
   const QuestionBankPage();
 }
 
+/// 资料库（家长上传资料 + 向量化，ADR-0055）。
+class MaterialLibraryPage extends ParentPage {
+  const MaterialLibraryPage();
+}
+
 /// 模型管理。
 class ModelsPage extends ParentPage {
   const ModelsPage();

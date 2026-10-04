@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 
+import 'package:dio/dio.dart';
+
 /// 网络服务抽象：统一 get/post 接口。
 /// 外层（data 层）通过此抽象与后端通信，不直接依赖 Dio。
 abstract class NetworkService {
@@ -8,6 +10,10 @@ abstract class NetworkService {
   Future<dynamic> put(String path,
       {Map<String, dynamic>? query, Map<String, dynamic>? body});
   Future<dynamic> delete(String path, {Map<String, dynamic>? body});
+
+  /// multipart 文件上传（如资料库上传，ADR-0055）。FormData 由调用方组装
+  /// （file + 表单字段），本层只负责发送与错误归一。
+  Future<dynamic> postForm(String path, FormData form);
 
   /// SSE 流式 POST：返回原始字节流（text/event-stream），由调用方按 SSE 协议解析。
   /// 复用 Dio 拦截器（自动注入 Authorization、错误统一转 AppException）。

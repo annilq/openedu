@@ -150,6 +150,16 @@ class DioNetworkService implements NetworkService {
     }
   }
 
+  @override
+  Future<dynamic> postForm(String path, FormData form) async {
+    try {
+      final r = await _dio.post(path, data: form);
+      return r.data;
+    } on DioException catch (e) {
+      _handleError(e);
+    }
+  }
+
   /// 流式端点（SSE）的默认接收超时。
   ///
   /// 出题是「逐题串行调用模型」：实测 2 题就要 19–36 秒，题目越多越久。BaseOptions

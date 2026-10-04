@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:dio/dio.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -30,6 +31,10 @@ class FakeSseNetwork implements NetworkService {
       null;
   @override
   Future<dynamic> delete(String path, {Map<String, dynamic>? body}) async => null;
+
+  @override
+  Future<dynamic> postForm(String path, FormData form) async =>
+      throw UnimplementedError();
 
   @override
   Future<Uint8List> postBytes(String path, {Map<String, dynamic>? body}) async =>

@@ -23,6 +23,7 @@ import '../providers/parent_tasks_notifier.dart';
 import '../providers/selected_child_provider.dart';
 import '../parent_pages.dart';
 import '../screens/parent_task_review_screen.dart';
+import 'parent_destinations.dart';
 import '../widgets/child_home.dart';
 import '../widgets/parent/parent_child_selector.dart';
 import '../widgets/parent/parent_overview_view.dart';
@@ -31,6 +32,7 @@ import '../widgets/parent/parent_tutor_logs_view.dart';
 import '../widgets/parent/parent_question_bank_view.dart';
 import '../widgets/parent/parent_tasks_view.dart';
 import '../widgets/parent/parent_wrong_questions_view.dart';
+import '../widgets/parent/material_library_view.dart';
 import 'child_mastery_screen.dart';
 import '../../../../shared/widgets/app_actions.dart';
 
@@ -204,6 +206,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       QuestionBankPage() => ParentQuestionBankView(
           onNavigateToReview: _navigateToReview,
         ),
+      MaterialLibraryPage() => const MaterialLibraryView(),
       ModelsPage() => const ParentModelManagementScreen(),
       TaskListPage() => ParentTasksView(
           onNavigateToReview: _navigateToReview,
@@ -297,6 +300,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  // 导航目的地构造器（`parent_destinations.dart`）：方法体抽出后本文件回到
+  // ADR-0058 基线内，新增「资料库」入口不再顶破棘轮。
+  NavigationDestinations get _destinations => NavigationDestinations(
+        go: _go,
+        goChildTab: _switchChildTab,
+        goProfile: _onProfileTap,
+        genTrailing: _genTrailing,
+      );
+
   Widget _buildChildView() {
     if (_showProfile) {
       return ProfileScreen(user: widget.user, onLogout: widget.onLogout);
@@ -324,97 +336,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  // 家长端导航目的地：与旧 ParentSidebar 同序（0-4 + 6 题库）。
-  // 审核覆盖层存在时先关层再切换（复用旧侧栏 onNavTap 行为）。
-  List<AdaptiveNavDestination> _parentDestinations(
-    ParentPage page,
-    TaskGenState gen,
-  ) {
-    // 审核页高亮「进来时的那一页」——审核是任务的延续，不是一个新的侧栏入口。
-    final active = highlightFor(page);
-    return [
-      AdaptiveNavDestination(
-          icon: LucideIcons.layoutDashboard,
-          label: '概览',
-          active: active is OverviewPage,
-          onTap: () => _go(const OverviewPage())),
-      AdaptiveNavDestination(
-          icon: LucideIcons.listTodo,
-          label: '任务',
-          active: active is TaskListPage,
-          onTap: () => _go(const TaskListPage())),
-      AdaptiveNavDestination(
-          icon: LucideIcons.pencil,
-          label: '布置任务',
-          active: active is CreateTaskPage,
-          onTap: () => _go(const CreateTaskPage()),
-          // ADR-0057 P1：出题进行中在侧栏也亮一个进度徽标，点它即回生成页。
-          trailing: _genTrailing(gen)),
-      AdaptiveNavDestination(
-          icon: LucideIcons.bookOpen,
-          label: '错题本',
-          active: active is WrongQuestionsPage,
-          onTap: () => _go(const WrongQuestionsPage())),
-      AdaptiveNavDestination(
-          icon: LucideIcons.sparkles,
-          label: 'AI 答疑记录',
-          active: active is TutorLogsPage,
-          onTap: () => _go(const TutorLogsPage())),
-      AdaptiveNavDestination(
-          icon: LucideIcons.library,
-          label: '题库',
-          active: active is QuestionBankPage,
-          onTap: () => _go(const QuestionBankPage())),
-      AdaptiveNavDestination(
-          icon: LucideIcons.cpu,
-          label: '模型管理',
-          active: active is ModelsPage,
-          onTap: () => _go(const ModelsPage())),
-    ];
-  }
-
-  List<AdaptiveNavDestination> _childDestinations(int activeIndex) => [
-    AdaptiveNavDestination(
-        icon: LucideIcons.house,
-        label: '首页',
-        active: activeIndex == 0,
-        onTap: () => _switchChildTab(0)),
-    AdaptiveNavDestination(
-        icon: LucideIcons.refreshCw,
-        label: '复习',
-        active: activeIndex == 1,
-        onTap: () => _switchChildTab(1)),
-    AdaptiveNavDestination(
-        icon: LucideIcons.bookOpen,
-        label: '错题本',
-        active: activeIndex == 2,
-        onTap: () => _switchChildTab(2)),
-    AdaptiveNavDestination(
-        icon: LucideIcons.sparkles,
-        label: '问 AI 老师',
-        active: activeIndex == 3,
-        onTap: () => _switchChildTab(3)),
-    AdaptiveNavDestination(
-        icon: LucideIcons.target,
-        label: '掌握度',
-        active: activeIndex == 4,
-        onTap: () => _switchChildTab(4)),
-  ];
-
-  /// 「我的」入口。家长端与页面共用同一个状态；娃娃端仍是页签 + 布尔两套，
-  /// 所以高亮由调用方传进来（娃娃端在显示个人信息时置 -1，避免页签与「我的」
-  /// 同时高亮）。
-  AdaptiveNavDestination _profileDestination({required bool active}) =>
-      AdaptiveNavDestination(
-        icon: LucideIcons.userRound,
-        label: '我的',
-        active: active,
-        onTap: _onProfileTap,
-      );
-
   /// 壳目的地 → 家长端页面；娃娃端没有这些目的地（返回 null，意图被丢弃）。
   ///
-  /// 这里是 [_parentDestinations] 之外**第二个**写入口（助手卡片跳转），所以映射
+  /// 这里是 [_destinations.parent] 之外**第二个**写入口（助手卡片跳转），所以映射
   /// 只此一处，不把编号散出去。
   ParentPage? _parentPageFor(ShellDestination destination) {
     if (!widget.user.isParent) return null;
@@ -487,8 +411,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       final gen = ref.watch(taskGenNotifierProvider);
       return AdaptiveShell(
         mode: AppUserMode.parent,
-        destinations: _parentDestinations(_parentPage, gen),
-        profileDestination: _profileDestination(active: _parentPage is ProfilePage),
+        destinations: _destinations.parent(_parentPage, gen),
+        profileDestination: _destinations.profile(active: _parentPage is ProfilePage),
         sidebarTop: ParentChildSelector(
           onNavigateToAddChild: _onNavigateToAddChild,
           onNavigateToEditChild: _onNavigateToEditChild,
@@ -505,8 +429,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return AdaptiveShell(
       mode: AppUserMode.child,
       // 显示个人信息时页签一律取消高亮：否则「复习」和「我的」会同时亮着。
-      destinations: _childDestinations(_showProfile ? -1 : _childNavIndex),
-      profileDestination: _profileDestination(active: _showProfile),
+      destinations: _destinations.child(_showProfile ? -1 : _childNavIndex),
+      profileDestination: _destinations.profile(active: _showProfile),
       sidebarBottom: AdaptiveUserBlock(
         user: widget.user,
         onProfileTap: _onProfileTap,

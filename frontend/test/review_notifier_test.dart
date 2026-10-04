@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'package:dio/dio.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 
@@ -36,6 +37,10 @@ class FakeNetwork implements NetworkService {
 
   @override
   Future<dynamic> delete(String path, {Map<String, dynamic>? body}) async => null;
+
+  @override
+  Future<dynamic> postForm(String path, FormData form) async =>
+      throw UnimplementedError();
 
   @override
   Stream<Uint8List> streamPost(
