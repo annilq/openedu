@@ -34,8 +34,10 @@ class _MaterialKnowledgeManageViewState
     final text = AppTheme.textOf(context);
     final notifier = ref.read(knowledgeManageProvider.notifier);
     ref.listen(knowledgeManageProvider, (_, next) {
-      if (next.notice != null) AppToast.show(context, next.notice!);
-      ref.read(knowledgeManageProvider.notifier).consumeNotice();
+      if (next.notice != null) {
+        AppToast.show(context, next.notice!);
+        ref.read(knowledgeManageProvider.notifier).consumeNotice();
+      }
     });
 
     return AppCard(
@@ -43,7 +45,7 @@ class _MaterialKnowledgeManageViewState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 范围：知识点是家长私有的，必须锁死 (学科, 年级)。
+          // 范围：知识点是家长私有的，必须锁死 (学科, 年级, 学期)。
           Row(
             children: [
               Expanded(
@@ -52,7 +54,7 @@ class _MaterialKnowledgeManageViewState
                   values: const ['数学', '语文', '英语'],
                   labels: const ['数学', '语文', '英语'],
                   value: km.subject,
-                  onChanged: (v) => notifier.setScope(v, km.grade),
+                  onChanged: (v) => notifier.setScope(v, km.grade, km.semester),
                 ),
               ),
               const SizedBox(width: AppSpacing.md),
@@ -62,7 +64,18 @@ class _MaterialKnowledgeManageViewState
                   values: List.generate(9, (i) => i + 1),
                   labels: List.generate(9, (i) => '${i + 1}年级'),
                   value: km.grade,
-                  onChanged: (v) => notifier.setScope(km.subject, v),
+                  onChanged: (v) => notifier.setScope(km.subject, v, km.semester),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: AppPickerField<String>(
+                  label: '学期',
+                  // '' = 整学年/不限；其余为具体学期（与后端一致）。
+                  values: const ['', '上学期', '下学期'],
+                  labels: const ['整学年', '上学期', '下学期'],
+                  value: km.semester,
+                  onChanged: (v) => notifier.setScope(km.subject, km.grade, v),
                 ),
               ),
             ],

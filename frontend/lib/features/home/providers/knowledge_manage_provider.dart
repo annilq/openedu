@@ -11,6 +11,9 @@ import 'home_provider.dart';
 class KnowledgeManageState {
   final String subject;
   final int grade;
+  /// 学期范围维度（ADR-0055 §4 补）：'' = 整学年/不限；'上学期' / '下学期'。
+  /// 知识点与家长私有、锁死 (学科, 年级) 同一口径，再加学期避免把上下学期混在一起。
+  final String semester;
 
   /// 该范围内全部知识点：涌现（emerged，含待审 pending）+ 骨架兜底（skeleton，
   /// 后端标记为 curated 但 id 为 null——确认时才落库）。
@@ -25,6 +28,7 @@ class KnowledgeManageState {
   const KnowledgeManageState({
     this.subject = '数学',
     this.grade = 1,
+    this.semester = '',
     this.items = const [],
     this.selectedNames = const {},
     this.loading = false,
@@ -35,6 +39,7 @@ class KnowledgeManageState {
   KnowledgeManageState copyWith({
     String? subject,
     int? grade,
+    String? semester,
     List<KnowledgePointOption>? items,
     Set<String>? selectedNames,
     bool? loading,
@@ -46,6 +51,7 @@ class KnowledgeManageState {
       KnowledgeManageState(
         subject: subject ?? this.subject,
         grade: grade ?? this.grade,
+        semester: semester ?? this.semester,
         items: items ?? this.items,
         selectedNames: selectedNames ?? this.selectedNames,
         loading: loading ?? this.loading,
@@ -69,6 +75,7 @@ class KnowledgeManageNotifier extends StateNotifier<KnowledgeManageState> {
       final items = await _repo.getKnowledgePoints(
         subject: state.subject,
         grade: state.grade,
+        semester: state.semester,
       );
       state = state.copyWith(items: items, loading: false);
     } catch (e) {
@@ -76,12 +83,17 @@ class KnowledgeManageNotifier extends StateNotifier<KnowledgeManageState> {
     }
   }
 
-  /// 切换 (学科, 年级) 范围：重置勾选并重新拉目录。
-  void setScope(String subject, int grade) {
-    if (subject == state.subject && grade == state.grade) return;
+  /// 切换 (学科, 年级, 学期) 范围：重置勾选并重新拉目录。
+  void setScope(String subject, int grade, String semester) {
+    if (subject == state.subject &&
+        grade == state.grade &&
+        semester == state.semester) {
+      return;
+    }
     state = state.copyWith(
       subject: subject,
       grade: grade,
+      semester: semester,
       selectedNames: const {},
     );
     load();
@@ -105,6 +117,7 @@ class KnowledgeManageNotifier extends StateNotifier<KnowledgeManageState> {
       await _repo.confirmKnowledgePoints(
         subject: state.subject,
         grade: state.grade,
+        semester: state.semester,
         names: state.selectedNames.toList(),
       );
       await load();

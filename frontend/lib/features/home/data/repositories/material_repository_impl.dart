@@ -37,6 +37,8 @@ abstract class MaterialRepository {
   Future<List<KnowledgePointOption>> getKnowledgePoints({
     required String subject,
     required int grade,
+    /// 学期范围维度（ADR-0055 §4 补）：'' = 整学年/不限；'上学期' / '下学期'。
+    String semester = '',
   });
 
   /// 确认（批量转正）知识点：pending→curated；骨架条目落库为 curated（ADR-0055 §4）。
@@ -44,6 +46,7 @@ abstract class MaterialRepository {
     required String subject,
     required int grade,
     required List<String> names,
+    String semester = '',
   });
 }
 
@@ -56,10 +59,11 @@ class MaterialRepositoryImpl implements MaterialRepository {
   Future<List<KnowledgePointOption>> getKnowledgePoints({
     required String subject,
     required int grade,
+    String semester = '',
   }) async {
     final data = await _network.get(
       '/materials/knowledge-points',
-      query: {'subject': subject, 'grade': grade},
+      query: {'subject': subject, 'grade': grade, 'semester': semester},
     );
     final items = decodeMap(data)['items'] as List? ?? const [];
     return items
@@ -72,10 +76,11 @@ class MaterialRepositoryImpl implements MaterialRepository {
     required String subject,
     required int grade,
     required List<String> names,
+    String semester = '',
   }) async {
     await _network.post(
       '/materials/knowledge-points/confirm',
-      body: {'names': names, 'subject': subject, 'grade': grade},
+      body: {'names': names, 'subject': subject, 'grade': grade, 'semester': semester},
     );
   }
 }
