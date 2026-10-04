@@ -195,7 +195,9 @@ class _MaterialLibraryViewState extends ConsumerState<MaterialLibraryView> {
   Widget _buildMaterialsCard(MaterialLibraryState state) {
     final app = AppTheme.colorsOf(context);
     final text = AppTheme.textOf(context);
-    final current = state.folderById(state.currentFolderId);
+    // 是否身处目录内（null=根）：header 仅当 inFolder 才显示，回根即消失。
+    final bool inFolder = state.currentFolderId != null;
+    final current = inFolder ? state.folderById(state.currentFolderId) : null;
     final subfolders = state.folders
         .where((f) => f.parentFolderId == state.currentFolderId)
         .toList();
@@ -226,7 +228,8 @@ class _MaterialLibraryViewState extends ConsumerState<MaterialLibraryView> {
             ),
           // 当前目录标题：根目录无返回键（就是默认视图）；子目录左侧「← 返回」回到上层。
           // 返回目标直接用 state.parentFolderId（load 时已写入），不依赖从 folders 反查。
-          if (current != null)
+          // inFolder 才是 header 开关——回根（currentFolderId=null）时这道分支必不进。
+          if (inFolder && current != null)
             Padding(
               padding: const EdgeInsets.only(bottom: AppSpacing.sm),
               child: Row(

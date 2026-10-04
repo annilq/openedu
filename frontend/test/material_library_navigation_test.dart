@@ -81,6 +81,28 @@ void main() {
       expect(notifier.state.materials.map((m) => m.id), ['m0']);
     });
 
+    test('从「根级子目录」点返回 → 回到根且 header 状态清空', () async {
+      // 复现用户场景：进入根级目录 a（parentFolderId=null），再点返回
+      // （a.parentFolderId=null）→ 应回到根；此时 currentFolderId/parentFolderId
+      // 都为 null，视图侧 folderById 必须返回 null（否则会残留返回键 + 目录名）。
+      when(() => repo.getMaterials(folderId: 'a'))
+          .thenAnswer((_) async => [matInA]);
+      when(() => repo.getMaterials(folderId: null))
+          .thenAnswer((_) async => [matRoot]);
+
+      await notifier.openFolder('a');
+      expect(notifier.state.currentFolderId, 'a');
+      expect(notifier.state.parentFolderId, isNull);
+
+      await notifier.openFolder(notifier.state.parentFolderId); // == null
+
+      expect(notifier.state.currentFolderId, isNull);
+      expect(notifier.state.parentFolderId, isNull);
+      // 视图契约：根目录时 folderById(null) 必须返回 null，head（返回键 + 目录名）才会隐藏。
+      expect(notifier.state.folderById(notifier.state.currentFolderId), isNull);
+      expect(notifier.state.materials.map((m) => m.id), ['m0']);
+    });
+
     test('并发 load 守卫：后发起的 load 结果不被早发慢请求覆盖', () async {
       // a 先发起但慢，b 后发起但快：最终 currentFolderId 必须是 b（后者胜出）。
       when(() => repo.getFolders())
