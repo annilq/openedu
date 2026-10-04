@@ -226,9 +226,8 @@ class _MaterialLibraryViewState extends ConsumerState<MaterialLibraryView> {
               child: Text(state.error!,
                   style: text.bodySmall?.copyWith(color: app.error)),
             ),
-          // 当前目录标题：根目录无返回键（就是默认视图）；子目录左侧「← 返回」回到上层。
-          // 返回目标直接用 state.parentFolderId（load 时已写入），不依赖从 folders 反查。
-          // inFolder 才是 header 开关——回根（currentFolderId=null）时这道分支必不进。
+          // 当前目录标题：根目录无返回键；子目录左侧「← 返回」回上层（目标=parentFolderId）。
+          // inFolder 是 header 开关，回根（currentFolderId=null）时这道分支必不进。
           if (inFolder && current != null)
             Padding(
               padding: const EdgeInsets.only(bottom: AppSpacing.sm),

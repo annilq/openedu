@@ -49,7 +49,7 @@ class MaterialLibraryState {
 
   MaterialLibraryState copyWith({
     List<MaterialFolderModel>? folders,
-    String? currentFolderId,
+    Object? currentFolderId = _kUnset,
     bool clearFolder = false,
     Object? parentFolderId = _kUnset,
     List<MaterialItemModel>? materials,
@@ -61,8 +61,13 @@ class MaterialLibraryState {
   }) =>
       MaterialLibraryState(
         folders: folders ?? this.folders,
-        currentFolderId:
-            clearFolder ? null : (currentFolderId ?? this.currentFolderId),
+        // 与 parentFolderId 同用哨兵：显式传 null（如 load 回到根）必须清掉旧 id，
+        // 否则 `null ?? this.currentFolderId` 会把旧目录 id 留下，导致「回到根却仍显示子目录」。
+        currentFolderId: clearFolder
+            ? null
+            : (identical(currentFolderId, _kUnset)
+                ? this.currentFolderId
+                : currentFolderId as String?),
         parentFolderId: identical(parentFolderId, _kUnset)
             ? this.parentFolderId
             : parentFolderId as String?,
