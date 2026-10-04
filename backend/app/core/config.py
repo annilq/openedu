@@ -114,6 +114,14 @@ class Settings(BaseSettings):
     # vector（预留）= 后续接入 embedding 向量库；未知值回退 mock 并告警。
     RETRIEVER_PROVIDER: str = "mock"
 
+    # —— 资料库（ADR-0055）——
+    # 上传文件落盘根目录：storage_key 是相对此目录的路径（不存绝对路径，
+    # 换部署不挪坟）。SQLite/PG 同构，目录缺失时上传端点自动创建。
+    MATERIAL_UPLOAD_ROOT: str = str(_BACKEND_DIR / "data" / "materials")
+    # 单文件上限：教材 PDF 通常 <50MB，20MB 覆盖绝大多数扫描卷子/讲义；
+    # 解析与 LLM 提取都吃内存，超限直接 413 而不是读完再拒。
+    MATERIAL_MAX_BYTES: int = 20 * 1024 * 1024
+
     # —— 打印导出（ADR-0052）——
     # 中文字体目录：**不在代码里硬编码**——它的取值取决于部署形态
     # （本地仓库 → backend/assets/fonts；容器 → 镜像内的同一路径，见 Dockerfile）。

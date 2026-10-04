@@ -7,6 +7,7 @@ from app.features.children.router import router as children_router
 from app.features.export.router import router as export_router
 from app.features.health.router import router as health_router
 from app.features.mastery.router import router as mastery_router
+from app.features.materials.router import router as materials_router
 from app.features.model_management.router import router as model_management_router
 from app.features.questions.router import router as questions_router
 from app.features.review.router import router as review_router
@@ -19,6 +20,7 @@ api_router.include_router(children_router)
 api_router.include_router(tasks_router)
 api_router.include_router(review_router)
 api_router.include_router(mastery_router)
+api_router.include_router(materials_router)
 api_router.include_router(tutor_router)
 api_router.include_router(questions_router)
 api_router.include_router(export_router)

@@ -73,6 +73,12 @@ class ErrCode(str, Enum):
     # 娃娃端只能导出**自己的**错题；出现任何「给别人导出」的意图都是请求非法。
     EXPORT_CHILD_SCOPE = "EXPORT_80006"  # 娃娃端导出越过了自己的范围（400）
 
+    # 资料库 90xxx（ADR-0055）
+    MATERIAL_PARSE_FAILED = "MAT_90001"  # 解析失败：格式不支持 / 损坏 / 提不出文字（422）
+    MATERIAL_TOO_LARGE = "MAT_90002"  # 超出单文件大小上限（413）
+    MATERIAL_NOT_FOUND = "MAT_90003"  # 资料 / 目录不存在或非本家长（404）
+    MATERIAL_FOLDER_NOT_EMPTY = "MAT_90004"  # 目录下仍有资料或子目录（409）
+
 
 _HTTP_DEFAULT_STATUS: dict[ErrCode, int] = {
     ErrCode.UNAUTHORIZED: status.HTTP_401_UNAUTHORIZED,
@@ -115,6 +121,11 @@ _HTTP_DEFAULT_STATUS: dict[ErrCode, int] = {
     ErrCode.EXPORT_SOURCE_UNKNOWN: status.HTTP_400_BAD_REQUEST,
     ErrCode.EXPORT_CHILD_REQUIRED: status.HTTP_400_BAD_REQUEST,
     ErrCode.EXPORT_CHILD_SCOPE: status.HTTP_400_BAD_REQUEST,
+    # 资料解析失败是「这份文件读不出字」，不是服务坏 —— 可重试换文件，语义同 422。
+    ErrCode.MATERIAL_PARSE_FAILED: status.HTTP_422_UNPROCESSABLE_CONTENT,
+    ErrCode.MATERIAL_TOO_LARGE: status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+    ErrCode.MATERIAL_NOT_FOUND: status.HTTP_404_NOT_FOUND,
+    ErrCode.MATERIAL_FOLDER_NOT_EMPTY: status.HTTP_409_CONFLICT,
 }
 
 
