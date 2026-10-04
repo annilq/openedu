@@ -54,15 +54,22 @@ def tutor_system_prompt(grade: int, subject: str) -> str:
     )
 
 
-def check_input(text: str) -> SafetyVerdict:
-    """输入安全校验：越狱/非学习类主题拦截。"""
+def check_input(text: str, *, offtopic: bool = True) -> SafetyVerdict:
+    """输入安全校验：越狱/指令注入拦截；``offtopic`` 控制是否额外拦截非学习类主题。
+
+    - 聊天/对话场景用默认 ``offtopic=True``：主题偏转也要拦。
+    - 资料入库（整篇教材扫描）传 ``offtopic=False``：长文档里 incidental 的
+      主题关键词（如数学应用题常见的「成人票」）会误杀合法教育内容；且入库只
+      提炼知识点，模型回写仍过 ``check_output`` 输出闸门，无需在输入侧做主题判定。
+    """
     t = (text or "").lower()
     for kw in _JAILBREAK_HINTS:
         if kw.lower() in t:
             return SafetyVerdict(safe=False, reason=f"检测到越狱/指令注入意图：{kw}")
-    for kw in _OFFTOPIC_HINTS:
-        if kw.lower() in t:
-            return SafetyVerdict(safe=False, reason=f"检测到非学习类主题：{kw}")
+    if offtopic:
+        for kw in _OFFTOPIC_HINTS:
+            if kw.lower() in t:
+                return SafetyVerdict(safe=False, reason=f"检测到非学习类主题：{kw}")
     return SafetyVerdict(safe=True)
 
 

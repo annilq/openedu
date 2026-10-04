@@ -291,7 +291,7 @@ async def _extract_and_align(
     text = (material.text or "").strip()
     if not text:
         return "failed", "资料没有可分析的文本"
-    verdict = check_input(text[:_PROMPT_TEXT_LIMIT])
+    verdict = check_input(text[:_PROMPT_TEXT_LIMIT], offtopic=False)
     if not verdict.safe:
         # ADR-0012：不安全内容不进 prompt；资料照常保留，只是不做 AI 提取。
         return "skipped_unsafe", verdict.reason
