@@ -105,12 +105,18 @@ class _MaterialLibraryViewState extends ConsumerState<MaterialLibraryView> {
   Widget build(BuildContext context) {
     final libState = ref.watch(materialLibraryNotifierProvider);
     ref.listen(materialLibraryNotifierProvider, (_, next) {
-      if (next.notice != null) AppToast.show(context, next.notice!);
-      ref.read(materialLibraryNotifierProvider.notifier).consumeNotice();
+      if (next.notice != null) {
+        AppToast.show(context, next.notice!);
+        // 仅在确有 notice 时消费，否则 state= 会再次同步触发本 listener
+        // 形成无限递归（Stack Overflow）。
+        ref.read(materialLibraryNotifierProvider.notifier).consumeNotice();
+      }
     });
     ref.listen(knowledgeManageProvider, (_, next) {
-      if (next.notice != null) AppToast.show(context, next.notice!);
-      ref.read(knowledgeManageProvider.notifier).consumeNotice();
+      if (next.notice != null) {
+        AppToast.show(context, next.notice!);
+        ref.read(knowledgeManageProvider.notifier).consumeNotice();
+      }
     });
 
     return AppScrollPage(
