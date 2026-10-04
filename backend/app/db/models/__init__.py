@@ -13,6 +13,14 @@ from app.db.models.base import (
     get_usage_date_utc,
 )
 from app.db.models.conversation import Conversation, Message
+from app.db.models.material import (
+    CHUNKER_VERSION,
+    INDEX_STATES,
+    KnowledgePoint,
+    Material,
+    MaterialChunk,
+    MaterialFolder,
+)
 from app.db.models.model_config import ModelConfig
 from app.db.models.progress import AnswerRecord, Checkin, WrongQuestion
 from app.db.models.question import Question
@@ -34,6 +42,12 @@ __all__ = [
     "TutorLog",
     "Conversation",
     "Message",
+    "Material",
+    "MaterialChunk",
+    "MaterialFolder",
+    "KnowledgePoint",
+    "CHUNKER_VERSION",
+    "INDEX_STATES",
     "get_datetime_utc",
     "get_review_due_utc",
     "get_usage_date_utc",
