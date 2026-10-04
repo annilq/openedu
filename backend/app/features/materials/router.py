@@ -62,6 +62,7 @@ async def upload_material(
     folder_id: UUID | None = Form(default=None),
     subject: str | None = Form(default=None),
     grade: int | None = Form(default=None),
+    semester: str | None = Form(default=None),
 ) -> UploadResult:
     """上传一份资料（PDF / docx / txt / md）。
 
@@ -78,6 +79,7 @@ async def upload_material(
         folder_id=folder_id,
         subject=subject,
         grade=grade,
+        semester=semester,
     )
 
 

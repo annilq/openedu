@@ -54,6 +54,7 @@ def material_resp(material: Material) -> MaterialResp:
         size_bytes=material.size_bytes,
         subject=material.subject,
         grade=material.grade,
+        semester=material.semester,
         knowledge_points=material.knowledge_points or [],
         index_state=material.index_state,
         embed_model=material.embed_model,
@@ -73,6 +74,7 @@ def folder_resp(folder: MaterialFolder, counts: tuple[int, int] | None) -> Folde
         parent_folder_id=folder.parent_folder_id,
         subject=folder.subject,
         grade=folder.grade,
+        semester=folder.semester,
         created_at=folder.created_at,
         material_count=mat_count,
         subfolder_count=sub_count,
@@ -101,6 +103,7 @@ def create_folder(
         parent_folder_id=req.parent_folder_id,
         subject=req.subject,
         grade=req.grade,
+        semester=req.semester,
     )
     session.add(folder)
     session.commit()
@@ -126,6 +129,8 @@ def update_folder(
         folder.subject = req.subject
     if "grade" in req.model_fields_set:
         folder.grade = req.grade
+    if "semester" in req.model_fields_set:
+        folder.semester = req.semester
     session.add(folder)
     session.commit()
     session.refresh(folder)
@@ -184,10 +189,11 @@ def delete_folder(
 
 def _resolve_inherited(
     session: Session, folder_id: uuid.UUID | None
-) -> tuple[str | None, int | None]:
-    """沿目录链向上找最近一次设置的 (subject, grade)（ADR-0055 §2 继承）。"""
+) -> tuple[str | None, int | None, str | None]:
+    """沿目录链向上找最近一次设置的 (subject, grade, semester)（ADR-0055 §2 继承）。"""
     subject: str | None = None
     grade: int | None = None
+    semester: str | None = None
     seen: set[uuid.UUID] = set()
     cursor_id = folder_id
     while cursor_id is not None and cursor_id not in seen:
@@ -199,8 +205,10 @@ def _resolve_inherited(
             subject = folder.subject
         if grade is None and folder.grade:
             grade = folder.grade
+        if semester is None and folder.semester:
+            semester = folder.semester
         cursor_id = folder.parent_folder_id
-    return subject, grade
+    return subject, grade, semester
 
 
 def _store_file(*, parent_id: uuid.UUID, filename: str, data: bytes) -> str:
@@ -221,6 +229,7 @@ async def upload_material(
     folder_id: uuid.UUID | None,
     subject: str | None,
     grade: int | None,
+    semester: str | None = None,
 ) -> UploadResult:
     if len(data) > settings.MATERIAL_MAX_BYTES:
         raise AppErrorException(
@@ -234,7 +243,9 @@ async def upload_material(
     except ParseError as e:
         raise AppErrorException(ErrCode.MATERIAL_PARSE_FAILED, str(e)) from e
 
-    inherited_subject, inherited_grade = _resolve_inherited(session, folder_id)
+    inherited_subject, inherited_grade, inherited_semester = _resolve_inherited(
+        session, folder_id
+    )
     material = Material(
         parent_id=parent_id,
         folder_id=folder_id,
@@ -246,6 +257,7 @@ async def upload_material(
         # 覆盖优先级：显式指定 > 目录继承（AI 只补空白，见模块 docstring）
         subject=subject or inherited_subject,
         grade=grade or inherited_grade,
+        semester=semester or inherited_semester,
     )
     session.add(material)
     session.commit()
@@ -344,7 +356,7 @@ async def _extract_and_align(
                 subject=material.subject,
                 grade=material.grade,
                 name=name,
-                semester="",
+                semester=material.semester or "",
             )
     return "extracted", None
 

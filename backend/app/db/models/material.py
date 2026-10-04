@@ -63,6 +63,8 @@ class MaterialFolder(SQLModel, table=True):
     # 继承元数据：None = 未设置（上传/解析时逐级向上找最近祖先补齐）
     subject: str | None = Field(default=None, max_length=16)
     grade: int | None = None
+    # 学期范围维度（ADR-0055 §2 补）：'' / '上学期' / '下学期'；None = 未设置（继承）。
+    semester: str | None = Field(default=None, max_length=8)
     parent_folder_id: uuid.UUID | None = Field(
         default=None, foreign_key="materialfolder.id"
     )
@@ -94,6 +96,8 @@ class Material(SQLModel, table=True):
     # 整篇提取的元数据（AI 读全文一次，广播给所有 chunk——不逐 chunk 提取）
     subject: str | None = Field(default=None, max_length=16)
     grade: int | None = None
+    # 学期（继承目录，ADR-0055 §2 补）：None = 未设置。
+    semester: str | None = Field(default=None, max_length=8)
     knowledge_points: list[str] | None = Field(default=None, sa_type=JSON)
     # 向量化状态机 + 版本戳（ADR-0055 §5）：向量绑定模型，换模型/切分器即 stale
     index_state: str = Field(default=INDEX_STATE_PENDING, max_length=16)

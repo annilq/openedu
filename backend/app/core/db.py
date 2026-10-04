@@ -200,6 +200,34 @@ def run_migrations() -> None:
             # 偏序迁移：表还没建（首次启动由 init_db 建表并带新列），跳过即可。
             pass
 
+        # —— 目录 / 资料学期维度（ADR-0055 §2 补）——
+        # 学期是目录的继承元数据（''/上学期/下学期），随资料上传继承到 Material，
+        # 再在抽取知识点时带入 KnowledgePoint.semester。旧库无此列时补齐。
+        # ⚠️ 表名必须匹配模型默认生成名：MaterialFolder → `materialfolder`、Material → `material`（均小写无下划线）。
+        try:
+            for tbl in ("materialfolder", "material"):
+                if is_sqlite:
+                    cols = [
+                        r[1]
+                        for r in conn.execute(
+                            text(f"PRAGMA table_info({tbl})")
+                        ).fetchall()
+                    ]
+                    if "semester" not in cols:
+                        conn.execute(
+                            text(f"ALTER TABLE {tbl} ADD COLUMN semester VARCHAR(8)")
+                        )
+                else:
+                    conn.execute(
+                        text(
+                            f"ALTER TABLE {tbl} ADD COLUMN IF NOT EXISTS "
+                            "semester VARCHAR(8)"
+                        )
+                    )
+        except OperationalError:
+            # 偏序迁移：表还没建（首次启动由 init_db 建表并带新列），跳过即可。
+            pass
+
         # —— model_config（家长自定义模型，ADR-0015）——
         conn.execute(
             text(

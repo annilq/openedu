@@ -13,6 +13,8 @@ class FolderCreate(SQLModel):
     parent_folder_id: UUID | None = None
     subject: str | None = Field(default=None, max_length=16)
     grade: int | None = Field(default=None, ge=1, le=9)
+    # 学期范围维度（ADR-0055 §2 补）：None = 未设置（继承）；''/上学期/下学期。
+    semester: str | None = Field(default=None, max_length=8)
 
 
 class FolderUpdate(SQLModel):
@@ -21,6 +23,7 @@ class FolderUpdate(SQLModel):
     name: str | None = Field(default=None, min_length=1, max_length=128)
     subject: str | None = Field(default=None, max_length=16)
     grade: int | None = Field(default=None, ge=1, le=9)
+    semester: str | None = Field(default=None, max_length=8)
     parent_folder_id: UUID | None = None
 
 
@@ -32,6 +35,7 @@ class FolderResp(SQLModel):
     parent_folder_id: UUID | None = None
     subject: str | None = None
     grade: int | None = None
+    semester: str | None = None
     created_at: datetime | None = None
     material_count: int = 0
     subfolder_count: int = 0
@@ -47,6 +51,7 @@ class MaterialResp(SQLModel):
     size_bytes: int
     subject: str | None = None
     grade: int | None = None
+    semester: str | None = None
     knowledge_points: list[str] = []
     # 向量化状态机（pending/ready/failed/stale）——前端徽标的数据源
     index_state: str
