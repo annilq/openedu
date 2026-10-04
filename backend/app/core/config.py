@@ -122,6 +122,20 @@ class Settings(BaseSettings):
     # 解析与 LLM 提取都吃内存，超限直接 413 而不是读完再拒。
     MATERIAL_MAX_BYTES: int = 20 * 1024 * 1024
 
+    # —— embedding 服务端基础设施（ADR-0055 §8，显式豁免 ADR-0039）——
+    # embedding **不进家长 ModelConfig**：向量绑定模型是物理约束——若跟着家长的
+    # 聊天模型走，家长换一次默认模型，全部存量向量跨空间作废。这不违反 0039 的
+    # 立法目的（消灭免鉴权的引擎解析路径）：embedding 不经 LLM 生成路径、不涉密钥托管。
+    # none = 未启用（向量化端点显式报错，不静默假装成功）；
+    # ollama = POST {base}/api/embed；openai_compat = POST {base}/embeddings。
+    # 推荐 bge-m3（dense 强、中文优、MIT）；sparse 通道在检索侧按词法现算，不依赖模型。
+    EMBEDDING_PROVIDER: Literal["none", "ollama", "openai_compat"] = "none"
+    EMBEDDING_MODEL: str = "bge-m3"
+    EMBEDDING_BASE_URL: str = ""  # 空则 ollama 回落 OLLAMA_BASE_URL
+    EMBEDDING_API_KEY: str = ""  # openai_compat 需要；ollama 留空
+    # 换模型 / 切分策略后，旧向量批量重算的超时（单批 HTTP）
+    EMBEDDING_TIMEOUT_S: float = 120.0
+
     # —— 打印导出（ADR-0052）——
     # 中文字体目录：**不在代码里硬编码**——它的取值取决于部署形态
     # （本地仓库 → backend/assets/fonts；容器 → 镜像内的同一路径，见 Dockerfile）。

@@ -22,6 +22,7 @@ from app.core.errors import AppErrorException, ErrCode
 from app.db.models import KnowledgePoint, Material, MaterialFolder
 from app.domain.safety import check_input
 from app.domain.subjects import SUBJECTS
+from app.features.materials import indexing
 from app.features.materials import repository as repo
 from app.features.materials.parser import ParseError, extract_text
 from app.features.materials.schemas import (
@@ -355,6 +356,8 @@ def list_materials(
 ) -> list[MaterialResp]:
     if folder_id is not None:
         repo.get_owned_folder(session, parent_id=parent_id, folder_id=folder_id)
+    # 惰性 stale 标记：模型 / 切分器变更后，首次看列表即感知（ADR-0055 §5）
+    indexing.mark_stale_if_model_changed(session, parent_id=parent_id)
     return [
         material_resp(m)
         for m in repo.list_materials(session, parent_id=parent_id, folder_id=folder_id)

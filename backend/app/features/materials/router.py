@@ -11,7 +11,7 @@ from uuid import UUID
 from fastapi import APIRouter, File, Form, UploadFile
 
 from app.core.deps import CurrentParent, SessionDep
-from app.features.materials import service
+from app.features.materials import indexing, service
 from app.features.materials.schemas import (
     ExtractResult,
     FolderCreate,
@@ -125,6 +125,21 @@ def delete_material(
     session: SessionDep, user: CurrentParent, material_id: UUID
 ) -> dict:
     return service.delete_material(session, parent_id=user.id, material_id=material_id)
+
+
+@router.post("/{material_id}/vectorize", response_model=MaterialResp)
+async def vectorize_material(
+    session: SessionDep, user: CurrentParent, material_id: UUID
+) -> MaterialResp:
+    """手动向量化 / 重新向量化（ADR-0055 §5：不自动触发，状态徽标提示）。
+
+    服务端未配置 embedding 时 500 + ``LLM_UNAVAILABLE``；切片/embedding 失败
+    不抛错——资料落 ``failed`` 态并附人话原因，家长可重试。
+    """
+    material = await indexing.vectorize_material(
+        session, parent_id=user.id, material_id=material_id
+    )
+    return service.material_resp(material)
 
 
 @router.post("/{material_id}/extract", response_model=ExtractResult)
