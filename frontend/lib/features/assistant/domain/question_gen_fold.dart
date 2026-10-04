@@ -41,6 +41,13 @@ class QuestionGenFold {
   /// 家长拿到残缺任务却毫无提示。此处单独留痕，供上层提示「少题」。
   final List<String> failures;
 
+  /// 本次出题参考了几份资料（TOOL_RESULT.referenced_materials，ADR-0055 §13）。
+  /// 0 = 未启用 RAG 或没有命中。
+  final int referencedMaterials;
+
+  /// 有几份资料因未向量化 / 失败 / 过期未参与本次出题（TOOL_RESULT.unindexed_materials）。
+  final int unindexedMaterials;
+
   const QuestionGenFold({
     this.questions = const <QuestionPreview>[],
     this.liveIndex = -1,
@@ -50,6 +57,8 @@ class QuestionGenFold {
     this.stage = '',
     this.errorText,
     this.failures = const <String>[],
+    this.referencedMaterials = 0,
+    this.unindexedMaterials = 0,
   });
 
   static const _generating = '生成中';
@@ -98,8 +107,14 @@ class QuestionGenFold {
       AssistantEventType.assistantMessage =>
         (ev.text?.isNotEmpty ?? false) ? _copy(lastMessage: ev.text!) : this,
       AssistantEventType.data => _withQuestion(ev),
-      AssistantEventType.toolResult =>
-        _copy(liveIndex: -1, liveLabel: '', stage: stage),
+      AssistantEventType.toolResult => _copy(
+          liveIndex: -1,
+          liveLabel: '',
+          stage: stage,
+          // TOOL_RESULT 携带 RAG 溯源计数（ADR-0055 §13）：参考几份 / 几份未参与。
+          referencedMaterials: _intOf(ev.result, 'referenced_materials'),
+          unindexedMaterials: _intOf(ev.result, 'unindexed_materials'),
+        ),
       AssistantEventType.error => _copy(errorText: ev.message ?? _genFailed),
       _ => this,
     };
@@ -129,6 +144,8 @@ class QuestionGenFold {
     String? lastMessage,
     String? stage,
     List<String>? failures,
+    int? referencedMaterials,
+    int? unindexedMaterials,
     Object? errorText = _unset,
   }) =>
       QuestionGenFold(
@@ -139,10 +156,19 @@ class QuestionGenFold {
         lastMessage: lastMessage ?? this.lastMessage,
         stage: stage ?? this.stage,
         failures: failures ?? this.failures,
+        referencedMaterials: referencedMaterials ?? this.referencedMaterials,
+        unindexedMaterials: unindexedMaterials ?? this.unindexedMaterials,
         errorText: identical(errorText, _unset)
             ? this.errorText
             : errorText as String?,
       );
+
+  static int _intOf(dynamic result, String key) {
+    if (result is Map<String, dynamic>) {
+      return (result[key] as num?)?.toInt() ?? 0;
+    }
+    return 0;
+  }
 
   static const _unset = Object();
 }

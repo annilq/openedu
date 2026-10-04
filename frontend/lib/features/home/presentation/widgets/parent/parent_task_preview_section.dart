@@ -30,6 +30,8 @@ class TaskPreviewSection extends StatelessWidget {
     final int liveIndex;
     final String liveLabel;
     final String liveReasoning;
+    final int referenced;
+    final int unindexed;
     final bool awaitingConfirm = state is TaskGenReady;
     // 取到局部变量才谈得上类型提升：`state` 是字段，Dart 不会为它做 promotion。
     final current = state;
@@ -40,6 +42,8 @@ class TaskPreviewSection extends StatelessWidget {
       liveIndex = current.liveIndex;
       liveLabel = current.liveLabel;
       liveReasoning = current.liveReasoning;
+      referenced = current.referencedMaterials;
+      unindexed = current.unindexedMaterials;
     } else {
       final r = current as TaskGenReady;
       questions = r.questions;
@@ -48,6 +52,8 @@ class TaskPreviewSection extends StatelessWidget {
       liveIndex = -1;
       liveLabel = '';
       liveReasoning = '';
+      referenced = r.referencedMaterials;
+      unindexed = r.unindexedMaterials;
     }
     final status = streaming
         ? '生成中…'
@@ -82,6 +88,24 @@ class TaskPreviewSection extends StatelessWidget {
         if (failures.isNotEmpty)
           _FailureBanner(
             text: '有 ${failures.length} 道题生成失败：${failures.join('；')}',
+          ),
+        // RAG 溯源提示（ADR-0055 §13）：参考了几份 / 有几份没参与——不阻断，
+        // 但手动向量化的最大风险就是资料停在未向量化而家长毫无察觉。
+        if (referenced > 0)
+          Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.xs),
+            child: Text(
+              '已参考资料库中 $referenced 份资料出题。',
+              style: text.bodySmall?.copyWith(color: app.onSurfaceVariant),
+            ),
+          ),
+        if (unindexed > 0)
+          Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.xs),
+            child: Text(
+              '有 $unindexed 份资料尚未向量化（或已过期），未参与本次出题。',
+              style: text.bodySmall?.copyWith(color: app.onSurfaceVariant),
+            ),
           ),
         // 生成中：当前题的内联推理区（题卡到达后折叠，见 _PreviewCard 的 info icon）。
         if (streaming && liveIndex >= 0)

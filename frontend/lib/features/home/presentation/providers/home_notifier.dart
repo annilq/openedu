@@ -67,6 +67,12 @@ class TaskGenPreview extends TaskGenState {
   /// 用它显示「已出 N/M」进度，故预览态也带这个数字。
   final int expected;
 
+  /// 本次参考了几份资料（RAG 溯源计数，ADR-0055 §13）；0 = 未命中 / 未启用。
+  final int referencedMaterials;
+
+  /// 有几份资料未参与本次出题（未向量化 / 失败 / 过期）；0 = 全部参与。
+  final int unindexedMaterials;
+
   const TaskGenPreview(
     this.questions, {
     this.streaming = false,
@@ -76,6 +82,8 @@ class TaskGenPreview extends TaskGenState {
     this.failures = const [],
     this.stage = '',
     this.expected = 0,
+    this.referencedMaterials = 0,
+    this.unindexedMaterials = 0,
   });
 }
 
@@ -108,6 +116,12 @@ class TaskGenReady extends TaskGenState {
   /// 单题失败原因；非空表示本次有题没生成出来。
   final List<String> failures;
 
+  /// 本次参考了几份资料（RAG 溯源计数）；0 = 未命中 / 未启用。
+  final int referencedMaterials;
+
+  /// 有几份资料未参与本次出题（未向量化 / 失败 / 过期）；0 = 全部参与。
+  final int unindexedMaterials;
+
   /// 是否由家长主动停止（ADR-0057 Q1=B）：是则中性陈述「已停止 · 保留 N 题」，
   /// 不当成故障报警——自己按的停止不该被渲染成系统出错。
   final bool stopped;
@@ -116,6 +130,8 @@ class TaskGenReady extends TaskGenState {
     this.questions, {
     this.expected = 0,
     this.failures = const [],
+    this.referencedMaterials = 0,
+    this.unindexedMaterials = 0,
     this.stopped = false,
   });
 
@@ -196,6 +212,8 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
           liveReasoning: _fold.liveReasoning,
           failures: _fold.failures,
           stage: _fold.stage,
+          referencedMaterials: _fold.referencedMaterials,
+          unindexedMaterials: _fold.unindexedMaterials,
         );
       }
       // UX 修正：流结束若 0 题，直接回显后端说明并跳过必败的落库请求，
@@ -224,6 +242,8 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
         _fold.questions,
         expected: _expected,
         failures: _fold.failures,
+        referencedMaterials: _fold.referencedMaterials,
+        unindexedMaterials: _fold.unindexedMaterials,
         // 流自然结束：未主动停止（即便中途某题失败，也走上面的 hasError 分支）。
         stopped: _stopped,
       );
@@ -244,6 +264,8 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
       _fold.questions,
       expected: _expected,
       failures: _fold.failures,
+      referencedMaterials: _fold.referencedMaterials,
+      unindexedMaterials: _fold.unindexedMaterials,
       stopped: true,
     );
   }

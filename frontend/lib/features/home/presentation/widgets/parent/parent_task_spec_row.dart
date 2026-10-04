@@ -18,7 +18,10 @@ class TaskSpecRowEditor extends StatelessWidget {
   final String subject;
   final ValueChanged<String> onSubjectChanged;
 
-  /// 知识点输入框：控制器由表单持有（要跟着行一起 dispose）。
+  /// 知识点选择器（ADR-0055 §4）：控制器仍由表单持有（要跟着行一起 dispose），
+  /// 但家长从**目录里选**而不是自由输入——受控目录是掌握度分组的前提。
+  /// 选项由表单按 (学科, 年级) 联动加载后传入；当前文本不在目录里时由表单补进
+  /// 选项（掌握度看板 CTA 预填的知识点不在骨架里，也不能凭空消失）。
   final TextEditingController knowledgePoint;
 
   final String qtype;
@@ -36,6 +39,9 @@ class TaskSpecRowEditor extends StatelessWidget {
   final int index;
   final VoidCallback onRemove;
 
+  /// 目录选项（涌现 + 骨架），由表单按 (学科, 年级) 加载后传入；null = 目录尚未加载。
+  final List<String>? extraKnowledgePoints;
+
   const TaskSpecRowEditor({
     super.key,
     required this.subject,
@@ -49,7 +55,18 @@ class TaskSpecRowEditor extends StatelessWidget {
     required this.removable,
     required this.index,
     required this.onRemove,
+    this.extraKnowledgePoints,
   });
+
+  /// 知识点选项：目录 + 当前文本补位（预填知识点不在骨架里也不能凭空消失）。
+  List<String> get knowledgePointOptions {
+    final options = <String>[...?extraKnowledgePoints];
+    final current = knowledgePoint.text;
+    if (current.isNotEmpty && !options.contains(current)) {
+      options.insert(0, current);
+    }
+    return options;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -71,15 +88,23 @@ class TaskSpecRowEditor extends StatelessWidget {
           const SizedBox(width: AppSpacing.md),
           Expanded(
             flex: 3,
-            child: AppTextField(label: '知识点', controller: knowledgePoint),
+            child: AppPickerField<String>(
+              label: '知识点',
+              values: knowledgePointOptions,
+              labels: knowledgePointOptions,
+              value: knowledgePoint.text.isEmpty ? null : knowledgePoint.text,
+              placeholder: '请选择知识点',
+              onChanged: (v) => knowledgePoint.text = v,
+            ),
           ),
           const SizedBox(width: AppSpacing.md),
           Expanded(
             flex: 2,
             child: AppPickerField<String>(
               label: '题型',
-              values: const ['calc', 'fill', 'choice', 'open'],
-              labels: const ['计算', '填空', '选择', '应用'],
+              // 题型白名单按学科给（ADR-0055 §12）：英语没有计算题。
+              values: qtypesForSubject(subject),
+              labels: [for (final q in qtypesForSubject(subject)) kQtypeLabels[q] ?? q],
               value: qtype,
               onChanged: onQtypeChanged,
             ),
@@ -133,23 +158,31 @@ class TaskSpecRowEditor extends StatelessWidget {
   }
 }
 
-/// 内置学科选项（覆盖小学至初中 K9 全学科）。
-///
-/// 任务建接口（`taskGenNotifierProvider`）对 subject 仅原样存储、不做白名单校验，
-/// 故此处可放开到全学科；tutor 答疑学科白名单受后端 `SUBJECTS` 约束，不在此列。
+/// 学科选项（ADR-0055 §11）：收敛到 3 科，与后端 `SUBJECTS` 同源。
+/// 存量其他学科的旧任务照常展示复习（冻结语义），只是不能新建。
 const List<String> kTaskSubjects = <String>[
-  '语文',
   '数学',
+  '语文',
   '英语',
-  '道德与法治',
-  '科学',
-  '历史',
-  '地理',
-  '物理',
-  '化学',
-  '生物',
-  '音乐',
-  '美术',
-  '体育与健康',
-  '信息技术',
 ];
+
+/// 题型白名单（ADR-0055 §12）：列表首项即该学科默认题型。
+const Map<String, List<String>> kSubjectQtypes = <String, List<String>>{
+  '数学': ['calc', 'choice', 'fill', 'open'],
+  '语文': ['fill', 'choice', 'open'],
+  '英语': ['choice', 'fill', 'open'],
+};
+
+/// 题型标识 → 中文标签。
+const Map<String, String> kQtypeLabels = <String, String>{
+  'calc': '计算',
+  'choice': '选择',
+  'fill': '填空',
+  'open': '应用',
+};
+
+String defaultQtypeFor(String subject) =>
+    kSubjectQtypes[subject]?.first ?? 'choice';
+
+List<String> qtypesForSubject(String subject) =>
+    kSubjectQtypes[subject] ?? const ['choice', 'fill', 'open'];

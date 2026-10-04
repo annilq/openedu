@@ -112,6 +112,9 @@ class QuestionPreview {
   final String difficulty;
   /// 出题推理过程（ADR-0017）：仅预览态展示，不落库；旧服务端不下发时为空。
   final String reasoning;
+  /// 资料溯源快照（ADR-0055 §10）：[{material, snippet}]；无 RAG 时为 null。
+  /// 仅透传——确认落库时原样回传，随题保存。
+  final List<Map<String, dynamic>>? sourceRefs;
 
   const QuestionPreview({
     this.subject = '',
@@ -124,6 +127,7 @@ class QuestionPreview {
     this.answer,
     this.difficulty = 'medium',
     this.reasoning = '',
+    this.sourceRefs,
   });
 
   factory QuestionPreview.fromJson(Map<String, dynamic> json) => QuestionPreview(
@@ -137,6 +141,9 @@ class QuestionPreview {
         answer: json['answer'] as String?,
         difficulty: json['difficulty'] as String? ?? 'medium',
         reasoning: json['reasoning'] as String? ?? '',
+        sourceRefs: (json['source_refs'] as List?)
+            ?.map((e) => Map<String, dynamic>.from(e as Map))
+            .toList(),
       );
 
   /// 回传后端 /tasks/from-generated 落库（snake_case，与 QuestionOut 对齐）。
@@ -151,6 +158,7 @@ class QuestionPreview {
         'answer': answer,
         'difficulty': difficulty,
         'reasoning': reasoning,
+        'source_refs': sourceRefs,
       };
 }
 
