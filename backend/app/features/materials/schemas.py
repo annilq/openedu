@@ -109,6 +109,17 @@ class KnowledgePointResp(SQLModel):
     status: str = "curated"
     # emerged = 资料涌现；skeleton = 自编骨架
     source: str = "skeleton"
+    # 默认交互式讲解模板（ADR-0061）：[{kind, inputs, controls, ...}]；null = 暂未配置。
+    scenes: list[dict] | None = None
+
+
+class KnowledgePointScenesUpdate(SQLModel):
+    """教师为知识点编写 / 覆盖默认交互讲解模板（ADR-0061）。
+
+    仅接收 ``scenes``（知识点级模板数组），不做其它字段变更；空数组 = 清空模板。
+    """
+
+    scenes: list[dict] = Field(default_factory=list)
 
 
 class KnowledgePointListResp(SQLModel):

@@ -51,3 +51,7 @@ class Question(SQLModel, table=True):
         default=None,
         sa_type=DateTime(timezone=True),  # type: ignore
     )
+    # 本题的交互式讲解实例（ADR-0061）：出题时从对应知识点 scenes 取模板、覆盖本题
+    # 数值得到。学生端可在题卡解析区/讲解卡内联渲染，并继续改 inputs 求解。刻意不建
+    # 外键（快照式）：知识点模板改动不影响已生成的题。可空 = 本题不可图形化。
+    scene_spec: dict | None = Field(default=None, sa_type=JSON)

@@ -173,3 +173,8 @@ class KnowledgePoint(SQLModel, table=True):
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore
     )
+    # 默认交互式讲解模板（ADR-0061）：[{kind, inputs, controls, timeline,
+    # narrative, outputs, locked_answer}]。教师基于知识点编写并调好体验，出题时
+    # 按本题数值覆盖默认 inputs → 生成 Question.scene_spec。刻意不建外键（快照式）：
+    # 删除/改模板不影响已生成的题。可空 = 该知识点暂无图形化讲解。
+    scenes: list[dict] | None = Field(default=None, sa_type=JSON)

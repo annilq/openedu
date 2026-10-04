@@ -19,9 +19,11 @@ from app.features.materials.schemas import (
     FolderUpdate,
     KnowledgePointConfirm,
     KnowledgePointListResp,
+    KnowledgePointResp,
+    KnowledgePointScenesUpdate,
+    MaterialMove,
     MaterialResp,
     UploadResult,
-    MaterialMove,
 )
 
 router = APIRouter(prefix="/materials", tags=["materials"])
@@ -115,6 +117,28 @@ def confirm_knowledge_points(
         semester=req.semester,
     )
     return {"confirmed": confirmed}
+
+
+@router.patch("/knowledge-points/{kp_id}/scenes", response_model=KnowledgePointResp)
+def update_knowledge_point_scenes_endpoint(
+    session: SessionDep,
+    user: CurrentParent,
+    kp_id: UUID,
+    req: KnowledgePointScenesUpdate,
+) -> KnowledgePointResp:
+    """教师为知识点编写 / 覆盖默认交互讲解模板（ADR-0061）。
+
+    仅更新 ``scenes`` 字段；owner 隔离在 service 层校验。
+    """
+    kp = service.update_knowledge_point_scenes(
+        session,
+        parent_id=user.id,
+        kp_id=kp_id,
+        scenes=req.scenes,
+    )
+    return KnowledgePointResp(
+        id=kp.id, name=kp.name, status=kp.status, source=kp.source, scenes=kp.scenes
+    )
 
 
 @router.get("/{material_id}", response_model=MaterialResp)

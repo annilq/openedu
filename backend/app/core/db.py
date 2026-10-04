@@ -200,6 +200,49 @@ def run_migrations() -> None:
             # 偏序迁移：表还没建（首次启动由 init_db 建表并带新列），跳过即可。
             pass
 
+        # —— 交互式讲解场景（ADR-0061）：知识点默认模板 + 题目实例 ——
+        # knowledgepoint.scenes：[{kind, inputs, controls, ...}] 教师编写的默认讲解模板。
+        # question.scene_spec：出题时由知识点模板 + 本题数值融合得到的实例。
+        # 均 JSON 可空、不建外键（快照式），沿用 semester 的 SQLite/Postgres 双分支。
+        try:
+            if is_sqlite:
+                kp_cols = [
+                    r[1]
+                    for r in conn.execute(
+                        text("PRAGMA table_info(knowledgepoint)")
+                    ).fetchall()
+                ]
+                if "scenes" not in kp_cols:
+                    conn.execute(
+                        text("ALTER TABLE knowledgepoint ADD COLUMN scenes TEXT")
+                    )
+                q_cols = [
+                    r[1]
+                    for r in conn.execute(
+                        text("PRAGMA table_info(question)")
+                    ).fetchall()
+                ]
+                if "scene_spec" not in q_cols:
+                    conn.execute(
+                        text("ALTER TABLE question ADD COLUMN scene_spec TEXT")
+                    )
+            else:
+                conn.execute(
+                    text(
+                        "ALTER TABLE knowledgepoint ADD COLUMN IF NOT EXISTS "
+                        "scenes JSON"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "ALTER TABLE question ADD COLUMN IF NOT EXISTS "
+                        "scene_spec JSON"
+                    )
+                )
+        except OperationalError:
+            # 偏序迁移：表还没建（首次启动由 init_db 建表并带新列），跳过即可。
+            pass
+
         # —— 目录 / 资料学期维度（ADR-0055 §2 补）——
         # 学期是目录的继承元数据（''/上学期/下学期），随资料上传继承到 Material，
         # 再在抽取知识点时带入 KnowledgePoint.semester。旧库无此列时补齐。

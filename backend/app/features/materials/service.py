@@ -476,7 +476,9 @@ def list_knowledge_points(
     )
     known = {r.name for r in rows}
     items = [
-        KnowledgePointResp(id=r.id, name=r.name, status=r.status, source=r.source)
+        KnowledgePointResp(
+            id=r.id, name=r.name, status=r.status, source=r.source, scenes=r.scenes
+        )
         for r in rows
     ]
     # 骨架补位：DB 已有（含待审）的名字不再重复给——家长自己涌现的措辞优先于骨架
@@ -490,6 +492,27 @@ def list_knowledge_points(
     return KnowledgePointListResp(
         items=items, pending_count=sum(1 for i in items if i.status == "pending")
     )
+
+
+def update_knowledge_point_scenes(
+    session: Session,
+    *,
+    parent_id: uuid.UUID,
+    kp_id: uuid.UUID,
+    scenes: list[dict],
+) -> KnowledgePoint:
+    """教师为知识点编写 / 覆盖默认交互讲解模板（ADR-0061）。
+
+    owner 隔离：``kp_id`` 必须属于当前家长，否则视作不存在。空数组 = 清空模板。
+    """
+    kp = session.get(KnowledgePoint, kp_id)
+    if kp is None or kp.parent_id != parent_id:
+        raise AppErrorException(ErrCode.NOT_FOUND, "知识点不存在")
+    kp.scenes = scenes or None
+    session.add(kp)
+    session.commit()
+    session.refresh(kp)
+    return kp
 
 
 def confirm_knowledge_points(
