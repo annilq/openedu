@@ -14,6 +14,7 @@ import '../../../../../shared/widgets/app_inputs.dart';
 import '../../../../../shared/widgets/app_loading.dart';
 import '../../../../../shared/widgets/app_scroll_page.dart';
 import '../../../../../shared/widgets/app_section_title.dart';
+import '../../../../../shared/widgets/app_tags.dart';
 import '../../../../../shared/widgets/app_toast.dart';
 import '../../../../materials/domain/repositories/material_library_repository.dart';
 import '../../../../materials/providers/material_library_provider.dart';
@@ -243,49 +244,69 @@ class _MaterialLibraryViewState extends ConsumerState<MaterialLibraryView> {
       if (mat.subject != null) mat.subject!,
       if (mat.grade != null) '${mat.grade}年级',
     ].join(' · ');
+    // 知识点 chip（ADR-0055 §3）：资料级知识点直接展示，让家长一眼看到
+    // 这份资料覆盖了哪些点；空时（如尚未重提取）不占空间。
+    final kpChips = mat.knowledgePoints.isEmpty
+        ? const <Widget>[]
+        : <Widget>[
+            const SizedBox(height: AppSpacing.xs),
+            Wrap(
+              spacing: AppSpacing.xs,
+              runSpacing: AppSpacing.xs,
+              children: [
+                for (final kp in mat.knowledgePoints) AppTags.normal(kp),
+              ],
+            ),
+          ];
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(LucideIcons.fileText, size: 18),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Text.rich(
-              TextSpan(children: [
-                TextSpan(text: mat.name),
-                if (meta.isNotEmpty)
-                  TextSpan(
-                    text: '　$meta',
-                    style:
-                        text.bodySmall?.copyWith(color: app.onSurfaceVariant),
-                  ),
-              ]),
-            ),
+          Row(
+            children: [
+              const Icon(LucideIcons.fileText, size: 18),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text.rich(
+                  TextSpan(children: [
+                    TextSpan(text: mat.name),
+                    if (meta.isNotEmpty)
+                      TextSpan(
+                        text: '　$meta',
+                        style: text.bodySmall
+                            ?.copyWith(color: app.onSurfaceVariant),
+                      ),
+                  ]),
+                ),
+              ),
+              Text(label,
+                  style: text.bodySmall
+                      ?.copyWith(color: badgeColor, fontWeight: FontWeight.w700)),
+              const SizedBox(width: AppSpacing.sm),
+              AppTextAction(
+                label: mat.indexState == 'ready' ? '重新向量化' : '向量化',
+                onPressed: () => ref
+                    .read(materialLibraryNotifierProvider.notifier)
+                    .vectorize(mat.id),
+              ),
+              AppTextAction(
+                label: '重提取',
+                onPressed: () => ref
+                    .read(materialLibraryNotifierProvider.notifier)
+                    .reextract(mat.id),
+              ),
+              AppIconAction(
+                icon: LucideIcons.trash2,
+                iconSize: 16,
+                semanticLabel: '删除资料 ${mat.name}',
+                onPressed: () => ref
+                    .read(materialLibraryNotifierProvider.notifier)
+                    .deleteMaterial(mat.id),
+              ),
+            ],
           ),
-          Text(label,
-              style: text.bodySmall
-                  ?.copyWith(color: badgeColor, fontWeight: FontWeight.w700)),
-          const SizedBox(width: AppSpacing.sm),
-          AppTextAction(
-            label: mat.indexState == 'ready' ? '重新向量化' : '向量化',
-            onPressed: () => ref
-                .read(materialLibraryNotifierProvider.notifier)
-                .vectorize(mat.id),
-          ),
-          AppTextAction(
-            label: '重提取',
-            onPressed: () => ref
-                .read(materialLibraryNotifierProvider.notifier)
-                .reextract(mat.id),
-          ),
-          AppIconAction(
-            icon: LucideIcons.trash2,
-            iconSize: 16,
-            semanticLabel: '删除资料 ${mat.name}',
-            onPressed: () => ref
-                .read(materialLibraryNotifierProvider.notifier)
-                .deleteMaterial(mat.id),
-          ),
+          ...kpChips,
         ],
       ),
     );
