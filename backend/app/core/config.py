@@ -118,9 +118,9 @@ class Settings(BaseSettings):
     # 上传文件落盘根目录：storage_key 是相对此目录的路径（不存绝对路径，
     # 换部署不挪坟）。SQLite/PG 同构，目录缺失时上传端点自动创建。
     MATERIAL_UPLOAD_ROOT: str = str(_BACKEND_DIR / "data" / "materials")
-    # 单文件上限：教材 PDF 通常 <50MB，20MB 覆盖绝大多数扫描卷子/讲义；
+    # 单文件上限：教材 PDF 常达 40-50MB（整本扫描/高分辨率），给到 64MB 余量；
     # 解析与 LLM 提取都吃内存，超限直接 413 而不是读完再拒。
-    MATERIAL_MAX_BYTES: int = 20 * 1024 * 1024
+    MATERIAL_MAX_BYTES: int = 64 * 1024 * 1024
 
     # —— embedding 服务端基础设施（ADR-0055 §8，显式豁免 ADR-0039）——
     # embedding **不进家长 ModelConfig**：向量绑定模型是物理约束——若跟着家长的
