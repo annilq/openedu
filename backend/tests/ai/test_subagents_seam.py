@@ -10,6 +10,7 @@
 说明：``run()`` 是 async generator，测试用 ``_drive`` 包一层 asyncio.run 收集事件，避免
 嵌套事件循环。真实 LLM 调用路径（genkit）需真机 / CI runner 验证。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -62,7 +63,9 @@ class _FakeProvider(EducationLLMProvider):
         yield TextDelta(delta="思路")
         yield StructuredDone(data=dict(_Q_DICT))
 
-    async def tutor(self, *, grade, subject, knowledge_point, context, question, history=None):
+    async def tutor(
+        self, *, grade, subject, knowledge_point, context, question, history=None
+    ):
         self.last_tutor_context = context
         return "讲解内容"
 
@@ -71,8 +74,11 @@ class _FakeProvider(EducationLLMProvider):
 
 
 class _Chunk:
-    def __init__(self, content: str) -> None:
+    """KnowledgeChunk 替身：source_name 对齐 ADR-0055 §10 溯源字段。"""
+
+    def __init__(self, content: str, source_name: str | None = None) -> None:
         self.content = content
+        self.source_name = source_name
 
 
 class _FakeRetriever:
@@ -81,7 +87,7 @@ class _FakeRetriever:
 
     def retrieve(self, **kw) -> list[_Chunk]:
         self.calls.append(kw)
-        return [_Chunk("分数加减：同分母相加分母不变")]
+        return [_Chunk("分数加减：同分母相加分母不变", "人教三年级上册")]
 
 
 def test_persona_normalization_and_fallback():
@@ -115,7 +121,9 @@ def test_question_subagent_rag_and_persona_threading():
     provider = _FakeProvider()
     retriever = _FakeRetriever()
     agent = QuestionSubAgent(provider=provider, retriever=retriever)
-    ctx = SubAgentContext(role="parent", message="帮我出2道三年级关于《分数》的数学选择题")
+    ctx = SubAgentContext(
+        role="parent", message="帮我出2道三年级关于《分数》的数学选择题"
+    )
 
     asyncio.run(_drive(agent, ctx))
 
@@ -123,8 +131,8 @@ def test_question_subagent_rag_and_persona_threading():
     assert retriever.calls, "retriever.retrieve 应被调用"
     assert provider.last_gen_kwargs is not None
     user_prompt = provider.last_gen_kwargs["user_prompt"]
-    # RAG 命中内容进入 user_prompt
-    assert "分数加减" in user_prompt
+    # RAG 命中内容进入 user_prompt，且带【资料名】前缀（ADR-0055 §10 溯源）
+    assert "【人教三年级上册】分数加减" in user_prompt
     # 学科 Persona 注入 user_prompt
     assert "【学科人格：数学】" in user_prompt
     # spec 携题目身份（subject/grade/knowledge_point），随 prompt 进入模型上下文
@@ -133,8 +141,20 @@ def test_question_subagent_rag_and_persona_threading():
 
 def test_expand_specs_expands_count():
     specs = [
-        {"subject": "数学", "grade": 3, "knowledge_point": "分数", "qtype": "choice", "count": 2},
-        {"subject": "语文", "grade": 3, "knowledge_point": "造句", "qtype": "fill", "difficulty": "easy"},
+        {
+            "subject": "数学",
+            "grade": 3,
+            "knowledge_point": "分数",
+            "qtype": "choice",
+            "count": 2,
+        },
+        {
+            "subject": "语文",
+            "grade": 3,
+            "knowledge_point": "造句",
+            "qtype": "fill",
+            "difficulty": "easy",
+        },
     ]
     items = expand_specs(specs)
     # count=2 展开两题；缺省 count 按 1；顺序即 q_index

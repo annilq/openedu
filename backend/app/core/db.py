@@ -26,9 +26,14 @@ def run_migrations() -> None:
 
         # —— question.parent_id ——（既有迁移，保留）
         if is_sqlite:
-            cols = [r[1] for r in conn.execute(text("PRAGMA table_info(question)")).fetchall()]
+            cols = [
+                r[1]
+                for r in conn.execute(text("PRAGMA table_info(question)")).fetchall()
+            ]
             if "parent_id" not in cols:
-                conn.execute(text("ALTER TABLE question ADD COLUMN parent_id VARCHAR(36)"))
+                conn.execute(
+                    text("ALTER TABLE question ADD COLUMN parent_id VARCHAR(36)")
+                )
         else:  # postgres
             conn.execute(
                 text("ALTER TABLE question ADD COLUMN IF NOT EXISTS parent_id UUID")
@@ -37,14 +42,34 @@ def run_migrations() -> None:
         # —— question.origin（题目来源：ai / parent，ADR-0060）——
         # 存量行无 origin：默认 "ai"（历史题目皆为 AI 生成）。新增行由创建点显式赋值。
         if is_sqlite:
-            q_cols = [r[1] for r in conn.execute(text("PRAGMA table_info(question)")).fetchall()]
+            q_cols = [
+                r[1]
+                for r in conn.execute(text("PRAGMA table_info(question)")).fetchall()
+            ]
             if "origin" not in q_cols:
                 conn.execute(
-                    text("ALTER TABLE question ADD COLUMN origin VARCHAR(16) DEFAULT 'ai'")
+                    text(
+                        "ALTER TABLE question ADD COLUMN origin VARCHAR(16) DEFAULT 'ai'"
+                    )
                 )
         else:
             conn.execute(
-                text("ALTER TABLE question ADD COLUMN IF NOT EXISTS origin VARCHAR(16) DEFAULT 'ai'")
+                text(
+                    "ALTER TABLE question ADD COLUMN IF NOT EXISTS origin VARCHAR(16) DEFAULT 'ai'"
+                )
+            )
+
+        # —— question.source_refs（资料溯源快照 JSON，ADR-0055 §10）——
+        if is_sqlite:
+            q_cols = [
+                r[1]
+                for r in conn.execute(text("PRAGMA table_info(question)")).fetchall()
+            ]
+            if "source_refs" not in q_cols:
+                conn.execute(text("ALTER TABLE question ADD COLUMN source_refs TEXT"))
+        else:
+            conn.execute(
+                text("ALTER TABLE question ADD COLUMN IF NOT EXISTS source_refs JSON")
             )
         # 回填：通过 task_question -> task 找到原题归属家长；孤儿行保持 NULL。
         # 旧库若尚未建 task_question 表（偏序迁移），跳过回填（owner 隔离降级，dev 可重置）。
@@ -102,7 +127,10 @@ def run_migrations() -> None:
         # —— 归档 / 毕业时间戳（ADR-0053 P2）——
         # 三个模块共用一套 archived 字段的诱惑在这里被拒绝了：题库是「家长主动弃用」、
         # 错题是「系统判定已掌握」，同名字段会让「这行为什么归档了」无法回答。
-        for table, column in (("question", "archived_at"), ("wrongquestion", "graduated_at")):
+        for table, column in (
+            ("question", "archived_at"),
+            ("wrongquestion", "graduated_at"),
+        ):
             try:
                 if is_sqlite:
                     cols = [

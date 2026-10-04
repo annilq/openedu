@@ -491,7 +491,7 @@ def _question_fields(payload: dict) -> dict:
     """
     allowed = (
         "subject", "grade", "knowledge_point", "qtype", "stem",
-        "options", "answer", "explanation", "difficulty",
+        "options", "answer", "explanation", "difficulty", "source_refs",
     )
     return {k: payload[k] for k in allowed if k in payload}
 
@@ -1282,7 +1282,8 @@ async def generate_task_stream(
     # 出题 provider 经归一封装构造（ADR-0034 Phase 2）：统一由 resolve_engine 解析
     # req.model / 家长 ModelConfig，与批改 / 伴学走同一条模型解析链。
     provider = build_ai_provider(req.model, parent_id=parent_id, session=session)
-    retriever = build_retriever()
+    # RAG（ADR-0055 §13）：vector 模式下传 (session, parent_id) 启用家长私有资料库检索
+    retriever = build_retriever(session=session, parent_id=parent_id)
     deps = RuntimeDeps(provider=provider, retriever=retriever, safety=None)
 
     # 反馈边（ADR-0060 D4）：把看板下发的代表错题解析为题干样例，注入出题 prompt。
@@ -1315,6 +1316,14 @@ async def generate_task_stream(
         ]
 
     subject = req.specs[0].subject
+    # 「有 N 份资料未参与本次出题」（ADR-0055 §13）：pending/failed/stale 计数。
+    # 纯提示性遥测：session 替身 / 查询失败一律按 0，绝不阻塞出题主链路。
+    try:
+        from app.features.materials import repository as materials_repo
+
+        unindexed = materials_repo.count_unindexed(session, parent_id=parent_id)
+    except Exception:  # noqa: BLE001
+        unindexed = 0
     ctx = SubAgentContext(
         role="parent",
         message="",  # 结构化规格走 ctx.extra["specs"]，不依赖自由文本
@@ -1330,6 +1339,7 @@ async def generate_task_stream(
             "session_id": None,
             "weak_examples": weak_examples,
             "specs": [s.model_dump() for s in req.specs],
+            "unindexed_materials": unindexed,
         },
     )
 

@@ -6,7 +6,6 @@ from sqlmodel import Field, SQLModel
 
 from app.db.models.base import get_datetime_utc
 
-
 # 题目来源（ADR-0060）：区分 AI 生成与家长度录，是版权门禁（ADR-0020）判定
 # 「仿写是否放大侵权风险」的前提——仿写只应作用于 AI 生成题，不会把家长从
 # 教辅录入的题再繁衍成 N 道。存量行经 run_migrations 回填为 "ai"。
@@ -36,6 +35,9 @@ class Question(SQLModel, table=True):
     answer: str | None = None
     explanation: str | None = None
     difficulty: str | None = None
+    # 资料溯源快照（ADR-0055 §10）：[{material: 资料名, snippet: 片段摘要}]。
+    # 刻意不建 source_chunk_ids 外键——家长删资料后题目不失去依据，也无删除级联。
+    source_refs: list[dict] | None = Field(default=None, sa_type=JSON)
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore

@@ -117,7 +117,9 @@ async def chat(
         else None
     )
     provider = build_provider(engine=engine)
-    retriever = build_retriever()
+    # RAG（ADR-0055 §13）：家长端传 (session, parent_id) 启用资料库向量检索；
+    # 娃娃端 parent_id 为 None → 自动回落 mock（资料库是家长私有的）。
+    retriever = build_retriever(session=session, parent_id=parent_id)
     safety = ChildSafety() if role == "child" else None
     deps = RuntimeDeps(provider=provider, retriever=retriever, safety=safety)
 

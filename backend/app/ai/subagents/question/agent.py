@@ -12,6 +12,7 @@ USER_MESSAGE / 路由 THINKING / DONE 与持久化。
 ``BaseSubAgent`` / ``SubAgentContext`` 与通用 ``LLMProvider.stream``；出题特有的
 prompt 组装与解析就地在子包内完成（``pipeline.py`` / ``parsers.py``，ADR-0032 Q3）。
 """
+
 from __future__ import annotations
 
 from agent_core.protocol import EVENT_STEP, step
@@ -75,9 +76,15 @@ def build_question_context(
     knowledge_point: str,
     query: str | None,
     retriever=None,
-) -> tuple[str | None, str]:
-    """计算 ``(rag_context, persona_hint)``：RAG 命中 + 学科 Persona 渲染。"""
+) -> tuple[str | None, str, list[dict]]:
+    """计算 ``(rag_context, persona_hint, source_refs)``：RAG 命中 + Persona + 溯源快照。
+
+    ``source_refs`` 是 ADR-0055 §10 的快照溯源：``[{material: 资料名, snippet: 摘要}]``，
+    随题卡下发并随题落库——资料删除后题目依据仍在（不建外键的原因）。
+    rag_context 每行带【资料名】前缀，让模型知道口径来自哪份资料（仅作对齐参考）。
+    """
     rag_context: str | None = None
+    source_refs: list[dict] = []
     if retriever is not None and (knowledge_point or query):
         chunks = retriever.retrieve(
             subject=subject,
@@ -86,25 +93,67 @@ def build_question_context(
             query=query or knowledge_point,
         )
         if chunks:
-            rag_context = "\n".join(f"- {c.content}" for c in chunks)
+            lines = []
+            for c in chunks:
+                if c.source_name:
+                    source_refs.append(
+                        {"material": c.source_name, "snippet": c.content[:80]}
+                    )
+                    lines.append(f"- 【{c.source_name}】{c.content}")
+                else:
+                    lines.append(f"- {c.content}")
+            rag_context = "\n".join(lines)
     persona_hint = get_subject_persona(subject).render()
-    return rag_context, persona_hint
+    return rag_context, persona_hint, source_refs
 
 
 # 学科别名 → 标准学科名（自由文本容错）
 _SUBJECT_ALIASES = {
-    "数学": "数学", "语文": "语文", "英语": "英语", "英文": "英语",
-    "科学": "科学", "物理": "物理", "化学": "化学", "生物": "生物",
-    "历史": "历史", "地理": "地理", "政治": "政治", "道法": "政治",
-    "美术": "美术", "音乐": "音乐", "体育": "体育", "信息": "信息",
+    "数学": "数学",
+    "语文": "语文",
+    "英语": "英语",
+    "英文": "英语",
+    "科学": "科学",
+    "物理": "物理",
+    "化学": "化学",
+    "生物": "生物",
+    "历史": "历史",
+    "地理": "地理",
+    "政治": "政治",
+    "道法": "政治",
+    "美术": "美术",
+    "音乐": "音乐",
+    "体育": "体育",
+    "信息": "信息",
 }
 _QTYPE_MAP = {
-    "选择": "choice", "单选": "choice", "选择题": "choice", "多选": "choice",
-    "填空": "fill", "填空题": "fill", "判断": "choice", "判断题": "choice",
-    "计算": "calc", "计算题": "calc", "应用题": "calc",
-    "问答": "open", "解答": "open", "简答题": "open", "问答题": "open",
+    "选择": "choice",
+    "单选": "choice",
+    "选择题": "choice",
+    "多选": "choice",
+    "填空": "fill",
+    "填空题": "fill",
+    "判断": "choice",
+    "判断题": "choice",
+    "计算": "calc",
+    "计算题": "calc",
+    "应用题": "calc",
+    "问答": "open",
+    "解答": "open",
+    "简答题": "open",
+    "问答题": "open",
 }
-_CN_NUM = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
+_CN_NUM = {
+    "一": 1,
+    "二": 2,
+    "三": 3,
+    "四": 4,
+    "五": 5,
+    "六": 6,
+    "七": 7,
+    "八": 8,
+    "九": 9,
+}
 
 
 def parse_specs_from_text(text: str) -> list[dict]:
@@ -216,10 +265,15 @@ def _finish_message(
     ok = len(generated)
     if ok == 0:
         reason = failures[0] if failures else None
-        return reason or "本次未能生成题目，请检查「模型管理」中的模型配置（添加模型并设为默认）。"
+        return (
+            reason
+            or "本次未能生成题目，请检查「模型管理」中的模型配置（添加模型并设为默认）。"
+        )
 
     summary = _subject_summary(items)
-    head = f"已生成 {ok} 道题" + (f"（{summary}）" if summary and ok == requested else "")
+    head = f"已生成 {ok} 道题" + (
+        f"（{summary}）" if summary and ok == requested else ""
+    )
     tail = "题卡中包含题目、选项与解析，可据此布置给孩子（保存为任务为后续能力）。"
     if ok < requested:
         reason = failures[0] if failures else "未知原因"
@@ -272,15 +326,18 @@ class QuestionSubAgent(BaseSubAgent):
         # 逐题串行出题时「某一题失败」必须留痕——否则多学科出题会静默少题
         # （家长只看到少了某一科，却没有任何提示），这是本次修复的目标缺陷。
         failures: list[str] = []
+        # 资料溯源（ADR-0055 §13）：逐题快照 + 去重后的「参考了 N 份资料」计数。
+        referenced: set[str] = set()
         for idx, item in enumerate(items):
             focus = focuses[idx % n_focus] if n_focus else None
-            rag_context, persona_hint = build_question_context(
+            rag_context, persona_hint, item_refs = build_question_context(
                 subject=item["subject"],
                 grade=item["grade"],
                 knowledge_point=item["knowledge_point"],
                 query=focus or item["knowledge_point"],
                 retriever=self.retriever,
             )
+            referenced.update(ref["material"] for ref in item_refs)
             persona_hint = with_skills(persona_hint, ctx.skills)
             system_prompt, user_prompt, spec = build_question_prompts(
                 subject=item["subject"],
@@ -296,7 +353,10 @@ class QuestionSubAgent(BaseSubAgent):
             )
             yield step(
                 step_label(
-                    item["subject"], item["grade"], item["knowledge_point"], item["qtype"]
+                    item["subject"],
+                    item["grade"],
+                    item["knowledge_point"],
+                    item["qtype"],
                 )
             )
             async for frame in translate_stream(
@@ -316,17 +376,23 @@ class QuestionSubAgent(BaseSubAgent):
                     continue
                 data = frame.data
                 if data is not None and data.get("type") == "question":
+                    # 溯源快照随题卡下发（ADR-0055 §10）；客户端原样回传落库。
+                    if item_refs:
+                        data["result"]["source_refs"] = item_refs
                     generated.append(data["result"])
                 yield frame
 
         # TOOL_RESULT 带上「应出 / 实出 / 失败」计数：前端据此判断本次是否少题，
         # 不再靠「题卡数 == 规格数」的隐式假设（少题时前端会静默落库残缺任务）。
+        # 另带 RAG 溯源计数与未向量化资料数（ADR-0055 §13 的两条提示的数据源）。
         yield tc.result(
             {
                 "count": len(generated),
                 "requested": len(items),
                 "failed": len(failures),
                 "fail_reason": failures[0] if failures else None,
+                "referenced_materials": len(referenced),
+                "unindexed_materials": ctx.extra.get("unindexed_materials") or 0,
             }
         )
         yield self._finish(

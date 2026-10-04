@@ -9,6 +9,7 @@ ADR-0031：通用消息级 ``LLMProvider`` 已上移到 ``agent_core.ports``；�
 - 出题 / 题卡相关结构体（``GeneratedQuestion`` / ``QuestionStreamEvent`` 等）：教育域语义，
   随 ``app/ai/parsers/question.py`` 与出题 subagent 使用，不进 agent_core。
 """
+
 from __future__ import annotations
 
 from abc import abstractmethod
@@ -34,6 +35,7 @@ __all__ = [
 # 兼容 re-export：历史 ``from app.domain.provider import LLMProvider`` 仍指向通用接口
 # （已在上方 from import 中引入）。
 
+
 @dataclass
 class GeneratedQuestion:
     subject: str
@@ -45,6 +47,9 @@ class GeneratedQuestion:
     answer: str
     explanation: str
     difficulty: str
+    # 资料溯源快照（ADR-0055 §10）：[{material, snippet}]；无 RAG 时为 None。
+    # 由 SubAgent 在题卡帧上注入（pipeline 不感知检索层）。
+    source_refs: list[dict] | None = None
 
 
 # ─────────────── 出题流式事件（引擎层语义 schema，与传输协议无关） ───────────────

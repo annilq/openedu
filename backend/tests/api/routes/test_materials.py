@@ -321,3 +321,87 @@ class TestVectorization:
         r = client.get("/api/v1/materials", headers=auth_headers(ptoken))
         states = {m["id"]: m["index_state"] for m in r.json()}
         assert states[uploaded_mat_id] == "stale"
+
+
+# ── B4：VectorKnowledgeRetriever（dense + 词法 + RRF）───────────────────
+
+
+class TestVectorRetrieval:
+    def test_hybrid_retrieval_and_filter(self, client, ptoken, upload_root, db, monkeypatch):
+        """向量化后经 build_retriever('vector') 检索：dense+词法融合，快照带资料名。"""
+        folder = _create_folder(client, ptoken, name="数学三上", subject="数学", grade=3)
+
+        async def kw_embed(texts):
+            # 关键词向量：含「鸡兔」→ [1,0,0,0]，否则 [0,1,0,0]
+            return [[1.0, 0.0, 0.0, 0.0] if "鸡兔" in t else [0.0, 1.0, 0.0, 0.0] for t in texts]
+
+        monkeypatch.setattr(
+            "app.features.materials.indexing.settings.EMBEDDING_PROVIDER", "ollama"
+        )
+        monkeypatch.setattr("app.features.materials.indexing.embed_texts", kw_embed)
+        mat_ids = []
+        for name, content in (
+            ("鸡兔同笼.txt", "鸡兔同笼问题：设鸡有 x 只，兔有 y 只，则 x+y=头数，2x+4y=脚数。"),
+            ("运算律.txt", "乘法分配律：a×(b+c)=a×b+a×c，这是简便运算的重要依据。"),
+        ):
+            r = _upload(client, ptoken, filename=name, content=content.encode(), folder_id=folder["id"])
+            mat_ids.append(r.json()["material"]["id"])
+        for mid in mat_ids:
+            r = client.post(f"/api/v1/materials/{mid}/vectorize", headers=auth_headers(ptoken))
+            assert r.json()["index_state"] == "ready", r.text
+
+        # 切到 vector 检索：查询向量指向「鸡兔」簇
+        monkeypatch.setattr("app.core.config.settings.RETRIEVER_PROVIDER", "vector")
+
+        async def q_embed(texts):
+            return [[1.0, 0.0, 0.0, 0.0] for _ in texts]
+
+        monkeypatch.setattr("app.features.materials.retrieval.embed_texts", q_embed)
+
+        from sqlmodel import select
+
+        from app.db.models import User
+        from app.domain.retriever import build_retriever
+
+        parent = db.exec(select(User).where(User.username == "mat_parent")).one()
+        retriever = build_retriever(session=db, parent_id=parent.id)
+        chunks = retriever.retrieve(subject="数学", grade=3, knowledge_point="鸡兔同笼", query="鸡兔同笼")
+        assert chunks, "向量+词法双路不应为空"
+        assert all(c.source == "vector" for c in chunks)
+        # RRF 融合后首命中是 dense+词法双高分的「鸡兔」片段，快照带资料名
+        assert chunks[0].source_name == "鸡兔同笼.txt"
+        assert "鸡兔同笼" in chunks[0].content
+
+    def test_version_mismatch_excluded(self, client, ptoken, upload_root, db, monkeypatch):
+        """版本戳双保险：embed_model 与当前配置不符的 chunk 不参与检索（stale 语义）。"""
+        from sqlmodel import select
+
+        from app.db.models import User, MaterialChunk
+        from app.features.materials import repository as repo
+        from app.features.materials.retrieval import VectorKnowledgeRetriever
+
+        parent = db.exec(select(User).where(User.username == "mat_parent")).one()
+        mats = repo.list_materials(db, parent_id=parent.id, folder_id=None)
+        assert mats, "前置：已有已上传资料"
+        old = mats[0]
+        db.add(
+            MaterialChunk(
+                parent_id=parent.id,
+                material_id=old.id,
+                seq=0,
+                content="旧模型的孤儿片段不该被召回",
+                embed_model="旧模型",
+                chunker_ver="v0",
+                subject=old.subject or "数学",
+                grade=old.grade or 3,
+            )
+        )
+        db.commit()
+        retriever = VectorKnowledgeRetriever(db, parent.id)
+        chunks = retriever.retrieve(
+            subject=old.subject or "数学",
+            grade=old.grade or 3,
+            knowledge_point="任意",
+            query="孤儿片段",
+        )
+        assert all("旧模型的孤儿片段" not in c.content for c in chunks)

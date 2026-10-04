@@ -7,6 +7,7 @@
 ADR-0028：语义事件经 ``translate_stream`` 转帧，**推理增量会按字符攒批**，
 因此 THINKING 帧数少于语义事件数（同一次出题从数百帧降到数十帧）。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -84,7 +85,9 @@ def _run(message: str, *, fail: bool = False):
 
 def _run_specs(specs: list[dict], *, fail_at: set[int]):
     """按结构化 specs 出题（ADR-0034），可指定第几次模型调用失败。"""
-    agent = QuestionSubAgent(provider=_ScriptedProvider(fail_at=fail_at), retriever=None)
+    agent = QuestionSubAgent(
+        provider=_ScriptedProvider(fail_at=fail_at), retriever=None
+    )
     ctx = SubAgentContext(role="parent", message="", extra={"specs": specs})
 
     async def _go():
@@ -95,8 +98,12 @@ def _run_specs(specs: list[dict], *, fail_at: set[int]):
 
 def _spec(subject: str, **kw) -> dict:
     base = {
-        "subject": subject, "grade": 3, "knowledge_point": "分数",
-        "qtype": "choice", "difficulty": "medium", "count": 1,
+        "subject": subject,
+        "grade": 3,
+        "knowledge_point": "分数",
+        "qtype": "choice",
+        "difficulty": "medium",
+        "count": 1,
     }
     base.update(kw)
     return base
@@ -168,6 +175,9 @@ def test_partial_failure_reports_shortfall_in_tool_result():
         "requested": 2,
         "failed": 1,
         "fail_reason": "模型未返回结构化题卡",
+        # ADR-0055 §13：RAG 溯源计数（无 RAG 时为 0）
+        "referenced_materials": 0,
+        "unindexed_materials": 0,
     }
 
 

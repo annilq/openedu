@@ -22,6 +22,8 @@ class KnowledgeChunk:
     knowledge_point: str
     content: str
     source: str  # builtin | web | vector
+    # 资料溯源（ADR-0055 §10 快照溯源）：命中片段来自哪份资料；mock 无此概念
+    source_name: str | None = None
 
 
 class KnowledgeRetriever(ABC):
@@ -121,12 +123,22 @@ class MockKnowledgeRetriever(KnowledgeRetriever):
         return results
 
 
-def build_retriever() -> KnowledgeRetriever:
-    """按配置选择检索实现；未知值回退 mock 并告警，保证服务始终可启动。"""
+def build_retriever(
+    session: object | None = None, parent_id: object | None = None
+) -> KnowledgeRetriever:
+    """按配置选择检索实现；未知值回退 mock 并告警，保证服务始终可启动。
+
+    ``vector`` 分支需要 (session, parent_id) 做家长私有的资料库检索——调用方
+    在出题上下文里传入；两者缺任一则降级 mock（assistant 等无 DB 上下文的
+    调用点行为不变）。
+    """
     provider = settings.RETRIEVER_PROVIDER
-    if provider in ("mock", "builtin"):
-        return MockKnowledgeRetriever()
-    if provider != "vector":  # vector 为预留值：后续接入 embedding 向量库
+    if provider == "vector" and session is not None and parent_id is not None:
+        # 延迟 import：domain 层不反向依赖 features（分层纪律），运行时才落到具体实现
+        from app.features.materials.retrieval import VectorKnowledgeRetriever
+
+        return VectorKnowledgeRetriever(session, parent_id)  # type: ignore[arg-type]
+    if provider not in ("mock", "builtin", "vector"):
         warnings.warn(
             f"未知 RETRIEVER_PROVIDER={provider!r}，回退到内置 mock 检索",
             stacklevel=2,
