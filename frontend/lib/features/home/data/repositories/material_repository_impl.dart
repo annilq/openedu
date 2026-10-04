@@ -38,6 +38,13 @@ abstract class MaterialRepository {
     required String subject,
     required int grade,
   });
+
+  /// 确认（批量转正）知识点：pending→curated；骨架条目落库为 curated（ADR-0055 §4）。
+  Future<void> confirmKnowledgePoints({
+    required String subject,
+    required int grade,
+    required List<String> names,
+  });
 }
 
 class MaterialRepositoryImpl implements MaterialRepository {
@@ -58,5 +65,17 @@ class MaterialRepositoryImpl implements MaterialRepository {
     return items
         .map((e) => KnowledgePointOption.fromJson(Map<String, dynamic>.from(e as Map)))
         .toList();
+  }
+
+  @override
+  Future<void> confirmKnowledgePoints({
+    required String subject,
+    required int grade,
+    required List<String> names,
+  }) async {
+    await _network.post(
+      '/materials/knowledge-points/confirm',
+      body: {'names': names, 'subject': subject, 'grade': grade},
+    );
   }
 }

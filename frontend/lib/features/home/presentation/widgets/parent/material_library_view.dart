@@ -18,11 +18,13 @@ import '../../../../../shared/widgets/app_tags.dart';
 import '../../../../../shared/widgets/app_toast.dart';
 import '../../../../materials/domain/repositories/material_library_repository.dart';
 import '../../../../materials/providers/material_library_provider.dart';
+import '../../../providers/knowledge_manage_provider.dart';
+import 'material_knowledge_manage_view.dart';
 
 /// 资料库页（ADR-0055 B6）：网盘式目录 + 上传 + 手动向量化 + 状态徽标。
 ///
-/// 目录带学科 / 年级（子项继承可覆盖）；文件带向量化状态机徽标
-/// （未向量化 / 已就绪 / 失败 / 已过期），「向量化」永远手动触发。
+/// 两个视图用分段切换：**资料**（目录/资料/向量化）与**知识点管理**
+/// （按学科×年级查看涌现目录、勾选待审/骨架条目并批量确认转正，ADR-0055 §4）。
 class MaterialLibraryView extends ConsumerStatefulWidget {
   const MaterialLibraryView({super.key});
 
@@ -32,6 +34,8 @@ class MaterialLibraryView extends ConsumerStatefulWidget {
 }
 
 class _MaterialLibraryViewState extends ConsumerState<MaterialLibraryView> {
+  int _tabIndex = 0;
+
   Future<void> _pickAndUpload() async {
     // file_picker 13：静态方法，取消返回空列表；桌面端用 readAsBytes 拿字节。
     final files = await FilePicker.pickFiles(
@@ -88,82 +92,141 @@ class _MaterialLibraryViewState extends ConsumerState<MaterialLibraryView> {
         );
   }
 
+  void _switchTab(int idx) {
+    if (idx == _tabIndex) return;
+    setState(() => _tabIndex = idx);
+    // 进入「知识点管理」视图时按需拉一次目录（确保最新待审/骨架状态）。
+    if (idx == 1) {
+      ref.read(knowledgeManageProvider.notifier).load();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(materialLibraryNotifierProvider);
-    final app = AppTheme.colorsOf(context);
-    final text = AppTheme.textOf(context);
+    final libState = ref.watch(materialLibraryNotifierProvider);
     ref.listen(materialLibraryNotifierProvider, (_, next) {
       if (next.notice != null) AppToast.show(context, next.notice!);
       ref.read(materialLibraryNotifierProvider.notifier).consumeNotice();
     });
+    ref.listen(knowledgeManageProvider, (_, next) {
+      if (next.notice != null) AppToast.show(context, next.notice!);
+      ref.read(knowledgeManageProvider.notifier).consumeNotice();
+    });
 
+    return AppScrollPage(
+      children: [
+        SectionTitle('资料库'),
+        _segmented(),
+        const SizedBox(height: AppSpacing.md),
+        if (_tabIndex == 0)
+          _buildMaterialsCard(libState)
+        else
+          const MaterialKnowledgeManageView(),
+      ],
+    );
+  }
+
+  /// 分段切换：资料 / 知识点管理。当前项实心高亮，另一项浅底描边（neo-brutalist）。
+  Widget _segmented() => Row(
+        children: [
+          Expanded(child: _segBtn('资料', 0)),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(child: _segBtn('知识点管理', 1)),
+        ],
+      );
+
+  Widget _segBtn(String label, int idx) {
+    final app = AppTheme.colorsOf(context);
+    final text = AppTheme.textOf(context);
+    final active = _tabIndex == idx;
+    return AppFocusableAction(
+      onTap: () => _switchTab(idx),
+      semanticLabel: '切换到$label',
+      child: Container(
+        height: 40,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: active ? app.primary : app.surfaceRaised,
+          border: Border.all(color: app.outline, width: 1.5),
+          borderRadius: BorderRadius.circular(AppRadius.input),
+        ),
+        child: Text(
+          label,
+          style: text.bodyLarge?.copyWith(
+            color: active ? app.onPrimary : app.onSurface,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── 资料视图（目录 + 资料 + 向量化，B6）───────────────────────────────
+
+  Widget _buildMaterialsCard(MaterialLibraryState state) {
+    final app = AppTheme.colorsOf(context);
+    final text = AppTheme.textOf(context);
     final current = state.folderById(state.currentFolderId);
     final subfolders = state.folders
         .where((f) => f.parentFolderId == state.currentFolderId)
         .toList();
 
-    return AppScrollPage(
-      children: [
-        SectionTitle('资料库'),
-        AppCard(
-          padding: const EdgeInsets.all(AppSpacing.md),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return AppCard(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: AppSpacing.md,
+            runSpacing: AppSpacing.sm,
             children: [
-              Wrap(
-                spacing: AppSpacing.md,
-                runSpacing: AppSpacing.sm,
-                children: [
-                  AppPrimaryButton(label: '上传资料', onPressed: _pickAndUpload),
-                  ShadButton.outline(
-                    leading: const Icon(LucideIcons.folderPlus, size: 16),
-                    onPressed: _newFolder,
-                    child: const Text('新建目录'),
-                  ),
-                ],
+              AppPrimaryButton(label: '上传资料', onPressed: _pickAndUpload),
+              ShadButton.outline(
+                leading: const Icon(LucideIcons.folderPlus, size: 16),
+                onPressed: _newFolder,
+                child: const Text('新建目录'),
               ),
-              const SizedBox(height: AppSpacing.md),
-              if (state.error != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                  child: Text(state.error!,
-                      style: text.bodySmall?.copyWith(color: app.error)),
-                ),
-              // 目录路径：根 > 三年级数学 > …（点任意一级跳转）
-              Row(
-                children: [
-                  _crumb(context, '全部', null),
-                  if (current != null) ...[
-                    Text(' / ', style: text.bodySmall),
-                    Text(current.name, style: text.bodySmall),
-                  ],
-                ],
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              if (state.loading)
-                const Padding(
-                  padding: EdgeInsets.all(AppSpacing.lg),
-                  child: Center(child: AppLoading()),
-                )
-              else ...[
-                ...subfolders.map(_folderRow),
-                ...state.materials.map(_materialRow),
-                if (subfolders.isEmpty && state.materials.isEmpty)
-                  const AppEmptyState(
-                    icon: LucideIcons.folderOpen,
-                    title: '这里还没有资料',
-                    message: '上传教材、卷子或笔记，向量化后出题时会自动参考',
-                  ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          if (state.error != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+              child: Text(state.error!,
+                  style: text.bodySmall?.copyWith(color: app.error)),
+            ),
+          // 目录路径：根 > 三年级数学 > …（点任意一级跳转）
+          Row(
+            children: [
+              _crumb('全部', null),
+              if (current != null) ...[
+                Text(' / ', style: text.bodySmall),
+                Text(current.name, style: text.bodySmall),
               ],
             ],
           ),
-        ),
-      ],
+          const SizedBox(height: AppSpacing.sm),
+          if (state.loading)
+            const Padding(
+              padding: EdgeInsets.all(AppSpacing.lg),
+              child: Center(child: AppLoading()),
+            )
+          else ...[
+            ...subfolders.map(_folderRow),
+            ...state.materials.map(_materialRow),
+            if (subfolders.isEmpty && state.materials.isEmpty)
+              const AppEmptyState(
+                icon: LucideIcons.folderOpen,
+                title: '这里还没有资料',
+                message: '上传教材、卷子或笔记，向量化后出题时会自动参考',
+              ),
+          ],
+        ],
+      ),
     );
   }
 
-  Widget _crumb(BuildContext context, String label, String? folderId) {
+  Widget _crumb(String label, String? folderId) {
     final app = AppTheme.colorsOf(context);
     final text = AppTheme.textOf(context);
     return AppFocusableAction(
