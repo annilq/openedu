@@ -344,6 +344,7 @@ async def _extract_and_align(
                 subject=material.subject,
                 grade=material.grade,
                 name=name,
+                semester="",
             )
     return "extracted", None
 
@@ -392,10 +393,15 @@ def delete_material(
 
 
 def list_knowledge_points(
-    session: Session, *, parent_id: uuid.UUID, subject: str, grade: int
+    session: Session,
+    *,
+    parent_id: uuid.UUID,
+    subject: str,
+    grade: int,
+    semester: str = "",
 ) -> KnowledgePointListResp:
     rows = repo.list_knowledge_points(
-        session, parent_id=parent_id, subject=subject, grade=grade
+        session, parent_id=parent_id, subject=subject, grade=grade, semester=semester
     )
     known = {r.name for r in rows}
     items = [
@@ -422,6 +428,7 @@ def confirm_knowledge_points(
     subject: str,
     grade: int,
     names: list[str],
+    semester: str = "",
 ) -> int:
     """确认知识点：待审转正；骨架条目落库为转正（source=skeleton）。返回转正数。"""
     if subject not in SUBJECTS:
@@ -432,13 +439,19 @@ def confirm_knowledge_points(
         if not name:
             continue
         kp = repo.find_knowledge_point(
-            session, parent_id=parent_id, subject=subject, grade=grade, name=name
+            session,
+            parent_id=parent_id,
+            subject=subject,
+            grade=grade,
+            name=name,
+            semester=semester,
         )
         if kp is None:
             kp = KnowledgePoint(
                 parent_id=parent_id,
                 subject=subject,
                 grade=grade,
+                semester=semester,
                 name=name,
                 status="curated",
                 source="skeleton",

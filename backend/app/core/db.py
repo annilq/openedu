@@ -171,6 +171,33 @@ def run_migrations() -> None:
                 # 偏序迁移：表还没建（首次启动由 init_db 建表并带索引），跳过即可。
                 pass
 
+        # —— 知识点学期维度（ADR-0055 §4 补）——
+        # 学期是第四维范围（'' = 整学年/不限；'上学期' / '下学期'），旧库无此列时补齐。
+        try:
+            if is_sqlite:
+                cols = [
+                    r[1]
+                    for r in conn.execute(
+                        text("PRAGMA table_info(knowledge_point)")
+                    ).fetchall()
+                ]
+                if "semester" not in cols:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE knowledge_point ADD COLUMN semester VARCHAR(8) DEFAULT ''"
+                        )
+                    )
+            else:
+                conn.execute(
+                    text(
+                        "ALTER TABLE knowledge_point ADD COLUMN IF NOT EXISTS "
+                        "semester VARCHAR(8) NOT NULL DEFAULT ''"
+                    )
+                )
+        except OperationalError:
+            # 偏序迁移：表还没建（首次启动由 init_db 建表并带新列），跳过即可。
+            pass
+
         # —— model_config（家长自定义模型，ADR-0015）——
         conn.execute(
             text(

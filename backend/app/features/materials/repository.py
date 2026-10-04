@@ -132,7 +132,12 @@ def delete_material_cascade(session: Session, material: Material) -> int:
 
 
 def list_knowledge_points(
-    session: Session, *, parent_id: uuid.UUID, subject: str, grade: int
+    session: Session,
+    *,
+    parent_id: uuid.UUID,
+    subject: str,
+    grade: int,
+    semester: str = "",
 ) -> list[KnowledgePoint]:
     stmt = (
         select(KnowledgePoint)
@@ -140,6 +145,7 @@ def list_knowledge_points(
             KnowledgePoint.parent_id == parent_id,
             KnowledgePoint.subject == subject,
             KnowledgePoint.grade == grade,
+            KnowledgePoint.semester == semester,
         )
         .order_by(KnowledgePoint.created_at)
     )
@@ -153,11 +159,13 @@ def find_knowledge_point(
     subject: str,
     grade: int,
     name: str,
+    semester: str = "",
 ) -> KnowledgePoint | None:
     stmt = select(KnowledgePoint).where(
         KnowledgePoint.parent_id == parent_id,
         KnowledgePoint.subject == subject,
         KnowledgePoint.grade == grade,
+        KnowledgePoint.semester == semester,
         KnowledgePoint.name == name,
     )
     return session.exec(stmt).first()
@@ -170,14 +178,26 @@ def upsert_pending_knowledge_point(
     subject: str,
     grade: int,
     name: str,
+    semester: str = "",
 ) -> KnowledgePoint:
     """涌现知识点落库：已存在则原样返回（不动状态），不存在则新建**待审**。"""
     existing = find_knowledge_point(
-        session, parent_id=parent_id, subject=subject, grade=grade, name=name
+        session,
+        parent_id=parent_id,
+        subject=subject,
+        grade=grade,
+        name=name,
+        semester=semester,
     )
     if existing is not None:
         return existing
-    kp = KnowledgePoint(parent_id=parent_id, subject=subject, grade=grade, name=name)
+    kp = KnowledgePoint(
+        parent_id=parent_id,
+        subject=subject,
+        grade=grade,
+        semester=semester,
+        name=name,
+    )
     session.add(kp)
     session.commit()
     session.refresh(kp)

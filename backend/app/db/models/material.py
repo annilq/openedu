@@ -151,14 +151,17 @@ class KnowledgePoint(SQLModel, table=True):
     """
 
     __table_args__ = (
-        UniqueConstraint("parent_id", "subject", "grade", "name"),
-        Index("ix_knowledgepoint_scope", "parent_id", "subject", "grade"),
+        # 学期是第四维范围：'' = 整学年/不限；'上学期' / '下学期' 各算独立点。
+        UniqueConstraint("parent_id", "subject", "grade", "name", "semester"),
+        Index("ix_knowledgepoint_scope", "parent_id", "subject", "grade", "semester"),
     )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     parent_id: uuid.UUID = Field(foreign_key="user.id")
     subject: str = Field(max_length=16)
     grade: int
+    # 学期范围维度（ADR-0055 §4 补）：'' = 整学年/不限；'上学期' / '下学期'。
+    semester: str = Field(default="", max_length=8)
     name: str = Field(max_length=128)
     status: str = Field(default=KP_STATUS_PENDING, max_length=16)
     source: str = Field(default=KP_SOURCE_EMERGED, max_length=16)

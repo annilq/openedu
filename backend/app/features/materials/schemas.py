@@ -111,3 +111,5 @@ class KnowledgePointConfirm(SQLModel):
     names: list[str] = Field(min_length=1, max_length=50)
     subject: str = Field(max_length=16)
     grade: int = Field(ge=1, le=9)
+    # 学期范围维度（ADR-0055 §4 补）：'' = 整学年/不限；'上学期' / '下学期'。
+    semester: str = Field(default="", max_length=8)

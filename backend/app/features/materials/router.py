@@ -91,11 +91,11 @@ def list_materials(
 
 @router.get("/knowledge-points", response_model=KnowledgePointListResp)
 def list_knowledge_points(
-    session: SessionDep, user: CurrentParent, subject: str, grade: int
+    session: SessionDep, user: CurrentParent, subject: str, grade: int, semester: str = ""
 ) -> KnowledgePointListResp:
     """知识点选择器数据源：涌现目录（含待审）+ 骨架兜底（ADR-0055 §4）。"""
     return service.list_knowledge_points(
-        session, parent_id=user.id, subject=subject, grade=grade
+        session, parent_id=user.id, subject=subject, grade=grade, semester=semester
     )
 
 
@@ -109,6 +109,7 @@ def confirm_knowledge_points(
         subject=req.subject,
         grade=req.grade,
         names=req.names,
+        semester=req.semester,
     )
     return {"confirmed": confirmed}
 
