@@ -156,6 +156,37 @@ AI 出题 / 伴学 / 批改都需真实引擎，且**无内置模型、无本地
 > `provider ∈ {ollama, openai_compat}`；`base_url` 留空时 ollama 走 `OLLAMA_BASE_URL`（默认 `http://localhost:11434`）。
 > **先固定 `MODEL_APIKEY_SECRET` 再加模型**：该值决定加密密钥，改它会让已存 API Key 全部解不开（事故见 `docs/adr/0038`）。加错顺序时，回到「模型管理」重填一次 Key 即可恢复。
 
+### 资料库 / RAG 出题（ADR-0055）
+
+出题要引用家长上传的资料，需在 `backend/.env` 配 4 项 —— **与「模型管理」无关**：embedding 是服务端基础设施（显式豁免 ADR-0039），因为向量与模型绑定是物理约束，若跟着家长的聊天模型走，家长换一次默认模型就全部存量向量作废。
+
+| 变量 | 取值 | 说明 |
+|---|---|---|
+| `EMBEDDING_PROVIDER` | `none`（默认）/ `ollama` / `openai_compat` | `none` 时向量化端点显式报错，不静默假装成功 |
+| `EMBEDDING_MODEL` | `bge-m3`（推荐，中文强、dense 优） | **同时是向量版本戳**，定下后不要改 |
+| `EMBEDDING_BASE_URL` | ollama 填根地址；openai_compat 填带 `/v1` 的根 | 留空时 ollama 回落 `OLLAMA_BASE_URL`；内部各拼 `/api/embed`、`/embeddings` |
+| `RETRIEVER_PROVIDER` | `mock`（默认）/ `vector` | `vector` 才检索家长私有资料库；未知值告警并回退 `mock` |
+
+本地 Ollama 走一遍：
+
+```bash
+ollama pull bge-m3                      # 约 1.2GB
+cd backend && uv run uvicorn app.main:app --reload
+```
+
+```dotenv
+# backend/.env（改完必须重启进程——settings 在 import 期读取）
+EMBEDDING_PROVIDER=ollama
+EMBEDDING_MODEL=bge-m3
+EMBEDDING_BASE_URL=http://localhost:11434
+RETRIEVER_PROVIDER=vector
+```
+
+**生效链路**：重启后端 → 「资料库」上传 → 点向量化 → 状态徽标转「已就绪」（未向量化 = `未向量化` / 失败 = `失败`）→ 出题时上下文才带 `【资料名】` 前缀，题目随之带 `source_refs` 溯源。改了 `EMBEDDING_MODEL`（含改名，如 `bge-m3` ↔ `bge-m3:latest`）：存量资料惰性标 `已过期`，检索侧按模型名过滤，需重新向量化。
+
+> 首片资料向量化会等 Ollama 把权重换入内存（数秒到十几秒，`EMBEDDING_TIMEOUT_S=120` 已覆盖）；同模型紧接着再调很快。embedding 调用失败**不会**阻塞出题——检索降级为词法通道，只是没有向量召回。
+
+
 ---
 
 ## API 速览
