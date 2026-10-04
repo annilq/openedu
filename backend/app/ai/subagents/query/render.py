@@ -41,6 +41,17 @@ _KIND: dict[str, str] = {
     "get_mastery": "mastery_list",
 }
 
+# 交互讲解卡种类（ADR-0061 决策 7）：聊天内嵌的交互演示。
+#
+# 它不是某个查询工具的结果，而是讲解 / 题目解析下发的 SceneSpec——仍走 ADR-0042 的
+# ``DATA`` 帧，但 ``data.type`` 固定为 ``INTERACTIVE_SCENE_KIND``，载荷（``result``）
+# 即 SceneSpec 原样（含内层 ``kind`` = 具体场景类型如 ``reflection``）。
+#
+# **双登记**：此字符串必须与前端 ``AssistantCardKind.interactiveScene`` 逐字一致，
+# 任何一侧改了另一侧必须同步（契约测试对齐，见 ADR-0042 §Consequences）。旧前端认不出
+# 该种类时由降级卡兜住，不丢内容。
+INTERACTIVE_SCENE_KIND = "interactive_scene"
+
 # 工具 → 卡头标签（人可读）。
 _TITLE: dict[str, str] = {
     "list_children": "娃娃",
@@ -213,6 +224,26 @@ def _notice(title: str, text: str) -> Card:
     return Card(kind="notice", payload={"title": title, "text": text})
 
 
+def render_scene_card(spec: Any) -> Card:
+    """把一份 SceneSpec 包成 ``interactive_scene`` 展示卡（ADR-0061 决策 7）。
+
+    调用方（讲解 / 题目解析）拿到题的 ``scene_spec`` 后，经 ``data_event`` 下发：
+
+        from agent_core.protocol import data_event
+        data_event(card.payload, extra={"type": INTERACTIVE_SCENE_KIND})
+
+    前端 ``AssistantCard.fromData`` 把 ``result``（即本 payload）原样放入
+    ``AssistantCard.rawPayload``，再由 ``SceneInterpreter`` 按内层 ``spec['kind']``
+    分派渲染器。
+
+    健壮性：非 dict 的畸形 spec（模型瞎编 / 字段缺失）一律回退为空 payload 的卡，
+    交给前端降级卡兜住——绝不把 None / 字符串当 payload 下发出去崩前端。
+    """
+    if not isinstance(spec, dict):
+        spec = {}
+    return Card(kind=INTERACTIVE_SCENE_KIND, payload=dict(spec))
+
+
 def _block_cards(name: str, block: dict[str, Any]) -> list[Card]:
     title = _title_of(name)
     kind = _KIND.get(name, "notice")
@@ -290,4 +321,9 @@ def render_cards(name: str, result: Any) -> list[Card]:
     return cards
 
 
-__all__ = ["Card", "render_cards"]
+__all__ = [
+    "Card",
+    "render_cards",
+    "render_scene_card",
+    "INTERACTIVE_SCENE_KIND",
+]
