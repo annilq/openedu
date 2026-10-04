@@ -13,7 +13,7 @@ import '../../domain/assistant_card.dart';
 /// |---|---|---|
 /// | 待办 / 复习（要做的事） | `taskList` · `dueReviewList` · `guide` | `cyan` |
 /// | 错题 / 掌握（要看的问题） | `wrongQuestionList` · `masteryList` · `questionBankList` | `magenta` |
-/// | 结构 / 对话（无行动压力） | `question` · `progress` · `notice` · `childList` · 未登记 | 中性灰 |
+/// | 结构 / 对话（无行动压力） | `question` · `progress` · `notice` · `childList` · `interactiveScene` · 未登记 | 中性灰 |
 ///
 /// `guide` 归「待办」族：它是**要用户去做一件事**的卡（去布置任务），
 /// 与任务列表同一语义，不该长得像一条中性说明。
@@ -43,6 +43,7 @@ IconData cardIconOf(String kind) => switch (kind) {
       AssistantCardKind.progress => LucideIcons.barChart3,
       AssistantCardKind.questionBankList => LucideIcons.library,
       AssistantCardKind.guide => LucideIcons.cornerDownRight,
+      AssistantCardKind.interactiveScene => LucideIcons.shapes,
       _ => LucideIcons.info,
     };
 

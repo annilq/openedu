@@ -13,11 +13,15 @@ class KnowledgePointOption {
   /// emerged = 资料涌现；skeleton = 自编骨架。
   final String source;
 
+  /// 默认交互式讲解模板（ADR-0061）：[{kind, inputs, controls, ...}]；null = 暂未配置。
+  final List<Map<String, dynamic>>? scenes;
+
   const KnowledgePointOption({
     this.id,
     required this.name,
     this.status = 'curated',
     this.source = 'skeleton',
+    this.scenes,
   });
 
   factory KnowledgePointOption.fromJson(Map<String, dynamic> json) =>
@@ -26,6 +30,9 @@ class KnowledgePointOption {
         name: json['name'] as String? ?? '',
         status: json['status'] as String? ?? 'curated',
         source: json['source'] as String? ?? 'skeleton',
+        scenes: (json['scenes'] as List?)
+            ?.map((e) => Map<String, dynamic>.from(e as Map))
+            .toList(),
       );
 }
 
@@ -47,6 +54,12 @@ abstract class MaterialRepository {
     required int grade,
     required List<String> names,
     String semester = '',
+  });
+
+  /// 为知识点编写 / 覆盖默认交互讲解模板（ADR-0061）。空数组 = 清空模板。
+  Future<void> updateKnowledgePointScenes({
+    required String kpId,
+    required List<Map<String, dynamic>> scenes,
   });
 }
 
@@ -81,6 +94,17 @@ class MaterialRepositoryImpl implements MaterialRepository {
     await _network.post(
       '/materials/knowledge-points/confirm',
       body: {'names': names, 'subject': subject, 'grade': grade, 'semester': semester},
+    );
+  }
+
+  @override
+  Future<void> updateKnowledgePointScenes({
+    required String kpId,
+    required List<Map<String, dynamic>> scenes,
+  }) async {
+    await _network.patch(
+      '/materials/knowledge-points/$kpId/scenes',
+      body: {'scenes': scenes},
     );
   }
 }

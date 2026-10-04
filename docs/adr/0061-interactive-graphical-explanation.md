@@ -132,7 +132,9 @@ SceneSpec 只描述「画什么」，不写 Flutter 代码。核心字段：
   - `scene_interpreter.dart` —— `SceneInterpreter` 按 `kind` 分发（前后端双登记，见决策 7），未识别 kind 走 `AppEmptyState` 降级。
 - 几何严格对齐已验证的 `prototypes/reflection_demo.html`：折叠角 `θ = 进度 × 180°`（重合仅门控于 θ=π）、静止侧（青）/ 折叠侧（橙）双填充半区、重合判定「折叠侧 vs 静止侧」而非自身反射。
 - 令牌合规：描边走 `AppElevation.borderWidth/Hairline`、配色走 `AppBrutal`、控件热区走 `AppIconAction`（禁裸 GestureDetector）、空态走 `AppEmptyState`；`flutter analyze lib/shared/widgets/scene_interpreter/` 零 issue。
-- 遗留（骨架未含）：① 三处消费方接线（出题解析卡 / 错题本 / AI 伴学讲解卡接入 `SceneInterpreter`）；② 助手卡 `AssistantCardKind` 新增 `interactive_scene` 并下发 DATA 帧（决策 7）；③ 控制条 `Slider` 替换为 `ShadSlider` 贴合设计系统；④ `KnowledgePoint.scenes` 存储 DDL 尚未建（启动期幂等 ALTER，沿用 `semester` 先例）。
+- `KnowledgePoint.scenes` / `Question.scene_spec` 存储 DDL：已于 2026-10-04 落地（启动期幂等 ALTER + 读写 + 迁移已对真实 `app.db` 验证），见 §G。
+- 助手卡 `interactive_scene` 接入：已于 2026-10-04 落地（前后端双登记 + 前端渲染分派 + 测试），见 §G。
+- 遗留（骨架未含）：① 三处消费方接线（出题解析卡 / 错题本 / AI 伴学讲解卡接入 `SceneInterpreter`）；③ 控制条 `Slider` 替换为 `ShadSlider` 贴合设计系统。
 
 ### 10. 公式渲染缺口：单独立项
 
@@ -186,7 +188,7 @@ SceneSpec 只描述「画什么」，不写 Flutter 代码。核心字段：
 |---|---|---|---|---|
 | 平均数与条形统计图 | f24c1077 | **`bar_chart`** | 改数据 → 条形实时变化 → 平均数线移动 | ✅ 实现 |
 | 图形的运动（平移） | d054cd30 | `translation` | 方格纸拖动图形，显示平移方向与格子数 | 候选 |
-| 图形的运动（轴对称） | 357dd912 | `reflection` | 单个轴对称图形 + 内部对称轴（可旋转任意角度+平移），播放时沿轴翻折、两半重合（找对称轴/判断是否轴对称） | ✅ 已设计 |
+| 图形的运动（轴对称） | 357dd912 | `reflection` | 单个轴对称图形 + 内部对称轴（可旋转任意角度+平移），播放时沿轴翻折、两半重合（找对称轴/判断是否轴对称） | ✅ 已落地（渲染器+编辑器） |
 | 观察物体（二） | 99d90750 | `observation_3d` | 旋转查看三视图（需 3D，暂缓） | 候选 |
 | 数位顺序表 | ca74c700 | `place_value` | 数字占位 / 进率可视化 | 候选 |
 | 四舍五入 | c46978f2 | `rounding` | 看尾数位、舍 / 入判定 | 候选 |
@@ -223,3 +225,39 @@ SceneSpec 只描述「画什么」，不写 Flutter 代码。核心字段：
 3. 教师编写 UI 首版形态未定：先做最小可用——选 `kind` + 表单填默认 `inputs` / `controls` / `narrative` + 实时预览，打通 `bar_chart` 闭环。
 4. 「分析流程」的讲解文案动态改写（改 `inputs` 后 `narrative` 如何随 `outputs` 更新）需在各 kind 渲染器内定义，属渲染器契约的一部分。
 5. **authoring 机制（2026-10-04 拍板：AI 起草 + 人工调参，两者结合）**：为现有知识点「添加默认场景」= AI 基于 KP（名称 / 学科 / 年级 / 学期 + 关联资料片段，按 KP 过滤召回）生成 SceneSpec 草稿（从 kind 注册表选类型 + 默认 `inputs`），教师再调交互体验后确认落库；不可图形化 KP 不产出。仍须先固化 `kind` 词汇表并为 `KnowledgePoint` 加「是否有默认场景 / 哪个 kind」标记（决策 E）。公式渲染维持 §10 字面串占位（用户拍板首版不引入 flutter_math）。
+
+### G. 实现进度（2026-10-04）
+
+决策 9.1 的 `reflection` 已完成**端到端 MVP**：教师可在知识点上编写并保存默认交互讲解，出题 / 错题 / 伴学消费待接。
+
+- **后端（已落地 + 验证）**
+  - `KnowledgePoint.scenes` 列、`Question.scene_spec` 列（JSON、可空、不建外键，与 `source_refs` 同口径）。
+  - 迁移：`app/core/db.py` 启动期幂等 ALTER（SQLite `PRAGMA` + Postgres `IF NOT EXISTS` 双分支）；已对真实 `app.db` 执行验证，存量数据两列均默认 `null`。
+  - 读写：`schemas.KnowledgePointScenesUpdate` + `service.update_knowledge_point_scenes`（owner 隔离校验）+ `router.PATCH /materials/knowledge-points/{kp_id}/scenes`；`KnowledgePointResp` 已带 `scenes`。
+  - 验证：`ruff` 全清、`import` smoke 通过、`run_migrations` 实际加列成功。
+
+- **前端（已落地 + `flutter analyze` 全清）**
+  - 渲染器：`shared/widgets/scene_interpreter/reflection_scene.dart`（`ReflectionSceneData` + `ReflectionSceneWidget`；几何严格对齐已验证原型——折叠角 = 进度×180°、半平面裁剪双填充、重合门控于 180°）。
+  - 解释器：`shared/widgets/scene_interpreter/scene_interpreter.dart`（`SceneInterpreter` 按 `kind` 分派，`unknown` 走 `AppEmptyState` 降级）。
+  - 教师调参 UI：知识点管理视图已落库知识点（id≠null）行加「讲解」入口 → 弹窗编辑器（`knowledge_point_scene_editor.dart`：选图形 + 调默认对称轴参数 + `SceneInterpreter` 实时预览 + 保存）；`KnowledgePointOption` / `MaterialRepository` / `knowledgeManageProvider` 已接 `scenes` 读写。
+
+- **仍待做（不在本轮）**
+  - 三处消费方接线（§C：出题融合写 `scene_spec` / 错题本内联 / 伴学 c1+c2）。
+  - `bar_chart` 等其余 kind（§E.1）。
+  - 公式渲染（§10，首版字面串占位）。
+
+### H. 助手卡 `interactive_scene` 接入（2026-10-04 落地）
+
+ADR-0061 决策 7 的后端 DATA 帧 + 前端渲染分派已打通（任务 ②）。本次只做**卡片协议层**接入；真正「从讲解 / 题目解析下发 SceneSpec」的生产者（伴学 c2 路径）仍属 §C 三处消费方接线（任务 ③）。
+
+- **前端（已落地 + `flutter analyze` 全清 + 单测全过）**
+  - `domain/assistant_card.dart`：`AssistantCardKind.interactiveScene = 'interactive_scene'`（与后端 `render.py#INTERACTIVE_SCENE_KIND` 逐字双登记）；`hasContent` 对 `interactive_scene` 以「内层 `rawPayload['kind']` 为字符串」判定，缺内层 kind 不挂空壳卡。
+  - `presentation/widgets/assistant_interactive_scene_card.dart`（新建）：卡头（`LucideIcons.shapes` + 标题取自 SceneSpec 的 `title`）+ `SceneInterpreter(kind: 内层kind, spec: rawPayload)`；复用 `AssistantCardShell` 容器。
+  - `assistant_card_header.dart`：`interactiveScene` 加图标 `shapes`、归「结构 / 对话」中性族（不抢色相）。
+  - `assistant_cards.dart`：`switch` 加 `interactiveScene` 分派到新卡；`shared/` 不 import `features/`（分层不变量保持）。
+  - 验证：`test/assistant_card_test.dart` 增「外层 kind + 内层 scene kind 落 rawPayload」「缺内层 kind → 无内容」两组。
+
+- **后端（已落地 + `ruff` 全清 + 单测全过）**
+  - `ai/subagents/query/render.py`：增 `INTERACTIVE_SCENE_KIND` 常量（`render_scene_card` 与之同义，双登记）+ `render_scene_card(spec)` 构建器（畸形 spec 不崩、空 payload 降级）；导出入 `__all__`。
+  - 生产者约定：讲解 / 题目解析侧拿到 `scene_spec` 后 `data_event(card.payload, extra={"type": INTERACTIVE_SCENE_KIND})`，前端 `fromData` 把 `result` 原样放入 `rawPayload`。
+  - 验证：`tests/ai/test_assistant_card.py` 增常量对齐 / 包裹 / 拷贝隔离 / 畸形 spec 四组。

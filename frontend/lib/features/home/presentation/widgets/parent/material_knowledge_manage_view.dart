@@ -1,9 +1,11 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/material.dart' show Dialog, showDialog;
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/widgets/app_buttons.dart';
+import '../../../../../shared/widgets/app_actions.dart';
 import '../../../../../shared/widgets/app_card.dart';
 import '../../../../../shared/widgets/app_empty_state.dart';
 import '../../../../../shared/widgets/app_focusable_action.dart';
@@ -11,6 +13,7 @@ import '../../../../../shared/widgets/app_inputs.dart';
 import '../../../../../shared/widgets/app_loading.dart';
 import '../../../../../shared/widgets/app_toast.dart';
 import '../../../providers/knowledge_manage_provider.dart';
+import 'knowledge_point_scene_editor.dart';
 
 /// 知识点管理视图（ADR-0055 §4 确认页）：按 (学科, 年级) 列出知识点目录，
 /// 勾选待审 / 骨架条目并批量确认转正。从资料库页分段切换进来。
@@ -149,6 +152,12 @@ class _MaterialKnowledgeManageViewState
                           ),
                         ),
                       ),
+                    if (kp.id != null)
+                      AppTextAction(
+                        label: '讲解',
+                        onPressed: () =>
+                            _openSceneEditor(context, kp.id!, kp.scenes),
+                      ),
                   ],
                 ),
               );
@@ -164,6 +173,29 @@ class _MaterialKnowledgeManageViewState
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  /// 打开交互讲解编辑器（ADR-0061）：为已落库知识点编写默认交互讲解模板。
+  void _openSceneEditor(
+    BuildContext context,
+    String kpId,
+    List<Map<String, dynamic>>? scenes,
+  ) {
+    showDialog(
+      context: context,
+      builder: (_) => Dialog(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560),
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            child: KnowledgePointSceneEditor(
+              kpId: kpId,
+              initialScenes: scenes,
+            ),
+          ),
+        ),
       ),
     );
   }

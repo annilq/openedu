@@ -59,6 +59,37 @@ void main() {
     });
   });
 
+  group('AssistantCard.fromData · interactive_scene（ADR-0061 决策 7）', () {
+    test('外层 kind + 内层 scene kind 落 rawPayload，判定有内容', () {
+      final card = AssistantCard.fromData(const {
+        'type': 'interactive_scene',
+        'result': {
+          'kind': 'reflection',
+          'title': '图形的运动（轴对称）',
+          'inputs': [
+            {'key': 'axisAngle', 'value': 90},
+          ],
+        },
+      })!;
+
+      expect(card.kind, AssistantCardKind.interactiveScene);
+      expect(card.title, '图形的运动（轴对称）');
+      // 内层场景类型与整份 SceneSpec 都原样可读，交给 SceneInterpreter 分派。
+      expect(card.rawPayload['kind'], 'reflection');
+      expect(card.hasContent, isTrue);
+    });
+
+    test('缺内层 kind → 视为无内容（不画空壳卡）', () {
+      final card = AssistantCard.fromData(const {
+        'type': 'interactive_scene',
+        'result': {},
+      })!;
+
+      expect(card.kind, AssistantCardKind.interactiveScene);
+      expect(card.hasContent, isFalse);
+    });
+  });
+
   group('AssistantCard.fromData · 容错', () {
     test('data 为 null / result 非对象 → 不产卡（畸形帧）', () {
       expect(AssistantCard.fromData(null), isNull);

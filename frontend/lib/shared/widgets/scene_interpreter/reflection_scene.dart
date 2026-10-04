@@ -359,6 +359,24 @@ class _ReflectionSceneWidgetState extends State<ReflectionSceneWidget>
   }
 
   @override
+  void didUpdateWidget(covariant ReflectionSceneWidget old) {
+    super.didUpdateWidget(old);
+    // 外部（编辑器）修改默认参数时同步内部状态并复位动画，避免预览卡在旧值。
+    if (old.data.figure != widget.data.figure ||
+        old.data.axisAngle != widget.data.axisAngle ||
+        old.data.axisX != widget.data.axisX ||
+        old.data.axisY != widget.data.axisY) {
+      _axisAngle = widget.data.axisAngle;
+      _axisX = widget.data.axisX;
+      _axisY = widget.data.axisY;
+      _fold.stop();
+      _fold.value = 0;
+      _playing = false;
+      setState(() {});
+    }
+  }
+
+  @override
   void dispose() {
     _fold.dispose();
     super.dispose();

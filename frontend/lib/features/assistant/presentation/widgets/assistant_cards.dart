@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import '../../domain/assistant_card.dart';
 import 'assistant_card_shell.dart';
 import 'assistant_guide_card.dart';
+import 'assistant_interactive_scene_card.dart';
 import 'assistant_list_card.dart';
 import 'assistant_question_card.dart';
 import 'assistant_stats_card.dart';
@@ -18,6 +19,7 @@ import 'assistant_text_card.dart';
 /// - [AssistantCardKind.progress] → 指标卡（答对 / 正确率 / 打卡）
 /// - [AssistantCardKind.notice] → 提示卡（标题 + 文本）
 /// - [AssistantCardKind.guide] → 引导卡（说明 + 受控跳转出口）
+/// - [AssistantCardKind.interactiveScene] → 交互讲解卡（卡头 + [SceneInterpreter]）
 /// - 其余列表类 → 列表卡（标题 + 归属 + 明细行）
 ///
 /// **降级不丢内容**：认不出的种类若带 `items` 走列表卡的「通用行」，否则走提示卡。
@@ -50,6 +52,8 @@ class AssistantCardTile extends StatelessWidget {
       AssistantCardKind.notice => AssistantTextCard(card: card),
       AssistantCardKind.guide =>
         AssistantGuideCard(card: card, onAction: onAction),
+      AssistantCardKind.interactiveScene =>
+        AssistantInteractiveSceneCard(card: card),
       _ => card.items.isEmpty
           ? AssistantTextCard(card: card)
           : AssistantListCard(card: card),

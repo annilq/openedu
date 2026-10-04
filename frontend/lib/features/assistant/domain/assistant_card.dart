@@ -79,7 +79,11 @@ class AssistantCard {
       stats.isNotEmpty ||
       text.isNotEmpty ||
       actions.isNotEmpty ||
-      (kind == AssistantCardKind.question && rawPayload.isNotEmpty);
+      (kind == AssistantCardKind.question && rawPayload.isNotEmpty) ||
+      // 交互讲解卡：内容在 rawPayload（SceneSpec），且须带内层场景 kind 才算有内容，
+      // 否则只渲染降级空态、不应挂一张空壳卡。
+      (kind == AssistantCardKind.interactiveScene &&
+          rawPayload['kind'] is String);
 
   /// 从 `DATA` 帧的 `data` 载荷解析；不可渲染时返回 null（调用方跳过该帧）。
   ///
@@ -189,4 +193,12 @@ class AssistantCardKind {
 
   /// 无结构可言的提示（查询失败等）。
   static const notice = 'notice';
+
+  /// 聊天内嵌的交互讲解（ADR-0061 决策 7）：把 SceneSpec 下发给客户端自行渲染。
+  ///
+  /// 外层 DATA 帧 `data.type = interactive_scene`，载荷（`result`）即 SceneSpec 原样；
+  /// 内层 `result.kind` 才是具体场景类型（`reflection` / `bar_chart` …），
+  /// 由 `shared/widgets/scene_interpreter` 按 kind 分派渲染器。旧前端认不出此种类
+  /// 时由降级卡兜住（ADR-0042 §决策 4），不丢内容。
+  static const interactiveScene = 'interactive_scene';
 }

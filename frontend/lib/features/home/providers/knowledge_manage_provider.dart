@@ -132,6 +132,21 @@ class KnowledgeManageNotifier extends StateNotifier<KnowledgeManageState> {
   }
 
   void consumeNotice() => state = state.copyWith(clearNotice: true);
+
+  /// 为知识点保存交互讲解模板（ADR-0061）：覆盖式写入 scenes，保存后刷新列表。
+  Future<void> saveScenes(
+    String kpId,
+    List<Map<String, dynamic>> scenes,
+  ) async {
+    state = state.copyWith(loading: true, clearError: true, clearNotice: true);
+    try {
+      await _repo.updateKnowledgePointScenes(kpId: kpId, scenes: scenes);
+      await load();
+      state = state.copyWith(loading: false, notice: '已保存交互讲解模板');
+    } catch (e) {
+      state = state.copyWith(loading: false, error: '保存失败：$e');
+    }
+  }
 }
 
 final knowledgeManageProvider =
