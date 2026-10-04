@@ -7,6 +7,7 @@ class MaterialFolderModel {
   final String? parentFolderId;
   final String? subject;
   final int? grade;
+  final String? semester;
   final int materialCount;
   final int subfolderCount;
 
@@ -16,6 +17,7 @@ class MaterialFolderModel {
     this.parentFolderId,
     this.subject,
     this.grade,
+    this.semester,
     this.materialCount = 0,
     this.subfolderCount = 0,
   });
@@ -27,6 +29,7 @@ class MaterialFolderModel {
         parentFolderId: json['parent_folder_id'] as String?,
         subject: json['subject'] as String?,
         grade: json['grade'] as int?,
+        semester: json['semester'] as String?,
         materialCount: json['material_count'] as int? ?? 0,
         subfolderCount: json['subfolder_count'] as int? ?? 0,
       );
@@ -47,6 +50,7 @@ class MaterialItemModel {
   final int sizeBytes;
   final String? subject;
   final int? grade;
+  final String? semester;
   final List<String> knowledgePoints;
 
   /// pending / ready / failed / stale —— 状态徽标的数据源（ADR-0055 §5）。
@@ -62,6 +66,7 @@ class MaterialItemModel {
     this.sizeBytes = 0,
     this.subject,
     this.grade,
+    this.semester,
     this.knowledgePoints = const [],
     this.indexState = 'pending',
     this.embedModel,
@@ -77,6 +82,7 @@ class MaterialItemModel {
         sizeBytes: json['size_bytes'] as int? ?? 0,
         subject: json['subject'] as String?,
         grade: json['grade'] as int?,
+        semester: json['semester'] as String?,
         knowledgePoints: (json['knowledge_points'] as List?)
                 ?.map((e) => e.toString())
                 .toList() ??
@@ -97,6 +103,7 @@ abstract class MaterialLibraryRepository {
     String? parentFolderId,
     String? subject,
     int? grade,
+    String? semester,
   });
 
   Future<void> deleteFolder(String folderId);

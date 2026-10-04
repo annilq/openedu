@@ -23,12 +23,14 @@ class MaterialLibraryRepositoryImpl implements MaterialLibraryRepository {
     String? parentFolderId,
     String? subject,
     int? grade,
+    String? semester,
   }) async {
     await _network.post('/materials/folders', body: {
       'name': name,
       if (parentFolderId != null) 'parent_folder_id': parentFolderId,
       'subject': subject,
       'grade': grade,
+      'semester': semester,
     });
   }
 

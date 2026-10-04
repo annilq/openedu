@@ -86,6 +86,7 @@ class MaterialLibraryNotifier extends StateNotifier<MaterialLibraryState> {
     required String name,
     String? subject,
     int? grade,
+    String? semester,
   }) async {
     try {
       await _repo.createFolder(
@@ -93,6 +94,7 @@ class MaterialLibraryNotifier extends StateNotifier<MaterialLibraryState> {
         parentFolderId: state.currentFolderId,
         subject: subject,
         grade: grade,
+        semester: semester,
       );
       await load();
       state = state.copyWith(notice: '目录「$name」已创建');

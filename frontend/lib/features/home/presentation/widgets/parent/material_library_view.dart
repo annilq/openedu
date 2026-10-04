@@ -56,6 +56,7 @@ class _MaterialLibraryViewState extends ConsumerState<MaterialLibraryView> {
     final nameCtrl = TextEditingController();
     String? subject;
     int? grade;
+    String? semester;
     final confirmed = await AppDialog.confirm(
       context,
       title: const Text('新建目录'),
@@ -79,6 +80,14 @@ class _MaterialLibraryViewState extends ConsumerState<MaterialLibraryView> {
             value: grade,
             onChanged: (v) => grade = v,
           ),
+          const SizedBox(height: AppSpacing.md),
+          AppPickerField<String>(
+            label: '学期（可选，子项继承）',
+            values: const ['上学期', '下学期'],
+            labels: const ['上学期', '下学期'],
+            value: semester,
+            onChanged: (v) => semester = v,
+          ),
         ],
       ),
     );
@@ -89,6 +98,7 @@ class _MaterialLibraryViewState extends ConsumerState<MaterialLibraryView> {
           name: name,
           subject: subject,
           grade: grade,
+          semester: semester,
         );
   }
 
@@ -253,6 +263,7 @@ class _MaterialLibraryViewState extends ConsumerState<MaterialLibraryView> {
     final meta = [
       if (folder.subject != null) folder.subject!,
       if (folder.grade != null) '${folder.grade}年级',
+      if (folder.semester != null && folder.semester!.isNotEmpty) folder.semester!,
     ].join(' · ');
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.sm),
