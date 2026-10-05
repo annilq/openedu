@@ -1,5 +1,6 @@
 import 'assistant_card.dart';
 import 'assistant_event.dart';
+import 'assistant_source.dart';
 import 'stream_stage.dart';
 
 /// 把 AG-UI 事件流折成「AI 文本 + 结构化卡片 + 安全兜底标记」的纯模块。
@@ -33,12 +34,16 @@ class AiTextFold {
   /// ERROR 帧文案；非 null 表示流以错误收尾。
   final String? errorText;
 
+  /// 答疑引用落点（后端 `rag_sources` DATA 帧）：答案下方「参考来源」条的数据。
+  final List<RagSource> sources;
+
   const AiTextFold({
     this.text = '',
     this.cards = const <AssistantCard>[],
     this.blocked = false,
     this.stage = '',
     this.errorText,
+    this.sources = const <RagSource>[],
   });
 
   static const _fallbackError = '出错了，请稍后重试';
@@ -55,13 +60,34 @@ class AiTextFold {
     return switch (ev.eventType) {
       AssistantEventType.assistantMessage =>
         _copy(text: text + (ev.text ?? ''), stage: stage),
-      AssistantEventType.data => _withCard(ev, stage: stage),
+      AssistantEventType.data => _withData(ev, stage: stage),
       AssistantEventType.error => _copy(
           blocked: blocked || ev.code == AssistantErrorCode.inputUnsafe,
           errorText: errorText ?? ev.message ?? _fallbackError,
         ),
       _ => stage == null ? this : _copy(stage: stage),
     };
+  }
+
+  AiTextFold _withData(AssistantEvent ev, {String? stage}) {
+    final data = ev.data;
+    // 答疑引用条：把 `rag_sources` DATA 帧收进 sources，供答案下方渲染。
+    // 与卡片走同一信封（DATA），但种类不同、渲染器不同，故在此分流。
+    if (data != null &&
+        data['type'] == 'rag_sources' &&
+        data['result'] is List) {
+      final incoming = (data['result'] as List)
+          .whereType<Map<String, dynamic>>()
+          .map(RagSource.fromJson)
+          .toList();
+      if (incoming.isNotEmpty) {
+        return _copy(
+          sources: <RagSource>[...sources, ...incoming],
+          stage: stage,
+        );
+      }
+    }
+    return _withCard(ev, stage: stage);
   }
 
   AiTextFold _withCard(AssistantEvent ev, {String? stage}) {
@@ -82,6 +108,7 @@ class AiTextFold {
     bool? blocked,
     String? stage,
     Object? errorText = _unset,
+    List<RagSource>? sources,
   }) =>
       AiTextFold(
         text: text ?? this.text,
@@ -91,6 +118,7 @@ class AiTextFold {
         errorText: identical(errorText, _unset)
             ? this.errorText
             : errorText as String?,
+        sources: sources ?? this.sources,
       );
 
   static const _unset = Object();

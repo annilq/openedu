@@ -13,6 +13,7 @@ import '../../domain/assistant_card.dart';
 import '../provider/assistant_notifier.dart';
 import 'assistant_card_plain_text.dart';
 import 'assistant_cards.dart';
+import 'assistant_sources_bar.dart';
 import '../../../../shared/widgets/app_actions.dart';
 import '../../../../shared/widgets/app_card.dart';
 
@@ -150,6 +151,11 @@ class _Bubble extends StatelessWidget {
             // 复制入口只挂在 AI 回复上：用户自己的提问没有复制价值，占位「思考中」
             // 气泡也没有内容可复制。卡片算内容——有卡无文（引用查询结果时很常见）
             // 也要能复制，所以判据是「正文或卡片非空」。
+            // 答疑引用条：命中并注入 prompt 的资料片段溯源，紧跟答案下方展示
+            // （与复制入口同列左缩进，AI 靠左）。未命中资料库时不渲染。
+            if (message.sources.isNotEmpty)
+              AssistantSourcesBar(sources: message.sources),
+
             if (!isUser && !message.thinking && copyText.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(

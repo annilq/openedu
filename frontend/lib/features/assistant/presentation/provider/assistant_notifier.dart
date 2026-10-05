@@ -6,6 +6,7 @@ import '../../providers/assistant_provider.dart';
 import '../../domain/ai_text_fold.dart';
 import '../../domain/assistant_card.dart';
 import '../../domain/assistant_event.dart';
+import '../../domain/assistant_source.dart';
 import '../../domain/conversation.dart';
 
 /// 一条助手对话气泡。
@@ -16,15 +17,17 @@ class AssistantMessage {
   final List<AssistantCard>? cards; // DATA 类型化卡片（题卡 / 任务卡 / 学情卡）
   final bool thinking; // 占位「思考中」气泡（尚无文本）
   final String stage; // thinking 时的阶段文案（路由/工具帧提取），空 = 默认「思考中…」
+  final List<RagSource> sources; // 答疑引用落点（答案下方「参考来源」条）
 
   const AssistantMessage({
     required this.role,
     this.text = '',
     this.blocked = false,
     this.cards,
-        this.thinking = false,
-        this.stage = '',
-      });
+    this.thinking = false,
+    this.stage = '',
+    this.sources = const <RagSource>[],
+  });
 
   /// 从回放气泡重建一条消息（role 换算成 UI 侧口径：`assistant` → `ai`）。
   ///
@@ -35,6 +38,8 @@ class AssistantMessage {
         role: bubble.role == 'assistant' ? 'ai' : 'user',
         text: bubble.text,
         cards: bubble.cards.isEmpty ? null : bubble.cards,
+        // 回放溯源为后续增强：当前气泡载荷未携带 sources，留空不展示。
+        sources: const <RagSource>[],
       );
 }
 
@@ -197,6 +202,7 @@ class AssistantNotifier extends StateNotifier<AssistantState> {
         text: fold.text,
         cards: fold.cards.isEmpty ? null : fold.cards,
         blocked: fold.blocked,
+        sources: fold.sources,
       ));
     }
     if (fold.hasError) {
