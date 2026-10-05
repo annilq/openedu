@@ -43,6 +43,7 @@
 - ⚠️ **`git commit -- <file>` 会重暂存该文件整个工作区再提交**：hunk 级拆分须 `git add -p` 后**不带 pathspec** `git commit`，否则未选 hunk 一并进（误并 ADR-0061 `multi`/`scene_spec` 翻过车）。
 - 引擎失败归因：`decrypt()` 解不开只返 `None`；`ToolUnsupportedError`(无FC) vs `ProviderRequestError`(带 `kind`+`user_hint`) 落 `genkit.py#classify_failure`；禁 `except Exception` 抹成「请添加模型」。
 - ⚠️ **`sa_type=JSON` 可空列须 `JSON(none_as_null=True)`**（ADR-0061 §N）：否则 `None` 序列化成文本`'null'`，`IS NOT NULL` 为真而内容空，非空计数失真。已修 scenes/scene_spec；其余(options/source_refs/specs)同坑。
+- ⚠️ **SQLite「加列」≠「加约束」**（ADR-0061 §R）：`ALTER TABLE ADD COLUMN x` 里写的 `UNIQUE(...)` 子句被**静默忽略**（无 `ADD CONSTRAINT`）→ **老库仍留旧约束而新建库正常**，本地测不出来。改 UNIQUE 只能**重建表**（建新表→`INSERT..SELECT`→删旧→`RENAME`→重建索引），迁移须**幂等**（先读 `sqlite_master` 判现状）；回归测试要**手工造老库形状**。旧约束更严时重建必安全（不可能已有重复行）。
 - 工具 schema strict(ADR-0040)：可省略参数有缺席编码(`""`/`0`/枚举含 `NO_FILTER="all"`)。助手分流(ADR-0043)：`acc` 只收 TEXT。
 - pytest 前 `cd backend && mv .env .env.hidden`（完恢复）；`.venv/bin/ruff`、`.venv/bin/pytest`（全量~25s）。⚠️ **真库 `backend/app.db`**（相对 backend），根目录跑迁移静默建空库 → 必先 `cd backend`。⚠️ 3 个 vectorize/retrieval 用例既存顺序污染失败（干净树同败、单跑过），勿误判。
 - **「测试连接」**（2026-09-20）：①走后端（密钥密文只在后端）；②经 `build_engine` 同源；③失败 200+`ok=false`。超时 `MODEL_PROBE_TIMEOUT_S=20`。
