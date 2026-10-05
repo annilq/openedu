@@ -19,6 +19,7 @@
 - ⚠️ **非 push 路由页面禁裸 `Navigator.pop`**（弹根栈最后一条=整个App→白屏）；走注入回调或 `maybePop`。
 
 ## 2. 视觉/控件实测（取值见 `.impeccable.md`）
+- ⚠️ **全仓禁用 Material 系控件**（`InkWell`/`Icons.`/`Scaffold`/`ListTile`/`Divider`/`Tooltip`）：App 根是 `ShadApp`+`CupertinoApp`，**整棵树无 Material 祖先**，构建期即抛「No Material widget found」、整片区域崩掉。**`flutter analyze` 照不出来**（类型全合法，只有真机构建才炸）→ 新控件测试须在**不套 Material** 的树里真构建一次（先例 `test/assistant_sources_bar_test.dart`）。可点区一律 `AppFocusableAction`。
 - 描边三档：2 `borderWidth`·1.5 `borderWidthSm`·1 `borderWidthHairline`（顶栏底边/侧栏右缘/分隔线）。
 - ⚠️ **白物体在纸底没边界**是头号陷阱：`surfaceRaised` vs 纸底 `#FDFBF7` 仅差~1.02 → 补描边非加粗。
 - 空态 `AppEmptyState`(ADR-0051)。reduce-motion 须 `reducedMotionOf(context)?Duration.zero:…`；浮层阴影 `_floatingShadows()`（暗色返 `none`）。
