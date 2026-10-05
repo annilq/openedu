@@ -461,3 +461,71 @@ ADR-0061 决策 7 的后端 DATA 帧 + 前端渲染分派已打通（任务 ②�
 - 实测确认**不是 bug**：题目 `semester=''` **不该**匹配「下学期」的知识点模板 —— §J 的规则是「同学期优先 → 整学年兜底」，**不反向跨学期**。
 - 验证：`bank_question_detail_test.dart` **7/7**（题干/选项/答案/解析、知识点信息、`''`→整学年、有场景出图、无场景不占位、画布压窄、关闭按钮）；后端实测响应带 `semester` + `scene_spec`（正方形题= 4 顶点）；`flutter analyze lib` 零 issue；前端 **310 passed**、后端 **542 passed**。
 - ⚠️ 过程中试图把题库卡片抽成独立文件以压回行数基线，**失败两次**（行号切片吞掉了相邻方法体 → 58 个编译错），已回滚。教训：**多行切片改文件前必须 assert 首尾锚点**；且并行会话正在改的文件**不做大段抽取**。最终只做最小增量（+10 行）—— 该文件本就超基线（既存状态）。
+
+#### S.1 补做：拆 `BankQuestionRow`，把题库视图压回棘轮基线以下
+
+上一节留的尾巴（题库视图 866 行 > 基线 838，棘轮一直红）已做掉：
+
+- 拆出 `BankQuestionRow`（156 行）= 卡片 `_buildItem` + `_tag` + `_usageTag`，回调全部**构造注入**（`onToggle` / `onShowUsages`），本文件不依赖视图私有状态。
+- `parent_question_bank_view.dart` **866 → 759**；按 ADR-0058「拆小了就把基线跟着调小」**基线 838 → 759**。
+- 结果：**前端全量 311 passed**（此前整轮会话都带着这 1 个棘轮失败）。
+- ⚠️ **搬代码块时禁用正则删方法**：`re.sub(r"...标签.*?\n  \}\n", ..., re.S)` 在 DOTALL 下 `.*?` 匹配不到本方法结尾的 `  }` 就**跨进下一个方法**、把 `_buildActionFooter` 方法体吞进删除区 → 58 个编译错（行边界断言是对的，错的是删除用的正则）。**正确做法：块逐行原样搬，只对要改的行做单行精确替换，helper 一律保留只改签名。**
+- 另两个小坑：`sed -n 'a,bp'` 输出带尾随换行会让 `split('\n')` 末元素为 `''`（assert 前先 pop）；`AppTheme.colorsOf(context)` 返回 **`AppColors`** 而非 `ColorScheme`。
+- 行为等价性逐项核对：多选 onTap / 复选框 / 「用过 N 次」/ 查看详情 / 已归档标签 / 选中描边变 primary，全部确认在新文件内（顺手把 `() => onToggle` 这类冗余 lambda 简化）。
+
+### T. 修两个报障：题库详情无图 + 选项「A. A.」重复标识
+
+#### T.1 题库详情没有交互展示
+
+- **根因**：`list_bank_questions` 返回 `Question.scene_spec` **原始值**，**没有实时回退**；而 `tasks`/`review` 路径是「快照优先 + `build_scene_spec_for_question` 回退」。快照只在**出题那一刻**生成，而模板往往是**之后**才配的 → **题库里的存量题永远出不了图**。
+- **修法**：与 tasks/review 同一口径（`q.scene_spec or build_scene_spec_for_question(...)`，带 `scene_cache` 避免同页几十道同知识点题各查一次）。
+- 实测（`Question.scene_spec` 仍为 NULL 的老题）：「正方形有几条对称轴」→ **4 顶点**；「下面哪个图形是轴对称图形」→ **选项组 4 项**；「下面哪个英文字母…」→ 5 顶点（arrow 兜底，字母词不在图库）。三档输出同时验证了抽取链路。
+- ⚠️ 排查时连踩两个坑（都不是 bug）：模板配在了**别的 parent** 下；题是 `semester=''`（整学年）而模板配在下学期 —— §J 是「同学期优先 + 整学年兜底」，**不反向跨学期**。**验证场景解析前先对齐 parent 与 semester。**
+
+#### T.2 选项重复标识「A. A. 房子」
+
+- **既有契约**：后端 `normalize_options` **刻意不剥**前缀（docstring 明说：答案字段也带前缀，剥离会让判题比对失配）→ 渲染层负责剥 `cleanOptionText`。
+- **本次补上 2 处**：① 题库详情弹窗（§S 新写时漏了）；② **助手纯文本题卡 `card_payload.dart`** —— 既存漏网之鱼，自己画了标号却没剥，靠新写的守卫测试才被发现。
+- **守卫测试 `tests/ai/test_option_prefix_contract.py`（23/23）**：
+  - 7 处渲染点**逐个**断言调用了 `cleanOptionText`；
+  - 正则**不误剥正文**（`Apple` / `三角形ABC` / 单个 `A`）；
+  - 不变量写成「**画标号 ⊆ 剥前缀**」—— 不是「禁止手工画标号」，因为纯文本卡片没有 `AppOptionTile` 可用，手工编号是合法的。
+
+#### T.3 连带修好：可空 JSON 列写出文本 `'null'`（ADR-0061 §N 全仓）
+
+- `Question.options` 等**12 个可空JSON 列**都缺 `none_as_null=True` → Python `None` 被序列化成**文本 `'null'`** 而非 SQL NULL → `IS NOT NULL` 为真而内容为空。实测 `question.options` 有 **5 行是文本 `'null'`**，读出来是字符串 `'null'` → 任何「这题有选项」的判断都走偏（这正是 §S 排查时偶然撞见的）。
+- 模型层**全量统一** + 新增幂等启动迁移 `_nullify_text_json_nulls` 收拾存量（24 行）：只 `UPDATE` 值**恰为** `'null'` 的行，表/列不存在则跳过。实测清零、连跑两次幂等、真选项未被误清。
+- ⚠️ 批量改模型声明时翻车两次（正则吞掉 `sa_type=JSON)` 的右括号 → 86 错；补回后又给已正确的行多加括号）。教训同 §S.1：**批量改声明式代码也要逐行判定 + 全仓 grep 复查**。
+
+**验证**：后端 **576 passed**（3 个 vector 既存顺序污染）、前端 `analyze lib` 零 issue + **311 passed 全绿**；`ruff check app` 干净（2 个既存 I001/F401 位于非本次改动文件）。
+
+### U. 修「仍然没有图形」：REST 端点漏字段 + 图库兜底（2026-10-05）
+
+§T 之后用户仍报「没有图形」。两个**独立**根因叠在一起，只修 §T 那一个当然还是没图：
+
+#### U.1 根因一：修错了文件 —— 前端打的是 REST 端点，改的是助手工具
+
+- 前端题库走 `GET /questions` → `features/questions/router.py` + `schemas.py`，而 §T 改的是 `features/questions/service.py`（**助手查询工具**的投影）。两条路径**各有一份 `BankQuestionItem`**，`schemas.py` 那份**根本没有 `scene_spec` / `semester` 字段** → 响应里连 key 都没有，前端 `BankQuestionItem.fromJson` 永远拿到 null。
+- ⚠️ **教训**：「下发了 X」必须**打到端点验**（响应体里真的有这个 key），不能只测 service 函数——单测全绿也照漏不误。本次补 `tests/api/routes/test_questions_bank_scene.py` 就是为此：它断言的是**端点响应**，不是 service 返回值。
+
+#### U.2 根因二：库里一条模板都没有 —— 回退解析也救不了
+
+- 实测真库：`knowledgepoint.scenes` **非空 0 条**、`question.scene_spec` / `taskquestion.scene_spec` **非空 0 条**。也就是说「快照优先 + 实时回退」两级**都是空的**，回退查模板必然查不到 → 必然无图。**光修链路不出图是正确行为，不是 bug。**
+- 但家长的观感就是「功能没做」：讲解的**几何权威来源是图库**（`scene_figures` ↔ 前端 `figures.dart`），教师模板只提供**默认参数**（默认哪个图形、轴多少度）。题面明写「正方形」时，图库里本来就有权威顶点——**没配模板就不出图**等于让「正方形有几条对称轴」这类最典型的题裸奔。
+
+#### U.3 修法：图库兜底（新增 `default_scene_from_figure`）
+
+- 教师**没配模板**时，若题面/选项**命中图库图形**，按图库合成默认 `reflection` 场景：顶点、默认轴角度、`axisAngles/axisCount` 全部取自图库（§Q 决策 A：轴对齐、零微扰），`editable=true`（学生能自己拖轴去试）。
+- **边界（防臆造，与 `extract_scene_inputs` 同纪律）**：命中不了图形就返回 `None`。纯计算题「图书馆有 86 本书」没有图形可讲，硬塞一个图形就是编。
+- **不泄题**：引导语只说「点播放看两侧能否重合 / 自己旋转找出所有能重合的角度」，**不出现条数**（「正方形有几条对称轴」的答案就是那个数）。
+- **如实**：`outputs.isAxisymmetric = axis_count > 0`（平行四边形 = False）；**带选项组时去掉 `outputs`**——每个选项判定不同（房子对称、平行四边形不对称），父级给统一结论就是替学生答。
+- **优先级不变**：教师模板 > 图库兜底（`derivedFrom` 标记来源，便于排查「这图是谁给的」）。
+
+#### U.4 顺带收口：四条读路径共用一个函数
+
+- 新增 `scene_spec_for_read(session, snapshot=..., ...)` = 「快照优先 → 实时解析 → 图库兜底」。此前 `tasks` / `review` / 助手工具**各内联一份** `q.scene_spec or build_...`，`questions` REST **整段漏写** —— 这正是「同一道题换个地方就没图」的成因。
+- `review`（错题本）此前**只发快照**、连回退都没有 → 老错题永远没图，一并按同一口径接上（`review_item_to_resp` 新增可选 `session` / `scene_cache`）。
+
+**验证**：真库实测（无任何模板、无快照）——「正方形有几条对称轴」→ square + 4 顶点；「长方形…」→ rectangle；「下面哪个图形是轴对称图形」→ **选项组 4 项**；「英文字母…」→ 无图（字母不在图库，**不臆造**）。后端 **589 passed**（3 个 vector 既存顺序污染）、`ruff` 仅 2 个既存（已核对 HEAD 版本同报）。前端本轮未改动。
+
+**待办（backlog）**：英文字母（H/N/F/G…）尚未进图库，故「哪个字母是轴对称」这类题仍无图——补图库即可，与本次修复无关。

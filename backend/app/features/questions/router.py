@@ -13,6 +13,7 @@ from fastapi import APIRouter, Query
 
 from app.core.deps import CurrentParent, SessionDep
 from app.core.pagination import clamp_page_size, encode_cursor
+from app.features.materials.scene_fusion import scene_spec_for_read
 from app.features.questions.repository import (
     delete_bank_questions,
     get_question_usages,
@@ -76,6 +77,9 @@ def list_bank(
         if items and len(items) == page_size
         else None
     )
+    # 同一页里同一 (年级, 学科, 学期, 知识点) 的题共用一份模板解析结果 —— 避免
+    # 每题各查一次（同页通常有几十道同知识点的题）。与助手查询工具同一口径。
+    scene_cache: dict[tuple, dict | None] = {}
     return BankListResp(
         items=[
             BankQuestionItem(
@@ -92,6 +96,21 @@ def list_bank(
                 created_at=q.created_at,
                 usage_count=usage.get(q.id, 0),
                 archived_at=q.archived_at,
+                semester=q.semester or "",
+                # 交互讲解（ADR-0061 §U）：与任务详情 / 错题本走同一个函数，
+                # 否则同一道题「任务里有图、题库里没图」。
+                scene_spec=scene_spec_for_read(
+                    session,
+                    snapshot=q.scene_spec,
+                    parent_id=q.parent_id,
+                    subject=q.subject,
+                    grade=q.grade,
+                    knowledge_point=q.knowledge_point,
+                    semester=q.semester,
+                    stem=q.stem,
+                    options=q.options,
+                    cache=scene_cache,
+                ),
             )
             for q in items
         ],

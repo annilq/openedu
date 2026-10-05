@@ -53,6 +53,7 @@ from app.domain.structured import normalize_options
 from app.domain.provider import GeneratedQuestion, QuestionCard, QuestionStreamEvent
 from app.features.materials.scene_fusion import (
     build_scene_spec_for_question,
+    scene_spec_for_read,
 )
 from app.features.tasks.repository import (
     add_bank_questions_to_task,
@@ -161,13 +162,12 @@ def wrong_question_to_resp(
         due_at=wq.due_at,
         multi=q.multi,
         graduated_at=wq.graduated_at,
-        # 交互讲解（ADR-0061 §M）：**快照优先**——出题时算好的那份就是这道题的
-        # 讲解实例（贴合本题图形/角度，且知识点模板后续改动不影响它）。
-        # 老数据没有快照才回退实时解析（按知识点 + 学期找模板），保证存量题
-        # 仍能出图；两者都无则 None，前端降级为纯文本解析。
-        scene_spec=q.scene_spec
-        or build_scene_spec_for_question(
+        # 交互讲解（ADR-0061 §U）：走与题库/错题本共用的 ``scene_spec_for_read``
+        # —— 快照优先（出题时算好的那份贴合本题图形/角度，模板后续改动不影响
+        # 它）；老数据没有快照才实时解析（按知识点 + 学期找模板，再无则图库兜底）。
+        scene_spec=scene_spec_for_read(
             session,
+            snapshot=q.scene_spec,
             parent_id=q.parent_id,
             subject=q.subject,
             grade=q.grade,

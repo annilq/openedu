@@ -1,6 +1,7 @@
 """Pydantic schemas for the questions (bank) feature."""
 
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from sqlmodel import Field, SQLModel
@@ -23,6 +24,13 @@ class BankQuestionItem(SQLModel):
     usage_count: int = 0  # 被多少个 Task 引用（复用度）
     # 已归档时间；None = 在用（ADR-0053 P2）。前端据此给「已归档」徽标。
     archived_at: datetime | None = None
+    # 学期（ADR-0061 §J）：'' = 整学年/不限。详情要展示——它同时决定讲解匹配
+    # 哪份知识点模板（同学期优先、整学年兜底）。此前本 schema 漏了它，详情里
+    # 「学期」永远显示成整学年。
+    semester: str = ""
+    # 交互讲解实例（ADR-0061 §U）：快照优先、缺失则实时解析、再无则图库兜底。
+    # 此前本 schema 漏了它，题库详情**永远**没有图形（前端拿到 null 就不渲染）。
+    scene_spec: dict[str, Any] | None = None
 
 
 class BankListResp(SQLModel):

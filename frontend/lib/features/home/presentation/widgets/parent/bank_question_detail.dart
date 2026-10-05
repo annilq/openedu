@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 
 import '../../../../../shared/domain/models/models.dart';
 import '../../../../../shared/theme/app_theme.dart';
+import '../../../../../shared/utils/option_text.dart';
 import '../../../../../shared/utils/question_labels.dart';
 import '../../../../../shared/widgets/app_actions.dart';
 import '../../../../../shared/widgets/app_tags.dart';
@@ -87,13 +88,14 @@ class BankQuestionDetail extends StatelessWidget {
             Text(item.stem, style: text.bodyMedium),
             if (hasOptions) ...[
               const SizedBox(height: AppSpacing.sm),
-              // 选项标号取自**位置**（与做题/纸质导出一致），不受选项文本里是否
-              // 自带「A.」影响。
+              // 标号按**位置**重画（与做题/纸质导出一致），正文必须先过
+              // `cleanOptionText` 剥掉模型自带的 "A. " 前缀 —— 否则会显示成
+              // 「A. A. 房子」。这与另外 5 处选项渲染（AppOptionTile 等）同口径。
               for (var i = 0; i < item.options!.length; i++)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 2),
                   child: Text(
-                    '${chr(i)}. ${item.options![i]}',
+                    '${chr(i)}. ${cleanOptionText(item.options![i])}',
                     style: text.bodyMedium,
                   ),
                 ),

@@ -22,6 +22,7 @@ from app.core.errors import AppErrorException, ErrCode
 from app.db.models import Question, User, WrongQuestion
 from app.domain import Grader
 from app.domain.review_scheduler import apply_review_outcome, next_interval_days
+from app.features.materials.scene_fusion import scene_spec_for_read
 from app.features.review.repository import list_due_wrong_questions
 from app.features.review.schemas import ReviewAnswerSubmit, ReviewItemResp
 from app.features.tasks.repository import create_answer_record
@@ -36,8 +37,33 @@ class ReviewNotDue(Exception):
     """复习项尚未到期，不可作答（路由翻译为 409）。"""
 
 
-def review_item_to_resp(wq: WrongQuestion, q: Question) -> ReviewItemResp:
-    """错题 + 题目 → 复习项响应（含下次间隔，供前端展示遗忘曲线状态）。"""
+def review_item_to_resp(
+    wq: WrongQuestion,
+    q: Question,
+    *,
+    session: Session | None = None,
+    scene_cache: dict[tuple, dict | None] | None = None,
+) -> ReviewItemResp:
+    """错题 + 题目 → 复习项响应（含下次间隔，供前端展示遗忘曲线状态）。
+
+    ``session`` 非空时交互讲解走 :func:`scene_spec_for_read`（ADR-0061 §U）：
+    错题本此前**只发快照**，老错题（出题时还没模板）永远没图——与题库详情
+    / 任务详情同一口径才不会「同一道题换个地方就没图」。
+    """
+    scene_spec = q.scene_spec
+    if session is not None:
+        scene_spec = scene_spec_for_read(
+            session,
+            snapshot=q.scene_spec,
+            parent_id=q.parent_id,
+            subject=q.subject,
+            grade=q.grade,
+            knowledge_point=q.knowledge_point,
+            semester=q.semester,
+            stem=q.stem,
+            options=q.options,
+            cache=scene_cache,
+        )
     return ReviewItemResp(
         wrong_question_id=wq.id,
         question_id=q.id,
@@ -53,14 +79,19 @@ def review_item_to_resp(wq: WrongQuestion, q: Question) -> ReviewItemResp:
         next_interval_days=next_interval_days(wq.review_stage),
         due_at=wq.due_at,
         multi=q.multi,
-        scene_spec=q.scene_spec,
+        scene_spec=scene_spec,
     )
 
 
 def list_due_reviews(*, session: Session, child_id: UUID) -> list[ReviewItemResp]:
     """娃娃的待复习队列：遗忘曲线到点的错题（不含答案，防作弊）。"""
     rows = list_due_wrong_questions(session=session, child_id=child_id)
-    return [review_item_to_resp(wq, q) for wq, q in rows]
+    # 同一页里同一知识点的题共用一份模板解析结果。
+    scene_cache: dict[tuple, dict | None] = {}
+    return [
+        review_item_to_resp(wq, q, session=session, scene_cache=scene_cache)
+        for wq, q in rows
+    ]
 
 
 def submit_answer(

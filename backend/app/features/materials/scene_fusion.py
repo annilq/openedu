@@ -25,6 +25,7 @@ from app.features.materials.scene_extract import (
     extract_option_group,
     extract_scene_inputs,
 )
+from app.features.materials.scene_figures import figure_by_key
 
 
 def fuse_scene_spec(
@@ -77,6 +78,113 @@ def fuse_scene_spec(
                 merged.append({"key": key, "value": value, "generated": True})
         spec["inputs"] = merged
     return spec
+
+
+def default_scene_from_figure(figure_key: str | None) -> dict | None:
+    """图库兜底场景（ADR-0061 §U）：没配模板、但题面点名了图形时的默认演示。
+
+    为什么必须有兜底：讲解的**几何**权威来源是图库（``scene_figures``），教师模板
+    只提供默认参数（默认哪个图形、轴多少度）。题面明写「正方形」时，图库里本来
+    就有权威顶点——「没配模板就不出图」会让「正方形有几条对称轴」这类**最典型**
+    的题裸奔，家长看到的就是「功能没做」。
+
+    边界（防臆造，与 :func:`extract_scene_inputs` 同一纪律）：**只有题面/选项确实
+    命中了图库图形才生成**。命中不了（纯计算题「图书馆有 86 本书」）返回 ``None``
+    ——那种题本来也没有图形可讲，硬给一个图形就是编。
+
+    ``outputs.isAxisymmetric`` **如实取** ``axis_count > 0``（平行四边形 = False），
+    不写死 True——写死等于替学生答了「它是不是轴对称图形」。
+    """
+    shape = figure_by_key(figure_key)
+    if shape is None:
+        return None
+    return {
+        "kind": "reflection",
+        "title": f"{shape.label}·轴对称",
+        "inputs": [
+            {
+                "key": "axisAngle",
+                "label": "对称轴角度",
+                "value": shape.default_axis_angle,
+                "min": 0,
+                "max": 180,
+                "step": 1,
+                "unit": "度",
+            },
+            {
+                "key": "axisX",
+                "label": "对称轴水平",
+                "value": 0.5,
+                "min": 0.3,
+                "max": 0.7,
+                "step": 0.01,
+                "unit": "比例",
+            },
+            {
+                "key": "axisY",
+                "label": "对称轴垂直",
+                "value": 0.5,
+                "min": 0.3,
+                "max": 0.7,
+                "step": 0.01,
+                "unit": "比例",
+            },
+            {"key": "figure", "label": "图形", "value": shape.key},
+            {
+                "key": "points",
+                "label": "顶点",
+                "value": [[x, y] for x, y in shape.vertices],
+            },
+        ],
+        "controls": {"play": True, "pause": True, "scrub": True, "speed": True},
+        # 引导**动手试**而不报答案：说出「有几条」就等于把答案念出来了。
+        "narrative": (
+            f"这是{shape.label}。点播放看沿对称轴对折后两侧能否完全重合；"
+            "也可以自己旋转、平移对称轴，找出所有能重合的角度。"
+        ),
+        "outputs": {"isAxisymmetric": shape.axis_count > 0},
+        "editable": True,
+        # 来源标记：教师配了模板后会被模板覆盖，便于排查「这图是谁给的」。
+        "derivedFrom": "figure_library",
+    }
+
+
+def scene_spec_for_read(
+    session: Session,
+    *,
+    snapshot: Any,
+    parent_id: Any,
+    subject: str,
+    grade: int,
+    knowledge_point: str,
+    semester: str = "",
+    stem: str | None = None,
+    options: list[str] | None = None,
+    cache: dict[tuple, dict | None] | None = None,
+) -> dict | None:
+    """读取路径的统一口径（ADR-0061 §U）：**快照优先 → 实时解析（含图库兜底）**。
+
+    三处消费方（题库详情 / 错题本 / 任务详情）必须走**同一个函数**。此前各自内联
+    ``q.scene_spec or build_...``，题库 REST 端点甚至整段漏写——于是同一道题
+    「在任务详情有图、在题库详情没图」，排查时极易误判成前端渲染问题。
+
+    - 有快照（出题时算好、贴合本题图形与角度）→ 直接返回，知识点模板后续改动
+      不影响已生成的题；
+    - 无快照（老数据 / 模板是后来才配的）→ 实时解析，仍无则**图库兜底**。
+    """
+    if isinstance(snapshot, dict) and snapshot:
+        return snapshot
+    return build_scene_spec_for_question(
+        session,
+        parent_id=parent_id,
+        subject=subject,
+        grade=grade,
+        knowledge_point=knowledge_point,
+        semester=semester,
+        stem=stem,
+        options=options,
+        cache=cache,
+    )
 
 
 def resolve_scene_spec_for_question(
@@ -210,10 +318,20 @@ def build_scene_spec_for_question(
         cache=cache,
     )
     if spec is None:
-        return None
+        # 图库兜底（ADR-0061 §U）：没有模板时，只要题面点名了图形就照样出图。
+        # 再走一遍 fuse 是为了让题面角度（如「沿 45° 对折」）也覆盖到兜底场景上。
+        fallback = default_scene_from_figure(overrides.get("figure"))
+        if fallback is None:
+            return None
+        spec = fuse_scene_spec([fallback], overrides=overrides) or fallback
     group = extract_option_group(options)
     if group is not None:
         # 顶层挂optionGroup（不放进 inputs）——它不是可调输入项，而是「同一模板
         # 派生多份实例」的指令；放inputs 里会被 fromSpec 当成单图输入解析。
         spec["optionGroup"] = group
+        # 选项组里**每个选项的判定各不相同**（房子对称、平行四边形不对称），父级
+        # 不该给一个统一结论——兜底场景的结论来自「题面第一个命中的图形」，
+        # 与其余选项无关，留着就是给错答案。教师模板的 outputs 不动（那是他配的）。
+        if spec.get("derivedFrom") == "figure_library":
+            spec.pop("outputs", None)
     return spec
