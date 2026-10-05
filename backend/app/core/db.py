@@ -211,6 +211,9 @@ def run_migrations() -> None:
             # 偏序迁移：表还没建（首次启动由 init_db 建表并带新列），跳过即可。
             pass
 
+        # —— 清理 JSON 列里的文本 'null'（ADR-0061 §T）——
+        _nullify_text_json_nulls(conn)
+
         # —— 知识点唯一约束补 semester（ADR-0061 §R）——
         # ⚠️ 上一段只补了**列**，但 SQLite **无法 ALTER 已存在表上的 UNIQUE 约束**
         # （没有 `ALTER TABLE ... ADD CONSTRAINT`）。于是所有在加学期维度**之前**
@@ -409,6 +412,39 @@ def run_migrations() -> None:
                 ")"
             )
         )
+
+
+def _nullify_text_json_nulls(conn) -> None:
+    """把 JSON 列里「文本 ``'null'``」改回真正的 SQL NULL（ADR-0061 §T）。
+
+    **为什么会有**：SQLAlchemy 的 ``JSON`` 列默认 ``none_as_null=False`` —— 写
+    Python ``None`` 时它会序列化成**文本 ``'null'``** 存进 TEXT 列，而不是 SQL NULL。
+    于是 ``WHERE col IS NOT NULL`` 为真（行「有值」），而实际内容是空。任何按
+    「非空」计数的逻辑都会失真（实测 ``question.options`` 有 5 行是文本 'null'，
+    读出来是字符串 ``'null'``，``.get('options')`` 之类判断全部走偏）。
+
+    **现在模型层已统一用 ``JSON(none_as_null=True)``**（新写入不再产生文本 'null'），
+    本迁移只负责收拾存量。幂等：只 UPDATE 当前值**恰为**文本 'null' 的行；
+    表不存在则跳过（偏序迁移纪律）。
+    """
+    for table, column in (
+        ("question", "options"),
+        ("question", "source_refs"),
+        ("taskquestion", "options"),
+        ("task", "focus_interest"),
+        ("task", "specs"),
+        ("material", "knowledge_points"),
+        ("user", "interests"),
+        ("conversation", "payload"),
+        ("conversation", "usage"),
+    ):
+        try:
+            conn.execute(
+                text(f"UPDATE {table} SET {column} = NULL WHERE {column} = 'null'")
+            )
+        except OperationalError:
+            # 表/列还没建 → 跳过。SQL 的标识符来自上面的常量白名单，非外部输入。
+            continue
 
 
 def _rebuild_kp_unique_with_semester(conn) -> None:

@@ -35,7 +35,7 @@ class Question(SQLModel, table=True):
     semester: str = Field(default="", max_length=8)
     qtype: str
     stem: str
-    options: list[str] | None = Field(default=None, sa_type=JSON)
+    options: list[str] | None = Field(default=None, sa_type=JSON(none_as_null=True))
     # 是否多选题（ADR-0004 D5）：与 TaskQuestion.multi 同源，题库题复用闭环时一并拷贝。
     multi: bool = Field(default=False)
     answer: str | None = None
@@ -43,7 +43,7 @@ class Question(SQLModel, table=True):
     difficulty: str | None = None
     # 资料溯源快照（ADR-0055 §10）：[{material: 资料名, snippet: 片段摘要}]。
     # 刻意不建 source_chunk_ids 外键——家长删资料后题目不失去依据，也无删除级联。
-    source_refs: list[dict] | None = Field(default=None, sa_type=JSON)
+    source_refs: list[dict] | None = Field(default=None, sa_type=JSON(none_as_null=True))
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore

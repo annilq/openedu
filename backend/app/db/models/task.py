@@ -11,7 +11,7 @@ class TaskBase(SQLModel):
     title: str = Field(max_length=255)
     status: str = Field(max_length=16, default="draft")  # draft|ready|assigned|done
     # 兴趣题模式：本卷聚焦的兴趣主题（WF-4），整卷共享、用于审阅打标与整卷重生成复现。
-    focus_interest: list[str] | None = Field(default=None, sa_type=JSON)
+    focus_interest: list[str] | None = Field(default=None, sa_type=JSON(none_as_null=True))
 
 
 class Task(TaskBase, table=True):
@@ -25,7 +25,7 @@ class Task(TaskBase, table=True):
     # 落库以便「整卷重生成 / 单题重生成」沿用同一模型，避免静默回退 mock。
     model: str | None = Field(default=None)
     # 原始生成规格：from-generated 完整保存，整卷重生成时按此规格重跑并覆盖草稿项（R-Q2=c）。
-    specs: list[dict] | None = Field(default=None, sa_type=JSON)
+    specs: list[dict] | None = Field(default=None, sa_type=JSON(none_as_null=True))
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore

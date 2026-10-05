@@ -51,14 +51,14 @@ class Message(SQLModel, table=True):
     role: str = Field(max_length=16)
     step: str = Field(default="output", max_length=16)
     content: str = Field(default="")
-    payload: dict | None = Field(default=None, sa_type=JSON)
+    payload: dict | None = Field(default=None, sa_type=JSON(none_as_null=True))
     model: str | None = Field(default=None, max_length=255)
     input_safe: bool = True
     output_safe: bool = True
     blocked: bool = False
     block_reason: str | None = Field(default=None, max_length=255)
     latency_ms: int | None = Field(default=None)
-    usage: dict | None = Field(default=None, sa_type=JSON)
+    usage: dict | None = Field(default=None, sa_type=JSON(none_as_null=True))
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore
