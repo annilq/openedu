@@ -109,6 +109,10 @@ R4 棘轮（presentation 不得 import `*/data/`）不受影响：`presentation/
 - 抽出后同步**下调** `_baseline` 中 `assistant_chat_page.dart` 的登记值，让棘轮停在更低的高度。
 - 顺带把语音状态放进新文件，主页面不新增一个字段。
 
+**已落地（2026-10-06）**：`_InputBar` 已抽为 `assistant_input_bar.dart`（96 行），页面
+**557 → 473 行**，`_baseline` 同步下调至 473；棘轮断言通过，助手相关 21 项测试全绿。
+抽出后页面仍 >400，故条目保留在基线里——**棘轮停在更低处，不是把债务消掉**。
+
 ### 10. 权限声明：打补丁脚本（不把平台目录纳入版本控制）
 
 所需声明：iOS/macOS 的 `NSMicrophoneUsageDescription` + `NSSpeechRecognitionUsageDescription`、
