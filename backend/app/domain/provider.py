@@ -47,6 +47,9 @@ class GeneratedQuestion:
     answer: str
     explanation: str
     difficulty: str
+    # 是否多选题（ADR-0004 D5）：choice 题可多选；批改按选项集合比对。
+    # 置于无默认值字段之后，避免 dataclass「默认字段前置」顺序错误。
+    multi: bool = False
     # 学期维度（ADR-0061 发布任务对接资料库）：'' = 不限/整学年；'上学期' / '下学期'。
     # 随题落库，讲解时按 (parent_id, subject, grade, knowledge_point, semester) 匹配
     # 家长私有知识点模板，进而演示该知识点预设的交互场景。
