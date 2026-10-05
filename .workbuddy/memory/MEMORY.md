@@ -42,7 +42,7 @@
 - 五个坑（`runAsync`/`ShadApp.custom` theme/pdfx/`pumpAndSettle`/MediaQuery 注入位）见 `docs/agents/frontend.md` §7。
 
 ## 5. Git/后端/长列表
-- ✅ `git push origin main` 可通；⚠️ 常显 `Everything up-to-date` 却已成功 → 以 `git ls-remote origin main` 比对 HEAD 为准。提交按逻辑批次拆、正文写「为什么」；`chore(memory):` 单独提交。
+- ✅ **平台目录不在版本控制 → 对策已定为「打补丁脚本」**（非纳入版本控制）：脚本在 `frontend/scripts/`（`patch_macos_network.py` 网络权限、`patch_voice_permissions.py` 语音权限 ADR-0063 §10），幂等可重跑，支持 `--check`（缺则退 1，把静默失效变成 CI 可见失败）。清单见 `CONTRIBUTING.md` §平台目录补丁。⚠️ macOS 沙盒下麦克风还需 entitlements `com.apple.security.device.audio-input`（缺则静默被拒）。⚠️ 常显 `Everything up-to-date` 却已成功 → 以 `git ls-remote origin main` 比对 HEAD 为准。提交按逻辑批次拆、正文写「为什么」；`chore(memory):` 单独提交。
 - ⚠️ **`git commit -- <file>` 会重暂存该文件整个工作区再提交**：hunk 级拆分须 `git add -p` 后**不带 pathspec** `git commit`，否则未选 hunk 一并进（误并 ADR-0061 `multi`/`scene_spec` 翻过车）。
 - 引擎失败归因：`decrypt()` 解不开只返 `None`；`ToolUnsupportedError`(无FC) vs `ProviderRequestError`(带 `kind`+`user_hint`) 落 `genkit.py#classify_failure`；禁 `except Exception` 抹成「请添加模型」。
 - ⚠️ **可空JSON 列一律须 `JSON(none_as_null=True)`**（ADR-0061 §N/§T）：否则 `None` 被序列化成**文本 `'null'`**（非 SQL NULL）→ `IS NOT NULL` 为真而内容空、「有选项」类判断全走偏。**已全仓统一（12 列）**。迁移 `_nullify_text_json_nulls` 收拾存量（幂等，只UPDATE 值恰为 `'null'` 的行）。
