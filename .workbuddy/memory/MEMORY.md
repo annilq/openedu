@@ -40,6 +40,8 @@
 
 ## 4. 测试/截图探针
 - 五个坑（`runAsync`/`ShadApp.custom` theme/pdfx/`pumpAndSettle`/MediaQuery 注入位）见 `docs/agents/frontend.md` §7。
+- ⚠️ **`ShadApp.custom(appBuilder:)` 不装 `ShadToaster`**（只有传 `child` 的 `ShadAppBuilder` 才包）→ widget 测试里用 appBuilder 必须显式 `ShadToaster(child:)`，否则 `AppToast.show` 抛「Could not find ShadToaster」。生产走 `CupertinoApp.builder`+`ShadAppBuilder(child:)`，不受影响。
+- ⚠️ 测试里改 `debugDefaultTargetPlatformOverride` **在 tearDown 复位不及**（`_verifyInvariants` 早于 test 包 tearDown）→ 别改平台；要测长按就用 `startGesture`+`pump(kLongPressTimeout)`，要测点按就把 `holdToTalk` 显式传进组件。
 
 ## 5. Git/后端/长列表
 - ✅ **平台目录不在版本控制 → 对策已定为「打补丁脚本」**（非纳入版本控制）：脚本在 `frontend/scripts/`（`patch_macos_network.py` 网络权限、`patch_voice_permissions.py` 语音权限 ADR-0063 §10），幂等可重跑，支持 `--check`（缺则退 1，把静默失效变成 CI 可见失败）。清单见 `CONTRIBUTING.md` §平台目录补丁。⚠️ macOS 沙盒下麦克风还需 entitlements `com.apple.security.device.audio-input`（缺则静默被拒）。⚠️ 常显 `Everything up-to-date` 却已成功 → 以 `git ls-remote origin main` 比对 HEAD 为准。提交按逻辑批次拆、正文写「为什么」；`chore(memory):` 单独提交。
