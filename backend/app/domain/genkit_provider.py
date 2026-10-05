@@ -80,10 +80,22 @@ class GenkitProvider(EducationLLMProvider):
         engine = self._resolve()
         if engine is None:
             return None
-        ctx = f"\n相关上下文：{context}" if context else ""
         prompt = (
             f"学生问：{question}\n"
-            f"所属知识点：{knowledge_point}{ctx}\n"
+            f"所属知识点：{knowledge_point}\n"
+        )
+        # 知识库 grounding（ADR-0055 §13）：资料库原文是回答的唯一权威依据。
+        # context 已由 TutorService 前缀「【知识库】\n」并清洗，作为独立块紧邻强约束，
+        # 避免小模型忽略原文或凭空编造资料里已有的内容。
+        if context:
+            prompt += (
+                f"{context}\n"
+                "以上【知识库】中的教材原文是回答的唯一权威依据。"
+                "请严格依据原文作答：优先直接采用原文里的定义、判断步骤与例子；"
+                "不得编造教材之外的内容，也不得用你自己的例子替换教材例子；"
+                "若原文已给出判断步骤，就按原文步骤讲解。\n"
+            )
+        prompt += (
             "请用简洁、鼓励的语气，结合知识点给出适合该年级学生的分步讲解，必要时举例。"
             "只讲解学习相关内容，不要回答与学习无关的话题。"
         )

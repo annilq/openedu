@@ -15,12 +15,35 @@ ADR-0030：``skills`` 为 manifest 声明的 SOP（``skills/*.md``，系统受�
 （question / knowledge_point / context），SOP 在闸门之后拼接进 prompt。
 """
 
+import re
+
 from dataclasses import dataclass
 
 from app.core.async_bridge import run_async
 from app.domain.provider import EducationLLMProvider
 from app.domain.retriever import KnowledgeRetriever
 from app.domain.safety import SAFE_REFUSAL, check_input, check_output
+
+# 知识库原始片段常是 OCR 教材的任意字符窗口，夹带页码 / 练习题号 / 页眉等噪声，
+# 直接喂给小模型会让它读不懂、退回固有知识自编。注入模型前做保守清洗：
+# 丢弃纯数字行（页码、题号）、教材版式噪声（练习X / 成长小档案 / 单元标题），
+# 并把换行压成空格，便于模型按语义吸收。
+_CHUNK_NOISE_RE = re.compile(
+    r"^(练习[一二三四五六七八九十百零\d]+|成长小档案|图形的运动（二）\d*|我的收获.*|做一做|看一看，数一数。你发现了什么？)$"
+)
+
+
+def _clean_knowledge_text(text: str) -> str:
+    """清洗单段知识库片段：去版式噪声、合并空白。不改语义，仅去 OCR 噪声。"""
+    lines = []
+    for ln in (text or "").split("\n"):
+        s = ln.strip()
+        if not s or s.isdigit():
+            continue
+        if _CHUNK_NOISE_RE.match(s):
+            continue
+        lines.append(s)
+    return " ".join(lines)
 
 # 引擎不可用时的兜底说明（mock 兜底已移除，provider.tutor 返回 None）。
 _LLM_UNAVAILABLE = "暂无可用的 AI 引擎，无法答疑（请在「模型管理」中添加模型并设为默认）。"
@@ -75,7 +98,10 @@ class TutorService:
         )
         if not chunks:
             return None
-        return "\n".join(f"- {c.content}" for c in chunks)
+        # 清洗 OCR 噪声再注入，避免小模型被页码/题号干扰而忽略正文（ADR-0055 §13）。
+        return "\n".join(
+            f"- {_clean_knowledge_text(c.content)}" for c in chunks if _clean_knowledge_text(c.content)
+        )
 
     def explain(
         self,
