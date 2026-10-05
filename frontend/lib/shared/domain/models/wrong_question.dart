@@ -58,6 +58,10 @@ class WrongQuestionModel {
   /// 毕业（已掌握）时间（ADR-0053 P2）；null = 仍在复习队列里。
   final DateTime? graduatedAt;
 
+  /// 交互式讲解实例（ADR-0061）：题目知识点命中家长私有知识点模板时由后端附带，
+  /// 错题卡据此内联渲染交互演示。可空 = 该知识点暂无图形化讲解。
+  final Map<String, dynamic>? sceneSpec;
+
   WrongQuestionModel({
     required this.id,
     required this.questionId,
@@ -74,6 +78,7 @@ class WrongQuestionModel {
     this.reviewStage = 0,
     this.dueAt,
     this.graduatedAt,
+    this.sceneSpec,
   });
 
   factory WrongQuestionModel.fromJson(Map<String, dynamic> json) {
@@ -93,6 +98,7 @@ class WrongQuestionModel {
       reviewStage: json['review_stage'] as int? ?? 0,
       dueAt: parseDate(json['due_at']),
       graduatedAt: parseDate(json['graduated_at']),
+      sceneSpec: json['scene_spec'] as Map<String, dynamic>?,
     );
   }
 }

@@ -20,6 +20,13 @@ class QuestionModel {
   final String? answer;
   final String difficulty;
 
+  /// 学期（ADR-0061 发布任务对接资料库）：'' = 不限/整学年；'上学期' / '下学期'。
+  final String semester;
+
+  /// 交互式讲解实例（ADR-0061）：题目知识点命中家长私有知识点模板时由后端附带，
+  /// 题卡解析区据此内联渲染。可空 = 该知识点暂无图形化讲解。
+  final Map<String, dynamic>? sceneSpec;
+
   /// 是否已加入题库（草稿审核用）：questionId != null。
   bool get inQuestionBank => questionId != null;
 
@@ -35,6 +42,8 @@ class QuestionModel {
     this.explanation = '',
     this.answer,
     this.difficulty = 'medium',
+    this.semester = '',
+    this.sceneSpec,
   });
 
   /// 草稿审核仅允许的编辑字段（R-Q4）。
@@ -93,6 +102,8 @@ class QuestionModel {
       explanation: json['explanation'] as String? ?? '',
       answer: json['answer'] as String?,
       difficulty: json['difficulty'] as String? ?? 'medium',
+      semester: json['semester'] as String? ?? '',
+      sceneSpec: json['scene_spec'] as Map<String, dynamic>?,
     );
   }
 }
@@ -110,11 +121,15 @@ class QuestionPreview {
   final String explanation;
   final String? answer;
   final String difficulty;
+  /// 学期（ADR-0061）：随规格下发到每道题，确认落库时原样回传。
+  final String semester;
   /// 出题推理过程（ADR-0017）：仅预览态展示，不落库；旧服务端不下发时为空。
   final String reasoning;
   /// 资料溯源快照（ADR-0055 §10）：[{material, snippet}]；无 RAG 时为 null。
   /// 仅透传——确认落库时原样回传，随题保存。
   final List<Map<String, dynamic>>? sourceRefs;
+  /// 交互式讲解实例（ADR-0061）：预览态不渲染，仅透传，确认落库时原样回传。
+  final Map<String, dynamic>? sceneSpec;
 
   const QuestionPreview({
     this.subject = '',
@@ -126,8 +141,10 @@ class QuestionPreview {
     this.explanation = '',
     this.answer,
     this.difficulty = 'medium',
+    this.semester = '',
     this.reasoning = '',
     this.sourceRefs,
+    this.sceneSpec,
   });
 
   factory QuestionPreview.fromJson(Map<String, dynamic> json) => QuestionPreview(
@@ -140,10 +157,12 @@ class QuestionPreview {
         explanation: json['explanation'] as String? ?? '',
         answer: json['answer'] as String?,
         difficulty: json['difficulty'] as String? ?? 'medium',
+        semester: json['semester'] as String? ?? '',
         reasoning: json['reasoning'] as String? ?? '',
         sourceRefs: (json['source_refs'] as List?)
             ?.map((e) => Map<String, dynamic>.from(e as Map))
             .toList(),
+        sceneSpec: json['scene_spec'] as Map<String, dynamic>?,
       );
 
   /// 回传后端 /tasks/from-generated 落库（snake_case，与 QuestionOut 对齐）。
@@ -157,8 +176,10 @@ class QuestionPreview {
         'explanation': explanation,
         'answer': answer,
         'difficulty': difficulty,
+        'semester': semester,
         'reasoning': reasoning,
         'source_refs': sourceRefs,
+        'scene_spec': sceneSpec,
       };
 }
 

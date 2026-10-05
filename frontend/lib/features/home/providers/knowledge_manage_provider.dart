@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../data/repositories/material_repository_impl.dart';
+import '../domain/repositories/material_repository.dart';
 import 'home_provider.dart';
 
 /// 知识点管理状态（ADR-0055 §4 确认页）：按 (subject, grade) 取目录、勾选待审 /

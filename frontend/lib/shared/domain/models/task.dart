@@ -12,6 +12,11 @@ class TaskSpecModel {
   final String difficulty;
   final int count;
 
+  /// 学期维度（ADR-0061 发布任务对接资料库）：'' = 不限/整学年；'上学期' / '下学期'。
+  /// 随规格下发到每道题（Question/TaskQuestion.semester），讲解时按
+  /// (学科, 年级, 知识点, 学期) 匹配资料库里该知识点的交互场景模板。
+  final String semester;
+
   TaskSpecModel({
     required this.subject,
     required this.grade,
@@ -19,6 +24,7 @@ class TaskSpecModel {
     required this.qtype,
     this.difficulty = 'medium',
     required this.count,
+    this.semester = '',
   });
 
   factory TaskSpecModel.fromJson(Map<String, dynamic> json) {
@@ -29,6 +35,7 @@ class TaskSpecModel {
       qtype: json['qtype'] as String,
       difficulty: json['difficulty'] as String? ?? 'medium',
       count: json['count'] as int,
+      semester: json['semester'] as String? ?? '',
     );
   }
 
@@ -39,6 +46,7 @@ class TaskSpecModel {
         'qtype': qtype,
         'difficulty': difficulty,
         'count': count,
+        'semester': semester,
       };
 }
 
