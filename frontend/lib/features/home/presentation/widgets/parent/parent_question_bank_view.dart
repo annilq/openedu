@@ -458,9 +458,52 @@ class _ParentQuestionBankViewState
     );
   }
 
+  /// 全选状态：已加载页里的题全部选中才视为「全选」（否则点一下只补选漏的）。
+  /// 空页恒为假，避免在没有题时显示「取消全选」。
+  bool _allLoadedSelected(BankState state) {
+    if (state is! BankLoaded) return false;
+    final items = state.page.items;
+    if (items.isEmpty) return false;
+    return items.every((e) => _selectedIds.contains(e.id));
+  }
+
+  /// 全选 / 取消全选：只作用于「已加载」的题（分页下后续页尚未拉取，
+  /// 点了也选不到；要选全库请在筛选里缩小范围后逐页加载）。
+  void _toggleSelectAll(BankState state) {
+    if (state is! BankLoaded) return;
+    final items = state.page.items;
+    if (items.isEmpty) return;
+    setState(() {
+      if (_allLoadedSelected(state)) {
+        for (final e in items) {
+          _selectedIds.remove(e.id);
+        }
+      } else {
+        for (final e in items) {
+          _selectedIds.add(e.id);
+        }
+      }
+    });
+  }
+
+  Widget _selectAllButton(BankState state) {
+    final all = _allLoadedSelected(state);
+    return ShadButton.outline(
+      size: ShadButtonSize.sm,
+      onPressed: state is BankLoaded && state.page.items.isNotEmpty
+          ? () => _toggleSelectAll(state)
+          : null,
+      leading: Icon(
+        all ? LucideIcons.checkCheck : LucideIcons.listChecks,
+        size: 16,
+      ),
+      child: Text(all ? '取消全选' : '全选'),
+    );
+  }
+
   /// 筛选区（学科 / 题型 / 年级 / 关键词）。放在卡片顶部，随页面一起滚动，
   /// 与「错题本」等页面「SectionTitle + AppCard(内嵌内容)」的结构保持一致。
-  Widget _buildFilters(dynamic app) {
+  Widget _buildFilters(BankState state, dynamic app) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -519,6 +562,8 @@ class _ParentQuestionBankViewState
         // 归档三态（ADR-0053 P2）。与年级 chip 同一套语言：选中的实色、未选描边。
         // ADR 里写的是 AppSelectStrip，但那个组件是「多选模式条」（计数 + 全选），
         // 与这里的语义不同；复用本页已有的 chip 行才是「全站一种筛选语言」。
+        // 归档三态 + 全选共用一行（ADR-0053）：全选紧跟归档筛选之后，不单独占一行。
+        // 全选只在有已加载题时可用，选中态反转文案为「取消全选」。
         Wrap(
           spacing: AppSpacing.xs,
           runSpacing: AppSpacing.xs,
@@ -530,6 +575,10 @@ class _ParentQuestionBankViewState
               ('archived', '只看已归档'),
             ])
               _archivedChip(opt.$1, opt.$2),
+            Padding(
+              padding: const EdgeInsets.only(left: AppSpacing.sm),
+              child: _selectAllButton(state),
+            ),
           ],
         ),
       ],
@@ -582,7 +631,7 @@ class _ParentQuestionBankViewState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildFilters(app),
+        _buildFilters(state, app),
         const SizedBox(height: AppSpacing.md),
         Container(height: 1, color: app.outline),
         const SizedBox(height: AppSpacing.md),
