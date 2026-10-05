@@ -9,7 +9,7 @@
 """
 from __future__ import annotations
 
-from agent_core.protocol import data_event
+from agent_core.protocol import assistant_message, data_event
 from agent_core.subagent import BaseSubAgent, SubAgentContext
 from app.ai.subagents.subject_personas import get_subject_persona
 from app.domain.subjects import SUBJECTS
@@ -44,27 +44,37 @@ class TutorSubAgent(BaseSubAgent):
         return persona
 
     async def run(self, message: str, ctx: SubAgentContext, *, session=None):
-        """悬浮助手入口：自由文本 → 适龄讲解（ASSISTANT_MESSAGE）。"""
+        """悬浮助手入口：自由文本 → 适龄讲解（流式 ASSISTANT_MESSAGE）。"""
         subject = detect_subject(message) or (ctx.extra.get("subject") or "")
         grade = int(ctx.extra.get("grade") or 0)
         tc = self._tool("tutor_explain", label="伴学答疑")
         yield tc.call
-        result = await self.service.aexplain(
+        # 流式讲解：溯源（rag_sources）先于正文下发，正文逐 token 下推，
+        # 前端边接收边渲染——彻底消除「一直显示伴学答疑、无 SSE 进度」的观感
+        # （原为 tutor() 缓冲整段、65s 后才一次性吐出，SSE 被视为卡死）。
+        async for chunk in self.service.aexplain_stream(
             grade=grade,
             subject=subject,
             knowledge_point="",
             context=self._effective_context(subject, ctx.extra.get("context")),
             question=message,
             history=ctx.history,
-            # ADR-0030：SOP 在输入安全闸门之后注入（见 TutorService.aexplain）
+            # ADR-0030：SOP 在输入安全闸门之后注入（见 TutorService.aexplain_stream）
             skills=ctx.skills,
-        )
-        yield tc.result({"blocked": result.blocked})
-        # 答疑引用条：把命中并注入 prompt 的资料片段溯源作为 DATA 帧下发，
-        # 前端在答案下方渲染「参考来源」。未命中则不下发（避免空条）。
-        if result.sources:
-            yield data_event(
-                [s.to_dict() for s in result.sources],
-                extra={"type": "rag_sources"},
-            )
-        yield self._finish(result.answer, blocked=result.blocked)
+        ):
+            if chunk.sources and not chunk.done:
+                # 答疑引用条：把命中并注入 prompt 的资料片段溯源作为 DATA 帧下发，
+                # 前端在答案下方渲染「参考来源」。早于正文 → 引用条随首 token 出现。
+                # 仅非 done 帧下发：done 帧也带 sources 仅是冗余兜底，避免重复下发造成
+                # 前端引用条重复渲染。
+                yield data_event(
+                    [s.to_dict() for s in chunk.sources],
+                    extra={"type": "rag_sources"},
+                )
+            elif chunk.delta:
+                yield assistant_message(chunk.delta)
+            elif chunk.done:
+                yield tc.result({"blocked": chunk.blocked})
+                # 仅拦截态才补一条收尾消息（拒绝话术）；正常流正文已由 delta 拼出。
+                if chunk.blocked:
+                    yield self._finish(chunk.answer or "", blocked=True)

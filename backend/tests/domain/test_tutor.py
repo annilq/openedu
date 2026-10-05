@@ -2,6 +2,8 @@
 
 用 FakeProvider 隔离真实模型，验证编排：输入拦截 → 检索注入 → 调用 → 输出拦截。
 """
+import asyncio
+
 from agent_core.ports import TextDelta
 from app.domain.provider import EducationLLMProvider
 from app.domain.retriever import KnowledgeChunk
@@ -229,3 +231,55 @@ def test_input_blocked_skips_retriever():
     )
     assert r.blocked is True
     assert called["n"] == 0
+
+
+def test_aexplain_stream_yields_sources_before_deltas():
+    """流式讲解：溯源 DATA 帧先于正文增量下发，且增量可拼回完整答案。
+
+    回归保护 cd51bb0/本轮流式改造：检索命中溯源须早于正文（引用条随首 token 出现），
+    不能等整段生成完才一次性吐出（SSE 观感像卡死）。
+    """
+    provider = FakeProvider("轴对称的判断方法是沿轴对折后两边重合。")
+    retriever = FakeRetriever(
+        [
+            KnowledgeChunk(
+                subject="数学",
+                grade=4,
+                knowledge_point="图形",
+                content="点 A 与 A' 到对称轴的距离相等",
+                source="vector",
+                source_name="四年级下册《数学》",
+                material_id="m-1",
+                chunk_id="c-1",
+            )
+        ]
+    )
+    svc = TutorService(provider, retriever)
+
+    async def _collect():
+        return [
+            c
+            async for c in svc.aexplain_stream(
+                grade=4,
+                subject="数学",
+                knowledge_point="",
+                context=None,
+                question="怎样判断轴对称图形",
+            )
+        ]
+
+    chunks = asyncio.run(_collect())
+    sources_chunks = [c for c in chunks if c.sources]
+    delta_chunks = [c for c in chunks if c.delta]
+    done = [c for c in chunks if c.done]
+    assert sources_chunks, "命中资料库应下发溯源帧"
+    assert delta_chunks, "应下发正文增量帧"
+    assert done and not done[-1].blocked
+    # 溯源帧必须早于首个正文增量帧
+    assert chunks.index(sources_chunks[0]) < chunks.index(delta_chunks[0])
+    # 正文增量可拼回完整答案
+    assert "".join(c.delta for c in delta_chunks) == (
+        "轴对称的判断方法是沿轴对折后两边重合。"
+    )
+    # 溯源条目携带资料身份，供前端「参考来源」渲染
+    assert sources_chunks[0].sources[0].material_id == "m-1"

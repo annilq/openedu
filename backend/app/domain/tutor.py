@@ -17,6 +17,7 @@ ADR-0030：``skills`` 为 manifest 声明的 SOP（``skills/*.md``，系统受�
 
 import re
 
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 
 from app.core.async_bridge import run_async
@@ -77,6 +78,23 @@ class RAGSource:
             "chunk_id": self.chunk_id,
             "snippet": self.snippet,
         }
+
+
+@dataclass
+class TutorStreamChunk:
+    """``aexplain_stream`` 产出的逐帧片段：溯源 / 文本增量 / 收尾。
+
+    - ``sources``：检索命中溯源，命中即下发（早于正文，引用条可边生成边显示）。
+    - ``delta``：正文文本增量（逐 token）。
+    - ``done``：收尾帧，携带完整答案与拦截标记。
+    """
+
+    sources: list[RAGSource] | None = None
+    delta: str | None = None
+    done: bool = False
+    answer: str | None = None
+    blocked: bool = False
+    reason: str | None = None
 
 
 class TutorService:
@@ -250,6 +268,90 @@ class TutorService:
             blocked=False,
             reason=None,
             sources=sources,
+        )
+
+    async def aexplain_stream(
+        self,
+        *,
+        grade: int,
+        subject: str,
+        knowledge_point: str,
+        context: str | None,
+        question: str,
+        history: list[dict] | None = None,
+        skills: str = "",
+    ) -> AsyncIterator[TutorStreamChunk]:
+        """异步讲解（流式）：逐帧 yield 溯源 / 文本增量 / 收尾，供 SSE 边生成边下推。
+
+        与 ``aexplain`` 走同一套安全闸门 + 知识库检索 + 输出校验，只是把模型输出从
+        「一次性返回全文」改为「逐 token 下推」。溯源在检索完成后**立即**下发，
+        早于正文——引用条可随首 token 一同出现，而不是等整段生成完才冒出来。
+        """
+        # 1) 输入安全校验
+        combined = "\n".join(p for p in (question, knowledge_point, context) if p)
+        inp = check_input(combined)
+        if not inp.safe:
+            yield TutorStreamChunk(
+                done=True, answer=SAFE_REFUSAL, blocked=True, reason=inp.reason
+            )
+            return
+
+        # 2) 知识库检索注入
+        kb_context, sources = self._retrieve(
+            subject=subject,
+            grade=grade,
+            knowledge_point=knowledge_point,
+            query=question,
+        )
+        effective_context = self._with_knowledge(context, kb_context)
+
+        # 2.5) SOP 注入（ADR-0030）：系统受控资产，放在输入闸门之后
+        sop = (skills or "").strip()
+        if sop:
+            effective_context = (
+                f"{effective_context}\n\n{sop}" if effective_context else sop
+            )
+
+        # 检索命中即下发溯源：引用条可早于正文出现
+        if sources:
+            yield TutorStreamChunk(sources=sources)
+
+        # 3) 流式调用模型，逐增量下推
+        parts: list[str] = []
+        async for delta in self.provider.tutor_stream(
+            grade=grade,
+            subject=subject,
+            knowledge_point=knowledge_point,
+            context=effective_context,
+            question=question,
+            history=history,
+        ):
+            if delta:
+                parts.append(delta)
+                yield TutorStreamChunk(delta=delta)
+
+        raw = "".join(parts)
+
+        # 3.5) 引擎不可用：provider 未产出任何 token
+        if not raw:
+            yield TutorStreamChunk(
+                done=True,
+                answer=_LLM_UNAVAILABLE,
+                blocked=True,
+                reason="llm_unavailable",
+            )
+            return
+
+        # 4) 输出安全校验
+        out = check_output(raw)
+        if not out.safe:
+            yield TutorStreamChunk(
+                done=True, answer=SAFE_REFUSAL, blocked=True, reason=out.reason
+            )
+            return
+
+        yield TutorStreamChunk(
+            done=True, answer=raw, blocked=False, reason=None, sources=sources
         )
 
 

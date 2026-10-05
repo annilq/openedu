@@ -13,6 +13,7 @@ ADR-0031：通用消息级 ``LLMProvider`` 已上移到 ``agent_core.ports``；�
 from __future__ import annotations
 
 from abc import abstractmethod
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -95,6 +96,33 @@ class EducationLLMProvider(LLMProvider):
     ) -> str | None:
         """AI 伴学答疑：返回适龄、纯学习相关的讲解文本。"""
         ...
+
+    async def tutor_stream(
+        self,
+        *,
+        grade: int,
+        subject: str,
+        knowledge_point: str,
+        context: str | None,
+        question: str,
+        history: list[dict] | None = None,
+    ) -> AsyncIterator[str]:
+        """伴学答疑流式变体：逐文本增量 yield（供 SSE 边生成边下推）。
+
+        默认实现委托 ``tutor()`` 一次性返回（非流式 provider 的兜底，保证
+        ``TutorService.aexplain_stream`` 对任意 provider 都可驱动）；真正的逐 token
+        流式由 GenkitProvider 重写。
+        """
+        answer = await self.tutor(
+            grade=grade,
+            subject=subject,
+            knowledge_point=knowledge_point,
+            context=context,
+            question=question,
+            history=history,
+        )
+        if answer:
+            yield answer
 
     @abstractmethod
     async def grade_open(self, *, question, student_answer) -> dict:

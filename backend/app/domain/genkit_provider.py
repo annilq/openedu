@@ -67,7 +67,7 @@ class GenkitProvider(EducationLLMProvider):
         async for ev in adapter.stream(system, prompt, schema=schema, tools=tools, history=history):
             yield ev
 
-    async def tutor(
+    def _tutor_prompt(
         self,
         *,
         grade: int,
@@ -76,10 +76,8 @@ class GenkitProvider(EducationLLMProvider):
         context: str | None,
         question: str,
         history: list[dict] | None = None,
-    ) -> str | None:
-        engine = self._resolve()
-        if engine is None:
-            return None
+    ) -> str:
+        """构造伴学答疑 prompt（tutor / tutor_stream 共用，避免两份实现分叉）。"""
         prompt = (
             f"学生问：{question}\n"
             f"所属知识点：{knowledge_point}\n"
@@ -105,6 +103,55 @@ class GenkitProvider(EducationLLMProvider):
                 for m in history[-10:]
             )
             prompt += f"\n\n【对话历史】\n{lines}\n请结合以上历史，自然衔接作答。"
+        return prompt
+
+    async def tutor_stream(
+        self,
+        *,
+        grade: int,
+        subject: str,
+        knowledge_point: str,
+        context: str | None,
+        question: str,
+        history: list[dict] | None = None,
+    ) -> AsyncIterator[str]:
+        """伴学答疑流式变体：逐 token yield 文本增量，供 SSE 边生成边下推。"""
+        engine = self._resolve()
+        if engine is None:
+            return
+        prompt = self._tutor_prompt(
+            grade=grade,
+            subject=subject,
+            knowledge_point=knowledge_point,
+            context=context,
+            question=question,
+            history=history,
+        )
+        async for ev in self.stream(tutor_system_prompt(grade, subject), prompt, history=history):
+            if isinstance(ev, TextDelta):
+                yield ev.delta
+
+    async def tutor(
+        self,
+        *,
+        grade: int,
+        subject: str,
+        knowledge_point: str,
+        context: str | None,
+        question: str,
+        history: list[dict] | None = None,
+    ) -> str | None:
+        engine = self._resolve()
+        if engine is None:
+            return None
+        prompt = self._tutor_prompt(
+            grade=grade,
+            subject=subject,
+            knowledge_point=knowledge_point,
+            context=context,
+            question=question,
+            history=history,
+        )
         parts: list[str] = []
         async for ev in self.stream(tutor_system_prompt(grade, subject), prompt, history=history):
             if isinstance(ev, TextDelta):
