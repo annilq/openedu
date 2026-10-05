@@ -14,13 +14,13 @@ import '../../../../../shared/widgets/app_inputs.dart';
 import '../../../../../shared/widgets/app_loading.dart';
 import '../../../../../shared/widgets/app_scroll_page.dart';
 import '../../../../../shared/widgets/app_section_title.dart';
-import '../../../../../shared/widgets/app_tags.dart';
 import '../../../../../shared/widgets/app_toast.dart';
 import '../../../../materials/domain/repositories/material_library_repository.dart';
 import '../../../../materials/providers/material_library_provider.dart';
 import '../../../providers/knowledge_manage_provider.dart';
 import 'material_folder_actions.dart';
 import 'material_knowledge_manage_view.dart';
+import 'material_library_material_row.dart';
 
 /// 资料库页（ADR-0055 B6）：网盘式目录 + 上传 + 手动向量化 + 状态徽标。
 ///
@@ -256,8 +256,11 @@ class _MaterialLibraryViewState extends ConsumerState<MaterialLibraryView> {
               child: Center(child: AppLoading()),
             )
           else ...[
-            ...subfolders.map(_folderRow),
-            ...state.materials.map(_materialRow),
+            ..._withDividers([
+              for (final f in subfolders) _folderRow(f),
+              for (final m in state.materials)
+                MaterialLibraryMaterialRow(mat: m),
+            ], app),
             if (subfolders.isEmpty && state.materials.isEmpty)
               AppEmptyState(
                 icon: LucideIcons.folderOpen,
@@ -272,6 +275,29 @@ class _MaterialLibraryViewState extends ConsumerState<MaterialLibraryView> {
     );
   }
 
+  /// 列表项之间插一条安静的分隔线（发丝级 1px，用 onSurfaceVariant 低透明，浅于
+  /// ink 描边），提升密集列表的可读性；末项之后不画线。各行本身不再带底部留白，
+  /// 间距由分隔线统一收口。
+  List<Widget> _withDividers(List<Widget> children, AppColors app) {
+    if (children.length <= 1) return children;
+    final out = <Widget>[];
+    for (var i = 0; i < children.length; i++) {
+      out.add(children[i]);
+      if (i < children.length - 1) {
+        // 发丝级 1px 分隔线（onSurfaceVariant 低透明，浅于 ink 描边）。用 Container 直接
+        // 画，避免 shadcn_ui 与 flutter widgets 的 Divider 导出冲突。
+        out.add(Padding(
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+          child: Container(
+            height: 1,
+            color: app.onSurfaceVariant.withValues(alpha: 0.25),
+          ),
+        ));
+      }
+    }
+    return out;
+  }
+
   Widget _folderRow(MaterialFolderModel folder) {
     final app = AppTheme.colorsOf(context);
     final text = AppTheme.textOf(context);
@@ -281,119 +307,51 @@ class _MaterialLibraryViewState extends ConsumerState<MaterialLibraryView> {
       if (folder.semester != null && folder.semester!.isNotEmpty) folder.semester!,
     ].join(' · ');
     // 整行（图标 + 名称 + 计数）都可点进入；右侧重命名/移动/删除是独立按钮，不触发导航。
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-      child: Row(
-        children: [
-          Expanded(
-            child: AppFocusableAction(
-              hoverHighlight: true,
-              onTap: () => ref
-                  .read(materialLibraryNotifierProvider.notifier)
-                  .openFolder(folder.id),
-              semanticLabel: '打开目录 ${folder.name}',
-              child: Row(
-                children: [
-                  const Icon(LucideIcons.folder, size: 18),
-                  const SizedBox(width: AppSpacing.sm),
-                  Expanded(
-                    child: Text.rich(TextSpan(children: [
-                      TextSpan(text: folder.name),
-                      if (meta.isNotEmpty)
-                        TextSpan(
-                            text: '　$meta',
-                            style: text.bodySmall
-                                ?.copyWith(color: app.onSurfaceVariant)),
-                    ])),
-                  ),
-                  Text('${folder.materialCount} 份资料',
-                      style: text.bodySmall
-                          ?.copyWith(color: app.onSurfaceVariant)),
-                  const SizedBox(width: AppSpacing.sm),
-                  Icon(LucideIcons.chevronRight,
-                      size: 16, color: app.onSurfaceVariant),
-                ],
-              ),
-            ),
-          ),
-          AppTextAction(label: '重命名', onPressed: () => editFolderDialog(context, ref, folder)),
-          AppTextAction(label: '移动', onPressed: () => moveFolderTo(context, ref, folder)),
-          AppIconAction(
-            icon: LucideIcons.trash2,
-            iconSize: 16,
-            semanticLabel: '删除目录 ${folder.name}',
-            onPressed: () => ref
+    // 行本身不带底部留白，列表项之间的间距由 `_withDividers` 的分隔线统一收口。
+    return Row(
+      children: [
+        Expanded(
+          child: AppFocusableAction(
+            hoverHighlight: true,
+            onTap: () => ref
                 .read(materialLibraryNotifierProvider.notifier)
-                .deleteFolder(folder.id),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _materialRow(MaterialItemModel mat) {
-    final app = AppTheme.colorsOf(context);
-    final text = AppTheme.textOf(context);
-    final label = kIndexStateLabels[mat.indexState] ?? mat.indexState;
-    final badgeColor = switch (mat.indexState) {
-      'ready' => app.primary,
-      'failed' => app.error,
-      'stale' => app.secondary,
-      _ => app.onSurfaceVariant,
-    };
-    final meta = [
-      if (mat.subject != null) mat.subject!,
-      if (mat.grade != null) '${mat.grade}年级',
-    ].join(' · ');
-    // 知识点 chip（ADR-0055 §3）：资料级知识点直接展示，让家长一眼看到
-    // 这份资料覆盖了哪些点；空时（如尚未重提取）不占空间。
-    final kpChips = mat.knowledgePoints.isEmpty
-        ? const <Widget>[]
-        : <Widget>[
-            const SizedBox(height: AppSpacing.xs),
-            Wrap(
-              spacing: AppSpacing.xs,
-              runSpacing: AppSpacing.xs,
+                .openFolder(folder.id),
+            semanticLabel: '打开目录 ${folder.name}',
+            child: Row(
               children: [
-                for (final kp in mat.knowledgePoints) AppTags.normal(kp),
-              ],
-            ),
-          ];
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(LucideIcons.fileText, size: 18),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(
-                child: Text.rich(
-                  TextSpan(children: [
-                    TextSpan(text: mat.name),
+                const Icon(LucideIcons.folder, size: 18),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Text.rich(TextSpan(children: [
+                    TextSpan(text: folder.name),
                     if (meta.isNotEmpty)
                       TextSpan(
-                        text: '　$meta',
-                        style: text.bodySmall
-                            ?.copyWith(color: app.onSurfaceVariant),
-                      ),
-                  ]),
+                          text: '　$meta',
+                          style: text.bodySmall
+                              ?.copyWith(color: app.onSurfaceVariant)),
+                  ])),
                 ),
-              ),
-              Text(label,
-                  style: text.bodySmall
-                      ?.copyWith(color: badgeColor, fontWeight: FontWeight.w700)),
-              const SizedBox(width: AppSpacing.sm),
-              AppTextAction(label: mat.indexState == 'ready' ? '重新向量化' : '向量化', onPressed: () => ref.read(materialLibraryNotifierProvider.notifier).vectorize(mat.id)),
-              AppTextAction(label: '重提取', onPressed: () => ref.read(materialLibraryNotifierProvider.notifier).reextract(mat.id)),
-              AppTextAction(label: '移动', onPressed: () => moveMaterialToFolder(context, ref, mat)),
-              AppIconAction(icon: LucideIcons.trash2, iconSize: 16, semanticLabel: '删除资料 ${mat.name}', onPressed: () => ref.read(materialLibraryNotifierProvider.notifier).deleteMaterial(mat.id)),
-            ],
+                Text('${folder.materialCount} 份资料',
+                    style: text.bodySmall
+                        ?.copyWith(color: app.onSurfaceVariant)),
+                const SizedBox(width: AppSpacing.sm),
+                Icon(LucideIcons.chevronRight,
+                    size: 16, color: app.onSurfaceVariant),
+              ],
+            ),
           ),
-          ...kpChips,
-        ],
-      ),
+        ),
+        AppTextAction(label: '重命名', onPressed: () => editFolderDialog(context, ref, folder)),
+        AppTextAction(label: '移动', onPressed: () => moveFolderTo(context, ref, folder)),
+        AppIconAction(
+          icon: LucideIcons.trash2,
+          iconSize: 16,
+          semanticLabel: '删除目录 ${folder.name}',
+          onPressed: () => ref
+              .read(materialLibraryNotifierProvider.notifier)
+              .deleteFolder(folder.id),
+        ),
+      ],
     );
   }
 }
