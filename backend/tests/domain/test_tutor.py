@@ -283,3 +283,41 @@ def test_aexplain_stream_yields_sources_before_deltas():
     )
     # 溯源条目携带资料身份，供前端「参考来源」渲染
     assert sources_chunks[0].sources[0].material_id == "m-1"
+
+
+def test_tutor_prompt_grounds_on_kb_verbatim_when_context_present():
+    """带资料库上下文时，prompt 必须强约束「优先原样复述原文、不得编造、补充须标注」。
+
+    回归保护：伴学答疑应贴着教材原文讲解，而非模型自由发挥（如自创「小技巧/小练习」、
+    童趣化包装、表情符号堆砌、玩具/生活类比等）。无资料库上下文时不混入该约束，
+    避免对纯生成题空加限制。
+    """
+    from app.domain.genkit_provider import GenkitProvider
+
+    with_ctx = GenkitProvider()._tutor_prompt(
+        grade=4,
+        subject="数学",
+        knowledge_point="",
+        context="【知识库】\n点 A 与 A' 到对称轴的距离相等。",
+        question="怎样判断轴对称图形",
+    )
+    # 1) 优先原样复述/引用原文，不改写成自己的话
+    assert "原样复述" in with_ctx
+    # 2) 禁止编造教材外内容（口诀/练习/童趣包装/表情符号装饰）
+    assert "编造" in with_ctx
+    # 3) 确需补充必须显式以「（补充）」标注
+    assert "（补充）" in with_ctx
+    # 4) 原文步骤不得重新排序或简化
+    assert "重新排序" in with_ctx
+
+    without_ctx = GenkitProvider()._tutor_prompt(
+        grade=4,
+        subject="数学",
+        knowledge_point="",
+        context=None,
+        question="怎样判断轴对称图形",
+    )
+    # 无资料库时不混入复述/编造约束（避免对纯生成题空加限制）
+    assert "原样复述" not in without_ctx
+    assert "（补充）" not in without_ctx
+
