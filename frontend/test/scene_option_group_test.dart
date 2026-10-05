@@ -181,14 +181,14 @@ void main() {
   testWidgets('editable=true 时轴控制可见（①A：学生能自己拖轴）', (tester) async {
     await _pumpScene(tester, _specWithGroup());
 
-    // 每个场景 4 个 slider：1 个对折进度（0..1）+ 3 个轴参数
+    // 每个场景 4 个 ShadSlider：1 个对折进度（未显式设 max → null）+ 3 个轴参数
     // （角度 0..180、水平 0.3..0.7、垂直 0.3..0.7）。轴参数那 3 个正是 ①A 要的
     // —— editable=false 时它们会整个消失，学生就只能看不能试。
-    final all = tester.widgetList<Slider>(find.byType(Slider)).toList();
+    final all = tester.widgetList<ShadSlider>(find.byType(ShadSlider)).toList();
     expect(all, hasLength(2 * 4));
-    final foldScrub = all.where((s) => s.max == 1.0).toList();
-    final axisSliders = all.where((s) => s.max != 1.0).toList();
-    expect(foldScrub, hasLength(2), reason: '每个场景 1 个对折进度条');
+    final foldSliders = all.where((s) => s.max == null).toList();
+    final axisSliders = all.where((s) => s.max != null).toList();
+    expect(foldSliders, hasLength(2), reason: '每个场景 1 个对折进度条');
     expect(axisSliders, hasLength(2 * 3), reason: '每个场景 3 个轴控制 slider');
   });
 }

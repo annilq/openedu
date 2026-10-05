@@ -8,6 +8,7 @@
 // 1. 弹窗内容**不溢出**（套了 SingleChildScrollView + 预览压窄）；
 // 2. **预览区不重复**轴滑块（editable:false），否则白占地方还撑爆弹窗；
 // 3. **保存进库的那份是 editable:true** —— 学生端必须能拖轴（①A 的本意）。
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -19,7 +20,6 @@ import 'package:kids_learn/features/home/providers/home_provider.dart';
 import 'package:kids_learn/features/home/providers/knowledge_manage_provider.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
 import 'package:kids_learn/shared/widgets/scene_interpreter/reflection_scene.dart';
-import 'package:kids_learn/shared/widgets/scene_interpreter/reflection_scene_data.dart';
 
 /// 记录 saveScenes 收到的 spec，用来断言「保存的那份 editable=true」。
 class _RecordingManageNotifier extends KnowledgeManageNotifier {
@@ -40,11 +40,69 @@ class _StubRepo implements MaterialRepository {
   dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError();
 }
 
+/// 一份合法的「已配置」reflection 模板：图形=房子（默认竖轴 90°）。
+///
+/// `pumpEditor` 默认就传它：编辑器仅在「已配置」（`initialScenes` 非空）时才渲染
+/// 完整表单（图形选择 + 3 轴滑块 + 预览 + 保存按钮）；`unconfigured` 时只显示
+/// 开发者指引（ADR-0061：交互讲解模板是开发者实现的组件、不是教师在前端手配的），
+/// 不挂滑块/预览/保存按钮。多数测试要验的就是完整表单，故设为默认。
+const List<Map<String, dynamic>> _configuredScenes = [
+  {
+    'kind': 'reflection',
+    'title': '图形的运动（轴对称）',
+    'inputs': [
+      {
+        'key': 'axisAngle',
+        'label': '对称轴角度',
+        'value': 90,
+        'min': 0,
+        'max': 180,
+        'step': 1,
+        'unit': '度',
+      },
+      {
+        'key': 'axisX',
+        'label': '对称轴水平',
+        'value': 0.5,
+        'min': 0.3,
+        'max': 0.7,
+        'step': 0.01,
+        'unit': '比例',
+      },
+      {
+        'key': 'axisY',
+        'label': '对称轴垂直',
+        'value': 0.5,
+        'min': 0.3,
+        'max': 0.7,
+        'step': 0.01,
+        'unit': '比例',
+      },
+      {'key': 'figure', 'label': '图形', 'value': 'house'},
+      {
+        'key': 'points',
+        'label': '顶点',
+        'value': [
+          [0.30, 0.70],
+          [0.70, 0.70],
+          [0.70, 0.45],
+          [0.50, 0.25],
+          [0.30, 0.45],
+        ],
+      },
+    ],
+    'controls': {'play': true, 'pause': true, 'scrub': true, 'speed': true},
+    'narrative': '这是一个轴对称图形，中间虚线是它的对称轴。',
+    'outputs': {'isAxisymmetric': true},
+    'editable': true,
+  },
+];
+
 void main() {
   Future<void> pumpEditor(
     WidgetTester tester, {
     Size size = const Size(1200, 900),
-    List<Map<String, dynamic>>? initialScenes,
+    List<Map<String, dynamic>>? initialScenes = _configuredScenes,
   }) async {
     await tester.binding.setSurfaceSize(size);
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -59,21 +117,29 @@ void main() {
           theme:
               AppTheme.shadFor(false, AppUserMode.parent, AppDensity.compact),
           appBuilder: (context) => MaterialApp(
-            home: Scaffold(
-              // 与真实调用点一致：Dialog + maxWidth 560
-              body: Center(
-                child: Dialog(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 560),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: KnowledgePointSceneEditor(
-                        kpId: 'kp1',
-                        kpName: '图形的运动（轴对称）',
-                        subject: '数学',
-                        grade: 4,
-                        semester: '下学期',
-                        initialScenes: initialScenes,
+            home: CupertinoTheme(
+              // 本测试用 MaterialApp 作壳（与真实调用点 CupertinoApp 不同），但产品树
+              // 恒提供 CupertinoTheme：AppSlider / AppTheme.colorsOf 经
+              // CupertinoTheme.brightnessOf 取亮暗。补这一层，否则预览里的折叠滑块
+              // （AppSlider）构建时取不到 CupertinoTheme 而抛错，ReflectionSceneWidget
+              // 整棵挂不上。
+              data: const CupertinoThemeData(brightness: Brightness.light),
+              child: Scaffold(
+                // 与真实调用点一致：Dialog + maxWidth 560
+                body: Center(
+                  child: Dialog(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 560),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: KnowledgePointSceneEditor(
+                          kpId: 'kp1',
+                          kpName: '图形的运动（轴对称）',
+                          subject: '数学',
+                          grade: 4,
+                          semester: '下学期',
+                          initialScenes: initialScenes,
+                        ),
                       ),
                     ),
                   ),
@@ -94,10 +160,11 @@ void main() {
 
   testWidgets('预览区不重复轴滑块（editable:false）', (tester) async {
     await pumpEditor(tester);
-    // 面板自己 3 个轴滑块（角度/水平/垂直）+ 预览内 1 个对折进度条= 4。
-    // 若预览仍带 editable:true，这里会是 7（多出 3 个重复的轴滑块）。
-    final sliders = tester.widgetList<Slider>(find.byType(Slider)).toList();
-    final axisSliders = sliders.where((s) => s.max != 1.0).toList();
+    // 面板自己 3 个轴滑块（角度/水平/垂直，显式设 max）+ 预览内 1 个对折进度条
+    // （未设 max → null）= 4。若预览仍带 editable:true，这里会是 7（多出 3 个重复
+    // 的轴滑块）。
+    final sliders = tester.widgetList<ShadSlider>(find.byType(ShadSlider)).toList();
+    final axisSliders = sliders.where((s) => s.max != null).toList();
     expect(
       axisSliders,
       hasLength(3),
@@ -156,6 +223,7 @@ void main() {
   });
 
   testWidgets('换图形后轴角度跟随该图形默认轴（预览同步刷新）', (tester) async {
+    // pumpEditor 默认已传 _configuredScenes（编辑器渲染完整表单 + 预览）。
     await pumpEditor(tester);
     // 初始房子= 竖轴 90
     final before = tester
@@ -164,5 +232,16 @@ void main() {
         .data
         .axisAngle;
     expect(before, 90);
+  });
+
+  testWidgets('未配置时显示开发者指引、不渲染表单（ADR-0061 §O）', (tester) async {
+    // 该知识点尚无模板：编辑器应展示「开发者指引」而非一份误导性的轴对称表单，
+    // 且不挂载任何轴滑块 / 保存按钮（模板是开发者实现的组件，非教师前端手配）。
+    await pumpEditor(tester, initialScenes: null);
+    expect(tester.takeException(), isNull, reason: '未配置分支不应抛异常');
+    expect(find.text('尚未配置交互讲解模板（开发者任务）'), findsOneWidget);
+    // 表单组件在 unconfigured 下不出现：
+    expect(find.text('保存讲解'), findsNothing);
+    expect(find.byType(ShadSlider), findsNothing);
   });
 }

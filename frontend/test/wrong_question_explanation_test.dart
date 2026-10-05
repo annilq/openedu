@@ -14,7 +14,6 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:kids_learn/features/home/presentation/widgets/parent/wrong_question_explanation.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
 import 'package:kids_learn/shared/widgets/scene_interpreter/reflection_scene.dart';
-import 'package:kids_learn/shared/widgets/scene_interpreter/reflection_scene_data.dart';
 
 /// 正方形 + 4 条对称轴（决策 A：轴对齐）。题干「正方形有几条对称轴」的形态。
 Map<String, dynamic> _squareSpec() => {
@@ -125,8 +124,8 @@ void main() {
     await tester.tap(find.text('查看解析'));
     await tester.pumpAndSettle();
 
-    // 3 个轴控制（角度/水平/垂直）+ 1 个对折进度
-    final sliders = tester.widgetList<Slider>(find.byType(Slider)).toList();
-    expect(sliders.where((s) => s.max != 1.0), hasLength(3));
+    // 3 个轴控制（角度/水平/垂直）+ 1 个对折进度（未显式设 max → null）
+    final sliders = tester.widgetList<ShadSlider>(find.byType(ShadSlider)).toList();
+    expect(sliders.where((s) => s.max != null), hasLength(3));
   });
 }

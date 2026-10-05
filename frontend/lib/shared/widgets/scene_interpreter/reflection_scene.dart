@@ -1,11 +1,13 @@
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show listEquals;
-import 'package:flutter/material.dart' show Icons, Slider;
+import 'package:flutter/material.dart' show Icons;
 import 'package:flutter/widgets.dart';
+import 'package:shadcn_ui/shadcn_ui.dart' show ShadSliderController;
 
 import '../../theme/app_theme.dart';
 import '../app_actions.dart';
+import '../app_slider.dart';
 import 'reflection_scene_data.dart';
 
 // =====================================================================
@@ -228,6 +230,14 @@ class _ReflectionSceneWidgetState extends State<ReflectionSceneWidget>
   late double _axisAngle;
   late double _axisX;
   late double _axisY;
+  // 滑块改用 shadcn_ui 的 `ShadSlider`（设计系统，ADR-0044），它是**无受控**组件，
+  // 当前值托管在 `ShadSliderController` 上；下面四个控制器与上面的状态变量双向同步：
+  // 拖拽由 ShadSlider 写回控制器并经 onChanged 写回变量；外部重置（didUpdateWidget）
+  // 改写变量后须同步 `.value`，否则滑块卡在旧值。
+  late final ShadSliderController _axisAngleC;
+  late final ShadSliderController _axisXC;
+  late final ShadSliderController _axisYC;
+  late final ShadSliderController _foldC;
   bool _playing = false;
 
   @override
@@ -236,6 +246,10 @@ class _ReflectionSceneWidgetState extends State<ReflectionSceneWidget>
     _axisAngle = widget.data.axisAngle;
     _axisX = widget.data.axisX;
     _axisY = widget.data.axisY;
+    _axisAngleC = ShadSliderController(initialValue: _axisAngle);
+    _axisXC = ShadSliderController(initialValue: _axisX);
+    _axisYC = ShadSliderController(initialValue: _axisY);
+    _foldC = ShadSliderController(initialValue: 0);
     _fold = AnimationController(
       vsync: this,
       value: 0,
@@ -245,7 +259,11 @@ class _ReflectionSceneWidgetState extends State<ReflectionSceneWidget>
       // 折叠过程，太慢会让学生等得不耐烦。reduce-motion 下 `_play()` 直接跳到
       // 终点、根本不走动画（见 `_play`），所以这个时长不影响无障碍用户。
       duration: const Duration(milliseconds: 1400),
-    )..addListener(() => setState(() {}));
+    )..addListener(() {
+        // 播放动画时 `_fold.value` 每帧变化，同步给滑块控制器使其跟随。
+        _foldC.value = _fold.value;
+        setState(() {});
+      });
   }
 
   @override
@@ -260,8 +278,12 @@ class _ReflectionSceneWidgetState extends State<ReflectionSceneWidget>
       _axisAngle = widget.data.axisAngle;
       _axisX = widget.data.axisX;
       _axisY = widget.data.axisY;
+      _axisAngleC.value = _axisAngle;
+      _axisXC.value = _axisX;
+      _axisYC.value = _axisY;
       _fold.stop();
       _fold.value = 0;
+      _foldC.value = 0;
       _playing = false;
       setState(() {});
     }
@@ -269,6 +291,10 @@ class _ReflectionSceneWidgetState extends State<ReflectionSceneWidget>
 
   @override
   void dispose() {
+    _axisAngleC.dispose();
+    _axisXC.dispose();
+    _axisYC.dispose();
+    _foldC.dispose();
     _fold.dispose();
     super.dispose();
   }
@@ -308,7 +334,7 @@ class _ReflectionSceneWidgetState extends State<ReflectionSceneWidget>
         const SizedBox(height: AppSpacing.sm),
         _labeledSlider(
           '对称轴角度',
-          _axisAngle,
+          _axisAngleC,
           0,
           180,
           1,
@@ -317,7 +343,7 @@ class _ReflectionSceneWidgetState extends State<ReflectionSceneWidget>
         ),
         _labeledSlider(
           '对称轴水平',
-          _axisX,
+          _axisXC,
           0.3,
           0.7,
           0.01,
@@ -326,7 +352,7 @@ class _ReflectionSceneWidgetState extends State<ReflectionSceneWidget>
         ),
         _labeledSlider(
           '对称轴垂直',
-          _axisY,
+          _axisYC,
           0.3,
           0.7,
           0.01,
@@ -337,11 +363,11 @@ class _ReflectionSceneWidgetState extends State<ReflectionSceneWidget>
 
   Widget _labeledSlider(
     String label,
-    double value,
+    ShadSliderController controller,
     double min,
     double max,
     double step,
-    ValueChanged<double> onChanged,
+    ValueChanged<double>? onChanged,
     String display,
   ) {
     final t = AppTheme.textOf(context);
@@ -350,9 +376,8 @@ class _ReflectionSceneWidgetState extends State<ReflectionSceneWidget>
       children: [
         SizedBox(width: 84, child: Text(label, style: t.labelSmall!)),
         Expanded(
-          // TODO: 替换为 ShadSlider 以贴合设计系统。
-          child: Slider(
-            value: value,
+          child: AppSlider(
+            controller: controller,
             min: min,
             max: max,
             divisions: divisions,
@@ -437,10 +462,10 @@ class _ReflectionSceneWidgetState extends State<ReflectionSceneWidget>
                 semanticLabel: _playing ? '暂停对折' : '播放对折',
               ),
               Expanded(
-                child: Slider(
-                  value: _fold.value,
-                  // TODO: 替换为 ShadSlider 以贴合设计系统。
+                child: AppSlider(
+                  controller: _foldC,
                   onChanged: widget.data.controlsScrub ? _scrub : null,
+                  enabled: widget.data.controlsScrub,
                   label: '对折 $progressDeg°',
                 ),
               ),
