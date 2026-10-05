@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 from datetime import date
+from typing import Any
 from uuid import UUID
 
 from sqlmodel import Session, select
@@ -49,7 +50,9 @@ from app.core.pagination import clamp_page_size, encode_cursor
 from app.db.models import Question, Task, TaskQuestion, User, WrongQuestion
 from app.domain import Grader, build_retriever
 from app.domain.provider import GeneratedQuestion, QuestionCard, QuestionStreamEvent
-from app.features.materials.scene_fusion import resolve_scene_spec_for_question
+from app.features.materials.scene_fusion import (
+    build_scene_spec_for_question,
+)
 from app.features.tasks.repository import (
     add_bank_questions_to_task,
     assign_task,
@@ -110,6 +113,9 @@ def question_to_resp(tq: TaskQuestion, *, include_answer: bool) -> QuestionResp:
         knowledge_point=tq.knowledge_point,
         explanation=tq.explanation or "",
         semester=tq.semester,
+        multi=tq.multi,
+        # 交互讲解快照（ADR-0061 §M）：草稿期算好的那份直接下发，无需再查知识点。
+        scene_spec=tq.scene_spec,
         answer=tq.answer if include_answer else None,
     )
 
@@ -152,19 +158,38 @@ def wrong_question_to_resp(
         first_wrong_at=wq.first_wrong_at,
         review_stage=wq.review_stage,
         due_at=wq.due_at,
+        multi=q.multi,
         graduated_at=wq.graduated_at,
-        # 交互讲解：按题目知识点 + 学期解析家长私有模板（ADR-0061）。无模板时 None，
-        # 前端据此降级为纯文本解析，行为与改动前完全一致。
-        scene_spec=resolve_scene_spec_for_question(
+        # 交互讲解（ADR-0061 §M）：**快照优先**——出题时算好的那份就是这道题的
+        # 讲解实例（贴合本题图形/角度，且知识点模板后续改动不影响它）。
+        # 老数据没有快照才回退实时解析（按知识点 + 学期找模板），保证存量题
+        # 仍能出图；两者都无则 None，前端降级为纯文本解析。
+        scene_spec=q.scene_spec
+        or build_scene_spec_for_question(
             session,
             parent_id=q.parent_id,
             subject=q.subject,
             grade=q.grade,
             knowledge_point=q.knowledge_point,
             semester=q.semester,
+            stem=q.stem,
+            options=q.options,
             cache=scene_cache,
         ),
     )
+
+
+def _valid_choice_options(options: object) -> bool:
+    """选择题必须有 ≥2 个非空选项，否则落库后娃娃端会退化成文本框、无法选择。
+
+    这是「选择题必须可选项」的硬约束：模型偶发会把 ``qtype`` 标成 ``choice`` 却
+    不给 ``options``（或不给够），若照存，今日练习里就变成填空题输入框。在落库前
+    拦掉，让家长重新生成，而不是存一份答不了的残缺题。
+    """
+    if not isinstance(options, list):
+        return False
+    non_empty = [o for o in options if isinstance(o, str) and o.strip()]
+    return len(non_empty) >= 2
 
 
 # ───────────────────────── 只读用例 ─────────────────────────
@@ -524,7 +549,7 @@ def _question_fields(payload: dict) -> dict:
     allowed = (
         "subject", "grade", "knowledge_point", "qtype", "stem",
         "options", "answer", "explanation", "difficulty", "semester",
-        "source_refs",
+        "source_refs", "multi",
     )
     return {k: payload[k] for k in allowed if k in payload}
 
@@ -655,8 +680,15 @@ def _gen_tq_for_spec_item(
     interests: list[str] | None,
     focus_interests: list[str] | None,
     engine=None,
+    scene_ctx: tuple[Session, Any] | None = None,
 ) -> TaskQuestion:
-    """按单项规格出一道题（草稿态：task_id / question_id 均为 None）。"""
+    """按单项规格出一道题（草稿态：task_id / question_id 均为 None）。
+
+    ``scene_ctx=(session, parent_id)`` 非空时**顺带落场景快照**（ADR-0061 §M）：
+    「知识点模板 + 本题数值」融合成 SceneSpec 写进 ``TaskQuestion.scene_spec``，
+    于是草稿预览就能内联渲染交互讲解，且模板后续改动不影响已生成的题。
+    为 None（无 DB 上下文的纯出题路径 / 测试）时跳过，行为与旧版一致。
+    """
     focus = _round_robin_focus(focus_interests, idx)
     g = _gen_question(
         engine,
@@ -669,6 +701,26 @@ def _gen_tq_for_spec_item(
         interests=interests if focus is None else None,
         focus_interest=focus,
     )
+    scene_spec = None
+    if scene_ctx is not None:
+        sess, pid = scene_ctx
+        scene_spec = build_scene_spec_for_question(
+            sess,
+            parent_id=pid,
+            subject=g.subject,
+            grade=g.grade,
+            knowledge_point=g.knowledge_point,
+            semester=g.semester,
+            stem=g.stem,
+            options=g.options,
+        )
+    # 选择题必须带有效选项：换题时模型偶发只标 qtype=choice 不给 options，
+    # 直接拦掉，避免把答不了的残缺题换进草稿。
+    if g.qtype == "choice" and not _valid_choice_options(g.options):
+        raise AppErrorException(
+            ErrCode.TASK_CHOICE_NO_OPTIONS,
+            "选择题缺少有效选项，换题失败，请重试",
+        )
     return TaskQuestion(
         task_id=None,  # 由 batch_generate_task / regenerate_all 回填
         question_id=None,  # R-Q1=c：草稿期不入题库
@@ -682,6 +734,7 @@ def _gen_tq_for_spec_item(
         explanation=g.explanation,
         difficulty=g.difficulty,
         semester=g.semester,
+        scene_spec=scene_spec,
     )
 
 
@@ -691,10 +744,13 @@ def _generate_task_questions_for_specs(
     interests: list[str] | None = None,
     focus_interests: list[str] | None = None,
     engine=None,
+    scene_ctx: tuple[Session, Any] | None = None,
 ) -> list[TaskQuestion]:
     """调用出题引擎产草稿 TaskQuestion（R-Q1=c：不写 Question 表）。
 
     engine 为 resolve_engine 解析结果（None = 无真实引擎，出题核心将失败并抛 LLM_UNAVAILABLE）。
+
+    ``scene_ctx`` 透传给 :func:`_gen_tq_for_spec_item` 落场景快照（ADR-0061 §M）。
 
     兴趣注入（WF-3/WF-4）：
     - `interests`：轻融入兴趣池（娃娃画像 categories），整卷统一下传。
@@ -708,6 +764,7 @@ def _generate_task_questions_for_specs(
             interests=interests,
             focus_interests=focus_interests,
             engine=engine,
+            scene_ctx=scene_ctx,
         )
         for idx, item in enumerate(_expand_spec_items(specs))
     ]
@@ -805,20 +862,55 @@ def create_from_generated(
     for q in questions:
         if not isinstance(q, dict):
             continue
+        subject = str(q.get("subject", ""))
+        grade = int(q.get("grade", 0) or 0)
+        kp = str(q.get("knowledge_point", ""))
+        semester = str(q.get("semester", "") or "")
+        stem = str(q.get("stem", ""))
+        options = q.get("options")  # list[str] | None
+        qtype = str(q.get("qtype", "open"))
+        # 多选题标记（ADR-0004 D5）：随题卡透传；非 choice / 无选项题恒 False。
+        multi = bool(q.get("multi", False)) and qtype == "choice" and bool(_valid_choice_options(options))
+        # 选择题必须带有效选项：模型偶发把 qtype 标成 choice 却不给 options，
+        # 照存会让娃娃端渲染成文本框、无法选择。落库前拦掉，让家长重新生成。
+        if qtype == "choice" and not _valid_choice_options(options):
+            raise AppErrorException(
+                ErrCode.TASK_CHOICE_NO_OPTIONS,
+                "选择题缺少有效选项，无法保存，请重新生成任务",
+            )
+        # 交互讲解快照（ADR-0061 §M）：优先用前端回传的（出题时已算好的），
+        # 没有就地按「知识点模板 + 本题数值」融合一份。写null 也要归一化成
+        # None——JSON `null` 存进JSON 列会让「非空」计数失真。
+        raw_scene = q.get("scene_spec")
+        if isinstance(raw_scene, dict) and raw_scene:
+            scene_spec: dict | None = raw_scene
+        else:
+            scene_spec = build_scene_spec_for_question(
+                session,
+                parent_id=parent_id,
+                subject=subject,
+                grade=grade,
+                knowledge_point=kp,
+                semester=semester,
+                stem=stem,
+                options=options,
+            )
         draft_questions.append(
             TaskQuestion(
                 task_id=None,  # 由 batch_generate_task 回填
                 question_id=None,  # R-Q1=c：草稿期不入题库
-                subject=str(q.get("subject", "")),
-                grade=int(q.get("grade", 0) or 0),
-                knowledge_point=str(q.get("knowledge_point", "")),
-                qtype=str(q.get("qtype", "open")),
-                stem=str(q.get("stem", "")),
-                options=q.get("options"),  # list[str] | None
+                subject=subject,
+                grade=grade,
+                knowledge_point=kp,
+                qtype=qtype,
+                stem=stem,
+                options=options,
+                multi=multi,
                 answer=q.get("answer"),
                 explanation=q.get("explanation") or "",
                 difficulty=str(q.get("difficulty") or "medium"),
-                semester=str(q.get("semester", "") or ""),
+                semester=semester,
+                scene_spec=scene_spec,
             )
         )
     if not draft_questions:
@@ -948,8 +1040,13 @@ def _gen_for_swap(
     *,
     interests_pool: list[str] | None,
     focus: str | None,
+    scene_ctx: tuple[Session, Any] | None = None,
 ) -> Question:
-    """按原题的 subject/grade/knowledge_point/qtype/difficulty 拉一道新题。"""
+    """按原题的 subject/grade/knowledge_point/qtype/difficulty 拉一道新题。
+
+    ``scene_ctx=(session, parent_id)`` 非空时给新题融合场景快照（ADR-0061 §M）——
+    新题stem/options 与旧题不同，必须重算而不是沿用 ``tq.scene_spec``。
+    """
     g = _gen_question(
         engine,
         subject=tq.subject,
@@ -961,10 +1058,24 @@ def _gen_for_swap(
         interests=interests_pool if focus is None else None,
         focus_interest=focus,
     )
+    scene_spec = None
+    if scene_ctx is not None:
+        sess, pid = scene_ctx
+        scene_spec = build_scene_spec_for_question(
+            sess,
+            parent_id=pid,
+            subject=g.subject,
+            grade=g.grade,
+            knowledge_point=g.knowledge_point,
+            semester=g.semester,
+            stem=g.stem,
+            options=g.options,
+        )
     return Question(
         subject=g.subject, grade=g.grade, knowledge_point=g.knowledge_point,
         qtype=g.qtype, stem=g.stem, options=g.options, answer=g.answer,
         explanation=g.explanation, difficulty=g.difficulty, semester=g.semester,
+        scene_spec=scene_spec,
     )
 
 
@@ -975,7 +1086,13 @@ def regenerate_one(
     tq, engine, interests_pool, focus = _regenerate_one_inputs(
         session=session, parent=parent, task_id=task_id, tq_id=tq_id
     )
-    new_q = _gen_for_swap(tq, engine, interests_pool=interests_pool, focus=focus)
+    new_q = _gen_for_swap(
+        tq,
+        engine,
+        interests_pool=interests_pool,
+        focus=focus,
+        scene_ctx=(session, parent.id),
+    )
     return _swap_question(session=session, tq_id=tq_id, gen_question=new_q)
 
 
@@ -1101,6 +1218,7 @@ def regenerate_all(*, session: Session, parent: User, task_id: UUID) -> TaskResp
             interests=interests_pool,
             focus_interests=task.focus_interest,
             engine=engine,
+            scene_ctx=(session, parent.id),
         )
         for idx, item in enumerate(spec_items)
     ]

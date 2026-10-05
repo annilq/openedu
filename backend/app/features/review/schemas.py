@@ -27,3 +27,5 @@ class ReviewItemResp(SQLModel):
     review_stage: int
     next_interval_days: int
     due_at: datetime | None = None
+    # 是否多选题（ADR-0004 D5）：choice 题且多正确项时 True，前端渲染复选、批改按集合比对。
+    multi: bool = False

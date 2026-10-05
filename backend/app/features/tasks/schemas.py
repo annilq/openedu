@@ -22,6 +22,8 @@ class TaskSpec(SQLModel):
     knowledge_point: str = Field(max_length=128)
     qtype: str = Field(max_length=16)  # choice|fill|calc|open
     difficulty: str = Field(max_length=16, default="medium")
+    # 是否多选题（ADR-0004 D5）：仅 choice 题型有意义；fill/calc/open 置 True 会被校验拒绝。
+    multi: bool = False
     # 学期维度（ADR-0061 发布任务对接资料库）：'' = 不限/整学年；'上学期' / '下学期'。
     # 随规格持久化到 Task.specs 以便整卷重生成沿用，并透传到每道题 → Question/TaskQuestion。
     semester: str = Field(default="", max_length=8)
@@ -41,6 +43,14 @@ class TaskSpec(SQLModel):
         subject = info.data.get("subject")
         if subject and v not in qtypes_for(subject):
             raise ValueError(f"学科「{subject}」不支持题型「{v}」")
+        return v
+
+    @field_validator("multi")
+    @classmethod
+    def _multi_only_for_choice(cls, v: bool, info) -> bool:
+        # 多选题只在 choice 题型有意义；fill/calc/open 标多选属调用方错误，直接拒绝。
+        if v and info.data.get("qtype") != "choice":
+            raise ValueError("多选题（multi=true）仅支持选择题（choice）题型")
         return v
 
 
@@ -104,6 +114,8 @@ class QuestionResp(SQLModel):
     explanation: str = ""
     # 学期维度（ADR-0061）：随题下发，前端展示/讲解场景匹配用。
     semester: str = ""
+    # 是否多选题（ADR-0004 D5）：choice 题且多选项时 True，前端渲染复选、批改按集合比对。
+    multi: bool = False
     # 娃娃端接口恒为 None，防作弊
     answer: str | None = None
 
@@ -206,6 +218,8 @@ class WrongQuestionResp(SQLModel):
     first_wrong_at: datetime | None = None
     review_stage: int = 0
     due_at: datetime | None = None
+    # 是否多选题（ADR-0004 D5）：随题下发，便于错题本复用闭环时渲染。
+    multi: bool = False
     # 毕业（已掌握）时间；None = 仍在复习队列里（ADR-0053 P2）。
     graduated_at: datetime | None = None
     # 交互式讲解实例（ADR-0061）：题目知识点命中家长私有知识点模板时附上，

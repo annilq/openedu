@@ -52,6 +52,7 @@ def review_item_to_resp(wq: WrongQuestion, q: Question) -> ReviewItemResp:
         review_stage=wq.review_stage,
         next_interval_days=next_interval_days(wq.review_stage),
         due_at=wq.due_at,
+        multi=q.multi,
     )
 
 

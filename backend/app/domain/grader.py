@@ -28,6 +28,18 @@ class Grader:
     def _normalize(text: str | None) -> str:
         return re.sub(r"\s+", "", (text or "").strip().lower())
 
+    @staticmethod
+    def _normalize_set(text: str | list[str] | None) -> set[str]:
+        """多选题：answer / 作答 均为「｜」连接的选项文本（前端多选取集也按此序列化），
+
+        按集合比对——顺序无关、去重、空白忽略。
+        """
+        if isinstance(text, list):
+            parts = text
+        else:
+            parts = (text or "").split("|")
+        return {Grader._normalize(p) for p in parts if str(p).strip()}
+
     def grade(self, *, question, student_answer) -> dict:
         if question.qtype == "open":
             return run_async(
@@ -35,7 +47,13 @@ class Grader:
                     question=question, student_answer=student_answer
                 )
             )
-        correct = self._normalize(student_answer) == self._normalize(question.answer)
+        # 多选题（ADR-0004 D5）：按选项集合比对，顺序/重复不计。
+        if getattr(question, "multi", False):
+            correct = self._normalize_set(student_answer) == self._normalize_set(
+                question.answer
+            )
+        else:
+            correct = self._normalize(student_answer) == self._normalize(question.answer)
         return {
             "correct": correct,
             "score": 1.0 if correct else 0.0,

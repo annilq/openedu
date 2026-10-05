@@ -9,13 +9,15 @@ import '../../../../shared/widgets/app_option_tile.dart';
 import '../../../../shared/widgets/app_buttons.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/app_tags.dart';
+import '../../../../shared/utils/option_text.dart';
+import '../../../../shared/utils/question_labels.dart';
 
 /// 做题页单题作答区：题干标签 + 选项/输入 + 提交。
 /// 纯展示：选中态/答案/提交由调用方（屏幕 State）持有并回调。
 class PracticeQuestionView extends StatelessWidget {
   final QuestionModel question;
   final TaskModel task;
-  final String? selectedOption;
+  final Set<String> selectedOptions;
   final TextEditingController answerController;
   final bool answerReady;
   final ValueChanged<String> onOptionTap;
@@ -32,7 +34,7 @@ class PracticeQuestionView extends StatelessWidget {
     super.key,
     required this.question,
     required this.task,
-    required this.selectedOption,
+    required this.selectedOptions,
     required this.answerController,
     required this.answerReady,
     required this.onOptionTap,
@@ -96,6 +98,7 @@ class PracticeQuestionView extends StatelessWidget {
                     if (q.grade > 0) AppTags.normal('${q.grade}年级'),
                     if (q.knowledgePoint.isNotEmpty)
                       AppTags.info(q.knowledgePoint),
+                    AppTags.normal(qtypeLabelWithJudge(q.qtype, q.options)),
                   ],
                 ),
                 const SizedBox(height: AppSpacing.xxl),
@@ -103,11 +106,18 @@ class PracticeQuestionView extends StatelessWidget {
                 // 必须用 IntrinsicHeight 给 Row 一个有界高度，否则在无界滚动区里崩。
                 IntrinsicHeight(child: stemBlock),
                 const SizedBox(height: AppSpacing.xxl),
-                if (q.options != null && q.options!.isNotEmpty)
+                // 选择题按 qtype 走选项卡片（ADR-0004：qtype ∈ {choice,fill,calc,open}）。
+                // 只有 choice 且有有效选项才渲染选项，其余（填空/计算/应用）走输入框——
+                // 这样「选择题渲染成文本框」的退化被根因拦在落库前（后端 TASK_CHOICE_NO_OPTIONS），
+                // 前端此处只在选项确实可用时才切到选择模式。
+                if (q.qtype == 'choice' &&
+                    q.options != null &&
+                    q.options!.isNotEmpty)
                   ...q.options!.asMap().entries.map((e) => AppOptionTile(
                         index: e.key,
-                        text: e.value,
-                        selected: selectedOption == e.value,
+                        text: cleanOptionText(e.value),
+                        selected: selectedOptions.contains(e.value),
+                        multi: q.multi,
                         onTap: () => onOptionTap(e.value),
                       ))
                 else

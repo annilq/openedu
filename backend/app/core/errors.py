@@ -52,6 +52,7 @@ class ErrCode(str, Enum):
     QUESTION_ACCESS_DENIED = "TASK_20015"  # 部分题库题无权限（owner 隔离）
     QUESTION_IN_USE = "TASK_20016"  # 题库题已被任务引用，禁止删除
     WRONG_QUESTION_NOT_FOUND = "TASK_20017"  # 错题不存在 / 非本孩子（重新加入复习）
+    TASK_CHOICE_NO_OPTIONS = "TASK_20018"  # 选择题缺少有效选项（≥2 个非空），落库会退化成文本框
 
     # Auth 30xxx
     AUTH_INVALID_TOKEN = "AUTH_30001"
@@ -104,6 +105,7 @@ _HTTP_DEFAULT_STATUS: dict[ErrCode, int] = {
     ErrCode.QUESTION_NOT_FOUND: status.HTTP_404_NOT_FOUND,
     ErrCode.QUESTION_ACCESS_DENIED: status.HTTP_403_FORBIDDEN,
     ErrCode.QUESTION_IN_USE: status.HTTP_409_CONFLICT,
+    ErrCode.TASK_CHOICE_NO_OPTIONS: status.HTTP_422_UNPROCESSABLE_CONTENT,
     # JWT 过期/失效：属「未认证」，与缺 token（UNAUTHORIZED）一致返回 401，
     # 让前端统一走 UnauthorizedException → 清 token 跳登录。真实越权（TASK_NOT_OWNED
     # 等）才返回 403，绝不因此误踢已登录用户。

@@ -43,6 +43,40 @@ String difficultyLabel(String difficulty) => switch (difficulty) {
       _ => difficulty,
     };
 
+/// 判断题识别（ADR-0004 D5）：后端无独立 `judge` 题型，判断题靠「choice + 选项仅为
+/// 对/错二选一」伪装。这里按选项内容识别，命中则在 UI 上标注「判断题」，但渲染仍
+/// 复用单选卡（2 个选项 = 2 个单选框）。
+///
+/// 注意：判定要求**恰好两个选项且都落在对/错词表**，避免把「A. 正确 / B. 错误」之外的
+/// 普通二选一选择题误判成判断题。
+const _judgeOptionWords = {
+  '对',
+  '错',
+  '正确',
+  '错误',
+  '对吗',
+  '×',
+  '√',
+  'true',
+  'false',
+  't',
+  'f',
+  'yes',
+  'no',
+  '是',
+  '否',
+};
+
+bool isJudgeQuestion(String qtype, List<String>? options) {
+  if (qtype != 'choice' || options == null || options.length != 2) return false;
+  final norm = options.map((o) => o.trim().toLowerCase()).toSet();
+  return norm.length == 2 && norm.every(_judgeOptionWords.contains);
+}
+
+/// 题型长标签（带判断题识别）：判断题返回「判断题」，其余走 [qtypeLabelFull]。
+String qtypeLabelWithJudge(String qtype, List<String>? options) =>
+    isJudgeQuestion(qtype, options) ? '判断题' : qtypeLabelFull(qtype);
+
 /// 任务状态 → 中文：`draft` → 「草稿」。
 ///
 /// 取值域见后端任务状态机（`draft` 草稿 / `ready` 已锁定 / `assigned` 已派发 /

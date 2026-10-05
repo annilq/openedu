@@ -67,9 +67,20 @@ def run_migrations() -> None:
             ]
             if "source_refs" not in q_cols:
                 conn.execute(text("ALTER TABLE question ADD COLUMN source_refs TEXT"))
+            # question.multi（ADR-0004 D5）：多选题标记，默认 False。
+            if "multi" not in q_cols:
+                conn.execute(
+                    text("ALTER TABLE question ADD COLUMN multi BOOLEAN NOT NULL DEFAULT 0")
+                )
         else:
             conn.execute(
                 text("ALTER TABLE question ADD COLUMN IF NOT EXISTS source_refs JSON")
+            )
+            conn.execute(
+                text(
+                    "ALTER TABLE question ADD COLUMN IF NOT EXISTS "
+                    "multi BOOLEAN NOT NULL DEFAULT FALSE"
+                )
             )
         # 回填：通过 task_question -> task 找到原题归属家长；孤儿行保持 NULL。
         # 旧库若尚未建 task_question 表（偏序迁移），跳过回填（owner 隔离降级，dev 可重置）。
@@ -244,6 +255,20 @@ def run_migrations() -> None:
                             "ALTER TABLE taskquestion ADD COLUMN semester VARCHAR(8) DEFAULT ''"
                         )
                     )
+                # taskquestion.scene_spec：草稿期就要带场景，否则「确认前预览 /
+                # 草稿审核」拿不到快照（question 要等 promote 才有行）。
+                if "scene_spec" not in tq_cols:
+                    conn.execute(
+                        text("ALTER TABLE taskquestion ADD COLUMN scene_spec TEXT")
+                    )
+                # taskquestion.multi（ADR-0004 D5）：多选题标记，默认 False。
+                if "multi" not in tq_cols:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE taskquestion ADD COLUMN multi "
+                            "BOOLEAN NOT NULL DEFAULT 0"
+                        )
+                    )
             else:
                 conn.execute(
                     text(
@@ -267,6 +292,18 @@ def run_migrations() -> None:
                     text(
                         "ALTER TABLE taskquestion ADD COLUMN IF NOT EXISTS "
                         "semester VARCHAR(8) NOT NULL DEFAULT ''"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "ALTER TABLE taskquestion ADD COLUMN IF NOT EXISTS "
+                        "scene_spec JSON"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "ALTER TABLE taskquestion ADD COLUMN IF NOT EXISTS "
+                        "multi BOOLEAN NOT NULL DEFAULT FALSE"
                     )
                 )
         except OperationalError:

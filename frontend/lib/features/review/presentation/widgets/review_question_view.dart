@@ -8,12 +8,14 @@ import '../../../../shared/widgets/app_option_tile.dart';
 import '../../../../shared/widgets/app_buttons.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/app_tags.dart';
+import '../../../../shared/utils/option_text.dart';
+import '../../../../shared/utils/question_labels.dart';
 
 /// 复习页单题作答区：题干标签 + 选项/输入 + 提交。
 /// 纯展示：选中态/答案/提交由调用方（屏幕 State）持有并回调。
 class ReviewQuestionView extends StatelessWidget {
   final ReviewItemModel item;
-  final String? selectedOption;
+  final Set<String> selectedOptions;
   final TextEditingController answerController;
   final bool submitting;
   final bool answerReady;
@@ -24,7 +26,7 @@ class ReviewQuestionView extends StatelessWidget {
   const ReviewQuestionView({
     super.key,
     required this.item,
-    required this.selectedOption,
+    required this.selectedOptions,
     required this.answerController,
     required this.submitting,
     required this.answerReady,
@@ -52,6 +54,7 @@ class ReviewQuestionView extends StatelessWidget {
                   AppTags.subject(SubjectAccent.fromName(item.subject)),
                   AppTags.normal('${item.grade}年级'),
                   AppTags.info(item.knowledgePoint),
+                  AppTags.normal(qtypeLabelWithJudge(item.qtype, item.options)),
                   AppTags.warning('错过 ${item.wrongCount} 次'),
                 ],
               ),
@@ -63,11 +66,15 @@ class ReviewQuestionView extends StatelessWidget {
                     style: AppTheme.textOf(context).titleMedium),
               ),
               const SizedBox(height: AppSpacing.xxl),
-              if (item.options != null && item.options!.isNotEmpty)
+              // 选择题按 qtype 走选项卡片；有有效选项才渲染，否则走输入框。
+              if (item.qtype == 'choice' &&
+                  item.options != null &&
+                  item.options!.isNotEmpty)
                 ...item.options!.asMap().entries.map((e) => AppOptionTile(
                       index: e.key,
-                      text: e.value,
-                      selected: selectedOption == e.value,
+                      text: cleanOptionText(e.value),
+                      selected: selectedOptions.contains(e.value),
+                      multi: item.multi,
                       disabled: submitting,
                       onTap: () => onOptionTap(e.value),
                     ))

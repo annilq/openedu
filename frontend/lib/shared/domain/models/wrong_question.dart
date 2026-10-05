@@ -119,6 +119,9 @@ class ReviewItemModel {
   final int nextIntervalDays;
   final DateTime? dueAt;
 
+  /// 是否多选题（ADR-0004 D5）：渲染复选 / 单选，由后端随题下发。
+  final bool multi;
+
   ReviewItemModel({
     required this.wrongQuestionId,
     required this.questionId,
@@ -133,6 +136,7 @@ class ReviewItemModel {
     required this.reviewStage,
     required this.nextIntervalDays,
     this.dueAt,
+    this.multi = false,
   });
 
   factory ReviewItemModel.fromJson(Map<String, dynamic> json) {
@@ -150,6 +154,7 @@ class ReviewItemModel {
       reviewStage: json['review_stage'] as int? ?? 0,
       nextIntervalDays: json['next_interval_days'] as int? ?? 1,
       dueAt: parseDate(json['due_at']),
+      multi: json['multi'] as bool? ?? false,
     );
   }
 }

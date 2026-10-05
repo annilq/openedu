@@ -88,6 +88,122 @@ def test_from_generated_persists_questions(client):
     assert body["questions"][0]["answer"] is not None
 
 
+def test_from_generated_rejects_choice_without_options(client):
+    """选择题必须带有效选项，否则落库会退化成文本框、娃娃端无法选择（TASK_CHOICE_NO_OPTIONS）。"""
+    r = register_parent(client, username="fg_parent_choice").json()["access_token"]
+    cid = _create_child(client, r, username="fg_kid_choice")["id"]
+
+    bad_questions = [
+        {
+            "subject": "数学",
+            "grade": 2,
+            "knowledge_point": "加法",
+            "qtype": "choice",
+            "stem": "下面哪个等于 3？",
+            "options": None,  # 选择题却没给选项
+            "answer": "B",
+            "explanation": "1+2=3",
+            "difficulty": "easy",
+        },
+        {
+            "subject": "数学",
+            "grade": 2,
+            "knowledge_point": "加法",
+            "qtype": "choice",
+            "stem": "下面哪个等于 4？",
+            "options": ["A"],  # 只有一个、不足以选择
+            "answer": "A",
+            "explanation": "2+2=4",
+            "difficulty": "easy",
+        },
+    ]
+    resp = client.post(
+        "/api/v1/tasks/from-generated",
+        headers=auth_headers(r),
+        json={
+            "title": "残缺选择题卷",
+            "child_id": cid,
+            "specs": [
+                {"subject": "数学", "grade": 2, "knowledge_point": "加法", "qtype": "choice", "difficulty": "easy", "count": 1}
+            ],
+            "questions": bad_questions,
+        },
+    )
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["code"] == "TASK_20018"
+
+
+def test_from_generated_accepts_choice_with_options(client):
+    """带有效选项的选择题正常落库。"""
+    r = register_parent(client, username="fg_parent_choice_ok").json()["access_token"]
+    cid = _create_child(client, r, username="fg_kid_choice_ok")["id"]
+
+    good_questions = [
+        {
+            "subject": "数学",
+            "grade": 2,
+            "knowledge_point": "加法",
+            "qtype": "choice",
+            "stem": "下面哪个等于 3？",
+            "options": ["A. 1", "B. 3", "C. 5"],
+            "answer": "B",
+            "explanation": "1+2=3",
+            "difficulty": "easy",
+        }
+    ]
+    resp = client.post(
+        "/api/v1/tasks/from-generated",
+        headers=auth_headers(r),
+        json={
+            "title": "选择题卷",
+            "child_id": cid,
+            "specs": [
+                {"subject": "数学", "grade": 2, "knowledge_point": "加法", "qtype": "choice", "difficulty": "easy", "count": 1}
+            ],
+            "questions": good_questions,
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    assert len(resp.json()["questions"]) == 1
+
+
+def test_from_generated_persists_multi_choice(client):
+    """多选题（multi=true + ｜连接的多答案）原样落库，娃娃端据此渲染复选卡。"""
+    r = register_parent(client, username="fg_parent_multi").json()["access_token"]
+    cid = _create_child(client, r, username="fg_kid_multi")["id"]
+
+    multi_questions = [
+        {
+            "subject": "数学",
+            "grade": 2,
+            "knowledge_point": "加法",
+            "qtype": "choice",
+            "stem": "下面哪些等于 3？",
+            "options": ["A. 1", "B. 3", "C. 0", "D. 1+2"],
+            "answer": "B|D",  # 多个正确项用 ｜ 连接（ADR-0004 D5）
+            "explanation": "3 与 1+2 都等于 3。",
+            "difficulty": "easy",
+            "multi": True,
+        }
+    ]
+    resp = client.post(
+        "/api/v1/tasks/from-generated",
+        headers=auth_headers(r),
+        json={
+            "title": "多选题卷",
+            "child_id": cid,
+            "specs": [
+                {"subject": "数学", "grade": 2, "knowledge_point": "加法", "qtype": "choice", "difficulty": "easy", "count": 1, "multi": True}
+            ],
+            "questions": multi_questions,
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    q = resp.json()["questions"][0]
+    assert q["multi"] is True
+    assert q["answer"] == "B|D"
+
+
 def test_from_generated_rejects_empty_questions(client):
     r = register_parent(client, username="fg_parent_b")
     ptoken = r.json()["access_token"]

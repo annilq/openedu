@@ -54,7 +54,8 @@ class ReviewScreen extends ConsumerStatefulWidget {
 
 class _ReviewScreenState extends ConsumerState<ReviewScreen> {
   final _answerController = TextEditingController();
-  String? _selectedOption;
+  // 选中态（ADR-0004 D5）：多选为集合、单选为单元素集合，统一用集合表达。
+  final Set<String> _selectedOptions = {};
   int _currentIndex = 0;
   int _totalCount = 0;
   bool _done = false;
@@ -77,16 +78,47 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
 
   bool _answerReady(ReviewItemModel item) {
     if (_submitting) return false;
-    if (item.options != null && item.options!.isNotEmpty) {
-      return _selectedOption != null;
+    // 选择题（有有效选项）以选项选中态为准；其余题型以输入框非空为准。
+    if (item.qtype == 'choice' &&
+        item.options != null &&
+        item.options!.isNotEmpty) {
+      return _selectedOptions.isNotEmpty;
     }
     return _answerController.text.trim().isNotEmpty;
   }
 
+  /// 组合最终作答文本（ADR-0004 D5）：多选按「｜」连接选中项，单选取唯一选中项。
+  String _composeAnswer(ReviewItemModel item) {
+    if (item.qtype == 'choice' &&
+        item.options != null &&
+        item.options!.isNotEmpty) {
+      if (_selectedOptions.isEmpty) return '';
+      return item.multi
+          ? (_selectedOptions.toList()..sort()).join('|')
+          : _selectedOptions.first;
+    }
+    return _answerController.text.trim();
+  }
+
+  /// 选项点击：多选切换成员、单选替换唯一选中项。
+  void _onOptionTap(ReviewItemModel item, String value) => setState(() {
+        if (item.multi) {
+          if (_selectedOptions.contains(value)) {
+            _selectedOptions.remove(value);
+          } else {
+            _selectedOptions.add(value);
+          }
+        } else {
+          _selectedOptions
+            ..clear()
+            ..add(value);
+        }
+      });
+
   Future<void> _submit(ReviewItemModel item) async {
     if (!_answerReady(item)) return;
     if (_submitting) return;
-    final answer = _selectedOption ?? _answerController.text.trim();
+    final answer = _composeAnswer(item);
 
     setState(() => _submitting = true);
     final result = await ref
@@ -101,7 +133,7 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
 
     if (result.correct) _correctCount++;
     _answerController.clear();
-    setState(() => _selectedOption = null);
+    setState(() => _selectedOptions.clear());
 
     final nextState = ref.read(dueReviewNotifierProvider);
     if (nextState is DueReviewLoaded && nextState.items.isEmpty) {
@@ -228,15 +260,15 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
                             child: ReviewQuestionView(
                               item: state.items[
                                   _currentIndex.clamp(0, state.items.length - 1)],
-                              selectedOption: _selectedOption,
+                              selectedOptions: _selectedOptions,
                               answerController: _answerController,
                               submitting: _submitting,
                               answerReady: _answerReady(state.items[_currentIndex
                                   .clamp(0, state.items.length - 1)]),
-                              onOptionTap: (v) => setState(() {
-                                _selectedOption = v;
-                                _answerController.text = v;
-                              }),
+                              onOptionTap: (v) => _onOptionTap(
+                                  state.items[_currentIndex
+                                      .clamp(0, state.items.length - 1)],
+                                  v),
                               onAnswerChanged: () => setState(() {}),
                               onSubmit: () => _submit(state.items[_currentIndex
                                   .clamp(0, state.items.length - 1)]),

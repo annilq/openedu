@@ -37,7 +37,9 @@ class PracticeScreen extends ConsumerStatefulWidget {
 
 class _PracticeScreenState extends ConsumerState<PracticeScreen> {
   final _answerController = TextEditingController();
-  String? _selectedOption;
+  // 选中态（ADR-0004 D5）：多选题为集合、单选题为单元素集合。统一用集合表达，
+  // 渲染与提交都从集合取，避免单选/多选两套状态。
+  final Set<String> _selectedOptions = {};
   late bool _preview;
 
   @override
@@ -58,7 +60,10 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
   bool get _answerReady {
     final q = _currentQuestion;
     if (q == null) return false;
-    if (q.options != null && q.options!.isNotEmpty) return _selectedOption != null;
+    // 选择题（有有效选项）以选项选中态为准；其余题型以输入框非空为准。
+    if (q.qtype == 'choice' && q.options != null && q.options!.isNotEmpty) {
+      return _selectedOptions.isNotEmpty;
+    }
     return _answerController.text.trim().isNotEmpty;
   }
 
@@ -71,22 +76,54 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
     return null;
   }
 
+  /// 组合最终作答文本（ADR-0004 D5）：
+  /// - 选择题：多选按「｜」连接选中项（排序后，便于比对稳定），单选取唯一选中项。
+  /// - 填空/计算/应用：取输入框文本。
+  String _composeAnswer(QuestionModel q) {
+    if (q.qtype == 'choice' && q.options != null && q.options!.isNotEmpty) {
+      if (_selectedOptions.isEmpty) return '';
+      return q.multi
+          ? (_selectedOptions.toList()..sort()).join('|')
+          : _selectedOptions.first;
+    }
+    return _answerController.text.trim();
+  }
+
+  /// 选项点击：多选切换成员、单选替换唯一选中项。
+  void _onOptionTap(QuestionModel q, String value) => setState(() {
+        if (q.multi) {
+          if (_selectedOptions.contains(value)) {
+            _selectedOptions.remove(value);
+          } else {
+            _selectedOptions.add(value);
+          }
+        } else {
+          _selectedOptions
+            ..clear()
+            ..add(value);
+        }
+      });
+
   void _submit(String questionId) {
-    final answer = _selectedOption ?? _answerController.text.trim();
+    final q = _currentQuestion;
+    if (q == null) return;
+    final answer = _composeAnswer(q);
     if (answer.isEmpty) return;
     ref.read(practiceNotifierProvider.notifier).submitAnswer(questionId, answer);
     _answerController.clear();
-    setState(() => _selectedOption = null);
+    setState(() => _selectedOptions.clear());
   }
 
   /// 订正作答：复用练习批改，提交后弹结果并回到订正列表。
   Future<void> _submitCorrection(String questionId) async {
-    final answer = _selectedOption ?? _answerController.text.trim();
+    final q = _currentQuestion;
+    if (q == null) return;
+    final answer = _composeAnswer(q);
     if (answer.isEmpty) return;
     final notifier = ref.read(practiceNotifierProvider.notifier);
     final result = await notifier.submitCorrection(questionId, answer);
     _answerController.clear();
-    setState(() => _selectedOption = null);
+    setState(() => _selectedOptions.clear());
     if (result != null && mounted) _showResult(context, result);
   }
 
@@ -116,7 +153,7 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
   void _enterInteractive() {
     setState(() => _preview = false);
     _answerController.clear();
-    setState(() => _selectedOption = null);
+    setState(() => _selectedOptions.clear());
     ref.read(practiceNotifierProvider.notifier).startTask(widget.task);
   }
 
@@ -241,14 +278,11 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
             Practicing() => PracticeQuestionView(
                 question: state.currentQuestion,
                 task: widget.task,
-                selectedOption: _selectedOption,
+                selectedOptions: _selectedOptions,
                 answerController: _answerController,
                 answerReady: _answerReady,
                 preview: _preview,
-                onOptionTap: (v) => setState(() {
-                  _selectedOption = v;
-                  _answerController.text = v;
-                }),
+                onOptionTap: (v) => _onOptionTap(state.currentQuestion, v),
                 onAnswerChanged: () => setState(() {}),
                 onSubmit:
                     _preview ? () {} : () => _submit(state.currentQuestion.id),
@@ -259,7 +293,7 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
                 results: state.results,
                 onCorrect: (id) {
                   setState(() {
-                    _selectedOption = null;
+                    _selectedOptions.clear();
                     _answerController.clear();
                   });
                   ref
@@ -297,14 +331,11 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
       child: PracticeQuestionView(
         question: q,
         task: state.task,
-        selectedOption: _selectedOption,
+        selectedOptions: _selectedOptions,
         answerController: _answerController,
         answerReady: _answerReady,
         preview: false,
-        onOptionTap: (v) => setState(() {
-          _selectedOption = v;
-          _answerController.text = v;
-        }),
+        onOptionTap: (v) => _onOptionTap(q, v),
         onAnswerChanged: () => setState(() {}),
         onSubmit: () => _submitCorrection(q.id),
         onNext: null,

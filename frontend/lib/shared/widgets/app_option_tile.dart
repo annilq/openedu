@@ -15,6 +15,10 @@ class AppOptionTile extends StatelessWidget {
   final VoidCallback? onTap;
   final bool disabled;
 
+  /// 是否多选题（ADR-0004 D5）：True 时前导标记为方块复选框、False 为圆形单选框。
+  /// 渲染差异只在前导形状与勾选图标语义，选中/描边逻辑与单选一致。
+  final bool multi;
+
   const AppOptionTile({
     super.key,
     required this.index,
@@ -22,6 +26,7 @@ class AppOptionTile extends StatelessWidget {
     required this.selected,
     this.onTap,
     this.disabled = false,
+    this.multi = false,
   });
 
   static const _letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
@@ -68,7 +73,8 @@ class AppOptionTile extends StatelessWidget {
                 height: 36,
                 decoration: BoxDecoration(
                   color: selected ? scheme.primary : scheme.surfaceSunken,
-                  borderRadius: BorderRadius.circular(AppRadius.card),
+                  // 多选=方块复选框、单选=圆形单选框（ADR-0004 D5）。
+                  borderRadius: BorderRadius.circular(multi ? 8 : 999),
                   border: Border.all(
                     color: scheme.outline,
                     width: AppElevation.borderWidthSm,

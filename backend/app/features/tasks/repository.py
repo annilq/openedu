@@ -205,10 +205,14 @@ def promote_task_question(
         qtype=tq.qtype,
         stem=tq.stem,
         options=tq.options,
+        multi=tq.multi,
         answer=tq.answer,
         explanation=tq.explanation,
         difficulty=tq.difficulty,
         semester=tq.semester,
+        # 场景快照随草稿一起进题库（ADR-0061 §M）：草稿期算好的那份就是这道题
+        # 的讲解实例，入库后不再依赖知识点模板是否被改动。
+        scene_spec=tq.scene_spec,
     )
     session.add(q)
     session.flush()

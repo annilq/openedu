@@ -48,7 +48,10 @@ class TaskQuestion(SQLModel, table=True):
     knowledge_point: str
     qtype: str
     stem: str
-    options: list[str] | None = Field(default=None, sa_type=JSON)
+    options: list[str] | None = Field(default=None, sa_type=JSON(none_as_null=True))
+    # 是否多选题（ADR-0004 D5）：choice 题可多选；渲染为复选卡片、批改按集合比对。
+    # 非 choice 或无选项题恒为 False，避免前端误判多选。
+    multi: bool = Field(default=False)
     answer: str | None = None
     explanation: str | None = None
     difficulty: str | None = None
@@ -56,6 +59,13 @@ class TaskQuestion(SQLModel, table=True):
     # 与 Question 对齐——promote_task_question 把此值拷贝进题库 Question，进而在讲解时
     # 按 (parent_id, subject, grade, knowledge_point, semester) 匹配家长私有知识点模板。
     semester: str = Field(default="", max_length=8)
+    # 本题的交互式讲解实例快照（ADR-0061 §M）：生成时由「知识点模板 + 本题数值」
+    # 融合得到并落库。草稿期就带上——否则确认前的预览 / 草稿审核拿不到场景
+    # （Question 要等 promote 才有行）。可空 = 本题不可图形化。
+    # 刻意不建外键（快照式）：知识点模板后续改动不影响已生成的题。
+    # `none_as_null=True`：让 Python None 真落库为 SQL NULL（见 KnowledgePoint.scenes
+    # 同处注释——JSON 类型默认把 None 写成文本 'null'，非空计数会失真）。
+    scene_spec: dict | None = Field(default=None, sa_type=JSON(none_as_null=True))
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore

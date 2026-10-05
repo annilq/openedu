@@ -204,6 +204,11 @@ def parse_specs_from_text(text: str) -> list[dict]:
             qtype = qt
             break
 
+    # 多选题标记（ADR-0004 D5）：自然语言里出现「多选 / 多选题」即视为多选，
+    # 与 _QTYPE_MAP 把「多选」映射到 choice 相互独立——多选题仍是 choice 题型，
+    # 只是 multi=True，渲染为复选、批改按集合比对。
+    multi = "多选" in text or "多选题" in text
+
     kp = ""
     m = re.search(r"关于\s*《?\s*([\u4e00-\u9fa5A-Za-z0-9]+)", text)
     if m:
@@ -227,6 +232,7 @@ def parse_specs_from_text(text: str) -> list[dict]:
                 "difficulty": "medium",
                 "semester": "",
                 "count": count,
+                "multi": multi,
             }
         )
     return specs
@@ -355,6 +361,7 @@ class QuestionSubAgent(BaseSubAgent):
                 persona_hint=persona_hint,
                 history=ctx.history,
                 weak_examples=weak_examples,
+                multi=item.get("multi", False),
             )
             yield step(
                 step_label(

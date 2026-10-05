@@ -56,6 +56,8 @@ class QuestionOut(BaseModel):
     difficulty: str
     semester: str = ""
     reasoning: str = ""
+    # 是否多选题（ADR-0004 D5）：由 spec 透传，落库进 TaskQuestion.multi。
+    multi: bool = False
 
 
 class QuestionSchema(BaseModel):
@@ -71,6 +73,8 @@ class QuestionSchema(BaseModel):
     explanation: str
     difficulty: str
     reasoning: str = ""
+    # 是否多选题（ADR-0004 D5）：由 spec 透传，落库进 TaskQuestion.multi。
+    multi: bool = False
 
 
 @dataclass(frozen=True)
@@ -83,6 +87,8 @@ class QuestionSpec:
     qtype: str
     difficulty: str
     semester: str = ""
+    # 是否多选题（ADR-0004 D5）：不可变身份之外、随题透传的标记。
+    multi: bool = False
 
 
 def assemble_question(
@@ -118,6 +124,7 @@ def assemble_question(
         answer=answer,
         explanation=explanation,
         reasoning=text,
+        multi=spec.multi,
     )
 
 
