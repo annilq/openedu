@@ -57,7 +57,7 @@
 - **学习闭环六段只一段通**：仅「答错即建错题」(`tasks/service.py:1236`)；出题不消费错题/掌握度(`question/pipeline.py:45-111` 零引用)。修法 ADR-0060。
 - **长列表(ADR-0053)**：keyset 游标；追加在途换条件会拼回旧页→await 后重读；两列用 `Row`+`Expanded`(阈值1048)；读错题加 `graduated_at IS NULL`；迁移走启动期幂等 DDL。
 - ⚠️ **分层不变量9：归属判定只许走 `core.guard`**(`require_owned`/`find_owned`/`require_owned_child`)，禁内联 `x.parent_id!=y`；AST 守卫 `tests/ai/test_layering_invariants.py` 全仓扫。改 `features/*/service.py` 必跑 `tests/ai/`。
-- **ADR-0055 资料库+RAG（2026-10-04 定稿+实现 B1–B7）**：4表全带 parent_id；向量存 BLOB 暴力扫；dense+sparse+RRF(BGE-M3)。`EMBEDDING_MODEL` 兼向量版本戳（改名=全量 stale）。`build_retriever(session,parent_id)` 新签名。黄金集 Hit@5=100%/Recall@5≥0.85。遗留：OCR/reranker/pgvector/英语分层。**0055 已用，下号查目录（最大0061）。**
+- **ADR-0055 资料库+RAG（2026-10-04 定稿+实现 B1–B7）**：4表全带 parent_id；向量存 BLOB 暴力扫；dense+sparse+RRF(BGE-M3)。`EMBEDDING_MODEL` 兼向量版本戳（改名=全量 stale）。`build_retriever(session,parent_id)` 新签名。黄金集 Hit@5=100%/Recall@5≥0.85。遗留：OCR/reranker/pgvector/英语分层。**已用到 0063（0063=助手语音输入），下号前查目录+git status+本文件**
 - ⚠️ **同一实体有两份 schema**：`features/*/service.py`（助手查询工具投影）与 `router.py`+`schemas.py`（REST）。**前端打的是 REST**——只改 service 端点响应里连 key 都没有（ADR-0061 §U 翻车：题库 `scene_spec`/`semester`）。**「下发了 X」必须打到端点验**。
 - **交互讲解读路径唯一入口 `scene_spec_for_read`**（ADR-0061 §U）= 快照 → 知识点+学期实时解析 → **图库兜底**（题面命中图库图形才出图，否则 None 不臆造；引导语不泄条数；optionGroup 时去 `outputs`）。四条读路径共用。
 
