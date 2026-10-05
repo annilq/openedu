@@ -110,17 +110,26 @@ class VectorKnowledgeRetriever:
         knowledge_point: str,
         query: str,
     ) -> list[KnowledgeChunk]:
-        # 候选集：家长 + 学科 + 年级 + 版本戳匹配（stale 向量天然出局）
+        # 候选集硬边界：家长归属 + 版本戳（stale 向量天然出局）。
+        # 学科 / 年级是「已知时」的便利过滤（ADR-0055 §13 原为出题管线设计，那时
+        # subject+grade 一定随请求带来）。但答疑问答（tutor）往往拿不到：
+        #   家长端 grade 恒为 0、自由文本又几乎无法可靠识别学科（「轴对称图形」不含
+        #   「数学」二字）。若在此强过滤，候选集直接被打空 → RAG 静默失效，
+        #   模型只能凭自身知识编造。故 subject 为空 / grade<=0 时退化为跨全库语义检索，
+        #   隔离仍由 parent_id 保证（ADR-0055 §2：检索范围永远按家长归属隔离）。
+        conditions = [
+            MaterialChunk.parent_id == self._parent_id,
+            MaterialChunk.embed_model == settings.EMBEDDING_MODEL,
+            MaterialChunk.chunker_ver == CHUNKER_VERSION,
+        ]
+        if subject:
+            conditions.append(MaterialChunk.subject == subject)
+        if grade and grade > 0:
+            conditions.append(MaterialChunk.grade == grade)
         rows = self._session.exec(
             select(MaterialChunk, Material.name)  # type: ignore[call-overload]
             .join(Material, Material.id == MaterialChunk.material_id)
-            .where(
-                MaterialChunk.parent_id == self._parent_id,
-                MaterialChunk.subject == subject,
-                MaterialChunk.grade == grade,
-                MaterialChunk.embed_model == settings.EMBEDDING_MODEL,
-                MaterialChunk.chunker_ver == CHUNKER_VERSION,
-            )
+            .where(*conditions)
             .limit(2000)
         ).all()
         if not rows:

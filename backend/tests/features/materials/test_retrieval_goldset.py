@@ -355,3 +355,15 @@ class TestGoldSetRecall:
             db, gold_parent["parent_id"], monkeypatch, "英语", 3, "问候语"
         )
         assert any("Good morning" in c for c in top5_greet)
+
+    def test_retrieve_without_subject_or_grade(self, gold_parent, db, monkeypatch):
+        """答疑问答（tutor）常拿不到学科/年级：家长端 grade 恒为 0、自由文本难识别
+        学科。此时检索必须退化为跨全库语义检索，而非因 subject=''/grade=0 把候选集
+        打到空导致 RAG 静默失效（修复前：retrieve('', 0, ...) 恒返回空）。"""
+        top5 = _retrieve(db, gold_parent["parent_id"], monkeypatch, "", 0, "什么是比喻")
+        assert any("比喻" in c for c in top5), f"无 subject/grade 时未召回相关片段：{top5}"
+        # 已知学科/年级时仍严格过滤（与上面的隔离测试一致，不因放宽而漏掉约束）
+        top5_strict = _retrieve(
+            db, gold_parent["parent_id"], monkeypatch, "语文", 4, "什么是比喻"
+        )
+        assert any("比喻" in c for c in top5_strict)

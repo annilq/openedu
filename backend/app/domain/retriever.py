@@ -114,8 +114,11 @@ class MockKnowledgeRetriever(KnowledgeRetriever):
             return []
         results = []
         for item in _BUILTIN_KNOWLEDGE:
-            # 学科 + 年级双精确：适龄优先（低年级不会拿到高年级内容）
-            if item["subject"] != subject or item["grade"] != grade:
+            # 学科 / 年级在「已知时」才作为硬过滤（与 vector 实现一致：答疑问答常
+            # 拿不到二者）。未知时退化为纯关键词命中，避免候选集被打空。
+            if subject and item["subject"] != subject:
+                continue
+            if grade and grade > 0 and item["grade"] != grade:
                 continue
             kp = item["knowledge_point"].lower()
             if kp in text or text in kp:
