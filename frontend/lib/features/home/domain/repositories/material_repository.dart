@@ -50,8 +50,29 @@ class KnowledgePointOption {
       );
 }
 
+/// 知识点目录响应（ADR-0061 §L）：条目 + **来源说明**。
+///
+/// [notice] 非空 = 当前范围没有真实知识点、只剩骨架兜底。骨架是分不出学期的大颗粒
+/// 目录，所以那种情况下切学期拿到的下拉会逐字相同——把这句话透到 UI 上，家长才
+/// 不会误判成「联动坏了」。
+class KnowledgePointDirectory {
+  final List<KnowledgePointOption> items;
+  final String notice;
+
+  const KnowledgePointDirectory({this.items = const [], this.notice = ''});
+
+  factory KnowledgePointDirectory.fromJson(Map<String, dynamic> json) =>
+      KnowledgePointDirectory(
+        items: (json['items'] as List? ?? const [])
+            .map((e) =>
+                KnowledgePointOption.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList(),
+        notice: json['notice'] as String? ?? '',
+      );
+}
+
 abstract class MaterialRepository {
-  Future<List<KnowledgePointOption>> getKnowledgePoints({
+  Future<KnowledgePointDirectory> getKnowledgePointDirectory({
     required String subject,
     required int grade,
     /// 学期范围维度（ADR-0055 §4 补 / ADR-0061）：

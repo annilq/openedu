@@ -72,12 +72,18 @@ class KnowledgeManageNotifier extends StateNotifier<KnowledgeManageState> {
   Future<void> load() async {
     state = state.copyWith(loading: true, clearError: true, clearNotice: true);
     try {
-      final items = await _repo.getKnowledgePoints(
+      final dir = await _repo.getKnowledgePointDirectory(
         subject: state.subject,
         grade: state.grade,
         semester: state.semester,
       );
-      state = state.copyWith(items: items, loading: false);
+      state = state.copyWith(
+        items: dir.items,
+        loading: false,
+        // 目录来源说明（ADR-0061 §L）走notice 通道，与操作反馈不混。
+        notice: dir.notice.isEmpty ? null : dir.notice,
+        clearNotice: dir.notice.isEmpty,
+      );
     } catch (e) {
       state = state.copyWith(loading: false, error: '加载失败：$e');
     }

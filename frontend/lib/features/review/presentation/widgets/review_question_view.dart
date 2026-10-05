@@ -8,6 +8,7 @@ import '../../../../shared/widgets/app_option_tile.dart';
 import '../../../../shared/widgets/app_buttons.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/app_tags.dart';
+import '../../../../shared/widgets/scene_interpreter/scene_interpreter.dart';
 import '../../../../shared/utils/option_text.dart';
 import '../../../../shared/utils/question_labels.dart';
 
@@ -66,6 +67,20 @@ class ReviewQuestionView extends StatelessWidget {
                     style: AppTheme.textOf(context).titleMedium),
               ),
               const SizedBox(height: AppSpacing.xxl),
+              // 几何选项组（ADR-0061 §O）：每个选项本身是图形时，把选项组渲染成
+              // 每个图形一个可交互场景，与下方可点选的 A/B/C/D 选项卡对应。
+              if (item.sceneSpec != null &&
+                  item.sceneSpec!['optionGroup'] is Map &&
+                  ((item.sceneSpec!['optionGroup']['items'] as List?)
+                          ?.isNotEmpty ??
+                      false))
+                ...[
+                  SceneInterpreter(
+                    kind: (item.sceneSpec!['kind'] as String?) ?? 'reflection',
+                    spec: item.sceneSpec!,
+                  ),
+                  const SizedBox(height: AppSpacing.xxl),
+                ],
               // 选择题按 qtype 走选项卡片；有有效选项才渲染，否则走输入框。
               if (item.qtype == 'choice' &&
                   item.options != null &&

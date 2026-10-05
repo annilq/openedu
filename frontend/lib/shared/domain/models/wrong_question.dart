@@ -122,6 +122,10 @@ class ReviewItemModel {
   /// 是否多选题（ADR-0004 D5）：渲染复选 / 单选，由后端随题下发。
   final bool multi;
 
+  /// 几何选项组（ADR-0061 §O）：选择题每个选项本身是图形时下发，前端渲染成每个图形
+  /// 一个可交互场景；无则 Null。复用 Question.scene_spec 快照，前端只消费不解释。
+  final Map<String, dynamic>? sceneSpec;
+
   ReviewItemModel({
     required this.wrongQuestionId,
     required this.questionId,
@@ -137,6 +141,7 @@ class ReviewItemModel {
     required this.nextIntervalDays,
     this.dueAt,
     this.multi = false,
+    this.sceneSpec,
   });
 
   factory ReviewItemModel.fromJson(Map<String, dynamic> json) {
@@ -155,6 +160,7 @@ class ReviewItemModel {
       nextIntervalDays: json['next_interval_days'] as int? ?? 1,
       dueAt: parseDate(json['due_at']),
       multi: json['multi'] as bool? ?? false,
+      sceneSpec: json['scene_spec'] as Map<String, dynamic>?,
     );
   }
 }

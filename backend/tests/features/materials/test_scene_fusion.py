@@ -7,6 +7,7 @@
 DB 查询用轻量 stub session，不依赖真实数据库，保证单测快且稳定。
 """
 from app.features.materials.scene_fusion import (
+    build_scene_spec_for_question,
     fuse_scene_spec,
     resolve_scene_spec_for_question,
 )
@@ -228,3 +229,111 @@ def test_resolve_semester_aware_cache_key():
     before = session.exec_calls
     resolve_scene_spec_for_question(**kw, semester="上学期", cache=cache)
     assert session.exec_calls == before
+
+
+# ── 题面 overrides（ADR-0061 §M 第1 步）────────────────────────────────
+
+
+def test_overrides_replace_template_input_values():
+    """题面抽出的值必须**覆盖**模板默认值（否则场景与题目无关）。"""
+    template = [
+        {
+            "kind": "reflection",
+            "inputs": [
+                {"key": "axisAngle", "value": 90},
+                {"key": "figure", "value": "house"},
+                {"key": "axisX", "value": 0.5},
+            ],
+        }
+    ]
+    out = fuse_scene_spec(
+        template, overrides={"figure": "kite", "axisAngle": 45.0}
+    )
+    vals = {i["key"]: i["value"] for i in out["inputs"]}
+    assert vals["figure"] == "kite"
+    assert vals["axisAngle"] == 45.0
+    # 未被覆盖的保持模板默认
+    assert vals["axisX"] == 0.5
+
+
+def test_overrides_are_applied_on_read_path():
+    """读路径带 overrides 时也要生效（生成时/回退解析共用同一条逻辑）。"""
+    template = [{"kind": "reflection", "inputs": [{"key": "figure", "value": "house"}]}]
+    session = FakeSession(_KP(template))
+    out = resolve_scene_spec_for_question(
+        session,
+        parent_id="p",
+        subject="数学",
+        grade=4,
+        knowledge_point="图形的运动（轴对称）",
+        overrides={"figure": "arrow"},
+    )
+    assert out["inputs"][0]["value"] == "arrow"
+
+
+def test_overrides_bypass_cache():
+    """带题面值时不走缓存：同一知识点的不同题目结果不同，混用会串味。"""
+    template = [{"kind": "reflection", "inputs": [{"key": "figure", "value": "house"}]}]
+    session = FakeSession(_KP(template))
+    cache: dict = {}
+    a = resolve_scene_spec_for_question(
+        session,
+        parent_id="p",
+        subject="数学",
+        grade=4,
+        knowledge_point="KP",
+        overrides={"figure": "kite"},
+        cache=cache,
+    )
+    b = resolve_scene_spec_for_question(
+        session,
+        parent_id="p",
+        subject="数学",
+        grade=4,
+        knowledge_point="KP",
+        overrides={"figure": "para"},
+        cache=cache,
+    )
+    assert a["inputs"][0]["value"] == "kite"
+    assert b["inputs"][0]["value"] == "para"
+    assert cache == {}, "带overrides 时不得写入跨题复用缓存"
+
+
+def test_build_scene_spec_end_to_end():
+    """build_scene_spec_for_question = 找模板 +抽题面值 + 融合。"""
+    template = [
+        {
+            "kind": "reflection",
+            "inputs": [
+                {"key": "axisAngle", "value": 90},
+                {"key": "figure", "value": "house"},
+            ],
+        }
+    ]
+    session = FakeSession(_KP(template))
+    out = build_scene_spec_for_question(
+        session,
+        parent_id="p",
+        subject="数学",
+        grade=4,
+        knowledge_point="图形的运动（轴对称）",
+        semester="下学期",
+        stem="下图是风筝，沿 45° 的线对折能重合吗？",
+    )
+    vals = {i["key"]: i["value"] for i in out["inputs"]}
+    assert vals["figure"] == "kite"
+    assert vals["axisAngle"] == 45.0
+
+
+def test_build_scene_spec_no_knowledge_point_returns_none():
+    session = FakeSession(_KP([{"kind": "reflection", "inputs": []}]))
+    assert (
+        build_scene_spec_for_question(
+            session,
+            parent_id="p",
+            subject="数学",
+            grade=4,
+            knowledge_point="",
+        )
+        is None
+    )

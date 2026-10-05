@@ -33,11 +33,15 @@ final materialRepositoryProvider = Provider<MaterialRepository>((ref) {
 ///
 /// 学期进key（ADR-0061 发布任务对接资料库）：同一知识点可按学期分设模板，家长选了
 /// 「上学期」就只看到上学期的目录，讲解时才不会拿错学期的交互场景。
+///
+/// 返回 [KnowledgePointDirectory] 而非裸列表：它带 [KnowledgePointDirectory.notice]
+/// ——该范围只有骨架兜底时后端会明说「这是不分学期的通用目录」，不透传的话家长切
+/// 学期看到一模一样的下拉会以为联动坏了（§L）。
 final knowledgePointsProvider = FutureProvider.autoDispose
-    .family<List<KnowledgePointOption>, (String, int, String)>((ref, key) async {
+    .family<KnowledgePointDirectory, (String, int, String)>((ref, key) async {
   final (subject, grade, semester) = key;
   final repo = ref.watch(materialRepositoryProvider);
-  return repo.getKnowledgePoints(
+  return repo.getKnowledgePointDirectory(
     subject: subject,
     grade: grade,
     semester: semester,

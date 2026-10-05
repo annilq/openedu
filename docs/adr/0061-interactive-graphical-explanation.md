@@ -263,7 +263,7 @@ SceneSpec 只描述「画什么」，不写 Flutter 代码。核心字段：
 - (c2) 伴学讲解经 `DATA` 帧下发 `interactive_scene` 卡（决策 7 的生产者）：tutor 讲解当前题时若 `scene_spec` 命中，经 `data_event(card.payload, extra={"type": INTERACTIVE_SCENE_KIND})` 下发；后端 `render.py#_KIND` + 前端分派已就绪（任务 ②），只差生产者接线。
 - 出题融合写 `Question.scene_spec`（ADR-0061 决策 2/3 原规划）：在 `_gen_for_swap` / `create_from_generated` 落库缝注入；与读路径可并存（写优先、读兜底）。
 - `bar_chart` 等其余 kind（§E.1）。
-- 教师端「按学期维护知识点讲解模板」的 UI 收口（后端 `KnowledgePoint.semester` 唯一约束与场景解析已就绪，教师调参弹窗暂未显式暴露学期维度，默认落整学年）。
+- ~~教师端「按学期维护知识点讲解模板」的 UI 收口~~ → **已落地（§K）**：弹窗暴露作用范围（学期 tag + 生效条件说明），列表行加学期徽标；不做学期切换（知识点学期建行即定，唯一约束含 semester）。
 
 ### H. 助手卡 `interactive_scene` 接入（2026-10-04 落地）
 
@@ -310,3 +310,154 @@ ADR-0061 决策 7 的后端 DATA 帧 + 前端渲染分派已打通（任务 ②�
 - **顺带的分层修复**（ADR R4 棘轮，`_knownR4` 自 2026-09-15 起为空、不得回退）：为拿 `KnowledgePointOption.semester`，presentation 一度 import `data/repositories/material_repository_impl.dart` → 把**接口 + 选项模型**移到 `domain/repositories/material_repository.dart`，`data/` 只留 `MaterialRepositoryImpl`。
 - **顺带的文件拆分**（ADR-0058）：`parent_task_form_view.dart` 因加学期涨到 410 行、触发 400 行守卫 → 把持两个 `TextEditingController` 的 `_SpecRow` 提成 `task_spec_row_data.dart` 的 `TaskSpecRow`（与纯展示的 `TaskSpecRowEditor` 构成数据/视图一对），表单回到 355 行。
 - 验证：`test_materials.py::TestKnowledgePoints::test_semester_scope_union_vs_exact` 钉住并集/精确两态 + 响应带 semester；`ruff check app tests` 仅余 1 处既存未用 import（`tests/domain/test_subject_qtypes.py`，非本次引入）；前端 `flutter analyze lib` 零 issue、**全量 277 例全过**（含 `file_size_guard_test` 与 `feature_boundaries_test` R4 棘轮）。
+
+### K. 教师调参弹窗暴露学期维度（2026-10-05）
+
+把 §I 遗留的「教师调参弹窗默认落整学年」收口。**先厘清一件事**：弹窗不做学期**切换**——模板挂在**某个具体知识点**上，而知识点的学期在建行时就定了（唯一约束 `(parent_id, subject, grade, name, semester)`）。在弹窗里改学期等于「移动知识点」，会撞唯一约束、且语义上不是调参。因此本轮做的是**把作用范围显式摆出来**。
+
+- **弹窗头部作用域条**（`knowledge_point_scene_editor.dart`）：标题下补知识点名 + 一条作用域条（`年级 / 学科 / 学期` 三个 tag），并按学期给一句话预期：
+  - 整学年（`''`）：「整学年兜底模板：仅当题目没有同学期的专属模板时才生效。」
+  - 上/下学期：「仅作用于此学期（X）的题目；其他学期若有专属模板则不生效。」
+  这段文案对应后端 `resolve_scene_spec_for_question` 的「先精确同学期 → 回落整学年」规则——教师不知道当前配的是哪个学期的模板，就无法预期讲解时会不会命中。
+- **列表行学期徽标**（`material_knowledge_manage_view.dart`）：`km.semester.isEmpty && kp.semester.isNotEmpty` 时给该行加一个学期 tag。**这是上一轮并集改造的必要补丁**：整学年视图同屏混着上/下学期的点（实测 4年级数学 = 上15 + 下14），光看名字分不出归属。限定了学期范围时后端只回该学期的行，徽标即冗余，不画。
+- 弹窗入参从 `kpId + initialScenes` 扩到 `kpId / kpName / subject / grade / semester / initialScenes`；`semester` 传**知识点自身的** `kp.semester` 而非当前范围筛选值（范围可能是并集，弹窗要显示的是这份模板实际作用的那个学期）。
+- 验证：`flutter analyze lib` 零 issue、全量 277 例全过；两文件 290 / 252 行（守 ADR-0058）。真实数据实测：`图形的运动（轴对称）` = 数学 4年级**下学期**，整学年并集响应里 `semester='下学期'` 且 `scenes` 随行下发，弹窗能同时拿到学期与既有模板。
+
+### L. 报障排查：改学期后知识点 options 不变（2026-10-05）
+
+**逐层排除**（先测后判，不靠猜）：① provider 层三元组 key → 三次请求三份数据 ✅；② 视图层编辑器 getters → 随 options 变化 ✅；③ `ShadSelect` 是否缓存旧下拉 → 实测能刷新 ✅（**排除**了「StatefulWidget 缓存」这个想当然的猜测）；④ 真实 HTTP → **根因浮出**。
+
+- **根因**：并集/精确过滤本身是对的，但**作用在空集上**。某些 (学科, 年级, 学期) 范围还没有资料知识点，真实行数为 0，下拉只剩 `skeleton_names(subject, grade)` 骨架兜底——而**骨架函数不吃学期参数**，于是三个学期返回**逐字相同**的 6 个泛化条目。§J 修的是「有数据时按学期切」，没覆盖「无数据时看起来没切」。
+- **修法 = 把沉默变可见**，而不是给 108 个 (学科×年级×学期) 格编骨架课表（自编课表容易教错，且违背骨架「冷启动不空窗、不充当权威课标」的定位）。`KnowledgePointListResp` 加 `notice`：
+  - 某学期**无真实知识点** → 明说「该学期还没有资料知识点，以下是**不分学期**的通用目录；上传对应学期的资料并向量化后，这里才会按学期变化」；
+  - 「不限学期」（并集语义）与「已有真实知识点」→ `notice` 为空，不制造噪声。
+- **前端**：新增 `KnowledgePointDirectory`（`items` + `notice`）取代裸 `List`，`knowledgePointsProvider` 返回它；`DirectoryNoticeBar`（弱一档 secondary 描边 + info 图标）在布置任务表单与知识点管理页展示。
+- 验证：后端 `test_notice_explains_skeleton_only_scope` 钉住 notice 三态（空目录给 / 不限学期不给 / 有真实点后消失）；前端 `task_semester_options_test.dart`（5）+ `select_options_refresh_test.dart`（1）；`flutter analyze lib` 零 issue；后端全量 480 passed。
+- **未解决（留待产品决策）**：若希望「无数据时切学期也给出不同骨架」，需要真正的学期课表数据源（教材目录），不属于本ADR 范围。当前形态是如实告知而非伪造。
+
+### M. 关联度自查：题目 ↔ 知识点 ↔ 交互场景（2026-10-05，实测）
+
+用户问：「为『图形的运动（轴对称）』出一道选择题有 4 个选项，讲解时会不会为 4 个选项各生成交互讲解？」**答案：不会，而且当前连 1 个场景都不会出。** 逐段核实如下（`backend/app.db` 实测，非推断）。
+
+| 环节 | 现状 | 证据 |
+|---|---|---|
+| 题目 → 知识点 | ✅ **已关联** | `Question.{subject,grade,semester,knowledge_point}` 四元组随规格落库（§I） |
+| 知识点 → 场景模板 | ⚠️ **形同虚设** | 205 个知识点里 `scenes` 非空的只有 **1** 条，且它是 JSON 字符串 `'null'`（不是 SQL NULL）→ `fuse_scene_spec` 拿到 `None` 一律返回 `None` |
+| 题目 → 场景实例 | ❌ **从未写入** | `Question.scene_spec` 列存在（§I 建的），但全库 **8 道题非空数 = 0**；代码里 `scene_spec=` 唯一出现在 `tasks/service.py:158`，那是**读路径**的 `WrongQuestionResp` 响应字段，不是落库 |
+| 题目数值 → 场景 inputs | ❌ **没接上** | `resolve_scene_spec_for_question` 调 `fuse_scene_spec(kp.scenes)` **不传 `overrides`**（`scene_fusion.py:106`）。`fuse_scene_spec` 的 `overrides` 参数（按题面数值覆盖默认 inputs）**全仓无调用方**——这是 ADR §C 决策 2/3 规划、至今未实现的那一步 |
+| 选项 → 场景 | ❌ **结构上不可能** | 场景由 `knowledge_point` 单键解析，**与 `options` 无关**；前端 `_QuestionBody` 里 `options` 只喂 `_QuestionOptions`（纯文本选项），`sceneSpec` 只喂 `SceneInterpreter`（kind + inputs），两条互不相交 |
+
+**结论**：当前形态是「**一个知识点 → 一份通用场景模板**」，不是「**一道题 → 一份贴合该题的场景**」。所以 4 个选项不会被分别讲解；即便模板配好了，也只会出现**一个**场景，且用的是知识点模板里的默认轴参数（house / 90°），**与这道题的具体图形、具体选项无关**。
+
+**要达到「每题各自贴合」需要补的三步**（均未做）：
+1. **出题时抽题面数值** → `overrides`：从 stem/options 里抽出图形与轴参数（选择题还要逐选项抽，这是最难点）；
+2. **落库快照** → 在 `_gen_for_swap` / `from-generated` 缝把融合结果写进 `Question.scene_spec`（顺带获得快照语义：模板改了不影响已生成的题）；
+3. **选择题的逐选项场景**：需要 SceneSpec 表达「一组候选图形 + 判定哪几个轴对称」，即 `kind` 从单图 `reflection` 扩到集合语义（`options[]` + `locked_answer`），这是**新的 kind** 而非现有 kind 的参数扩展。
+
+⚠️ 另发现一个数据缺陷：把 JSON `null` 存进 `scenes` 会让「非空计数」失真（`IS NOT NULL` 为真但内容是空）。写入侧应统一 `scenes or None`（`update_knowledge_point_scenes` 已是这么写的，是历史数据或绕过该端点写入的）。
+
+### N. 落库快照 + 题面数值抽取（§M 第 2 / 1 步，2026-10-05 落地）
+
+补上 §M 诊断出的前两步。第 3 步（选择题逐选项场景 / 新 kind）**仍未做**。
+
+- **① 题面数值抽取**（新 `app/features/materials/scene_extract.py`）：纯函数 `extract_scene_inputs(stem, options) -> overrides`，抽 `figure`（房子/风筝/箭头/平行四边形，中英词表）与 `axisAngle`（`45°`/`60度`，**负号一并捕获**否则 `-30°` 会被当成 `30°` 把轴画到镜像位置）。
+  - **只抽「抽得到且不矛盾」的**：`axisX/axisY` 是归一化对称轴位置，题面极少精确表述 → **永不从题面抽**，只由教师在调参面板手摆。抽不到就返回空 dict让模板默认值留着——给一个与题目无关的图形比不给场景更糟（会教错）。
+  - 角度只接受 `0..180`：`360°` 是旋转题不是轴对称题，不覆盖。
+  - 选择题取**第一个**命中的图形（题面优先于选项）：逐选项各配一个场景需要 SceneSpec 表达「候选图形集合 + 判定哪几个对称」，是**新 kind**（第 3 步），单 kind 结构上做不到。
+- **② 落库快照**：
+  - `TaskQuestion` 新增 `scene_spec` 列（`Question` 早有）。草稿期就带上——否则确认前的预览/草稿审核拿不到场景（`Question` 要等 promote 才有行）。启动期幂等 DDL，SQLite/Postgres 双分支。
+  - 三处落库缝写入：`create_from_generated`（主路径，优先用前端回传的、否则就地融合）、`_gen_tq_for_spec_item`（整卷生成/重生成，经新增的 `scene_ctx=(session, parent_id)`）、`_gen_for_swap`（单题重生成，**必须重算**——新题 stem/options 与旧题不同，不能沿用旧快照）；`promote_task_question` 把草稿快照带进题库 `Question`。
+- **③ 读路径快照优先**：`wrong_question_to_resp` = `q.scene_spec or build_scene_spec_for_question(...)`（老数据无快照时回退实时解析，存量题仍能出图）。`question_to_resp` 直接下发草稿快照。
+- **④ 缓存纪律**：`overrides` 非空时**绕过** `cache`——缓存键只含 (知识点, 学期)，带题面值时同一知识点不同题目结果不同，混用会串味。故 `build_scene_spec_for_question` 透传 `cache`，仅在抽不到题面值时生效。
+- **⑤ 根因修复：`JSON(none_as_null=True)`**。§M 发现的「文本 `null`」不是历史脏数据，而是 **SQLAlchemy `JSON` 类型默认把 Python `None` 序列化成字符串 `'null'`**——清空模板写进去的就是文本，`IS NOT NULL` 为真而内容是空。三个场景列（`KnowledgePoint.scenes` / `Question.scene_spec` / `TaskQuestion.scene_spec`）全部加上 `none_as_null=True`，实测「写内容 → typeof=text / 清空 → typeof=null 且值为真 NULL」。存量 1 条脏数据已清洗。
+- 实测（同一知识点「图形的运动（轴对称）」、同一模板，三道不同题各自抽到的场景**互不相同**）：
+
+  | 题面 | 抽到的场景 |
+  |---|---|
+  | 房子沿 45 度的线对折 | `figure=house, axisAngle=45.0` |
+  | 下图是风筝，判断是否轴对称 | `figure=kite`（角度沿用默认 90） |
+  | 平行四边形是轴对称图形吗 | `figure=para` |
+
+- 验证：新 `test_scene_extract.py` **17/17**（含 `none_as_null` 真 SQL NULL 的底层 `typeof` 断言、以及「`axisX/axisY` 永不被抽」「负角度被拒」「超范围角度被拒」）；`test_scene_fusion.py` 增 overrides 覆盖 / 读路径生效 / **带overrides 绕过缓存** / 端到端四组；后端全量 **502 passed**（3 个 vector 既存顺序污染同前）；前端 `analyze lib` 零 issue、283 passed（1 failed 仍是并行会话的 `parent_question_bank_view` 棘轮，非本次引入）。前端**无需改动**——`QuestionModel`/`WrongQuestionModel`/`QuestionPreview` 早已读 `scene_spec` 且题卡/错题卡都会内联 `SceneInterpreter`。
+
+### O. 选项组：同一模板派生 N 个独立可交互场景（2026-10-05 落地，§M 第 3 步）
+
+用户澄清了第3 步的真实需求：**不是**让程序判定「哪几个选项轴对称」并报答案（我原先设想的集合语义新 kind），而是「每个选项都能单独演示、用户自己拖轴验证」。核查发现该能力**早已内建**（`_isAxisymmetric` 吃任意多边形 + 3 个轴slider + 实时「✓ 是轴对称 / ✗ 不是」判定），缺的只有「**图形切换**」与「**选项各自的几何**」。
+
+- **纯顶点驱动，不内置图形概念**（用户决策）：渲染器不再认识「房子/风筝」。图形顶点下沉为**数据**：
+  - `frontend/lib/shared/domain/figures.dart` + `backend/app/features/materials/scene_figures.py` —— 同一份几何的两个副本（运行时后端读不到前端源码）。`ReflectionFigure` 枚举删除，退化为教师面板的「预设选择器」。
+  - `ReflectionSceneData` 核心变成 `points`，`fromSpec` 优先级：`inputs[].points`（后端下发）→ `figure` 预设 key（兼容旧 spec）→ 房子兜底。**永不出现空场景**。
+  - ⚠️ **副本漂移会改判定**（学生拖轴永远对不上）→ `test_scene_figures.py` 做**跨语言逐字比对**（正则解析 Dart 源与 Python 侧对齐），并钉住「`para` 必须保持错切（上边中点 0.50 / 下边 0.62）——它就是那道『不是轴对称』的干扰项，被修正成矩形题目就废了」。
+- **选项组 `optionGroup`**：`extract_option_group(options)` 逐项识别图形 → 附**该图形自己的顶点 + 默认轴角度**；`build_scene_spec_for_question` 把它挂在 spec **顶层**（不放`inputs`——那会被当单图输入解析）。实测同一模板 + 4 选项 → A房子(5顶点,90°) / B风筝(4,90°) / C箭头(7,**0°**) / D平行四边形(4,90°)。
+  - **全-or-无**：任一选项识别不出 → 整体不生成（退回单场景）。半套选项组比没有更容易误导。
+  - 标号优先取选项原文前缀（`A.` / `A、`），无前缀则按序回退 A/B/C。
+- **前端 `SceneOptionGroup`**：`SceneInterpreter` 见`optionGroup` 即展开为 N 个 `ReflectionSceneWidget`（各自 State → 拖 A 不影响 B），**Wrap** 排布（用户决策③）。每项用**该图形自己的默认轴**而非模板的（否则箭头停在竖轴、一开始就不重合，学生会以为题目错了）。
+  - ⚠️ **实测发现并修**：`ReflectionSceneWidget` 画布是「边长 = 宽度」的**正方形**，两列并排在 1200 宽屏上每个高达~590px，一屏放不下 4 个 → `_itemWidth` 夹在 [240, 360]。
+- **①A `editable: true`**（用户决策）：教师面板保存时不再写 `false`——那会把轴控制控件整个藏掉，学生只能看不能试，等于掐掉题目最核心的动手环节。
+- **spec 格式变更安全性**：改动前确认三张表 `scenes`/`scene_spec` **存量为 0**（仅 1 条测试残留，已清），故直接改格式无需兼容旧快照；`fromSpec` 仍保留 `figure` 预设 key 回退以防将来。
+- 验证：后端 `test_scene_figures.py` **8/8**（含跨语言 parity + para 错切守卫）、`test_scene_extract.py` 增选项组 **8 组**（四选项各自顶点/箭头横轴/点与图库一致/中文分隔符标号/无前缀回退/**全-or-无**/≥2 选项）；前端 `scene_option_group_test.dart` **7/7**（渲染 N 个而非 1 个 / 各用自己默认轴 / 顶点不共用 / 标号图形名可见 / 无 optionGroup 零回归 / 无效 points 走空态不崩 / editable 轴控件可见）；后端全量 **518 passed**、前端 **290 passed**（1 failed 仍是并行会话的 `parent_question_bank_view` 棘轮）。
+- **遗留**：`optionGroup` 目前只在题目**选项文字里能识别出图形**时生成；识别不出（如「如图所示」）就退回单场景。真正的按图演示需要图形识别能力（视觉/OCR），不在本轮。
+
+### P. 修：教师调参弹窗溢出（①A 的副作用）
+
+把 `editable` 改成 `true`（①A）之后，`KnowledgePointSceneEditor` 的 Column **溢出 306px**（536×808 弹窗装不下）。根因是 `_buildSpec()` 被**预览与保存共用**：预览因此也长出 3 个轴滑块，而面板上方本来就有同样的 3 个（纯重复），叠加「预览画布是边长 = 宽度的正方形」（536 宽 → 536 高）直接顶爆。
+
+修法（三处，缺一仍会在某类屏高下复发）：
+1. `_buildSpec({required bool editable})` —— **保存传 `true`**（学生端要能拖轴，①A 本意）、**预览传 `false`**（不重复滑块）。两者语义本就不同，不该共用一个默认值。
+2. 预览外包 `Center + ConstrainedBox(maxWidth: 300)`，压窄正方形画布。
+3. 弹窗内容套 `SingleChildScrollView` 兜底——任何屏高/字号组合都不再溢出。
+
+**教训**：`editable` 是「**存进 spec 的值**」，不是「面板自己的预览行为」。凡是「同一份 spec 同时供预览与持久化」的地方，都要显式区分这两个用途。
+
+验证：`test/scene_editor_dialog_test.dart` **6/6** —— 弹窗不溢出 / 预览**不重复**轴滑块（断言轴滑块恰好 3 个而非 6）/ **保存的 spec 是 `editable: true`** / 保存带 `points` / 短屏 700×560 不溢出 / 换图形轴角度跟随默认轴。`flutter analyze lib` 零 issue、全量 **296 passed**。
+
+### Q. 家长端「查看解析」出图 + 正方形（程序生成的第一例）
+
+诉求：「正方形有几条对称轴」（答案 C，4 条）在查看解析时能拖轴试出 4 条，而不是给一行文字。
+
+- **两端分叉是主因**：学生端错题卡早有场景（`wrong_questions_screen.dart:277`），**家长端完全没接**（只有 `解析：{文字}`）。抽出 `WrongQuestionExplanation`（含展开态 + 文字 + 图形）接上，判定条件与学生端一致。**顺序：文字解析在前、图形在后**（先给结论、再给可动手验证的图形）；**有图但文字为空也能展开**。
+- **正方形：程序生成（决策 A 轴对齐零微扰）**。分界线是「几何定义是否唯一且无歧义」：
+  - 规则图形（正方形/正三角形/圆）→ **程序生成**，任何实现都必然正确，还能参数化位置朝向；
+  - `para` 这类**不对称是教学设计意图**的→ **必须手写**，算法只会把它"修好"。
+
+  故新增 `_square_vertices(cx, cy, half)`，**刻意不接受 rotation 参数**（要转就转画布，别动顶点）。
+- **`axisAngles`（全部对称轴）字段**：`FigureShape` 从「一条 `defaultAxisAngle`」扩到「**一组** `axisAngles`」，因为「有几条」要数它。第二层（计数反馈）将来加不用改结构。
+  - ⚠️ **必须如实下发**（para = `[]`、count = 0）：曾写 `axis_angles or [default]` → para 谎报「有 1 条轴」，而这份数据唯一的用途就是回答「有几条」——那是**教错**。渲染要的「初始轴」另有 `defaultAxisAngle`，**两者语义不同，别用兜底混掉**。
+- **figure 命中必须连带下发 `points`**：前端 `fromSpec` 的几何优先级是「`points` > `figure` 预设」，只覆盖 `figure` 会让画面仍是模板里那个图形（题干讲正方形、画着房子）。
+- **`fuse_scene_spec` 支持 overrides 新增 input key**：老模板没有 `points` input 时，覆盖会被**静默丢弃**（改动没生效且无任何报错）。
+- 实测（教师模板=房子 + 题干「正方形有几条对称轴」）：`figure=square` / `points` 4 顶点 / `axisAngles=[90,0,45,135]` / `axisCount=4`。
+- **ADR-0058 两次踩线**（基线只许下调，故拆文件而非调基线）：`reflection_scene.dart` 618>567 → 抽出 `ReflectionSceneData` 到 `reflection_scene_data.dart`（数据层与渲染层分开）；`parent_wrong_questions_view` → 抽出 `WrongQuestionExplanation`。
+- ⚠️ **测试里解析 Dart 源的正则回溯**：`arrow` 的 `axisAngles` 前有注释 → 跨字段大正则的 `.*?` 回溯把**下一个图形（`para`）整块吞掉**，误报「图形 key 不一致」。改为**先 `split('FigureShape(')` 切块、再逐字段独立解析**。
+- 验证：后端 `test_scene_figures.py` **13/13**（正方形 4 轴 / 轴对齐 / para 0 轴 / 跨语言 parity 含 `axisAngles`）、`test_scene_extract.py` 增 4 组；前端 `wrong_question_explanation_test.dart` **6/6**；后端全量 **533 passed**（3 vector 既存污染）、前端 **303 passed**（1 failed 为并行会话的 `parent_question_bank_view` 棘轮）。
+- **第二层按用户决定暂不做**（「已发现 2/4 条」计数反馈）；数据层 `axisAngles` 已就位。
+
+### R. 修：知识点 UNIQUE 约束缺 semester（§J 遗留的静默故障）
+
+报障：`UNIQUE constraint failed: knowledgepoint.parent_id, .subject, .grade, .name`（确认知识点 500）。
+
+- ⚠️ **根因：SQLite 没有 `ALTER TABLE ... ADD CONSTRAINT`**。§J 加学期维度时只补了**列**（`ADD COLUMN semester``），而 `ADD COLUMN` 里写的 `UNIQUE(...)` 子句会被**静默忽略**。于是所有在加学期维度**之前**建库的库（本机 dev 库即是）唯一约束仍是旧的**4 列** `UNIQUE(parent_id, subject, grade, name)`。
+  - **新建库没事**（`create_all` 按模型建 5 列）→ 这正是它长期测不出来的原因。
+  - `ix_knowledgepoint_scope` 同样过期（老库 3 列、模型 4 列）。
+- ⚠️ **后果不是报错，而是静默废掉 §J 承诺的核心能力**：同一知识点**无法**按学期各存一份（上/下学期模板）——名字一撞就撞唯一约束。
+- **修法**：`_rebuild_kp_unique_with_semester(conn)`。SQLite 改约束只有一条路：**重建表**（建新表 → `INSERT..SELECT` 拷数据 → 删旧 → `ALTER..RENAME` → 重建 `ix_knowledgepoint_scope` 为 4 列版）。
+  - **幂等**：先读 `sqlite_master` 判 UNIQUE 里有没有 `semester`，缺才动手；表未建 / 列都还没有则跳过（偏序迁移纪律）。
+  - **数据安全**：只搬行不改值；旧 4 列约束**更严**（同一名字在旧库不可能有多行），故新约束下必然仍成立 —— 不会出现迁移后立刻违约。
+- 实测：迁移后约束 5 列、索引 4 列、**205 行守恒**、连跑 3 次幂等；HTTP 复现原崩溃路径（上/下/整学年各确认一次同名知识点）全 200。
+- 回归测试 `tests/core/test_kp_semester_unique_migration.py` **9/9** —— 在临时库上**手工造出老库形状**（4 列约束）再跑迁移：老库必撞 / 迁移后能共存 / **同学期同名仍被拒**（补 semester ≠ 放弃唯一性）/ 幂等且行数守恒 / **`scenes` 列不丢**（教师模板会整列消失）/ 表缺失是 noop。
+- **教训**：SQLite 迁移里「加列」不等于「加约束」；且这类问题**在新建库环境测不出来**，回归测试必须手工造老库形状。
+
+### S. 题库题目详情（含知识点信息 + 交互讲解）
+
+题库列表是**扫描式**的（题干截 2 行、只有标签），但「这题讲什么」需要**停留式**阅读 —— 列表里既没有选项/答案/解析，也没有任何图形。
+
+- **数据链路诊断**：`list_bank_questions` 用 `select(Question)` 取整行，`Question.scene_spec` **本来就在库里**，但 service 手工列字段时**漏了它**（`semester` 也漏）→ 后端补上下发；前端 `BankQuestionItem` 补 `sceneSpec` / `semester`。
+- **入口不劫持整卡 onTap**：题库整卡点击是「**多选**」（批量归档/删除/导出），改成打开详情会让家长没法多选题 → 走行内显式入口「查看详情」。
+- 新增 `BankQuestionDetail`（独立文件，避 ADR-0058 棘轮）四块内容：
+  1. **题目本体**：题干全文 + 选项（标号按**位置**生成，与做题/纸质导出一致）+ 答案 + 解析；
+  2. **知识点信息**：学科 / 年级 / **学期** / 知识点 / 被引用次数。学期是 §J 的第四维，**必须展示** —— 它同时决定讲解匹配哪份知识点模板；`''` 显示成「**整学年**」而不是空标签（空标签看起来像 bug）；
+  3. **交互讲解**：读落库快照（模板后续改动不影响已生成的题）；
+  4. 无 `scene_spec` 时**不占位** —— 「没配模板」是常态，不是异常，不该给空态。
+  - 画布**压窄到 300**：正方形边长 = 宽度，不压会把弹窗顶出屏幕（同 §O / §P / §Q 的教训）。
+- 实测确认**不是 bug**：题目 `semester=''` **不该**匹配「下学期」的知识点模板 —— §J 的规则是「同学期优先 → 整学年兜底」，**不反向跨学期**。
+- 验证：`bank_question_detail_test.dart` **7/7**（题干/选项/答案/解析、知识点信息、`''`→整学年、有场景出图、无场景不占位、画布压窄、关闭按钮）；后端实测响应带 `semester` + `scene_spec`（正方形题= 4 顶点）；`flutter analyze lib` 零 issue；前端 **310 passed**、后端 **542 passed**。
+- ⚠️ 过程中试图把题库卡片抽成独立文件以压回行数基线，**失败两次**（行号切片吞掉了相邻方法体 → 58 个编译错），已回滚。教训：**多行切片改文件前必须 assert 首尾锚点**；且并行会话正在改的文件**不做大段抽取**。最终只做最小增量（+10 行）—— 该文件本就超基线（既存状态）。

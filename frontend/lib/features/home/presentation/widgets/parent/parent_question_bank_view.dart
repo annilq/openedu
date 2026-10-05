@@ -21,6 +21,8 @@ import '../../../../export/presentation/export_confirm.dart';
 import '../../../../export/presentation/export_preview_page.dart';
 import '../../providers/question_bank_notifier.dart';
 import '../../providers/selected_child_provider.dart';
+import 'bank_question_detail.dart';
+import '../../../../../shared/widgets/app_actions.dart';
 import '../../../../../shared/widgets/app_card.dart';
 import '../../../../../shared/widgets/app_focusable_action.dart';
 import '../../../../../shared/widgets/app_section_title.dart';
@@ -737,6 +739,14 @@ class _ParentQuestionBankViewState
                       if (q.archivedAt != null) _tag(app, '已归档'),
                       if (q.usageCount > 0) _usageTag(app, q),
                     ],
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  // 详情含题干全文 + 选项 + 答案 + 解析 + 知识点信息 + 交互讲解
+                  //（ADR-0061 §S）。**不劫持整卡 onTap** —— 那是「多选」，
+                  // 家长要靠它批量归档/删除/导出；详情走行内显式入口。
+                  AppTextAction(
+                    label: '查看详情',
+                    onPressed: () => BankQuestionDetail.show(context, q),
                   ),
                 ],
               ),

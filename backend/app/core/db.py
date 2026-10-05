@@ -211,6 +211,21 @@ def run_migrations() -> None:
             # 偏序迁移：表还没建（首次启动由 init_db 建表并带新列），跳过即可。
             pass
 
+        # —— 知识点唯一约束补 semester（ADR-0061 §R）——
+        # ⚠️ 上一段只补了**列**，但 SQLite **无法 ALTER 已存在表上的 UNIQUE 约束**
+        # （没有 `ALTER TABLE ... ADD CONSTRAINT`）。于是所有在加学期维度**之前**
+        # 建库的库（含本机开发库）里，唯一约束仍是旧的 4 列
+        # `UNIQUE(parent_id, subject, grade, name)` —— **少了 semester**。
+        #
+        # 后果不是「报错」而是**静默废掉 §J 承诺的核心能力**：同一知识点无法按学期
+        # 各存一份（上/下学期模板），因为名字一撞就撞唯一约束。实测报错
+        # `UNIQUE constraint failed: knowledgepoint.parent_id, .subject, .grade, .name`。
+        #
+        # 修法：SQLite 改约束只能**重建表**（建新表 → 拷数据 → 删旧 → 改名 → 重建索引）。
+        # 幂等：只在检测到约束确实缺 semester 时才做。
+        if is_sqlite:
+            _rebuild_kp_unique_with_semester(conn)
+
         # —— 交互式讲解场景（ADR-0061）：知识点默认模板 + 题目实例 ——
         # knowledgepoint.scenes：[{kind, inputs, controls, ...}] 教师编写的默认讲解模板。
         # question.scene_spec：出题时由知识点模板 + 本题数值融合得到的实例。
@@ -394,6 +409,83 @@ def run_migrations() -> None:
                 ")"
             )
         )
+
+
+def _rebuild_kp_unique_with_semester(conn) -> None:
+    """把 knowledgepoint 的 UNIQUE 约束补上 ``semester``（ADR-0061 §R）。
+
+    **为什么必须重建表**：SQLite 没有 ``ALTER TABLE ... ADD CONSTRAINT``，
+    改已存在表的唯一约束只有「建新表 → 拷数据 → 删旧 → 改名 → 重建索引」一条路。
+
+    为什么需要：加学期维度那次迁移只补了**列**（``ADD COLUMN semester``），
+    约束没动。SQLite 会忽略 ``ADD COLUMN`` 里带的 ``UNIQUE(...)`` 子句，于是老库里
+    仍是 ``UNIQUE(parent_id, subject, grade, name)``——**同一知识点按学期各存一份
+    根本存不进去**（名字一撞就撞约束），§J 承诺的核心能力静默失效。
+
+    幂等：先读 ``sqlite_master`` 判约束现状，缺 semester 才动手；已正确的库直接返回。
+    重建后重新建``ix_knowledgepoint_scope``（含 semester 的4 列版本）。
+
+    数据安全：拷贝只搬**行**，不改值。旧 4 列约束比新 5 列更严（同一名字在旧库
+    根本不可能有多行），所以新约束下必然仍成立——不会出现迁移后立刻违约。
+    """
+    row = conn.execute(
+        text(
+            "SELECT sql FROM sqlite_master "
+            "WHERE type = 'table' AND name = 'knowledgepoint'"
+        )
+    ).fetchone()
+    if row is None or not row[0]:
+        return  # 表还没建（首次启动走 init_db 建表，天然带 semester 约束）
+    ddl = row[0]
+    # 已经含 semester 约束 → 无需重建（幂等短路）
+    if "UNIQUE" in ddl.upper() and "semester" in ddl.split("UNIQUE", 1)[1]:
+        return
+
+    cols = [r[1] for r in conn.execute(text("PRAGMA table_info(knowledgepoint)"))]
+    if "semester" not in cols:
+        # 列都还没有 → 上面的 ADD COLUMN 迁移会先补；本轮跳过（下次启动再收尾）
+        return
+
+    # 列清单与顺序照搬现有表（semester/scenes 已在其中），只改 UNIQUE 定义。
+    conn.execute(text("DROP TABLE IF EXISTS _kp_migrate_tmp"))
+    conn.execute(
+        text(
+            "CREATE TABLE _kp_migrate_tmp ("
+            " id CHAR(32) NOT NULL, "
+            " parent_id CHAR(32) NOT NULL, "
+            " subject VARCHAR(16) NOT NULL, "
+            " grade INTEGER NOT NULL, "
+            " name VARCHAR(128) NOT NULL, "
+            " status VARCHAR(16) NOT NULL, "
+            " source VARCHAR(16) NOT NULL, "
+            " created_at DATETIME, "
+            " semester VARCHAR(8) DEFAULT '', "
+            " scenes TEXT, "
+            " PRIMARY KEY (id), "
+            # ★ 关键差异：唯一约束含 semester → 同一知识点可按学期各存一份
+            " UNIQUE (parent_id, subject, grade, name, semester), "
+            " FOREIGN KEY(parent_id) REFERENCES user (id))"
+        )
+    )
+    conn.execute(
+        text(
+            "INSERT INTO _kp_migrate_tmp "
+            "(id, parent_id, subject, grade, name, status, source, created_at, "
+            " semester, scenes) "
+            "SELECT id, parent_id, subject, grade, name, status, source, created_at, "
+            " COALESCE(semester, ''), scenes FROM knowledgepoint"
+        )
+    )
+    conn.execute(text("DROP TABLE knowledgepoint"))
+    conn.execute(text("ALTER TABLE _kp_migrate_tmp RENAME TO knowledgepoint"))
+    # 重建 scope 索引（含 semester 的 4 列版本；旧库那条只有 3 列）
+    conn.execute(text("DROP INDEX IF EXISTS ix_knowledgepoint_scope"))
+    conn.execute(
+        text(
+            "CREATE INDEX ix_knowledgepoint_scope "
+            "ON knowledgepoint (parent_id, subject, grade, semester)"
+        )
+    )
 
 
 def init_db() -> None:

@@ -49,6 +49,7 @@ from app.core.guard import require_owned, require_owned_child
 from app.core.pagination import clamp_page_size, encode_cursor
 from app.db.models import Question, Task, TaskQuestion, User, WrongQuestion
 from app.domain import Grader, build_retriever
+from app.domain.structured import normalize_options
 from app.domain.provider import GeneratedQuestion, QuestionCard, QuestionStreamEvent
 from app.features.materials.scene_fusion import (
     build_scene_spec_for_question,
@@ -867,7 +868,9 @@ def create_from_generated(
         kp = str(q.get("knowledge_point", ""))
         semester = str(q.get("semester", "") or "")
         stem = str(q.get("stem", ""))
-        options = q.get("options")  # list[str] | None
+        # 模型不守 output_schema 时可能把选项揉成一个字符串 / 一个列表元素；
+        # 落库前切分成「每项一段」，否则娃娃端选项挤在一行无法选择。
+        options = normalize_options(q.get("options"))  # list[str] | None
         qtype = str(q.get("qtype", "open"))
         # 多选题标记（ADR-0004 D5）：随题卡透传；非 choice / 无选项题恒 False。
         multi = bool(q.get("multi", False)) and qtype == "choice" and bool(_valid_choice_options(options))

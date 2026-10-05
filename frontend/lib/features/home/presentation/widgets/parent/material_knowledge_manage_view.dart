@@ -11,6 +11,7 @@ import '../../../../../shared/widgets/app_empty_state.dart';
 import '../../../../../shared/widgets/app_focusable_action.dart';
 import '../../../../../shared/widgets/app_inputs.dart';
 import '../../../../../shared/widgets/app_loading.dart';
+import '../../../../../shared/widgets/app_tags.dart';
 import '../../../../../shared/widgets/app_toast.dart';
 import '../../../providers/knowledge_manage_provider.dart';
 import 'knowledge_point_scene_editor.dart';
@@ -135,6 +136,14 @@ class _MaterialKnowledgeManageViewState
                     const SizedBox(width: AppSpacing.sm),
                     Expanded(child: Text(kp.name)),
                     const SizedBox(width: AppSpacing.sm),
+                    // 「整学年」并集视图下同屏混着上/下学期的点，光看名字分不出
+                    // 归属——学期徽标让教师点开前就知道这份讲解配给哪个学期。
+                    // 限定了学期范围时后端只回该学期的行，徽标就是冗余信息，不画。
+                    if (km.semester.isEmpty && kp.semester.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(right: AppSpacing.sm),
+                        child: AppTags.normal(kp.semester),
+                      ),
                     if (label.isNotEmpty)
                       Container(
                         padding: const EdgeInsets.symmetric(
@@ -155,8 +164,15 @@ class _MaterialKnowledgeManageViewState
                     if (kp.id != null)
                       AppTextAction(
                         label: '讲解',
-                        onPressed: () =>
-                            _openSceneEditor(context, kp.id!, kp.scenes),
+                        onPressed: () => _openSceneEditor(
+                          context,
+                          kpId: kp.id!,
+                          kpName: kp.name,
+                          kpSemester: kp.semester,
+                          subject: km.subject,
+                          grade: km.grade,
+                          scenes: kp.scenes,
+                        ),
                       ),
                   ],
                 ),
@@ -178,11 +194,19 @@ class _MaterialKnowledgeManageViewState
   }
 
   /// 打开交互讲解编辑器（ADR-0061）：为已落库知识点编写默认交互讲解模板。
+  ///
+  /// 传**知识点自身的**学期（`kp.semester`）而非当前范围筛选值：范围可能是
+  /// 「整学年」并集（此时同一屏混着上/下学期的点），弹窗要显示的是这份模板
+  /// 实际作用的那个学期。
   void _openSceneEditor(
-    BuildContext context,
-    String kpId,
-    List<Map<String, dynamic>>? scenes,
-  ) {
+    BuildContext context, {
+    required String kpId,
+    required String kpName,
+    required String kpSemester,
+    required String subject,
+    required int grade,
+    required List<Map<String, dynamic>>? scenes,
+  }) {
     showDialog(
       context: context,
       builder: (_) => Dialog(
@@ -192,6 +216,10 @@ class _MaterialKnowledgeManageViewState
             padding: const EdgeInsets.all(AppSpacing.md),
             child: KnowledgePointSceneEditor(
               kpId: kpId,
+              kpName: kpName,
+              subject: subject,
+              grade: grade,
+              semester: kpSemester,
               initialScenes: scenes,
             ),
           ),

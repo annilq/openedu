@@ -20,6 +20,10 @@ class QuestionModel {
   final String? answer;
   final String difficulty;
 
+  /// 是否多选题（ADR-0004 D5）：choice 且有多个正确项时 True。
+  /// 渲染为复选卡片、批改按选项集合比对；非 choice / 单选择题为 False。
+  final bool multi;
+
   /// 学期（ADR-0061 发布任务对接资料库）：'' = 不限/整学年；'上学期' / '下学期'。
   final String semester;
 
@@ -42,6 +46,7 @@ class QuestionModel {
     this.explanation = '',
     this.answer,
     this.difficulty = 'medium',
+    this.multi = false,
     this.semester = '',
     this.sceneSpec,
   });
@@ -73,6 +78,7 @@ class QuestionModel {
     String? explanation,
     String? answer,
     String? difficulty,
+    bool? multi,
   }) {
     return QuestionModel(
       id: id ?? this.id,
@@ -86,6 +92,7 @@ class QuestionModel {
       explanation: explanation ?? this.explanation,
       answer: answer ?? this.answer,
       difficulty: difficulty ?? this.difficulty,
+      multi: multi ?? this.multi,
     );
   }
 
@@ -102,6 +109,7 @@ class QuestionModel {
       explanation: json['explanation'] as String? ?? '',
       answer: json['answer'] as String?,
       difficulty: json['difficulty'] as String? ?? 'medium',
+      multi: json['multi'] as bool? ?? false,
       semester: json['semester'] as String? ?? '',
       sceneSpec: json['scene_spec'] as Map<String, dynamic>?,
     );
@@ -121,6 +129,8 @@ class QuestionPreview {
   final String explanation;
   final String? answer;
   final String difficulty;
+  /// 是否多选题（ADR-0004 D5）：随题卡下发，确认落库时原样回传后端 multi 字段。
+  final bool multi;
   /// 学期（ADR-0061）：随规格下发到每道题，确认落库时原样回传。
   final String semester;
   /// 出题推理过程（ADR-0017）：仅预览态展示，不落库；旧服务端不下发时为空。
@@ -141,6 +151,7 @@ class QuestionPreview {
     this.explanation = '',
     this.answer,
     this.difficulty = 'medium',
+    this.multi = false,
     this.semester = '',
     this.reasoning = '',
     this.sourceRefs,
@@ -157,6 +168,7 @@ class QuestionPreview {
         explanation: json['explanation'] as String? ?? '',
         answer: json['answer'] as String?,
         difficulty: json['difficulty'] as String? ?? 'medium',
+        multi: json['multi'] as bool? ?? false,
         semester: json['semester'] as String? ?? '',
         reasoning: json['reasoning'] as String? ?? '',
         sourceRefs: (json['source_refs'] as List?)
@@ -176,6 +188,7 @@ class QuestionPreview {
         'explanation': explanation,
         'answer': answer,
         'difficulty': difficulty,
+        'multi': multi,
         'semester': semester,
         'reasoning': reasoning,
         'source_refs': sourceRefs,
@@ -199,6 +212,14 @@ class BankQuestionItem {
   final String? explanation;
   final int usageCount;
 
+  /// 学期维度（ADR-0061 §J）：'' = 整学年/不限。详情要展示——它同时决定讲解
+  /// 匹配哪份知识点模板（同学期优先、整学年兜底）。
+  final String semester;
+
+  /// 交互讲解快照（ADR-0061）：题库题是**已落库**的题，讲解直接读快照，知识点
+  /// 模板后续改动不影响它。为 null = 这题没有图形化讲解（老数据 / 该知识点没配模板）。
+  final Map<String, dynamic>? sceneSpec;
+
   /// 归档时间（ADR-0053 P2）；null = 在用。前端据此给「已归档」徽标。
   final DateTime? archivedAt;
 
@@ -214,6 +235,8 @@ class BankQuestionItem {
     this.answer,
     this.explanation,
     this.usageCount = 0,
+    this.semester = '',
+    this.sceneSpec,
     this.archivedAt,
   });
 
@@ -229,6 +252,8 @@ class BankQuestionItem {
         answer: json['answer'] as String?,
         explanation: json['explanation'] as String?,
         usageCount: (json['usage_count'] as int?) ?? 0,
+        semester: json['semester'] as String? ?? '',
+        sceneSpec: json['scene_spec'] as Map<String, dynamic>?,
         archivedAt: parseDate(json['archived_at']),
       );
 }

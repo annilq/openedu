@@ -30,7 +30,7 @@ from app.domain.provider import (
     ReasoningDelta,
 )
 from app.domain.safety import check_output
-from app.domain.structured import schema_field
+from app.domain.structured import normalize_options, schema_field
 
 
 def qtype_label(qtype: str) -> str:
@@ -104,7 +104,9 @@ def assemble_question(
     不该因为它的措辞而丢掉一道好题）。
     """
     stem = raw.get("stem") or ""
-    options = raw.get("options")
+    # 模型偶发不守 output_schema，把全部选项揉进一个字符串或某一列表元素；
+    # 切分成「每个选项一段」再落库，否则娃娃端会看到一长串选项挤在一行（无法逐条选）。
+    options = normalize_options(raw.get("options"))
     answer = raw.get("answer") or ""
     explanation = raw.get("explanation") or ""
     if not check_output(f"{stem} {answer} {explanation}").safe:

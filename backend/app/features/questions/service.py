@@ -58,6 +58,12 @@ def list_bank_questions(
             "explanation": q.explanation,
             "created_at": q.created_at.isoformat() if q.created_at else None,
             "usage_count": usage.get(q.id, 0),
+            # 学期维度（ADR-0061 §J）：详情页要展示「这题属于哪个学期」——它同时
+            # 决定了讲解匹配哪份知识点模板（同学期优先、整学年兜底）。
+            "semester": q.semester or "",
+            # 交互讲解快照（ADR-0061）：题库题是「已落库」的题，讲解直接读快照
+            # （知识点模板后续改动不影响它）。老数据可能为 None → 前端不显示图形。
+            "scene_spec": q.scene_spec,
         }
         for q in items
     ]

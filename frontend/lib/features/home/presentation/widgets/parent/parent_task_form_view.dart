@@ -22,6 +22,7 @@ import '../../../domain/repositories/material_repository.dart'
 import 'parent_task_interest_section.dart';
 import 'parent_task_preview_section.dart';
 import 'parent_task_spec_row.dart';
+import 'directory_notice_bar.dart';
 import 'task_spec_row_data.dart';
 import '../../../providers/home_provider.dart';
 
@@ -47,7 +48,7 @@ class ParentTaskFormView extends ConsumerStatefulWidget {
 
 class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
   final List<TaskSpecRow> _rows = [TaskSpecRow()];
-  final _totalCtrl = TextEditingController(text: '10');
+  final _totalCtrl = TextEditingController(text: '4');
   final _titleCtrl = TextEditingController(text: '今日练习');
 
   // 兴趣题模式（WF-4）：开=聚焦所选兴趣主题；关=后端自动轻融入娃娃画像。
@@ -79,9 +80,7 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
       });
     }
     // 预拉取可选模型列表，供模型选择器展示（仅家长可见自定义模型）。
-    Future.microtask(
-      () => ref.read(modelsNotifierProvider.notifier).load(),
-    );
+    Future.microtask(() => ref.read(modelsNotifierProvider.notifier).load());
     // 隐藏「默认」选项后必须显式选模型：模型列表加载完成后，若尚未选择则回落到
     // 家长设为默认的模型（否则取列表首项），保证出题请求带有效 model 而非 null。
     ref.listenManual(modelsNotifierProvider, (prev, next) {
@@ -110,21 +109,20 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
     super.dispose();
   }
 
-  void _addRow() => setState(() => _rows.add(TaskSpecRow(
-        subject: '语文',
-        knowledgePoint: '字词积累',
-      )));
+  void _addRow() => setState(
+    () => _rows.add(TaskSpecRow(subject: '语文', knowledgePoint: '字词积累')),
+  );
 
   void _removeRow(int i) => setState(() {
-        if (_rows.length > 1) {
-          _rows[i].dispose();
-          _rows.removeAt(i);
-        }
-      });
+    if (_rows.length > 1) {
+      _rows[i].dispose();
+      _rows.removeAt(i);
+    }
+  });
 
   /// 一键均分（ADR-0004 D5）：总题数按当前行数等分，余数给前几行。
   void _evenSplit() {
-    final total = int.tryParse(_totalCtrl.text) ?? 10;
+    final total = int.tryParse(_totalCtrl.text) ?? 4;
     final n = _rows.length;
     if (n == 0) return;
     final base = total ~/ n;
@@ -140,9 +138,10 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
       _rows.map((r) => r.toSpec(selected.grade)).toList();
 
   /// 兴趣题模式（WF-4）：开启且至少选一个主题才下传聚焦主题；否则 null = 后端自动轻融入。
-  List<String>? _currentFocus() => _useInterestMode && _focusThemes.isNotEmpty
-      ? _focusThemes.toList()
-      : null;
+  List<String>? _currentFocus() =>
+      _useInterestMode && _focusThemes.isNotEmpty
+          ? _focusThemes.toList()
+          : null;
 
   void _generate() {
     final selected = ref.read(selectedChildProvider);
@@ -160,7 +159,9 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
       return;
     }
     // 生成任务：先流式逐题渲染题卡（消除真实模型超时），流结束后再落库为草稿。
-    ref.read(taskGenNotifierProvider.notifier).generate(
+    ref
+        .read(taskGenNotifierProvider.notifier)
+        .generate(
           childId: selected.id,
           title: _titleCtrl.text,
           specs: specs,
@@ -207,6 +208,10 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
               ),
               const SizedBox(height: AppSpacing.lg),
               ..._buildSpecRows(),
+              if (_directoryNotice case final notice?) ...[
+                DirectoryNoticeBar(text: notice),
+                const SizedBox(height: AppSpacing.sm),
+              ],
               const SizedBox(height: AppSpacing.xl),
               ModelSelector(
                 selected: _modelId,
@@ -266,25 +271,46 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
     int grade,
     String semester,
   ) {
-    final async = ref.watch(knowledgePointsProvider((subject, grade, semester)));
-    return async.valueOrNull;
+    final async = ref.watch(
+      knowledgePointsProvider((subject, grade, semester)),
+    );
+    return async.valueOrNull?.items;
+  }
+
+  /// 当前范围内「只有骨架兜底、没有真实知识点」时的说明（ADR-0061 §L）。
+  ///
+  /// 骨架不分学期，所以这种范围下切学期拿到的下拉逐字相同。不解释的话家长会以为
+  /// 联动坏了——实际只是该学期还没上传资料。只在第一行提示，避免多行时刷屏。
+  String? get _directoryNotice {
+    if (_rows.isEmpty) return null;
+    final async = ref.watch(
+      knowledgePointsProvider((
+        _rows.first.subject,
+        _rows.first.grade ?? ref.read(selectedChildProvider)?.grade ?? 2,
+        _rows.first.semester,
+      )),
+    );
+    final notice = async.valueOrNull?.notice ?? '';
+    return notice.isEmpty ? null : notice;
   }
 
   Widget _buildInterestSection() {
     return TaskInterestSection(
       enabled: _useInterestMode,
-      onEnabledChanged: (v) => setState(() {
-        _useInterestMode = v;
-        if (!v) _focusThemes.clear();
-      }),
+      onEnabledChanged:
+          (v) => setState(() {
+            _useInterestMode = v;
+            if (!v) _focusThemes.clear();
+          }),
       selectedThemes: _focusThemes,
-      onToggleTheme: (t) => setState(() {
-        if (_focusThemes.contains(t)) {
-          _focusThemes.remove(t);
-        } else {
-          _focusThemes.add(t);
-        }
-      }),
+      onToggleTheme:
+          (t) => setState(() {
+            if (_focusThemes.contains(t)) {
+              _focusThemes.remove(t);
+            } else {
+              _focusThemes.add(t);
+            }
+          }),
     );
   }
 
@@ -329,15 +355,16 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
   Widget _buildActionArea(TaskGenState genState) {
     // 生成结束、等待确认：优先于忙碌判定——此时不该隐藏按钮，反而必须给出口。
     if (genState is TaskGenReady) return _buildReviewGate();
-    final busy = genState is TaskGenLoading ||
+    final busy =
+        genState is TaskGenLoading ||
         (genState is TaskGenPreview && genState.streaming);
-    final showSpinner = busy &&
+    final showSpinner =
+        busy &&
         (genState is TaskGenPreview
             ? (genState.questions.isEmpty && genState.liveIndex < 0)
             : true);
     if (showSpinner) {
-      final stage =
-          genState is TaskGenPreview ? genState.stage : '';
+      final stage = genState is TaskGenPreview ? genState.stage : '';
       return AppLoading(message: stage.isEmpty ? '正在准备出题…' : stage);
     }
     if (busy) {
@@ -346,9 +373,7 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
     }
     return Row(
       children: [
-        Expanded(
-          child: AppPrimaryButton(label: '生成任务', onPressed: _generate),
-        ),
+        Expanded(child: AppPrimaryButton(label: '生成任务', onPressed: _generate)),
       ],
     );
   }

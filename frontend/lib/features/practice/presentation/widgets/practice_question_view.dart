@@ -9,6 +9,7 @@ import '../../../../shared/widgets/app_option_tile.dart';
 import '../../../../shared/widgets/app_buttons.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/app_tags.dart';
+import '../../../../shared/widgets/scene_interpreter/scene_interpreter.dart';
 import '../../../../shared/utils/option_text.dart';
 import '../../../../shared/utils/question_labels.dart';
 
@@ -47,6 +48,10 @@ class PracticeQuestionView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final q = question;
+    final scene = q.sceneSpec;
+    final hasFigureGroup = scene != null &&
+        scene['optionGroup'] is Map &&
+        ((scene['optionGroup']['items'] as List?)?.isNotEmpty ?? false);
     final total = task.questions.length;
     final currentIndex = task.questions.indexOf(q);
     final isLast = currentIndex < 0 || currentIndex >= total - 1;
@@ -106,6 +111,17 @@ class PracticeQuestionView extends StatelessWidget {
                 // 必须用 IntrinsicHeight 给 Row 一个有界高度，否则在无界滚动区里崩。
                 IntrinsicHeight(child: stemBlock),
                 const SizedBox(height: AppSpacing.xxl),
+                // 几何选项组（ADR-0061 §O）：选择题每个选项本身是一个图形（如「下列图形
+                // 哪个是轴对称」）时，把题干下方的选项组渲染成每个图形一个可交互场景，
+                // 与下方可点选的 A/B/C/D 选项卡对应。无选项组时整块跳过。
+                if (hasFigureGroup)
+                  ...[
+                    SceneInterpreter(
+                      kind: (scene['kind'] as String?) ?? 'reflection',
+                      spec: scene,
+                    ),
+                    const SizedBox(height: AppSpacing.xxl),
+                  ],
                 // 选择题按 qtype 走选项卡片（ADR-0004：qtype ∈ {choice,fill,calc,open}）。
                 // 只有 choice 且有有效选项才渲染选项，其余（填空/计算/应用）走输入框——
                 // 这样「选择题渲染成文本框」的退化被根因拦在落库前（后端 TASK_CHOICE_NO_OPTIONS），

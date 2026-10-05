@@ -1,10 +1,12 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart' show Icons, Slider;
 import 'package:flutter/widgets.dart';
 
 import '../../theme/app_theme.dart';
 import '../app_actions.dart';
+import 'reflection_scene_data.dart';
 
 // =====================================================================
 // §轴对称交互讲解渲染器（kind = reflection，ADR-0061 决策 9.1）
@@ -16,68 +18,12 @@ import '../app_actions.dart';
 // - 重合判定门控于 θ≈π 且轴为真正对称线（折叠侧 vs 静止侧，禁止与自身反射比对）。
 // =====================================================================
 
-/// 预设图形（归一化坐标 0..1，y 向下）。
-enum ReflectionFigure { house, kite, arrow, para }
-
-extension ReflectionFigureX on ReflectionFigure {
-  /// 图形顶点（归一化）。
-  List<Offset> get points {
-    switch (this) {
-      case ReflectionFigure.house:
-        return const [
-          Offset(0.30, 0.70),
-          Offset(0.70, 0.70),
-          Offset(0.70, 0.45),
-          Offset(0.50, 0.25),
-          Offset(0.30, 0.45),
-        ];
-      case ReflectionFigure.kite:
-        return const [
-          Offset(0.50, 0.20),
-          Offset(0.72, 0.50),
-          Offset(0.50, 0.80),
-          Offset(0.28, 0.50),
-        ];
-      case ReflectionFigure.arrow:
-        return const [
-          Offset(0.20, 0.42),
-          Offset(0.62, 0.42),
-          Offset(0.62, 0.30),
-          Offset(0.82, 0.50),
-          Offset(0.62, 0.70),
-          Offset(0.62, 0.58),
-          Offset(0.20,0.58),
-        ];
-      case ReflectionFigure.para:
-        return const [
-          Offset(0.30, 0.40),
-          Offset(0.70, 0.40),
-          Offset(0.82, 0.70),
-          Offset(0.42, 0.70),
-        ];
-    }
-  }
-
-  /// 该图形默认对称轴角度（度，0=水平、90=竖直）。
-  double get defaultAxisAngle {
-    switch (this) {
-      case ReflectionFigure.house:
-      case ReflectionFigure.kite:
-      case ReflectionFigure.para:
-        return 90;
-      case ReflectionFigure.arrow:
-        return 0;
-    }
-  }
-
-  static ReflectionFigure fromName(String? name) => switch (name) {
-        'house' => ReflectionFigure.house,
-        'kite' => ReflectionFigure.kite,
-        'arrow' => ReflectionFigure.arrow,
-        'para' => ReflectionFigure.para,
-        _ => ReflectionFigure.house,
-      };
-}
+/// 预设图形已移出本文件 → `shared/domain/figures.dart`（ADR-0061 §O）。
+///
+/// 本渲染器**不再认识「房子/风筝」这类概念**，只吃一组顶点（ADR-0061 §O）：
+/// 图形数据是教学素材（见 `figures.dart`），由后端按题目选项下发或由内置预设兜底。
+/// `ReflectionFigure` / `ReflectionFigureX` 仅作为**兜底预设集**保留给教师调参
+/// 面板与「spec 未带points」的旧数据。
 
 /// 重合判定阈值（归一化空间）。
 const double _coincidenceThreshold = 0.03;
@@ -262,70 +208,6 @@ class _ReflectionPainter extends CustomPainter {
       old.points != points;
 }
 
-/// 轴对称场景数据（与 SceneSpec JSON 解耦，可直接构造以便测试）。
-///
-/// 由 [ReflectionSceneData.fromSpec] 从 ADR-0061 的 SceneSpec 解析；
-/// 缺字段时回退默认值。
-class ReflectionSceneData {
-  final ReflectionFigure figure;
-  final double axisAngle;
-  final double axisX;
-  final double axisY;
-  final bool controlsPlay;
-  final bool controlsScrub;
-  final String? narrative;
-  final bool editable;
-  final bool lockedAxisymmetric;
-
-  const ReflectionSceneData({
-    required this.figure,
-    this.axisAngle = 90,
-    this.axisX = 0.5,
-    this.axisY = 0.5,
-    this.controlsPlay = true,
-    this.controlsScrub = true,
-    this.narrative,
-    this.editable = true,
-    this.lockedAxisymmetric = true,
-  });
-
-  /// 由 SceneSpec 解析（ADR-0061 §9.1）；缺字段回退默认。
-  factory ReflectionSceneData.fromSpec(Map<String, dynamic> spec) {
-    final inputs = (spec['inputs'] as List?) ?? <dynamic>[];
-    var axisAngle = 90.0;
-    var axisX = 0.5;
-    var axisY = 0.5;
-    var figureName = 'house';
-    for (final raw in inputs) {
-      final m = raw as Map<String, dynamic>;
-      final key = m['key'] as String?;
-      final val = m['value'];
-      switch (key) {
-        case 'axisAngle':
-          if (val is num) axisAngle = val.toDouble();
-        case 'axisX':
-          if (val is num) axisX = val.toDouble();
-        case 'axisY':
-          if (val is num) axisY = val.toDouble();
-        case 'figure':
-          if (val is String) figureName = val;
-      }
-    }
-    final controls = spec['controls'] as Map? ?? <String, dynamic>{};
-    final outputs = spec['outputs'] as Map? ?? <String, dynamic>{};
-    return ReflectionSceneData(
-      figure: ReflectionFigureX.fromName(figureName),
-      axisAngle: axisAngle,
-      axisX: axisX,
-      axisY: axisY,
-      controlsPlay: controls['play'] as bool? ?? true,
-      controlsScrub: controls['scrub'] as bool? ?? true,
-      narrative: spec['narrative'] as String?,
-      editable: spec['editable'] as bool? ?? true,
-      lockedAxisymmetric: outputs['isAxisymmetric'] as bool? ?? true,
-    );
-  }
-}
 
 /// 轴对称交互演示（kind = reflection）骨架。
 ///
@@ -354,15 +236,24 @@ class _ReflectionSceneWidgetState extends State<ReflectionSceneWidget>
     _axisAngle = widget.data.axisAngle;
     _axisX = widget.data.axisX;
     _axisY = widget.data.axisY;
-    _fold = AnimationController(vsync: this, value: 0)
-      ..addListener(() => setState(() {}));
+    _fold = AnimationController(
+      vsync: this,
+      value: 0,
+      // 必须给 duration：`_play()` 走 `forward()`，没设 duration 会在点击播放时
+      // 抛 "AnimationController.forward() called with no default duration"。
+      // 取值对着 spec 的「速度」语义：一次完整对折（0→180°）1.4s，太快看不清
+      // 折叠过程，太慢会让学生等得不耐烦。reduce-motion 下 `_play()` 直接跳到
+      // 终点、根本不走动画（见 `_play`），所以这个时长不影响无障碍用户。
+      duration: const Duration(milliseconds: 1400),
+    )..addListener(() => setState(() {}));
   }
 
   @override
   void didUpdateWidget(covariant ReflectionSceneWidget old) {
     super.didUpdateWidget(old);
     // 外部（编辑器）修改默认参数时同步内部状态并复位动画，避免预览卡在旧值。
-    if (old.data.figure != widget.data.figure ||
+    // 几何按points 比对（ADR-0061 §O 顶点驱动）：图形换了 = 顶点变了。
+    if (!listEquals(old.data.points, widget.data.points) ||
         old.data.axisAngle != widget.data.axisAngle ||
         old.data.axisX != widget.data.axisX ||
         old.data.axisY != widget.data.axisY) {
@@ -505,7 +396,7 @@ class _ReflectionSceneWidgetState extends State<ReflectionSceneWidget>
   @override
   Widget build(BuildContext context) {
     final (c, d, n) = _frame;
-    final points = widget.data.figure.points;
+    final points = widget.data.points;
     final symmetric = _isAxisymmetric(points, c, d, n);
     final progressDeg = (_fold.value * 180).round();
     final atEnd = _fold.value >= 0.99;

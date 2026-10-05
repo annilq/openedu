@@ -495,8 +495,18 @@ def list_knowledge_points(
                     id=None, name=name, status="curated", source="skeleton"
                 )
             )
+    # 只有骨架时**明说**（ADR-0061 §L）：骨架是分不出学期的大颗粒目录，家长切学期
+    # 看到的下拉会逐字相同——不说清楚就像「联动坏了」，实际只是该范围还没资料。
+    notice = ""
+    if not rows and semester:
+        notice = (
+            f"该学期（{semester}）还没有资料知识点，以下是**不分学期**的通用目录；"
+            "上传对应学期的资料并向量化后，这里才会按学期变化。"
+        )
     return KnowledgePointListResp(
-        items=items, pending_count=sum(1 for i in items if i.status == "pending")
+        items=items,
+        pending_count=sum(1 for i in items if i.status == "pending"),
+        notice=notice,
     )
 
 

@@ -36,6 +36,8 @@ class Question(SQLModel, table=True):
     qtype: str
     stem: str
     options: list[str] | None = Field(default=None, sa_type=JSON)
+    # 是否多选题（ADR-0004 D5）：与 TaskQuestion.multi 同源，题库题复用闭环时一并拷贝。
+    multi: bool = Field(default=False)
     answer: str | None = None
     explanation: str | None = None
     difficulty: str | None = None
@@ -59,4 +61,6 @@ class Question(SQLModel, table=True):
     # 本题的交互式讲解实例（ADR-0061）：出题时从对应知识点 scenes 取模板、覆盖本题
     # 数值得到。学生端可在题卡解析区/讲解卡内联渲染，并继续改 inputs 求解。刻意不建
     # 外键（快照式）：知识点模板改动不影响已生成的题。可空 = 本题不可图形化。
-    scene_spec: dict | None = Field(default=None, sa_type=JSON)
+    # `none_as_null=True`：让 Python None 真落库为 SQL NULL（见 KnowledgePoint.scenes
+    # 同处注释——JSON 类型默认把 None 写成文本 'null'，会让「非空」计数失真）。
+    scene_spec: dict | None = Field(default=None, sa_type=JSON(none_as_null=True))

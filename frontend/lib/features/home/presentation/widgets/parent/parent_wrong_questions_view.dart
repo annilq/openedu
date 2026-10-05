@@ -10,6 +10,7 @@ import '../../../../../shared/widgets/app_content_frame.dart';
 import '../../../../../shared/widgets/app_empty_state.dart';
 import '../../../../../shared/widgets/app_error.dart';
 import '../../../../../shared/widgets/app_loading.dart';
+import 'wrong_question_explanation.dart';
 import '../../../../../shared/widgets/app_paging_footer.dart';
 import '../../../../../shared/widgets/app_toast.dart';
 import '../../../../export/domain/export_repository.dart';
@@ -364,14 +365,15 @@ class _ParentWrongCard extends StatefulWidget {
 }
 
 class _ParentWrongCardState extends State<_ParentWrongCard> {
-  /// 展开状态是「这一张卡的事」，不进 provider：翻页后卡片重建，折叠回去是对的。
-  bool _expanded = false;
-
   @override
   Widget build(BuildContext context) {
     final item = widget.item;
     final scheme = AppTheme.colorsOf(context);
     final hasExplanation = item.explanation.trim().isNotEmpty;
+    // 交互讲解（ADR-0061 §Q）：家长端「查看解析」也要能出图。渲染与展开态都在
+    // `WrongQuestionExplanation` 里（拆出来是为了不顶破 ADR-0058 的行数棘轮）。
+    final hasScene =
+        item.sceneSpec != null && item.sceneSpec!['kind'] is String;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -419,16 +421,10 @@ class _ParentWrongCardState extends State<_ParentWrongCard> {
             ],
           ),
         ),
-        if (hasExplanation)
-          AppTextAction(
-            label: _expanded ? '收起解析' : '查看解析',
-            onPressed: () => setState(() => _expanded = !_expanded),
-          ),
-        if (hasExplanation && _expanded)
-          Padding(
-            padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-            child: Text('解析：${item.explanation}',
-                style: AppTheme.textOf(context).bodyMedium),
+        if (hasExplanation || hasScene)
+          WrongQuestionExplanation(
+            explanation: item.explanation,
+            sceneSpec: item.sceneSpec,
           ),
         if (widget.onRejoin != null)
           AppTextAction(

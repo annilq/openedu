@@ -11,7 +11,7 @@ class MaterialRepositoryImpl implements MaterialRepository {
   final NetworkService _network;
 
   @override
-  Future<List<KnowledgePointOption>> getKnowledgePoints({
+  Future<KnowledgePointDirectory> getKnowledgePointDirectory({
     required String subject,
     required int grade,
     String semester = '',
@@ -20,10 +20,7 @@ class MaterialRepositoryImpl implements MaterialRepository {
       '/materials/knowledge-points',
       query: {'subject': subject, 'grade': grade, 'semester': semester},
     );
-    final items = decodeMap(data)['items'] as List? ?? const [];
-    return items
-        .map((e) => KnowledgePointOption.fromJson(Map<String, dynamic>.from(e as Map)))
-        .toList();
+    return KnowledgePointDirectory.fromJson(decodeMap(data));
   }
 
   @override

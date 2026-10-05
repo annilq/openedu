@@ -259,6 +259,48 @@ class TestKnowledgePoints:
         )
         assert len(r2.json()["items"]) == len(items)
 
+    def test_notice_explains_skeleton_only_scope(self, client, ptoken, upload_root):
+        """只有骨架兜底时必须**明说**（ADR-0061 §L）。
+
+        回归背景：骨架是分不出学期的大颗粒目录，家长在某范围切学期时下拉逐字相同，
+        不解释就像「联动坏了」。这里钉住 notice 的出现条件。
+        """
+        # 空账号 + 未确认任何知识点 → 上/下学期都只剩骨架
+        for semester in ("上学期", "下学期"):
+            r = client.get(
+                f"/api/v1/materials/knowledge-points?subject=数学&grade=5&semester={semester}",
+                headers=auth_headers(ptoken),
+            )
+            assert r.status_code == 200
+            body = r.json()
+            assert all(i["id"] is None for i in body["items"]), "前置：应只有骨架"
+            assert body["notice"], f"只有骨架的 {semester} 范围必须给出说明"
+            assert "不分学期" in body["notice"]
+
+        # 不限学期（''）=并集语义，不属于「某学期没有」的场景 → 不出notice
+        r = client.get(
+            "/api/v1/materials/knowledge-points?subject=数学&grade=5",
+            headers=auth_headers(ptoken),
+        )
+        assert r.json()["notice"] == ""
+
+        # 该学期有真实知识点后 → notice 消失
+        client.post(
+            "/api/v1/materials/knowledge-points/confirm",
+            headers=auth_headers(ptoken),
+            json={
+                "names": ["真实点"],
+                "subject": "数学",
+                "grade": 5,
+                "semester": "上学期",
+            },
+        )
+        r = client.get(
+            "/api/v1/materials/knowledge-points?subject=数学&grade=5&semester=上学期",
+            headers=auth_headers(ptoken),
+        )
+        assert r.json()["notice"] == "", "有真实知识点后不该再提示骨架兜底"
+
     def test_semester_scope_union_vs_exact(self, client, ptoken, upload_root):
         """学期维度（ADR-0061）：不限学期 = 并集；限定学期 = 精确匹配。
 

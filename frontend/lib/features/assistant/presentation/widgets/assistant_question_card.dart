@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/utils/option_text.dart';
 import '../../../../shared/utils/question_labels.dart';
 import '../../../../shared/widgets/app_tags.dart';
 import '../../../../shared/widgets/scene_interpreter/scene_interpreter.dart';
@@ -199,7 +200,7 @@ class _QuestionOptions extends StatelessWidget {
                 const SizedBox(width: AppSpacing.sm),
                 Expanded(
                   child: Text(
-                    options[i],
+                    cleanOptionText(options[i]),
                     style: text.bodySmall?.copyWith(color: scheme.onSurface),
                   ),
                 ),

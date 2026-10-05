@@ -3,10 +3,12 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../../shared/domain/models/models.dart';
 import '../../../../../shared/theme/app_theme.dart';
+import '../../../../../shared/utils/option_text.dart';
 import '../../../../../shared/utils/question_labels.dart';
 import '../../../../../shared/widgets/app_actions.dart';
 import '../../../../../shared/widgets/app_motion.dart';
 import '../../../../../shared/widgets/app_tags.dart';
+import '../../../../../shared/widgets/scene_interpreter/scene_interpreter.dart';
 import '../../../../../shared/widgets/stream_reasoning_panel.dart';
 import '../../providers/home_notifier.dart';
 
@@ -207,6 +209,11 @@ class _PreviewCard extends StatelessWidget {
     final app = AppTheme.colorsOf(context);
     final text = AppTheme.textOf(context);
     final options = q.options;
+    // 取到局部变量才谈得上类型提升：`q.sceneSpec` 是 getter，Dart 不会为它做 promotion。
+    final sceneSpec = q.sceneSpec;
+    final hasFigureGroup = sceneSpec != null &&
+        sceneSpec['optionGroup'] is Map &&
+        ((sceneSpec['optionGroup']['items'] as List?)?.isNotEmpty ?? false);
     return Container(
       margin: const EdgeInsets.only(bottom: AppSpacing.md),
       padding: const EdgeInsets.all(AppSpacing.md),
@@ -263,13 +270,23 @@ class _PreviewCard extends StatelessWidget {
           ),
           const SizedBox(height: AppSpacing.sm),
           Text(q.stem, style: text.bodyMedium),
+          // 几何选项组（ADR-0061 §O）：每个选项本身是图形时，预览即渲染成每个图形
+          // 一个可交互场景，让家长在布置前就看到图形选项。
+          if (hasFigureGroup)
+            ...[
+              const SizedBox(height: AppSpacing.sm),
+              SceneInterpreter(
+                kind: (sceneSpec['kind'] as String?) ?? 'reflection',
+                spec: sceneSpec,
+              ),
+            ],
           if (options != null && options.isNotEmpty) ...[
             const SizedBox(height: AppSpacing.sm),
             ...options.asMap().entries.map(
                   (e) => Padding(
                     padding: const EdgeInsets.only(bottom: 4),
                     child: Text(
-                      '${String.fromCharCode(65 + e.key)}. ${e.value}',
+                      '${String.fromCharCode(65 + e.key)}. ${cleanOptionText(e.value)}',
                       style: text.bodySmall,
                     ),
                   ),

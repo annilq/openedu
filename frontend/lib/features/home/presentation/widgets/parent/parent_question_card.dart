@@ -4,6 +4,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../../shared/domain/models/models.dart';
 import '../../../../../shared/theme/app_theme.dart';
+import '../../../../../shared/utils/option_text.dart';
 import '../../../../../shared/utils/question_labels.dart';
 import '../../../../../shared/widgets/app_motion.dart';
 import '../../../../../shared/widgets/stream_reasoning_panel.dart';
@@ -215,7 +216,7 @@ class ParentQuestionCardState extends ConsumerState<ParentQuestionCard> {
                       ),
                       const SizedBox(width: AppSpacing.sm),
                       Expanded(
-                          child: Text(e.value,
+                          child: Text(cleanOptionText(e.value),
                               style: AppTheme.textOf(context)
                                   .bodyMedium
                                   ?.copyWith(height: 1.4))),

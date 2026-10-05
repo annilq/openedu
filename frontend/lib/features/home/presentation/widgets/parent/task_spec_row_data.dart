@@ -32,11 +32,10 @@ class TaskSpecRow {
     String? knowledgePoint,
     String? count,
     String? semester,
-  })  : subject = subject ?? '数学',
-        semester = semester ?? '',
-        knowledgePoint =
-            TextEditingController(text: knowledgePoint ?? '两位数加减法'),
-        count = TextEditingController(text: count ?? '5') {
+  }) : subject = subject ?? '数学',
+       semester = semester ?? '',
+       knowledgePoint = TextEditingController(text: knowledgePoint ?? '两位数加减法'),
+       count = TextEditingController(text: count ?? '4') {
     qtype = defaultQtypeFor(this.subject);
   }
 
@@ -56,11 +55,11 @@ class TaskSpecRow {
 
   /// 本行 → 出题规格；[defaultGrade] 是「未手动指定年级」时的兜底（娃娃年级）。
   TaskSpecModel toSpec(int defaultGrade) => TaskSpecModel(
-        subject: subject,
-        grade: grade ?? defaultGrade,
-        knowledgePoint: knowledgePoint.text,
-        qtype: qtype,
-        count: int.tryParse(count.text) ?? 1,
-        semester: semester,
-      );
+    subject: subject,
+    grade: grade ?? defaultGrade,
+    knowledgePoint: knowledgePoint.text,
+    qtype: qtype,
+    count: int.tryParse(count.text) ?? 1,
+    semester: semester,
+  );
 }

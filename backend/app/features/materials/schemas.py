@@ -129,6 +129,10 @@ class KnowledgePointScenesUpdate(SQLModel):
 class KnowledgePointListResp(SQLModel):
     items: list[KnowledgePointResp]
     pending_count: int = 0
+    # 目录来源说明（ADR-0061 §L）：**当前范围没有真实知识点、只剩骨架兜底**时
+    # 给出人话解释。骨架是「冷启动不空窗」的通用目录、**不分学期**，所以在没有
+    # 资料知识点的范围里，切学期拿到的下拉会逐字相同——不解释就像「联动坏了」。
+    notice: str = ""
 
 
 class KnowledgePointConfirm(SQLModel):

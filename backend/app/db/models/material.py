@@ -177,4 +177,9 @@ class KnowledgePoint(SQLModel, table=True):
     # narrative, outputs, locked_answer}]。教师基于知识点编写并调好体验，出题时
     # 按本题数值覆盖默认 inputs → 生成 Question.scene_spec。刻意不建外键（快照式）：
     # 删除/改模板不影响已生成的题。可空 = 该知识点暂无图形化讲解。
-    scenes: list[dict] | None = Field(default=None, sa_type=JSON)
+    #
+    # `none_as_null=True` 是关键：SQLAlchemy 的 JSON 类型默认把 Python ``None``
+    # 序列化成 JSON 字符串 ``'null'``（**不是** SQL NULL），于是「清空模板」写进去的
+    # 是文本 ``null``——`IS NOT NULL` 为真、内容却是空的，任何「非空计数」都会失真
+    # （ADR-0061 §M 实测踩过）。加上它，Python None 才真正落库为 SQL NULL。
+    scenes: list[dict] | None = Field(default=None, sa_type=JSON(none_as_null=True))
