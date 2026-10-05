@@ -226,6 +226,24 @@ def run_migrations() -> None:
                     conn.execute(
                         text("ALTER TABLE question ADD COLUMN scene_spec TEXT")
                     )
+                if "semester" not in q_cols:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE question ADD COLUMN semester VARCHAR(8) DEFAULT ''"
+                        )
+                    )
+                tq_cols = [
+                    r[1]
+                    for r in conn.execute(
+                        text("PRAGMA table_info(taskquestion)")
+                    ).fetchall()
+                ]
+                if "semester" not in tq_cols:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE taskquestion ADD COLUMN semester VARCHAR(8) DEFAULT ''"
+                        )
+                    )
             else:
                 conn.execute(
                     text(
@@ -237,6 +255,18 @@ def run_migrations() -> None:
                     text(
                         "ALTER TABLE question ADD COLUMN IF NOT EXISTS "
                         "scene_spec JSON"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "ALTER TABLE question ADD COLUMN IF NOT EXISTS "
+                        "semester VARCHAR(8) NOT NULL DEFAULT ''"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "ALTER TABLE taskquestion ADD COLUMN IF NOT EXISTS "
+                        "semester VARCHAR(8) NOT NULL DEFAULT ''"
                     )
                 )
         except OperationalError:

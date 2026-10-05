@@ -29,6 +29,10 @@ class Question(SQLModel, table=True):
     subject: str
     grade: int
     knowledge_point: str
+    # 学期维度（ADR-0061 发布任务对接资料库）：'' = 不限/整学年；'上学期' / '下学期'。
+    # 与知识点唯一约束 (parent_id, subject, grade, name, semester) 对齐，便于按学期
+    # 精确关联家长私有知识点模板，进而在讲解时按知识点预设场景演示。
+    semester: str = Field(default="", max_length=8)
     qtype: str
     stem: str
     options: list[str] | None = Field(default=None, sa_type=JSON)

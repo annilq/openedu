@@ -52,6 +52,10 @@ class TaskQuestion(SQLModel, table=True):
     answer: str | None = None
     explanation: str | None = None
     difficulty: str | None = None
+    # 学期维度（ADR-0061 发布任务对接资料库）：'' = 不限/整学年；'上学期' / '下学期'。
+    # 与 Question 对齐——promote_task_question 把此值拷贝进题库 Question，进而在讲解时
+    # 按 (parent_id, subject, grade, knowledge_point, semester) 匹配家长私有知识点模板。
+    semester: str = Field(default="", max_length=8)
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore
