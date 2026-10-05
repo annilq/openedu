@@ -1,6 +1,8 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/app_focusable_action.dart';
 import '../../domain/assistant_source.dart';
 
 /// 答疑答案下方的「参考来源」条：把本次命中并注入 prompt 的资料片段溯源列出来，
@@ -104,9 +106,15 @@ class _SourceChip extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        InkWell(
+        // 不用 InkWell：App 根是 CupertinoApp/ShadApp，子树**没有 Material 祖先**，
+        // InkWell 会在构建期直接抛「No Material widget found」（整棵消息流崩掉，
+        // 不是某个按钮失灵）。也不留裸 GestureDetector——它不进焦点树，桌面端 Tab
+        // 跳不过来、Enter 点不动，而 `flutter analyze` 照不出来（ADR-0046）。
+        AppFocusableAction(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(AppSpacing.sm),
+          hoverHighlight: true,
+          borderRadius: BorderRadius.circular(AppRadius.chip),
+          semanticLabel: expanded ? '收起来源片段' : '展开来源片段',
           child: Container(
             padding: const EdgeInsets.symmetric(
               horizontal: AppSpacing.sm,
@@ -114,16 +122,27 @@ class _SourceChip extends StatelessWidget {
             ),
             decoration: BoxDecoration(
               color: scheme.surfaceContainerLow,
-              border: Border.all(color: scheme.outline),
-              borderRadius: BorderRadius.circular(AppSpacing.sm),
+              border: Border.all(
+                color: scheme.outline,
+                width: AppElevation.borderWidthSm,
+              ),
+              borderRadius: BorderRadius.circular(AppRadius.chip),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  expanded ? Icons.expand_less : Icons.expand_more,
-                  size: 14,
-                  color: scheme.onSurfaceVariant,
+                // 固定 chevronDown + turns 旋转，取代硬切换图标：硬切换没有过渡，
+                // 箭头会「跳」一下（与 AssistantReasoningDisclosure 同一处理）。
+                AnimatedRotation(
+                  turns: expanded ? 0.5 : 0,
+                  duration: reducedMotionOf(context)
+                      ? Duration.zero
+                      : const Duration(milliseconds: 160),
+                  child: Icon(
+                    LucideIcons.chevronDown,
+                    size: 14,
+                    color: scheme.onSurfaceVariant,
+                  ),
                 ),
                 const SizedBox(width: 4),
                 Text(
