@@ -158,6 +158,43 @@ def test_retriever_hits_append_to_existing_context():
     assert provider.context.index("已有上下文") < provider.context.index("知识库")
 
 
+def test_retriever_sources_captured_for_citation():
+    """命中带 material_id 的片段时，溯源进入 TutorResult.sources 供前端引用条。"""
+    provider = RecordingProvider()
+    retriever = FakeRetriever(
+        [
+            KnowledgeChunk(
+                subject="数学",
+                grade=4,
+                knowledge_point="图形",
+                content="79\n点 A 与 A' 到对称轴的距离相等\n练习二十",
+                source="vector",
+                source_name="四年级下册《数学》",
+                material_id="m-123",
+                chunk_id="c-456",
+            )
+        ]
+    )
+    svc = TutorService(provider, retriever)
+    r = svc.explain(
+        grade=4,
+        subject="数学",
+        knowledge_point="图形",
+        context=None,
+        question="怎样判断轴对称图形",
+    )
+    assert r.blocked is False
+    assert len(r.sources) == 1
+    src = r.sources[0]
+    assert src.material_id == "m-123"
+    assert src.chunk_id == "c-456"
+    assert src.material_name == "四年级下册《数学》"
+    # 溯源 snippet 经过 OCR 噪声清洗（页码/练习X 去掉）
+    assert "79" not in src.snippet
+    assert "练习二十" not in src.snippet
+    assert "对称轴" in src.snippet
+
+
 def test_retriever_no_hit_keeps_context_unchanged():
     provider = RecordingProvider()
     retriever = FakeRetriever([])

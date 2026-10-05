@@ -17,11 +17,11 @@ ADR-0030：``skills`` 为 manifest 声明的 SOP（``skills/*.md``，系统受�
 
 import re
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from app.core.async_bridge import run_async
 from app.domain.provider import EducationLLMProvider
-from app.domain.retriever import KnowledgeRetriever
+from app.domain.retriever import KnowledgeChunk, KnowledgeRetriever
 from app.domain.safety import SAFE_REFUSAL, check_input, check_output
 
 # 知识库原始片段常是 OCR 教材的任意字符窗口，夹带页码 / 练习题号 / 页眉等噪声，
@@ -56,6 +56,27 @@ class TutorResult:
     output_safe: bool
     blocked: bool  # True 表示因安全原因返回兜底（未调用/未采用模型输出）
     reason: str | None = None
+    # 答疑引用落点（前端「参考来源」条）：命中并实际注入 prompt 的资料片段溯源。
+    # 为空表示本次未命中资料库（mock 检索或无相关资料）。
+    sources: list["RAGSource"] = field(default_factory=list)
+
+
+@dataclass
+class RAGSource:
+    """答疑引用落点：一段命中片段来自哪份资料，供前端展示「参考来源」链接。"""
+
+    material_id: str
+    material_name: str
+    chunk_id: str
+    snippet: str  # 实际注入 prompt 的清洗后片段（截断展示）
+
+    def to_dict(self) -> dict:
+        return {
+            "material_id": self.material_id,
+            "material_name": self.material_name,
+            "chunk_id": self.chunk_id,
+            "snippet": self.snippet,
+        }
 
 
 class TutorService:
@@ -82,14 +103,15 @@ class TutorService:
         grade: int,
         knowledge_point: str,
         query: str,
-    ) -> str | None:
-        """知识库检索（T11，故事 24/25）：命中则把知识点内容拼成上下文片段。
+    ) -> tuple[str | None, list[RAGSource]]:
+        """知识库检索（T11，故事 24/25）：命中则把知识点内容拼成上下文片段，
+        并同时返回溯源列表（供前端「参考来源」条）。
 
         注：当前内置自编库为可信内容；接入外部检索源（vector/web）后，外部内容
         视为不可信输入，须先经 check_input 再注入。
         """
         if self.retriever is None:
-            return None
+            return None, []
         chunks = self.retriever.retrieve(
             subject=subject,
             grade=grade,
@@ -97,11 +119,25 @@ class TutorService:
             query=query,
         )
         if not chunks:
-            return None
-        # 清洗 OCR 噪声再注入，避免小模型被页码/题号干扰而忽略正文（ADR-0055 §13）。
-        return "\n".join(
-            f"- {_clean_knowledge_text(c.content)}" for c in chunks if _clean_knowledge_text(c.content)
-        )
+            return None, []
+        kb_lines: list[str] = []
+        sources: list[RAGSource] = []
+        for c in chunks:
+            cleaned = _clean_knowledge_text(c.content)
+            if not cleaned:
+                continue
+            kb_lines.append(f"- {cleaned}")
+            # 仅 vector 检索的片段带 material_id/chunk_id/source_name：据此生成溯源。
+            if c.material_id and c.chunk_id and c.source_name:
+                sources.append(
+                    RAGSource(
+                        material_id=str(c.material_id),
+                        material_name=c.source_name,
+                        chunk_id=str(c.chunk_id),
+                        snippet=cleaned[:160],
+                    )
+                )
+        return ("\n".join(kb_lines) if kb_lines else None), sources
 
     def explain(
         self,
@@ -159,15 +195,13 @@ class TutorService:
             )
 
         # 2) 知识库检索注入：命中则让讲解优先对齐教材口径。
-        effective_context = self._with_knowledge(
-            context,
-            self._retrieve(
-                subject=subject,
-                grade=grade,
-                knowledge_point=knowledge_point,
-                query=question,
-            ),
+        kb_context, sources = self._retrieve(
+            subject=subject,
+            grade=grade,
+            knowledge_point=knowledge_point,
+            query=question,
         )
+        effective_context = self._with_knowledge(context, kb_context)
 
         # 2.5) SOP 注入（ADR-0030）：系统受控资产，放在输入闸门之后，不参与 check_input。
         sop = (skills or "").strip()
@@ -215,6 +249,7 @@ class TutorService:
             output_safe=True,
             blocked=False,
             reason=None,
+            sources=sources,
         )
 
 

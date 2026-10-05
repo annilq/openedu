@@ -172,6 +172,10 @@ class VectorKnowledgeRetriever:
                 content=chunks[i].content,
                 source="vector",
                 source_name=names[i],
+                material_id=str(chunks[i].material_id)
+                if chunks[i].material_id is not None
+                else None,
+                chunk_id=str(chunks[i].id),
             )
             for i in fused
         ]

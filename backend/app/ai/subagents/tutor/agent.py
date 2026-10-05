@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+from agent_core.protocol import data_event
 from agent_core.subagent import BaseSubAgent, SubAgentContext
 from app.ai.subagents.subject_personas import get_subject_persona
 from app.domain.subjects import SUBJECTS
@@ -59,4 +60,11 @@ class TutorSubAgent(BaseSubAgent):
             skills=ctx.skills,
         )
         yield tc.result({"blocked": result.blocked})
+        # 答疑引用条：把命中并注入 prompt 的资料片段溯源作为 DATA 帧下发，
+        # 前端在答案下方渲染「参考来源」。未命中则不下发（避免空条）。
+        if result.sources:
+            yield data_event(
+                [s.to_dict() for s in result.sources],
+                extra={"type": "rag_sources"},
+            )
         yield self._finish(result.answer, blocked=result.blocked)

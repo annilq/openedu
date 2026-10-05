@@ -24,6 +24,10 @@ class KnowledgeChunk:
     source: str  # builtin | web | vector
     # 资料溯源（ADR-0055 §10 快照溯源）：命中片段来自哪份资料；mock 无此概念
     source_name: str | None = None
+    # 引用落点（答疑引用条）：命中片段所属资料 id 与片段 id，供前端展示「参考来源」。
+    # mock / builtin 检索无此概念，留 None；仅 vector 检索会填充。
+    material_id: str | None = None
+    chunk_id: str | None = None
 
 
 class KnowledgeRetriever(ABC):
