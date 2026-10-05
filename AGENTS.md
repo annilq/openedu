@@ -97,4 +97,6 @@ Issues / PRDs 以 GitHub Issues 承载，全部操作经 `gh` CLI。建读列评
 - **平台 runner 未纳入版本控制**：`frontend/.gitignore` 第 20–25 行忽略
   `android / linux / macos / web / windows / ios`，即**平台目录全是本机生成物**。改桌面窗口尺寸、
   原生权限、Info.plist 之类只在本机生效，`flutter create` 重新生成或换机器构建都会回退。
-  要做持久改动必须先决定「纳入版本控制 or 打补丁脚本」。
+  要做持久改动必须先决定「纳入版本控制 or 打补丁脚本」——**已定为打补丁脚本**，脚本在
+`frontend/scripts/`（现有 `patch_macos_network.py`、`patch_voice_permissions.py`），清单与
+触发时机见 [`CONTRIBUTING.md` §平台目录补丁](CONTRIBUTING.md#平台目录补丁目录-frontendscripts)。

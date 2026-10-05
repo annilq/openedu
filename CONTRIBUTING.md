@@ -140,6 +140,28 @@ docker compose up --build       # 启动 PostgreSQL + backend，后端暴露 800
 | 测试 | `flutter test` |
 | 设计系统自检 | 运行 `lib/dev/theme_preview.dart` 页面核对令牌一致性 |
 
+### 平台目录补丁（目录 `frontend/scripts/`）
+
+⚠️ `frontend/.gitignore` 第 20–25 行忽略 `android / linux / macos / web / windows / ios`，
+**平台目录全是本机生成物、不在版本控制里**。凡是必须写进原生层的改动（窗口尺寸、
+Info.plist、entitlements、AndroidManifest），只在改的那台机器上生效——
+`flutter create` 重新生成或换机器构建都会**静默回退**。已定的对策是**打补丁脚本**
+（而非把平台目录纳入版本控制），脚本可反复运行（幂等）。
+
+| 脚本 | 补齐什么 | 什么时候必须跑 |
+|------|----------|----------------|
+| `patch_macos_network.py` | macOS entitlements 的 `network.client` 与 Info.plist 的 `NSAllowsLocalNetworking` | 重新生成 macOS 平台后；App 发不出 HTTP 且后端零日志时先跑它 |
+| `patch_voice_permissions.py` | iOS/macOS 的 `NSMicrophoneUsageDescription` + `NSSpeechRecognitionUsageDescription`、macOS 的 `com.apple.security.device.audio-input`、Android 的 `RECORD_AUDIO` | 重新生成平台目录或换机器后；助手语音输入（ADR-0063）生效前 |
+
+```bash
+python3 frontend/scripts/patch_voice_permissions.py           # 补齐
+python3 frontend/scripts/patch_voice_permissions.py --check    # 只检查不写入，缺则退出码 1
+```
+
+`--check` 是给 CI / 构建前自检用的。原生权限缺失的失效方式是**静默**的——
+界面上看不出任何异常（语音能力门禁会判定 `unsupported`、麦按钮根本不渲染），
+只有 `--check` 能把它变成一条会失败的检查。
+
 ### CI（`.github/workflows/`）
 
 - `ci.yml`：frontend（`flutter analyze` + `flutter test`）→ backend（`ruff check` + `pytest`）。
