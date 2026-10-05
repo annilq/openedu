@@ -90,6 +90,34 @@ void main() {
     });
   });
 
+  group('AssistantCard.fromData · 题卡内联交互讲解（ADR-0061 消费方）', () {
+    test('question 卡携带 scene_spec → 原样可读、判定有内容', () {
+      final question = AssistantCard.fromData(const {
+        'type': 'question',
+        'result': {
+          'subject': '数学',
+          'grade': 4,
+          'qtype': 'choice',
+          'stem': '下面哪个图形是轴对称图形？',
+          'options': ['A', 'B'],
+          'scene_spec': {
+            'kind': 'reflection',
+            'title': '图形的运动（轴对称）',
+            'inputs': [
+              {'key': 'axisAngle', 'value': 90},
+            ],
+          },
+        },
+      })!;
+
+      expect(question.kind, AssistantCardKind.question);
+      // 题卡解析区据此内联渲染交互演示（assistant_question_card.dart）。
+      expect(question.rawPayload['scene_spec'], isA<Map>());
+      expect(question.rawPayload['scene_spec']['kind'], 'reflection');
+      expect(question.hasContent, isTrue);
+    });
+  });
+
   group('AssistantCard.fromData · 容错', () {
     test('data 为 null / result 非对象 → 不产卡（畸形帧）', () {
       expect(AssistantCard.fromData(null), isNull);

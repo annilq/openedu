@@ -4,6 +4,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/utils/question_labels.dart';
 import '../../../../shared/widgets/app_tags.dart';
+import '../../../../shared/widgets/scene_interpreter/scene_interpreter.dart';
 import '../../domain/assistant_card.dart';
 import '../../domain/card_payload.dart';
 import 'assistant_card_header.dart';
@@ -64,6 +65,9 @@ class AssistantQuestionCard extends StatelessWidget {
                 answer: cardStr(raw['answer']),
                 explanation: cardStr(raw['explanation']),
                 reasoning: cardStr(raw['reasoning']),
+                sceneSpec: raw['scene_spec'] is Map
+                    ? Map<String, dynamic>.from(raw['scene_spec'] as Map)
+                    : null,
               ),
             ],
           ),
@@ -87,6 +91,7 @@ class _QuestionBody extends StatelessWidget {
   final String answer;
   final String explanation;
   final String reasoning;
+  final Map<String, dynamic>? sceneSpec;
 
   const _QuestionBody({
     required this.subject,
@@ -98,12 +103,14 @@ class _QuestionBody extends StatelessWidget {
     required this.answer,
     required this.explanation,
     required this.reasoning,
+    this.sceneSpec,
   });
 
   @override
   Widget build(BuildContext context) {
     final scheme = AppTheme.colorsOf(context);
     final text = AppTheme.textOf(context);
+    final hasScene = sceneSpec != null && sceneSpec!['kind'] is String;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -147,6 +154,15 @@ class _QuestionBody extends StatelessWidget {
         if (reasoning.isNotEmpty) ...[
           const SizedBox(height: AppSpacing.sm),
           AssistantReasoningDisclosure(reasoning: reasoning),
+        ],
+        if (hasScene) ...[
+          const SizedBox(height: AppSpacing.md),
+          AppTags.info('交互讲解'),
+          const SizedBox(height: AppSpacing.sm),
+          SceneInterpreter(
+            kind: sceneSpec!['kind'] as String,
+            spec: sceneSpec!,
+          ),
         ],
       ],
     );

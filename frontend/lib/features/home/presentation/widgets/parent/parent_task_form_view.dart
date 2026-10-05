@@ -17,9 +17,12 @@ import '../../../../model_management/presentation/widgets/model_selector.dart';
 import '../../providers/home_notifier.dart';
 import '../../providers/selected_child_provider.dart';
 import '../../providers/task_form_prefill.dart';
+import '../../../domain/repositories/material_repository.dart'
+    show KnowledgePointOption;
 import 'parent_task_interest_section.dart';
 import 'parent_task_preview_section.dart';
 import 'parent_task_spec_row.dart';
+import 'task_spec_row_data.dart';
 import '../../../providers/home_provider.dart';
 
 /// 布置练习任务右栏：多学科行表单 + 一键均分 + 生成（ADR-0004）。
@@ -33,7 +36,8 @@ import '../../../providers/home_provider.dart';
 ///
 /// 三个区块各自成文件（规格行 / 兴趣 / 预览）：本文件只留**表单状态与出口**
 /// （行数据、总题数、模型、生成·确认·放弃）。区块挪走后本文件才装得下 ADR-0058
-/// 的 400 行——挪之前是 810 行，其中 250 行是三个区块的排版。
+/// 的 400 行——挪之前是 810 行，其中 250 行是三个区块的排版。行的数据与视图分别
+/// 在 `task_spec_row_data.dart` / `parent_task_spec_row.dart`。
 class ParentTaskFormView extends ConsumerStatefulWidget {
   const ParentTaskFormView({super.key});
 
@@ -41,58 +45,8 @@ class ParentTaskFormView extends ConsumerStatefulWidget {
   ConsumerState<ParentTaskFormView> createState() => _ParentTaskFormViewState();
 }
 
-/// 一行学科规格（学科 + 知识点 + 题型 + 题量 + 年级）。
-///
-/// 持有两个 [TextEditingController]，所以**生命周期必须归表单**：行的编辑器
-/// （[TaskSpecRowEditor]）是纯展示的，行本身跟着表单一起 dispose。
-class _SpecRow {
-  String subject;
-  final TextEditingController knowledgePoint;
-  final TextEditingController count;
-
-  /// 默认题型 = 学科白名单首项（ADR-0055 §12）：数学 calc / 语文 fill / 英语 choice。
-  String qtype = defaultQtypeFor('数学');
-
-  // null = 继承当前选中娃娃的年级；非 null = 家长手动覆盖。
-  int? grade;
-
-  _SpecRow({
-    String? subject,
-    String? knowledgePoint,
-    String? count,
-  })  : subject = subject ?? '数学',
-        knowledgePoint =
-            TextEditingController(text: knowledgePoint ?? '两位数加减法'),
-        count = TextEditingController(text: count ?? '5') {
-    qtype = defaultQtypeFor(this.subject);
-  }
-
-  /// 切学科时题型随白名单联动：当前题型不在新学科白名单里就落回默认
-  /// （语文/英语没有计算题，不能把上一行的 calc 留下来）。
-  void onSubjectChanged(String next) {
-    subject = next;
-    if (!qtypesForSubject(next).contains(qtype)) {
-      qtype = defaultQtypeFor(next);
-    }
-  }
-
-  void dispose() {
-    knowledgePoint.dispose();
-    count.dispose();
-  }
-
-  TaskSpecModel toSpec(int defaultGrade) => TaskSpecModel(
-        subject: subject,
-        // 未手动指定时继承当前选中娃娃年级；娃娃年级维持家长手动维护（ADR-0005 修订）。
-        grade: grade ?? defaultGrade,
-        knowledgePoint: knowledgePoint.text,
-        qtype: qtype,
-        count: int.tryParse(count.text) ?? 1,
-      );
-}
-
 class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
-  final List<_SpecRow> _rows = [_SpecRow()];
+  final List<TaskSpecRow> _rows = [TaskSpecRow()];
   final _totalCtrl = TextEditingController(text: '10');
   final _titleCtrl = TextEditingController(text: '今日练习');
 
@@ -156,7 +110,7 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
     super.dispose();
   }
 
-  void _addRow() => setState(() => _rows.add(_SpecRow(
+  void _addRow() => setState(() => _rows.add(TaskSpecRow(
         subject: '语文',
         knowledgePoint: '字词积累',
       )));
@@ -277,8 +231,8 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
 
   /// 学科规格行。年级的兜底（未指定 → 继承娃娃年级 → 2）在此解析好再传给编辑器：
   /// 编辑器是纯展示的，不该为了取兜底值去认识 `selectedChildProvider`。
-  /// 知识点目录按 (学科, 年级) 联动加载（ADR-0055 §4），加载失败按空目录兜底——
-  /// 选项里仍保留当前文本，家长不至于被一次网络抖动卡死在表单上。
+  /// 知识点目录按 (学科, 年级, 学期) 联动加载（ADR-0055 §4 / ADR-0061），加载失败
+  /// 按空目录兜底——选项里仍保留当前文本，家长不至于被一次网络抖动卡死在表单上。
   List<Widget> _buildSpecRows() {
     final selected = ref.watch(selectedChildProvider);
     return [
@@ -292,21 +246,28 @@ class _ParentTaskFormViewState extends ConsumerState<ParentTaskFormView> {
           count: _rows[i].count,
           grade: _rows[i].grade ?? selected?.grade ?? 2,
           onGradeChanged: (v) => setState(() => _rows[i].grade = v),
+          semester: _rows[i].semester,
+          onSemesterChanged: (v) => setState(() => _rows[i].semester = v),
           removable: _rows.length > 1,
           index: i,
           onRemove: () => _removeRow(i),
-          extraKnowledgePoints: _knowledgePointNames(
+          knowledgePointOptions: _knowledgePointOptions(
             _rows[i].subject,
             _rows[i].grade ?? selected?.grade ?? 2,
+            _rows[i].semester,
           ),
         ),
     ];
   }
 
-  /// 某行 (学科, 年级) 的知识点目录名列表；未加载 / 失败返回 null（编辑器按空处理）。
-  List<String>? _knowledgePointNames(String subject, int grade) {
-    final async = ref.watch(knowledgePointsProvider((subject, grade)));
-    return async.valueOrNull?.map((e) => e.name).toList();
+  /// 某行 (学科, 年级, 学期) 的知识点目录；未加载 / 失败返回 null（编辑器按空处理）。
+  List<KnowledgePointOption>? _knowledgePointOptions(
+    String subject,
+    int grade,
+    String semester,
+  ) {
+    final async = ref.watch(knowledgePointsProvider((subject, grade, semester)));
+    return async.valueOrNull;
   }
 
   Widget _buildInterestSection() {

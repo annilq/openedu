@@ -6,6 +6,7 @@ import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/presentation/paging.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_card_list.dart';
+import '../../../../shared/widgets/scene_interpreter/scene_interpreter.dart';
 import '../../../../shared/widgets/app_error.dart';
 import '../../../../shared/widgets/app_loading.dart';
 import '../../../../shared/widgets/app_motion.dart';
@@ -273,6 +274,16 @@ class _WrongQuestionCard extends StatelessWidget {
                         ],
                       ),
                     ),
+                    if (item.sceneSpec != null &&
+                        item.sceneSpec!['kind'] is String) ...[
+                      const SizedBox(height: AppSpacing.md),
+                      AppTags.info('交互讲解'),
+                      const SizedBox(height: AppSpacing.sm),
+                      SceneInterpreter(
+                        kind: item.sceneSpec!['kind'] as String,
+                        spec: item.sceneSpec!,
+                      ),
+                    ],
                   ],
                 ),
               ),
