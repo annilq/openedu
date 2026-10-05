@@ -61,10 +61,15 @@ class DeleteQuestionsReq(SQLModel):
 
 
 class DeleteQuestionsResult(SQLModel):
-    """批量删除结果：被任务引用的题不删，分组返回。"""
+    """批量硬删结果：全量级联删除，分组返回。
+
+    - ``deleted``：成功删除的题库题 id；
+    - ``deleted_tasks``：因失去全部题目而被连带删除的任务 id；
+    - ``skipped_forbidden``：不存在 / 非本家长所有、未删除的 id。
+    """
 
     deleted: list[UUID] = []
-    skipped_in_use: list[UUID] = []  # 已被任务引用，跳过
+    deleted_tasks: list[UUID] = []  # 因变空而被连带删除的任务
     skipped_forbidden: list[UUID] = []  # 不存在 / 非本家长所有，跳过
 
 

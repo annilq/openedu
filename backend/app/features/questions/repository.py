@@ -3,12 +3,21 @@
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import delete, update
 from sqlmodel import Session, func, select
 
 from app.core.errors import ErrCode
 from app.core.guard import require_owned
 from app.core.pagination import apply_keyset, count_of, order_by_keyset
-from app.db.models import Question, Task, TaskQuestion
+from app.db.models import (
+    AnswerRecord,
+    Checkin,
+    Conversation,
+    Question,
+    Task,
+    TaskQuestion,
+    WrongQuestion,
+)
 
 
 def list_bank_questions(
@@ -95,10 +104,20 @@ def delete_bank_questions(
     parent_id: uuid.UUID,
     question_ids: list[uuid.UUID],
 ) -> dict[str, list[uuid.UUID]]:
-    """批量删除题库题；被任务引用（TaskQuestion.question_id 存在）的不删。
+    """批量硬删题库题，并全量级联清理所有引用它的数据。
 
-    返回 {deleted, skipped_in_use, skipped_forbidden} 三组 id，便于前端汇总提示。
-    owner 隔离：只处理本家长拥有的题；其余归为 skipped_forbidden。
+    级联范围（owner 隔离，只处理本家长拥有的题）：
+    - ``TaskQuestion``：删除所有任务里指向该题的快照副本（即「任务中关联的题目」）；
+    - ``AnswerRecord`` / ``WrongQuestion``：删除该题的学生作答与错题记录
+      （二者 ``question_id`` 为非空外键，不清理会产生悬空 / 外键冲突）；
+    - 若某任务因此失去全部题目（``TaskQuestion`` 数为 0），连该任务一并删除
+      （含其 ``Checkin``，并将 ``Conversation.ref_task_id`` 置空）。
+
+    不存在 / 非本家长所有的题归为 ``skipped_forbidden``，不删。
+
+    与归档（``set_bank_questions_archived``）的分工：归档是可逆的「先收起来」
+    （被引用也能归档、随时恢复）；删除是「彻底不要了」，所以才需要级联清掉
+    引用它的副本与记录，否则会破坏外键完整性。
     """
     # 本家长拥有的题（owner 隔离）
     owned = {
@@ -109,33 +128,58 @@ def delete_bank_questions(
             )
         ).all()
     }
-    # 被任意 TaskQuestion 引用的 question_id 集合（question_id 为 None 的草稿题不算引用）
-    referenced: set[uuid.UUID] = set()
-    if question_ids:
-        rows = session.exec(
-            select(TaskQuestion.question_id).where(
-                TaskQuestion.question_id.in_(question_ids)
-            )
-        ).all()
-        referenced = {r for r in rows if r is not None}
 
     deleted: list[uuid.UUID] = []
-    skipped_in_use: list[uuid.UUID] = []
     skipped_forbidden: list[uuid.UUID] = []
+    affected_task_ids: set[uuid.UUID] = set()
+
     for qid in question_ids:
         q = owned.get(qid)
         if q is None:
             skipped_forbidden.append(qid)
             continue
-        if qid in referenced:
-            skipped_in_use.append(qid)
-            continue
+        # 1) 级联删除该题的作答 / 错题记录（question_id 非空外键）。
+        session.exec(
+            delete(AnswerRecord).where(AnswerRecord.question_id == qid)
+        )
+        session.exec(
+            delete(WrongQuestion).where(WrongQuestion.question_id == qid)
+        )
+        # 2) 找出并删除所有任务里指向该题的快照副本，记录受影响的任务。
+        tq_rows = session.exec(
+            select(TaskQuestion).where(TaskQuestion.question_id == qid)
+        ).all()
+        for tq in tq_rows:
+            affected_task_ids.add(tq.task_id)
+        session.exec(
+            delete(TaskQuestion).where(TaskQuestion.question_id == qid)
+        )
+        # 3) 删除题库题本身。
         session.delete(q)
         deleted.append(qid)
+
+    # 4) 受影响的任务若已无任何题目，连任务一并删除（含 Checkin，并置空引用它的会话）。
+    deleted_tasks: list[uuid.UUID] = []
+    if affected_task_ids:
+        for tid in affected_task_ids:
+            remaining = session.exec(
+                select(TaskQuestion).where(TaskQuestion.task_id == tid)
+            ).first()
+            if remaining is None:
+                deleted_tasks.append(tid)
+        for tid in deleted_tasks:
+            session.exec(delete(Checkin).where(Checkin.task_id == tid))
+            session.exec(
+                update(Conversation)
+                .where(Conversation.ref_task_id == tid)
+                .values(ref_task_id=None)
+            )
+            session.exec(delete(Task).where(Task.id == tid))
+
     session.commit()
     return {
         "deleted": deleted,
-        "skipped_in_use": skipped_in_use,
+        "deleted_tasks": deleted_tasks,
         "skipped_forbidden": skipped_forbidden,
     }
 

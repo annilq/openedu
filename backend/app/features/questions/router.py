@@ -1,8 +1,9 @@
 """题库复用闭环：题库浏览、删除与引用反查（家长作用域）。
 
 - GET /questions：按 parent 作用域过滤分页浏览题库，含每题复用度 usage_count。
-- DELETE /questions：批量删除题库题；被任务引用（TaskQuestion.question_id 存在）的题不删，
-  返回 deleted / skipped_in_use / skipped_forbidden 三组 id。
+- DELETE /questions：批量硬删题库题，并全量级联清理引用它的数据（任务里的题目副本、
+  AnswerRecord、WrongQuestion；任务因此变空则连任务一并删）。返回
+  deleted / deleted_tasks / skipped_forbidden 三组 id。
 - GET /questions/{question_id}/usages：反查某题被哪些任务引用（闭环「用过 N 次 → 在哪里用」）。
 - 写/组卷入口在 tasks.py（POST /tasks/from-bank、POST /tasks/{task_id}/questions/from-bank）。
 """
@@ -108,9 +109,11 @@ def delete_questions(
     parent: CurrentParent,
     body: DeleteQuestionsReq,
 ) -> DeleteQuestionsResult:
-    """批量删除题库题：被任务引用（TaskQuestion.question_id 存在）的题不删。
+    """批量硬删题库题，并全量级联清理引用它的数据。
 
-    返回 deleted / skipped_in_use / skipped_forbidden 三组 id。
+    被任务引用的题不再「跳过」，而是连任务里的题目副本（TaskQuestion）、作答记录
+    （AnswerRecord）、错题（WrongQuestion）一起删；若任务因此失去全部题目则连任务
+    一并删。返回 deleted / deleted_tasks / skipped_forbidden 三组 id。
     """
     result = delete_bank_questions(
         session=session, parent_id=parent.id, question_ids=body.ids

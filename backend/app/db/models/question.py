@@ -48,9 +48,10 @@ class Question(SQLModel, table=True):
     )
     # 显式归档（ADR-0053 P2）：None = 在用。
     #
-    # 为什么不是「删除」：被任务引用的题删不掉，家长于是「不敢删、只能堆着」——
-    # 题库只增不减的根因就是这个心理。归档必须可恢复，所以它只是一个可空时间戳，
-    # 而不是布尔 + 不可逆删除。
+    # 归档与硬删的分工：硬删（DELETE /questions）现在会全量级联清掉引用本题的
+    # 任务副本 / 作答 / 错题，并连带删变空的任务——所以「被任务引用就删不掉」已不成立；
+    # 归档保留下来是作为「可恢复地先收起来」的路径（被引用也能归档、随时能恢复），
+    # 它只是一个可空时间戳，而不是布尔 + 不可逆删除。
     archived_at: datetime | None = Field(
         default=None,
         sa_type=DateTime(timezone=True),  # type: ignore
