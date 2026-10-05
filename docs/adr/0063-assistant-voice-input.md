@@ -101,6 +101,16 @@ R4 棘轮（presentation 不得 import `*/data/`）不受影响：`presentation/
 
 **入口范围收敛为助手输入框**，不铺到题库搜索 / 筛选：每多一处都要处理「门禁不可用时布局不跳」，收益不抵成本。
 
+**已落地（2026-10-06）**：三个文件已建，Provider 为 `shared/domain/providers/voice_input_provider.dart`
+的 `voiceInputProvider`（组合根，照 `core_providers.dart` 的先例：provider 可以 import `data/`，
+`presentation/` 不行）。两个实测事实写在这里以免后人重踩：
+
+- ⚠️ `speech_to_text` 主文件**只 import 不 export** `speech_recognition_result.dart` /
+  `speech_recognition_error.dart`，用这两个类型必须**显式再 import 一次**。
+- ⚠️ Linux 上 `initialize()` 是**抛 `MissingPluginException`**，不是返回 false——
+  所以网关必须 `catch`，否则门禁判不出来，会在 Linux 上渲染出必然失败的按钮。
+  （也因此无需 `dart:io`，Web 构建不受影响。）
+
 ### 9. 文件规模：必须新开文件，不得长进 `assistant_chat_page.dart`
 
 `assistant_chat_page.dart` 现 **557 行**，已登记在 `test/file_size_guard_test.dart` 的 `_baseline` 里（ADR-0058 棘轮，**只许下调**）。语音状态管理直接塞进去会推高该行——**违反棘轮**。
@@ -149,10 +159,13 @@ CI 也构建不出来。
 
 ## 影响
 
-- **新增依赖**：`speech_to_text: ^7.4.0`（唯一新增运行时依赖）。ADR-0044 曾因 `flutter_animate` 只经 shadcn_ui 传递引入而显式声明，本条同理：插件必须在 `pubspec.yaml` 显式声明。
+- **新增依赖**：`speech_to_text: ^7.4.0`（唯一新增运行时依赖，**实际解析为 7.5.0**）。ADR-0044 曾因 `flutter_animate` 只经 shadcn_ui 传递引入而显式声明，本条同理：插件必须在 `pubspec.yaml` 显式声明。
 - **后端**：零改动。
 - **协议**：零改动（`POST /api/v1/assistant/chat` 不变，无新 kind、无新 action target）。
-- **测试**：`shared/data/local/platform_speech_gateway.dart` 用端口 fake 覆盖门禁三态；`assistant_input_bar` 覆盖「落草稿不自动发送」「重说清空」「转写为空不动输入框」三条契约。
+- **测试**：`test/voice_input_gate_test.dart` 覆盖门禁三态 + 缓存 + 静默阈值透传（7 用例，已全绿）。
+  `SpeechToText()` 是**返回单例的 factory**，无法靠继承造假，所以用 mocktail；本仓既有写法是
+  `any(named: 'x')`（**不是** `anyNamed('x')`，那是 mockito 的写法，mocktail 没有导出）。
+  后续 `assistant_input_bar` 还要覆盖「落草稿不自动发送」「重说清空」「转写为空不动输入框」三条契约。
 
 ## 待定
 

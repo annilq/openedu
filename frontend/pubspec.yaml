@@ -23,6 +23,10 @@ dependencies:
   printing: ^5.15.0
   pdfx: ^2.11.0
   file_picker: ^13.1.0
+  # 语音输入（ADR-0063）：平台原生 STT。显式声明而非依赖传递引入。
+  # ⚠️ 该插件不支持 Linux，Web 实现走 Google 云端（国内不可达）——两端由能力门禁
+  # （VoiceAvailability.unsupported）挡掉，不渲染麦按钮。
+  speech_to_text: ^7.4.0
 
 dev_dependencies:
   flutter_test:
