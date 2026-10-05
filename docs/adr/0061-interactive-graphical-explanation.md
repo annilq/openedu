@@ -246,6 +246,25 @@ SceneSpec 只描述「画什么」，不写 Flutter 代码。核心字段：
   - `bar_chart` 等其余 kind（§E.1）。
   - 公式渲染（§10，首版字面串占位）。
 
+### I. 消费方接线（2026-10-04 落地）
+
+任务 ③ 的首个切片已打通**读路径解析**形态（ADR-0061 §C 的 (b) 错题本 + (c1) 题卡内联）：
+
+- **融合内核**：`app/features/materials/scene_fusion.py`
+  - `fuse_scene_spec(kp_scenes, overrides)`：纯函数，取知识点模板首条、深拷贝、用题面输入覆盖同名 `inputs[].value`（无 overrides 即原样拷贝）；缺模板 / 畸形一律 `None`。
+  - `resolve_scene_spec_for_question(session, parent_id, subject, grade, knowledge_point, cache)`：按 `(parent_id, subject, grade, name)` 查家长私有知识点（**忽略 semester**——`Question` 不携带学期维度，与绝大多数知识点默认 `semester=''` 一致），命中取最新一条；带 `cache` 避免一页错题对同一知识点反复查库。
+- **后端错题本响应**：`WrongQuestionResp` 加 `scene_spec` 字段；`tasks/service.py#wrong_question_to_resp` 解析并附上（三处调用点同步：`list_wrong_questions` / `list_wrong_questions_page` / `rejoin`）；`WrongQuestionListResp` 透传。
+- **前端**：`WrongQuestionModel` / `QuestionModel` / `QuestionPreview` 加 `sceneSpec`（fromJson/toJson）；`wrong_questions_screen._WrongQuestionCard` 与 `assistant_question_card._QuestionBody` 在 `sceneSpec` 存在时内联 `SceneInterpreter`（带「交互讲解」标签，无场景时维持原纯文本行为，零回归）。
+- **验证**：后端 `tests/features/materials/test_scene_fusion.py`（6/6，纯函数 + stub session 缓存/命中/缺失三态）；前端 `test/assistant_card_test.dart`（题卡携带 scene_spec 解析断言）；`ruff` 全清、`flutter analyze lib` 零 issue、改动涉及的 `test_pagination` / `test_archive` 16/16 全过。
+
+**形态决策（MVP，待确认）**：本轮采用**读路径按知识点解析场景**，而非 ADR-0061 决策 2/3 原规划的「出题时融合写 `Question.scene_spec` 快照」。理由：零表结构改动（`Question.scene_spec` 列虽已建但本轮未写）、对历史题即时生效、不依赖重建题。代价：知识点模板改动会即时反映到所有历史错题（非快照语义）。若需严格快照语义，后续可加写出题时持久化。
+
+**仍待做（下一切片）**
+- (c2) 伴学讲解经 `DATA` 帧下发 `interactive_scene` 卡（决策 7 的生产者）：tutor 讲解当前题时若 `scene_spec` 命中，经 `data_event(card.payload, extra={"type": INTERACTIVE_SCENE_KIND})` 下发；后端 `render.py#_KIND` + 前端分派已就绪（任务 ②），只差生产者接线。
+- 出题融合写 `Question.scene_spec`（ADR-0061 决策 2/3 原规划）：在 `_gen_for_swap` / `create_from_generated` 落库缝注入；与读路径可并存（写优先、读兜底）。
+- `bar_chart` 等其余 kind（§E.1）。
+- 教师端「按学期维护知识点讲解模板」的 UI 收口（后端 `KnowledgePoint.semester` 唯一约束与场景解析已就绪，教师调参弹窗暂未显式暴露学期维度，默认落整学年）。
+
 ### H. 助手卡 `interactive_scene` 接入（2026-10-04 落地）
 
 ADR-0061 决策 7 的后端 DATA 帧 + 前端渲染分派已打通（任务 ②）。本次只做**卡片协议层**接入；真正「从讲解 / 题目解析下发 SceneSpec」的生产者（伴学 c2 路径）仍属 §C 三处消费方接线（任务 ③）。
@@ -261,3 +280,33 @@ ADR-0061 决策 7 的后端 DATA 帧 + 前端渲染分派已打通（任务 ②�
   - `ai/subagents/query/render.py`：增 `INTERACTIVE_SCENE_KIND` 常量（`render_scene_card` 与之同义，双登记）+ `render_scene_card(spec)` 构建器（畸形 spec 不崩、空 payload 降级）；导出入 `__all__`。
   - 生产者约定：讲解 / 题目解析侧拿到 `scene_spec` 后 `data_event(card.payload, extra={"type": INTERACTIVE_SCENE_KIND})`，前端 `fromData` 把 `result` 原样放入 `rawPayload`。
   - 验证：`tests/ai/test_assistant_card.py` 增常量对齐 / 包裹 / 拷贝隔离 / 畸形 spec 四组。
+
+### I. 发布任务对接资料库：学期维度打通（2026-10-05 落地）
+
+让「发布任务」表单里的学科 / 年级 / 知识点与资料库目录联动，并加**学期**选项，使任务里的题与知识点关联，讲解时能按知识点预设的交互场景演示。
+
+- **学期贯通全链路**（`''` = 不限 / 整学年；`'上学期'` / `'下学期'`，与后端 `KnowledgePoint.semester` 同源）：
+  - 存储：`Question.semester` + `TaskQuestion.semester` 两列（启动期幂等 ALTER，SQLite PRAGMA / Postgres `IF NOT EXISTS` 双分支；已对真实 `app.db` 验证）。`TaskQuestion` 也带学期是因`promote_task_question` 把TaskQuestion 字段拷贝进题库 `Question`。
+  - 出题链路：`GeneratedQuestion` / `QuestionOut` / `QuestionSpec` / `TaskSpec` 全加 `semester`；`expand_specs`（dict + 对象两路）逐项保留；`build_question_prompts` 同时把学期写进 `QuestionSpec`（供装配回填）与 prompt 语境（`(上/下)学期`，未指定时说「整学年」）；`stream_question` / `SchemaQuestionParser` 把学期回填到题卡。
+  - 落库：`_question_fields` 白名单加 `semester`（覆盖 `_question_from_payload` / `_task_question_from_payload`）；`from-generated` 直建 `TaskQuestion` 与 `promote_task_question` 均写入；`_gen_for_swap`（单题重生成）沿用 `tq.semester`。
+  - 场景解析：`resolve_scene_spec_for_question` 改**学期感知**——优先精确命中 `(subject, grade, name, semester)`，否则回落 `semester=''` 整学年模板；`cache` 键含学期。
+- **前端**：
+  - `knowledgePointsProvider` family 键 `(String, int)` → `(String, int, String)`（学期进 key，同学期只取同学期目录）。
+  - `TaskSpecRowEditor` 拆**两行**布局（学科/知识点/题型 + 题数/年级/学期/删除）并加学期 `AppPickerField`——一行塞 7 个字段在紧凑档（<700）每格仅 ~45px、选项文字被截断。新增 `kTaskSemesters` / `kTaskSemesterLabels`（`''` → 「不限学期」）。
+  - `TaskSpecModel` / `QuestionModel` / `QuestionPreview` 加 `semester`（fromJson / toJson）→ 学期随流式题卡回传 `/tasks/from-generated` 落库。
+- **顺带修复**：`materials/service.py#update_knowledge_point_scenes` 内联比较 `parent_id` 违反分层不变量 9（`tests/ai/test_layering_invariants.py`）——改用 `core.guard.require_owned`。此为更早「存储 DDL + 教师调参 UI」轮次引入、当时未跑该守卫的既存欠账。
+- **验证**：迁移已对真实 `app.db` 跑通（两列均在）；`ruff check app` 全清；`flutter analyze lib` 零 issue；后端 `test_question_semester.py`（5/5：规格展开 / prompt spec+语境 / 流式回填）+ `test_scene_fusion.py` 增学期四组（精确命中 / 回落整学年 / 无学期单查 / 缓存键含学期）共 15/15；前端 `test/task_semester_test.dart` 6/6。**全量pytest 3 个 vectorize/retrieval 用例失败为既存测试顺序污染**（干净树同样失败、单跑通过），非本次引入。
+
+### J. 布置任务排列调整 + 知识点按学期联动修复（2026-10-05）
+
+用户报障：「4年级上学期数学资料库有 12 个知识点，但布置练习任务里知识点不随学期切换」。两处改动：
+
+- **排列改为填写顺序**：`年级 → 学期 → 学科` 三个范围项在第一行，`知识点 → 题型 → 题数` 在第二行。理由：前两者决定知识点的可选集，先摆它们家长才「先定位范围、再挑知识点」；知识点紧跟其后，中间不插别的控件。仍用**两行**（非一行）——6 字段挤紧凑档（<700）每格仅 ~60px、选项文字被截断。
+- **根因修复：不限学期原本是「精确匹配空串」**。`repo.list_knowledge_points` 对 `semester=''` 也做 `== ''` 匹配，而资料涌现的知识点几乎都带「上/下学期」——于是表单默认态永远只拿到 6 个泛化骨架兜底，家长看到的就是「不随学期切换」。改为：
+  - `semester=''`（不限）→ 返回该 (学科, 年级) 下**所有**学期的知识点（并集，按学期排序）；
+  - `semester='上/下学期'` → 精确匹配该学期。
+  - 实测 4年级数学：不限 29（15 上 + 14 下）、上学期 15、下学期 14。
+  - `KnowledgePointResp` 加 `semester` 字段随行下发，前端在**不限学期**的跨学期并集里给非当前学期项加「（X学期）」后缀标注，限定学期时不加（无噪声）。
+- **顺带的分层修复**（ADR R4 棘轮，`_knownR4` 自 2026-09-15 起为空、不得回退）：为拿 `KnowledgePointOption.semester`，presentation 一度 import `data/repositories/material_repository_impl.dart` → 把**接口 + 选项模型**移到 `domain/repositories/material_repository.dart`，`data/` 只留 `MaterialRepositoryImpl`。
+- **顺带的文件拆分**（ADR-0058）：`parent_task_form_view.dart` 因加学期涨到 410 行、触发 400 行守卫 → 把持两个 `TextEditingController` 的 `_SpecRow` 提成 `task_spec_row_data.dart` 的 `TaskSpecRow`（与纯展示的 `TaskSpecRowEditor` 构成数据/视图一对），表单回到 355 行。
+- 验证：`test_materials.py::TestKnowledgePoints::test_semester_scope_union_vs_exact` 钉住并集/精确两态 + 响应带 semester；`ruff check app tests` 仅余 1 处既存未用 import（`tests/domain/test_subject_qtypes.py`，非本次引入）；前端 `flutter analyze lib` 零 issue、**全量 277 例全过**（含 `file_size_guard_test` 与 `feature_boundaries_test` R4 棘轮）。

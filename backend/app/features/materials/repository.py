@@ -139,16 +139,23 @@ def list_knowledge_points(
     grade: int,
     semester: str = "",
 ) -> list[KnowledgePoint]:
-    stmt = (
-        select(KnowledgePoint)
-        .where(
-            KnowledgePoint.parent_id == parent_id,
-            KnowledgePoint.subject == subject,
-            KnowledgePoint.grade == grade,
-            KnowledgePoint.semester == semester,
-        )
-        .order_by(KnowledgePoint.created_at)
+    """某学科某年级的知识点目录。
+
+    学期语义（ADR-0061 发布任务对接资料库）：
+    - ``semester=''`` = **不限学期** → 返回该 (学科, 年级) 下**所有**学期的知识点。
+      早期实现按 ``semester == ''`` 精确匹配，而资料涌现出的知识点几乎都带
+      「上/下学期」，于是「不限学期」永远返回空——布置任务表单默认态看不到任何
+      真实知识点、只剩骨架兜底，看起来就像「知识点不随学期切换」。
+    - ``semester='上/下学期'`` → 精确匹配该学期（家长明确限定了学期就该只看它）。
+    """
+    stmt = select(KnowledgePoint).where(
+        KnowledgePoint.parent_id == parent_id,
+        KnowledgePoint.subject == subject,
+        KnowledgePoint.grade == grade,
     )
+    if semester:
+        stmt = stmt.where(KnowledgePoint.semester == semester)
+    stmt = stmt.order_by(KnowledgePoint.semester, KnowledgePoint.created_at)
     return list(session.exec(stmt).all())
 
 

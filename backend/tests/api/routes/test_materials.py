@@ -259,6 +259,54 @@ class TestKnowledgePoints:
         )
         assert len(r2.json()["items"]) == len(items)
 
+    def test_semester_scope_union_vs_exact(self, client, ptoken, upload_root):
+        """学期维度（ADR-0061）：不限学期 = 并集；限定学期 = 精确匹配。
+
+        回归背景：早期实现对 ``semester=''`` 也做精确匹配，而资料涌现的知识点几乎
+        都带「上/下学期」——于是布置任务表单默认态（不限学期）永远只拿到骨架兜底，
+        家长看到的就是「知识点不随学期切换」。这里钉住两态语义。
+        """
+        # 确认三个同学科同学年级、不同学期的知识点落库。
+        for semester, name in (
+            ("上学期", "上册专属点"),
+            ("下学期", "下册专属点"),
+        ):
+            r = client.post(
+                "/api/v1/materials/knowledge-points/confirm",
+                headers=auth_headers(ptoken),
+                json={
+                    "names": [name],
+                    "subject": "数学",
+                    "grade": 4,
+                    "semester": semester,
+                },
+            )
+            assert r.status_code == 200, r.text
+
+        def _names(semester: str | None) -> list[str]:
+            url = "/api/v1/materials/knowledge-points?subject=数学&grade=4"
+            if semester is not None:
+                url += f"&semester={semester}"
+            r = client.get(url, headers=auth_headers(ptoken))
+            assert r.status_code == 200, r.text
+            return [i["name"] for i in r.json()["items"] if i["id"] is not None]
+
+        # 精确学期：只含该学期，且响应带semester 供前端标注。
+        assert _names("上学期") == ["上册专属点"]
+        assert _names("下学期") == ["下册专属点"]
+        # 不限学期（连字符都不传，等价 ''）：并集两个学期。
+        assert set(_names(None)) == {"上册专属点", "下册专属点"}
+        assert set(_names("")) == {"上册专属点", "下册专属点"}
+
+        # 响应带semester 字段（前端据此给跨学期并集加后缀标注）。
+        r = client.get(
+            "/api/v1/materials/knowledge-points?subject=数学&grade=4",
+            headers=auth_headers(ptoken),
+        )
+        by_name = {i["name"]: i.get("semester") for i in r.json()["items"]}
+        assert by_name["上册专属点"] == "上学期"
+        assert by_name["下册专属点"] == "下学期"
+
 
 # ── B3：向量化状态机 ────────────────────────────────────────────────────
 
@@ -418,7 +466,7 @@ class TestVectorRetrieval:
         """版本戳双保险：embed_model 与当前配置不符的 chunk 不参与检索（stale 语义）。"""
         from sqlmodel import select
 
-        from app.db.models import User, MaterialChunk
+        from app.db.models import MaterialChunk, User
         from app.features.materials import repository as repo
         from app.features.materials.retrieval import VectorKnowledgeRetriever
 

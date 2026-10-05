@@ -111,6 +111,10 @@ class KnowledgePointResp(SQLModel):
     source: str = "skeleton"
     # 默认交互式讲解模板（ADR-0061）：[{kind, inputs, controls, ...}]；null = 暂未配置。
     scenes: list[dict] | None = None
+    # 所属学期（ADR-0061 发布任务对接资料库）：'' = 整学年；'上学期' / '下学期'。
+    # 「不限学期」查询会并集多个学期，前端据此给知识点加学期后缀标注，
+    # 避免家长在跨学期并集里看到同名却不知属于哪个学期。
+    semester: str = ""
 
 
 class KnowledgePointScenesUpdate(SQLModel):

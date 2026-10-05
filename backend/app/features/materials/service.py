@@ -19,6 +19,7 @@ from agent_core.ports import StructuredDone
 from app.core.ai_plumbing import build_ai_provider
 from app.core.config import settings
 from app.core.errors import AppErrorException, ErrCode
+from app.core.guard import require_owned
 from app.db.models import KnowledgePoint, Material, MaterialFolder
 from app.db.models.material import INDEX_STATE_READY, INDEX_STATE_STALE
 from app.domain.safety import check_input
@@ -477,7 +478,12 @@ def list_knowledge_points(
     known = {r.name for r in rows}
     items = [
         KnowledgePointResp(
-            id=r.id, name=r.name, status=r.status, source=r.source, scenes=r.scenes
+            id=r.id,
+            name=r.name,
+            status=r.status,
+            source=r.source,
+            scenes=r.scenes,
+            semester=r.semester,
         )
         for r in rows
     ]
@@ -503,11 +509,17 @@ def update_knowledge_point_scenes(
 ) -> KnowledgePoint:
     """教师为知识点编写 / 覆盖默认交互讲解模板（ADR-0061）。
 
-    owner 隔离：``kp_id`` 必须属于当前家长，否则视作不存在。空数组 = 清空模板。
+    owner 隔离：``kp_id`` 必须属于当前家长，否则视作不存在（``require_owned``）。
+    空数组 = 清空模板。
     """
-    kp = session.get(KnowledgePoint, kp_id)
-    if kp is None or kp.parent_id != parent_id:
-        raise AppErrorException(ErrCode.NOT_FOUND, "知识点不存在")
+    kp = require_owned(
+        session=session,
+        owner_id=parent_id,
+        model=KnowledgePoint,
+        obj_id=kp_id,
+        code=ErrCode.NOT_FOUND,
+        message="知识点不存在",
+    )
     kp.scenes = scenes or None
     session.add(kp)
     session.commit()
