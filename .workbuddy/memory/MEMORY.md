@@ -45,6 +45,7 @@
 
 ## 5. Git / 后端 / 长列表
 - ✅ `git push origin main` 可通；⚠️ 常输出 `Everything up-to-date` 但已成功 → 以 `git ls-remote origin main` 比对 HEAD 为准。提交按**逻辑批次**拆、正文写「为什么」；`chore(memory):` 单独提交。
+- ⚠️ **`git commit -- <file>` 会把该文件整个工作区重新暂存再提交**：若想只提交某文件的部分 hunk（hunk 级拆分，避开混入 WIP），必须 `git add -p` 选好 hunk 后**不带 pathspec** `git commit`，否则其余未选 hunk 会被一并提交。实测翻过车：把 ADR-0061 的 `multi`/`scene_spec` WIP 误并进了级联提交，靠 `git reset --soft HEAD~N` + 重排索引修正。
 - **引擎失败归因**：`decrypt()` 解不开只返 `None`（密文永不出门）；`ToolUnsupportedError`(无 FC) vs `ProviderRequestError`（带 `kind` + `user_hint`）落点 `genkit.py#classify_failure`；禁 `except Exception` 把引擎失败抹成「请添加模型」。
 - ⚠️ **`sa_type=JSON` 的可空列必须写 `JSON(none_as_null=True)`**（ADR-0061 §N 实测）：SQLAlchemy 默认把 Python `None` 序列化成**文本 `'null'`** 而非 SQL NULL →「清空字段」写进去的是字符串，`IS NOT NULL` 为真而内容是空，任何非空计数都失真。已修`KnowledgePoint.scenes` / `Question.scene_spec` / `TaskQuestion.scene_spec`；**其余 `sa_type=JSON` 可空列同坑**（options/source_refs/specs），用到时一并处理。
 - 工具 schema strict（ADR-0040）：可省略参数要有缺席编码（`""`/`0`/枚举含 `NO_FILTER="all"`）。助手分流（ADR-0043）：`acc` 只收 TEXT。残留：`deepseek-v4-flash` 多轮 tool loop 退化成 XML → 对策**减跳数**。
