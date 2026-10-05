@@ -1,67 +1,62 @@
 # openedu · 项目长期约定
 
-> 设计语言/令牌/原则：`.impeccable.md` + `docs/adr/0044–0060`；术语 `CONTEXT.md`；入口 `AGENTS.md`（细节在 `docs/agents/{architecture,frontend,ai}.md`）。
-> 本文件只留**实测数字 / 归因 / 操作纪律**。⚠️ 注入上限 ~11.5k 字符，超出不可见：新增前先删等量旧话。
+> 权威设计/令牌/原则在 `.impeccable.md` + `docs/adr/0044–0060` + `docs/agents/*.md`；术语 `CONTEXT.md`；入口 `AGENTS.md`。本文件只留**实测数字/归因/操作纪律**。⚠️ 注入上限 ~11.5k 字符，超出不可见：新增前先删等量旧话。
 
-## 0. 环境 / 命令 / 多会话
-- Flutter SDK `/Users/annilq/Documents/fulttersdk/flutter`（不在 PATH）。`flutter analyze` 退出码常非 0 → 认 `No issues found!`。⚠️ `flutter test` **必先关代理**（`env no_proxy="127.0.0.1,localhost,::1" NO_PROXY=同值`，否则 `Invalid WebSocket upgrade request`），全量 ~16s。
-- ⚠️ 禁跑 `dart format`（本机 tall style 版本不同 → 85/118 文件噪声 diff）；只靠 analyze。
-- ⚠️ 多会话并行改共享文件（`app_theme.dart`/`MEMORY.md`/`AGENTS.md`/`.impeccable.md`）：先 `git status` + 看 mtime，定点 Edit，写完回读（本文件被并发整写覆盖过两次）。
-- ⚠️ `flutter test` 慢先查游离进程：挂死探针占 `build/test_cache` 锁 → 等锁假失败（`ps | grep flutter_tester` → kill）。新增原生插件必须完整重跑 App（Hot Restart 不补原生注册 → pigeon `channel-error`）。
-- ⚠️ 本机 `grep` 是 BSD 版，不支持 BRE 的 `\|` → `grep "a\|b"` **静默返回空**；一律 `grep -E`，且 `grep -c` 得 0 不等于没有（用 Grep 工具复核）。曾误判两次。zsh 下 `--include=*.dart` 要加引号。
-- ⚠️ **新建 ADR 取号前查目录最大号 + `git status docs/adr/` + memory 预留**（撞车三次：0055、0058）。只看 `ls` 会漏掉别人**已建未提交**的文件。
+## 0. 环境/命令/多会话
+- Flutter SDK `/Users/annilq/Documents/fulttersdk/flutter`（不在 PATH）。`flutter analyze` 退出码常非0 → 认 `No issues found!`。⚠️ `flutter test` **必先关代理**（`no_proxy="127.0.0.1,localhost,::1" NO_PROXY=同`，否则 `Invalid WebSocket upgrade request`），全量~16s。
+- ⚠️ 禁 `dart format`（本机 tall style 不同 → 85/118 文件噪声 diff）；只靠 analyze。
+- ⚠️ 多会话并行改共享文件（`app_theme.dart`/`MEMORY.md`/`AGENTS.md`/`.impeccable.md`）：先 `git status`+看 mtime，定点 Edit，写完回读（本文件被并发整写覆盖过两次）。
+- ⚠️ `flutter test` 慢先查游离 `flutter_tester` 进程占 `build/test_cache` 锁 → kill。新增原生插件须完整重跑 App（Hot Restart 不补原生注册 → pigeon `channel-error`）。
+- ⚠️ 本机 `grep` 是 BSD 版，不支持 `a\|b` → 用 `grep -E`；`grep -c` 得0不等于没有，用 Grep 工具复核。
+- ⚠️ **新 ADR 取号前查目录最大号 + `git status docs/adr/` + memory 预留**（撞车三次：0055/0058）。
+- ⚠️ ADR-0061（资料库/场景）改动当前在 working tree 未提交，与已提交 D5 多选/判断改动分离；`git status` 确认范围再提交，勿误并。
 
 ## 1. 前端分层（ADR-0036/0037）
-- AI 唯一入口 `assistantNotifierProvider` + `AssistantMessageList`；后端唯一端点 `POST /api/v1/assistant/chat`。**助手路由优先级即功能**（ADR-0054）：写意图走 `guide`（`priority=20`）；不高于 `query`(12) 就被只读查询接走（query triggers 含泛词「任务/作业」）。📚 架构教材 `docs/learning/ai-assistant/`。
-- **卡片动作是受控枚举**：`actions=[{label,target}]`，target 如 `parent_create_task`（**不是 URL**），前端 `ShellDestination.fromTarget` 解读、认不出即不动；**新增 target 两端同改**（`guide/agent.py` + `fromTarget`）。跨页导航走 `shared/presentation/shell_navigation.dart` → `HomeScreen` 的 `ref.listen`。
-- 单向 `main/ → features/* → shared/*`；`shared/` 不 import `features/`；`App*` 只给 `shared/widgets/`；各 feature 有 repository、**刻意不建 datasource**。相对 import 越过 `lib/` 根时分析器不报错 → 层数自己数准。
-- ⚠️ **R4 棘轮 `presentation/` 不得 import `*/data/`**（`test/feature_boundaries_test.dart`，`_knownR4` **自 2026-09-15 起为空、不得回退**）。要用 data 里的类型（如 `KnowledgePointOption`）→ 先把该类型+接口搬到 `domain/repositories/`，data/ 只留 `Impl`（参考 `home/domain/repositories/material_repository.dart`）。
-- ⚠️ **非 push 路由的页面禁裸 `Navigator.pop`**：底下没有可弹的路由，弹的是根栈最后一条＝整个 App → 白屏（下次重建撞 `NavigatorState.build` 的 `_history.isNotEmpty`，热重启才炸）。走注入回调或 `maybePop`。
+- AI 唯一入口 `assistantNotifierProvider`+`AssistantMessageList`；后端唯一端点 `POST /api/v1/assistant/chat`。**助手路由优先级即功能**（ADR-0054）：写意图走 `guide`(priority=20)；不高于 `query`(12) 被只读查询接走（query triggers 含泛词「任务/作业」）。
+- **卡片动作受控枚举** `actions=[{label,target}]`，target 如 `parent_create_task`（非 URL）；前端 `ShellDestination.fromTarget` 解读，认不出即不动；**新增 target 两端同改**（`guide/agent.py`+`fromTarget`）。
+- 单向 `main/ → features/* → shared/*`；`shared/` 不 import `features/`；`App*` 只给 `shared/widgets/`；各 feature 有 repository、不建 datasource。
+- ⚠️ **R4 棘轮 `presentation/` 不得 import `*/data/`**（`test/feature_boundaries_test.dart`，`_knownR4` 自 2026-09-15 起为空、不得回退）。要用 data 类型 → 先搬到 `domain/repositories/`，data/ 只留 `Impl`。
+- ⚠️ **非 push 路由页面禁裸 `Navigator.pop`**（弹根栈最后一条=整个App→白屏）；走注入回调或 `maybePop`。
 
-（守卫清单见 `docs/agents/frontend.md` §6）
+## 2. 视觉/控件实测（取值见 `.impeccable.md`）
+- 描边三档：2 `borderWidth`·1.5 `borderWidthSm`·1 `borderWidthHairline`（顶栏底边/侧栏右缘/分隔线）。
+- ⚠️ **白物体在纸底没边界**是头号陷阱：`surfaceRaised` vs 纸底 `#FDFBF7` 仅差~1.02 → 补描边非加粗。
+- 空态 `AppEmptyState`(ADR-0051)。reduce-motion 须 `reducedMotionOf(context)?Duration.zero:…`；浮层阴影 `_floatingShadows()`（暗色返 `none`）。
+- ⚠️ **`ShadButton.height` 是内容盒高**，描边画盒外 → 可见高=值+2×描边宽（声明32**实测40**）；收口 `AppControl.buttonContentHeight()`；并排按钮一律 `Wrap`。图标按钮 `AppIconAction`、行内 `AppTextAction`。
+- ⚠️ **`ShadCard` 比内容高时内容贴顶不居中** → 钉高调用点自包 `Center`。`Row(stretch)` 须包 `IntrinsicHeight`；`Column(stretch)` 安全。
+- **高度=触控锚点逐阶下推**：`heightLg`=48，标准−`step`(8)，紧凑−2×`step`；调档只改锚点。
+- ⚠️ **`ReflectionSceneWidget` 画布边长=宽度正方形**（ADR-0061 §O）：并排须夹每份宽[240,360]；顶点已下沉 `shared/domain/figures.dart`，**改顶点须同步后端 `materials/scene_figures.py`**（跨语言 parity 测试钉住）。
+- ⚠️ **`reducedMotionOf` 事实源在 `shared/theme/app_theme.dart`**；别 `export … show` 转出（6处 `app_motion` import 变 `unnecessary_import`）。
 
-## 2. 视觉与控件实测事实（取值见 `.impeccable.md`）
-- 描边三档禁裸数字：2 `borderWidth`（卡/弹窗/浮层）· 1.5 `borderWidthSm`（chip/徽标/题号）· 1 `borderWidthHairline`（顶栏底边/侧栏右缘/分隔线/`listRow`）。
-- ⚠️ **「白物体在纸底没边界」是头号陷阱**：`surfaceRaised` vs 纸底 `#FDFBF7` 仅差 ~1.02 → 补描边而非加粗；输入框刻意留 1px（`AppControl.inputStrut`，加粗裁字）。
-- 空态统一 `AppEmptyState`（ADR-0051）。reduce-motion 须 `reducedMotionOf(context) ? Duration.zero : …`；浮层阴影统一 `_floatingShadows()`（暗色返 `none`），别写 `shadows: const []`。
-- ⚠️ **`ShadButton.height` 是「内容盒高」**，描边画在盒**外** → 可见高 = 值 + 2×描边宽（声明 32 **实测 40**）；收口 `AppControl.buttonContentHeight()`；不可放进会压缩它的容器 → overflow；并排按钮一律 `Wrap`。图标按钮用 `AppIconAction`、行内文字操作用 `AppTextAction`（`CupertinoButton` 44×44 `minSize` 是第三种高度权威）。
-- ⚠️ **`ShadCard` 比内容高时内容贴顶不居中**（卡 44/内容 28 → 上 1 下 15）→ 钉高的调用点自己包 `Center`。`Row(stretch)` 必须包 `IntrinsicHeight`；`Column(stretch)` 安全。**高度 = 触控锚点逐阶下推**：`heightLg`=48，标准 −`step`(8)，紧凑 −2×`step`；调档只改锚点（`AppControl`）。
-- **语义色**：学科标记走 `SubjectMarkIcon`/`SubjectKey.mark`，**实际由 `_TagChip` 渲染**（`AppTags.subject` 私有组件内）——只读工厂函数就断言「零业务调用」是错的；助手卡 `AssistantCardHeader` 按类别上色（cyan=待办/复习、magenta=错题/掌握）。
-- ⚠️ **`ReflectionSceneWidget` 画布是「边长 = 宽度」的正方形**（ADR-0061 §O）：宽度直接决定高度，**放多份并排时必须夹住每份宽度**（现夹在 [240,360]）——1200 宽屏两列并排会让每个高达 ~590px，一屏放不下 4 个。图形顶点已下沉为数据（`shared/domain/figures.dart`），**改顶点须同步后端 `materials/scene_figures.py`**（漂移会改「是否轴对称」判定，已有跨语言 parity 测试钉住）。
-- ⚠️ **`reducedMotionOf` 事实源在 `shared/theme/app_theme.dart`**（主题层也读它 → 反向 import 成循环）；别用 `export ... show` 转出（6 个调用点的 `app_motion` import 会变 `unnecessary_import`）。
+## 3. 自适应布局（ADR-0045/0059）
+- `AdaptiveShell` 两档：紧凑<700=娃娃底栏/家长抽屉；≥700=侧栏240↔64。`largeMin 1200` 无消费者。✅ 适配层实测完好（九档×两模式零溢出）。
+- ⚠️ **导航状态必须单一**：家长端 `sealed ParentPage`，所有入口只调 `_go(page)`；并列状态⇒必漏清且 analyze 照不出。
+- ⚠️ **文件规模棘轮**（ADR-0058）：`test/file_size_guard_test.dart` 的 `_baseline` 只许下调，新文件>400行直拦。基线14→**11条**（现最大 `parent_question_bank_view`838/`parent_tasks_view`649/`app_theme`1695）。事实源是测试 `_baseline`，非 ADR §8 快照。
+- ✅ **桌面窗口地板 320×568**（推翻800×600）；三处 runner 同改。⚠️ 六平台目录未进版本控制 → 改完须 `flutter build`。
+- ⚠️ **内容兜底须 `Align(topCenter)`+`ConstrainedBox`，不可 `Center`**。⚠️ **`Navigator.push` 整页走 `AppContentFrame`**（唯一出口，16调用点/12文件）+退路 `AppPushedPage`(`showBack`默认true)；勿手写 `AppTopBar(showBack:)`（默认false锁死一屏）。⚠️ 浮层宽令牌指外框宽，内容侧减 `popoverChrome`。
 
-## 3. 自适应布局（ADR-0045，令牌表见 `AppLayout`）
-- `AdaptiveShell` 实为两档（ADR-0059 删了 `detail` 与双栏）：紧凑 <700 = 娃娃底栏/家长抽屉；≥700 = 侧栏 240↔64。`largeMin 1200` 无消费者。✅ 适配层实测完好（九档 × 两模式零溢出）——「没适配 device」类报障先怀疑「看不见」。
-- ⚠️ **导航状态必须单一**（ADR-0059）：家长端「当前页面」只有 `sealed ParentPage`（`parent_pages.dart`），所有入口只调 `_go(page)`（`profile_screen.dart` 已删除，折为 `_Profile`）。并列状态 ⇒ 必然要「谁压谁」的裁决，散在各回调里必漏清，且 analyze 照不出来。⚠️ `_onProfileTap` 是两角色共用的，娃娃端仍走 `_showProfile`。
-- ⚠️ **文件规模棘轮**（ADR-0058）：`test/file_size_guard_test.dart` 的 `_baseline` 只许下调，新文件 >400 行直接拦。**P0–P4 已全部执行完**（2026-09-21，见 `docs/refactor/…decomposition.md` §8），基线 14 → **11 条**（现最大：`parent_question_bank_view` 838 / `parent_tasks_view` 649 / `app_theme` 1695）。⚠️ ADR-0058 §8 那张基线表是立 ADR 当天的快照、已与代码不符——**事实源是测试里的 `_baseline`**。
-- ⚠️ **拆大文件时先看两类「搬不动的东西」**：① **私有标识不跨 library**——`_ParentPage` + 11 个子类搬出 `home_screen` 就必须改公开（ADR-0059 的判据是「只有一个 `_parentPage` 字段」，与类名公开与否无关）；② **被多处共用的私有函数**（`assistant_cards` 的 `_s`/`_rowOf`/`_statsOf` 同时供渲染与「复制纯文本」用）→ 必须落到 domain 层（现 `features/assistant/domain/card_payload.dart`），留在 widget 文件里就只能复制一份并让它漂移。
-- ✅ **桌面窗口地板 320×568**（修订 ADR-0045，推翻 800×600；旧值 800 > `compactMax` 700 使紧凑档从未渲染）：macOS/Windows/Linux 三处 runner 同改。⚠️ 六个平台目录从未进版本控制（`frontend/.gitignore:20–25`）→ 改完必须 `flutter build` 重跑。
-- ⚠️ **内容兜底必须 `Align(topCenter)` + `ConstrainedBox`，不可 `Center`**。守卫 `test/adaptive_shell_layout_test.dart`。
-- ⚠️ **`Navigator.push` 整页不在壳兜底内**：宽度走 `AppContentFrame`（全仓唯一出口，16 调用点/12 文件，守卫 `test/content_frame_guard_test.dart`）、退路走 `AppPushedPage`（`showBack` 默认 true）；别手写 `AppTopBar(showBack:)`（默认 `false` = 锁死一屏）。勿把「故意留在框外的兄弟节点」一起钉窄。
-- ⚠️ **浮层宽度令牌指「外框宽」**：`popoverTheme.padding` + 2px 描边在内容**之外** → 内容侧须减 `popoverChrome`。（P3 已把主题层那 12 个 widget 整体搬到 `shared/widgets/`，`app_theme` 2740 → 1695。）
+## 4. 测试/截图探针
+- 五个坑（`runAsync`/`ShadApp.custom` theme/pdfx/`pumpAndSettle`/MediaQuery 注入位）见 `docs/agents/frontend.md` §7。
 
-## 4. 测试与截图探针
-- 五个「会挂死 / 量错」的坑（`runAsync` / `ShadApp.custom` 的 theme / pdfx / `pumpAndSettle` / MediaQuery 注入位置）已迁到 **`docs/agents/frontend.md` §7**，此处不重复。
-
-## 5. Git / 后端 / 长列表
-- ✅ `git push origin main` 可通；⚠️ 常输出 `Everything up-to-date` 但已成功 → 以 `git ls-remote origin main` 比对 HEAD 为准。提交按**逻辑批次**拆、正文写「为什么」；`chore(memory):` 单独提交。
-- ⚠️ **`git commit -- <file>` 会把该文件整个工作区重新暂存再提交**：若想只提交某文件的部分 hunk（hunk 级拆分，避开混入 WIP），必须 `git add -p` 选好 hunk 后**不带 pathspec** `git commit`，否则其余未选 hunk 会被一并提交。实测翻过车：把 ADR-0061 的 `multi`/`scene_spec` WIP 误并进了级联提交，靠 `git reset --soft HEAD~N` + 重排索引修正。
-- **引擎失败归因**：`decrypt()` 解不开只返 `None`（密文永不出门）；`ToolUnsupportedError`(无 FC) vs `ProviderRequestError`（带 `kind` + `user_hint`）落点 `genkit.py#classify_failure`；禁 `except Exception` 把引擎失败抹成「请添加模型」。
-- ⚠️ **`sa_type=JSON` 的可空列必须写 `JSON(none_as_null=True)`**（ADR-0061 §N 实测）：SQLAlchemy 默认把 Python `None` 序列化成**文本 `'null'`** 而非 SQL NULL →「清空字段」写进去的是字符串，`IS NOT NULL` 为真而内容是空，任何非空计数都失真。已修`KnowledgePoint.scenes` / `Question.scene_spec` / `TaskQuestion.scene_spec`；**其余 `sa_type=JSON` 可空列同坑**（options/source_refs/specs），用到时一并处理。
-- 工具 schema strict（ADR-0040）：可省略参数要有缺席编码（`""`/`0`/枚举含 `NO_FILTER="all"`）。助手分流（ADR-0043）：`acc` 只收 TEXT。残留：`deepseek-v4-flash` 多轮 tool loop 退化成 XML → 对策**减跳数**。
-- pytest 前 `cd backend && mv .env .env.hidden`（跑完恢复）；用 `.venv/bin/ruff`、`.venv/bin/pytest`（全量 ~25s）。偶发 `Sensitive content approval timed out` → 重跑。⚠️ **真库是 `backend/app.db`**（`DATABASE_URL=sqlite:///./app.db` 相对 backend）——仓库根也有个 `app.db`，在根目录跑迁移会静默新建空库，跑前必须 `cd backend`。⚠️ 偶发 `EEXIST ... pytest-of-unknown` 是 basetemp 竞态（`--basetemp=/tmp/x` 可解），非代码问题。⚠️ 全量 pytest 有 3 个 vectorize/retrieval 用例**既存顺序污染**失败（干净树同样失败、单跑通过），勿误判为自己引入。
-- **「测试连接」**（2026-09-20，`POST /models/test` + `model_management/probe.py`）：① **必须走后端**（密钥密文只在后端）；② **与生产同源**——经 `app.ai.engine.build_engine` 构造，另起 HTTP 直连会造「测试过、出题挂」的假绿灯；③ 失败一律 200 + `ok=false`。超时 `MODEL_PROBE_TIMEOUT_S=20`。
-- ⚠️ **探针「首帧即停」，绝不读完整个流**（qwen3:1.7b 带 thinking：一句 ping 要 6.4s 吐完 330 token，首 chunk <1s）。收尾两步：先 `future.cancel()`；再判 `future.done()` 后 await——401 时一帧都没有、channel 只静默 `StopAsyncIteration`，不 await 会把认证失败判成连接成功。
-- **本地 Ollama 慢 ≠ 探针慢**：直连 curl 81ms vs 探针 16.8s，服务端日志证实 Ollama 真花了 16s——2.9GB 权重换入内存（切模型会挤掉上一个），同模型紧接着再测 0.67s。真实出题同样要付这个冷加载。
-- **产品定位（2026-09-21 拍板）**：家庭自用为主 + 轻量开源（他人可自部署）；**已放弃跨家庭内容分享**（ADR-0019 版权红线对自用/自部署归零）。⚠️「开源给多人用」≠「内容跨家庭流通」。文档分工：**README 只放产品，技术内容在 `CONTRIBUTING.md`**。
-- ⚠️ **「AI 编造数据」≠ 越权**：先查会话 message 轨迹有没有 `tool_call`/`tool_result` 步（有就一定落库）——没有＝工具根本没执行，模型凭空编。**流式与否会改变模型的 FC 行为**：`ministral-3:3b` 在 `stream=true` 下零 tool_calls 直接编正文，`stream=false` 却正确返回 `list_children`；`qwen3:1.7b` 流式正常。排障用 curl ollama `/api/chat` 同参数切 `stream` 对比。⚠️ 已修（ADR-0033 第四档）：`BaseSubAgent.requires_tool_data`（query=True），整轮零工具调用却有正文 → 硬失败，不放行。⚠️ `probe.py` 不带 tools → 无 FC 模型照样测试绿灯（未修）。
-- **学习闭环六段只有一段通**（详见 `2026-09-21.md` §业务拓展盘问）：仅「答错即建错题」通（`tasks/service.py:1236`）；出题**不消费**错题与掌握度（`question/pipeline.py:45-111` 零引用）。修法 ADR-0060：掌握度 → 显式出题入口 + 以代表错题（上限 3）仿写**同类题**；`Question` 无 origin 字段，仿写有版权遗留。
-- **长列表（ADR-0053）**：keyset 游标（非 offset）；⚠️ 追加在途换条件会拼回旧页 → await 后重读最新 state；⚠️ 两列不用 `SliverGrid`（行高被钉死会裁卡）→ `Row`+`Expanded`（阈值 `listTwoColumnMin 1048`）；⚠️ 读错题每处都要加 `graduated_at IS NULL`；归档三套语义禁共用；迁移走启动期幂等 DDL，不引入 alembic。
-- ⚠️ **分层不变量 9：归属判定只许走 `core.guard`**（`require_owned`/`find_owned`/`require_owned_child`），禁内联 `x.parent_id != y`——AST 守卫 `tests/ai/test_layering_invariants.py` 全仓扫。⚠️ **改 `features/*/service.py` 必跑 `tests/ai/`**，本轮就靠它抓到上一轮遗留的内联比较欠账。
-- **ADR-0055 资料库+RAG（2026-10-04 定稿+实现 B1–B7）**：4 表全带 parent_id；向量存 BLOB 服务内暴力扫、不引 pgvector；dense+sparse+RRF（BGE-M3）。`EMBEDDING_*` env **base_url 语义分叉**（ollama 根地址拼 `/api/embed`；openai_compat 带 `/v1` 根拼 `/embeddings`；`none` 显式 500）；`EMBEDDING_MODEL` **兼作向量版本戳**（改名=全量 stale）。`build_retriever(session, parent_id)` 新签名；`RETRIEVER_PROVIDER=vector` 仅当调用方同给 session+parent_id 生效。黄金集 Hit@5=100%/Recall@5≥0.85 门禁（`tests/features/materials/test_retrieval_goldset.py`）。遗留：OCR/reranker/pgvector/英语分层。**0055 已用，下一 ADR 编号查目录（当前最大 0060）。**
+## 5. Git/后端/长列表
+- ✅ `git push origin main` 可通；⚠️ 常显 `Everything up-to-date` 却已成功 → 以 `git ls-remote origin main` 比对 HEAD 为准。提交按逻辑批次拆、正文写「为什么」；`chore(memory):` 单独提交。
+- ⚠️ **`git commit -- <file>` 会重暂存该文件整个工作区再提交**：hunk 级拆分须 `git add -p` 后**不带 pathspec** `git commit`，否则未选 hunk 一并进（误并 ADR-0061 `multi`/`scene_spec` 翻过车）。
+- 引擎失败归因：`decrypt()` 解不开只返 `None`；`ToolUnsupportedError`(无FC) vs `ProviderRequestError`(带 `kind`+`user_hint`) 落 `genkit.py#classify_failure`；禁 `except Exception` 抹成「请添加模型」。
+- ⚠️ **`sa_type=JSON` 可空列须 `JSON(none_as_null=True)`**（ADR-0061 §N）：否则 `None` 序列化成文本`'null'`，`IS NOT NULL` 为真而内容空，非空计数失真。已修 scenes/scene_spec；其余(options/source_refs/specs)同坑。
+- 工具 schema strict(ADR-0040)：可省略参数有缺席编码(`""`/`0`/枚举含 `NO_FILTER="all"`)。助手分流(ADR-0043)：`acc` 只收 TEXT。
+- pytest 前 `cd backend && mv .env .env.hidden`（完恢复）；`.venv/bin/ruff`、`.venv/bin/pytest`（全量~25s）。⚠️ **真库 `backend/app.db`**（相对 backend），根目录跑迁移静默建空库 → 必先 `cd backend`。⚠️ 3 个 vectorize/retrieval 用例既存顺序污染失败（干净树同败、单跑过），勿误判。
+- **「测试连接」**（2026-09-20）：①走后端（密钥密文只在后端）；②经 `build_engine` 同源；③失败 200+`ok=false`。超时 `MODEL_PROBE_TIMEOUT_S=20`。
+- ⚠️ **探针首帧即停**：`future.cancel()` 后判 `future.done()` 再 await；401 时一帧无、channel 静默 `StopAsyncIteration`，不 await 把认证失败判成成功。
+- **本地 Ollama 慢≠探针慢**：切模型权重换入内存真花~16s，同模型再测0.67s。真实出题同样付冷加载。
+- **产品定位**（2026-09-21）：家庭自用+轻量开源（自部署）；已放弃跨家庭内容分享。README 只放产品，技术在 `CONTRIBUTING.md`。
+- ⚠️ **「AI 编造数据」≠越权**：先查 message 轨迹有无 `tool_call`/`tool_result`（有必落库）；无=工具没执行、模型编。**流式改 FC 行为**：`ministral-3:3b` `stream=true` 零 tool_calls 编正文、`stream=false` 正确返回；`qwen3:1.7b` 流式正常。
+- **学习闭环六段只一段通**：仅「答错即建错题」(`tasks/service.py:1236`)；出题不消费错题/掌握度(`question/pipeline.py:45-111` 零引用)。修法 ADR-0060。
+- **长列表(ADR-0053)**：keyset 游标；追加在途换条件会拼回旧页→await 后重读；两列用 `Row`+`Expanded`(阈值1048) 非 `SliverGrid`；读错题加 `graduated_at IS NULL`；迁移走启动期幂等 DDL。
+- ⚠️ **分层不变量9：归属判定只许走 `core.guard`**(`require_owned`/`find_owned`/`require_owned_child`)，禁内联 `x.parent_id!=y`；AST 守卫 `tests/ai/test_layering_invariants.py` 全仓扫。改 `features/*/service.py` 必跑 `tests/ai/`。
+- **ADR-0055 资料库+RAG（2026-10-04 定稿+实现 B1–B7）**：4表全带 parent_id；向量存 BLOB 暴力扫；dense+sparse+RRF(BGE-M3)。`EMBEDDING_MODEL` 兼向量版本戳（改名=全量 stale）。`build_retriever(session,parent_id)` 新签名。黄金集 Hit@5=100%/Recall@5≥0.85。遗留：OCR/reranker/pgvector/英语分层。**0055 已用，下号查目录（最大0060）。**
 
 ## 6. 题型模型（ADR-0004 D5，2026-10-05）
-- **qtype 取值域不变**：`{choice, fill, calc, open}`（后端权威，grader/导出按 `=="open"` 分支）。填空/计算/应用共用输入框；选择题走选项卡。
-- **多选**：新增 `multi:bool`（默认 False），跨 `TaskQuestion`/`Question`/`GeneratedQuestion`/`QuestionOut`/`QuestionSchema`/`QuestionSpec`/`TaskSpec`/`QuestionResp`/`ReviewItemResp`/`WrongQuestionResp` + 启动期 ALTER。`TaskSpec.multi=True` 仅允许 `qtype=='choice'`（否则 422）。前端 `AppOptionTile.multi` 方块复选/圆形单选；作答态 `Set<String>`；提交多选 `(_selectedOptions..sort()).join('|')`；**评分按选项集合比对**（顺序无关、去重、空白忽略）。
-- **判断题**：无独立数据类型，`choice` + 选项仅为对/错二选一（前端 `isJudgeQuestion` 识别）→ 渲染复用单选卡、UI 标签显示「判断题」（`qtypeLabelWithJudge`）。
-- ⚠️ 选择题必须带 ≥2 有效选项，否则落库拦 `TASK_CHOICE_NO_OPTIONS(422)`（旧数据有 choice+null 退化成文本框的 bug，已修）。
+- **qtype 域**：`{choice,fill,calc,open}`（后端权威）。填空/计算/应用共用输入框；选择走选项卡。
+- **多选**：新增 `multi:bool`（默认False），跨 `TaskQuestion`/`Question`/`GeneratedQuestion`/`QuestionOut`/`QuestionSchema`/`QuestionSpec`/`TaskSpec`/`QuestionResp`/`ReviewItemResp`/`WrongQuestionResp`+启动期 ALTER。`TaskSpec.multi=True` 仅允许 `qtype=='choice'`（否422）。前端 `AppOptionTile.multi` 方块复选/圆形单选；作答 `Set<String>`；提交多选 `(_selectedOptions..sort()).join('|')`；**评分按选项集合比对**（顺序无关/去重/空白忽略）。
+- **判断题**：无独立类型，`choice`+对/错二选一（前端 `isJudgeQuestion` 识别）→ 渲染复用单选卡、UI 标「判断题」(`qtypeLabelWithJudge`)。
+- ⚠️ 选择题须带≥2有效选项，否则拦 `TASK_CHOICE_NO_OPTIONS(422)`（旧 choice+null 退化文本框 bug 已修）。
