@@ -103,7 +103,7 @@ R4 棘轮（presentation 不得 import `*/data/`）不受影响：`presentation/
 
 **已落地（2026-10-06）**：三个文件已建，Provider 为 `shared/domain/providers/voice_input_provider.dart`
 的 `voiceInputProvider`（组合根，照 `core_providers.dart` 的先例：provider 可以 import `data/`，
-`presentation/` 不行）。两个实测事实写在这里以免后人重踩：
+`presentation/` 不行）。展示层另有两个文件，见 §11。两个实测事实写在这里以免后人重踩：
 
 - ⚠️ `speech_to_text` 主文件**只 import 不 export** `speech_recognition_result.dart` /
   `speech_recognition_error.dart`，用这两个类型必须**显式再 import 一次**。
@@ -150,6 +150,42 @@ CI 也构建不出来。
 `[ok]`、`--check` 退 0；Android manifest 经 `ElementTree` 校验，`uses-permission` 位于
 `<manifest>` 直接子元素、`<application>` 之外。
 
+### 11. UI 层：受控组件、共用一行、以及四个实测事实
+
+**已落地（2026-10-06）**：
+
+| 文件 | 行数 | 职责 |
+|---|---|---|
+| `shared/domain/providers/voice_session_provider.dart` | 202 | 会话状态机：把转写流收成 `VoiceSessionState` |
+| `shared/widgets/app_voice_button.dart` | 104 | 麦按钮与录音态，**受控**（不自己记住「在不在录」） |
+| `features/assistant/presentation/widgets/assistant_input_bar.dart` | 207 | 粘合：把草稿写进输入框 + 「重说」 |
+
+**麦按钮与「重说」都收在 `ShadInput` 的 `trailing` 里**，与输入共用一行：不额外占宽度、
+不引入新的纵向层。门禁不放行时整个 `trailing` 传 `null`，不留空隙。
+
+实测事实（四个都踩过）：
+
+- ⚠️ **`ShadApp.custom(appBuilder:)` 这条路径不自动装 `ShadToaster`**——只有传 `child`
+  的 `ShadAppBuilder` 才会包 `ShadToaster`/`ShadSonner`。生产走的是 `CupertinoApp` 的
+  `builder` + `ShadAppBuilder(child:)`，所以没问题；但测试里若直接用 `appBuilder`，
+  `AppToast.show` 会抛「Could not find ShadToaster」，必须显式包一层。
+- ⚠️ 测试里**改 `debugDefaultTargetPlatformOverride` 会在 tearDown 里复位不及**——
+  `_verifyInvariants` 比 `test` 包的 tearDown 先跑，于是报「foundation debug variable
+  was changed」。对策是不改平台：测试默认就是 Android，直接用 `startGesture` +
+  `pump(kLongPressTimeout)` 驱动移动端**长按**这条主路径；桌面「点按切换」单独用
+  `holdToTalk: false` 直测组件。
+- ⚠️ `AppVoiceButton` 是**受控组件**：`listening` 由外部回灌，它自己不记住状态。
+  所以「再点一次停」必须由调用方把新状态传回来——第一版测试就是忘了这一点，
+  第二次点击仍走 `onStart`。
+- ⚠️ 「重说」挂在 **`spoken`**（本次会话是否真转写出过内容）上，而不是 `draft` 非空：
+  `draft` 在会话开始时就已被填成用户手打的半句，用它会把用户打的内容一并清掉。
+
+**棘轮约束反过来改了设计**：角色原计划由 `AssistantChatPage` 传 `isParent` 进输入栏，
+但助手整页已 473 行并登记在基线里（ADR-0058，只许下调），加这一个参数就把它顶到
+479、撞棘轮。改为直接读 `UserModeScope`——「当前是谁在用」本就是全局信号，不该逐层透传。
+
+上滑取消用 `onLongPressMoveUpdate` 的 `offsetFromOrigin.dy <= -32px`，与微信肌肉记忆一致。
+
 ## 不做的事
 
 - ❌ TTS（语音朗读回答）——本 ADR 只覆盖输入侧。
@@ -162,10 +198,11 @@ CI 也构建不出来。
 - **新增依赖**：`speech_to_text: ^7.4.0`（唯一新增运行时依赖，**实际解析为 7.5.0**）。ADR-0044 曾因 `flutter_animate` 只经 shadcn_ui 传递引入而显式声明，本条同理：插件必须在 `pubspec.yaml` 显式声明。
 - **后端**：零改动。
 - **协议**：零改动（`POST /api/v1/assistant/chat` 不变，无新 kind、无新 action target）。
-- **测试**：`test/voice_input_gate_test.dart` 覆盖门禁三态 + 缓存 + 静默阈值透传（7 用例，已全绿）。
+- **测试**：`test/voice_input_gate_test.dart` 覆盖门禁三态 + 缓存 + 静默阈值透传（7 用例，已全绿）；
+  `test/voice_input_draft_test.dart` 覆盖「落草稿不自动发送」「重说清空」「转写为空不动输入框」
+  「静默阈值按角色」「长按 / 点按两种触发」（7 用例，已全绿）。
   `SpeechToText()` 是**返回单例的 factory**，无法靠继承造假，所以用 mocktail；本仓既有写法是
   `any(named: 'x')`（**不是** `anyNamed('x')`，那是 mockito 的写法，mocktail 没有导出）。
-  后续 `assistant_input_bar` 还要覆盖「落草稿不自动发送」「重说清空」「转写为空不动输入框」三条契约。
 
 ## 待定
 

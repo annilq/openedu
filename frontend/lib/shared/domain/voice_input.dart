@@ -52,6 +52,22 @@ class VoiceInputFailure implements Exception {
   String toString() => 'VoiceInputFailure: $message';
 }
 
+/// 静默阈值档位（ADR-0063 §6）。
+///
+/// 「静默多久算说完」**必须按角色注入**，不能写死在组件里：成人说
+/// 「三分之二加五分之一等于多少」一气呵成；儿童会说「那个…三分之二…加…五分之一…」，
+/// 中间停顿远长于平台默认（约 1–1.5s），默认阈值会在句中掐断——语音输入对最需要
+/// 它的人群反而最难用。
+///
+/// 两档都是**待真机校准的初值**（ADR-0063 §待定），不是实测结论。
+abstract final class VoiceSilence {
+  /// 家长端：沿用接近平台默认的短档。
+  static const Duration adult = Duration(seconds: 2);
+
+  /// 儿童端：≥3s（ADR-0063 §6 的硬要求），初值取 4s 留余量。
+  static const Duration child = Duration(seconds: 4);
+}
+
 /// 语音输入端口：把「说的话」变成文本，仅此而已（ADR-0063 §1）。
 ///
 /// 产物是普通文本，经输入框进入 `assistantNotifierProvider` 后与手打文本完全同权——
