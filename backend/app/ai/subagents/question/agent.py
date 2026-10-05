@@ -37,6 +37,7 @@ def expand_specs(specs) -> list[dict]:
             knowledge_point = str(sp.get("knowledge_point", ""))
             qtype = str(sp.get("qtype", ""))
             difficulty = str(sp.get("difficulty", "medium"))
+            semester = str(sp.get("semester", ""))
             count = int(sp.get("count", 1))
         else:
             subject = str(sp.subject)
@@ -44,6 +45,7 @@ def expand_specs(specs) -> list[dict]:
             knowledge_point = str(sp.knowledge_point)
             qtype = str(sp.qtype)
             difficulty = str(sp.difficulty)
+            semester = str(getattr(sp, "semester", "") or "")
             count = int(sp.count)
         for _ in range(max(0, count)):
             items.append(
@@ -53,6 +55,7 @@ def expand_specs(specs) -> list[dict]:
                     "knowledge_point": knowledge_point,
                     "qtype": qtype,
                     "difficulty": difficulty,
+                    "semester": semester,
                 }
             )
     return items
@@ -222,6 +225,7 @@ def parse_specs_from_text(text: str) -> list[dict]:
                 "knowledge_point": kp,
                 "qtype": qtype,
                 "difficulty": "medium",
+                "semester": "",
                 "count": count,
             }
         )
@@ -345,6 +349,7 @@ class QuestionSubAgent(BaseSubAgent):
                 knowledge_point=item["knowledge_point"],
                 qtype=item["qtype"],
                 difficulty=item["difficulty"],
+                semester=item.get("semester", ""),
                 focus_interest=focus,
                 rag_context=rag_context,
                 persona_hint=persona_hint,

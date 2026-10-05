@@ -54,6 +54,7 @@ class QuestionOut(BaseModel):
     answer: str
     explanation: str
     difficulty: str
+    semester: str = ""
     reasoning: str = ""
 
 
@@ -81,6 +82,7 @@ class QuestionSpec:
     knowledge_point: str
     qtype: str
     difficulty: str
+    semester: str = ""
 
 
 def assemble_question(
@@ -110,6 +112,7 @@ def assemble_question(
         knowledge_point=spec.knowledge_point,
         qtype=spec.qtype,
         difficulty=spec.difficulty,
+        semester=spec.semester,
         stem=stem,
         options=options,
         answer=answer,
@@ -174,6 +177,7 @@ class SchemaQuestionParser:
                     answer=out.answer,
                     explanation=out.explanation,
                     difficulty=out.difficulty,
+                    semester=out.semester,
                 ),
                 reasoning=out.reasoning,
             )

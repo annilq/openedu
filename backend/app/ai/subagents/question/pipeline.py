@@ -49,26 +49,28 @@ def _build_question_clause(
     knowledge_point: str,
     qtype: str,
     difficulty: str,
+    semester: str,
     interests: list[str] | None,
     focus_interest: str | None,
 ) -> str:
     """出题语境内核（情境/难度/兴趣包装）：流式与落库共用，保证口径一致
     （ADR-0021：RAG / 学科 Persona 在调用方注入）。"""
+    sem_hint = f"{semester}" if semester else "整学年"
     if focus_interest:
         clause = (
-            f"请围绕主题“{focus_interest}”为{grade}年级《{subject}》的“{knowledge_point}”"
-            f"出一道{qtype}题，难度{difficulty}。题目情境应以“{focus_interest}”为载体讲清知识点，"
-            f"必须紧扣教材，不引入与学习无关或不当内容。"
+            f"请围绕主题“{focus_interest}”为{grade}年级《{subject}》（{sem_hint}）的"
+            f"“{knowledge_point}”出一道{qtype}题，难度{difficulty}。题目情境应以"
+            f"“{focus_interest}”为载体讲清知识点，必须紧扣教材，不引入与学习无关或不当内容。"
         )
     elif interests:
         clause = (
-            f"请为{grade}年级《{subject}》的“{knowledge_point}”出一道{qtype}题，"
+            f"请为{grade}年级《{subject}》（{sem_hint}）的“{knowledge_point}”出一道{qtype}题，"
             f"难度{difficulty}。可结合娃娃兴趣（{', '.join(interests)}）作情境包装，"
             f"但必须紧扣知识点，不得偏离教材。"
         )
     else:
         clause = (
-            f"请为{grade}年级《{subject}》的“{knowledge_point}”出一道{qtype}题，"
+            f"请为{grade}年级《{subject}》（{sem_hint}）的“{knowledge_point}”出一道{qtype}题，"
             f"难度{difficulty}。"
         )
     return clause
@@ -81,8 +83,9 @@ def _build_question_prompt(
     knowledge_point: str,
     qtype: str,
     difficulty: str,
-    interests: list[str] | None,
-    focus_interest: str | None,
+    semester: str = "",
+    interests: list[str] | None = None,
+    focus_interest: str | None = None,
     rag_context: str | None = None,
     persona_hint: str | None = None,
     history: list[dict] | None = None,
@@ -91,7 +94,8 @@ def _build_question_prompt(
     """出题 prompt（流式与落库**同一份**，模型产出受 ``QuestionSchema`` 约束）。"""
     clause = _build_question_clause(
         subject=subject, grade=grade, knowledge_point=knowledge_point,
-        qtype=qtype, difficulty=difficulty, interests=interests, focus_interest=focus_interest,
+        qtype=qtype, difficulty=difficulty, semester=semester,
+        interests=interests, focus_interest=focus_interest,
     )
     if persona_hint:
         clause += f"\n\n{persona_hint}"
@@ -140,6 +144,7 @@ def build_question_prompts(
     knowledge_point: str,
     qtype: str,
     difficulty: str,
+    semester: str = "",
     interests: list[str] | None = None,
     focus_interest: str | None = None,
     rag_context: str | None = None,
@@ -152,7 +157,7 @@ def build_question_prompts(
     返回 ``(system_prompt, user_prompt, spec)``：
     - ``system_prompt``：固定的出题系统约束（适龄 / JSON 输出）。
     - ``user_prompt``：情境 / 难度 / 兴趣 / RAG / Persona / 多轮历史拼装后的完整用户指令。
-    - ``spec``：题目不可变身份（subject/grade/knowledge_point/qtype/difficulty），
+    - ``spec``：题目不可变身份（subject/grade/knowledge_point/qtype/difficulty/semester），
       由调用方给出、回填空模型产出（模型不一定回写这些字段）。
 
     出题 SubAgent（``agent.py``）与落库路径都经由此函数组装，再交给 provider；
@@ -160,9 +165,9 @@ def build_question_prompts(
     """
     user_prompt = _build_question_prompt(
         subject=subject, grade=grade, knowledge_point=knowledge_point, qtype=qtype,
-        difficulty=difficulty, interests=interests, focus_interest=focus_interest,
-        rag_context=rag_context, persona_hint=persona_hint, history=history,
-        weak_examples=weak_examples,
+        difficulty=difficulty, semester=semester, interests=interests,
+        focus_interest=focus_interest, rag_context=rag_context,
+        persona_hint=persona_hint, history=history, weak_examples=weak_examples,
     )
     spec = QuestionSpec(
         subject=subject,
@@ -170,6 +175,7 @@ def build_question_prompts(
         knowledge_point=knowledge_point,
         qtype=qtype,
         difficulty=difficulty,
+        semester=semester,
     )
     return QUESTION_SYSTEM_PROMPT, user_prompt, spec
 
@@ -220,6 +226,7 @@ async def stream_question(
                         answer=out.answer,
                         explanation=out.explanation,
                         difficulty=out.difficulty,
+                        semester=out.semester,
                     ),
                     reasoning=out.reasoning,
                 )
@@ -235,6 +242,7 @@ async def generate_question(
     knowledge_point: str,
     qtype: str,
     difficulty: str,
+    semester: str = "",
     interests: list[str] | None = None,
     focus_interest: str | None = None,
     rag_context: str | None = None,
@@ -248,8 +256,9 @@ async def generate_question(
     """
     system_prompt, user_prompt, spec = build_question_prompts(
         subject=subject, grade=grade, knowledge_point=knowledge_point, qtype=qtype,
-        difficulty=difficulty, interests=interests, focus_interest=focus_interest,
-        rag_context=rag_context, persona_hint=persona_hint, history=history,
+        difficulty=difficulty, semester=semester, interests=interests,
+        focus_interest=focus_interest, rag_context=rag_context,
+        persona_hint=persona_hint, history=history,
     )
     async for ev in stream_question(
         provider, system_prompt=system_prompt, user_prompt=user_prompt, spec=spec, history=history

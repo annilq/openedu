@@ -22,6 +22,9 @@ class TaskSpec(SQLModel):
     knowledge_point: str = Field(max_length=128)
     qtype: str = Field(max_length=16)  # choice|fill|calc|open
     difficulty: str = Field(max_length=16, default="medium")
+    # 学期维度（ADR-0061 发布任务对接资料库）：'' = 不限/整学年；'上学期' / '下学期'。
+    # 随规格持久化到 Task.specs 以便整卷重生成沿用，并透传到每道题 → Question/TaskQuestion。
+    semester: str = Field(default="", max_length=8)
     count: int = Field(default=1, ge=1)
 
     @field_validator("subject")
@@ -99,6 +102,8 @@ class QuestionResp(SQLModel):
     qtype: str
     knowledge_point: str
     explanation: str = ""
+    # 学期维度（ADR-0061）：随题下发，前端展示/讲解场景匹配用。
+    semester: str = ""
     # 娃娃端接口恒为 None，防作弊
     answer: str | None = None
 
@@ -203,6 +208,9 @@ class WrongQuestionResp(SQLModel):
     due_at: datetime | None = None
     # 毕业（已掌握）时间；None = 仍在复习队列里（ADR-0053 P2）。
     graduated_at: datetime | None = None
+    # 交互式讲解实例（ADR-0061）：题目知识点命中家长私有知识点模板时附上，
+    # 前端在错题卡内联渲染。可空 = 该知识点暂无图形化讲解（维持原纯文本行为）。
+    scene_spec: dict | None = None
 
 
 class WrongQuestionListResp(SQLModel):

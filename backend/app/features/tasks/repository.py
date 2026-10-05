@@ -208,6 +208,7 @@ def promote_task_question(
         answer=tq.answer,
         explanation=tq.explanation,
         difficulty=tq.difficulty,
+        semester=tq.semester,
     )
     session.add(q)
     session.flush()

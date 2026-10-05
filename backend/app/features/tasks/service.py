@@ -49,6 +49,7 @@ from app.core.pagination import clamp_page_size, encode_cursor
 from app.db.models import Question, Task, TaskQuestion, User, WrongQuestion
 from app.domain import Grader, build_retriever
 from app.domain.provider import GeneratedQuestion, QuestionCard, QuestionStreamEvent
+from app.features.materials.scene_fusion import resolve_scene_spec_for_question
 from app.features.tasks.repository import (
     add_bank_questions_to_task,
     assign_task,
@@ -108,6 +109,7 @@ def question_to_resp(tq: TaskQuestion, *, include_answer: bool) -> QuestionResp:
         qtype=tq.qtype,
         knowledge_point=tq.knowledge_point,
         explanation=tq.explanation or "",
+        semester=tq.semester,
         answer=tq.answer if include_answer else None,
     )
 
@@ -127,7 +129,12 @@ def task_to_resp(
 
 
 def wrong_question_to_resp(
-    wq: WrongQuestion, q: Question, *, include_answer: bool
+    wq: WrongQuestion,
+    q: Question,
+    *,
+    session: Session,
+    include_answer: bool,
+    scene_cache: dict | None = None,
 ) -> WrongQuestionResp:
     return WrongQuestionResp(
         id=wq.id,
@@ -140,11 +147,23 @@ def wrong_question_to_resp(
         options=q.options,
         answer=q.answer if include_answer else None,
         explanation=q.explanation or "",
+        semester=q.semester,
         wrong_count=wq.wrong_count,
         first_wrong_at=wq.first_wrong_at,
         review_stage=wq.review_stage,
         due_at=wq.due_at,
         graduated_at=wq.graduated_at,
+        # 交互讲解：按题目知识点 + 学期解析家长私有模板（ADR-0061）。无模板时 None，
+        # 前端据此降级为纯文本解析，行为与改动前完全一致。
+        scene_spec=resolve_scene_spec_for_question(
+            session,
+            parent_id=q.parent_id,
+            subject=q.subject,
+            grade=q.grade,
+            knowledge_point=q.knowledge_point,
+            semester=q.semester,
+            cache=scene_cache,
+        ),
     )
 
 
@@ -249,8 +268,12 @@ def list_wrong_questions(
     """错题本。``include_answer`` 由调用方按角色决定；查询工具恒传 True 后交
     ``project_for_role`` 统一裁剪（ADR-0033 决策 9）。"""
     rows = repo_list_wrong_questions(session=session, child_id=child_id)
+    scene_cache: dict = {}
     return [
-        wrong_question_to_resp(wq, q, include_answer=include_answer) for wq, q in rows
+        wrong_question_to_resp(
+            wq, q, session=session, include_answer=include_answer, scene_cache=scene_cache
+        )
+        for wq, q in rows
     ]
 
 
@@ -283,9 +306,12 @@ def list_wrong_questions_page(
         if rows and len(rows) == size
         else None
     )
+    scene_cache: dict = {}
     return WrongQuestionListResp(
         items=[
-            wrong_question_to_resp(wq, q, include_answer=include_answer)
+            wrong_question_to_resp(
+                wq, q, session=session, include_answer=include_answer, scene_cache=scene_cache
+            )
             for wq, q in rows
         ],
         total=count_wrong_questions(
@@ -365,7 +391,9 @@ def rejoin_child_wrong_question(
     question = session.get(Question, wq.question_id)
     if question is None:
         raise AppErrorException(ErrCode.QUESTION_NOT_FOUND, "原题不存在")
-    return wrong_question_to_resp(wq, question, include_answer=True)
+    return wrong_question_to_resp(
+        wq, question, session=session, include_answer=True
+    )
 
 
 def owned_child_progress(*, session: Session, parent: User, child_id: UUID) -> ProgressResp:
@@ -401,6 +429,7 @@ async def _gen_question_stream(
     knowledge_point: str,
     qtype: str,
     difficulty: str,
+    semester: str = "",
     interests: list[str] | None = None,
     focus_interest: str | None = None,
 ) -> AsyncIterator[QuestionStreamEvent]:
@@ -426,6 +455,7 @@ async def _gen_question_stream(
         knowledge_point=knowledge_point,
         qtype=qtype,
         difficulty=difficulty,
+        semester=semester,
         interests=interests,
         focus_interest=focus_interest,
     )
@@ -443,6 +473,7 @@ def _gen_question(
     knowledge_point: str,
     qtype: str,
     difficulty: str,
+    semester: str = "",
     interests: list[str] | None = None,
     focus_interest: str | None = None,
 ) -> GeneratedQuestion:
@@ -460,6 +491,7 @@ def _gen_question(
             knowledge_point=knowledge_point,
             qtype=qtype,
             difficulty=difficulty,
+            semester=semester,
             interests=interests,
             focus_interest=focus_interest,
         ):
@@ -491,7 +523,8 @@ def _question_fields(payload: dict) -> dict:
     """
     allowed = (
         "subject", "grade", "knowledge_point", "qtype", "stem",
-        "options", "answer", "explanation", "difficulty", "source_refs",
+        "options", "answer", "explanation", "difficulty", "semester",
+        "source_refs",
     )
     return {k: payload[k] for k in allowed if k in payload}
 
@@ -632,6 +665,7 @@ def _gen_tq_for_spec_item(
         knowledge_point=item["knowledge_point"],
         qtype=item["qtype"],
         difficulty=item["difficulty"],
+        semester=item.get("semester", ""),
         interests=interests if focus is None else None,
         focus_interest=focus,
     )
@@ -647,6 +681,7 @@ def _gen_tq_for_spec_item(
         answer=g.answer,
         explanation=g.explanation,
         difficulty=g.difficulty,
+        semester=g.semester,
     )
 
 
@@ -783,6 +818,7 @@ def create_from_generated(
                 answer=q.get("answer"),
                 explanation=q.get("explanation") or "",
                 difficulty=str(q.get("difficulty") or "medium"),
+                semester=str(q.get("semester", "") or ""),
             )
         )
     if not draft_questions:
@@ -921,13 +957,14 @@ def _gen_for_swap(
         knowledge_point=tq.knowledge_point,
         qtype=tq.qtype,
         difficulty=tq.difficulty or "medium",
+        semester=tq.semester,
         interests=interests_pool if focus is None else None,
         focus_interest=focus,
     )
     return Question(
         subject=g.subject, grade=g.grade, knowledge_point=g.knowledge_point,
         qtype=g.qtype, stem=g.stem, options=g.options, answer=g.answer,
-        explanation=g.explanation, difficulty=g.difficulty,
+        explanation=g.explanation, difficulty=g.difficulty, semester=g.semester,
     )
 
 
