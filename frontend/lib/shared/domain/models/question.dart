@@ -233,15 +233,19 @@ class BankQuestionItem {
       );
 }
 
-/// 批量删除题库题的结果：deleted / skippedInUse / skippedForbidden 分别给出 id 列表。
+/// 批量硬删题库题的结果：deleted / deletedTasks / skippedForbidden 分别给出 id 列表。
+///
+/// 后端已改为全量级联：被任务引用的题也会删，并连带清掉任务里的题目副本、
+/// 作答记录、错题；若任务因此变空则连任务一并删（计入 [deletedTasks]）。
+/// 故不再有「被引用所以跳过」这一组。
 class DeleteQuestionsResult {
   final List<String> deleted;
-  final List<String> skippedInUse;
+  final List<String> deletedTasks;
   final List<String> skippedForbidden;
 
   const DeleteQuestionsResult({
     this.deleted = const [],
-    this.skippedInUse = const [],
+    this.deletedTasks = const [],
     this.skippedForbidden = const [],
   });
 
@@ -249,7 +253,7 @@ class DeleteQuestionsResult {
       DeleteQuestionsResult(
         deleted:
             (json['deleted'] as List?)?.map((e) => e.toString()).toList() ?? const [],
-        skippedInUse: (json['skipped_in_use'] as List?)
+        deletedTasks: (json['deleted_tasks'] as List?)
                 ?.map((e) => e.toString())
                 .toList() ??
             const [],

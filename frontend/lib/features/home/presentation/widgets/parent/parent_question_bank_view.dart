@@ -238,7 +238,7 @@ class _ParentQuestionBankViewState
       builder: (ctx) => ShadDialog.alert(
         title: const Text('删除题库题目'),
         description: Text(
-          '确认删除选中的 $count 道题？已被任务引用的题将不会被删除。此操作不可撤销。',
+          '确认删除选中的 $count 道题？删除后该题会从所有任务中移除，相关作答与错题记录也会被清理；若任务因此变空也会被一并删除。此操作不可撤销。',
         ),
         actions: [
           ShadButton.ghost(
@@ -408,11 +408,11 @@ class _ParentQuestionBankViewState
       } else if (next is BankDeleted) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
-          final msg = next.skippedInUse > 0 || next.skippedForbidden > 0
-              ? '已删除 ${next.deleted} 题；'
-                  '${next.skippedInUse} 题已被任务引用未删'
-                  '${next.skippedForbidden > 0 ? '，${next.skippedForbidden} 题无权限' : ''}'
-              : '已删除 ${next.deleted} 题';
+          final msg = next.deletedTasks > 0 || next.skippedForbidden > 0
+              ? '已删除 ${next.deleted} 道题'
+                  '${next.deletedTasks > 0 ? '，并连带删除 ${next.deletedTasks} 个空任务' : ''}'
+                  '${next.skippedForbidden > 0 ? '；${next.skippedForbidden} 道无权限' : ''}'
+              : '已删除 ${next.deleted} 道题（含其任务副本与作答/错题记录）';
           AppToast.show(context, msg);
           _selectedIds.clear();
           _reload();
@@ -814,8 +814,9 @@ class _ParentQuestionBankViewState
       runSpacing: AppSpacing.sm,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        // 归档与删除并排：被任务引用的题删不掉，家长只能堆着——归档就是给
-        // 这种情况的出口，所以它必须和删除一样显眼，且可恢复（ADR-0053 P2）。
+        // 归档与删除并排：删除现已全量级联（引用它的任务副本 / 作答 / 错题一并清，
+        // 变空的任务也会删），所以不再有「删不掉只能堆着」；归档保留为可恢复的
+        // 「先收起来」出口，必须和删除一样显眼（ADR-0053 P2）。
         ShadButton.outline(
           onPressed: busy ? null : () => _archiveSelected(true),
           leading: const Icon(LucideIcons.archive, size: 16),

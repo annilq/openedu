@@ -69,9 +69,9 @@ class BankActionError extends BankState {
 
 class BankDeleted extends BankState {
   final int deleted;
-  final int skippedInUse;
+  final int deletedTasks;
   final int skippedForbidden;
-  const BankDeleted(this.deleted, this.skippedInUse, this.skippedForbidden);
+  const BankDeleted(this.deleted, this.deletedTasks, this.skippedForbidden);
 }
 
 /// 批量归档 / 恢复的结果（ADR-0053 P2）。
@@ -181,8 +181,8 @@ class QuestionBankNotifier extends StateNotifier<BankState> {
 
   /// 批量归档 / 恢复（ADR-0053 P2）。
   ///
-  /// 与删除的分工：删除是「彻底不要了」（被任务引用的题删不掉），归档是「先收起来」
-  /// ——被引用也能归档，且随时能恢复。
+  /// 与删除的分工：删除是「彻底不要了」，会全量级联清掉引用它的任务副本、作答、
+  /// 错题，并连带删变空的任务；归档是「先收起来」——被引用也能归档、且随时能恢复。
   Future<void> archiveQuestions(List<String> ids,
       {required bool archived}) async {
     state = const BankActionLoading();
@@ -233,7 +233,7 @@ class QuestionBankNotifier extends StateNotifier<BankState> {
       final res = await _repo.deleteQuestions(ids);
       state = BankDeleted(
         res.deleted.length,
-        res.skippedInUse.length,
+        res.deletedTasks.length,
         res.skippedForbidden.length,
       );
     } catch (e) {

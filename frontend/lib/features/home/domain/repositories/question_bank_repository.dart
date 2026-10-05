@@ -33,7 +33,7 @@ abstract class QuestionBankRepository {
   /// 选项 B 草稿选择器：家长草稿列表（GET /tasks?status=draft）。
   Future<List<TaskModel>> getDraftTasks();
 
-  /// 批量删除题库题：被任务引用的题后端已跳过（返回分组结果）。
+  /// 批量硬删题库题：后端全量级联（任务副本 / 作答 / 错题 / 变空任务），返回分组结果。
   Future<DeleteQuestionsResult> deleteQuestions(List<String> ids);
 
   /// 批量归档 / 恢复（ADR-0053 P2）。
