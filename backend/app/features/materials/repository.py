@@ -16,6 +16,9 @@ from app.db.models.material import (
     INDEX_STATE_FAILED,
     INDEX_STATE_PENDING,
     INDEX_STATE_STALE,
+    KP_SOURCE_SKELETON,
+    KP_STATUS_CURATED,
+    KP_STATUS_PENDING,
 )
 
 UNINDEXED_STATES = (INDEX_STATE_PENDING, INDEX_STATE_FAILED, INDEX_STATE_STALE)
@@ -217,3 +220,62 @@ def confirm_knowledge_point(session: Session, kp: KnowledgePoint) -> KnowledgePo
     session.commit()
     session.refresh(kp)
     return kp
+
+
+def confirm_knowledge_points_by_name(
+    session: Session,
+    *,
+    parent_id: uuid.UUID,
+    subject: str,
+    grade: int,
+    names: list[str],
+    semester: str = "",
+) -> int:
+    """按概念名跨学期转正（修复 ADR-0055 §4 的确认盲区）。
+
+    同一 ``(parent_id, subject, grade, name)`` 可能按学期拆成多行——整学年 / 上学期 /
+    下学期各一份（支持各学期独立讲解模板，见 ``scene_fusion`` 的学期回落）。家长在
+    「整学年」视图确认某个概念时，应当把该名下**所有**学期行的 ``pending`` 一并转正，
+    而不是只翻当前筛选学期那一行。旧实现按 ``semester`` 精确 ``find``，导致同名其它
+    学期的待审永远翻不动，列表里长期并存「待审 + 已转正」两条同名数据。
+
+    ``semester`` 仅用于名下无行时新建骨架条的默认学期（默认整学年）。
+    """
+    confirmed = 0
+    for raw in names:
+        name = raw.strip()[:128]
+        if not name:
+            continue
+        rows = session.exec(
+            select(KnowledgePoint).where(
+                KnowledgePoint.parent_id == parent_id,
+                KnowledgePoint.subject == subject,
+                KnowledgePoint.grade == grade,
+                KnowledgePoint.name == name,
+            )
+        ).all()
+        if not rows:
+            # 名下无行：按 semester 兜底新建一条 curated（骨架来源）。学期必须具体
+            # （2026-10-05 决策：不再允许空），整学年视图确认时退上学期。
+            kp = KnowledgePoint(
+                parent_id=parent_id,
+                subject=subject,
+                grade=grade,
+                semester=semester or "上学期",
+                name=name,
+                status=KP_STATUS_CURATED,
+                source=KP_SOURCE_SKELETON,
+            )
+            session.add(kp)
+            confirmed += 1
+        else:
+            flipped = False
+            for kp in rows:
+                if kp.status == KP_STATUS_PENDING:
+                    kp.status = KP_STATUS_CURATED
+                    flipped = True
+                    confirmed += 1
+            if flipped:
+                session.add_all(rows)
+    session.commit()
+    return confirmed

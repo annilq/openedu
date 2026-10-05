@@ -375,6 +375,13 @@ async def _extract_and_align(
 
     # 知识点对齐（ADR-0055 §4）：只在学科 / 年级齐备时入库，新知识点进「待审」
     if material.subject and material.grade and names:
+        # 学期必须具体（2026-10-05 决策：不再允许空学期）：资料显式学期 > 文件名推断
+        # （上册/下册）> 退上学期。整学年资料的知识点默认归上学期，讲解页可再改。
+        kp_semester = (
+            material.semester
+            or _semester_from_name(material.name)
+            or "上学期"
+        )
         for name in names:
             repo.upsert_pending_knowledge_point(
                 session,
@@ -382,7 +389,7 @@ async def _extract_and_align(
                 subject=material.subject,
                 grade=material.grade,
                 name=name,
-                semester=material.semester or "",
+                semester=kp_semester,
             )
     return "extracted", None
 
@@ -546,34 +553,19 @@ def confirm_knowledge_points(
     names: list[str],
     semester: str = "",
 ) -> int:
-    """确认知识点：待审转正；骨架条目落库为转正（source=skeleton）。返回转正数。"""
+    """确认知识点：待审转正；骨架条目落库为转正（source=skeleton）。返回转正数。
+
+    按**概念名**跨学期生效（见 ``repository.confirm_knowledge_points_by_name``）：
+    同一概念按学期拆成的多行会一并转正，避免「整学年」视图确认后仍有同名待审残留。
+    ``semester`` 仅用于名下无行时新建骨架条的默认学期（默认整学年）。
+    """
     if subject not in SUBJECTS:
         raise AppErrorException(ErrCode.VALIDATION, f"不支持的学科：{subject}")
-    confirmed = 0
-    for raw in names:
-        name = raw.strip()[:128]
-        if not name:
-            continue
-        kp = repo.find_knowledge_point(
-            session,
-            parent_id=parent_id,
-            subject=subject,
-            grade=grade,
-            name=name,
-            semester=semester,
-        )
-        if kp is None:
-            kp = KnowledgePoint(
-                parent_id=parent_id,
-                subject=subject,
-                grade=grade,
-                semester=semester,
-                name=name,
-                status="curated",
-                source="skeleton",
-            )
-            confirmed += 1
-        elif kp.status == "pending":
-            confirmed += 1
-        repo.confirm_knowledge_point(session, kp)
-    return confirmed
+    return repo.confirm_knowledge_points_by_name(
+        session,
+        parent_id=parent_id,
+        subject=subject,
+        grade=grade,
+        names=names,
+        semester=semester,
+    )

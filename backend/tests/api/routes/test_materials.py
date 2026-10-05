@@ -349,6 +349,59 @@ class TestKnowledgePoints:
         assert by_name["上册专属点"] == "上学期"
         assert by_name["下册专属点"] == "下学期"
 
+    def test_confirm_flips_all_semester_variants(self, client, ptoken):
+        """确认按概念名跨学期生效（修复同名待审残留）。
+
+        同一概念「图形的运动」按学期拆成 上学期(pending) + 下学期(pending) 两行；
+        在「整学年」视图确认后，两行都应转正，而不是只翻当前筛选学期那行（旧实现按
+        semester 精确 find，导致同名其它学期的待审永远翻不动）。学期不再允许空
+        （2026-10-05 决策），故以两个具体学期模拟「重名两行」。
+        """
+        from app.core.db import engine
+        from sqlmodel import Session as DBSession, select
+
+        from app.db.models import KnowledgePoint, User
+
+        with DBSession(engine) as s:
+            parent = s.exec(select(User)).first()
+            assert parent is not None
+            for sem in ("上学期", "下学期"):
+                s.add(
+                    KnowledgePoint(
+                        parent_id=parent.id,
+                        subject="数学",
+                        grade=3,
+                        semester=sem,
+                        name="图形的运动",
+                        status="pending",
+                        source="emerged",
+                    )
+                )
+            s.commit()
+
+        # 在「整学年」视图确认该概念（semester 默认 ''）
+        r = client.post(
+            "/api/v1/materials/knowledge-points/confirm",
+            headers=auth_headers(ptoken),
+            json={"names": ["图形的运动"], "subject": "数学", "grade": 3},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["confirmed"] == 2
+
+        # 两条同名数据都应已转正（不再并存「待审 + 已转正」）
+        r = client.get(
+            "/api/v1/materials/knowledge-points?subject=数学&grade=3",
+            headers=auth_headers(ptoken),
+        )
+        assert r.status_code == 200, r.text
+        rows = [
+            i
+            for i in r.json()["items"]
+            if i["name"] == "图形的运动" and i["id"] is not None
+        ]
+        assert {i["semester"] for i in rows} == {"上学期", "下学期"}
+        assert all(i["status"] == "curated" for i in rows)
+
 
 # ── B3：向量化状态机 ────────────────────────────────────────────────────
 

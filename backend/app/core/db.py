@@ -229,6 +229,13 @@ def run_migrations() -> None:
         if is_sqlite:
             _rebuild_kp_unique_with_semester(conn)
 
+        # —— 知识点彻底去掉空学期（用户决策 2026-10-05）——
+        # semester='' 原表示「整学年/不限」，会与具体学期行（上/下学期）并存，
+        # 造成同一概念（如「图形的运动」）在管理页出现「待审 + 已转正」两条重名数据。
+        # 现在学期必须是具体值。此迁移删掉有具体学期兄弟的 '' 行、把纯整学年 ''
+        # 行改归上学期。幂等：重跑为 no-op。方言无关。
+        _migrate_kp_no_empty_semester(conn)
+
         # —— 交互式讲解场景（ADR-0061）：知识点默认模板 + 题目实例 ——
         # knowledgepoint.scenes：[{kind, inputs, controls, ...}] 教师编写的默认讲解模板。
         # question.scene_spec：出题时由知识点模板 + 本题数值融合得到的实例。
@@ -522,6 +529,45 @@ def _rebuild_kp_unique_with_semester(conn) -> None:
             "ON knowledgepoint (parent_id, subject, grade, semester)"
         )
     )
+
+
+def _migrate_kp_no_empty_semester(conn) -> None:
+    """彻底去掉知识点空学期（用户决策 2026-10-05）。
+
+    ``semester=''`` 原表示「整学年/不限」，会与具体学期行（上/下学期）并存，造成同一
+    概念（如「图形的运动」）在管理页出现「待审 + 已转正」两条重名数据。决定：知识点
+    的学期必须是具体值，不再允许空。
+
+    - 同一 (parent_id, subject, grade, name) 同时有 ``''`` 行与具体学期行的 → 删 ``''`` 行
+      （具体学期胜出，消除重名）。
+    - 其余 ``''`` 行（纯整学年、无具体学期兄弟）→ 改为 ``上学期``（讲解页可再改）。
+
+    幂等：执行后 knowledgepoint 表不再有 ``semester=''`` 行，重跑为 no-op。方言无关
+    （DELETE/UPDATE 均为标准 SQL，EXISTS 关联子查询兼容 sqlite/postgres）。
+    """
+    try:
+        # 1) 删掉「有具体学期兄弟」的 '' 行：具体学期优先，消除重名。
+        conn.execute(
+            text(
+                "DELETE FROM knowledgepoint "
+                "WHERE semester = '' "
+                "  AND EXISTS ("
+                "    SELECT 1 FROM knowledgepoint k2"
+                "    WHERE k2.semester <> ''"
+                "      AND k2.parent_id = knowledgepoint.parent_id"
+                "      AND k2.subject = knowledgepoint.subject"
+                "      AND k2.grade = knowledgepoint.grade"
+                "      AND k2.name = knowledgepoint.name"
+                "  )"
+            )
+        )
+        # 2) 剩余 '' 行（纯整学年，无具体学期兄弟）→ 上学期。
+        conn.execute(
+            text("UPDATE knowledgepoint SET semester = '上学期' WHERE semester = ''")
+        )
+    except OperationalError:
+        # 表还没建 → 跳过（首次启动由 create_all 建表，本迁移后续启动再收尾）
+        return
 
 
 def init_db() -> None:

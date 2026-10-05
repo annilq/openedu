@@ -98,7 +98,7 @@ class Material(SQLModel, table=True):
     grade: int | None = None
     # 学期（继承目录，ADR-0055 §2 补）：None = 未设置。
     semester: str | None = Field(default=None, max_length=8)
-    knowledge_points: list[str] | None = Field(default=None, sa_type=JSON)
+    knowledge_points: list[str] | None = Field(default=None, sa_type=JSON(none_as_null=True))
     # 向量化状态机 + 版本戳（ADR-0055 §5）：向量绑定模型，换模型/切分器即 stale
     index_state: str = Field(default=INDEX_STATE_PENDING, max_length=16)
     embed_model: str | None = Field(default=None, max_length=128)
@@ -164,8 +164,9 @@ class KnowledgePoint(SQLModel, table=True):
     parent_id: uuid.UUID = Field(foreign_key="user.id")
     subject: str = Field(max_length=16)
     grade: int
-    # 学期范围维度（ADR-0055 §4 补）：'' = 整学年/不限；'上学期' / '下学期'。
-    semester: str = Field(default="", max_length=8)
+    # 学期范围维度（ADR-0055 §4 补，2026-10-05 决策：学期必须为具体值，不再允许空）：
+    # '上学期' / '下学期'。'整学年' 仅为前端聚合视图（UNION），不存空行。
+    semester: str = Field(default="上学期", max_length=8)
     name: str = Field(max_length=128)
     status: str = Field(default=KP_STATUS_PENDING, max_length=16)
     source: str = Field(default=KP_SOURCE_EMERGED, max_length=16)

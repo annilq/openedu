@@ -7,6 +7,7 @@ import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/widgets/app_buttons.dart';
 import '../../../../../shared/widgets/app_actions.dart';
 import '../../../../../shared/widgets/app_card.dart';
+import '../../../../../shared/widgets/app_dialog.dart';
 import '../../../../../shared/widgets/app_empty_state.dart';
 import '../../../../../shared/widgets/app_focusable_action.dart';
 import '../../../../../shared/widgets/app_inputs.dart';
@@ -164,15 +165,34 @@ class _MaterialKnowledgeManageViewState
                     if (kp.id != null)
                       AppTextAction(
                         label: '讲解',
-                        onPressed: () => _openSceneEditor(
-                          context,
-                          kpId: kp.id!,
-                          kpName: kp.name,
-                          kpSemester: kp.semester,
-                          subject: km.subject,
-                          grade: km.grade,
-                          scenes: kp.scenes,
-                        ),
+                        onPressed: () async {
+                          // 该知识点未配置交互讲解时，先提示去配置，避免编辑器
+                          // 一律回退到同一默认模板，造成「每个点讲解都一样」的错觉。
+                          final hasScenes =
+                              kp.scenes != null && kp.scenes!.isNotEmpty;
+                          if (!hasScenes) {
+                            final configure = await AppDialog.confirm(
+                              context,
+                              title: const Text('尚未配置讲解资源'),
+                              content: const Text(
+                                '该知识点还没有交互讲解模板，是否现在去配置？',
+                              ),
+                              cancelLabel: '稍后',
+                              confirmLabel: '去配置',
+                            );
+                            if (configure != true) return;
+                          }
+                          if (!context.mounted) return;
+                          _openSceneEditor(
+                            context,
+                            kpId: kp.id!,
+                            kpName: kp.name,
+                            kpSemester: kp.semester,
+                            subject: km.subject,
+                            grade: km.grade,
+                            scenes: kp.scenes,
+                          );
+                        },
                       ),
                   ],
                 ),
