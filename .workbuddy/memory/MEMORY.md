@@ -53,7 +53,7 @@
 - ⚠️ **选项标号只能由渲染层画，且必须同时剥模型前缀**（ADR-0061 §T）：后端 `normalize_options` **刻意不剥**（答案字段也带前缀，剥离会让判题失配）→ 前端**每处**选项渲染都要过 `cleanOptionText`。守卫测试 `tests/ai/test_option_prefix_contract.py` 逐点断言 + 不变量「**画标号 ⊆ 剥前缀**」（纯文本卡片手工画标号合法，故不能禁止）。
 - ⚠️ **SQLite「加列」≠「加约束」**（ADR-0061 §R）：`ALTER TABLE ADD COLUMN x` 里写的 `UNIQUE(...)` 子句被**静默忽略**（无 `ADD CONSTRAINT`）→ **老库仍留旧约束而新建库正常**，本地测不出来。改 UNIQUE 只能**重建表**（建新表→`INSERT..SELECT`→删旧→`RENAME`→重建索引），迁移须**幂等**（先读 `sqlite_master` 判现状）；回归测试要**手工造老库形状**。旧约束更严时重建必安全（不可能已有重复行）。
 - 工具 schema strict(ADR-0040)：可省略参数有缺席编码(`""`/`0`/`NO_FILTER="all"`)。助手分流(ADR-0043)：`acc` 只收 TEXT。
-- pytest 前 `cd backend && mv .env .env.hidden`（完恢复）；`.venv/bin/ruff`、`.venv/bin/pytest`（全量~25s）。⚠️ **真库 `backend/app.db`**（相对 backend），根目录跑迁移静默建空库 → 必先 `cd backend`。⚠️ 3 个 vectorize/retrieval 用例既存顺序污染失败（干净树同败、单跑过），勿误判。
+- pytest 前 `cd backend && mv .env .env.hidden`（完恢复）；`.venv/bin/ruff`、`.venv/bin/pytest`（全量~25s）。⚠️ **沙盒里必须加 `--basetemp=/tmp/<新目录>`**，否则 `tmp_path` 用例集体 PermissionError(EEXIST) 变 ERROR，会被误判成回归。⚠️ **真库 `backend/app.db`**（相对 backend），根目录跑迁移静默建空库 → 必先 `cd backend`。⚠️ 既存顺序污染失败 **4 个**（原记 3 个）：vectorize/retrieval 3 个 + `TestKnowledgePoints::test_confirm_flips_all_semester_variants`（它假定 `select(User).first()` = 自己的 fixture 家长），干净树全量同败、单跑过。勿误判。
 - **「测试连接」**（2026-09-20）：走后端 + `build_engine` 同源；失败 200+`ok=false`；超时 `MODEL_PROBE_TIMEOUT_S=20`。⚠️ **探针首帧即停**：`cancel()` 后判 `done()` 再 await（401 时一帧无、channel 静默 `StopAsyncIteration`，不 await 会把认证失败判成成功）。
 - **本地 Ollama 慢≠探针慢**：切模型权重换入内存真花~16s，同模型再测0.67s。
 - **产品定位**（2026-09-21）：家庭自用+轻量开源（自部署）；README 只放产品，技术在 `CONTRIBUTING.md`。
@@ -61,7 +61,8 @@
 - **学习闭环六段只一段通**：仅「答错即建错题」(`tasks/service.py:1236`)；出题不消费错题/掌握度(`question/pipeline.py:45-111` 零引用)。修法 ADR-0060。
 - **长列表(ADR-0053)**：keyset 游标；追加在途换条件会拼回旧页→await 后重读；两列用 `Row`+`Expanded`(阈值1048)；读错题加 `graduated_at IS NULL`；迁移走启动期幂等 DDL。
 - ⚠️ **分层不变量9：归属判定只许走 `core.guard`**(`require_owned`/`find_owned`/`require_owned_child`)，禁内联 `x.parent_id!=y`；AST 守卫 `tests/ai/test_layering_invariants.py` 全仓扫。改 `features/*/service.py` 必跑 `tests/ai/`。
-- **ADR-0055 资料库+RAG（2026-10-04 定稿+实现 B1–B7）**：4表全带 parent_id；向量存 BLOB 暴力扫；dense+sparse+RRF(BGE-M3)。`EMBEDDING_MODEL` 兼向量版本戳（改名=全量 stale）。`build_retriever(session,parent_id)` 新签名。黄金集 Hit@5=100%/Recall@5≥0.85。遗留：OCR/reranker/pgvector/英语分层。**已用到 0063（0063=助手语音输入），下号前查目录+git status+本文件**
+- **ADR-0064 多选删除（2026-10-06）**：`POST /materials/bulk-delete`（`{ids, cascade_knowledge_points}` 默认 False）+ `/materials/knowledge-points/bulk-delete`。⚠️ **删资料的知识点连带 = 只删孤儿**（`repository.prunable_knowledge_points` 三条：同 `(subject,grade,semester,name)` + **无其他留存资料引用**（须 `exclude_material_ids` 排除本批，否则同批互相担保）+ `source=emerged && status=pending`）。因 **KP↔Material 无外键、只靠名字串**（同名 upsert 共享 / 学期是第四维 / curated=家长资产）。学期口径须与提取时逐字一致。
+- **ADR-0055 资料库+RAG（2026-10-04 定稿+实现 B1–B7）**：4表全带 parent_id；向量存 BLOB 暴力扫；dense+sparse+RRF(BGE-M3)。`EMBEDDING_MODEL` 兼向量版本戳（改名=全量 stale）。`build_retriever(session,parent_id)` 新签名。黄金集 Hit@5=100%/Recall@5≥0.85。遗留：OCR/reranker/pgvector/英语分层。**已用到 0064（0063=助手语音输入，0064=多选删除+知识点级联清理），下号前查目录+git status+本文件**
 - ⚠️ **同一实体有两份 schema**：`features/*/service.py`（助手查询工具投影）与 `router.py`+`schemas.py`（REST）。**前端打的是 REST**——只改 service 端点响应里连 key 都没有（ADR-0061 §U 翻车：题库 `scene_spec`/`semester`）。**「下发了 X」必须打到端点验**。
 - **交互讲解读路径唯一入口 `scene_spec_for_read`**（ADR-0061 §U）= 快照 → 知识点+学期实时解析 → **图库兜底**（题面命中图库图形才出图，否则 None 不臆造；引导语不泄条数；optionGroup 时去 `outputs`）。四条读路径共用。
 
