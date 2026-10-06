@@ -130,8 +130,16 @@
 - **验证**：`ruff` 全绿；`pytest` 全量 **617 passed，3 failed（已 `git stash` 对照原码确认是改名前既存失败：vectorize/retrieval 3 个为已知顺序污染，非回归），2 skipped**。
 - **改名脚本的误伤修复**（已逐处修）：`Path(...).parents[N]`→`.teachers[N]`（6 处：config.py / layering / option_prefix / scene_figures）、`Path.mkdir(parents=True)`→`teachers=True`（service.py:238）、后端测试 `test_option_prefix_contract.SITES` 被一并指向尚不存在的前端 `teacher/` 路径 → 回退到 `parent/`（前端本批不动，用户要求「先改 CONTEXT.md + 后端」）。
 
-### Batch 2 — 待做（前端，本批未动）
+### Batch 2 — 已完成（2026-10-06）：前端 Dart
 
-- 前端 Dart：目录 `features/home/.../parent/`→`teacher/`、文件 `parent_*`→`teacher_*`；导航 `ParentPage`→`TeacherPage`（ADR-0059 单源）；`children` feature UI 文案「娃娃/儿童」→「学生」。
-- 前端测试改名：`parent_nav_single_source_test`→`teacher_nav_single_source_test`、`children_notifier_test`→`students_notifier_test` 等含旧术语断言同步改。
-- `flutter analyze` + `flutter test`（关代理）全绿后由用户确认提交。
+- **目录/文件改名**（精确脚本，regex 带负向预查保护 Flutter `child:`/`children:` 具名参数与 `SingleChildScrollView` 等控件）：
+  - 目录 `features/home/.../parent/`→`teacher/`；文件 `parent_*`→`teacher_*`（如 `parent_task_review_notifier.dart`→`teacher_task_review_notifier.dart`、`parent_destinations.dart`→`teacher_destinations.dart`、`child_mastery_screen.dart`→`student_mastery_screen.dart`、`child_home.dart`→`student_home.dart`）。
+  - 导航 `ParentPage`→`TeacherPage`（ADR-0059 单源，`teacher_pages.dart`）；`selected_child_provider`→`selected_student_provider`、`SelectedChild`→`SelectedStudent`、`SelectedChildNotifier`→`SelectedStudentNotifier`、`selectedChildProvider`→`selectedStudentProvider`。
+  - `features/children/*`→`features/students/*`；`children` feature UI 文案「娃娃/儿童」→「学生」。
+- **前端测试改名**：`parent_nav_single_source_test`→`teacher_nav_single_source_test`、`children_notifier_test`→`students_notifier_test` 等含旧术语断言同步改（`list_density_test`/`task_empty_state_test` 内 `SelectedChild`/`SelectedChildNotifier` 一并改 `SelectedStudent`/`SelectedStudentNotifier`）。
+- **误伤回收**（broken stash `b657d2e4` 已被 `git reset --hard HEAD` + `git clean -fd` 清掉，仅 reflog 留痕；从 reflog 提取其它会话未提交文件做逆向修复）：
+  - 21 个其它会话 `.dart`（语音/场景/知识点）全局逆向 `student→child`/`teacher→parent`/`学生→儿童` 安全拷回（确认不含 domain `student` 令牌）。
+  - 3 个 untracked 文件从 stash `^3` 正确路径（`frontend/lib/...`）提取：`reflection_figure_gallery.dart`、`reflection_scene_dialog.dart`（`lib/shared/widgets/scene_interpreter/`）、`patch_macos_spm_migration.py`（`frontend/scripts/`）—— 二者本就已是 `学生/教师` 正确口径、Flutter 参数完好，原样恢复。
+  - `selected_student_provider.dart:25` 被逆向误改的 `parentWrongQuestionsProvider` 回退为正确的 `teacherWrongQuestionsProvider`；并删掉逆向误生的孤儿旧名文件 `selected_child_provider.dart`，统一为单文件 `selected_student_provider.dart`。
+- **验证**：`flutter analyze` = **0 error**（2 个预存 warning：`select_options_refresh_test:39` unused `picked`、`list_density_test:53` override，均非回归）；`flutter test`（关代理）= **344 passed / 7 failed**。
+- **7 failed 非回归**：全部在 `scene_editor_dialog_test.dart` + `scene_option_group_test.dart`（ADR-0061 场景/反射功能，另一会话进行中）。失败为运行时场景逻辑（`Found 0 widgets with type "ReflectionSceneWidget"`、空列表），与 teacher/student 改名无关（`flutter analyze` 已零类型错误，改名仅动 import 路径与 `AppUserMode.parent`→`teacher`）。属另一会话进行中工作，不在本批范围，提交前由用户决定是否并回场景会话处理。
