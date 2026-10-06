@@ -27,7 +27,8 @@
 - ⚠️ **`ShadButton.height` 是内容盒高**，描边画盒外 → 可见高=值+2×描边宽（声明32**实测40**）；收口 `AppControl.buttonContentHeight()`；并排按钮一律 `Wrap`。图标按钮 `AppIconAction`、行内 `AppTextAction`。
 - ⚠️ **`ShadCard` 比内容高时内容贴顶不居中** → 钉高调用点自包 `Center`。`Row(stretch)` 须包 `IntrinsicHeight`；`Column(stretch)` 安全。
 - **高度=触控锚点逐阶下推**：`heightLg`=48，标准−`step`(8)，紧凑−2×`step`；调档只改锚点。
-- ⚠️ **`ReflectionSceneWidget` 画布边长=宽度正方形**（ADR-0061 §O）：并排须夹每份宽[240,360]；顶点已下沉 `shared/domain/figures.dart`，**改顶点须同步后端 `materials/scene_figures.py`**（跨语言 parity 测试钉住）。
+- ⚠️ **`ReflectionSceneWidget` 画布边长=宽度正方形**（ADR-0061 §O）：顶点已下沉 `shared/domain/figures.dart`，**改顶点须同步后端 `materials/scene_figures.py`**（跨语言 parity 测试钉住）。
+- ⚠️ **多图形不再平铺（ADR-0061 §V）**：`optionGroup` → 图形画廊（**整库 11 个**卡片，列数只按可用宽度算，目标卡宽 124 夹 2–6 列）+ 点卡片弹 `ReflectionSceneDialog`（框里放完整场景，交互一件不少）。⚠️ 弹窗画布边长须按**屏高**夹 `min(420, 屏高−320, 屏宽−64)` 再夹 [220,420]，否则 1024×768 横屏顶出屏幕。画廊**只画不判**（出现「✓轴对称」= 泄答案）。
 - ⚠️ **`reducedMotionOf` 事实源在 `shared/theme/app_theme.dart`**；别 `export … show` 转出（6处 `app_motion` import 变 `unnecessary_import`）。
 
 ## 3. 自适应布局（ADR-0045/0059）
