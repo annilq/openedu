@@ -14,14 +14,14 @@ def create_user(
     session: Session,
     user_create: UserCreate,
     role: str,
-    parent_id: uuid.UUID | None = None,
+    teacher_id: uuid.UUID | None = None,
 ) -> User:
     db_obj = User.model_validate(
         user_create,
         update={
             "hashed_password": get_password_hash(user_create.password),
             "role": role,
-            "parent_id": parent_id,
+            "teacher_id": teacher_id,
         },
     )
     session.add(db_obj)
@@ -60,10 +60,10 @@ def authenticate(*, session: Session, username: str, password: str) -> User | No
     return db_user
 
 
-def list_children(*, session: Session, parent_id: uuid.UUID) -> list[User]:
+def list_students(*, session: Session, teacher_id: uuid.UUID) -> list[User]:
     from sqlmodel import select
 
-    return list(session.exec(select(User).where(User.parent_id == parent_id)))
+    return list(session.exec(select(User).where(User.teacher_id == teacher_id)))
 
 
 def update_user(
@@ -74,7 +74,7 @@ def update_user(
     grade: int | None = None,
     interests: dict | None = None,
 ) -> User:
-    """编辑娃娃资料（WF-5）：仅局部更新昵称/年级/兴趣；账号密码等字段不在此处变动。
+    """编辑学生资料（WF-5）：仅局部更新昵称/年级/兴趣；账号密码等字段不在此处变动。
 
     所有字段可选，仅传入非 None 的字段生效。
     """

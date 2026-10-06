@@ -9,26 +9,26 @@ from sqlmodel import Session, select
 
 from app.core.db import engine
 from app.db.models import WrongQuestion
-from tests.utils.user import auth_headers, login, register_parent
+from tests.utils.user import auth_headers, login, register_teacher
 
 
-def _create_child(client, ptoken, username="mk_kid"):
+def _create_student(client, ptoken, username="mk_kid"):
     r = client.post(
-        "/api/v1/children",
+        "/api/v1/students",
         headers=auth_headers(ptoken),
         json={
             "username": username,
             "password": "kid123456",
-            "display_name": "娃娃",
+            "display_name": "学生",
             "grade": 2,
-            "role": "child",
+            "role": "student",
         },
     )
     assert r.status_code == 201, r.text
     return r.json()
 
 
-def _make_task(client, ptoken, child_id, count=1):
+def _make_task(client, ptoken, student_id, count=1):
     # 单流：以「已生成题卡」直接落库（POST /tasks/from-generated，唯一业务写库点，ADR-0023）。
     specs = [
         {
@@ -60,7 +60,7 @@ def _make_task(client, ptoken, child_id, count=1):
         headers=auth_headers(ptoken),
         json={
             "title": "掌握度测试",
-            "child_id": child_id,
+            "student_id": student_id,
             "specs": specs,
             "questions": questions,
         },
@@ -73,7 +73,7 @@ def _make_task(client, ptoken, child_id, count=1):
     ag = client.post(
         f"/api/v1/tasks/{tid}/assign",
         headers=auth_headers(ptoken),
-        params={"child_id": child_id},
+        params={"student_id": student_id},
     )
     assert ag.status_code == 200, ag.text
     return ag.json()
@@ -89,9 +89,9 @@ def _answer(client, ctoken, task_id, question_id, student_answer):
     return r.json()
 
 
-def _get_mastery(client, ptoken, child_id):
+def _get_mastery(client, ptoken, student_id):
     r = client.get(
-        f"/api/v1/tasks/children/{child_id}/mastery",
+        f"/api/v1/tasks/students/{student_id}/mastery",
         headers=auth_headers(ptoken),
     )
     assert r.status_code == 200, r.text
@@ -108,11 +108,11 @@ def _force_due(wrong_question_id, *, stage=0):
         s.commit()
 
 
-def _load_wq(child_id, question_id) -> WrongQuestion:
+def _load_wq(student_id, question_id) -> WrongQuestion:
     with Session(engine) as s:
         return s.exec(
             select(WrongQuestion).where(
-                WrongQuestion.child_id == uuid.UUID(child_id),
+                WrongQuestion.student_id == uuid.UUID(student_id),
                 WrongQuestion.question_id == uuid.UUID(question_id),
             )
         ).one()
@@ -129,13 +129,13 @@ def _review(client, ctoken, wrong_question_id, student_answer):
 
 
 def test_empty_mastery(client):
-    """新娃娃还没有任何作答：看板为空。"""
-    r = register_parent(client, username="mk0_parent")
+    """新学生还没有任何作答：看板为空。"""
+    r = register_teacher(client, username="mk0_teacher")
     ptoken = r.json()["access_token"]
-    child = _create_child(client, ptoken, username="mk0_kid")
+    student = _create_student(client, ptoken, username="mk0_kid")
 
-    board = _get_mastery(client, ptoken, child["id"])
-    assert board["child_id"] == child["id"]
+    board = _get_mastery(client, ptoken, student["id"])
+    assert board["student_id"] == student["id"]
     assert board["total_knowledge_points"] == 0
     assert board["mastered_count"] == 0
     assert board["items"] == []
@@ -143,10 +143,10 @@ def test_empty_mastery(client):
 
 def test_wrong_review_graduate_flow(client):
     """AC-203 全链路：答错后分数被封顶压住 → 复习答对推进阶段分数上升 → 毕业解除封顶达到已掌握。"""
-    r = register_parent(client, username="mk1_parent")
+    r = register_teacher(client, username="mk1_teacher")
     ptoken = r.json()["access_token"]
-    child = _create_child(client, ptoken, username="mk1_kid")
-    task = _make_task(client, ptoken, child["id"], count=6)
+    student = _create_student(client, ptoken, username="mk1_kid")
+    task = _make_task(client, ptoken, student["id"], count=6)
     lr = login(client, "mk1_kid", "kid123456")
     ctoken = lr.json()["access_token"]
 
@@ -157,11 +157,11 @@ def test_wrong_review_graduate_flow(client):
             client, ctoken, task["id"], q["question_id"], "__wrong__" if wrong_question is None else q["answer"]
         )
         if not res["correct"]:
-            wrong_question = _load_wq(child["id"], q["question_id"])
+            wrong_question = _load_wq(student["id"], q["question_id"])
     assert wrong_question is not None
 
     # 答错后：正确率虽高，但活跃错题把分数封顶在 60（薄弱）
-    board = _get_mastery(client, ptoken, child["id"])
+    board = _get_mastery(client, ptoken, student["id"])
     assert board["total_knowledge_points"] == 1
     kp = board["items"][0]
     assert kp["knowledge_point"] == "加法"
@@ -174,7 +174,7 @@ def test_wrong_review_graduate_flow(client):
     wrong_q = next(q for q in task["questions"] if q["question_id"] == str(wrong_question.question_id))
     _force_due(str(wrong_question.id), stage=0)
     _review(client, ctoken, str(wrong_question.id), wrong_q["answer"])
-    board = _get_mastery(client, ptoken, child["id"])
+    board = _get_mastery(client, ptoken, student["id"])
     kp = board["items"][0]
     assert kp["total_answers"] == 7 and kp["correct_answers"] == 6
     assert kp["active_wrong"] == 1 and kp["max_review_stage"] == 1
@@ -184,7 +184,7 @@ def test_wrong_review_graduate_flow(client):
     # 末位阶段（15 天档）复习答对：毕业，解除封顶 → 已掌握（AC-203）
     _force_due(str(wrong_question.id), stage=4)
     _review(client, ctoken, str(wrong_question.id), wrong_q["answer"])
-    board = _get_mastery(client, ptoken, child["id"])
+    board = _get_mastery(client, ptoken, student["id"])
     kp = board["items"][0]
     assert kp["total_answers"] == 8 and kp["correct_answers"] == 7
     assert kp["active_wrong"] == 0
@@ -193,55 +193,55 @@ def test_wrong_review_graduate_flow(client):
     assert board["mastered_count"] == 1
 
 
-def test_mastery_forbidden_for_other_parent(client):
-    """越权：别的家长查不了这个娃娃的看板（403）。"""
-    r = register_parent(client, username="mk2_parent")
+def test_mastery_forbidden_for_other_teacher(client):
+    """越权：别的教师查不了这个学生的看板（403）。"""
+    r = register_teacher(client, username="mk2_teacher")
     ptoken = r.json()["access_token"]
-    child = _create_child(client, ptoken, username="mk2_kid")
-    # 给这个娃娃造一条作答记录，避免「无记录」歧义
-    task = _make_task(client, ptoken, child["id"], count=1)
+    student = _create_student(client, ptoken, username="mk2_kid")
+    # 给这个学生造一条作答记录，避免「无记录」歧义
+    task = _make_task(client, ptoken, student["id"], count=1)
     lr = login(client, "mk2_kid", "kid123456")
     _answer(client, lr.json()["access_token"], task["id"], task["questions"][0]["question_id"], "__wrong__")
 
-    other = register_parent(client, username="mk2_other")
+    other = register_teacher(client, username="mk2_other")
     other_token = other.json()["access_token"]
     r = client.get(
-        f"/api/v1/tasks/children/{child['id']}/mastery",
+        f"/api/v1/tasks/students/{student['id']}/mastery",
         headers=auth_headers(other_token),
     )
     assert r.status_code == 403
 
 
-def test_mastery_allowed_for_self_child(client):
-    """娃娃可以查看自己的掌握度（200），不再被 require_parent 拦截。"""
-    r = register_parent(client, username="mk3_parent")
+def test_mastery_allowed_for_self_student(client):
+    """学生可以查看自己的掌握度（200），不再被 require_teacher 拦截。"""
+    r = register_teacher(client, username="mk3_teacher")
     ptoken = r.json()["access_token"]
-    child = _create_child(client, ptoken, username="mk3_kid")
+    student = _create_student(client, ptoken, username="mk3_kid")
     # 造一条作答记录，避免「无记录」歧义
-    task = _make_task(client, ptoken, child["id"], count=1)
+    task = _make_task(client, ptoken, student["id"], count=1)
     lr = login(client, "mk3_kid", "kid123456")
     ctoken = lr.json()["access_token"]
     _answer(client, ctoken, task["id"], task["questions"][0]["question_id"], "__wrong__")
 
     r = client.get(
-        f"/api/v1/tasks/children/{child['id']}/mastery",
+        f"/api/v1/tasks/students/{student['id']}/mastery",
         headers=auth_headers(ctoken),
     )
     assert r.status_code == 200, r.text
-    assert r.json()["child_id"] == child["id"]
+    assert r.json()["student_id"] == student["id"]
 
 
-def test_mastery_forbidden_for_other_child(client):
-    """娃娃 token 不能查看别人的掌握度（403）。"""
-    p1 = register_parent(client, username="mk3a_parent")
-    _create_child(client, p1.json()["access_token"], username="mk3a_kid")
-    p2 = register_parent(client, username="mk3b_parent")
-    c2 = _create_child(client, p2.json()["access_token"], username="mk3b_kid")
+def test_mastery_forbidden_for_other_student(client):
+    """学生 token 不能查看别人的掌握度（403）。"""
+    p1 = register_teacher(client, username="mk3a_teacher")
+    _create_student(client, p1.json()["access_token"], username="mk3a_kid")
+    p2 = register_teacher(client, username="mk3b_teacher")
+    c2 = _create_student(client, p2.json()["access_token"], username="mk3b_kid")
     lr = login(client, "mk3a_kid", "kid123456")
     ctoken = lr.json()["access_token"]
 
     r = client.get(
-        f"/api/v1/tasks/children/{c2['id']}/mastery",
+        f"/api/v1/tasks/students/{c2['id']}/mastery",
         headers=auth_headers(ctoken),
     )
     assert r.status_code == 403

@@ -11,7 +11,7 @@ class Conversation(SQLModel, table=True):
     """一次 AI Agent 运行的容器（ADR-0022）。
 
     - kind：运行类型（开放 str），question|grade|agent|...
-    - parent_id：owner 隔离（呼应题库闭环）；child_id：触发者（出题可为 null=家长）
+    - teacher_id：owner 隔离（呼应题库闭环）；student_id：触发者（出题可为 null=教师）
     - model：所用模型引用（内置 id / ModelConfig id）
     - ref_task_id：关联生成的 Task，便于追溯出题结果
     - status：running|done|error|blocked
@@ -19,8 +19,8 @@ class Conversation(SQLModel, table=True):
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     kind: str = Field(max_length=32, index=True)
-    parent_id: uuid.UUID = Field(foreign_key="user.id", index=True)
-    child_id: uuid.UUID | None = Field(default=None, foreign_key="user.id")
+    teacher_id: uuid.UUID = Field(foreign_key="user.id", index=True)
+    student_id: uuid.UUID | None = Field(default=None, foreign_key="user.id")
     model: str | None = Field(default=None, max_length=255)
     title: str | None = Field(default=None, max_length=255)
     ref_task_id: uuid.UUID | None = Field(default=None, foreign_key="task.id")

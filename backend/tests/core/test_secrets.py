@@ -112,7 +112,7 @@ def test_health_check_flags_undecryptable_model(mem_session, caplog, monkeypatch
 
     mc = ModelConfig(
         id=uuid.uuid4(),
-        parent_id=uuid.uuid4(),
+        teacher_id=uuid.uuid4(),
         label="x",
         provider="openai_compat",
         model_name="gpt",

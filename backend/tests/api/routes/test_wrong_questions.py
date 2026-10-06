@@ -1,28 +1,28 @@
 """错题自动归集单测（T04，故事 13）。
 
-覆盖：正确作答不归集、答错归集（家长/娃娃可查）、重复错不建多条（wrong_count 递增）。
+覆盖：正确作答不归集、答错归集（教师/学生可查）、重复错不建多条（wrong_count 递增）。
 """
 from tests.utils.paging import page_items
-from tests.utils.user import auth_headers, login, register_parent
+from tests.utils.user import auth_headers, login, register_teacher
 
 
-def _create_child(client, ptoken, username="wq_kid"):
+def _create_student(client, ptoken, username="wq_kid"):
     r = client.post(
-        "/api/v1/children",
+        "/api/v1/students",
         headers=auth_headers(ptoken),
         json={
             "username": username,
             "password": "kid123456",
-            "display_name": "娃娃",
+            "display_name": "学生",
             "grade": 2,
-            "role": "child",
+            "role": "student",
         },
     )
     assert r.status_code == 201, r.text
     return r.json()
 
 
-def _make_task(client, ptoken, child_id, count=1):
+def _make_task(client, ptoken, student_id, count=1):
     # 单流：以「已生成题卡」直接落库（POST /tasks/from-generated，唯一业务写库点，ADR-0023）。
     specs = [
         {
@@ -54,7 +54,7 @@ def _make_task(client, ptoken, child_id, count=1):
         headers=auth_headers(ptoken),
         json={
             "title": "错题测试",
-            "child_id": child_id,
+            "student_id": student_id,
             "specs": specs,
             "questions": questions,
         },
@@ -67,7 +67,7 @@ def _make_task(client, ptoken, child_id, count=1):
     ag = client.post(
         f"/api/v1/tasks/{tid}/assign",
         headers=auth_headers(ptoken),
-        params={"child_id": child_id},
+        params={"student_id": student_id},
     )
     assert ag.status_code == 200, ag.text
     return ag.json()
@@ -83,20 +83,20 @@ def _answer(client, ctoken, task_id, question_id, student_answer):
     return r.json()
 
 
-def _setup(client, parent_username, child_username):
-    r = register_parent(client, username=parent_username)
+def _setup(client, teacher_username, student_username):
+    r = register_teacher(client, username=teacher_username)
     assert r.status_code == 200
     ptoken = r.json()["access_token"]
-    child = _create_child(client, ptoken, username=child_username)
-    task = _make_task(client, ptoken, child["id"])
-    lr = login(client, child_username, "kid123456")
+    student = _create_student(client, ptoken, username=student_username)
+    task = _make_task(client, ptoken, student["id"])
+    lr = login(client, student_username, "kid123456")
     assert lr.status_code == 200
-    return ptoken, child, task, lr.json()["access_token"]
+    return ptoken, student, task, lr.json()["access_token"]
 
 
 def test_correct_answer_not_collected(client):
-    """正确作答不归集：答对后娃娃/家长的错题列表均为空。"""
-    ptoken, _child, task, ctoken = _setup(client, "wq1_parent", "wq1_kid")
+    """正确作答不归集：答对后学生/教师的错题列表均为空。"""
+    ptoken, _student, task, ctoken = _setup(client, "wq1_teacher", "wq1_kid")
     q = task["questions"][0]
     result = _answer(client, ctoken, task["id"], q["question_id"], q["answer"])
     assert result["correct"] is True
@@ -104,17 +104,17 @@ def test_correct_answer_not_collected(client):
     mine = client.get("/api/v1/tasks/wrong-questions", headers=auth_headers(ctoken))
     assert mine.status_code == 200 and page_items(mine) == []
 
-    # 家长视角同样为空
-    by_parent = client.get(
-        f"/api/v1/tasks/children/{_child['id']}/wrong-questions",
+    # 教师视角同样为空
+    by_teacher = client.get(
+        f"/api/v1/tasks/students/{_student['id']}/wrong-questions",
         headers=auth_headers(ptoken),
     )
-    assert by_parent.status_code == 200 and page_items(by_parent) == []
+    assert by_teacher.status_code == 200 and page_items(by_teacher) == []
 
 
 def test_wrong_answer_collected_with_full_fields(client):
-    """答错归集：家长/娃娃都能查到；娃娃端不含答案（防作弊），家长端含答案供核查。"""
-    ptoken, child, task, ctoken = _setup(client, "wq2_parent", "wq2_kid")
+    """答错归集：教师/学生都能查到；学生端不含答案（防作弊），教师端含答案供核查。"""
+    ptoken, student, task, ctoken = _setup(client, "wq2_teacher", "wq2_kid")
     q = task["questions"][0]
     result = _answer(client, ctoken, task["id"], q["question_id"], "__wrong__")
     assert result["correct"] is False
@@ -127,25 +127,25 @@ def test_wrong_answer_collected_with_full_fields(client):
     assert item["question_id"] == q["question_id"]
     assert item["subject"] == "数学" and item["grade"] == 2
     assert item["stem"] == q["stem"]
-    assert item["answer"] is None  # 娃娃端防作弊
+    assert item["answer"] is None  # 学生端防作弊
     assert item["explanation"]
     assert item["wrong_count"] == 1
     assert item["first_wrong_at"] is not None
 
-    by_parent = client.get(
-        f"/api/v1/tasks/children/{child['id']}/wrong-questions",
+    by_teacher = client.get(
+        f"/api/v1/tasks/students/{student['id']}/wrong-questions",
         headers=auth_headers(ptoken),
     )
-    assert by_parent.status_code == 200
-    parents = page_items(by_parent)
-    assert len(parents) == 1
-    assert parents[0]["question_id"] == q["question_id"]
-    assert parents[0]["answer"] == q["answer"]  # 家长端含答案
+    assert by_teacher.status_code == 200
+    teachers = page_items(by_teacher)
+    assert len(teachers) == 1
+    assert teachers[0]["question_id"] == q["question_id"]
+    assert teachers[0]["answer"] == q["answer"]  # 教师端含答案
 
 
 def test_repeat_wrong_not_duplicated(client):
     """同一题重复答错：只保留一条，wrong_count 递增。"""
-    ptoken, child, task, ctoken = _setup(client, "wq3_parent", "wq3_kid")
+    ptoken, student, task, ctoken = _setup(client, "wq3_teacher", "wq3_kid")
     q = task["questions"][0]
     for _ in range(3):
         _answer(client, ctoken, task["id"], q["question_id"], "__wrong__")
@@ -159,23 +159,23 @@ def test_repeat_wrong_not_duplicated(client):
 
 
 def test_wrong_questions_permission(client):
-    """权限边界：娃娃不能查家长接口，家长不能查别人的娃娃。"""
-    ptoken, _child, task, ctoken = _setup(client, "wq4_parent", "wq4_kid")
+    """权限边界：学生不能查教师接口，教师不能查别人的学生。"""
+    ptoken, _student, task, ctoken = _setup(client, "wq4_teacher", "wq4_kid")
     _answer(client, ctoken, task["id"], task["questions"][0]["question_id"], "__wrong__")
 
-    # 娃娃调家长接口（CurrentParent）-> 403
+    # 学生调教师接口（CurrentTeacher）-> 403
     bad = client.get(
-        f"/api/v1/tasks/children/{_child['id']}/wrong-questions",
+        f"/api/v1/tasks/students/{_student['id']}/wrong-questions",
         headers=auth_headers(ctoken),
     )
     assert bad.status_code == 403
 
-    # 家长查别人的娃娃 -> 403
-    other_parent = register_parent(client, username="wq4_other")
-    assert other_parent.status_code == 200
-    opt = other_parent.json()["access_token"]
+    # 教师查别人的学生 -> 403
+    other_teacher = register_teacher(client, username="wq4_other")
+    assert other_teacher.status_code == 200
+    opt = other_teacher.json()["access_token"]
     stranger = client.get(
-        f"/api/v1/tasks/children/{_child['id']}/wrong-questions",
+        f"/api/v1/tasks/students/{_student['id']}/wrong-questions",
         headers=auth_headers(opt),
     )
     assert stranger.status_code == 403

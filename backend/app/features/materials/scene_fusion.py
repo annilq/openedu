@@ -2,7 +2,7 @@
 
 融合 = 取知识点 ``scenes`` 模板，用题面输入覆盖默认 ``inputs``，附 ``locked_answer``。
 纯函数 :func:`fuse_scene_spec` 与带 DB 查找的 :func:`resolve_scene_spec_for_question`
-共用同一套覆盖逻辑；读取路径（错题本 / 题卡）按 ``(parent_id, subject, grade,
+共用同一套覆盖逻辑；读取路径（错题本 / 题卡）按 ``(teacher_id, subject, grade,
 knowledge_point, semester)`` 解析知识点模板。
 
 匹配策略（学期维度，ADR-0061 发布任务对接资料库）：
@@ -86,7 +86,7 @@ def default_scene_from_figure(figure_key: str | None) -> dict | None:
     为什么必须有兜底：讲解的**几何**权威来源是图库（``scene_figures``），教师模板
     只提供默认参数（默认哪个图形、轴多少度）。题面明写「正方形」时，图库里本来
     就有权威顶点——「没配模板就不出图」会让「正方形有几条对称轴」这类**最典型**
-    的题裸奔，家长看到的就是「功能没做」。
+    的题裸奔，教师看到的就是「功能没做」。
 
     边界（防臆造，与 :func:`extract_scene_inputs` 同一纪律）：**只有题面/选项确实
     命中了图库图形才生成**。命中不了（纯计算题「图书馆有 86 本书」）返回 ``None``
@@ -153,7 +153,7 @@ def scene_spec_for_read(
     session: Session,
     *,
     snapshot: Any,
-    parent_id: Any,
+    teacher_id: Any,
     subject: str,
     grade: int,
     knowledge_point: str,
@@ -176,7 +176,7 @@ def scene_spec_for_read(
         return snapshot
     return build_scene_spec_for_question(
         session,
-        parent_id=parent_id,
+        teacher_id=teacher_id,
         subject=subject,
         grade=grade,
         knowledge_point=knowledge_point,
@@ -190,7 +190,7 @@ def scene_spec_for_read(
 def resolve_scene_spec_for_question(
     session: Session,
     *,
-    parent_id: Any,
+    teacher_id: Any,
     subject: str,
     grade: int,
     knowledge_point: str,
@@ -209,7 +209,7 @@ def resolve_scene_spec_for_question(
     使场景贴合本题。**``cache`` 只在 ``overrides`` 为空时可用**——缓存键只含
     (知识点, 学期)，带 overrides 时同一知识点不同题目的结果不同，混用会串味。
 
-    ``cache``（可选）按 ``(parent_id, subject, grade, knowledge_point, semester)`` 缓存，
+    ``cache``（可选）按 ``(teacher_id, subject, grade, knowledge_point, semester)`` 缓存，
     避免一页错题对同一「知识点 + 学期」反复查库。
     """
     if not knowledge_point:
@@ -218,19 +218,19 @@ def resolve_scene_spec_for_question(
         # 带题面值时不走缓存：同一知识点的不同题目结果不同。
         return _resolve_uncached(
             session,
-            parent_id=parent_id,
+            teacher_id=teacher_id,
             subject=subject,
             grade=grade,
             knowledge_point=knowledge_point,
             semester=semester,
             overrides=overrides,
         )
-    key = (str(parent_id), subject, grade, knowledge_point, semester)
+    key = (str(teacher_id), subject, grade, knowledge_point, semester)
     if cache is not None and key in cache:
         return cache[key]
     result = _resolve_uncached(
         session,
-        parent_id=parent_id,
+        teacher_id=teacher_id,
         subject=subject,
         grade=grade,
         knowledge_point=knowledge_point,
@@ -245,7 +245,7 @@ def resolve_scene_spec_for_question(
 def _resolve_uncached(
     session: Session,
     *,
-    parent_id: Any,
+    teacher_id: Any,
     subject: str,
     grade: int,
     knowledge_point: str,
@@ -258,7 +258,7 @@ def _resolve_uncached(
         return session.exec(
             select(KnowledgePoint)
             .where(
-                KnowledgePoint.parent_id == parent_id,
+                KnowledgePoint.teacher_id == teacher_id,
                 KnowledgePoint.subject == subject,
                 KnowledgePoint.grade == grade,
                 KnowledgePoint.name == knowledge_point,
@@ -280,7 +280,7 @@ def _resolve_uncached(
 def build_scene_spec_for_question(
     session: Session,
     *,
-    parent_id: Any,
+    teacher_id: Any,
     subject: str,
     grade: int,
     knowledge_point: str,
@@ -309,7 +309,7 @@ def build_scene_spec_for_question(
     overrides = extract_scene_inputs(stem=stem, options=options)
     spec = resolve_scene_spec_for_question(
         session,
-        parent_id=parent_id,
+        teacher_id=teacher_id,
         subject=subject,
         grade=grade,
         knowledge_point=knowledge_point,

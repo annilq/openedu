@@ -2,7 +2,7 @@
 
 覆盖两条主路径：
 - ``fuse_scene_spec``：纯函数，覆盖题面输入 → 题目实例；
-- ``resolve_scene_spec_for_question``：按题目知识点查家长私有知识点模板 + 分页缓存。
+- ``resolve_scene_spec_for_question``：按题目知识点查教师私有知识点模板 + 分页缓存。
 
 DB 查询用轻量 stub session，不依赖真实数据库，保证单测快且稳定。
 """
@@ -90,7 +90,7 @@ def test_resolve_hits_kp_and_caches():
     cache: dict = {}
     out1 = resolve_scene_spec_for_question(
         session,
-        parent_id="p",
+        teacher_id="p",
         subject="数学",
         grade=4,
         knowledge_point="图形的运动（轴对称）",
@@ -103,7 +103,7 @@ def test_resolve_hits_kp_and_caches():
     session._kp = None  # 若再查会返回 None，可断言没查
     out2 = resolve_scene_spec_for_question(
         session,
-        parent_id="p",
+        teacher_id="p",
         subject="数学",
         grade=4,
         knowledge_point="图形的运动（轴对称）",
@@ -118,7 +118,7 @@ def test_resolve_no_kp_returns_none():
     assert (
         resolve_scene_spec_for_question(
             session,
-            parent_id="p",
+            teacher_id="p",
             subject="数学",
             grade=4,
             knowledge_point="不存在的点",
@@ -132,7 +132,7 @@ def test_resolve_empty_kp_name_returns_none():
     assert (
         resolve_scene_spec_for_question(
             session,
-            parent_id="p",
+            teacher_id="p",
             subject="数学",
             grade=4,
             knowledge_point="",
@@ -168,7 +168,7 @@ def test_resolve_prefers_exact_semester_match():
     session = _SequenceSession([exact])
     out = resolve_scene_spec_for_question(
         session,
-        parent_id="p",
+        teacher_id="p",
         subject="数学",
         grade=4,
         knowledge_point="图形的运动（轴对称）",
@@ -184,7 +184,7 @@ def test_resolve_falls_back_to_year_wide_when_no_exact():
     session = _SequenceSession([None, year_wide])  # 第一次（精确）无果
     out = resolve_scene_spec_for_question(
         session,
-        parent_id="p",
+        teacher_id="p",
         subject="数学",
         grade=4,
         knowledge_point="图形的运动（轴对称）",
@@ -200,7 +200,7 @@ def test_resolve_no_semester_queries_once():
     session = _SequenceSession([year_wide])
     out = resolve_scene_spec_for_question(
         session,
-        parent_id="p",
+        teacher_id="p",
         subject="数学",
         grade=4,
         knowledge_point="图形的运动（轴对称）",
@@ -216,7 +216,7 @@ def test_resolve_semester_aware_cache_key():
     cache: dict = {}
     kw = dict(
         session=session,
-        parent_id="p",
+        teacher_id="p",
         subject="数学",
         grade=4,
         knowledge_point="图形的运动（轴对称）",
@@ -262,7 +262,7 @@ def test_overrides_are_applied_on_read_path():
     session = FakeSession(_KP(template))
     out = resolve_scene_spec_for_question(
         session,
-        parent_id="p",
+        teacher_id="p",
         subject="数学",
         grade=4,
         knowledge_point="图形的运动（轴对称）",
@@ -278,7 +278,7 @@ def test_overrides_bypass_cache():
     cache: dict = {}
     a = resolve_scene_spec_for_question(
         session,
-        parent_id="p",
+        teacher_id="p",
         subject="数学",
         grade=4,
         knowledge_point="KP",
@@ -287,7 +287,7 @@ def test_overrides_bypass_cache():
     )
     b = resolve_scene_spec_for_question(
         session,
-        parent_id="p",
+        teacher_id="p",
         subject="数学",
         grade=4,
         knowledge_point="KP",
@@ -313,7 +313,7 @@ def test_build_scene_spec_end_to_end():
     session = FakeSession(_KP(template))
     out = build_scene_spec_for_question(
         session,
-        parent_id="p",
+        teacher_id="p",
         subject="数学",
         grade=4,
         knowledge_point="图形的运动（轴对称）",
@@ -330,7 +330,7 @@ def test_build_scene_spec_no_knowledge_point_returns_none():
     assert (
         build_scene_spec_for_question(
             session,
-            parent_id="p",
+            teacher_id="p",
             subject="数学",
             grade=4,
             knowledge_point="",

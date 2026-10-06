@@ -16,7 +16,7 @@ engine = create_engine(str(settings.DATABASE_URL), connect_args=_connect_args)
 def run_migrations() -> None:
     """无 Alembic：启动期轻量迁移。
 
-    - question 表补 parent_id 列（owner 隔离，题库复用闭环）。
+    - question 表补 teacher_id 列（owner 隔离，题库复用闭环）。
     - user 表补 interests 列（兴趣画像，WF-1/WF-2）；task 表补 focus_interest 列（兴趣题模式，WF-4）。
     - 回填：通过 task_question -> task 找到原题归属家长；孤儿行保持 NULL
       （作用域查询会排除，dev 期可 rm app.db 重置）。
@@ -24,19 +24,24 @@ def run_migrations() -> None:
     with engine.begin() as conn:
         is_sqlite = engine.dialect.name == "sqlite"
 
-        # —— question.parent_id ——（既有迁移，保留）
+        # —— ADR-0065：归属列 parent_id→teacher_id、child_id→student_id 改名 ——
+        # 旧库物理列仍是 parent_id/child_id，此处一次性改名使其与模型层对齐；新库由
+        # create_all 直接建 teacher_id/student_id，本步 no-op。角色枚举同步映射。
+        _rename_ownership_columns(conn, is_sqlite)
+
+        # —— question.teacher_id ——（既有迁移，保留）
         if is_sqlite:
             cols = [
                 r[1]
                 for r in conn.execute(text("PRAGMA table_info(question)")).fetchall()
             ]
-            if "parent_id" not in cols:
+            if "teacher_id" not in cols:
                 conn.execute(
-                    text("ALTER TABLE question ADD COLUMN parent_id VARCHAR(36)")
+                    text("ALTER TABLE question ADD COLUMN teacher_id VARCHAR(36)")
                 )
         else:  # postgres
             conn.execute(
-                text("ALTER TABLE question ADD COLUMN IF NOT EXISTS parent_id UUID")
+                text("ALTER TABLE question ADD COLUMN IF NOT EXISTS teacher_id UUID")
             )
 
         # —— question.origin（题目来源：ai / parent，ADR-0060）——
@@ -88,11 +93,11 @@ def run_migrations() -> None:
             conn.execute(
                 text(
                     """
-                    UPDATE question SET parent_id = (
-                        SELECT t.parent_id FROM task_question tq
+                    UPDATE question SET teacher_id = (
+                        SELECT t.teacher_id FROM task_question tq
                         JOIN task t ON t.id = tq.task_id
                         WHERE tq.question_id = question.id LIMIT 1
-                    ) WHERE parent_id IS NULL
+                    ) WHERE teacher_id IS NULL
                     """
                 )
             )
@@ -170,11 +175,11 @@ def run_migrations() -> None:
         # CREATE INDEX IF NOT EXISTS 在 SQLite / Postgres 下都幂等，旧库启动期自动补齐。
         for ddl in (
             "CREATE INDEX IF NOT EXISTS ix_question_parent_created "
-            "ON question (parent_id, created_at DESC)",
+            "ON question (teacher_id, created_at DESC)",
             "CREATE INDEX IF NOT EXISTS ix_task_parent_created "
-            "ON task (parent_id, created_at DESC)",
+            "ON task (teacher_id, created_at DESC)",
             "CREATE INDEX IF NOT EXISTS ix_wrongquestion_child_firstwrong "
-            "ON wrongquestion (child_id, first_wrong_at DESC)",
+            "ON wrongquestion (student_id, first_wrong_at DESC)",
         ):
             try:
                 conn.execute(text(ddl))
@@ -218,11 +223,11 @@ def run_migrations() -> None:
         # ⚠️ 上一段只补了**列**，但 SQLite **无法 ALTER 已存在表上的 UNIQUE 约束**
         # （没有 `ALTER TABLE ... ADD CONSTRAINT`）。于是所有在加学期维度**之前**
         # 建库的库（含本机开发库）里，唯一约束仍是旧的 4 列
-        # `UNIQUE(parent_id, subject, grade, name)` —— **少了 semester**。
+        # `UNIQUE(teacher_id, subject, grade, name)` —— **少了 semester**。
         #
         # 后果不是「报错」而是**静默废掉 §J 承诺的核心能力**：同一知识点无法按学期
         # 各存一份（上/下学期模板），因为名字一撞就撞唯一约束。实测报错
-        # `UNIQUE constraint failed: knowledgepoint.parent_id, .subject, .grade, .name`。
+        # `UNIQUE constraint failed: knowledgepoint.teacher_id, .subject, .grade, .name`。
         #
         # 修法：SQLite 改约束只能**重建表**（建新表 → 拷数据 → 删旧 → 改名 → 重建索引）。
         # 幂等：只在检测到约束确实缺 semester 时才做。
@@ -368,7 +373,7 @@ def run_migrations() -> None:
             text(
                 "CREATE TABLE IF NOT EXISTS model_config ("
                 " id VARCHAR(36) PRIMARY KEY,"
-                " parent_id VARCHAR(36),"
+                " teacher_id VARCHAR(36),"
                 " label VARCHAR(64),"
                 " provider VARCHAR(32),"
                 " base_url VARCHAR(512),"
@@ -387,8 +392,8 @@ def run_migrations() -> None:
                 "CREATE TABLE IF NOT EXISTS conversation ("
                 " id VARCHAR(36) PRIMARY KEY,"
                 " kind VARCHAR(32),"
-                " parent_id VARCHAR(36),"
-                " child_id VARCHAR(36),"
+                " teacher_id VARCHAR(36),"
+                " student_id VARCHAR(36),"
                 " model VARCHAR(255),"
                 " title VARCHAR(255),"
                 " ref_task_id VARCHAR(36),"
@@ -462,7 +467,7 @@ def _rebuild_kp_unique_with_semester(conn) -> None:
 
     为什么需要：加学期维度那次迁移只补了**列**（``ADD COLUMN semester``），
     约束没动。SQLite 会忽略 ``ADD COLUMN`` 里带的 ``UNIQUE(...)`` 子句，于是老库里
-    仍是 ``UNIQUE(parent_id, subject, grade, name)``——**同一知识点按学期各存一份
+    仍是 ``UNIQUE(teacher_id, subject, grade, name)``——**同一知识点按学期各存一份
     根本存不进去**（名字一撞就撞约束），§J 承诺的核心能力静默失效。
 
     幂等：先读 ``sqlite_master`` 判约束现状，缺 semester 才动手；已正确的库直接返回。
@@ -495,7 +500,7 @@ def _rebuild_kp_unique_with_semester(conn) -> None:
         text(
             "CREATE TABLE _kp_migrate_tmp ("
             " id CHAR(32) NOT NULL, "
-            " parent_id CHAR(32) NOT NULL, "
+            " teacher_id CHAR(32) NOT NULL, "
             " subject VARCHAR(16) NOT NULL, "
             " grade INTEGER NOT NULL, "
             " name VARCHAR(128) NOT NULL, "
@@ -506,16 +511,16 @@ def _rebuild_kp_unique_with_semester(conn) -> None:
             " scenes TEXT, "
             " PRIMARY KEY (id), "
             # ★ 关键差异：唯一约束含 semester → 同一知识点可按学期各存一份
-            " UNIQUE (parent_id, subject, grade, name, semester), "
-            " FOREIGN KEY(parent_id) REFERENCES user (id))"
+            " UNIQUE (teacher_id, subject, grade, name, semester), "
+            " FOREIGN KEY(teacher_id) REFERENCES user (id))"
         )
     )
     conn.execute(
         text(
             "INSERT INTO _kp_migrate_tmp "
-            "(id, parent_id, subject, grade, name, status, source, created_at, "
+            "(id, teacher_id, subject, grade, name, status, source, created_at, "
             " semester, scenes) "
-            "SELECT id, parent_id, subject, grade, name, status, source, created_at, "
+            "SELECT id, teacher_id, subject, grade, name, status, source, created_at, "
             " COALESCE(semester, ''), scenes FROM knowledgepoint"
         )
     )
@@ -526,7 +531,7 @@ def _rebuild_kp_unique_with_semester(conn) -> None:
     conn.execute(
         text(
             "CREATE INDEX ix_knowledgepoint_scope "
-            "ON knowledgepoint (parent_id, subject, grade, semester)"
+            "ON knowledgepoint (teacher_id, subject, grade, semester)"
         )
     )
 
@@ -538,7 +543,7 @@ def _migrate_kp_no_empty_semester(conn) -> None:
     概念（如「图形的运动」）在管理页出现「待审 + 已转正」两条重名数据。决定：知识点
     的学期必须是具体值，不再允许空。
 
-    - 同一 (parent_id, subject, grade, name) 同时有 ``''`` 行与具体学期行的 → 删 ``''`` 行
+    - 同一 (teacher_id, subject, grade, name) 同时有 ``''`` 行与具体学期行的 → 删 ``''`` 行
       （具体学期胜出，消除重名）。
     - 其余 ``''`` 行（纯整学年、无具体学期兄弟）→ 改为 ``上学期``（讲解页可再改）。
 
@@ -554,7 +559,7 @@ def _migrate_kp_no_empty_semester(conn) -> None:
                 "  AND EXISTS ("
                 "    SELECT 1 FROM knowledgepoint k2"
                 "    WHERE k2.semester <> ''"
-                "      AND k2.parent_id = knowledgepoint.parent_id"
+                "      AND k2.teacher_id = knowledgepoint.teacher_id"
                 "      AND k2.subject = knowledgepoint.subject"
                 "      AND k2.grade = knowledgepoint.grade"
                 "      AND k2.name = knowledgepoint.name"
@@ -568,6 +573,76 @@ def _migrate_kp_no_empty_semester(conn) -> None:
     except OperationalError:
         # 表还没建 → 跳过（首次启动由 create_all 建表，本迁移后续启动再收尾）
         return
+
+
+def _rename_ownership_columns(conn, is_sqlite: bool) -> None:
+    """把历史库的归属列 parent_id→teacher_id、child_id→student_id 改名（ADR-0065）。
+
+    新库由 ``create_all`` 直接建 ``teacher_id``/``student_id``，本函数 no-op。
+    旧库（仍 ``parent_id``/``child_id``）在此一次性改名，使模型层与物理列对齐。
+
+    幂等：仅当旧列存在、新列不存在时才 ``RENAME``；表不存在则跳过（偏序迁移纪律）。
+    角色枚举值同步映射：``parent``→``teacher``、``child``→``student``。
+    """
+    renames = [
+        ("model_config", "parent_id", "teacher_id"),
+        ("question", "parent_id", "teacher_id"),
+        ("conversation", "parent_id", "teacher_id"),
+        ("conversation", "child_id", "student_id"),
+        ("task", "parent_id", "teacher_id"),
+        ("task", "child_id", "student_id"),
+        ("user", "parent_id", "teacher_id"),
+        ("materialfolder", "parent_id", "teacher_id"),
+        ("material", "parent_id", "teacher_id"),
+        ("materialchunk", "parent_id", "teacher_id"),
+        ("knowledgepoint", "parent_id", "teacher_id"),
+        ("wrongquestion", "child_id", "student_id"),
+        ("answerrecord", "child_id", "student_id"),
+        ("checkin", "child_id", "student_id"),
+        ("tutor", "child_id", "student_id"),
+    ]
+    for table, old, new in renames:
+        try:
+            if is_sqlite:
+                cols = [
+                    r[1]
+                    for r in conn.execute(
+                        text(f"PRAGMA table_info({table})")
+                    ).fetchall()
+                ]
+                old_exists = old in cols
+                new_exists = new in cols
+            else:
+                row = conn.execute(
+                    text(
+                        "SELECT 1 FROM information_schema.columns "
+                        "WHERE table_name = :t AND column_name = :c"
+                    ),
+                    {"t": table, "c": old},
+                ).fetchone()
+                old_exists = row is not None
+                row2 = conn.execute(
+                    text(
+                        "SELECT 1 FROM information_schema.columns "
+                        "WHERE table_name = :t AND column_name = :c"
+                    ),
+                    {"t": table, "c": new},
+                ).fetchone()
+                new_exists = row2 is not None
+        except OperationalError:
+            # 表不存在（首次启动偏序迁移），跳过
+            continue
+        if old_exists and not new_exists:
+            conn.execute(
+                text(f"ALTER TABLE {table} RENAME COLUMN {old} TO {new}")
+            )
+    # 角色枚举值映射（ADR-0065）：parent→teacher、child→student。幂等（无匹配行即 no-op）。
+    conn.execute(
+        text("UPDATE \"user\" SET role = 'teacher' WHERE role = 'parent'")
+    )
+    conn.execute(
+        text("UPDATE \"user\" SET role = 'student' WHERE role = 'child'")
+    )
 
 
 def init_db() -> None:

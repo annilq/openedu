@@ -10,19 +10,18 @@
 
 ADR-0030：``skills`` 为 manifest 声明的 SOP（``skills/*.md``，系统受控资产），**不参与
 输入安全校验**。SOP 文本里本就写着「越狱 / 成人 / 暴力 / 政治敏感一律拒绝」这类词，
-若把它并进 ``check_input`` 的扫描范围，每条娃娃提问都会被自己的安全 SOP 判为不安全
+若把它并进 ``check_input`` 的扫描范围，每条学生提问都会被自己的安全 SOP 判为不安全
 （实测 ``check_input(tutor_sop.md)`` → 命中「越狱」）。闸门只拦**用户可控输入**
 （question / knowledge_point / context），SOP 在闸门之后拼接进 prompt。
 """
 
 import re
-
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 
 from app.core.async_bridge import run_async
 from app.domain.provider import EducationLLMProvider
-from app.domain.retriever import KnowledgeChunk, KnowledgeRetriever
+from app.domain.retriever import KnowledgeRetriever
 from app.domain.safety import SAFE_REFUSAL, check_input, check_output
 
 # 知识库原始片段常是 OCR 教材的任意字符窗口，夹带页码 / 练习题号 / 页眉等噪声，
@@ -200,7 +199,7 @@ class TutorService:
         ``skills``：业务 SOP（系统受控），在输入闸门**之后**拼进上下文（ADR-0030）。
         """
         # 1) 输入安全校验（越狱 / 非学习类主题）
-        # 对所有娃娃可输入字段统一校验，避免越狱指令从知识点/上下文绕过年龄锁
+        # 对所有学生可输入字段统一校验，避免越狱指令从知识点/上下文绕过年龄锁
         combined = "\n".join(p for p in (question, knowledge_point, context) if p)
         inp = check_input(combined)
         if not inp.safe:
@@ -239,8 +238,8 @@ class TutorService:
         )
 
         # 3.5) 引擎不可用：provider.tutor 返回 None，降级为兜底说明。
-        # 缺失该分支时无引擎会把 answer=None、blocked=False 的结果下发——娃娃侧看到
-        # 空讲解，家长侧却记为一次正常答疑。
+        # 缺失该分支时无引擎会把 answer=None、blocked=False 的结果下发——学生侧看到
+        # 空讲解，教师侧却记为一次正常答疑。
         if raw is None:
             return TutorResult(
                 answer=_LLM_UNAVAILABLE,

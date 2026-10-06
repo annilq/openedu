@@ -14,12 +14,12 @@ from app.core.errors import AppErrorException
 from app.db.models import Question, Task, TaskQuestion, User, WrongQuestion
 from app.features.export import service as export_service
 from app.features.export.schemas import ExportSheetReq
-from tests.utils.user import auth_headers, register_parent
+from tests.utils.user import auth_headers, register_teacher
 
 
-def _register_parent(client, db: Session) -> tuple[User, str]:
+def _register_teacher(client, db: Session) -> tuple[User, str]:
     username = f"exp_{uuid.uuid4().hex[:8]}"
-    assert register_parent(client, username=username).status_code == 200
+    assert register_teacher(client, username=username).status_code == 200
     row = db.exec(select(User).where(User.username == username)).first()
     assert row is not None
     token = client.post(
@@ -28,17 +28,17 @@ def _register_parent(client, db: Session) -> tuple[User, str]:
     return row, token
 
 
-def _create_child(client, token: str, db: Session) -> User:
+def _create_student(client, token: str, db: Session) -> User:
     username = f"kid_{uuid.uuid4().hex[:8]}"
     r = client.post(
-        "/api/v1/children",
+        "/api/v1/students",
         headers=auth_headers(token),
         json={
             "username": username,
             "password": "kid123456",
             "display_name": "导出测试娃",
             "grade": 2,
-            "role": "child",
+            "role": "student",
         },
     )
     assert r.status_code == 201, r.text
@@ -47,9 +47,9 @@ def _create_child(client, token: str, db: Session) -> User:
     return row
 
 
-def _make_question(db: Session, *, parent_id, stem: str, subject: str = "数学") -> Question:
+def _make_question(db: Session, *, teacher_id, stem: str, subject: str = "数学") -> Question:
     q = Question(
-        parent_id=parent_id,
+        teacher_id=teacher_id,
         subject=subject,
         grade=2,
         knowledge_point="加法",
@@ -65,8 +65,8 @@ def _make_question(db: Session, *, parent_id, stem: str, subject: str = "数学"
     return q
 
 
-def _make_task(db: Session, *, parent_id, title: str, questions: list[Question]) -> Task:
-    task = Task(parent_id=parent_id, title=title, status="assigned")
+def _make_task(db: Session, *, teacher_id, title: str, questions: list[Question]) -> Task:
+    task = Task(teacher_id=teacher_id, title=title, status="assigned")
     db.add(task)
     db.commit()
     db.refresh(task)
@@ -91,10 +91,10 @@ def _make_task(db: Session, *, parent_id, title: str, questions: list[Question])
 
 
 def test_task_source_groups_by_task_and_uses_snapshot(client, db):
-    parent, _ = _register_parent(client, db)
-    q1 = _make_question(db, parent_id=parent.id, stem="任务一题面")
-    q2 = _make_question(db, parent_id=parent.id, stem="任务二题面")
-    task = _make_task(db, parent_id=parent.id, title="周末练习", questions=[q1, q2])
+    teacher, _ = _register_teacher(client, db)
+    q1 = _make_question(db, teacher_id=teacher.id, stem="任务一题面")
+    q2 = _make_question(db, teacher_id=teacher.id, stem="任务二题面")
+    task = _make_task(db, teacher_id=teacher.id, title="周末练习", questions=[q1, q2])
     # 源题事后被编辑：印的是快照，不该跟着变
     q1.stem = "源题已被改成另一个样子"
     db.add(q1)
@@ -102,7 +102,7 @@ def test_task_source_groups_by_task_and_uses_snapshot(client, db):
 
     document = export_service.build_document(
         session=db,
-        parent_id=parent.id,
+        teacher_id=teacher.id,
         req=ExportSheetReq(source="task", ids=[task.id]),
     )
     assert document.title == "周末练习"
@@ -111,40 +111,40 @@ def test_task_source_groups_by_task_and_uses_snapshot(client, db):
 
 
 def test_task_source_rejects_foreign_task(client, db):
-    parent, _ = _register_parent(client, db)
-    other, _ = _register_parent(client, db)
-    q = _make_question(db, parent_id=other.id, stem="别人的")
-    task = _make_task(db, parent_id=other.id, title="别人的任务", questions=[q])
+    teacher, _ = _register_teacher(client, db)
+    other, _ = _register_teacher(client, db)
+    q = _make_question(db, teacher_id=other.id, stem="别人的")
+    task = _make_task(db, teacher_id=other.id, title="别人的任务", questions=[q])
     with pytest.raises(AppErrorException) as exc:
         export_service.build_document(
             session=db,
-            parent_id=parent.id,
+            teacher_id=teacher.id,
             req=ExportSheetReq(source="task", ids=[task.id]),
         )
     assert exc.value.status_code == 403
 
 
 def test_wrong_book_skips_graduated_and_filters_due(client, db):
-    parent, ptoken = _register_parent(client, db)
-    child = _create_child(client, ptoken, db)
+    teacher, ptoken = _register_teacher(client, db)
+    student = _create_student(client, ptoken, db)
 
-    due = _make_question(db, parent_id=parent.id, stem="今天到期")
-    future = _make_question(db, parent_id=parent.id, stem="明天才到期")
-    graduated = _make_question(db, parent_id=parent.id, stem="已经毕业")
+    due = _make_question(db, teacher_id=teacher.id, stem="今天到期")
+    future = _make_question(db, teacher_id=teacher.id, stem="明天才到期")
+    graduated = _make_question(db, teacher_id=teacher.id, stem="已经毕业")
     now = datetime.now(UTC)
     rows = [
         WrongQuestion(
-            child_id=child.id,
+            student_id=student.id,
             question_id=due.id,
             due_at=now - timedelta(minutes=5),
         ),
         WrongQuestion(
-            child_id=child.id,
+            student_id=student.id,
             question_id=future.id,
             due_at=now + timedelta(days=1),
         ),
         WrongQuestion(
-            child_id=child.id,
+            student_id=student.id,
             question_id=graduated.id,
             due_at=now - timedelta(days=1),
             graduated_at=now,
@@ -156,8 +156,8 @@ def test_wrong_book_skips_graduated_and_filters_due(client, db):
 
     all_doc = export_service.build_document(
         session=db,
-        parent_id=parent.id,
-        req=ExportSheetReq(source="wrong_book", child_id=child.id),
+        teacher_id=teacher.id,
+        req=ExportSheetReq(source="wrong_book", student_id=student.id),
     )
     stems = [q.stem for s in all_doc.sections for q in s.questions]
     assert "已经毕业" not in stems
@@ -165,19 +165,19 @@ def test_wrong_book_skips_graduated_and_filters_due(client, db):
 
     due_doc = export_service.build_document(
         session=db,
-        parent_id=parent.id,
-        req=ExportSheetReq(source="wrong_book", child_id=child.id, due_only=True),
+        teacher_id=teacher.id,
+        req=ExportSheetReq(source="wrong_book", student_id=student.id, due_only=True),
     )
     due_stems = [q.stem for s in due_doc.sections for q in s.questions]
     assert due_stems == ["今天到期"]
 
 
-def test_wrong_book_rejects_foreign_child(client, db):
-    parent, _ = _register_parent(client, db)
+def test_wrong_book_rejects_foreign_student(client, db):
+    teacher, _ = _register_teacher(client, db)
     with pytest.raises(AppErrorException) as exc:
         export_service.build_document(
             session=db,
-            parent_id=parent.id,
-            req=ExportSheetReq(source="wrong_book", child_id=uuid.uuid4()),
+            teacher_id=teacher.id,
+            req=ExportSheetReq(source="wrong_book", student_id=uuid.uuid4()),
         )
     assert exc.value.status_code == 403

@@ -12,7 +12,7 @@ import uuid
 import pytest
 
 from tests.utils.fake_provider import FakeLLMProvider
-from tests.utils.user import auth_headers, register_parent
+from tests.utils.user import auth_headers, register_teacher
 
 
 def _count_question_cards(sse_text: str) -> int:
@@ -45,22 +45,22 @@ def _patch_provider(monkeypatch, *, fail_at: set[int] | None = None) -> None:
     """
     monkeypatch.setattr(
         "app.features.tasks.service.build_ai_provider",
-        lambda model_ref=None, *, parent_id=None, session=None: FakeLLMProvider(
+        lambda model_ref=None, *, teacher_id=None, session=None: FakeLLMProvider(
             fail_at=fail_at or set()
         ),
     )
 
 
 @pytest.fixture
-def parent_token(client):
+def teacher_token(client):
     # 唯一用户名，避免 session 级 db 夹具下「用户名已注册」冲突（用户跨测试累积）。
-    username = f"parent_{uuid.uuid4().hex[:8]}"
-    r = register_parent(client, username=username)
+    username = f"teacher_{uuid.uuid4().hex[:8]}"
+    r = register_teacher(client, username=username)
     assert r.status_code == 200, r.text
     return r.json()["access_token"]
 
 
-def test_generate_multi_row_specs_produces_total_cards(client, parent_token, monkeypatch):
+def test_generate_multi_row_specs_produces_total_cards(client, teacher_token, monkeypatch):
     """多行 specs（数学 1 + 语文 1）应产出 2 张题卡，而非被正则吞成 1 张。"""
     _patch_provider(monkeypatch)
     body = {
@@ -81,12 +81,12 @@ def test_generate_multi_row_specs_produces_total_cards(client, parent_token, mon
             },
         ],
     }
-    r = client.post("/api/v1/tasks/generate", headers=auth_headers(parent_token), json=body)
+    r = client.post("/api/v1/tasks/generate", headers=auth_headers(teacher_token), json=body)
     assert r.status_code == 200, r.text
     assert _count_question_cards(r.text) == 2
 
 
-def test_generate_single_row_count_two_produces_two_cards(client, parent_token, monkeypatch):
+def test_generate_single_row_count_two_produces_two_cards(client, teacher_token, monkeypatch):
     """单行 count=2 应产出 2 张（原链路在本场景已正确，作对照守护）。"""
     _patch_provider(monkeypatch)
     body = {
@@ -100,12 +100,12 @@ def test_generate_single_row_count_two_produces_two_cards(client, parent_token, 
             },
         ],
     }
-    r = client.post("/api/v1/tasks/generate", headers=auth_headers(parent_token), json=body)
+    r = client.post("/api/v1/tasks/generate", headers=auth_headers(teacher_token), json=body)
     assert r.status_code == 200, r.text
     assert _count_question_cards(r.text) == 2
 
 
-def test_generate_three_rows_mixed_counts(client, parent_token, monkeypatch):
+def test_generate_three_rows_mixed_counts(client, teacher_token, monkeypatch):
     """多行混合题量（2+1+3）应产出 6 张，验证结构化规格总数不再丢失。"""
     _patch_provider(monkeypatch)
     body = {
@@ -115,17 +115,17 @@ def test_generate_three_rows_mixed_counts(client, parent_token, monkeypatch):
             {"subject": "英语", "grade": 3, "knowledge_point": "词汇", "qtype": "choice", "count": 3},
         ],
     }
-    r = client.post("/api/v1/tasks/generate", headers=auth_headers(parent_token), json=body)
+    r = client.post("/api/v1/tasks/generate", headers=auth_headers(teacher_token), json=body)
     assert r.status_code == 200, r.text
     assert _count_question_cards(r.text) == 6
 
 
-def test_generate_empty_specs_rejected(client, parent_token, monkeypatch):
+def test_generate_empty_specs_rejected(client, teacher_token, monkeypatch):
     """空 specs 必须被显式拒绝（422），不得静默少出。"""
     _patch_provider(monkeypatch)
     r = client.post(
         "/api/v1/tasks/generate",
-        headers=auth_headers(parent_token),
+        headers=auth_headers(teacher_token),
         json={"specs": []},
     )
     assert r.status_code == 422
@@ -146,11 +146,11 @@ def _messages(sse_text: str) -> list[str]:
     return out
 
 
-def test_generate_partial_failure_reports_shortfall(client, parent_token, monkeypatch):
+def test_generate_partial_failure_reports_shortfall(client, teacher_token, monkeypatch):
     """数学+语文各 1 题、语文那次失败：必须只出 1 张卡，且收尾如实报「少题」。
 
     这是本次缺陷的端点级回归：失败题此前只产出一条 STEP(status=error)，前端当普通
-    进度吞掉后照常落库 → 家长拿到「只有数学」的草稿却毫无提示。
+    进度吞掉后照常落库 → 教师拿到「只有数学」的草稿却毫无提示。
     """
     _patch_provider(monkeypatch, fail_at={2})
     body = {
@@ -159,7 +159,7 @@ def test_generate_partial_failure_reports_shortfall(client, parent_token, monkey
             {"subject": "语文", "grade": 3, "knowledge_point": "字词", "qtype": "fill", "count": 1},
         ],
     }
-    r = client.post("/api/v1/tasks/generate", headers=auth_headers(parent_token), json=body)
+    r = client.post("/api/v1/tasks/generate", headers=auth_headers(teacher_token), json=body)
     assert r.status_code == 200, r.text
     assert _count_question_cards(r.text) == 1
 

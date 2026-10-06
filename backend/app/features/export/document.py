@@ -25,7 +25,7 @@ SUBJECT_MARKS: dict[str, str] = {
     "英语": "▲",
 }
 
-# 作答留白形态。只表达「这道题要孩子做什么」，具体毫米数在模板里——
+# 作答留白形态。只表达「这道题要学生做什么」，具体毫米数在模板里——
 # 那是版式决策，不是数据。
 ANSWER_SPACE_CHOICE = "choice"  # 有选项：选项本身即作答区，题后留少量间隔
 ANSWER_SPACE_BLANK_LINE = "blank_line"  # 填空：一条横线
@@ -37,7 +37,7 @@ _LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 # 星号与反引号：题干里不会拿它们当填空，直接剥。
 _EMPHASIS_STAR = re.compile(r"[*`]{1,3}")
 # 下划线必须**成对且紧贴文字**才当强调：填空题干是靠一串下划线表示「这里要写」
-# （如 "I ___ a student."），一律剥掉等于把纸上的空抹了，孩子没地方下笔。
+# （如 "I ___ a student."），一律剥掉等于把纸上的空抹了，学生没地方下笔。
 # 键党组：Markdown 强调要求标记紧贴内容，被空格孤立的长横线不是强调。
 _EMPHASIS_UNDERSCORE = re.compile(r"(?<![\w])_{1,3}(?=[^\s_])([^\n]*?)_{1,3}(?![_\w])")
 _TEX_DELIM = re.compile(r"\$+")
@@ -156,7 +156,7 @@ def _to_export_question(no: int, raw: RawQuestion) -> tuple[ExportQuestion, bool
 def build_export_document(*, title: str, groups: Sequence[QuestionGroup]) -> ExportDocument:
     """把分组好的题装配成导出文档：定题号、做纯文本降级、附学科标记。
 
-    题号**跨节连续**——娃娃用批改 App 扫码时，纸面上不能出现两个「第 1 题」。
+    题号**跨节连续**——学生用批改 App 扫码时，纸面上不能出现两个「第 1 题」。
     """
     sections: list[ExportSection] = []
     downgraded = 0

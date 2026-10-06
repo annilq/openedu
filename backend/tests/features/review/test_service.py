@@ -16,7 +16,7 @@ from app.features.review.schemas import ReviewAnswerSubmit
 
 def _make_entities(db: Session, *, due_in_past: bool = True, stage: int = 0):
     q = Question(
-        parent_id=uuid.uuid4(),
+        teacher_id=uuid.uuid4(),
         subject="数学",
         grade=2,
         knowledge_point="加法",
@@ -30,7 +30,7 @@ def _make_entities(db: Session, *, due_in_past: bool = True, stage: int = 0):
     db.commit()
     db.refresh(q)
     wq = WrongQuestion(
-        child_id=uuid.uuid4(),
+        student_id=uuid.uuid4(),
         question_id=q.id,
         review_stage=stage,
         due_at=(
@@ -58,7 +58,7 @@ def _stub_grader(monkeypatch, *, correct: bool = True):
         },
     )
     # build_ai_provider 在测试环境可能触发 env 缺失，桩掉避免构造真实 provider。
-    # 生产代码调用带 parent_id/session 关键字参数，桩需接受（ADR-0034 归一封装）。
+    # 生产代码调用带 teacher_id/session 关键字参数，桩需接受（ADR-0034 归一封装）。
     monkeypatch.setattr(review_service, "build_ai_provider", lambda *a, **k: None)
 
 
@@ -67,7 +67,7 @@ def test_submit_answer_not_due_rejected(db: Session, monkeypatch):
     _stub_grader(monkeypatch)
     submit = ReviewAnswerSubmit(wrong_question_id=wq.id, student_answer="2")
     try:
-        review_service.submit_answer(session=db, child_id=wq.child_id, submit=submit)
+        review_service.submit_answer(session=db, student_id=wq.student_id, submit=submit)
         assert False, "expected ReviewNotDue"
     except review_service.ReviewNotDue:
         pass
@@ -78,7 +78,7 @@ def test_submit_answer_wrong_owner_404(db: Session, monkeypatch):
     _stub_grader(monkeypatch)
     submit = ReviewAnswerSubmit(wrong_question_id=wq.id, student_answer="2")
     try:
-        review_service.submit_answer(session=db, child_id=uuid.uuid4(), submit=submit)
+        review_service.submit_answer(session=db, student_id=uuid.uuid4(), submit=submit)
         assert False, "expected ReviewNotFound"
     except review_service.ReviewNotFound:
         pass
@@ -89,7 +89,7 @@ def test_submit_answer_happy_path_advances(db: Session, monkeypatch):
     _stub_grader(monkeypatch)
     submit = ReviewAnswerSubmit(wrong_question_id=wq.id, student_answer="2")
 
-    result = review_service.submit_answer(session=db, child_id=wq.child_id, submit=submit)
+    result = review_service.submit_answer(session=db, student_id=wq.student_id, submit=submit)
 
     assert result.correct is True
     assert result.score == 1.0

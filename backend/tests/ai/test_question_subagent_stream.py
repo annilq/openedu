@@ -75,7 +75,7 @@ class _ScriptedProvider(LLMProvider):
 
 def _run(message: str, *, fail: bool = False):
     agent = QuestionSubAgent(provider=_FakeProvider(fail=fail), retriever=None)
-    ctx = SubAgentContext(role="parent", message=message)
+    ctx = SubAgentContext(role="teacher", message=message)
 
     async def _go():
         return [ev async for ev in agent.run(message, ctx)]
@@ -88,7 +88,7 @@ def _run_specs(specs: list[dict], *, fail_at: set[int]):
     agent = QuestionSubAgent(
         provider=_ScriptedProvider(fail_at=fail_at), retriever=None
     )
-    ctx = SubAgentContext(role="parent", message="", extra={"specs": specs})
+    ctx = SubAgentContext(role="teacher", message="", extra={"specs": specs})
 
     async def _go():
         return [ev async for ev in agent.run("", ctx)]
@@ -164,7 +164,7 @@ def test_partial_failure_reports_shortfall_in_tool_result():
     """多学科出题「某一科失败」必须在 TOOL_RESULT 里暴露计数，不得静默少题。
 
     回归背景：数学+语文各 1 题，语文那次模型调用失败时，前端把 STEP(status=error)
-    当普通进度吞掉，流结束后照常落库 → 家长拿到只有数学的残缺任务且无任何提示。
+    当普通进度吞掉，流结束后照常落库 → 教师拿到只有数学的残缺任务且无任何提示。
     """
     events = _run_specs([_spec("数学"), _spec("语文")], fail_at={2})
 

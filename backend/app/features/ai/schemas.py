@@ -11,8 +11,8 @@ class ConversationResp(SQLModel):
 
     id: uuid.UUID
     kind: str
-    parent_id: uuid.UUID
-    child_id: uuid.UUID | None = None
+    teacher_id: uuid.UUID
+    student_id: uuid.UUID | None = None
     model: str | None = None
     title: str | None = None
     ref_task_id: uuid.UUID | None = None

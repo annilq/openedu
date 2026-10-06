@@ -21,14 +21,14 @@ from app.domain import build_provider
 def build_ai_provider(
     model_ref: str | None = None,
     *,
-    parent_id: UUID | str | None = None,
+    teacher_id: UUID | str | None = None,
     session: Session | None = None,
 ):
     """归一构造 AI provider：统一经 ``resolve_engine`` 解析模型引用。
 
-    - ``model_ref`` 为 None → 回退本家长在「模型管理」中设为默认的模型（与既有 ``build_provider()`` 行为一致）。
+    - ``model_ref`` 为 None → 回退本教师在「模型管理」中设为默认的模型（与既有 ``build_provider()`` 行为一致）。
     - ``model_ref`` 为合法 ModelConfig UUID → 解析对应引擎，使批改 / 重生成
-      与 chat 一样尊重家长 ``ModelConfig`` 与请求级 ``model``。
+      与 chat 一样尊重教师 ``ModelConfig`` 与请求级 ``model``。
     """
-    engine = resolve_engine(model_ref, parent_id=parent_id, session=session)
+    engine = resolve_engine(model_ref, teacher_id=teacher_id, session=session)
     return build_provider(engine=engine)

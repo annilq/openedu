@@ -15,10 +15,10 @@ from sqlmodel import Session as DBSession
 
 from app.core.db import engine
 from app.db.models import Question
-from tests.utils.user import auth_headers, register_parent
+from tests.utils.user import auth_headers, register_teacher
 
 
-def _parent_id(client, token: str) -> uuid.UUID:
+def _teacher_id(client, token: str) -> uuid.UUID:
     r = client.get("/api/v1/auth/me", headers=auth_headers(token))
     assert r.status_code == 200, r.text
     return uuid.UUID(r.json()["id"])
@@ -31,14 +31,14 @@ def _list(client, token: str) -> list[dict]:
 
 
 def test_bank_list_returns_semester(client):
-    r = register_parent(client, username="bank_scene_parent")
+    r = register_teacher(client, username="bank_scene_teacher")
     token = r.json()["access_token"]
-    pid = _parent_id(client, token)
+    pid = _teacher_id(client, token)
     with DBSession(engine) as s:
         s.add(
             Question(
                 id=uuid.uuid4(),
-                parent_id=pid,
+                teacher_id=pid,
                 subject="数学",
                 grade=4,
                 knowledge_point="图形的运动（轴对称）",
@@ -57,14 +57,14 @@ def test_bank_list_returns_semester(client):
 
 def test_bank_list_scene_spec_falls_back_to_figure_library(client):
     """没配任何知识点模板时，「正方形有几条对称轴」也必须出图。"""
-    r = register_parent(client, username="bank_scene_parent2")
+    r = register_teacher(client, username="bank_scene_teacher2")
     token = r.json()["access_token"]
-    pid = _parent_id(client, token)
+    pid = _teacher_id(client, token)
     with DBSession(engine) as s:
         s.add(
             Question(
                 id=uuid.uuid4(),
-                parent_id=pid,
+                teacher_id=pid,
                 subject="数学",
                 grade=4,
                 knowledge_point="图形的运动（轴对称）",
@@ -87,14 +87,14 @@ def test_bank_list_scene_spec_falls_back_to_figure_library(client):
 
 def test_bank_list_no_figure_word_has_no_scene(client):
     """纯计算题没有图形可讲 → null，前端据此不渲染图形区（不占位、不报错）。"""
-    r = register_parent(client, username="bank_scene_parent3")
+    r = register_teacher(client, username="bank_scene_teacher3")
     token = r.json()["access_token"]
-    pid = _parent_id(client, token)
+    pid = _teacher_id(client, token)
     with DBSession(engine) as s:
         s.add(
             Question(
                 id=uuid.uuid4(),
-                parent_id=pid,
+                teacher_id=pid,
                 subject="数学",
                 grade=4,
                 knowledge_point="两位数加减法",

@@ -61,7 +61,7 @@ def get_current_user(session: SessionDep, token: TokenDep) -> User:
         raise AppErrorException(ErrCode.NOT_FOUND, "用户不存在")
     if not user.is_active:
         raise AppErrorException(
-            ErrCode.AUTH_INACTIVE_USER, "账号已停用，请联系家长"
+            ErrCode.AUTH_INACTIVE_USER, "账号已停用，请联系教师"
         )
     return user
 
@@ -69,33 +69,33 @@ def get_current_user(session: SessionDep, token: TokenDep) -> User:
 CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
-def require_parent(current_user: CurrentUser) -> User:
-    if current_user.role != "parent":
+def require_teacher(current_user: CurrentUser) -> User:
+    if current_user.role != "teacher":
         raise AppErrorException(
-            ErrCode.AUTH_PARENT_ONLY, "该接口仅家长账号可用"
+            ErrCode.AUTH_TEACHER_ONLY, "该接口仅教师账号可用"
         )
     return current_user
 
 
-CurrentParent = Annotated[User, Depends(require_parent)]
+CurrentTeacher = Annotated[User, Depends(require_teacher)]
 
 
-def require_child(current_user: CurrentUser) -> User:
-    if current_user.role != "child":
+def require_student(current_user: CurrentUser) -> User:
+    if current_user.role != "student":
         raise AppErrorException(
-            ErrCode.AUTH_CHILD_ONLY, "该接口仅娃娃账号可用"
+            ErrCode.AUTH_STUDENT_ONLY, "该接口仅学生账号可用"
         )
     return current_user
 
 
-CurrentChild = Annotated[User, Depends(require_child)]
+CurrentStudent = Annotated[User, Depends(require_student)]
 
 
 @dataclass
 class Caller:
     """统一调用者（悬浮助手双端通用）：role + 用户实体。
 
-    家长端 parent_id=用户自身；娃娃端 child_id=用户自身、parent_id=其家长（配额/owner 用）。
+    教师端 teacher_id=用户自身；学生端 student_id=用户自身、teacher_id=其教师（配额/owner 用）。
     """
 
     role: str

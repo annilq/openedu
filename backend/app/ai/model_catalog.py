@@ -1,10 +1,10 @@
-"""服务商预设目录（优化模型管理：简化家长手动输入）。
+"""服务商预设目录（优化模型管理：简化教师手动输入）。
 
 **注意与「模型」无关**：这里是「服务商」的静态目录（DeepSeek / OpenAI / Ollama …），
-不是可用模型清单——可用模型只有一处来源，即家长在「模型管理」里添加的 `ModelConfig`
+不是可用模型清单——可用模型只有一处来源，即教师在「模型管理」里添加的 `ModelConfig`
 （ADR-0039）。本文件只提供「选中某服务商后自动带出 provider / base_url / 模型名建议」。
 
-家长在「添加模型」时无需逐项手抄 provider / base_url / 模型名：
+教师在「添加模型」时无需逐项手抄 provider / base_url / 模型名：
 - 选一个服务商预设（如 deepseek）即可自动带出 provider 与默认 base_url；
 - models 列表给出该服务商常见模型名建议，前端渲染下拉/快捷选择，也可自由输入。
 
@@ -135,7 +135,7 @@ BUILTIN_PROVIDERS: dict[str, dict[str, Any]] = {
         "label": "Ollama（本地）",
         "provider": "ollama",
         "base_url": "http://localhost:11434",
-        # 本地模型标签随 Ollama 库更新；下列为常用且仍有效的标签（家长也可自由输入任意本地标签）。
+        # 本地模型标签随 Ollama 库更新；下列为常用且仍有效的标签（教师也可自由输入任意本地标签）。
         "models": ["llama3.3", "qwen2.5", "qwen3", "deepseek-r1", "phi3"],
         "api_key_hint": "本地运行，一般无需密钥",
         "doc_url": "https://ollama.com",

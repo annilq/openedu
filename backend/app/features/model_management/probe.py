@@ -7,11 +7,11 @@
 2. **判据必须与生产同源**：探针经 ``app.ai.engine.build_engine`` 构造引擎，与真实
    出题走**同一条链路**（同一份 ollama 默认地址、同一份引擎缓存）。若另起一条
    HTTP 直连，就会出现「测试通过但出题失败」的假绿灯——那比没有测试更糟。
-3. **失败归因可复用**：异常一律经 ``classify_failure``（ADR-0038）归类，家长看到
+3. **失败归因可复用**：异常一律经 ``classify_failure``（ADR-0038）归类，教师看到
    的是「密钥无效 / 地址不可达 / 模型名不存在」，而不是一个笼统的「连接失败」。
 
 探针本身是**一次极小开销的流式生成**（不是只读 /models 清单）：读取清单只能证明
-「接口通」，而家长真正要问的是「能不能用它出题」——认证、模型名、配额三件事
+「接口通」，而教师真正要问的是「能不能用它出题」——认证、模型名、配额三件事
 只有真发一次请求才验得出来。
 """
 from __future__ import annotations
@@ -121,7 +121,7 @@ async def probe_model(
         await asyncio.wait_for(_call_once(engine.genkit, engine.model), timeout=timeout)
     except asyncio.TimeoutError:
         # 超时的**下一步**取决于 provider：本地 Ollama 首次调用要先加载权重
-        # （几个 G 的模型可达数十秒），报「检查地址」会把家长往错的方向推；
+        # （几个 G 的模型可达数十秒），报「检查地址」会把教师往错的方向推；
         # 而云端服务 20 秒没反应，基本就是地址或网络的问题。
         if provider == "ollama":
             message = (
@@ -165,7 +165,7 @@ async def probe_model(
         ok=True,
         latency_ms=latency,
         # 口径是「首个响应」而非「完整答复」：探针在收到第一帧时就收工了
-        # （见 _call_once），把这个数字说成整轮耗时会让家长误判模型速度。
+        # （见 _call_once），把这个数字说成整轮耗时会让教师误判模型速度。
         message=f"连接成功：{model_name} 可用（{latency} ms 收到首个响应）。",
         error_kind=None,
         detail=None,

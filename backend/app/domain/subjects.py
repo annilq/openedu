@@ -24,7 +24,7 @@ SUBJECT_QTYPES: dict[str, list[str]] = {
     "英语": ["choice", "fill", "open"],
 }
 
-# 年级统一 1-9（小学 6 + 初中 3）；娃娃资料里的 1-6 是「孩子当前年级」，另一字段
+# 年级统一 1-9（小学 6 + 初中 3）；学生资料里的 1-6 是「学生当前年级」，另一字段
 GRADE_MIN, GRADE_MAX = 1, 9
 
 

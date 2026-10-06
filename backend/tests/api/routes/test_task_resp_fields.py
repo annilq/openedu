@@ -1,4 +1,4 @@
-"""GET /tasks 响应应携带 child_id / created_at（任务列表展示“对应娃娃”与排序）。"""
+"""GET /tasks 响应应携带 student_id / created_at（任务列表展示“对应学生”与排序）。"""
 from __future__ import annotations
 
 import uuid
@@ -8,13 +8,13 @@ from sqlmodel import Session as DBSession
 from app.core.db import engine
 from app.db.models import Task
 from tests.utils.paging import page_items
-from tests.utils.user import auth_headers, register_parent
+from tests.utils.user import auth_headers, register_teacher
 
 TASK_URL = "/api/v1/tasks"
 
 
-def test_task_list_includes_child_id_and_created_at(client):
-    r = register_parent(client, username="resp_parent_1")
+def test_task_list_includes_student_id_and_created_at(client):
+    r = register_teacher(client, username="resp_teacher_1")
     ptoken = r.json()["access_token"]
     me = client.get("/api/v1/auth/me", headers=auth_headers(ptoken))
     assert me.status_code == 200, me.text
@@ -25,10 +25,10 @@ def test_task_list_includes_child_id_and_created_at(client):
         s.add(
             Task(
                 id=task_id,
-                parent_id=pid,
+                teacher_id=pid,
                 title="一年级数学小测",
                 status="draft",
-                child_id=None,
+                student_id=None,
             )
         )
         s.commit()
@@ -38,8 +38,8 @@ def test_task_list_includes_child_id_and_created_at(client):
     items = page_items(r)
     assert items, "GET /tasks 应返回非空列表"
     item = next(t for t in items if t["id"] == str(task_id))
-    # 新字段必须序列化（之前缺失，导致前端无法展示“对应娃娃”与日期）
-    assert "child_id" in item
+    # 新字段必须序列化（之前缺失，导致前端无法展示“对应学生”与日期）
+    assert "student_id" in item
     assert "created_at" in item
-    assert item["child_id"] is None  # 草稿可未派发
+    assert item["student_id"] is None  # 草稿可未派发
     assert item["created_at"] is not None

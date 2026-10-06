@@ -242,24 +242,24 @@ _GOLD: list[dict] = [
 
 
 @pytest.fixture()
-def gold_parent(client, db):
-    """注册一个黄金集专属家长，并把固定语料按「已向量化」状态入库。"""
-    from tests.utils.user import auth_headers, login, register_parent
+def gold_teacher(client, db):
+    """注册一个黄金集专属教师，并把固定语料按「已向量化」状态入库。"""
+    from tests.utils.user import auth_headers, login, register_teacher
 
     username = f"gold_{uuid.uuid4().hex[:8]}"
-    register_parent(client, username=username, password="pw123456")
+    register_teacher(client, username=username, password="pw123456")
     token = login(client, username, "pw123456").json()["access_token"]
     from sqlmodel import select
 
     from app.db.models import User
 
-    parent = db.exec(select(User).where(User.username == username)).one()
-    pid = parent.id
+    teacher = db.exec(select(User).where(User.username == username)).one()
+    pid = teacher.id
 
     materials: dict[str, str] = {}
     for mname in {c["material"] for c in _CORPUS}:
         mat = Material(
-            parent_id=pid,
+            teacher_id=pid,
             name=mname,
             storage_key=f"gold/{uuid.uuid4().hex}",
             text="黄金集固定语料",
@@ -275,7 +275,7 @@ def gold_parent(client, db):
     for i, c in enumerate(_CORPUS):
         db.add(
             MaterialChunk(
-                parent_id=pid,
+                teacher_id=pid,
                 material_id=materials[c["material"]],
                 seq=i,
                 content=c["content"],
@@ -287,10 +287,10 @@ def gold_parent(client, db):
             )
         )
     db.commit()
-    return {"parent_id": pid, "token": token, "headers": auth_headers(token)}
+    return {"teacher_id": pid, "token": token, "headers": auth_headers(token)}
 
 
-def _retrieve(db, parent_id, monkeypatch, subject, grade, query):
+def _retrieve(db, teacher_id, monkeypatch, subject, grade, query):
     """固定 embedding 替身 + 配置对齐后跑一次检索，返回 top5 content 列表。"""
     monkeypatch.setattr("app.core.config.settings.EMBEDDING_MODEL", "gold-fake")
 
@@ -300,7 +300,7 @@ def _retrieve(db, parent_id, monkeypatch, subject, grade, query):
     monkeypatch.setattr(
         "app.features.materials.retrieval.embed_texts", _fake_embed_async
     )
-    retriever = VectorKnowledgeRetriever(db, parent_id)
+    retriever = VectorKnowledgeRetriever(db, teacher_id)
     chunks = retriever.retrieve(
         subject=subject, grade=grade, knowledge_point=query, query=query
     )
@@ -308,13 +308,13 @@ def _retrieve(db, parent_id, monkeypatch, subject, grade, query):
 
 
 class TestGoldSetRecall:
-    def test_hit_at_5_every_query(self, gold_parent, db, monkeypatch):
+    def test_hit_at_5_every_query(self, gold_teacher, db, monkeypatch):
         """每条黄金查询：top5 至少命中 1 个 gold 片段（Hit@5 = 100% 门禁）。"""
         misses = []
         for entry in _GOLD:
             top5 = _retrieve(
                 db,
-                gold_parent["parent_id"],
+                gold_teacher["teacher_id"],
                 monkeypatch,
                 entry["s"],
                 entry["g"],
@@ -325,13 +325,13 @@ class TestGoldSetRecall:
                 misses.append(f"{entry['q']!r} → top5 无 gold（got {len(top5)} 条）")
         assert misses == [], "Hit@5 未达标：\n" + "\n".join(misses)
 
-    def test_recall_at_5_threshold(self, gold_parent, db, monkeypatch):
+    def test_recall_at_5_threshold(self, gold_teacher, db, monkeypatch):
         """整体 Recall@5 ≥ 0.85（ADR-0055 §14 的门禁；改检索策略后重标）。"""
         total, hits = 0, 0
         for entry in _GOLD:
             top5 = _retrieve(
                 db,
-                gold_parent["parent_id"],
+                gold_teacher["teacher_id"],
                 monkeypatch,
                 entry["s"],
                 entry["g"],
@@ -344,26 +344,26 @@ class TestGoldSetRecall:
         recall = hits / total
         assert recall >= 0.85, f"Recall@5 = {recall:.2f} ({hits}/{total}) 低于门禁"
 
-    def test_grade_isolation(self, gold_parent, db, monkeypatch):
+    def test_grade_isolation(self, gold_teacher, db, monkeypatch):
         """年级过滤：三年级查询绝不召回六年级片段（反之亦然）。"""
-        top5 = _retrieve(db, gold_parent["parent_id"], monkeypatch, "英语", 3, "时态")
+        top5 = _retrieve(db, gold_teacher["teacher_id"], monkeypatch, "英语", 3, "时态")
         for c in top5:
             assert "六年级" not in str(c)
         # 语料里六年级时态片段与三年级问候片段按 subject+grade 隔离，上面已隐式覆盖；
         # 显式断言：三年级查询的三年级问候片段可达
         top5_greet = _retrieve(
-            db, gold_parent["parent_id"], monkeypatch, "英语", 3, "问候语"
+            db, gold_teacher["teacher_id"], monkeypatch, "英语", 3, "问候语"
         )
         assert any("Good morning" in c for c in top5_greet)
 
-    def test_retrieve_without_subject_or_grade(self, gold_parent, db, monkeypatch):
-        """答疑问答（tutor）常拿不到学科/年级：家长端 grade 恒为 0、自由文本难识别
+    def test_retrieve_without_subject_or_grade(self, gold_teacher, db, monkeypatch):
+        """答疑问答（tutor）常拿不到学科/年级：教师端 grade 恒为 0、自由文本难识别
         学科。此时检索必须退化为跨全库语义检索，而非因 subject=''/grade=0 把候选集
         打到空导致 RAG 静默失效（修复前：retrieve('', 0, ...) 恒返回空）。"""
-        top5 = _retrieve(db, gold_parent["parent_id"], monkeypatch, "", 0, "什么是比喻")
+        top5 = _retrieve(db, gold_teacher["teacher_id"], monkeypatch, "", 0, "什么是比喻")
         assert any("比喻" in c for c in top5), f"无 subject/grade 时未召回相关片段：{top5}"
         # 已知学科/年级时仍严格过滤（与上面的隔离测试一致，不因放宽而漏掉约束）
         top5_strict = _retrieve(
-            db, gold_parent["parent_id"], monkeypatch, "语文", 4, "什么是比喻"
+            db, gold_teacher["teacher_id"], monkeypatch, "语文", 4, "什么是比喻"
         )
         assert any("比喻" in c for c in top5_strict)

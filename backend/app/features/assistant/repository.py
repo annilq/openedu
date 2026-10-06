@@ -3,7 +3,7 @@
 多轮会话复用与历史读取（ADR-0026）：前端只需带 ``session_id``，后端按 id 取回
 ``Conversation`` 并载入历史消息拼入 prompt，维持多轮上下文。
 
-同一批行还被读成**用户面的会话历史**（ADR-0048）：列表（家长名下的会话，含娃娃的）
+同一批行还被读成**用户面的会话历史**（ADR-0048）：列表（教师名下的会话，含学生的）
 与回放（把落库轨迹折回对话气泡）。两条读路径与 prompt 历史共用同一个「可见轮次」
 判定（:func:`_visible_rows`）——「哪些行算一轮对话」是领域判定，只应有一份。
 """
@@ -209,13 +209,13 @@ async def load_chat_history_with_summary(
 
 # ── 会话列表（用户面，ADR-0048） ─────────────────────────────────────────────
 def list_chat_conversations(
-    *, session: Session, parent_id: UUID, limit: int = 50
+    *, session: Session, teacher_id: UUID, limit: int = 50
 ) -> list[Conversation]:
-    """家长名下的会话（**含名下娃娃的**），按最近活动倒序。
+    """教师名下的会话（**含名下学生的**），按最近活动倒序。
 
-    归属口径就是 ``Conversation.parent_id``：家长自己聊的 ``child_id IS NULL``，
-    娃娃聊的是娃娃的 id（见 ``service.chat`` 的角色分流）。这里不在 SQL 里再按
-    ``child_id`` 过滤——两类条目都要，「我的 / 孩子的」怎么分段是展示层的事。
+    归属口径就是 ``Conversation.teacher_id``：教师自己聊的 ``student_id IS NULL``，
+    学生聊的是学生的 id（见 ``service.chat`` 的角色分流）。这里不在 SQL 里再按
+    ``student_id`` 过滤——两类条目都要，「我的 / 学生的」怎么分段是展示层的事。
 
     排序键取 ``updated_at``（会话每次被读写都会刷新）而非 ``created_at``：
     刚被续接过的旧会话应该浮到最上面，否则续接完回到列表还得往下翻。
@@ -223,7 +223,7 @@ def list_chat_conversations(
     return list(
         session.exec(
             select(Conversation)
-            .where(Conversation.parent_id == parent_id)
+            .where(Conversation.teacher_id == teacher_id)
             .order_by(Conversation.updated_at.desc(), Conversation.created_at.desc())
             .limit(limit)
         ).all()
@@ -258,9 +258,9 @@ def conversation_meta(
     return out
 
 
-def child_names(session: Session, child_ids: list[UUID]) -> dict[UUID, str]:
-    """娃娃 id → 显示名（列表行的归属标签）。"""
-    ids = [cid for cid in child_ids if cid is not None]
+def student_names(session: Session, student_ids: list[UUID]) -> dict[UUID, str]:
+    """学生 id → 显示名（列表行的归属标签）。"""
+    ids = [cid for cid in student_ids if cid is not None]
     if not ids:
         return {}
     rows = session.exec(select(User.id, User.display_name).where(User.id.in_(ids))).all()
@@ -268,11 +268,11 @@ def child_names(session: Session, child_ids: list[UUID]) -> dict[UUID, str]:
 
 
 # ── 会话删除（多选，ADR-0048 补充） ───────────────────────────────────────────
-def delete_conversations(*, session: Session, parent_id: UUID, ids: list[UUID]) -> int:
-    """批量删除本家长名下、且在给定 id 集合内的会话，及其全部关联消息。
+def delete_conversations(*, session: Session, teacher_id: UUID, ids: list[UUID]) -> int:
+    """批量删除本教师名下、且在给定 id 集合内的会话，及其全部关联消息。
 
-    归属口径就是 ``parent_id``：孩子的会话也归家长所有（``Conversation.parent_id``
-    是家长），所以一并可删。越权的 id（其他家长 / 不存在）被 ``parent_id`` 过滤掉，
+    归属口径就是 ``teacher_id``：学生的会话也归教师所有（``Conversation.teacher_id``
+    是教师），所以一并可删。越权的 id（其他教师 / 不存在）被 ``teacher_id`` 过滤掉，
     静默忽略，不会误删他人数据。
 
     消息无 FK 级联（ADR-0048 有意不做的缺口），必须先删消息再删会话，否则外键约束
@@ -280,12 +280,12 @@ def delete_conversations(*, session: Session, parent_id: UUID, ids: list[UUID]) 
     """
     if not ids:
         return 0
-    # 先确认归属：只取本家长名下、且在请求集合内的 id，避免误删。
+    # 先确认归属：只取本教师名下、且在请求集合内的 id，避免误删。
     owned_ids = list(
         session.exec(
             select(Conversation.id).where(
                 Conversation.id.in_(ids),
-                Conversation.parent_id == parent_id,
+                Conversation.teacher_id == teacher_id,
             )
         ).all()
     )
@@ -311,6 +311,6 @@ __all__ = [
     "read_conversation_bubbles",
     "list_chat_conversations",
     "conversation_meta",
-    "child_names",
+    "student_names",
     "delete_conversations",
 ]

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 
-from app.core.deps import CurrentChild, SessionDep
+from app.core.deps import CurrentStudent, SessionDep
 from app.features.review import service as review_service
 from app.features.review.schemas import ReviewAnswerSubmit, ReviewItemResp
 from app.features.tasks.schemas import AnswerResult
@@ -13,19 +13,19 @@ router = APIRouter(prefix="/review", tags=["review"])
 
 
 @router.get("/due", response_model=list[ReviewItemResp])
-def due_reviews(*, session: SessionDep, child: CurrentChild) -> list[ReviewItemResp]:
-    """娃娃的待复习队列：遗忘曲线到点的错题（不含答案，防作弊）。"""
-    return review_service.list_due_reviews(session=session, child_id=child.id)
+def due_reviews(*, session: SessionDep, student: CurrentStudent) -> list[ReviewItemResp]:
+    """学生的待复习队列：遗忘曲线到点的错题（不含答案，防作弊）。"""
+    return review_service.list_due_reviews(session=session, student_id=student.id)
 
 
 @router.post("/answer", response_model=AnswerResult)
 def answer_review(
-    *, session: SessionDep, child: CurrentChild, submit: ReviewAnswerSubmit
+    *, session: SessionDep, student: CurrentStudent, submit: ReviewAnswerSubmit
 ) -> AnswerResult:
     """复习作答：复用与练习一致的批改逻辑，并更新遗忘曲线调度状态。"""
     try:
         return review_service.submit_answer(
-            session=session, child_id=child.id, submit=submit
+            session=session, student_id=student.id, submit=submit
         )
     except review_service.ReviewNotFound:
         raise HTTPException(status_code=404, detail="Review item not found")

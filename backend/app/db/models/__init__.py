@@ -1,7 +1,7 @@
 """Centralized ORM layer (feature-first architecture, ADR-0027).
 
 All SQLModel `table=True` entities live here because they reference each other
-via foreign keys (Task -> Child/User, TaskQuestion -> Task/Question, ...).
+via foreign keys (Task -> Student/User, TaskQuestion -> Task/Question, ...).
 Keeping ORM tables in one package avoids circular imports between feature
 packages. Each feature owns its Pydantic schemas, repository and service layer
 under `app/features/<name>/`.

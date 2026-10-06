@@ -22,7 +22,7 @@ _BANK_QUERY_LIMIT = 200
 def list_bank_questions(
     *,
     session: Session,
-    parent_id: UUID,
+    teacher_id: UUID,
     subject: str | None = None,
     grade: int | None = None,
     knowledge_point: str | None = None,
@@ -31,7 +31,7 @@ def list_bank_questions(
     since_days: int | None = None,
     limit: int | None = None,
 ) -> list[dict[str, Any]]:
-    """家长题库浏览（owner 隔离），投影为助手卡片友好的结构化字典。
+    """教师题库浏览（owner 隔离），投影为助手卡片友好的结构化字典。
 
     **交互讲解走「快照优先 + 实时回退」**（ADR-0061 §M，与 tasks/review 同一口径）：
     出题时算好的 ``Question.scene_spec`` 就是这道题的讲解实例（贴合本题图形/角度）；
@@ -42,7 +42,7 @@ def list_bank_questions(
     page_size = min(limit, _BANK_QUERY_LIMIT) if limit else _BANK_QUERY_LIMIT
     items, _total, usage = _repo_list(
         session=session,
-        parent_id=parent_id,
+        teacher_id=teacher_id,
         subject=subject,
         grade=grade,
         knowledge_point=knowledge_point,
@@ -77,7 +77,7 @@ def list_bank_questions(
             "scene_spec": scene_spec_for_read(
                 session,
                 snapshot=q.scene_spec,
-                parent_id=q.parent_id,
+                teacher_id=q.teacher_id,
                 subject=q.subject,
                 grade=q.grade,
                 knowledge_point=q.knowledge_point,

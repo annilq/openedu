@@ -284,17 +284,17 @@ def test_resolve_engine_never_passes_stored_ciphertext_as_api_key(
     monkeypatch.setattr(crypto.settings, "SECRET_KEY", "changeme", raising=False)
     captured = _capture_engine_kwargs(monkeypatch)
 
-    parent = User(
-        username="rot@p.com", display_name="轮换家长", role="parent",
-        hashed_password="x", parent_id=None,
+    teacher = User(
+        username="rot@p.com", display_name="轮换教师", role="teacher",
+        hashed_password="x", teacher_id=None,
     )
-    db.add(parent)
+    db.add(teacher)
     db.commit()
-    db.refresh(parent)
+    db.refresh(teacher)
     # 用「另一个密钥」加密 → 现在解不开（正是用户现场）
     stale = _fernet_for("dev-secret-change-me").encrypt(b"sk-stale").decode()
     mc = ModelConfig(
-        parent_id=parent.id, provider="openai_compat", model_name="deepseek-v4-flash",
+        teacher_id=teacher.id, provider="openai_compat", model_name="deepseek-v4-flash",
         api_key_enc=stale, base_url="https://api.deepseek.com", label="deepseek",
         is_default=True,
     )
@@ -302,7 +302,7 @@ def test_resolve_engine_never_passes_stored_ciphertext_as_api_key(
     db.commit()
     db.refresh(mc)
 
-    engine = resolve_engine(str(mc.id), parent_id=str(parent.id), session=db)
+    engine = resolve_engine(str(mc.id), teacher_id=str(teacher.id), session=db)
 
     assert engine is not None
     assert captured, "应经 build_genkit_engine 构造引擎"
@@ -318,21 +318,21 @@ def test_resolve_engine_passes_decrypted_key_when_secret_matches(
     monkeypatch.setattr(crypto.settings, "SECRET_KEY", "s-match", raising=False)
     captured = _capture_engine_kwargs(monkeypatch)
 
-    parent = User(
-        username="ok@p.com", display_name="正常家长", role="parent",
-        hashed_password="x", parent_id=None,
+    teacher = User(
+        username="ok@p.com", display_name="正常教师", role="teacher",
+        hashed_password="x", teacher_id=None,
     )
-    db.add(parent)
+    db.add(teacher)
     db.commit()
-    db.refresh(parent)
+    db.refresh(teacher)
     mc = ModelConfig(
-        parent_id=parent.id, provider="openai_compat", model_name="gpt-4o-mini",
+        teacher_id=teacher.id, provider="openai_compat", model_name="gpt-4o-mini",
         api_key_enc=crypto.encrypt("sk-plain-key"), label="ok", is_default=True,
     )
     db.add(mc)
     db.commit()
     db.refresh(mc)
 
-    resolve_engine(str(mc.id), parent_id=str(parent.id), session=db)
+    resolve_engine(str(mc.id), teacher_id=str(teacher.id), session=db)
 
     assert captured[0]["api_key"] == "sk-plain-key"

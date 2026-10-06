@@ -30,7 +30,7 @@ _SENSITIVE_OUTPUT = (
     "色情网站", "银行卡密码", "身份证号",
 )
 
-# 安全兜底回复：命中拦截时返回，不向娃娃暴露拒绝原因细节
+# 安全兜底回复：命中拦截时返回，不向学生暴露拒绝原因细节
 SAFE_REFUSAL = (
     "这道题我们先专注学习内容哦～如果你有学习上的问题，"
     "老师很乐意帮你讲明白 😊"
@@ -82,11 +82,11 @@ def check_output(text: str) -> SafetyVerdict:
     return SafetyVerdict(safe=True)
 
 
-class ChildSafety(Safety):
-    """儿童端输入安全闸门：把确定性 ``check_input`` 适配为 agent_core 的 ``Safety`` 抽象。
+class StudentSafety(Safety):
+    """学生端输入安全闸门：把确定性 ``check_input`` 适配为 agent_core 的 ``Safety`` 抽象。
 
     agent_core 的 ``RuntimeDeps.safety`` 只认 ``Safety`` 契约；本适配器让既有的
-    儿童双层防护（ADR-008）零改动地注入运行时。仅儿童端构造此实例（家长端不拦截）。
+    学生双层防护（ADR-008）零改动地注入运行时。仅学生端构造此实例（教师端不拦截）。
     """
 
     def check_input(self, text: str) -> SafetyResult:

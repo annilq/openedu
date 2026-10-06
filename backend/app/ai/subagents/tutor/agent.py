@@ -36,7 +36,7 @@ class TutorSubAgent(BaseSubAgent):
 
         业务 SOP（ADR-0030）**不走这里**——本方法的产物会被 TutorService 纳入
         ``check_input`` 扫描范围，而 SOP 文本里本就含「越狱 / 成人 / 暴力 / 政治敏感」等
-        安全词，并进去会导致每条娃娃提问被自己的 SOP 判为不安全。SOP 由 aexplain 在闸门后注入。
+        安全词，并进去会导致每条学生提问被自己的 SOP 判为不安全。SOP 由 aexplain 在闸门后注入。
         """
         persona = get_subject_persona(subject).render()
         if base_context:

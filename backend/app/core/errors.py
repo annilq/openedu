@@ -2,7 +2,7 @@
 
 口径（E-Q1~Q4=a）：
 - 系统级 10xxx，业务级按领域分段：20xxx Tasks / 30xxx Auth / 40xxx Review /
-  50xxx WrongQuestions / 60xxx Tutor / 70xxx Children。
+  50xxx WrongQuestions / 60xxx Tutor / 70xxx Students。
 - HTTP 状态码保持语义（401=401、403=403、404=404、422=422、500=500）。
 - 错误体：`{"code": str, "message": str, "status": int, "data": null|dict}`。
   code 用字符串（枚举名 + 数字），便于全局搜；成功体不包层，保持原样。
@@ -37,29 +37,29 @@ class ErrCode(str, Enum):
     # Tasks 领域 20xxx
     TASK_NOT_FOUND = "TASK_20001"
     TASK_NOT_OWNED = "TASK_20002"
-    TASK_NOT_YOUR_CHILD = "TASK_20003"
+    TASK_NOT_YOUR_STUDENT = "TASK_20003"
     TASK_STATUS_DRAFT_REQUIRED = "TASK_20004"  # 草稿态动作（编辑/重生成）
     TASK_STATUS_READY_REQUIRED = "TASK_20005"  # ready 态动作（派发）
     TASK_STATUS_ASSIGNED_REQUIRED = "TASK_20006"  # assigned 态动作（打卡）
-    TASK_NOT_ASSIGNED = "TASK_20007"  # child_id 为空就想作答/打卡
+    TASK_NOT_ASSIGNED = "TASK_20007"  # student_id 为空就想作答/打卡
     TASK_QUESTION_NOT_FOUND = "TASK_20008"
     TASK_LOCK_REQUIRES_ALL_PROMOTED = "TASK_20009"  # draft→ready 前每题必须入题库
     TASK_QUESTION_ALREADY_PROMOTED = "TASK_20010"
     TASK_EMPTY_SPECS = "TASK_20011"
-    TASK_CHILD_NOT_OWNED = "TASK_20012"  # batch-generate/assign 指定的 child 非本家长所有
+    TASK_CHILD_NOT_OWNED = "TASK_20012"  # batch-generate/assign 指定的 student 非本教师所有
     TASK_NO_QUESTIONS = "TASK_20013"  # 锁定/派发前草稿没有题
     QUESTION_NOT_FOUND = "TASK_20014"  # 题库题不存在（from-bank 全部越权/缺失）
     QUESTION_ACCESS_DENIED = "TASK_20015"  # 部分题库题无权限（owner 隔离）
     QUESTION_IN_USE = "TASK_20016"  # 题库题已被任务引用，禁止删除
-    WRONG_QUESTION_NOT_FOUND = "TASK_20017"  # 错题不存在 / 非本孩子（重新加入复习）
+    WRONG_QUESTION_NOT_FOUND = "TASK_20017"  # 错题不存在 / 非本学生（重新加入复习）
     TASK_CHOICE_NO_OPTIONS = "TASK_20018"  # 选择题缺少有效选项（≥2 个非空），落库会退化成文本框
 
     # Auth 30xxx
     AUTH_INVALID_TOKEN = "AUTH_30001"
     AUTH_INACTIVE_USER = "AUTH_30002"
     AUTH_BAD_CREDENTIALS = "AUTH_30003"
-    AUTH_PARENT_ONLY = "AUTH_30004"
-    AUTH_CHILD_ONLY = "AUTH_30005"
+    AUTH_TEACHER_ONLY = "AUTH_30004"
+    AUTH_STUDENT_ONLY = "AUTH_30005"
     AUTH_USERNAME_TAKEN = "AUTH_30006"
 
     # Assistant chat 40xxx（复用对话类）
@@ -70,14 +70,14 @@ class ErrCode(str, Enum):
     EXPORT_FONT_MISSING = "EXPORT_80002"  # 中文字体不可用（503）
     EXPORT_EMPTY = "EXPORT_80003"  # 选中的题全部取不到内容（400）
     EXPORT_SOURCE_UNKNOWN = "EXPORT_80004"  # 未知导出来源（400）
-    EXPORT_CHILD_REQUIRED = "EXPORT_80005"  # 错题来源未指定娃娃（400）
-    # 娃娃端只能导出**自己的**错题；出现任何「给别人导出」的意图都是请求非法。
-    EXPORT_CHILD_SCOPE = "EXPORT_80006"  # 娃娃端导出越过了自己的范围（400）
+    EXPORT_CHILD_REQUIRED = "EXPORT_80005"  # 错题来源未指定学生（400）
+    # 学生端只能导出**自己的**错题；出现任何「给别人导出」的意图都是请求非法。
+    EXPORT_CHILD_SCOPE = "EXPORT_80006"  # 学生端导出越过了自己的范围（400）
 
     # 资料库 90xxx（ADR-0055）
     MATERIAL_PARSE_FAILED = "MAT_90001"  # 解析失败：格式不支持 / 损坏 / 提不出文字（422）
     MATERIAL_TOO_LARGE = "MAT_90002"  # 超出单文件大小上限（413）
-    MATERIAL_NOT_FOUND = "MAT_90003"  # 资料 / 目录不存在或非本家长（404）
+    MATERIAL_NOT_FOUND = "MAT_90003"  # 资料 / 目录不存在或非本教师（404）
     MATERIAL_FOLDER_NOT_EMPTY = "MAT_90004"  # 目录下仍有资料或子目录（409）
 
 
@@ -91,7 +91,7 @@ _HTTP_DEFAULT_STATUS: dict[ErrCode, int] = {
     ErrCode.LLM_REQUEST_FAILED: status.HTTP_502_BAD_GATEWAY,
     ErrCode.TASK_NOT_FOUND: status.HTTP_404_NOT_FOUND,
     ErrCode.TASK_NOT_OWNED: status.HTTP_403_FORBIDDEN,
-    ErrCode.TASK_NOT_YOUR_CHILD: status.HTTP_403_FORBIDDEN,
+    ErrCode.TASK_NOT_YOUR_STUDENT: status.HTTP_403_FORBIDDEN,
     ErrCode.TASK_STATUS_DRAFT_REQUIRED: status.HTTP_409_CONFLICT,
     ErrCode.TASK_STATUS_READY_REQUIRED: status.HTTP_409_CONFLICT,
     ErrCode.TASK_STATUS_ASSIGNED_REQUIRED: status.HTTP_409_CONFLICT,
@@ -112,8 +112,8 @@ _HTTP_DEFAULT_STATUS: dict[ErrCode, int] = {
     ErrCode.AUTH_INVALID_TOKEN: status.HTTP_401_UNAUTHORIZED,
     ErrCode.AUTH_INACTIVE_USER: status.HTTP_400_BAD_REQUEST,
     ErrCode.AUTH_BAD_CREDENTIALS: status.HTTP_401_UNAUTHORIZED,
-    ErrCode.AUTH_PARENT_ONLY: status.HTTP_403_FORBIDDEN,
-    ErrCode.AUTH_CHILD_ONLY: status.HTTP_403_FORBIDDEN,
+    ErrCode.AUTH_TEACHER_ONLY: status.HTTP_403_FORBIDDEN,
+    ErrCode.AUTH_STUDENT_ONLY: status.HTTP_403_FORBIDDEN,
     ErrCode.AUTH_USERNAME_TAKEN: status.HTTP_400_BAD_REQUEST,
     ErrCode.CHAT_EMPTY_MESSAGE: status.HTTP_400_BAD_REQUEST,
     ErrCode.EXPORT_TOO_MANY: status.HTTP_400_BAD_REQUEST,

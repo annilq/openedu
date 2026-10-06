@@ -2,9 +2,9 @@
 
 三条纪律：
 - **提取失败不阻塞入库**——文件永远先落盘，元数据四态（extracted /
-  skipped_unsafe / skipped_no_engine / failed）随响应告知，家长可手动重试；
+  skipped_unsafe / skipped_no_engine / failed）随响应告知，教师可手动重试；
 - **用户内容进 prompt 前过 ADR-0012 ``check_input``**（§9 版权与安全闸门）；
-- **目录元数据是意图**——家长显式指定或目录继承的学科 / 年级不被 AI 推翻，
+- **目录元数据是意图**——教师显式指定或目录继承的学科 / 年级不被 AI 推翻，
   AI 只补空白并贡献知识点。
 """
 
@@ -22,7 +22,11 @@ from app.core.config import settings
 from app.core.errors import AppErrorException, ErrCode
 from app.core.guard import require_owned
 from app.db.models import KnowledgePoint, Material, MaterialFolder
-from app.db.models.material import INDEX_STATE_READY, INDEX_STATE_STALE
+from app.db.models.material import (
+    INDEX_STATE_READY,
+    INDEX_STATE_STALE,
+    KP_SOURCE_SKELETON,
+)
 from app.domain.safety import check_input
 from app.domain.subjects import SUBJECTS
 from app.features.materials import indexing
@@ -35,11 +39,12 @@ from app.features.materials.schemas import (
     FolderUpdate,
     KnowledgePointListResp,
     KnowledgePointResp,
+    KnowledgePointScopeListResp,
+    KnowledgePointScopeResp,
     MaterialMeta,
     MaterialResp,
     UploadResult,
 )
-from app.features.materials.skeleton import skeleton_names
 
 # 送进 LLM 的正文上限（字符）：整篇提取只需要「这是份什么资料」，不读全文
 _PROMPT_TEXT_LIMIT = 6000
@@ -74,7 +79,7 @@ def folder_resp(folder: MaterialFolder, counts: tuple[int, int] | None) -> Folde
     return FolderResp(
         id=folder.id,
         name=folder.name,
-        parent_folder_id=folder.parent_folder_id,
+        teacher_folder_id=folder.teacher_folder_id,
         subject=folder.subject,
         grade=folder.grade,
         semester=folder.semester,
@@ -87,23 +92,23 @@ def folder_resp(folder: MaterialFolder, counts: tuple[int, int] | None) -> Folde
 # ── 目录管理 ────────────────────────────────────────────────────────────
 
 
-def list_folders(session: Session, *, parent_id: uuid.UUID) -> list[FolderResp]:
-    folders = repo.list_folders(session, parent_id=parent_id)
-    counts = repo.folder_counts(session, parent_id=parent_id)
+def list_folders(session: Session, *, teacher_id: uuid.UUID) -> list[FolderResp]:
+    folders = repo.list_folders(session, teacher_id=teacher_id)
+    counts = repo.folder_counts(session, teacher_id=teacher_id)
     return [folder_resp(f, counts.get(f.id)) for f in folders]
 
 
 def create_folder(
-    session: Session, *, parent_id: uuid.UUID, req: FolderCreate
+    session: Session, *, teacher_id: uuid.UUID, req: FolderCreate
 ) -> FolderResp:
-    if req.parent_folder_id is not None:
+    if req.teacher_folder_id is not None:
         repo.get_owned_folder(
-            session, parent_id=parent_id, folder_id=req.parent_folder_id
+            session, teacher_id=teacher_id, folder_id=req.teacher_folder_id
         )
     folder = MaterialFolder(
-        parent_id=parent_id,
+        teacher_id=teacher_id,
         name=req.name.strip() or "未命名目录",
-        parent_folder_id=req.parent_folder_id,
+        teacher_folder_id=req.teacher_folder_id,
         subject=req.subject,
         grade=req.grade,
         semester=req.semester,
@@ -115,17 +120,17 @@ def create_folder(
 
 
 def update_folder(
-    session: Session, *, parent_id: uuid.UUID, folder_id: uuid.UUID, req: FolderUpdate
+    session: Session, *, teacher_id: uuid.UUID, folder_id: uuid.UUID, req: FolderUpdate
 ) -> FolderResp:
-    folder = repo.get_owned_folder(session, parent_id=parent_id, folder_id=folder_id)
-    if req.parent_folder_id is not None and req.parent_folder_id != folder.id:
-        parent = repo.get_owned_folder(
-            session, parent_id=parent_id, folder_id=req.parent_folder_id
+    folder = repo.get_owned_folder(session, teacher_id=teacher_id, folder_id=folder_id)
+    if req.teacher_folder_id is not None and req.teacher_folder_id != folder.id:
+        teacher = repo.get_owned_folder(
+            session, teacher_id=teacher_id, folder_id=req.teacher_folder_id
         )
         _assert_not_descendant(
-            session, parent_id=parent_id, folder=folder, target=parent
+            session, teacher_id=teacher_id, folder=folder, target=teacher
         )
-        folder.parent_folder_id = req.parent_folder_id
+        folder.teacher_folder_id = req.teacher_folder_id
     if req.name is not None:
         folder.name = req.name.strip() or folder.name
     if "subject" in req.model_fields_set:
@@ -143,7 +148,7 @@ def update_folder(
 def _assert_not_descendant(
     session: Session,
     *,
-    parent_id: uuid.UUID,
+    teacher_id: uuid.UUID,
     folder: MaterialFolder,
     target: MaterialFolder,
 ) -> None:
@@ -157,18 +162,18 @@ def _assert_not_descendant(
             )
         seen.add(cursor.id)
         cursor = (
-            session.get(MaterialFolder, cursor.parent_folder_id)
-            if cursor.parent_folder_id
+            session.get(MaterialFolder, cursor.teacher_folder_id)
+            if cursor.teacher_folder_id
             else None
         )
 
 
 def delete_folder(
-    session: Session, *, parent_id: uuid.UUID, folder_id: uuid.UUID
+    session: Session, *, teacher_id: uuid.UUID, folder_id: uuid.UUID
 ) -> None:
-    folder = repo.get_owned_folder(session, parent_id=parent_id, folder_id=folder_id)
+    folder = repo.get_owned_folder(session, teacher_id=teacher_id, folder_id=folder_id)
     if (
-        repo.count_folder_materials(session, parent_id=parent_id, folder_id=folder_id)
+        repo.count_folder_materials(session, teacher_id=teacher_id, folder_id=folder_id)
         > 0
     ):
         raise AppErrorException(
@@ -176,8 +181,8 @@ def delete_folder(
         )
     subs = [
         f
-        for f in repo.list_folders(session, parent_id=parent_id)
-        if f.parent_folder_id == folder.id
+        for f in repo.list_folders(session, teacher_id=teacher_id)
+        if f.teacher_folder_id == folder.id
     ]
     if subs:
         raise AppErrorException(
@@ -210,7 +215,7 @@ def _resolve_inherited(
             grade = folder.grade
         if semester is None and folder.semester:
             semester = folder.semester
-        cursor_id = folder.parent_folder_id
+        cursor_id = folder.teacher_folder_id
     return subject, grade, semester
 
 
@@ -218,7 +223,7 @@ def _semester_from_name(name: str) -> str | None:
     """文件名兜底推断学期（ADR-0055 §2 补，最低优先级）。
 
     教材文件名常带「上册 / 下册」→ 映射「上学期 / 下学期」。仅作**兜底**，
-    不覆盖家长显式选择或目录继承（调用方须把本结果放在 ``semester or
+    不覆盖教师显式选择或目录继承（调用方须把本结果放在 ``semester or
     inherited_semester or _semester_from_name(...)`` 链最末）。命中不了返回 ``None``。
     """
     if "上册" in name:
@@ -228,11 +233,11 @@ def _semester_from_name(name: str) -> str | None:
     return None
 
 
-def _store_file(*, parent_id: uuid.UUID, filename: str, data: bytes) -> str:
-    root = Path(settings.MATERIAL_UPLOAD_ROOT) / str(parent_id)
+def _store_file(*, teacher_id: uuid.UUID, filename: str, data: bytes) -> str:
+    root = Path(settings.MATERIAL_UPLOAD_ROOT) / str(teacher_id)
     root.mkdir(parents=True, exist_ok=True)
     ext = Path(filename).suffix.lower()
-    key = f"{parent_id}/{uuid.uuid4().hex}{ext}"
+    key = f"{teacher_id}/{uuid.uuid4().hex}{ext}"
     (Path(settings.MATERIAL_UPLOAD_ROOT) / key).write_bytes(data)
     return key
 
@@ -240,7 +245,7 @@ def _store_file(*, parent_id: uuid.UUID, filename: str, data: bytes) -> str:
 async def upload_material(
     session: Session,
     *,
-    parent_id: uuid.UUID,
+    teacher_id: uuid.UUID,
     filename: str,
     data: bytes,
     folder_id: uuid.UUID | None,
@@ -254,7 +259,7 @@ async def upload_material(
             f"文件超过大小上限（{settings.MATERIAL_MAX_BYTES // (1024 * 1024)}MB）",
         )
     if folder_id is not None:
-        repo.get_owned_folder(session, parent_id=parent_id, folder_id=folder_id)
+        repo.get_owned_folder(session, teacher_id=teacher_id, folder_id=folder_id)
     try:
         text = extract_text(filename=filename, data=data)
     except ParseError as e:
@@ -268,10 +273,10 @@ async def upload_material(
         semester or inherited_semester or _semester_from_name(filename)
     )
     material = Material(
-        parent_id=parent_id,
+        teacher_id=teacher_id,
         folder_id=folder_id,
         name=filename,
-        storage_key=_store_file(parent_id=parent_id, filename=filename, data=data),
+        storage_key=_store_file(teacher_id=teacher_id, filename=filename, data=data),
         mime="",
         size_bytes=len(data),
         text=text,
@@ -285,7 +290,7 @@ async def upload_material(
     session.refresh(material)
 
     extraction, error = await _extract_and_align(
-        session, parent_id=parent_id, material=material
+        session, teacher_id=teacher_id, material=material
     )
     return UploadResult(
         material=material_resp(material), extraction=extraction, extraction_error=error
@@ -293,14 +298,14 @@ async def upload_material(
 
 
 async def reextract_metadata(
-    session: Session, *, parent_id: uuid.UUID, material_id: uuid.UUID
+    session: Session, *, teacher_id: uuid.UUID, material_id: uuid.UUID
 ) -> ExtractResult:
-    """手动重新提取：知识点**全量刷新**；学科 / 年级只补空白（不覆盖家长意图）。"""
+    """手动重新提取：知识点**全量刷新**；学科 / 年级只补空白（不覆盖教师意图）。"""
     material = repo.get_owned_material(
-        session, parent_id=parent_id, material_id=material_id
+        session, teacher_id=teacher_id, material_id=material_id
     )
     extraction, error = await _extract_and_align(
-        session, parent_id=parent_id, material=material
+        session, teacher_id=teacher_id, material=material
     )
     return ExtractResult(
         material=material_resp(material), extraction=extraction, extraction_error=error
@@ -318,7 +323,7 @@ _EXTRACT_SYSTEM = (
 
 
 async def _extract_and_align(
-    session: Session, *, parent_id: uuid.UUID, material: Material
+    session: Session, *, teacher_id: uuid.UUID, material: Material
 ) -> tuple[str, str | None]:
     """跑整篇提取并写回 material + 对齐知识点目录。返回 (状态, 错误信息)。"""
     text = (material.text or "").strip()
@@ -329,7 +334,7 @@ async def _extract_and_align(
         # ADR-0012：不安全内容不进 prompt；资料照常保留，只是不做 AI 提取。
         return "skipped_unsafe", verdict.reason
 
-    provider = build_ai_provider(parent_id=parent_id, session=session)
+    provider = build_ai_provider(teacher_id=teacher_id, session=session)
     if not getattr(provider, "configured", True):
         return "skipped_no_engine", "未配置 AI 模型，请在「模型管理」中添加并设为默认"
 
@@ -357,7 +362,7 @@ async def _extract_and_align(
         material.subject = subject
     if grade and not material.grade:
         material.grade = grade
-    # 学期兜底：资料名含上册/下册且当前未设学期时自动带（最低优先级，不覆盖家长意图）。
+    # 学期兜底：资料名含上册/下册且当前未设学期时自动带（最低优先级，不覆盖教师意图）。
     # 既覆盖旧资料重抽（入库时尚未有文件名推断），也兜底 upload_material 之外直建的行。
     if not material.semester:
         inferred = _semester_from_name(material.name)
@@ -386,7 +391,7 @@ async def _extract_and_align(
         for name in names:
             repo.upsert_pending_knowledge_point(
                 session,
-                parent_id=parent_id,
+                teacher_id=teacher_id,
                 subject=material.subject,
                 grade=material.grade,
                 name=name,
@@ -399,27 +404,27 @@ async def _extract_and_align(
 
 
 def list_materials(
-    session: Session, *, parent_id: uuid.UUID, folder_id: uuid.UUID | None
+    session: Session, *, teacher_id: uuid.UUID, folder_id: uuid.UUID | None
 ) -> list[MaterialResp]:
     if folder_id is not None:
-        repo.get_owned_folder(session, parent_id=parent_id, folder_id=folder_id)
+        repo.get_owned_folder(session, teacher_id=teacher_id, folder_id=folder_id)
     # 惰性 stale 标记：模型 / 切分器变更后，首次看列表即感知（ADR-0055 §5）
-    indexing.mark_stale_if_model_changed(session, parent_id=parent_id)
+    indexing.mark_stale_if_model_changed(session, teacher_id=teacher_id)
     return [
         material_resp(m)
-        for m in repo.list_materials(session, parent_id=parent_id, folder_id=folder_id)
+        for m in repo.list_materials(session, teacher_id=teacher_id, folder_id=folder_id)
     ]
 
 
 def get_material(
-    session: Session, *, parent_id: uuid.UUID, material_id: uuid.UUID
+    session: Session, *, teacher_id: uuid.UUID, material_id: uuid.UUID
 ) -> MaterialResp:
     return material_resp(
-        repo.get_owned_material(session, parent_id=parent_id, material_id=material_id)
+        repo.get_owned_material(session, teacher_id=teacher_id, material_id=material_id)
     )
 
 
-def _knowledge_point_scope(material: Material) -> tuple[str, int, str] | None:
+def knowledge_point_scope(material: Material) -> tuple[str, int, str] | None:
     """资料对应的知识点作用域 ``(学科, 年级, 学期)``；信息不齐时返回 ``None``。
 
     学期口径必须与提取时（``_extract_and_align``）**逐字一致**：资料显式学期 >
@@ -437,13 +442,13 @@ def _knowledge_point_scope(material: Material) -> tuple[str, int, str] | None:
 def _prune_knowledge_points(
     session: Session,
     *,
-    parent_id: uuid.UUID,
+    teacher_id: uuid.UUID,
     materials: Sequence[Material],
 ) -> list[KnowledgePoint]:
     """算出这批资料删掉之后**无人认领**的知识点（详见 repository 的三条口径）。"""
     candidates: list[tuple[str, int, str, str]] = []
     for material in materials:
-        scope = _knowledge_point_scope(material)
+        scope = knowledge_point_scope(material)
         if scope is None:
             continue
         subject, grade, semester = scope
@@ -453,7 +458,7 @@ def _prune_knowledge_points(
         return []
     return repo.prunable_knowledge_points(
         session,
-        parent_id=parent_id,
+        teacher_id=teacher_id,
         candidates=candidates,
         exclude_material_ids={m.id for m in materials},
     )
@@ -462,7 +467,7 @@ def _prune_knowledge_points(
 def delete_materials(
     session: Session,
     *,
-    parent_id: uuid.UUID,
+    teacher_id: uuid.UUID,
     material_ids: Sequence[uuid.UUID],
     cascade_knowledge_points: bool = False,
 ) -> dict:
@@ -482,7 +487,7 @@ def delete_materials(
         seen.add(material_id)
         materials.append(
             repo.get_owned_material(
-                session, parent_id=parent_id, material_id=material_id
+                session, teacher_id=teacher_id, material_id=material_id
             )
         )
     if not materials:
@@ -494,7 +499,7 @@ def delete_materials(
         }
 
     kp_rows = (
-        _prune_knowledge_points(session, parent_id=parent_id, materials=materials)
+        _prune_knowledge_points(session, teacher_id=teacher_id, materials=materials)
         if cascade_knowledge_points
         else []
     )
@@ -520,18 +525,18 @@ def delete_materials(
 
 
 def delete_material(
-    session: Session, *, parent_id: uuid.UUID, material_id: uuid.UUID
+    session: Session, *, teacher_id: uuid.UUID, material_id: uuid.UUID
 ) -> dict:
     """删单份资料：**不级联知识点**（保留既有语义）。需要清理请用批量端点。"""
     return delete_materials(
-        session, parent_id=parent_id, material_ids=[material_id]
+        session, teacher_id=teacher_id, material_ids=[material_id]
     )
 
 
 def move_material(
     session: Session,
     *,
-    parent_id: uuid.UUID,
+    teacher_id: uuid.UUID,
     material_id: uuid.UUID,
     folder_id: uuid.UUID | None,
 ) -> Material:
@@ -542,10 +547,10 @@ def move_material(
     后检索按学科过滤却命中不到（chunk 的 subject 取自 material.subject）。
     """
     material = repo.get_owned_material(
-        session, parent_id=parent_id, material_id=material_id
+        session, teacher_id=teacher_id, material_id=material_id
     )
     if folder_id is not None:
-        repo.get_owned_folder(session, parent_id=parent_id, folder_id=folder_id)
+        repo.get_owned_folder(session, teacher_id=teacher_id, folder_id=folder_id)
     material.folder_id = folder_id
     if material.subject is None or material.grade is None or material.semester is None:
         inh_subject, inh_grade, inh_semester = _resolve_inherited(session, folder_id)
@@ -562,21 +567,37 @@ def move_material(
     return material
 
 
-# ── 知识点选择器（目录优先 + 骨架兜底，ADR-0055 §4）────────────────────
+# ── 知识点目录（ADR-0065：只认从这里上传的教材里涌现出来的那些）──────
 
 
 def list_knowledge_points(
     session: Session,
     *,
-    parent_id: uuid.UUID,
+    teacher_id: uuid.UUID,
     subject: str,
     grade: int,
     semester: str = "",
 ) -> KnowledgePointListResp:
-    rows = repo.list_knowledge_points(
-        session, parent_id=parent_id, subject=subject, grade=grade, semester=semester
-    )
-    known = {r.name for r in rows}
+    """某范围的知识点目录 = 该范围内上传过的教材里涌现出来的那些。
+
+    2026-10-06 起**不再补预置目录**（旧的 skeleton 兜底已下线，见 ADR-0065）：
+    预置目录让「1 年级数学」这种一份教材都没传的范围也列出十几条知识点，教师
+    勾选确认后拿到的是和自己学生无关的空目录，还以为系统已经认出了教材。
+
+    库里可能还有历史遗留的 skeleton 行（教师当年确认过）——这里一并屏蔽而不删
+    库：删数据不可逆，而这些行还挂着交互讲解模板（scenes），留着数据随时可逆。
+    """
+    rows = [
+        r
+        for r in repo.list_knowledge_points(
+            session,
+            teacher_id=teacher_id,
+            subject=subject,
+            grade=grade,
+            semester=semester,
+        )
+        if r.source != KP_SOURCE_SKELETON
+    ]
     items = [
         KnowledgePointResp(
             id=r.id,
@@ -588,22 +609,22 @@ def list_knowledge_points(
         )
         for r in rows
     ]
-    # 骨架补位：DB 已有（含待审）的名字不再重复给——家长自己涌现的措辞优先于骨架
-    for name in skeleton_names(subject, grade):
-        if name not in known:
-            items.append(
-                KnowledgePointResp(
-                    id=None, name=name, status="curated", source="skeleton"
-                )
-            )
-    # 只有骨架时**明说**（ADR-0061 §L）：骨架是分不出学期的大颗粒目录，家长切学期
-    # 看到的下拉会逐字相同——不说清楚就像「联动坏了」，实际只是该范围还没资料。
+    # 空列表本身不解释任何事——必须回答「为什么空」+「下一步做什么」（ADR-0051）。
     notice = ""
-    if not rows and semester:
-        notice = (
-            f"该学期（{semester}）还没有资料知识点，以下是**不分学期**的通用目录；"
-            "上传对应学期的资料并向量化后，这里才会按学期变化。"
+    if not items:
+        material_count = repo.count_materials_in_scope(
+            session, teacher_id=teacher_id, subject=subject, grade=grade
         )
+        if material_count == 0:
+            notice = (
+                "这个学科年级还没有上传过教材，所以没有知识点。"
+                "到「资料库」上传教材并完成提取后，知识点会自己出现在这里。"
+            )
+        else:
+            notice = (
+                f"这里有 {material_count} 份教材，但还没有识别出知识点。"
+                "到「资料库」对这些资料点「重新提取」（需要先配置并设为默认模型）。"
+            )
     return KnowledgePointListResp(
         items=items,
         pending_count=sum(1 for i in items if i.status == "pending"),
@@ -611,21 +632,57 @@ def list_knowledge_points(
     )
 
 
+def list_knowledge_point_scopes(
+    session: Session, *, teacher_id: uuid.UUID
+) -> KnowledgePointScopeListResp:
+    """教师**实际上传过教材**的知识点范围清单（ADR-0065）。
+
+    知识点管理页与出题表单的范围下拉都由它兜住：没传过教材的学科 / 年级根本不
+    该出现在选项里——选进去只能看到空列表，等于把 9 个年级 × 3 学科的空门都摆
+    出来让教师一个个试。
+
+    学期走 ``knowledge_point_scope`` 的同一口径（显式 > 文件名推断 > 上学期）：
+    这是知识点**诞生时**用的口径，这里若算法不一致，会出现「范围里列出了 4 年级
+    数学上学期，点进去却一条知识点都没有」。
+    """
+    counts: dict[tuple[str, int, str], int] = {}
+    unscoped = 0
+    for material in repo.list_materials(session, teacher_id=teacher_id):
+        scope = knowledge_point_scope(material)
+        if scope is None:
+            # 学科 / 年级缺失：归不到任何范围。必须计数回报——教师传了资料却在下
+            # 拉里找不到对应年级，第一反应是「上传丢了」，实际是元数据没提取出来。
+            unscoped += 1
+            continue
+        counts[scope] = counts.get(scope, 0) + 1
+    scopes = [
+        KnowledgePointScopeResp(
+            subject=subject,
+            grade=grade,
+            semester=semester,
+            material_count=count,
+        )
+        # 学科 → 年级 → 学期：与下拉的自然阅读顺序一致
+        for (subject, grade, semester), count in sorted(counts.items())
+    ]
+    return KnowledgePointScopeListResp(scopes=scopes, unscoped_count=unscoped)
+
+
 def update_knowledge_point_scenes(
     session: Session,
     *,
-    parent_id: uuid.UUID,
+    teacher_id: uuid.UUID,
     kp_id: uuid.UUID,
     scenes: list[dict],
 ) -> KnowledgePoint:
     """教师为知识点编写 / 覆盖默认交互讲解模板（ADR-0061）。
 
-    owner 隔离：``kp_id`` 必须属于当前家长，否则视作不存在（``require_owned``）。
+    owner 隔离：``kp_id`` 必须属于当前教师，否则视作不存在（``require_owned``）。
     空数组 = 清空模板。
     """
     kp = require_owned(
         session=session,
-        owner_id=parent_id,
+        owner_id=teacher_id,
         model=KnowledgePoint,
         obj_id=kp_id,
         code=ErrCode.NOT_FOUND,
@@ -639,7 +696,7 @@ def update_knowledge_point_scenes(
 
 
 def delete_knowledge_points(
-    session: Session, *, parent_id: uuid.UUID, ids: Sequence[uuid.UUID]
+    session: Session, *, teacher_id: uuid.UUID, ids: Sequence[uuid.UUID]
 ) -> int:
     """批量删除知识点（多选），返回实际删除条数。
 
@@ -647,13 +704,13 @@ def delete_knowledge_points(
     知识点名字串，不建外键），所以删掉目录里的这一行不会破坏已出的题与掌握度
     统计——只是这个范围的下拉里不再有它、后续出题也不会再选它。
     """
-    return repo.delete_knowledge_points(session, parent_id=parent_id, ids=list(ids))
+    return repo.delete_knowledge_points(session, teacher_id=teacher_id, ids=list(ids))
 
 
 def confirm_knowledge_points(
     session: Session,
     *,
-    parent_id: uuid.UUID,
+    teacher_id: uuid.UUID,
     subject: str,
     grade: int,
     names: list[str],
@@ -669,7 +726,7 @@ def confirm_knowledge_points(
         raise AppErrorException(ErrCode.VALIDATION, f"不支持的学科：{subject}")
     return repo.confirm_knowledge_points_by_name(
         session,
-        parent_id=parent_id,
+        teacher_id=teacher_id,
         subject=subject,
         grade=grade,
         names=names,

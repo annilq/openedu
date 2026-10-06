@@ -108,7 +108,7 @@ class FakeLLMProvider(EducationLLMProvider):
 
     # ── 脚本控制：端点/集成测试可在 fixture 交出的实例上就地改写 ──
     def script(self, *steps: ToolStep | str) -> "FakeLLMProvider":
-        """声明工具脚本（``"list_children"`` 或 ``("list_children", {...})``），并清空计数。"""
+        """声明工具脚本（``"list_students"`` 或 ``("list_students", {...})``），并清空计数。"""
         self._script = _normalize_script(steps)
         return self.reset()
 

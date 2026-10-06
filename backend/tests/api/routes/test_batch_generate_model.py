@@ -14,19 +14,19 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from agent_core.ports import LLMProvider, StructuredDone, TextDelta
-from tests.utils.user import auth_headers, register_parent
+from tests.utils.user import auth_headers, register_teacher
 
 
-def _create_child(client, ptoken, username="kidm1"):
+def _create_student(client, ptoken, username="kidm1"):
     r = client.post(
-        "/api/v1/children",
+        "/api/v1/students",
         headers=auth_headers(ptoken),
         json={
             "username": username,
             "password": "kid123456",
-            "display_name": "娃娃",
+            "display_name": "学生",
             "grade": 2,
-            "role": "child",
+            "role": "student",
         },
     )
     assert r.status_code == 201, r.text
@@ -40,8 +40,8 @@ def _make_draft(client, ptoken, cid, *, model):
         headers=auth_headers(ptoken),
         json={
             "title": "选模型卷",
-            "child_id": cid,
-            "model": model,  # 家长所选模型（ModelConfig id）
+            "student_id": cid,
+            "model": model,  # 教师所选模型（ModelConfig id）
             "specs": [
                 {"subject": "数学", "grade": 2, "knowledge_point": "加法", "qtype": "calc", "difficulty": "easy", "count": 1}
             ],
@@ -60,14 +60,14 @@ def _make_draft(client, ptoken, cid, *, model):
 
 
 def test_regenerate_honors_selected_model(client, monkeypatch):
-    r = register_parent(client, username="mfix_parent_a")
+    r = register_teacher(client, username="mfix_teacher_a")
     ptoken = r.json()["access_token"]
-    cid = _create_child(client, ptoken, username="mfix_kid_a")["id"]
+    cid = _create_student(client, ptoken, username="mfix_kid_a")["id"]
     tid = _make_draft(client, ptoken, cid, model="local-llama")
 
     captured = {"model_ref": None, "provider_built": False}
 
-    def fake_resolve(model_ref=None, *, parent_id=None, session=None):
+    def fake_resolve(model_ref=None, *, teacher_id=None, session=None):
         captured["model_ref"] = model_ref
         # 模拟「模型管理」中解析出的引擎（只验证它被传给 provider 构造）
         return SimpleNamespace(genkit=SimpleNamespace(model="ollama/llama3"), model="ollama/llama3")

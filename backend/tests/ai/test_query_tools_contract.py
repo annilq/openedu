@@ -4,10 +4,10 @@
 
 1. **工具集形状**：8 个只读工具、名称唯一、schema 合法、每个参数与工具本身都有
    描述（模型靠它选型）、handler 是 ``async (args, *, ctx, session)``。
-2. **娃娃端无答案**（ADR-008 硬门槛）：遍历全部工具跑一遍娃娃视角，断言输出中
-   **不出现** ``ANSWER_FIELDS``；并有**对照组**证明家长视角确实看得到答案——
-   否则「娃娃端没有」可能只是数据本来就空，属假绿。
-3. **越权不可达**：娃娃传别人的 ``child_id`` 无效；家长传别家的娃娃抛
+2. **学生端无答案**（ADR-008 硬门槛）：遍历全部工具跑一遍学生视角，断言输出中
+   **不出现** ``ANSWER_FIELDS``；并有**对照组**证明教师视角确实看得到答案——
+   否则「学生端没有」可能只是数据本来就空，属假绿。
+3. **越权不可达**：学生传别人的 ``student_id`` 无效；教师传别家的学生抛
    ``ToolArgumentError``（不静默返回空，避免模型把「没这个娃」读成「这个娃没数据」）。
    另断言全部工具**只读**（调用前后关键表行数不变）。
 """
@@ -29,7 +29,7 @@ from app.ai.subagents.query.tools._shared import (
     NO_FILTER,
     ToolArgumentError,
     project_for_role,
-    resolve_children,
+    resolve_students,
 )
 from app.ai.subagents.query.tools.registry import QUERY_TOOLS
 from app.core.db import engine
@@ -41,11 +41,11 @@ from app.db.models import (
     User,
     WrongQuestion,
 )
-from tests.utils.user import auth_headers, login, register_parent
+from tests.utils.user import auth_headers, login, register_teacher
 
 EXPECTED_TOOL_NAMES = [
-    "list_children",
-    "list_parent_tasks",
+    "list_students",
+    "list_teacher_tasks",
     "list_today_tasks",
     "list_wrong_questions",
     "list_due_reviews",
@@ -54,10 +54,10 @@ EXPECTED_TOOL_NAMES = [
     "get_mastery",
 ]
 
-# 仅家长可用、且**无 child 维度**的工具：娃娃端调用在 handler 入口即抛
-# ``ToolArgumentError``（题库是家长私有出题池，见 list_bank_questions.py 顶部说明）。
-# 因此「娃娃端不可见答案」这类以 child ctx 跑全工具集的契约对本类工具天然不适用——
-# 它们压根不接 child 调用，下面的循环对其豁免（否则 _run 会抛未捕获的异常）。
+# 仅教师可用、且**无 student 维度**的工具：学生端调用在 handler 入口即抛
+# ``ToolArgumentError``（题库是教师私有出题池，见 list_bank_questions.py 顶部说明）。
+# 因此「学生端不可见答案」这类以 student ctx 跑全工具集的契约对本类工具天然不适用——
+# 它们压根不接 student 调用，下面的循环对其豁免（否则 _run 会抛未捕获的异常）。
 PARENT_ONLY_TOOLS = frozenset({"list_bank_questions"})
 
 KID_PASSWORD = "kid123456"
@@ -98,16 +98,16 @@ def _keys(node: Any) -> set[str]:
     return set()
 
 
-def _create_child(client, ptoken: str, username: str, display_name: str) -> dict:
+def _create_student(client, ptoken: str, username: str, display_name: str) -> dict:
     r = client.post(
-        "/api/v1/children",
+        "/api/v1/students",
         headers=auth_headers(ptoken),
         json={
             "username": username,
             "password": KID_PASSWORD,
             "display_name": display_name,
             "grade": 2,
-            "role": "child",
+            "role": "student",
         },
     )
     assert r.status_code == 201, r.text
@@ -117,7 +117,7 @@ def _create_child(client, ptoken: str, username: str, display_name: str) -> dict
 def _make_task(
     client,
     ptoken: str,
-    child_id: str | None,
+    student_id: str | None,
     *,
     prefix: str = "",
     count: int = 1,
@@ -152,8 +152,8 @@ def _make_task(
         "specs": specs,
         "questions": questions,
     }
-    if child_id:
-        body["child_id"] = child_id
+    if student_id:
+        body["student_id"] = student_id
     r = client.post(
         "/api/v1/tasks/from-generated", headers=auth_headers(ptoken), json=body
     )
@@ -166,7 +166,7 @@ def _make_task(
     ag = client.post(
         f"/api/v1/tasks/{task_id}/assign",
         headers=auth_headers(ptoken),
-        params={"child_id": child_id},
+        params={"student_id": student_id},
     )
     assert ag.status_code == 200, ag.text
     return ag.json()
@@ -186,26 +186,26 @@ def _answer_wrong(client, ctoken: str, task: dict) -> None:
 
 
 def _setup(client, tag: str) -> dict:
-    """一组完整数据：1 家长 + 2 娃娃 + 各自任务 + 小明的错题 + 一条未派发草稿。"""
-    r = register_parent(client, username=f"qt_{tag}_parent", display_name="测试爸爸")
+    """一组完整数据：1 教师 + 2 学生 + 各自任务 + 小明的错题 + 一条未派发草稿。"""
+    r = register_teacher(client, username=f"qt_{tag}_teacher", display_name="测试爸爸")
     assert r.status_code in (200, 201), r.text
-    parent_token = r.json()["access_token"]
+    teacher_token = r.json()["access_token"]
 
-    a = _create_child(client, parent_token, f"qt_{tag}_a", "小明")
-    b = _create_child(client, parent_token, f"qt_{tag}_b", "小红")
+    a = _create_student(client, teacher_token, f"qt_{tag}_a", "小明")
+    b = _create_student(client, teacher_token, f"qt_{tag}_b", "小红")
 
-    task_a = _make_task(client, parent_token, a["id"], prefix="A")
-    _make_task(client, parent_token, b["id"], prefix="B")
-    draft = _make_task(client, parent_token, None, prefix="C", publish=False)
+    task_a = _make_task(client, teacher_token, a["id"], prefix="A")
+    _make_task(client, teacher_token, b["id"], prefix="B")
+    draft = _make_task(client, teacher_token, None, prefix="C", publish=False)
 
-    child_token = login(client, f"qt_{tag}_a", KID_PASSWORD).json()["access_token"]
-    _answer_wrong(client, child_token, task_a)
+    student_token = login(client, f"qt_{tag}_a", KID_PASSWORD).json()["access_token"]
+    _answer_wrong(client, student_token, task_a)
 
     with Session(engine) as session:
-        parent_id = str(session.get(User, UUID(a["id"])).parent_id)
+        teacher_id = str(session.get(User, UUID(a["id"])).teacher_id)
     return {
-        "parent_id": parent_id,
-        "parent_token": parent_token,
+        "teacher_id": teacher_id,
+        "teacher_token": teacher_token,
         "a": a,
         "b": b,
         "task_a": task_a,
@@ -244,7 +244,7 @@ def test_query_subagent_requires_tool_data():
     """「未查先答」闸门必须开着（ADR-0033）。
 
     真机教训（2026-09-22）：本地小模型在流式下不产出原生 ``ToolCall``，直接编造
-    「你有 3 个娃娃：小明 / 小红 / 小华」——工具一个都没执行，权限层自然无从生效。
+    「你有 3 个学生：小明 / 小红 / 小华」——工具一个都没执行，权限层自然无从生效。
     这条断言防止有人为了「让模型能回答元问题」把闸门悄悄关掉。
     """
     assert QuerySubAgent.requires_tool_data is True
@@ -260,153 +260,153 @@ def test_handlers_match_runtime_signature():
         assert params["session"].kind is inspect.Parameter.KEYWORD_ONLY, spec.name
 
 
-# ───────────────────────── 2. 娃娃端无答案（ADR-008） ─────────────────────────
+# ───────────────────────── 2. 学生端无答案（ADR-008） ─────────────────────────
 
 
-def test_all_tools_return_clean_payload_for_child(client):
-    """核心契约：全部工具在孩子视角下都不得出现任何答案类字段。"""
-    setup = _setup(client, "child_clean")
-    ctx = _ctx("child", child_id=setup["a"]["id"], parent_id=setup["parent_id"])
+def test_all_tools_return_clean_payload_for_student(client):
+    """核心契约：全部工具在学生视角下都不得出现任何答案类字段。"""
+    setup = _setup(client, "student_clean")
+    ctx = _ctx("student", student_id=setup["a"]["id"], teacher_id=setup["teacher_id"])
 
     for spec in QUERY_TOOLS:
         if spec.name in PARENT_ONLY_TOOLS:
-            # 仅家长工具：child 调用在入口即被拒，不存在「娃娃视角泄漏」的入口。
+            # 仅教师工具：student 调用在入口即被拒，不存在「学生视角泄漏」的入口。
             continue
         leaked = _keys(_run(spec, ctx)) & ANSWER_FIELDS
-        assert not leaked, f"{spec.name} 在娃娃视角泄漏字段：{sorted(leaked)}"
+        assert not leaked, f"{spec.name} 在学生视角泄漏字段：{sorted(leaked)}"
 
 
-def test_parent_payload_does_contain_answers_control_group(client):
-    """对照组：家长视角**确实**能看到答案——证明上一条的「没有」不是数据为空导致的假绿。"""
-    setup = _setup(client, "parent_answer")
-    ctx = _ctx("parent", parent_id=setup["parent_id"], child_id=setup["a"]["id"])
+def test_teacher_payload_does_contain_answers_control_group(client):
+    """对照组：教师视角**确实**能看到答案——证明上一条的「没有」不是数据为空导致的假绿。"""
+    setup = _setup(client, "teacher_answer")
+    ctx = _ctx("teacher", teacher_id=setup["teacher_id"], student_id=setup["a"]["id"])
 
     wrong_payload = _run(_spec("list_wrong_questions"), ctx)
     assert wrong_payload["total_items"] == 1
     assert "answer" in _keys(wrong_payload)
     assert "ans0" in json.dumps(wrong_payload, ensure_ascii=False)
 
-    tasks_payload = _run(_spec("list_parent_tasks"), ctx)
+    tasks_payload = _run(_spec("list_teacher_tasks"), ctx)
     assert "answer" in _keys(tasks_payload)
 
 
 def test_project_for_role_strips_nested_answer_fields():
     """投影是递归的：嵌套在列表/字典深处的答案字段同样被剥掉。"""
     payload = {
-        "children": [
+        "students": [
             {
                 "id": "x",
                 "items": [{"stem": "题", "answer": "42", "explanation": "因为", "options": ["a"]}],
             }
         ]
     }
-    projected = project_for_role(payload, "child")
+    projected = project_for_role(payload, "student")
     assert _keys(projected) & ANSWER_FIELDS == set()
-    assert projected["children"][0]["items"][0]["stem"] == "题"
-    assert projected["children"][0]["items"][0]["options"] == ["a"]
-    # 家长视角原样（不被「顺手」裁剪）
-    assert _keys(project_for_role(payload, "parent")) & ANSWER_FIELDS == ANSWER_FIELDS
+    assert projected["students"][0]["items"][0]["stem"] == "题"
+    assert projected["students"][0]["items"][0]["options"] == ["a"]
+    # 教师视角原样（不被「顺手」裁剪）
+    assert _keys(project_for_role(payload, "teacher")) & ANSWER_FIELDS == ANSWER_FIELDS
 
 
 # ───────────────────────── 3. 定位与越权 ─────────────────────────
 
 
-def test_child_resolution_ignores_requested_child_id(client):
-    """娃娃传别人的 child_id 无效：解析恒为自己，输出不得含兄弟任务。"""
+def test_student_resolution_ignores_requested_student_id(client):
+    """学生传别人的 student_id 无效：解析恒为自己，输出不得含兄弟任务。"""
     setup = _setup(client, "sibling")
-    ctx = _ctx("child", child_id=setup["a"]["id"], parent_id=setup["parent_id"])
+    ctx = _ctx("student", student_id=setup["a"]["id"], teacher_id=setup["teacher_id"])
 
-    payload = _run(_spec("list_today_tasks"), ctx, {"child_id": setup["b"]["id"]})
-    assert [b["name"] for b in payload["children"]] == ["小明"]
+    payload = _run(_spec("list_today_tasks"), ctx, {"student_id": setup["b"]["id"]})
+    assert [b["name"] for b in payload["students"]] == ["小明"]
     assert "B加法运算" not in json.dumps(payload, ensure_ascii=False)
 
 
-def test_child_scoped_queries_only_see_own_data(client):
-    """娃娃端每个工具都只应看到自己的数据。"""
+def test_student_scoped_queries_only_see_own_data(client):
+    """学生端每个工具都只应看到自己的数据。"""
     setup = _setup(client, "scope")
-    ctx = _ctx("child", child_id=setup["a"]["id"], parent_id=setup["parent_id"])
+    ctx = _ctx("student", student_id=setup["a"]["id"], teacher_id=setup["teacher_id"])
 
     for spec in QUERY_TOOLS:
         if spec.name in PARENT_ONLY_TOOLS:
             continue
         blob = json.dumps(_run(spec, ctx), ensure_ascii=False)
-        assert "小红" not in blob, f"{spec.name} 泄漏了兄弟娃娃"
+        assert "小红" not in blob, f"{spec.name} 泄漏了兄弟学生"
         assert "B加法运算" not in blob, f"{spec.name} 泄漏了兄弟任务"
 
 
-def test_parent_cannot_reach_other_parent_child(client):
-    """别家的娃娃 → 抛 ToolArgumentError（明确失败，而非空列表）。"""
+def test_teacher_cannot_reach_other_teacher_student(client):
+    """别家的学生 → 抛 ToolArgumentError（明确失败，而非空列表）。"""
     setup = _setup(client, "cross")
-    other = register_parent(client, username="qt_cross_other")
+    other = register_teacher(client, username="qt_cross_other")
     other_token = other.json()["access_token"]
-    outsider = _create_child(client, other_token, "qt_cross_outsider", "别人家的娃")
+    outsider = _create_student(client, other_token, "qt_cross_outsider", "别人家的娃")
 
-    ctx = _ctx("parent", parent_id=setup["parent_id"])
+    ctx = _ctx("teacher", teacher_id=setup["teacher_id"])
     for spec in QUERY_TOOLS:
-        if spec.name == "list_children":
+        if spec.name == "list_students":
             continue  # 无入参，不需要越权路径
         if spec.name in PARENT_ONLY_TOOLS:
-            # 无 child_id 维度：parent 作用域只查自己名下的题库，传别家娃娃 id 是无意义的入参，
-            # handler 忽略（本就只按 parent_id 取数），无需抛错——越权门禁在此不构成命题。
+            # 无 student_id 维度：teacher 作用域只查自己名下的题库，传别家学生 id 是无意义的入参，
+            # handler 忽略（本就只按 teacher_id 取数），无需抛错——越权门禁在此不构成命题。
             continue
         with pytest.raises(ToolArgumentError):
-            _run(spec, ctx, {"child_id": outsider["id"]})
+            _run(spec, ctx, {"student_id": outsider["id"]})
 
 
-def test_parent_child_name_resolution_and_miss(client):
-    """child_name 模糊匹配命中；未命中抛错而不是静默空。"""
+def test_teacher_student_name_resolution_and_miss(client):
+    """student_name 模糊匹配命中；未命中抛错而不是静默空。"""
     setup = _setup(client, "byname")
-    ctx = _ctx("parent", parent_id=setup["parent_id"])
+    ctx = _ctx("teacher", teacher_id=setup["teacher_id"])
 
-    hit = _run(_spec("list_today_tasks"), ctx, {"child_name": "小"})
-    assert sorted(b["name"] for b in hit["children"]) == ["小明", "小红"]
+    hit = _run(_spec("list_today_tasks"), ctx, {"student_name": "小"})
+    assert sorted(b["name"] for b in hit["students"]) == ["小明", "小红"]
 
-    exact = _run(_spec("list_today_tasks"), ctx, {"child_name": "小红"})
-    assert [b["name"] for b in exact["children"]] == ["小红"]
+    exact = _run(_spec("list_today_tasks"), ctx, {"student_name": "小红"})
+    assert [b["name"] for b in exact["students"]] == ["小红"]
 
     with pytest.raises(ToolArgumentError):
-        _run(_spec("list_today_tasks"), ctx, {"child_name": "不存在"})
+        _run(_spec("list_today_tasks"), ctx, {"student_name": "不存在"})
 
 
-def test_resolve_children_defaults_to_all_for_parent_and_self_for_child(client):
+def test_resolve_students_defaults_to_all_for_teacher_and_self_for_student(client):
     setup = _setup(client, "defaults")
 
     with Session(engine) as session:
-        parent_scope = resolve_children(
-            session=session, ctx=_ctx("parent", parent_id=setup["parent_id"])
+        teacher_scope = resolve_students(
+            session=session, ctx=_ctx("teacher", teacher_id=setup["teacher_id"])
         )
-        child_scope = resolve_children(
+        student_scope = resolve_students(
             session=session,
-            ctx=_ctx("child", child_id=setup["a"]["id"], parent_id=setup["parent_id"]),
+            ctx=_ctx("student", student_id=setup["a"]["id"], teacher_id=setup["teacher_id"]),
         )
 
-    assert sorted(u.display_name for u in parent_scope) == ["小明", "小红"]
-    assert [u.display_name for u in child_scope] == ["小明"]
+    assert sorted(u.display_name for u in teacher_scope) == ["小明", "小红"]
+    assert [u.display_name for u in student_scope] == ["小明"]
 
 
-def test_parent_tasks_tool_scopes_to_today_for_child(client):
-    """家长任务工具在娃娃端等价「今日任务」，绝不返回家长视角的全量任务表。"""
+def test_teacher_tasks_tool_scopes_to_today_for_student(client):
+    """教师任务工具在学生端等价「今日任务」，绝不返回教师视角的全量任务表。"""
     setup = _setup(client, "kid_tasks")
-    ctx = _ctx("child", child_id=setup["a"]["id"], parent_id=setup["parent_id"])
+    ctx = _ctx("student", student_id=setup["a"]["id"], teacher_id=setup["teacher_id"])
 
-    payload = _run(_spec("list_parent_tasks"), ctx)
-    assert [b["name"] for b in payload["children"]] == ["小明"]
+    payload = _run(_spec("list_teacher_tasks"), ctx)
+    assert [b["name"] for b in payload["students"]] == ["小明"]
     assert payload["unassigned_items"] == []
     blob = json.dumps(payload, ensure_ascii=False)
-    assert "C任务" not in blob  # 未派发草稿对孩子不可见
+    assert "C任务" not in blob  # 未派发草稿对学生不可见
     assert "B加法运算" not in blob
 
 
 def test_unassigned_drafts_only_surface_without_explicit_target(client):
-    """未派发草稿：不指定娃娃时进 ``unassigned_items``；精确指定时被剔除。"""
+    """未派发草稿：不指定学生时进 ``unassigned_items``；精确指定时被剔除。"""
     setup = _setup(client, "unassigned")
-    ctx = _ctx("parent", parent_id=setup["parent_id"])
+    ctx = _ctx("teacher", teacher_id=setup["teacher_id"])
 
-    broad = _run(_spec("list_parent_tasks"), ctx)
+    broad = _run(_spec("list_teacher_tasks"), ctx)
     assert [i["title"] for i in broad["unassigned_items"]] == [setup["draft"]["title"]]
     assert broad["total_items"] >= 3
 
-    narrow = _run(_spec("list_parent_tasks"), ctx, {"child_id": setup["a"]["id"]})
+    narrow = _run(_spec("list_teacher_tasks"), ctx, {"student_id": setup["a"]["id"]})
     assert narrow["unassigned_items"] == []
     assert "C任务" not in json.dumps(narrow, ensure_ascii=False)
 
@@ -415,19 +415,19 @@ def test_unassigned_drafts_only_surface_without_explicit_target(client):
 
 
 def test_envelope_shape_is_uniform_across_tools(client):
-    """全部工具同构：``children`` / ``unassigned_items`` / ``total_*`` 齐备。"""
+    """全部工具同构：``students`` / ``unassigned_items`` / ``total_*`` 齐备。"""
     setup = _setup(client, "envelope")
-    ctx = _ctx("parent", parent_id=setup["parent_id"])
+    ctx = _ctx("teacher", teacher_id=setup["teacher_id"])
 
     for spec in QUERY_TOOLS:
         payload = _run(spec, ctx)
         assert set(payload) == {
-            "children",
+            "students",
             "unassigned_items",
-            "total_children",
+            "total_students",
             "total_items",
         }, spec.name
-        for block in payload["children"]:
+        for block in payload["students"]:
             assert set(block) >= {"id", "name", "grade", "items", "meta"}
             assert isinstance(block["items"], list)
 
@@ -438,12 +438,12 @@ def test_tools_do_not_write_to_the_database(client):
     before = _counts()
 
     for role_ctx in (
-        _ctx("parent", parent_id=setup["parent_id"]),
-        _ctx("child", child_id=setup["a"]["id"], parent_id=setup["parent_id"]),
+        _ctx("teacher", teacher_id=setup["teacher_id"]),
+        _ctx("student", student_id=setup["a"]["id"], teacher_id=setup["teacher_id"]),
     ):
         for spec in QUERY_TOOLS:
-            if role_ctx.role == "child" and spec.name in PARENT_ONLY_TOOLS:
-                continue  # 仅家长工具：child 调用入口即拒，不计入「只读」轮次
+            if role_ctx.role == "student" and spec.name in PARENT_ONLY_TOOLS:
+                continue  # 仅教师工具：student 调用入口即拒，不计入「只读」轮次
             _run(spec, role_ctx)
 
     assert _counts() == before
@@ -452,17 +452,17 @@ def test_tools_do_not_write_to_the_database(client):
 def test_mastery_and_progress_tools_report_real_numbers(client):
     """抽查两个聚合工具的出参语义（掌握度看板 / 进度概况）。"""
     setup = _setup(client, "agg")
-    ctx = _ctx("parent", parent_id=setup["parent_id"], child_id=setup["a"]["id"])
+    ctx = _ctx("teacher", teacher_id=setup["teacher_id"], student_id=setup["a"]["id"])
 
     progress = _run(_spec("get_progress"), ctx)
-    block = progress["children"][0]
+    block = progress["students"][0]
     assert block["name"] == "小明"
     assert block["items"][0]["total"] == 1
     assert block["items"][0]["correct"] == 0
     assert block["items"][0]["accuracy"] == 0.0
 
     mastery = _run(_spec("get_mastery"), ctx)
-    block = mastery["children"][0]
+    block = mastery["students"][0]
     assert block["meta"]["total_knowledge_points"] == 1
     assert block["items"][0]["knowledge_point"] == "加法"
     assert block["items"][0]["active_wrong"] == 1
@@ -513,7 +513,7 @@ def test_absent_encodings_are_equivalent_to_not_passing(client):
     实测模型在 strict 下的填充值就是 ``""``（字符串）、``0``（整数）、``all``（枚举）。
     """
     setup = _setup(client, "strict_absent")
-    ctx = _ctx("parent", parent_id=setup["parent_id"])
+    ctx = _ctx("teacher", teacher_id=setup["teacher_id"])
 
     for spec in QUERY_TOOLS:
         args: dict[str, Any] = {}
@@ -527,48 +527,48 @@ def test_absent_encodings_are_equivalent_to_not_passing(client):
 def test_absent_normalization_does_not_weaken_real_validation(client):
     """归一只针对「缺席」：真实非法值仍须报错，别顺手把校验放宽。"""
     setup = _setup(client, "strict_bogus")
-    ctx = _ctx("parent", parent_id=setup["parent_id"])
+    ctx = _ctx("teacher", teacher_id=setup["teacher_id"])
 
     with pytest.raises(ToolArgumentError):
-        _run(_spec("list_parent_tasks"), ctx, {"status": "archived"})
+        _run(_spec("list_teacher_tasks"), ctx, {"status": "archived"})
     with pytest.raises(ToolArgumentError):
         _run(_spec("list_wrong_questions"), ctx, {"limit": -1})
     with pytest.raises(ToolArgumentError):
         _run(_spec("list_wrong_questions"), ctx, {"limit": "abc"})
     with pytest.raises(ToolArgumentError):
-        _run(_spec("list_parent_tasks"), ctx, {"child_id": "abc"})  # 真垃圾值不放过
+        _run(_spec("list_teacher_tasks"), ctx, {"student_id": "abc"})  # 真垃圾值不放过
 
 
 TEXTUAL_ABSENCE_VALUES = ["null", "NULL", "None", "undefined", "nil", "all", "", "   ", "n/a"]
 
 
 def _absence_tag(prefix: str, blank: str) -> str:
-    """每个参数用例必须独占 tag：``_create_child`` 断言 201，同一轮内重名会 400。"""
+    """每个参数用例必须独占 tag：``_create_student`` 断言 201，同一轮内重名会 400。"""
     return f"{prefix}{TEXTUAL_ABSENCE_VALUES.index(blank)}"
 
 
 @pytest.mark.parametrize("blank", TEXTUAL_ABSENCE_VALUES)
-def test_textual_absence_in_child_id_is_treated_as_unspecified(client, blank):
-    """真机回归：模型把「没有目标娃娃」写成**字符串** ``"null"`` 传给 ``child_id``。
+def test_textual_absence_in_student_id_is_treated_as_unspecified(client, blank):
+    """真机回归：模型把「没有目标学生」写成**字符串** ``"null"`` 传给 ``student_id``。
 
     旧行为：``str("null").strip()`` 为真 → 拿去解析 uuid → ``ToolArgumentError``
-    「child_id 不是合法的 uuid：'null'」→ 模型再试一轮（真机「查询草稿任务」即此）。
+    「student_id 不是合法的 uuid：'null'」→ 模型再试一轮（真机「查询草稿任务」即此）。
     现在必须等价于「不指定目标」：草稿仍进 ``unassigned_items``（不被误判为精确指定）。
     """
     setup = _setup(client, _absence_tag("cid", blank))
-    ctx = _ctx("parent", parent_id=setup["parent_id"])
-    spec = _spec("list_parent_tasks")
+    ctx = _ctx("teacher", teacher_id=setup["teacher_id"])
+    spec = _spec("list_teacher_tasks")
 
-    filled = _run(spec, ctx, {"child_id": blank})
+    filled = _run(spec, ctx, {"student_id": blank})
     assert filled == _run(spec, ctx)
     assert [i["title"] for i in filled["unassigned_items"]] == [setup["draft"]["title"]]
 
 
 @pytest.mark.parametrize("blank", TEXTUAL_ABSENCE_VALUES)
-def test_textual_absence_in_child_name_is_treated_as_unspecified(client, blank):
-    """``child_name`` 同一回归面：文本化缺席不得被当作「找不到这个娃」而抛错。"""
+def test_textual_absence_in_student_name_is_treated_as_unspecified(client, blank):
+    """``student_name`` 同一回归面：文本化缺席不得被当作「找不到这个娃」而抛错。"""
     setup = _setup(client, _absence_tag("cname", blank))
-    ctx = _ctx("parent", parent_id=setup["parent_id"])
-    spec = _spec("list_parent_tasks")
+    ctx = _ctx("teacher", teacher_id=setup["teacher_id"])
+    spec = _spec("list_teacher_tasks")
 
-    assert _run(spec, ctx, {"child_name": blank}) == _run(spec, ctx)
+    assert _run(spec, ctx, {"student_name": blank}) == _run(spec, ctx)

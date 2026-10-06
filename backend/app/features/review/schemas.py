@@ -12,7 +12,7 @@ class ReviewAnswerSubmit(SQLModel):
 
 
 class ReviewItemResp(SQLModel):
-    """到期复习项（娃娃端）：含题干、不含答案，附调度进度。"""
+    """到期复习项（学生端）：含题干、不含答案，附调度进度。"""
 
     wrong_question_id: uuid.UUID
     question_id: uuid.UUID

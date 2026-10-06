@@ -1,7 +1,7 @@
-"""embedding 客户端（ADR-0055 §7/§8）：服务端基础设施，不进家长 ModelConfig。
+"""embedding 客户端（ADR-0055 §7/§8）：服务端基础设施，不进教师 ModelConfig。
 
 只提供 **dense** 向量：BGE-M3 的 sparse 输出需要本地权重文件（不进镜像），
-检索侧的 sparse 通道改为**查询时词法现算**（见 ``retrieval.py``）——单家长
+检索侧的 sparse 通道改为**查询时词法现算**（见 ``retrieval.py``）——单教师
 数千片段的量级下，这比维护一套稀疏索引更便宜，效果等价（BM25 同族）。
 """
 

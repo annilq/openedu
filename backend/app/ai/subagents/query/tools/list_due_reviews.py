@@ -11,12 +11,12 @@ from agent_core.subagent import SubAgentContext
 from agent_core.tools import ToolSpec
 from app.ai.subagents.query.tools._shared import (
     LOCATOR_PROPS,
-    child_block,
     dump,
     envelope,
     optional_int,
     project_for_role,
-    resolve_children,
+    resolve_students,
+    student_block,
 )
 from app.features.review import service as review_service
 
@@ -31,18 +31,18 @@ async def handler(args: dict[str, Any], *, ctx: SubAgentContext, session: Any = 
     # 缺席归一（ADR-0040）：strict 模式会替模型补 0，0 恒表示「不设限」。
     limit = optional_int(args.get("limit"), name="limit")
 
-    children = resolve_children(
+    students = resolve_students(
         session=session,
         ctx=ctx,
-        child_id=args.get("child_id"),
-        child_name=args.get("child_name"),
+        student_id=args.get("student_id"),
+        student_name=args.get("student_name"),
     )
     blocks = []
-    for child in children:
-        rows = review_service.list_due_reviews(session=session, child_id=child.id)
+    for student in students:
+        rows = review_service.list_due_reviews(session=session, student_id=student.id)
         if limit is not None:
             rows = rows[:limit]
-        blocks.append(child_block(child, dump(rows)))
+        blocks.append(student_block(student, dump(rows)))
 
     return project_for_role(envelope(blocks), ctx.role)
 

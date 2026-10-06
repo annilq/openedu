@@ -29,8 +29,8 @@ class SubAgentManifest:
     business: str
     name: str
     description: str = ""
-    # 可见角色：parent / child（runtime 按当前角色过滤）
-    roles: list[str] = field(default_factory=lambda: ["parent", "child"])
+    # 可见角色：teacher / student（runtime 按当前角色过滤）
+    roles: list[str] = field(default_factory=lambda: ["teacher", "student"])
     # 意图触发词（规则匹配用，priority 降序）
     triggers: list[str] = field(default_factory=list)
     # 启发式兜底词（规则未命中时用）
@@ -84,7 +84,7 @@ def _manifest_from_dict(business: str, data: dict[str, Any]) -> SubAgentManifest
         business=business,
         name=str(data.get("name", business)),
         description=str(data.get("description", "")),
-        roles=list(data.get("roles", ["parent", "child"])),
+        roles=list(data.get("roles", ["teacher", "student"])),
         triggers=list(data.get("triggers", [])),
         hints=list(data.get("hints", [])),
         priority=int(data.get("priority", 0)),

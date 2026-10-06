@@ -1,9 +1,9 @@
-"""query SubAgent 工具的共享件：孩子定位与出参投影（ADR-0033 决策 8 / 9）。
+"""query SubAgent 工具的共享件：学生定位与出参投影（ADR-0033 决策 8 / 9）。
 
 两个函数是**机制化**的安全与一致边界，任何查询工具都不得自行重写：
 
-- ``resolve_children`` —— 工具入参 → 目标 ``User`` 列表（含归属/越权校验）；
-- ``project_for_role`` —— 出参按 ``ctx.role`` 投影（娃娃端剥掉答案与解析）。
+- ``resolve_students`` —— 工具入参 → 目标 ``User`` 列表（含归属/越权校验）；
+- ``project_for_role`` —— 出参按 ``ctx.role`` 投影（学生端剥掉答案与解析）。
 
 角色来源可信：``ctx.role`` 由 ``/assistant/chat`` 端点从 JWT 解出的 ``user.role`` 写入，
 客户端无法伪造；工具 handler 不是 FastAPI 依赖、拿不到 request，只能靠 ``ctx`` 透传，
@@ -18,27 +18,27 @@ from sqlmodel import Session
 
 from agent_core.subagent import SubAgentContext
 from app.core.errors import AppErrorException
-from app.core.guard import require_owned_child
+from app.core.guard import require_owned_student
 from app.db.models import User
-from app.features.children.service import list_children_of
+from app.features.students.service import list_students_of
 
-# 娃娃端绝不可见的字段（ADR-008 硬门槛）：答案与解析。
-# 契约测试遍历全部工具、跑一遍娃娃视角，断言本集合中的键不出现。
+# 学生端绝不可见的字段（ADR-008 硬门槛）：答案与解析。
+# 契约测试遍历全部工具、跑一遍学生视角，断言本集合中的键不出现。
 ANSWER_FIELDS: frozenset[str] = frozenset({"answer", "explanation"})
 
 _LOCATOR_DESC = (
-    "与 {other} 二选一；不指定时传空字符串，两者都为空＝家长名下全部娃娃 / 娃娃本人。"
+    "与 {other} 二选一；不指定时传空字符串，两者都为空＝教师名下全部学生 / 学生本人。"
 )
 
 # 全部查询工具共用的两个定位参数（同一份 schema 片段，保证模型侧描述一致）。
 LOCATOR_PROPS: dict[str, Any] = {
-    "child_id": {
+    "student_id": {
         "type": "string",
-        "description": f"娃娃账号 ID（uuid）。{_LOCATOR_DESC.format(other='child_name')}",
+        "description": f"学生账号 ID（uuid）。{_LOCATOR_DESC.format(other='student_name')}",
     },
-    "child_name": {
+    "student_name": {
         "type": "string",
-        "description": f"娃娃昵称（模糊匹配）。{_LOCATOR_DESC.format(other='child_id')}",
+        "description": f"学生昵称（模糊匹配）。{_LOCATOR_DESC.format(other='student_id')}",
     },
 }
 
@@ -50,8 +50,8 @@ LOCATOR_PROPS: dict[str, Any] = {
 # ``json_schema["required"] = [prop for prop in properties.keys()]``）。
 # 于是本文件写的 ``"required": []`` 在 wire 上并不存在——模型被迫为每个参数编一个值。
 #
-# 实测（deepseek-v4-flash / 真接口）：strict 下 ``list_parent_tasks`` 的入参为
-# ``{"child_id": "", "child_name": "", "status": ""}``。此时若某参数的「缺席」没有类型合法的
+# 实测（deepseek-v4-flash / 真接口）：strict 下 ``list_teacher_tasks`` 的入参为
+# ``{"student_id": "", "student_name": "", "status": ""}``。此时若某参数的「缺席」没有类型合法的
 # 编码，模型只能填非法值 → 收到硬错误 → 反复试探（省略 → 仍被要求必填 → 空串 → 还是错）
 # → 撞上 SOP「不重复调用同一个工具」后空转、把调用叙述成文本。
 #
@@ -59,9 +59,9 @@ LOCATOR_PROPS: dict[str, Any] = {
 # 1. 每个可省略参数都必须有**类型合法的缺席编码**：字符串用 ``""``，整数用 ``0``；
 # 2. 枚举型参数必须把 ``NO_FILTER``（``"all"``）列进 ``enum``，否则模型无合法值可填。
 #
-# 真机第二例：模型把「没有目标娃娃」写成了**字符串** ``"null"`` 传给 ``child_id``
+# 真机第二例：模型把「没有目标学生」写成了**字符串** ``"null"`` 传给 ``student_id``
 # （``optional_str`` 的缺席值把文本化的 ``None``/``null`` 一并覆盖，JSON ``null`` 本就是
-# ``None``）——两条路径都必须归一到「未提供」，否则模型会拿到 ``child_id 不是合法的 uuid``
+# ``None``）——两条路径都必须归一到「未提供」，否则模型会拿到 ``student_id 不是合法的 uuid``
 # 再试一轮。``"undefined"``/``"nil"`` 是同一类文本化缺席（JS / Ruby 口径），一并收。
 UNSET_TOKENS: frozenset[str] = frozenset(
     {"", "all", "any", "*", "none", "null", "nil", "undefined", "unset", "n/a", "na"}
@@ -135,27 +135,27 @@ def _load_user(session: Session, user_id: UUID, *, message: str) -> User:
     return user
 
 
-def resolve_parent(*, session: Session, ctx: SubAgentContext) -> User:
-    """解析调用者本人（家长视角工具用）：``parent_id`` 由端点写入可信 ``extra``。"""
-    raw = (ctx.extra or {}).get("parent_id")
+def resolve_teacher(*, session: Session, ctx: SubAgentContext) -> User:
+    """解析调用者本人（教师视角工具用）：``teacher_id`` 由端点写入可信 ``extra``。"""
+    raw = (ctx.extra or {}).get("teacher_id")
     if not raw:
-        raise ToolArgumentError("当前会话缺少家长身份，无法查询。")
+        raise ToolArgumentError("当前会话缺少教师身份，无法查询。")
     return _load_user(
-        session, _as_uuid(raw, field="parent_id"), message="当前家长账号不存在。"
+        session, _as_uuid(raw, field="teacher_id"), message="当前教师账号不存在。"
     )
 
 
-def resolve_children(
+def resolve_students(
     *,
     session: Session,
     ctx: SubAgentContext,
-    child_id: Any = None,
-    child_name: Any = None,
+    student_id: Any = None,
+    student_name: Any = None,
 ) -> list[User]:
-    """定位本次查询的目标娃娃（含越权校验）。
+    """定位本次查询的目标学生（含越权校验）。
 
-    - **娃娃**：恒为自己，入参被忽略——杜绝「换个 ``child_id`` 查别人」；
-    - **家长**：``child_id`` / ``child_name`` 二选一；都不传＝名下全部娃娃；
+    - **学生**：恒为自己，入参被忽略——杜绝「换个 ``student_id`` 查别人」；
+    - **教师**：``student_id`` / ``student_name`` 二选一；都不传＝名下全部学生；
       指定了但不在名下 → 抛 ``ToolArgumentError``（不静默返回空，避免模型把
       「你没这个娃」误读成「这个娃没数据」）。
 
@@ -166,31 +166,31 @@ def resolve_children(
     # 缺席归一收口在此（全部定位工具的公用入口，ADR-0033 决策 8）：strict 模式会替模型补
     # ``""``，模型也可能自发填 ``all``/``none``；不归一的话它们会被当作 uuid 去解析而报错，
     # 模型随即陷入重试（见本模块顶部「strict 模式下的必填陷阱」）。
-    child_id = optional_str(child_id)
-    child_name = optional_str(child_name)
+    student_id = optional_str(student_id)
+    student_name = optional_str(student_name)
 
-    if caller_role(ctx) == "child":
-        own_raw = extra.get("child_id")
+    if caller_role(ctx) == "student":
+        own_raw = extra.get("student_id")
         if not own_raw:
-            raise ToolArgumentError("当前会话缺少娃娃身份，无法查询。")
+            raise ToolArgumentError("当前会话缺少学生身份，无法查询。")
         own = _load_user(
-            session, _as_uuid(own_raw, field="child_id"), message="当前娃娃账号不存在。"
+            session, _as_uuid(own_raw, field="student_id"), message="当前学生账号不存在。"
         )
         return [own]
 
-    parent = resolve_parent(session=session, ctx=ctx)
-    if child_id:
+    teacher = resolve_teacher(session=session, ctx=ctx)
+    if student_id:
         try:
             return [
-                require_owned_child(
+                require_owned_student(
                     session=session,
-                    owner_id=parent.id,
-                    child_id=_as_uuid(
-                        child_id,
-                        field="child_id",
-                        hint="（按昵称定位请改用 child_name；不指定目标请留空）",
+                    owner_id=teacher.id,
+                    student_id=_as_uuid(
+                        student_id,
+                        field="student_id",
+                        hint="（按昵称定位请改用 student_name；不指定目标请留空）",
                     ),
-                    message="未找到该娃娃，或该娃娃不属于你的账号。",
+                    message="未找到该学生，或该学生不属于你的账号。",
                 )
             ]
         except AppErrorException as exc:
@@ -198,27 +198,27 @@ def resolve_children(
             # 归一为 ToolArgumentError，避免业务异常类型从 REST 层漏进内核调用栈。
             raise ToolArgumentError(str(exc)) from exc
 
-    if child_name:
-        keyword = child_name
+    if student_name:
+        keyword = student_name
         hits = [
             c
-            for c in list_children_of(session=session, parent_id=parent.id)
+            for c in list_students_of(session=session, teacher_id=teacher.id)
             if keyword in (c.display_name or "")
         ]
         if not hits:
-            raise ToolArgumentError(f"没有找到昵称含「{keyword}」的娃娃。")
+            raise ToolArgumentError(f"没有找到昵称含「{keyword}」的学生。")
         return hits
 
-    return list_children_of(session=session, parent_id=parent.id)
+    return list_students_of(session=session, teacher_id=teacher.id)
 
 
 def project_for_role(payload: Any, role: str) -> Any:
-    """按角色投影出参：娃娃端剥掉 ``ANSWER_FIELDS``，其他角色原样返回。
+    """按角色投影出参：学生端剥掉 ``ANSWER_FIELDS``，其他角色原样返回。
 
     工具**一律返回全量**（错题恒 ``include_answer=True``），裁剪只在此处发生——
     新增工具忘记裁剪会被契约测试拦下，不靠 review 纪律（ADR-008）。
     """
-    if (role or "").strip().lower() != "child":
+    if (role or "").strip().lower() != "student":
         return payload
     return _strip_answer_fields(payload)
 
@@ -248,16 +248,16 @@ def dump(node: Any) -> Any:
     return node
 
 
-def child_meta(child: User) -> dict[str, Any]:
-    """娃娃的身份摘要（每个分组块都带，供模型消歧与前端卡片展示）。"""
-    return {"id": str(child.id), "name": child.display_name, "grade": child.grade}
+def student_meta(student: User) -> dict[str, Any]:
+    """学生的身份摘要（每个分组块都带，供模型消歧与前端卡片展示）。"""
+    return {"id": str(student.id), "name": student.display_name, "grade": student.grade}
 
 
-def child_block(
-    child: User, items: list[Any], *, meta: dict[str, Any] | None = None
+def student_block(
+    student: User, items: list[Any], *, meta: dict[str, Any] | None = None
 ) -> dict[str, Any]:
-    """按娃娃分组的结果块：``{id, name, grade, items, meta}``。"""
-    return {**child_meta(child), "items": items, "meta": meta or {}}
+    """按学生分组的结果块：``{id, name, grade, items, meta}``。"""
+    return {**student_meta(student), "items": items, "meta": meta or {}}
 
 
 def envelope(
@@ -265,14 +265,14 @@ def envelope(
 ) -> dict[str, Any]:
     """统一出参信封（全部查询工具同构，方便模型理解与渲染 hook 展开）。
 
-    - ``children``：按娃娃分组的结果块；
-    - ``unassigned_items``：不属于任何娃娃的条目（目前仅「家长未派发的草稿任务」）；
-    - ``total_children`` / ``total_items``：命中的娃娃数与条目总数。
+    - ``students``：按学生分组的结果块；
+    - ``unassigned_items``：不属于任何学生的条目（目前仅「教师未派发的草稿任务」）；
+    - ``total_students`` / ``total_items``：命中的学生数与条目总数。
     """
     spare = list(unassigned or [])
     return {
-        "children": blocks,
+        "students": blocks,
         "unassigned_items": spare,
-        "total_children": len(blocks),
+        "total_students": len(blocks),
         "total_items": sum(len(b.get("items") or []) for b in blocks) + len(spare),
     }

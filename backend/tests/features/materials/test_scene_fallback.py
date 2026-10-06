@@ -1,7 +1,7 @@
 """图库兜底场景（ADR-0061 §U）单元测试。
 
 背景：教师**没配**知识点模板时，交互讲解此前一律返回 None —— 于是「正方形有
-几条对称轴」这类最典型的题在题库详情 / 错题本里**永远不出图**，家长看到的就是
+几条对称轴」这类最典型的题在题库详情 / 错题本里**永远不出图**，教师看到的就是
 「功能没做」。几何的权威来源是图库（``scene_figures``），题面点名了图形就该出图。
 
 本文件钉住三件事：
@@ -94,7 +94,7 @@ def test_build_falls_back_to_library_without_template():
     session = _NoTemplateSession()
     spec = build_scene_spec_for_question(
         session,
-        parent_id="p",
+        teacher_id="p",
         subject="数学",
         grade=4,
         knowledge_point="图形的运动（轴对称）",
@@ -115,7 +115,7 @@ def test_option_group_drops_library_verdict():
     session = _NoTemplateSession()
     spec = build_scene_spec_for_question(
         session,
-        parent_id="p",
+        teacher_id="p",
         subject="数学",
         grade=4,
         knowledge_point="图形的运动（轴对称）",
@@ -133,7 +133,7 @@ def test_build_no_figure_word_returns_none():
     assert (
         build_scene_spec_for_question(
             session,
-            parent_id="p",
+            teacher_id="p",
             subject="数学",
             grade=4,
             knowledge_point="两位数加减法",
@@ -149,7 +149,7 @@ def test_build_fallback_applies_stem_angle():
     session = _NoTemplateSession()
     spec = build_scene_spec_for_question(
         session,
-        parent_id="p",
+        teacher_id="p",
         subject="数学",
         grade=4,
         knowledge_point="图形的运动（轴对称）",
@@ -168,7 +168,7 @@ def test_template_still_wins_over_library():
 
     spec = build_scene_spec_for_question(
         _Session(),
-        parent_id="p",
+        teacher_id="p",
         subject="数学",
         grade=4,
         knowledge_point="图形的运动（轴对称）",
@@ -189,7 +189,7 @@ def test_scene_spec_for_read_prefers_snapshot():
     out = scene_spec_for_read(
         _BoomSession(),
         snapshot=snapshot,
-        parent_id="p",
+        teacher_id="p",
         subject="数学",
         grade=4,
         knowledge_point="KP",
@@ -204,7 +204,7 @@ def test_scene_spec_for_read_empty_snapshot_falls_back():
         scene_spec_for_read(
             session,
             snapshot=None,
-            parent_id="p",
+            teacher_id="p",
             subject="数学",
             grade=4,
             knowledge_point="两位数加减法",
@@ -215,7 +215,7 @@ def test_scene_spec_for_read_empty_snapshot_falls_back():
     out = scene_spec_for_read(
         session,
         snapshot={},
-        parent_id="p",
+        teacher_id="p",
         subject="数学",
         grade=4,
         knowledge_point="图形的运动（轴对称）",

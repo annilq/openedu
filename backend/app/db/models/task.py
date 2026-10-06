@@ -15,12 +15,12 @@ class TaskBase(SQLModel):
 
 
 class Task(TaskBase, table=True):
-    # 列表游标分页按 (parent_id, created_at 倒序) 取页（ADR-0053）。
-    __table_args__ = (Index("ix_task_parent_created", "parent_id", "created_at"),)
+    # 列表游标分页按 (teacher_id, created_at 倒序) 取页（ADR-0053）。
+    __table_args__ = (Index("ix_task_teacher_created", "teacher_id", "created_at"),)
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    parent_id: uuid.UUID = Field(foreign_key="user.id")
-    child_id: uuid.UUID | None = Field(default=None, foreign_key="user.id")  # 可空，assigned 时绑
+    teacher_id: uuid.UUID = Field(foreign_key="user.id")
+    student_id: uuid.UUID | None = Field(default=None, foreign_key="user.id")  # 可空，assigned 时绑
     # 出题所用模型引用（内置 id / ModelConfig id）；缺省 None = 后端回退（mock/langchain）。
     # 落库以便「整卷重生成 / 单题重生成」沿用同一模型，避免静默回退 mock。
     model: str | None = Field(default=None)
@@ -57,7 +57,7 @@ class TaskQuestion(SQLModel, table=True):
     difficulty: str | None = None
     # 学期维度（ADR-0061 发布任务对接资料库）：'' = 不限/整学年；'上学期' / '下学期'。
     # 与 Question 对齐——promote_task_question 把此值拷贝进题库 Question，进而在讲解时
-    # 按 (parent_id, subject, grade, knowledge_point, semester) 匹配家长私有知识点模板。
+    # 按 (teacher_id, subject, grade, knowledge_point, semester) 匹配教师私有知识点模板。
     semester: str = Field(default="", max_length=8)
     # 本题的交互式讲解实例快照（ADR-0061 §M）：生成时由「知识点模板 + 本题数值」
     # 融合得到并落库。草稿期就带上——否则确认前的预览 / 草稿审核拿不到场景

@@ -13,12 +13,12 @@ import pytest
 from agent_core.errors import ProviderRequestError
 from app.core.config import settings
 from app.features.model_management import probe as probe_mod
-from tests.utils.user import auth_headers, login, register_parent
+from tests.utils.user import auth_headers, login, register_teacher
 
 
-def _parent(client, suffix="p1"):
-    register_parent(client, username=f"parent_{suffix}", password="pw123456")
-    token = login(client, f"parent_{suffix}", "pw123456").json()["access_token"]
+def _teacher(client, suffix="p1"):
+    register_teacher(client, username=f"teacher_{suffix}", password="pw123456")
+    token = login(client, f"teacher_{suffix}", "pw123456").json()["access_token"]
     return auth_headers(token)
 
 
@@ -62,7 +62,7 @@ def test_probe_inline_params(client, recorder):
     calls, _ = recorder
     r = client.post(
         "/api/v1/models/test",
-        headers=_parent(client, "inline"),
+        headers=_teacher(client, "inline"),
         json={
             "provider": "openai_compat",
             "base_url": "https://api.deepseek.com",
@@ -79,7 +79,7 @@ def test_probe_inline_params(client, recorder):
 def test_probe_uses_stored_key_when_blank(client, recorder):
     """编辑表单密钥留空 = 用库里解密出来的那份（前端自己做不到的那一半）。"""
     calls, _ = recorder
-    h = _parent(client, "stored")
+    h = _teacher(client, "stored")
     created = _create(client, h, api_key="sk-stored")
     r = client.post(
         "/api/v1/models/test",
@@ -96,7 +96,7 @@ def test_probe_uses_stored_key_when_blank(client, recorder):
 def test_probe_override_wins_over_stored(client, recorder):
     """表单里改了模型名就以表单为准（改完还没保存就该试新的）。"""
     calls, _ = recorder
-    h = _parent(client, "override")
+    h = _teacher(client, "override")
     created = _create(client, h)
     r = client.post(
         "/api/v1/models/test",
@@ -108,12 +108,12 @@ def test_probe_override_wins_over_stored(client, recorder):
     assert calls[0]["api_key"] == "sk-new"
 
 
-def test_probe_other_parents_model_is_404(client, recorder):
+def test_probe_other_teachers_model_is_404(client, recorder):
     """越权：拿别人的 model_id 试连 → 404（与其余读接口同口径）。"""
     _, _ = recorder
-    owner = _parent(client, "owner")
+    owner = _teacher(client, "owner")
     created = _create(client, owner)
-    stranger = _parent(client, "stranger")
+    stranger = _teacher(client, "stranger")
     r = client.post(
         "/api/v1/models/test",
         headers=stranger,
@@ -127,7 +127,7 @@ def test_probe_requires_provider(client, recorder):
     _, _ = recorder
     r = client.post(
         "/api/v1/models/test",
-        headers=_parent(client, "novalid"),
+        headers=_teacher(client, "novalid"),
         json={"model_name": "gpt-4o", "api_key": "sk-x"},
     )
     assert r.status_code == 422
@@ -152,7 +152,7 @@ def test_probe_classifies_provider_failure(client, monkeypatch):
 
     r = client.post(
         "/api/v1/models/test",
-        headers=_parent(client, "auth"),
+        headers=_teacher(client, "auth"),
         json={
             "provider": "openai_compat",
             "base_url": "https://api.deepseek.com",
@@ -184,7 +184,7 @@ def test_probe_timeout_becomes_conclusion(client, monkeypatch):
 
     r = client.post(
         "/api/v1/models/test",
-        headers=_parent(client, "timeout"),
+        headers=_teacher(client, "timeout"),
         json={
             "provider": "openai_compat",
             "base_url": "https://api.deepseek.com",
@@ -259,7 +259,7 @@ def test_probe_stops_at_first_chunk(client, monkeypatch):
 
     r = client.post(
         "/api/v1/models/test",
-        headers=_parent(client, "firstchunk"),
+        headers=_teacher(client, "firstchunk"),
         json={
             "provider": "ollama",
             "base_url": "http://localhost:11434",
@@ -286,7 +286,7 @@ def test_probe_no_chunk_but_failed_is_not_success(client, monkeypatch):
 
     r = client.post(
         "/api/v1/models/test",
-        headers=_parent(client, "nochunk"),
+        headers=_teacher(client, "nochunk"),
         json={
             "provider": "openai_compat",
             "base_url": "https://api.deepseek.com",
@@ -314,7 +314,7 @@ def test_probe_redacts_secret_from_detail(client, monkeypatch):
 
     r = client.post(
         "/api/v1/models/test",
-        headers=_parent(client, "redact"),
+        headers=_teacher(client, "redact"),
         json={
             "provider": "openai_compat",
             "base_url": "https://x.test",

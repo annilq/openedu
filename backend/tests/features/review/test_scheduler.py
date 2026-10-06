@@ -14,7 +14,7 @@ from app.domain.review_scheduler import REVIEW_INTERVALS_DAYS, apply_review_outc
 
 def _make_wq(*, stage: int = 0, wrong_count: int = 1) -> WrongQuestion:
     return WrongQuestion(
-        child_id=uuid.uuid4(),
+        student_id=uuid.uuid4(),
         question_id=uuid.uuid4(),
         review_stage=stage,
         due_at=datetime.now(UTC),
@@ -53,7 +53,7 @@ def test_final_correct_graduates(db: Session):
 
     assert out is not None
     assert out.graduated_at is not None
-    # 行还在：痕迹留着，家长端「已掌握」分区能翻出来。
+    # 行还在：痕迹留着，教师端「已掌握」分区能翻出来。
     assert db.get(WrongQuestion, wq.id) is not None
 
 

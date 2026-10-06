@@ -1,7 +1,7 @@
 """Repository：按来源把「打印导出」需要的题从库里捞出来。
 
 这里只负责**取数 + 归属校验**（后者一律经 ``app.core.guard``，分层不变量
-禁止内联 ``parent_id ==`` 比较）；题号、分节、纯文本降级都是装配层
+禁止内联 ``teacher_id ==`` 比较）；题号、分节、纯文本降级都是装配层
 （``document.py``）的事。
 """
 from __future__ import annotations
@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from sqlmodel import Session, select
 
 from app.core.errors import ErrCode
-from app.core.guard import require_owned, require_owned_child
+from app.core.guard import require_owned, require_owned_student
 from app.db.models import Question, Task, TaskQuestion, WrongQuestion
 from app.features.export.document import QuestionGroup, RawQuestion
 
@@ -27,14 +27,14 @@ def _to_raw(row: Question | TaskQuestion) -> RawQuestion:
 
 
 def load_bank_questions(
-    *, session: Session, parent_id: uuid.UUID, question_ids: list[uuid.UUID]
+    *, session: Session, teacher_id: uuid.UUID, question_ids: list[uuid.UUID]
 ) -> list[RawQuestion]:
     """题库来源：逐题走归属守卫，保持调用方给的顺序（所见即所得）。"""
     rows: list[RawQuestion] = []
     for question_id in question_ids:
         question = require_owned(
             session=session,
-            owner_id=parent_id,
+            owner_id=teacher_id,
             model=Question,
             obj_id=question_id,
             code=ErrCode.QUESTION_ACCESS_DENIED,
@@ -45,7 +45,7 @@ def load_bank_questions(
 
 
 def load_task_groups(
-    *, session: Session, parent_id: uuid.UUID, task_ids: list[uuid.UUID]
+    *, session: Session, teacher_id: uuid.UUID, task_ids: list[uuid.UUID]
 ) -> list[QuestionGroup]:
     """任务来源：每个任务一节，节内是 ``TaskQuestion`` 深拷贝快照。
 
@@ -57,7 +57,7 @@ def load_task_groups(
     for task_id in task_ids:
         task = require_owned(
             session=session,
-            owner_id=parent_id,
+            owner_id=teacher_id,
             model=Task,
             obj_id=task_id,
             code=ErrCode.TASK_NOT_OWNED,
@@ -81,20 +81,20 @@ def load_task_groups(
 def load_wrong_book_questions(
     *,
     session: Session,
-    parent_id: uuid.UUID,
-    child_id: uuid.UUID,
+    teacher_id: uuid.UUID,
+    student_id: uuid.UUID,
     due_only: bool,
 ) -> list[RawQuestion]:
-    """错题来源：某娃娃的**未毕业**错题（毕业 = ``graduated_at`` 非空）。
+    """错题来源：某学生的**未毕业**错题（毕业 = ``graduated_at`` 非空）。
 
     ``due_only=True`` = 只取今天到期的，与复习页「当前到期复习项」同一份集合。
     """
-    require_owned_child(session=session, owner_id=parent_id, child_id=child_id)
+    require_owned_student(session=session, owner_id=teacher_id, student_id=student_id)
     stmt = (
         select(Question)
         .join(WrongQuestion, WrongQuestion.question_id == Question.id)
         .where(
-            WrongQuestion.child_id == child_id,
+            WrongQuestion.student_id == student_id,
             WrongQuestion.graduated_at.is_(None),  # type: ignore[union-attr]
         )
     )

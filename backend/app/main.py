@@ -22,7 +22,7 @@ async def lifespan(app: FastAPI):
     with Session(engine) as s:
         check_runtime_secrets_health(s)
     # 打印导出的中文字体同口径：生产缺失阻断启动，开发告警（ADR-0052）。
-    # 缺字体不会崩其他功能，但导出会产出豆腐块——那种废纸不能等家长打出来才发现。
+    # 缺字体不会崩其他功能，但导出会产出豆腐块——那种废纸不能等教师打出来才发现。
     check_export_font_health()
     yield
 

@@ -1,16 +1,16 @@
-from tests.utils.user import auth_headers, login, register_parent
+from tests.utils.user import auth_headers, login, register_teacher
 
 
-def _create_child(client, ptoken, username="kid1"):
+def _create_student(client, ptoken, username="kid1"):
     r = client.post(
-        "/api/v1/children",
+        "/api/v1/students",
         headers=auth_headers(ptoken),
         json={
             "username": username,
             "password": "kid123456",
-            "display_name": "娃娃",
+            "display_name": "学生",
             "grade": 2,
-            "role": "child",
+            "role": "student",
         },
     )
     assert r.status_code == 201, r.text
@@ -18,22 +18,22 @@ def _create_child(client, ptoken, username="kid1"):
 
 
 def test_full_closed_loop(client):
-    # 1) 注册家长
-    r = register_parent(client)
+    # 1) 注册教师
+    r = register_teacher(client)
     assert r.status_code == 200
     ptoken = r.json()["access_token"]
 
-    # 2) 加娃娃
-    child = _create_child(client, ptoken)
-    cid = child["id"]
+    # 2) 加学生
+    student = _create_student(client, ptoken)
+    cid = student["id"]
 
-    # 3) 家长出题（单流：POST /tasks/from-generated 落库已确认题卡，ADR-0023）。
+    # 3) 教师出题（单流：POST /tasks/from-generated 落库已确认题卡，ADR-0023）。
     gen = client.post(
         "/api/v1/tasks/from-generated",
         headers=auth_headers(ptoken),
         json={
             "title": "二年级混合卷",
-            "child_id": cid,
+            "student_id": cid,
             "specs": [
                 {
                     "subject": "数学",
@@ -74,10 +74,10 @@ def test_full_closed_loop(client):
     task = gen.json()
     assert task["status"] == "draft"
     assert len(task["questions"]) == 2
-    # 家长端能看到答案（审阅质量）
+    # 教师端能看到答案（审阅质量）
     assert task["questions"][0]["answer"] is not None
     tid = task["id"]
-    # 4) 家长确认成卷 draft → ready（ADR-0004 D7）
+    # 4) 教师确认成卷 draft → ready（ADR-0004 D7）
     cf = client.post(f"/api/v1/tasks/{tid}/confirm", headers=auth_headers(ptoken))
     assert cf.status_code == 200, cf.text
     assert cf.json()["status"] == "ready"
@@ -87,21 +87,21 @@ def test_full_closed_loop(client):
     q0_answer = confirmed["questions"][0]["answer"]
     q1_question_id = confirmed["questions"][1]["question_id"]
 
-    # 5) 家长派发 ready → assigned（绑 child_id，ADR-0004 D7）
+    # 5) 教师派发 ready → assigned（绑 student_id，ADR-0004 D7）
     ag = client.post(
         f"/api/v1/tasks/{tid}/assign",
         headers=auth_headers(ptoken),
-        params={"child_id": cid},
+        params={"student_id": cid},
     )
     assert ag.status_code == 200, ag.text
     assert ag.json()["status"] == "assigned"
 
-    # 6) 娃娃登录
+    # 6) 学生登录
     lr = login(client, "kid1", "kid123456")
     assert lr.status_code == 200
     ctoken = lr.json()["access_token"]
 
-    # 7) 今日任务：娃娃端看不到答案
+    # 7) 今日任务：学生端看不到答案
     today = client.get("/api/v1/tasks/today", headers=auth_headers(ctoken))
     assert today.status_code == 200
     assert today.json()[0]["questions"][0]["answer"] is None
@@ -126,7 +126,7 @@ def test_full_closed_loop(client):
 
     # 10) 进度
     pr = client.get(
-        f"/api/v1/tasks/children/{cid}/progress", headers=auth_headers(ptoken)
+        f"/api/v1/tasks/students/{cid}/progress", headers=auth_headers(ptoken)
     )
     assert pr.status_code == 200
     pj = pr.json()
@@ -137,47 +137,47 @@ def test_full_closed_loop(client):
 
 def test_error_paths(client):
     # 重复注册 -> 400
-    register_parent(client, username="dup")
-    r2 = register_parent(client, username="dup")
+    register_teacher(client, username="dup")
+    r2 = register_teacher(client, username="dup")
     assert r2.status_code == 400
 
-    # 娃娃调用家长接口（加娃娃） -> 403
+    # 学生调用教师接口（加学生） -> 403
     lr = login(client, "kid1", "kid123456")
     ctoken = lr.json()["access_token"]
     bad = client.post(
-        "/api/v1/children",
+        "/api/v1/students",
         headers=auth_headers(ctoken),
-        json={"username": "x", "password": "y", "display_name": "z", "role": "child"},
+        json={"username": "x", "password": "y", "display_name": "z", "role": "student"},
     )
     assert bad.status_code == 403
 
     # 未登录访问受保护接口 -> 401
-    noauth = client.get("/api/v1/children")
+    noauth = client.get("/api/v1/students")
     assert noauth.status_code == 401
 
 
 def test_auth_me(client):
     """前端登录后用 token 调 /auth/me 获取当前用户信息。"""
-    # 家长注册（用唯一用户名避免与其它测试冲突）
-    r = register_parent(client, username="me_parent")
+    # 教师注册（用唯一用户名避免与其它测试冲突）
+    r = register_teacher(client, username="me_teacher")
     assert r.status_code == 200, r.text
     ptoken = r.json()["access_token"]
 
-    # 调 /auth/me 应返回家长信息
+    # 调 /auth/me 应返回教师信息
     me = client.get("/api/v1/auth/me", headers=auth_headers(ptoken))
     assert me.status_code == 200
     me_json = me.json()
-    assert me_json["role"] == "parent"
-    assert me_json["username"] == "me_parent"
+    assert me_json["role"] == "teacher"
+    assert me_json["username"] == "me_teacher"
     assert "id" in me_json
 
-    # 创建娃娃并验证 /auth/me 返回 child 角色
-    _create_child(client, ptoken, username="kid_me")
+    # 创建学生并验证 /auth/me 返回 student 角色
+    _create_student(client, ptoken, username="kid_me")
     lr = login(client, "kid_me", "kid123456")
     assert lr.status_code == 200
     ctoken = lr.json()["access_token"]
 
     me2 = client.get("/api/v1/auth/me", headers=auth_headers(ctoken))
     assert me2.status_code == 200
-    assert me2.json()["role"] == "child"
+    assert me2.json()["role"] == "student"
     assert me2.json()["grade"] == 2

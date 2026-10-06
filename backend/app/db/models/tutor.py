@@ -8,10 +8,10 @@ from app.db.models.base import get_datetime_utc
 
 
 class TutorLog(SQLModel, table=True):
-    """AI 伴学答疑交互日志（F-305，家长可查）。"""
+    """AI 伴学答疑交互日志（F-305，教师可查）。"""
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    child_id: uuid.UUID = Field(foreign_key="user.id", index=True)
+    student_id: uuid.UUID = Field(foreign_key="user.id", index=True)
     grade: int
     subject: str = Field(max_length=32)
     knowledge_point: str = Field(default="", max_length=128)

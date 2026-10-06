@@ -2,7 +2,7 @@
 
 图片 OCR **二期**（依赖重、中文手写识别差，不与首版捆绑）。解析失败抛
 :class:`ParseError`，由 service 转成 422 明确告知「这格式读不出字」，绝不
-静默存一份空文本让家长以为入库成功。
+静默存一份空文本让教师以为入库成功。
 """
 
 from __future__ import annotations

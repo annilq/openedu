@@ -19,8 +19,8 @@ from agent_core.ports import TextDelta, ToolCall
 from tests.utils.fake_provider import FakeLLMProvider, _completed_hops
 
 _TOOLS = [
-    {"name": "list_children"},
-    {"name": "list_parent_tasks"},
+    {"name": "list_students"},
+    {"name": "list_teacher_tasks"},
     {"name": "list_wrong_questions"},
 ]
 
@@ -40,32 +40,32 @@ def test_default_script_is_single_hop_then_wrapup():
     provider = FakeLLMProvider()
     first = _collect(provider)
     assert len(first) == 1 and isinstance(first[0], ToolCall)
-    assert (first[0].name, first[0].args) == ("list_children", {})  # 下发列表第一个
-    assert provider.calls == [("list_children", {})]
+    assert (first[0].name, first[0].args) == ("list_students", {})  # 下发列表第一个
+    assert provider.calls == [("list_students", {})]
 
-    second = _collect(provider, history=[_tool_result("list_children")])
+    second = _collect(provider, history=[_tool_result("list_students")])
     assert len(second) == 1 and isinstance(second[0], TextDelta)
     assert second[0].delta == provider.tool_text
-    assert provider.calls == [("list_children", {})]  # 收尾轮不再发工具
+    assert provider.calls == [("list_students", {})]  # 收尾轮不再发工具
     assert provider.requests == 2
 
 
 def test_explicit_script_walks_hops_in_order_then_stops():
-    provider = FakeLLMProvider().script("list_children", ("list_wrong_questions", {"child_id": "c1"}))
-    assert provider._next_step(0, _TOOLS) == ("list_children", {})
-    assert provider._next_step(1, _TOOLS) == ("list_wrong_questions", {"child_id": "c1"})
+    provider = FakeLLMProvider().script("list_students", ("list_wrong_questions", {"student_id": "c1"}))
+    assert provider._next_step(0, _TOOLS) == ("list_students", {})
+    assert provider._next_step(1, _TOOLS) == ("list_wrong_questions", {"student_id": "c1"})
     assert provider._next_step(2, _TOOLS) is None  # 脚本用完 → 收尾
 
     first = _collect(provider)
     assert isinstance(first[0], ToolCall) and first[0].args == {}
-    second = _collect(provider, history=[_tool_result("list_children")])
+    second = _collect(provider, history=[_tool_result("list_students")])
     assert isinstance(second[0], ToolCall)
-    assert (second[0].name, second[0].args) == ("list_wrong_questions", {"child_id": "c1"})
+    assert (second[0].name, second[0].args) == ("list_wrong_questions", {"student_id": "c1"})
     third = _collect(
-        provider, history=[_tool_result("list_children"), _tool_result("list_wrong_questions")]
+        provider, history=[_tool_result("list_students"), _tool_result("list_wrong_questions")]
     )
     assert isinstance(third[0], TextDelta)
-    assert provider.calls == [("list_children", {}), ("list_wrong_questions", {"child_id": "c1"})]
+    assert provider.calls == [("list_students", {}), ("list_wrong_questions", {"student_id": "c1"})]
     assert provider.requests == 3
 
 
@@ -80,7 +80,7 @@ def test_client_supplied_history_does_not_swallow_first_tool_call():
         ],
     )
     assert len(events) == 1 and isinstance(events[0], ToolCall)
-    assert events[0].name == "list_children"
+    assert events[0].name == "list_students"
 
 
 def test_hop_counting_only_counts_tool_results():
@@ -91,9 +91,9 @@ def test_hop_counting_only_counts_tool_results():
 
 
 def test_script_and_reset_clear_counters():
-    provider = FakeLLMProvider(tool_script=["list_children"])
+    provider = FakeLLMProvider(tool_script=["list_students"])
     _collect(provider)
     assert provider.requests == 1
-    provider.script("list_parent_tasks")
+    provider.script("list_teacher_tasks")
     assert provider.requests == 0 and provider.calls == []
-    assert provider._next_step(0, _TOOLS) == ("list_parent_tasks", {})
+    assert provider._next_step(0, _TOOLS) == ("list_teacher_tasks", {})

@@ -42,11 +42,11 @@ def decode_vector(blob: bytes) -> list[float]:
 
 
 async def vectorize_material(
-    session: Session, *, parent_id: uuid.UUID, material_id: uuid.UUID
+    session: Session, *, teacher_id: uuid.UUID, material_id: uuid.UUID
 ) -> Material:
     """手动向量化 / 重新向量化。失败落 failed 态（附人话原因），不抛 500。"""
     material = repo.get_owned_material(
-        session, parent_id=parent_id, material_id=material_id
+        session, teacher_id=teacher_id, material_id=material_id
     )
 
     def _fail(reason: str) -> Material:
@@ -85,7 +85,7 @@ async def vectorize_material(
     for seq, (content, vec) in enumerate(zip(pieces, vectors, strict=True)):
         session.add(
             MaterialChunk(
-                parent_id=parent_id,
+                teacher_id=teacher_id,
                 material_id=material.id,
                 seq=seq,
                 content=content,
@@ -107,16 +107,16 @@ async def vectorize_material(
     return material
 
 
-def mark_stale_if_model_changed(session: Session, *, parent_id: uuid.UUID) -> int:
+def mark_stale_if_model_changed(session: Session, *, teacher_id: uuid.UUID) -> int:
     """把「模型或切分器已变」的就绪资料标记 stale。返回标记数。
 
-    惰性触发（列表 / 检索前调用）：不做后台任务、不搞事件——单家长量级下
+    惰性触发（列表 / 检索前调用）：不做后台任务、不搞事件——单教师量级下
     一条 UPDATE 比一套失效广播便宜得多。
     """
     stale = 0
     materials = session.exec(
         select(Material).where(
-            Material.parent_id == parent_id, Material.index_state == INDEX_STATE_READY
+            Material.teacher_id == teacher_id, Material.index_state == INDEX_STATE_READY
         )
     ).all()
     for material in materials:

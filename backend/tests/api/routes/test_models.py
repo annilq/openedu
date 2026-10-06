@@ -7,12 +7,12 @@ from sqlmodel import Session
 
 from app.core.crypto import decrypt
 from app.db.models import ModelConfig
-from tests.utils.user import auth_headers, login, register_parent
+from tests.utils.user import auth_headers, login, register_teacher
 
 
-def _parent(client, suffix="p1"):
-    register_parent(client, username=f"parent_{suffix}", password="pw123456")
-    token = login(client, f"parent_{suffix}", "pw123456").json()["access_token"]
+def _teacher(client, suffix="p1"):
+    register_teacher(client, username=f"teacher_{suffix}", password="pw123456")
+    token = login(client, f"teacher_{suffix}", "pw123456").json()["access_token"]
     return auth_headers(token)
 
 
@@ -32,7 +32,7 @@ def _create(client, headers, **overrides) -> dict:
 
 
 def test_list_models_empty(client):
-    h = _parent(client, "list")
+    h = _teacher(client, "list")
     r = client.get("/api/v1/models", headers=h)
     assert r.status_code == 200
     body = r.json()
@@ -42,7 +42,7 @@ def test_list_models_empty(client):
 
 
 def test_list_provider_presets(client):
-    h = _parent(client, "prov")
+    h = _teacher(client, "prov")
     r = client.get("/api/v1/models/providers", headers=h)
     assert r.status_code == 200
     body = r.json()
@@ -56,7 +56,7 @@ def test_list_provider_presets(client):
 
 
 def test_create_with_provider_preset(client, db: Session):
-    h = _parent(client, "preset")
+    h = _teacher(client, "preset")
     # 只选服务商预设 + 模型名 + key，不手写 provider/base_url
     r = client.post(
         "/api/v1/models",
@@ -85,7 +85,7 @@ def test_create_with_provider_preset(client, db: Session):
 
 
 def test_create_with_unknown_preset(client):
-    h = _parent(client, "badpreset")
+    h = _teacher(client, "badpreset")
     r = client.post(
         "/api/v1/models",
         headers=h,
@@ -102,7 +102,7 @@ def test_create_with_unknown_preset(client):
 
 def test_create_requires_api_key(client):
     """ADR-0039：缺 api_key / 传 null / 传空串或纯空白一律 422，不得落库。"""
-    h = _parent(client, "nokey")
+    h = _teacher(client, "nokey")
     base = {"label": "M", "provider": "ollama", "model_name": "llama3"}
     for bad_key in ({"__missing__": None}, None, "", "   "):
         payload = dict(base)
@@ -114,7 +114,7 @@ def test_create_requires_api_key(client):
 
 
 def test_create_and_encryption(client, db: Session):
-    h = _parent(client, "enc")
+    h = _teacher(client, "enc")
     payload = {
         "label": "我家 Ollama",
         "provider": "ollama",
@@ -140,14 +140,14 @@ def test_create_and_encryption(client, db: Session):
 
 def test_create_strips_api_key_whitespace(client, db: Session):
     """两端空白不应成为密钥内容的一部分（否则发给厂商必然认证失败）。"""
-    h = _parent(client, "strip")
+    h = _teacher(client, "strip")
     mid = _create(client, h, api_key="  sk-padded  ")["id"]
     mc = db.get(ModelConfig, uuid.UUID(mid))
     assert mc is not None and decrypt(mc.api_key_enc) == "sk-padded"
 
 
 def test_update_and_default(client, db: Session):
-    h = _parent(client, "upd")
+    h = _teacher(client, "upd")
     mid = _create(client, h)["id"]
     # 设默认
     r = client.put("/api/v1/models/default", headers=h, json={"id": mid})
@@ -161,7 +161,7 @@ def test_update_and_default(client, db: Session):
 
 def test_update_without_api_key_keeps_existing(client, db: Session):
     """编辑不带 api_key = 不修改，旧密钥原样保留（这是「留空=不改」的回归）。"""
-    h = _parent(client, "keep")
+    h = _teacher(client, "keep")
     mid = _create(client, h, api_key="sk-original")["id"]
     before = db.get(ModelConfig, uuid.UUID(mid)).api_key_enc
     assert client.put(f"/api/v1/models/{mid}", headers=h, json={"label": "M3"}).status_code == 200
@@ -173,7 +173,7 @@ def test_update_without_api_key_keeps_existing(client, db: Session):
 
 def test_update_with_blank_api_key_rejected(client, db: Session):
     """传空白串**不是**「不修改」的同义词：应 422，而不是把密钥抹成空白。"""
-    h = _parent(client, "blank")
+    h = _teacher(client, "blank")
     mid = _create(client, h, api_key="sk-original")["id"]
     r = client.put(f"/api/v1/models/{mid}", headers=h, json={"api_key": "   "})
     assert r.status_code == 422, r.text
@@ -182,25 +182,25 @@ def test_update_with_blank_api_key_rejected(client, db: Session):
 
 
 def test_update_replaces_api_key(client, db: Session):
-    h = _parent(client, "rot")
+    h = _teacher(client, "rot")
     mid = _create(client, h, api_key="sk-old")["id"]
     assert client.put(f"/api/v1/models/{mid}", headers=h, json={"api_key": "sk-new"}).status_code == 200
     db.expire_all()
     assert decrypt(db.get(ModelConfig, uuid.UUID(mid)).api_key_enc) == "sk-new"
 
 
-def test_cross_parent_forbidden(client, db: Session):
-    h1 = _parent(client, "owner")
-    h2 = _parent(client, "other")
+def test_cross_teacher_forbidden(client, db: Session):
+    h1 = _teacher(client, "owner")
+    h2 = _teacher(client, "other")
     mid = _create(client, h1)["id"]
-    # 另一家长访问 → 404（不属于自己）
+    # 另一教师访问 → 404（不属于自己）
     assert client.get(f"/api/v1/models/{mid}", headers=h2).status_code in (403, 404)
     assert client.put(f"/api/v1/models/{mid}", headers=h2, json={"label": "x"}).status_code in (403, 404)
     assert client.delete(f"/api/v1/models/{mid}", headers=h2).status_code in (403, 404)
 
 
 def test_delete(client, db: Session):
-    h = _parent(client, "del")
+    h = _teacher(client, "del")
     mid = _create(client, h)["id"]
     assert client.delete(f"/api/v1/models/{mid}", headers=h).status_code == 204
     assert db.get(ModelConfig, uuid.UUID(mid)) is None

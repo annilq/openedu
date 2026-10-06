@@ -36,7 +36,7 @@ class AssistantConversationResp(SQLModel):
     - ``title``：会话名（首条用户消息截断；历史会话无 title 时由服务端回落）。
     - ``kind``：**首轮**路由结果的展示标签，不承担分组或筛选——续接轮不更新它，
       拿它当类型筛选会撒谎。
-    - ``child_id`` / ``child_name``：``None`` 表示这是家长自己的会话；非空即孩子的，
+    - ``student_id`` / ``student_name``：``None`` 表示这是教师自己的会话；非空即学生的，
       前端据此分「只读回放」与「可续接」两条路径。
     - ``bubble_count``：可见轮次数（用户的提问数 + 回答数），列表行上的「几轮」。
     """
@@ -44,8 +44,8 @@ class AssistantConversationResp(SQLModel):
     id: UUID
     title: str
     kind: str
-    child_id: UUID | None = None
-    child_name: str | None = None
+    student_id: UUID | None = None
+    student_name: str | None = None
     bubble_count: int = 0
     created_at: datetime | None = None
     updated_at: datetime | None = None
@@ -77,8 +77,8 @@ class AssistantConversationDetailResp(SQLModel):
 class AssistantConversationsDeleteReq(SQLModel):
     """批量删除会话（多选删除，ADR-0048 补充）。
 
-    ``ids`` 只认**本家长名下**的会话：孩子的会话也归家长所有（``parent_id`` 是家长），
-    所以一并可删；越权的 id（其他家长 / 不存在）被后端按归属过滤掉，静默忽略，
+    ``ids`` 只认**本教师名下**的会话：学生的会话也归教师所有（``teacher_id`` 是教师），
+    所以一并可删；越权的 id（其他教师 / 不存在）被后端按归属过滤掉，静默忽略，
     不会误删他人数据。
     """
 

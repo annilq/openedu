@@ -72,7 +72,7 @@ class TestOptionRenderingSitesStripPrefix:
         "frontend/lib/features/assistant/presentation/widgets/assistant_question_card.dart":
             "助手题卡",
         "frontend/lib/features/home/presentation/widgets/parent/parent_question_card.dart":
-            "家长端题卡",
+            "教师端题卡",
         "frontend/lib/features/home/presentation/widgets/parent/parent_task_preview_section.dart":
             "任务预览",
         # ADR-0061 §S 题库详情（我最初漏了这处 → 详情里出现「A. A. 房子」）

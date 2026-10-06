@@ -1,6 +1,6 @@
 """资料库批量入库 + 向量化（一次性 / 可复用）。
 
-把 resources/ 下的教材 PDF 按文件名解析年级，按 (parent, name) 幂等入库并向量化。
+把 resources/ 下的教材 PDF 按文件名解析年级，按 (teacher, name) 幂等入库并向量化。
 
 用法：
     cd backend && uv run python scripts/ingest_textbooks.py [--source ../resources]
@@ -51,20 +51,20 @@ def parse_grade(name: str) -> int | None:
     return _CN2NUM[m.group(1)] if m else None
 
 
-def get_parent_id(session: Session) -> uuid.UUID:
-    # 优先用 annilq 这个家长账号；没有就取第一个 parent
+def get_teacher_id(session: Session) -> uuid.UUID:
+    # 优先用 annilq 这个教师账号；没有就取第一个 teacher
     user = session.exec(select(User).where(User.username == "annilq")).first()
     if user is None:
-        user = session.exec(select(User).where(User.role == "parent")).first()
+        user = session.exec(select(User).where(User.role == "teacher")).first()
     if user is None:
-        raise SystemExit("数据库里没有家长账号，请先注册一个家长")
+        raise SystemExit("数据库里没有教师账号，请先注册一个教师")
     return user.id
 
 
-def find_existing(session: Session, *, parent_id: str, name: str) -> Material | None:
+def find_existing(session: Session, *, teacher_id: str, name: str) -> Material | None:
     return session.exec(
         select(Material).where(
-            Material.parent_id == parent_id, Material.name == name  # type: ignore[union-attr]
+            Material.teacher_id == teacher_id, Material.name == name  # type: ignore[union-attr]
         )
     ).first()
 
@@ -94,8 +94,8 @@ async def main() -> None:
         raise SystemExit(f"在 {source} 下没有找到 PDF")
 
     with Session(engine) as session:
-        parent_id = get_parent_id(session)
-        print(f"家长账号 parent_id = {parent_id}")  # type: ignore[unreachable]
+        teacher_id = get_teacher_id(session)
+        print(f"教师账号 teacher_id = {teacher_id}")  # type: ignore[unreachable]
         print(f"EMBEDDING_PROVIDER = {settings.EMBEDDING_PROVIDER}  MODEL = {settings.EMBEDDING_MODEL}")
         print("=" * 70)
 
@@ -109,7 +109,7 @@ async def main() -> None:
             data = path.read_bytes()
             t0 = time.time()
             try:
-                existing = find_existing(session, parent_id=parent_id, name=name)
+                existing = find_existing(session, teacher_id=teacher_id, name=name)
                 if (
                     existing
                     and existing.index_state == INDEX_STATE_READY
@@ -122,7 +122,7 @@ async def main() -> None:
                         # 「待审」目录；学科/年级只补空白，不会覆盖我们已写死的数学/年级。
                         try:
                             res = await reextract_metadata(
-                                session, parent_id=parent_id, material_id=existing.id
+                                session, teacher_id=teacher_id, material_id=existing.id
                             )
                             kps = res.material.knowledge_points or []
                             print(
@@ -142,7 +142,7 @@ async def main() -> None:
 
                 mat = await upload_material(
                     session,
-                    parent_id=parent_id,
+                    teacher_id=teacher_id,
                     filename=name,
                     data=data,
                     folder_id=None,
@@ -150,7 +150,7 @@ async def main() -> None:
                     grade=grade,
                 )
                 material = await indexing.vectorize_material(
-                    session, parent_id=parent_id, material_id=mat.material.id
+                    session, teacher_id=teacher_id, material_id=mat.material.id
                 )
                 state = material.index_state
                 if state == INDEX_STATE_READY:

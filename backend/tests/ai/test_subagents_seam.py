@@ -122,7 +122,7 @@ def test_question_subagent_rag_and_persona_threading():
     retriever = _FakeRetriever()
     agent = QuestionSubAgent(provider=provider, retriever=retriever)
     ctx = SubAgentContext(
-        role="parent", message="帮我出2道三年级关于《分数》的数学选择题"
+        role="teacher", message="帮我出2道三年级关于《分数》的数学选择题"
     )
 
     asyncio.run(_drive(agent, ctx))
@@ -166,7 +166,7 @@ def test_question_subagent_run_per_item_rag_and_persona():
     """流式路径：每题独立触发 RAG + 学科 Persona 注入（不触真实 genkit）。"""
     retriever = _FakeRetriever()
     agent = QuestionSubAgent(provider=_FakeProvider(), retriever=retriever)
-    ctx = SubAgentContext(role="parent", message="帮我出2道三年级数学分数选择题")
+    ctx = SubAgentContext(role="teacher", message="帮我出2道三年级数学分数选择题")
 
     asyncio.run(_drive(agent, ctx))
 
@@ -193,7 +193,7 @@ def test_tutor_subagent_persona_injection():
     """伴学 run()：学科 Persona 注入讲解 context（复用 TutorService 真实路径）。"""
     provider = _FakeProvider()
     agent = TutorSubAgent(provider=provider, retriever=None)
-    ctx = SubAgentContext(role="child", message="英语的过去式是什么？")
+    ctx = SubAgentContext(role="student", message="英语的过去式是什么？")
 
     # 经 run()（悬浮助手真实入口）驱动，不经已删除的同步 explain 入口
     asyncio.run(_drive(agent, ctx))

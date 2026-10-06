@@ -20,7 +20,7 @@ widgets/assistant_cards.dart``）；渲染器认不出的 ``kind`` 由降级卡�
 - 不在此处做角色裁剪（裁剪只发生在工具侧的 ``project_for_role``，见 ADR-0033 决策 9）：
   本模块拿到的 result 已是投影后的安全载荷，再存一道判断只会制造第二个真相源。
 - 不把 ``status`` 翻成中文：状态枚举 → 文案的映射属呈现层，前端已有
-  （``parent_question_bank_view.dart`` 的 ``_statusLabel``），服务端只发机器值。
+  （``teacher_question_bank_view.dart`` 的 ``_statusLabel``），服务端只发机器值。
 - 不输出原始 JSON：卡片是给人看的摘要，模型上下文另有 ``TOOL_RESULT`` 承载。
 """
 from __future__ import annotations
@@ -31,8 +31,8 @@ from typing import Any
 # 工具 → 卡片种类（机器可读判别键，前端按它分派渲染器）。
 # 新增工具必须在此登记，否则落到 ``notice`` 降级卡（有内容、不丢帧）。
 _KIND: dict[str, str] = {
-    "list_children": "child_list",
-    "list_parent_tasks": "task_list",
+    "list_students": "student_list",
+    "list_teacher_tasks": "task_list",
     "list_today_tasks": "task_list",
     "list_wrong_questions": "wrong_question_list",
     "list_due_reviews": "due_review_list",
@@ -54,8 +54,8 @@ INTERACTIVE_SCENE_KIND = "interactive_scene"
 
 # 工具 → 卡头标签（人可读）。
 _TITLE: dict[str, str] = {
-    "list_children": "娃娃",
-    "list_parent_tasks": "任务",
+    "list_students": "学生",
+    "list_teacher_tasks": "任务",
     "list_today_tasks": "今日任务",
     "list_wrong_questions": "错题",
     "list_due_reviews": "待复习",
@@ -66,7 +66,7 @@ _TITLE: dict[str, str] = {
 
 # 明细为空时的说明（区分「查过了但没有」与「压根没查」）。
 _EMPTY_TEXT: dict[str, str] = {
-    "list_parent_tasks": "暂无任务。",
+    "list_teacher_tasks": "暂无任务。",
     "list_today_tasks": "今天没有任务。",
     "list_wrong_questions": "没有错题记录。",
     "list_due_reviews": "今天没有到期复习。",
@@ -112,7 +112,7 @@ def _title_of(name: str) -> str:
 
 
 def _subject_of(block: dict[str, Any]) -> str:
-    """归属标签：娃娃名（年级），如「小明（2年级）」。"""
+    """归属标签：学生名（年级），如「小明（2年级）」。"""
     who = str(block.get("name") or "")
     grade = block.get("grade")
     if who and grade:
@@ -170,7 +170,7 @@ def _bank_question_item(item: dict[str, Any]) -> dict[str, Any]:
 
 # 明细投影表：工具 → 单条明细的结构化形状。缺登记即降级为「标题 + 文本」。
 _ITEM_SHAPERS = {
-    "list_parent_tasks": _task_item,
+    "list_teacher_tasks": _task_item,
     "list_today_tasks": _task_item,
     "list_wrong_questions": _wrong_question_item,
     "list_due_reviews": _due_review_item,
@@ -192,7 +192,7 @@ def _progress_stats(item: dict[str, Any]) -> dict[str, Any]:
 def _items_of(name: str, raw: list[Any]) -> list[dict[str, Any]]:
     shape = _ITEM_SHAPERS.get(name)
     if shape is None:
-        # 未登记明细形状的工具（如 list_children）：只当计数，不猜字段。
+        # 未登记明细形状的工具（如 list_students）：只当计数，不猜字段。
         return []
     return [shape(i) for i in raw if isinstance(i, dict)]
 
@@ -249,9 +249,9 @@ def _block_cards(name: str, block: dict[str, Any]) -> list[Card]:
     kind = _KIND.get(name, "notice")
     subject = _subject_of(block)
 
-    if name == "list_children":
-        # 定位类工具：明细为空是正常的，卡片本身就是「这个娃娃可查」。
-        return [_card(kind=kind, title=title, subject=subject, text="可查询的娃娃")]
+    if name == "list_students":
+        # 定位类工具：明细为空是正常的，卡片本身就是「这个学生可查」。
+        return [_card(kind=kind, title=title, subject=subject, text="可查询的学生")]
 
     raw = [i for i in (block.get("items") or []) if i is not None]
     if not raw:
@@ -298,7 +298,7 @@ def render_cards(name: str, result: Any) -> list[Card]:
         return [_notice(title, f"查询失败：{result['error']}")]
 
     cards: list[Card] = []
-    for block in result.get("children") or []:
+    for block in result.get("students") or []:
         if isinstance(block, dict):
             cards.extend(_block_cards(name, block))
 

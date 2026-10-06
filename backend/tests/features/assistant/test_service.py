@@ -19,9 +19,9 @@ from app.features.assistant.schemas import AssistantChatReq
 from app.features.assistant.service import chat
 
 
-def _caller(role: str, *, user_id: uuid.UUID, parent_id: uuid.UUID, grade: int = 0):
-    """轻量 caller 桩（不触 HTTP）：服务只读 role / user.id / user.parent_id / user.grade。"""
-    return SimpleNamespace(role=role, user=SimpleNamespace(id=user_id, parent_id=parent_id, grade=grade))
+def _caller(role: str, *, user_id: uuid.UUID, teacher_id: uuid.UUID, grade: int = 0):
+    """轻量 caller 桩（不触 HTTP）：服务只读 role / user.id / user.teacher_id / user.grade。"""
+    return SimpleNamespace(role=role, user=SimpleNamespace(id=user_id, teacher_id=teacher_id, grade=grade))
 
 
 class _StubRuntime:
@@ -56,12 +56,12 @@ async def _drain(chat_coro) -> list[str]:
     return frames
 
 
-def _latest_conversation(session, *, parent_id=None, child_id=None):
+def _latest_conversation(session, *, teacher_id=None, student_id=None):
     stmt = select(Conversation)
-    if parent_id is not None:
-        stmt = stmt.where(Conversation.parent_id == parent_id)
-    if child_id is not None:
-        stmt = stmt.where(Conversation.child_id == child_id)
+    if teacher_id is not None:
+        stmt = stmt.where(Conversation.teacher_id == teacher_id)
+    if student_id is not None:
+        stmt = stmt.where(Conversation.student_id == student_id)
     conv = session.exec(stmt.order_by(Conversation.created_at.desc())).first()
     assert conv is not None, "会话应已落库"
     msgs = list(
@@ -75,14 +75,14 @@ def _latest_conversation(session, *, parent_id=None, child_id=None):
 def test_chat_folds_stream_into_message_trace(db):
     """happy-path：tool_call/result + 助手输出折叠为 5 步 Message 轨迹，会话置 done。"""
     pid = uuid.uuid4()
-    caller = _caller("parent", user_id=pid, parent_id=pid)
+    caller = _caller("teacher", user_id=pid, teacher_id=pid)
 
     frames = asyncio.run(
         _drain(chat(caller=caller, req=_req("23+45"), session=db, runtime=_StubRuntime("tutor", "伴学答疑")))
     )
     assert any("DONE" in f for f in frames), "应产出 DONE 帧"
 
-    conv, msgs = _latest_conversation(db, parent_id=pid)
+    conv, msgs = _latest_conversation(db, teacher_id=pid)
     assert (conv.kind, conv.status) == ("tutor", "done")
     assert [m.step for m in msgs] == ["input", "routing", "tool_call", "tool_result", "output"]
     assert msgs[-1].content == "答案是68"
@@ -90,17 +90,17 @@ def test_chat_folds_stream_into_message_trace(db):
     assert msgs[2].content == "计算"
 
 
-def test_child_tutor_chat_writes_tutor_log(db):
-    """ADR-008 副作用：娃娃伴学落 TutorLog（家长可见 + 每日上限计数），且未拦截。"""
+def test_student_tutor_chat_writes_tutor_log(db):
+    """ADR-008 副作用：学生伴学落 TutorLog（教师可见 + 每日上限计数），且未拦截。"""
     pid = uuid.uuid4()
     cid = uuid.uuid4()
-    caller = _caller("child", user_id=cid, parent_id=pid, grade=3)
+    caller = _caller("student", user_id=cid, teacher_id=pid, grade=3)
 
     asyncio.run(
         _drain(chat(caller=caller, req=_req("23+45"), session=db, runtime=_StubRuntime("tutor", "伴学答疑")))
     )
 
-    logs = db.exec(select(TutorLog).where(TutorLog.child_id == cid)).all()
-    assert len(logs) == 1, "娃娃伴学应落一条 TutorLog"
+    logs = db.exec(select(TutorLog).where(TutorLog.student_id == cid)).all()
+    assert len(logs) == 1, "学生伴学应落一条 TutorLog"
     assert logs[0].question == "23+45"
     assert logs[0].blocked is False

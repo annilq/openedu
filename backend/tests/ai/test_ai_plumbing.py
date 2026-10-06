@@ -1,7 +1,7 @@
 """AI 调用归一封装（ADR-0034 Phase 2）契约测试。
 
 锁定两条不变量：
-1. ``build_ai_provider`` 统一把 model_ref / parent_id 透传给 ``resolve_engine``，再交
+1. ``build_ai_provider`` 统一把 model_ref / teacher_id 透传给 ``resolve_engine``，再交
    ``build_provider`` 构造——消除「批改忽略 model」的分裂。
 2. 批改调用点（tasks/service 的 answer）确实把 task.model 透传进归一封装。
 """
@@ -15,15 +15,15 @@ from app.core.ai_plumbing import build_ai_provider
 from app.core.db import engine as db_engine
 from app.db.models import Task
 from tests.utils.fake_provider import FakeLLMProvider
-from tests.utils.user import auth_headers, login, register_parent
+from tests.utils.user import auth_headers, login, register_teacher
 
 
 def test_build_ai_provider_passes_model_ref_through(monkeypatch):
     captured = {}
 
-    def fake_resolve(model_ref=None, *, parent_id=None, session=None):
+    def fake_resolve(model_ref=None, *, teacher_id=None, session=None):
         captured["model_ref"] = model_ref
-        captured["parent_id"] = parent_id
+        captured["teacher_id"] = teacher_id
         return "ENGINE"
 
     def fake_build(engine=None):
@@ -33,16 +33,16 @@ def test_build_ai_provider_passes_model_ref_through(monkeypatch):
     monkeypatch.setattr("app.core.ai_plumbing.build_provider", fake_build)
 
     pid = uuid.uuid4()
-    assert build_ai_provider("m1", parent_id=pid) == "ENGINE"
+    assert build_ai_provider("m1", teacher_id=pid) == "ENGINE"
     assert captured["model_ref"] == "m1"
-    assert captured["parent_id"] == pid
+    assert captured["teacher_id"] == pid
 
 
 def test_build_ai_provider_falls_back_when_no_model(monkeypatch):
-    """model_ref 为 None 且无家长上下文时回落 None（端点据此降级或回退默认模型）。"""
+    """model_ref 为 None 且无教师上下文时回落 None（端点据此降级或回退默认模型）。"""
     captured = {}
 
-    def fake_resolve(model_ref=None, *, parent_id=None, session=None):
+    def fake_resolve(model_ref=None, *, teacher_id=None, session=None):
         captured["model_ref"] = model_ref
         return None
 
@@ -55,27 +55,27 @@ def test_build_ai_provider_falls_back_when_no_model(monkeypatch):
 
 def test_grading_passes_task_model_through(monkeypatch, client):
     """批改经归一封装，且把 task.model 透传（模型贯通的核心判据）。"""
-    ptoken = register_parent(client, username="aipl_parent").json()["access_token"]
+    ptoken = register_teacher(client, username="aipl_teacher").json()["access_token"]
     r = client.post(
-        "/api/v1/children",
+        "/api/v1/students",
         headers=auth_headers(ptoken),
         json={
             "username": "aipl_kid",
             "password": "kid123456",
-            "display_name": "娃娃",
+            "display_name": "学生",
             "grade": 2,
-            "role": "child",
+            "role": "student",
         },
     )
     assert r.status_code == 201, r.text
-    child_id = r.json()["id"]
+    student_id = r.json()["id"]
 
     r = client.post(
         "/api/v1/tasks/from-generated",
         headers=auth_headers(ptoken),
         json={
             "title": "grading-model",
-            "child_id": child_id,
+            "student_id": student_id,
             "specs": [
                 {
                     "subject": "数学",
@@ -116,12 +116,12 @@ def test_grading_passes_task_model_through(monkeypatch, client):
     client.post(
         f"/api/v1/tasks/{tid}/assign",
         headers=auth_headers(ptoken),
-        params={"child_id": child_id},
+        params={"student_id": student_id},
     )
 
     captured = {}
 
-    def fake_build(model_ref_in=None, *, parent_id=None, session=None):
+    def fake_build(model_ref_in=None, *, teacher_id=None, session=None):
         captured["model_ref"] = model_ref_in
         return FakeLLMProvider()
 

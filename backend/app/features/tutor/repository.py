@@ -10,7 +10,7 @@ from app.db.models import TutorLog
 def create_tutor_log(
     *,
     session: Session,
-    child_id: uuid.UUID,
+    student_id: uuid.UUID,
     grade: int,
     subject: str,
     knowledge_point: str,
@@ -21,7 +21,7 @@ def create_tutor_log(
     blocked: bool,
 ) -> TutorLog:
     log = TutorLog(
-        child_id=child_id,
+        student_id=student_id,
         grade=grade,
         subject=subject,
         knowledge_point=knowledge_point,
@@ -38,12 +38,12 @@ def create_tutor_log(
 
 
 def list_tutor_logs(
-    *, session: Session, child_id: uuid.UUID, limit: int = 200
+    *, session: Session, student_id: uuid.UUID, limit: int = 200
 ) -> list[TutorLog]:
-    """按时间倒序返回某娃娃的 AI 答疑日志（家长端查看）。"""
+    """按时间倒序返回某学生的 AI 答疑日志（教师端查看）。"""
     return session.exec(
         select(TutorLog)
-        .where(TutorLog.child_id == child_id)
+        .where(TutorLog.student_id == student_id)
         .order_by(TutorLog.created_at.desc())
         .limit(limit)
     ).all()

@@ -104,8 +104,8 @@ def _collect(provider, *, tools, history=None, prompt="查一下"):
 
 
 _SPEC = {
-    "name": "list_children",
-    "description": "列出孩子",
+    "name": "list_students",
+    "description": "列出学生",
     "parameters": {"type": "object", "properties": {}, "required": []},
 }
 
@@ -116,7 +116,7 @@ def test_tool_specs_become_tool_objects_not_dicts():
 
     assert len(tools) == 1
     assert not isinstance(tools[0], dict), "字典不是合法 tools 形参元素（原缺陷根因）"
-    assert tools[0].name == "list_children"
+    assert tools[0].name == "list_students"
 
 
 def test_invalid_tool_declaration_is_hard_failure():
@@ -138,13 +138,13 @@ def test_history_maps_to_messages_with_tool_parts_and_matching_refs():
             {
                 "role": "assistant",
                 "content": "",
-                "tool_calls": [{"name": "list_children", "args": {}, "ref": "call_7"}],
+                "tool_calls": [{"name": "list_students", "args": {}, "ref": "call_7"}],
             },
             {
                 "role": "tool",
-                "name": "list_children",
+                "name": "list_students",
                 "ref": "call_7",
-                "content": json.dumps({"children": []}, ensure_ascii=False),
+                "content": json.dumps({"students": []}, ensure_ascii=False),
             },
         ]
     )
@@ -156,7 +156,7 @@ def test_history_maps_to_messages_with_tool_parts_and_matching_refs():
     assert type(response).__name__ == "ToolResponsePart"
     # 关联 id 必须同值：OpenAI 要求 tool 消息的 tool_call_id 命中前一条 assistant 的 tool_calls
     assert request.tool_request.ref == response.tool_response.ref == "call_7"
-    assert request.tool_request.name == "list_children"
+    assert request.tool_request.name == "list_students"
 
 
 def test_assistant_text_and_tool_calls_share_one_message():
@@ -286,12 +286,12 @@ def test_final_message_text_is_not_duplicated_when_already_streamed():
 
 # ───────────────────────── ④ 响应 → 中性 ToolCall ─────────────────────────
 def test_tool_requests_become_tool_calls_with_parsed_args():
-    fake = _FakeGenkit(_response(tool_requests=[("list_children", '{"grade": 3}')]))
+    fake = _FakeGenkit(_response(tool_requests=[("list_students", '{"grade": 3}')]))
     events = _collect(_provider(fake), tools=[_SPEC])
 
     calls = [e for e in events if isinstance(e, ToolCall)]
     assert len(calls) == 1
-    assert calls[0].name == "list_children"
+    assert calls[0].name == "list_students"
     assert calls[0].args == {"grade": 3}, "JSON 文本入参须被解析为 dict"
 
 

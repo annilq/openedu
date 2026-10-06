@@ -3,7 +3,7 @@
 验证「生成任务」按钮走流式渲染题卡后，把已生成题卡一次性落库为 draft 任务：
   1) 正常：questions 落库为 TaskQuestion，返回 draft 任务且题量一致；
   2) 空 questions → 400（TASK_EMPTY_SPECS）；
-  3) child 越权（他人娃娃）→ 403（TASK_CHILD_NOT_OWNED）。
+  3) student 越权（他人学生）→ 403（TASK_CHILD_NOT_OWNED）。
 本端点不重新调用出题引擎，直接复用前端流式返回的题卡。
 """
 from __future__ import annotations
@@ -14,19 +14,19 @@ from sqlmodel import select
 
 from app.db.models.task import TaskQuestion
 from app.features.tasks import service as tasks_service
-from tests.utils.user import auth_headers, register_parent
+from tests.utils.user import auth_headers, register_teacher
 
 
-def _create_child(client, ptoken, username="kidfg1"):
+def _create_student(client, ptoken, username="kidfg1"):
     r = client.post(
-        "/api/v1/children",
+        "/api/v1/students",
         headers=auth_headers(ptoken),
         json={
             "username": username,
             "password": "kid123456",
-            "display_name": "娃娃",
+            "display_name": "学生",
             "grade": 2,
-            "role": "child",
+            "role": "student",
         },
     )
     assert r.status_code == 201, r.text
@@ -60,16 +60,16 @@ _SAMPLE_QUESTIONS = [
 
 
 def test_from_generated_persists_questions(client):
-    r = register_parent(client, username="fg_parent_a")
+    r = register_teacher(client, username="fg_teacher_a")
     ptoken = r.json()["access_token"]
-    cid = _create_child(client, ptoken, username="fg_kid_a")["id"]
+    cid = _create_student(client, ptoken, username="fg_kid_a")["id"]
 
     r = client.post(
         "/api/v1/tasks/from-generated",
         headers=auth_headers(ptoken),
         json={
             "title": "流式落库卷",
-            "child_id": cid,
+            "student_id": cid,
             "model": "local-llama",
             "specs": [
                 {"subject": "数学", "grade": 2, "knowledge_point": "加法", "qtype": "calc", "difficulty": "easy", "count": 1}
@@ -82,16 +82,16 @@ def test_from_generated_persists_questions(client):
     assert body["status"] == "draft"
     assert body["title"] == "流式落库卷"
     assert len(body["questions"]) == 2
-    # 题卡内容原样落库（含家长端可见答案）
+    # 题卡内容原样落库（含教师端可见答案）
     stems = {q["stem"] for q in body["questions"]}
     assert "计算：1 + 2 = ?" in stems
     assert body["questions"][0]["answer"] is not None
 
 
 def test_from_generated_rejects_choice_without_options(client):
-    """选择题必须带有效选项，否则落库会退化成文本框、娃娃端无法选择（TASK_CHOICE_NO_OPTIONS）。"""
-    r = register_parent(client, username="fg_parent_choice").json()["access_token"]
-    cid = _create_child(client, r, username="fg_kid_choice")["id"]
+    """选择题必须带有效选项，否则落库会退化成文本框、学生端无法选择（TASK_CHOICE_NO_OPTIONS）。"""
+    r = register_teacher(client, username="fg_teacher_choice").json()["access_token"]
+    cid = _create_student(client, r, username="fg_kid_choice")["id"]
 
     bad_questions = [
         {
@@ -122,7 +122,7 @@ def test_from_generated_rejects_choice_without_options(client):
         headers=auth_headers(r),
         json={
             "title": "残缺选择题卷",
-            "child_id": cid,
+            "student_id": cid,
             "specs": [
                 {"subject": "数学", "grade": 2, "knowledge_point": "加法", "qtype": "choice", "difficulty": "easy", "count": 1}
             ],
@@ -135,8 +135,8 @@ def test_from_generated_rejects_choice_without_options(client):
 
 def test_from_generated_accepts_choice_with_options(client):
     """带有效选项的选择题正常落库。"""
-    r = register_parent(client, username="fg_parent_choice_ok").json()["access_token"]
-    cid = _create_child(client, r, username="fg_kid_choice_ok")["id"]
+    r = register_teacher(client, username="fg_teacher_choice_ok").json()["access_token"]
+    cid = _create_student(client, r, username="fg_kid_choice_ok")["id"]
 
     good_questions = [
         {
@@ -156,7 +156,7 @@ def test_from_generated_accepts_choice_with_options(client):
         headers=auth_headers(r),
         json={
             "title": "选择题卷",
-            "child_id": cid,
+            "student_id": cid,
             "specs": [
                 {"subject": "数学", "grade": 2, "knowledge_point": "加法", "qtype": "choice", "difficulty": "easy", "count": 1}
             ],
@@ -168,9 +168,9 @@ def test_from_generated_accepts_choice_with_options(client):
 
 
 def test_from_generated_persists_multi_choice(client):
-    """多选题（multi=true + ｜连接的多答案）原样落库，娃娃端据此渲染复选卡。"""
-    r = register_parent(client, username="fg_parent_multi").json()["access_token"]
-    cid = _create_child(client, r, username="fg_kid_multi")["id"]
+    """多选题（multi=true + ｜连接的多答案）原样落库，学生端据此渲染复选卡。"""
+    r = register_teacher(client, username="fg_teacher_multi").json()["access_token"]
+    cid = _create_student(client, r, username="fg_kid_multi")["id"]
 
     multi_questions = [
         {
@@ -191,7 +191,7 @@ def test_from_generated_persists_multi_choice(client):
         headers=auth_headers(r),
         json={
             "title": "多选题卷",
-            "child_id": cid,
+            "student_id": cid,
             "specs": [
                 {"subject": "数学", "grade": 2, "knowledge_point": "加法", "qtype": "choice", "difficulty": "easy", "count": 1, "multi": True}
             ],
@@ -205,16 +205,16 @@ def test_from_generated_persists_multi_choice(client):
 
 
 def test_from_generated_rejects_empty_questions(client):
-    r = register_parent(client, username="fg_parent_b")
+    r = register_teacher(client, username="fg_teacher_b")
     ptoken = r.json()["access_token"]
-    cid = _create_child(client, ptoken, username="fg_kid_b")["id"]
+    cid = _create_student(client, ptoken, username="fg_kid_b")["id"]
 
     r = client.post(
         "/api/v1/tasks/from-generated",
         headers=auth_headers(ptoken),
         json={
             "title": "空卷",
-            "child_id": cid,
+            "student_id": cid,
             "specs": [
                 {"subject": "数学", "grade": 2, "knowledge_point": "加法", "qtype": "calc", "difficulty": "easy", "count": 1}
             ],
@@ -224,18 +224,18 @@ def test_from_generated_rejects_empty_questions(client):
     assert r.status_code == 422, r.text
 
 
-def test_from_generated_rejects_other_child(client):
-    pa = register_parent(client, username="fg_parent_c").json()["access_token"]
-    pb = register_parent(client, username="fg_parent_d").json()["access_token"]
-    cid = _create_child(client, pa, username="fg_kid_c")["id"]
+def test_from_generated_rejects_other_student(client):
+    pa = register_teacher(client, username="fg_teacher_c").json()["access_token"]
+    pb = register_teacher(client, username="fg_teacher_d").json()["access_token"]
+    cid = _create_student(client, pa, username="fg_kid_c")["id"]
 
-    # 家长 B 试图把题卡挂到家长 A 名下娃娃 → 越权
+    # 教师 B 试图把题卡挂到教师 A 名下学生 → 越权
     r = client.post(
         "/api/v1/tasks/from-generated",
         headers=auth_headers(pb),
         json={
             "title": "越权卷",
-            "child_id": cid,
+            "student_id": cid,
             "specs": [
                 {"subject": "数学", "grade": 2, "knowledge_point": "加法", "qtype": "calc", "difficulty": "easy", "count": 1}
             ],
@@ -260,15 +260,15 @@ def _questions_with_reasoning() -> list[dict]:
 
 def test_from_generated_without_reasoning_succeeds(client):
     """基线：入参不含 reasoning 字段时，正常落库成功。"""
-    r = register_parent(client, username="fg_parent_nr").json()["access_token"]
-    cid = _create_child(client, r, username="fg_kid_nr")["id"]
+    r = register_teacher(client, username="fg_teacher_nr").json()["access_token"]
+    cid = _create_student(client, r, username="fg_kid_nr")["id"]
 
     resp = client.post(
         "/api/v1/tasks/from-generated",
         headers=auth_headers(r),
         json={
             "title": "无 reasoning 卷",
-            "child_id": cid,
+            "student_id": cid,
             "specs": [
                 {"subject": "数学", "grade": 2, "knowledge_point": "加法", "qtype": "calc", "difficulty": "easy", "count": 1}
             ],
@@ -281,15 +281,15 @@ def test_from_generated_without_reasoning_succeeds(client):
 def test_from_generated_with_reasoning_drops_it(client, db):
     """重点：入参带 reasoning（模拟前端把预览题原样回传）→ 落库成功，
     且 reasoning 被白名单丢弃，不写进 TaskQuestion 表、也不出现在响应里。"""
-    r = register_parent(client, username="fg_parent_r").json()["access_token"]
-    cid = _create_child(client, r, username="fg_kid_r")["id"]
+    r = register_teacher(client, username="fg_teacher_r").json()["access_token"]
+    cid = _create_student(client, r, username="fg_kid_r")["id"]
 
     resp = client.post(
         "/api/v1/tasks/from-generated",
         headers=auth_headers(r),
         json={
             "title": "含 reasoning 卷",
-            "child_id": cid,
+            "student_id": cid,
             "specs": [
                 {"subject": "数学", "grade": 2, "knowledge_point": "加法", "qtype": "calc", "difficulty": "easy", "count": 1}
             ],

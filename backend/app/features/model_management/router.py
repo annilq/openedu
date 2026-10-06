@@ -1,11 +1,11 @@
-"""模型管理（ADR-0015 / ADR-0039）：仅家长可用，模型一律手动录入。
+"""模型管理（ADR-0015 / ADR-0039）：仅教师可用，模型一律手动录入。
 
-GET  /models           列出本家长自建模型（不含 api_key）
+GET  /models           列出本教师自建模型（不含 api_key）
 GET  /models/providers 服务商目录（deepseek/openai/... 默认 base_url + 模型名建议）
 POST /models           新增模型（api_key 必填，写入前加密；支持 provider_preset 自动补全）
 POST /models/test      「测试连接」：拿一组（可能未落库的）参数真发一次请求，200 + ok=false
-GET  /models/default   查本家长默认模型
-PUT  /models/default   设本家长默认模型（body: {id}）
+GET  /models/default   查本教师默认模型
+PUT  /models/default   设本教师默认模型（body: {id}）
 GET  /models/{id}      查单个模型（越权 / 不存在 → 404）
 PUT  /models/{id}      改模型（支持 provider_preset 自动补全）
 DELETE /models/{id}    删模型
@@ -21,7 +21,7 @@ from fastapi import APIRouter, HTTPException, status
 
 from app.ai.model_catalog import get_provider_preset, list_provider_presets
 from app.core.crypto import decrypt
-from app.core.deps import CurrentParent, SessionDep
+from app.core.deps import CurrentTeacher, SessionDep
 from app.core.errors import AppErrorException, ErrCode
 from app.features.model_management.probe import probe_model
 from app.features.model_management.repository import (
@@ -48,22 +48,22 @@ router = APIRouter(prefix="/models", tags=["models"])
 
 
 @router.get("", response_model=ModelListResp)
-def list_models(*, session: SessionDep, parent: CurrentParent) -> ModelListResp:
-    """本家长的全部模型（ADR-0039：无内置模型，故无需合并两份来源）。"""
+def list_models(*, session: SessionDep, teacher: CurrentTeacher) -> ModelListResp:
+    """本教师的全部模型（ADR-0039：无内置模型，故无需合并两份来源）。"""
     return ModelListResp(
-        custom=[_to_resp(mc) for mc in list_model_configs(session=session, parent_id=parent.id)]
+        custom=[_to_resp(mc) for mc in list_model_configs(session=session, teacher_id=teacher.id)]
     )
 
 
 @router.get("/providers", response_model=list[ProviderPreset])
-def list_providers(*, parent: CurrentParent) -> list[ProviderPreset]:
+def list_providers(*, teacher: CurrentTeacher) -> list[ProviderPreset]:
     """内置服务商目录：供「添加模型」自动带出 base_url 与模型名建议。"""
     return [ProviderPreset(**p) for p in list_provider_presets()]
 
 
 @router.post("", response_model=ModelConfigResp, status_code=status.HTTP_201_CREATED)
 def create_model(
-    *, session: SessionDep, parent: CurrentParent, payload: ModelConfigCreate
+    *, session: SessionDep, teacher: CurrentTeacher, payload: ModelConfigCreate
 ) -> ModelConfigResp:
     preset = None
     if payload.provider_preset:
@@ -79,7 +79,7 @@ def create_model(
         )
     mc = create_model_config(
         session=session,
-        parent_id=parent.id,
+        teacher_id=teacher.id,
         label=payload.label,
         provider=provider,
         base_url=base_url,
@@ -92,7 +92,7 @@ def create_model(
 
 @router.post("/test", response_model=ModelProbeResp)
 async def test_model(
-    *, session: SessionDep, parent: CurrentParent, payload: ModelProbeReq
+    *, session: SessionDep, teacher: CurrentTeacher, payload: ModelProbeReq
 ) -> ModelProbeResp:
     """「测试连接」：用一组（可能尚未落库的）模型参数真发一次请求。
 
@@ -109,7 +109,7 @@ async def test_model(
 
     if payload.model_id is not None:
         mc = get_model_config(
-            session=session, id=payload.model_id, parent_id=parent.id
+            session=session, id=payload.model_id, teacher_id=teacher.id
         )
         if mc is None:
             raise AppErrorException(ErrCode.NOT_FOUND, "模型不存在或不属于你的账号")
@@ -143,8 +143,8 @@ async def test_model(
 
 
 @router.get("/default", response_model=ModelConfigResp)
-def get_default(*, session: SessionDep, parent: CurrentParent) -> ModelConfigResp:
-    mc = get_default_model_config(session=session, parent_id=parent.id)
+def get_default(*, session: SessionDep, teacher: CurrentTeacher) -> ModelConfigResp:
+    mc = get_default_model_config(session=session, teacher_id=teacher.id)
     if mc is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="未设置默认模型")
     return _to_resp(mc)
@@ -152,22 +152,22 @@ def get_default(*, session: SessionDep, parent: CurrentParent) -> ModelConfigRes
 
 @router.put("/default", response_model=ModelConfigResp)
 def set_default(
-    *, session: SessionDep, parent: CurrentParent, payload: DefaultModelReq
+    *, session: SessionDep, teacher: CurrentTeacher, payload: DefaultModelReq
 ) -> ModelConfigResp:
-    mc = get_model_config(session=session, id=payload.id, parent_id=parent.id)
+    mc = get_model_config(session=session, id=payload.id, teacher_id=teacher.id)
     if mc is None:
         raise AppErrorException(ErrCode.NOT_FOUND, "模型不存在或不属于你的账号")
     updated = update_model_config(
-        session=session, id=payload.id, parent_id=parent.id, is_default=True
+        session=session, id=payload.id, teacher_id=teacher.id, is_default=True
     )
     return _to_resp(updated)
 
 
 @router.get("/{model_id}", response_model=ModelConfigResp)
 def get_model(
-    *, session: SessionDep, parent: CurrentParent, model_id: uuid.UUID
+    *, session: SessionDep, teacher: CurrentTeacher, model_id: uuid.UUID
 ) -> ModelConfigResp:
-    mc = get_model_config(session=session, id=model_id, parent_id=parent.id)
+    mc = get_model_config(session=session, id=model_id, teacher_id=teacher.id)
     if mc is None:
         raise AppErrorException(ErrCode.NOT_FOUND, "模型不存在或不属于你的账号")
     return _to_resp(mc)
@@ -177,7 +177,7 @@ def get_model(
 def update_model(
     *,
     session: SessionDep,
-    parent: CurrentParent,
+    teacher: CurrentTeacher,
     model_id: uuid.UUID,
     payload: ModelConfigUpdate,
 ) -> ModelConfigResp:
@@ -197,7 +197,7 @@ def update_model(
         fields["provider"] = provider
     if base_url is not None:
         fields["base_url"] = base_url
-    mc = update_model_config(session=session, id=model_id, parent_id=parent.id, **fields)
+    mc = update_model_config(session=session, id=model_id, teacher_id=teacher.id, **fields)
     if mc is None:
         raise AppErrorException(ErrCode.NOT_FOUND, "模型不存在或不属于你的账号")
     return _to_resp(mc)
@@ -205,8 +205,8 @@ def update_model(
 
 @router.delete("/{model_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_model(
-    *, session: SessionDep, parent: CurrentParent, model_id: uuid.UUID
+    *, session: SessionDep, teacher: CurrentTeacher, model_id: uuid.UUID
 ) -> None:
-    ok = delete_model_config(session=session, id=model_id, parent_id=parent.id)
+    ok = delete_model_config(session=session, id=model_id, teacher_id=teacher.id)
     if not ok:
         raise AppErrorException(ErrCode.NOT_FOUND, "模型不存在或不属于你的账号")

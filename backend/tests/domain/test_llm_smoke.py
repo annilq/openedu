@@ -48,19 +48,19 @@ def test_build_provider_is_genkit():
 
 
 def test_genkit_real_generate(db: Session):
-    parent = User(
-        username="smoke_parent@ex.com",
+    teacher = User(
+        username="smoke_teacher@ex.com",
         display_name="smoke",
-        role="parent",
+        role="teacher",
         hashed_password="x",
-        parent_id=None,
+        teacher_id=None,
     )
-    db.add(parent)
+    db.add(teacher)
     db.commit()
-    db.refresh(parent)
+    db.refresh(teacher)
 
     mc = ModelConfig(
-        parent_id=parent.id,
+        teacher_id=teacher.id,
         label="smoke",
         provider=_PROVIDER,
         base_url=_BASE_URL,
@@ -72,7 +72,7 @@ def test_genkit_real_generate(db: Session):
     db.commit()
     db.refresh(mc)
 
-    engine = resolve_engine(str(mc.id), parent_id=str(parent.id), session=db)
+    engine = resolve_engine(str(mc.id), teacher_id=str(teacher.id), session=db)
     assert engine is not None, "未解析到引擎（ModelConfig 自建行应可解析）"
     provider = build_provider(engine=engine)
     q = asyncio.run(

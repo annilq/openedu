@@ -45,7 +45,7 @@ from agent_core.tools import ToolRegistry, ToolSpec
 class SubAgentContext:
     """一次 SubAgent 调用的共享上下文（业务无关；业务字段走 extra）。"""
 
-    role: str = ""                       # 调用者角色：parent | child
+    role: str = ""                       # 调用者角色：teacher | student
     message: str | None = None           # 用户原始输入
     history: list[dict] | None = None    # 多轮历史（[{role, content}]）
     model: str | None = None             # 请求的模型标识（透传用）

@@ -11,11 +11,11 @@ from agent_core.subagent import SubAgentContext
 from agent_core.tools import ToolSpec
 from app.ai.subagents.query.tools._shared import (
     LOCATOR_PROPS,
-    child_block,
     dump,
     envelope,
     project_for_role,
-    resolve_children,
+    resolve_students,
+    student_block,
 )
 from app.features.tasks import service as tasks_service
 
@@ -27,16 +27,16 @@ DESCRIPTION = (
 
 
 async def handler(args: dict[str, Any], *, ctx: SubAgentContext, session: Any = None) -> Any:
-    children = resolve_children(
+    students = resolve_students(
         session=session,
         ctx=ctx,
-        child_id=args.get("child_id"),
-        child_name=args.get("child_name"),
+        student_id=args.get("student_id"),
+        student_name=args.get("student_name"),
     )
     blocks = []
-    for child in children:
-        progress = tasks_service.child_progress(session=session, child_id=child.id)
-        blocks.append(child_block(child, [dump(progress)]))
+    for student in students:
+        progress = tasks_service.student_progress(session=session, student_id=student.id)
+        blocks.append(student_block(student, [dump(progress)]))
 
     return project_for_role(envelope(blocks), ctx.role)
 

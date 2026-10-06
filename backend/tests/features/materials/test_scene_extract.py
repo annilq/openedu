@@ -1,7 +1,7 @@
 """题面 → 场景输入抽取（ADR-0061 §M 第1 步）单元测试。
 
 核心主张：**抽不到就不抽，绝不猜**。给一个与题目无关的图形比不给场景更糟——
-那会让家长对着错误图形理解本题。所以「空overrides」是合法且常见的结果。
+那会让教师对着错误图形理解本题。所以「空overrides」是合法且常见的结果。
 """
 import uuid
 
@@ -159,7 +159,7 @@ class TestNoneStoresAsSqlNull:
             s.add(
                 KnowledgePoint(
                     id=uuid.uuid4(),
-                    parent_id=uuid.uuid4(),
+                    teacher_id=uuid.uuid4(),
                     subject="数学",
                     grade=4,
                     semester="下学期",

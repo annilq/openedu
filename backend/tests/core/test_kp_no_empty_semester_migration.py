@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import sqlite3
 
-from sqlalchemy import text
 from sqlmodel import create_engine
 
 from app.core.db import _migrate_kp_no_empty_semester
@@ -19,7 +18,7 @@ from app.core.db import _migrate_kp_no_empty_semester
 _DDL = """
 CREATE TABLE knowledgepoint (
     id CHAR(32) NOT NULL,
-    parent_id CHAR(32) NOT NULL,
+    teacher_id CHAR(32) NOT NULL,
     subject VARCHAR(16) NOT NULL,
     grade INTEGER NOT NULL,
     name VARCHAR(128) NOT NULL,
@@ -29,7 +28,7 @@ CREATE TABLE knowledgepoint (
     semester VARCHAR(8) DEFAULT '上学期',
     scenes TEXT,
     PRIMARY KEY (id),
-    UNIQUE (parent_id, subject, grade, name, semester)
+    UNIQUE (teacher_id, subject, grade, name, semester)
 );
 """
 
@@ -40,24 +39,24 @@ def _make_db(path: str) -> None:
     # X：'' 行(已转正) + 上学期行(待审) —— 重名并存，'' 应被删
     conn.execute(
         "INSERT INTO knowledgepoint "
-        "(id,parent_id,subject,grade,name,status,source,created_at,semester,scenes) "
+        "(id,teacher_id,subject,grade,name,status,source,created_at,semester,scenes) "
         "VALUES ('x0','p1','数学',4,'图形的运动','curated','skeleton','2026-10-05','',NULL)"
     )
     conn.execute(
         "INSERT INTO knowledgepoint "
-        "(id,parent_id,subject,grade,name,status,source,created_at,semester,scenes) "
+        "(id,teacher_id,subject,grade,name,status,source,created_at,semester,scenes) "
         "VALUES ('x1','p1','数学',4,'图形的运动','pending','emerged','2026-10-05','上学期',NULL)"
     )
     # Y：仅 '' 行（纯整学年）→ 改上学期
     conn.execute(
         "INSERT INTO knowledgepoint "
-        "(id,parent_id,subject,grade,name,status,source,created_at,semester,scenes) "
+        "(id,teacher_id,subject,grade,name,status,source,created_at,semester,scenes) "
         "VALUES ('y0','p1','语文',3,'记叙文','pending','emerged','2026-10-05','',NULL)"
     )
     # Z：仅具体学期行，无 '' → 不受影响
     conn.execute(
         "INSERT INTO knowledgepoint "
-        "(id,parent_id,subject,grade,name,status,source,created_at,semester,scenes) "
+        "(id,teacher_id,subject,grade,name,status,source,created_at,semester,scenes) "
         "VALUES ('z0','p1','英语',5,'时态','curated','skeleton','2026-10-05','下学期',NULL)"
     )
     conn.commit()

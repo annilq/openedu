@@ -6,7 +6,7 @@ from datetime import UTC, date, datetime, timedelta
 from sqlmodel import Session, func, select
 
 from app.core.errors import AppErrorException, ErrCode
-from app.core.guard import require_owned_child
+from app.core.guard import require_owned_student
 from app.core.pagination import apply_keyset, count_of, order_by_keyset
 from app.db.models import (
     AnswerRecord,
@@ -79,9 +79,9 @@ def add_question_to_bank(*, session: Session, question: Question) -> Question:
 def batch_generate_task(
     *,
     session: Session,
-    parent_id: uuid.UUID,
+    teacher_id: uuid.UUID,
     title: str,
-    child_id: uuid.UUID | None,
+    student_id: uuid.UUID | None,
     specs_dicts: list[dict],
     task_questions: list[TaskQuestion],
     focus_interest: list[str] | None = None,
@@ -98,8 +98,8 @@ def batch_generate_task(
     task = Task(
         title=title,
         status="draft",
-        parent_id=parent_id,
-        child_id=child_id,
+        teacher_id=teacher_id,
+        student_id=student_id,
         specs=specs_dicts or None,
         focus_interest=focus_interest,
         model=model,
@@ -153,7 +153,7 @@ def update_task_meta(
 
 
 def confirm_task(*, session: Session, task_id: uuid.UUID) -> Task:
-    """draft → ready：家长确认锁定题集（CONTEXT 草稿/锁定/派发）。
+    """draft → ready：教师确认锁定题集（CONTEXT 草稿/锁定/派发）。
 
     R-Q1=c 锁定前校验：所有草稿项 question_id 非空（都已加入题库）。
 
@@ -198,7 +198,7 @@ def promote_task_question(
         if session.get(Question, tq.question_id) is not None:
             return tq
     q = Question(
-        parent_id=session.get(Task, tq.task_id).parent_id,  # owner 隔离（闭环）
+        teacher_id=session.get(Task, tq.task_id).teacher_id,  # owner 隔离（闭环）
         subject=tq.subject,
         grade=tq.grade,
         knowledge_point=tq.knowledge_point,
@@ -257,7 +257,7 @@ def regenerate_one_task_question(
 
     - 原 question_id 对应的 Question 同步删（R-Q5=b 级联）；
     - 新题未入题库（Question 只在生成器返回里保存为「临时对象」，不写 Question 表），
-      家长后续还需要点「加入题库」才真正入 Question 表。
+      教师后续还需要点「加入题库」才真正入 Question 表。
     """
     tq = session.get(TaskQuestion, tq_id)
     if tq is None:
@@ -300,7 +300,7 @@ def regenerate_all_task_questions(
     """整卷重生成（R-Q2=c）：按原 specs 重跑，全量替换草稿项。
 
     同时清理当前草稿所有已入库的 Question（R-Q5=b 级联）。
-    若传入 specs_dicts 则更新 Task.specs（家长在 UI 上调整了规格）。
+    若传入 specs_dicts 则更新 Task.specs（教师在 UI 上调整了规格）。
     """
     task = session.get(Task, task_id)
     if task is None or task.status != "draft":
@@ -331,9 +331,9 @@ def regenerate_all_task_questions(
 def create_task_from_bank(
     *,
     session: Session,
-    parent_id: uuid.UUID,
+    teacher_id: uuid.UUID,
     title: str,
-    child_id: uuid.UUID | None = None,
+    student_id: uuid.UUID | None = None,
     question_ids: list[uuid.UUID],
 ) -> Task:
     """选项 A：从题库新建任务（draft）。
@@ -341,17 +341,17 @@ def create_task_from_bank(
     深拷贝选中题为 TaskQuestion 并回填 question_id（复用源题），
     作答/错题归集仍指向同一道源题。specs=None：无 AI 生成规格，不支持整卷重生成。
     """
-    if child_id is not None:
-        require_owned_child(
+    if student_id is not None:
+        require_owned_student(
             session=session,
-            owner_id=parent_id,
-            child_id=child_id,
+            owner_id=teacher_id,
+            student_id=student_id,
             code=ErrCode.TASK_CHILD_NOT_OWNED,
-            message="该娃娃不属于你的账号",
+            message="该学生不属于你的账号",
         )
     owned = session.exec(
         select(Question).where(
-            Question.id.in_(question_ids), Question.parent_id == parent_id
+            Question.id.in_(question_ids), Question.teacher_id == teacher_id
         )
     ).all()
     owned_map = {q.id: q for q in owned}
@@ -360,8 +360,8 @@ def create_task_from_bank(
     if len(owned) != len(set(question_ids)):
         raise AppErrorException(ErrCode.QUESTION_ACCESS_DENIED, "部分题目不存在或无权限")
     task = Task(
-        title=title, status="draft", parent_id=parent_id,
-        child_id=child_id, specs=None,
+        title=title, status="draft", teacher_id=teacher_id,
+        student_id=student_id, specs=None,
     )
     session.add(task)
     session.flush()
@@ -379,7 +379,7 @@ def add_bank_questions_to_task(
     task_id: uuid.UUID,
     question_ids: list[uuid.UUID],
 ) -> Task | None:
-    """选项 B：把题库题追加到已有草稿（仅本家长拥有的题；同题去重）。
+    """选项 B：把题库题追加到已有草稿（仅本教师拥有的题；同题去重）。
 
     返回 None 表示任务不存在（路由层转 404）。
     """
@@ -394,7 +394,7 @@ def add_bank_questions_to_task(
     }
     owned = session.exec(
         select(Question).where(
-            Question.id.in_(question_ids), Question.parent_id == task.parent_id
+            Question.id.in_(question_ids), Question.teacher_id == task.teacher_id
         )
     ).all()
     for q in owned:
@@ -406,19 +406,19 @@ def add_bank_questions_to_task(
     return task
 
 
-def get_draft_tasks(*, session: Session, parent_id: uuid.UUID) -> list[Task]:
-    """家长草稿列表（供选项 B 的草稿选择器）。"""
+def get_draft_tasks(*, session: Session, teacher_id: uuid.UUID) -> list[Task]:
+    """教师草稿列表（供选项 B 的草稿选择器）。"""
     return list(
         session.exec(
             select(Task)
-            .where(Task.parent_id == parent_id, Task.status == "draft")
+            .where(Task.teacher_id == teacher_id, Task.status == "draft")
             .order_by(Task.created_at.desc())
         ).all()
     )
 
 
 def _status_clause(status: str | None):  # noqa: ANN202
-    """状态过滤条件；``status`` 允许逗号分隔的多个状态（家长任务页的 Tab）。
+    """状态过滤条件；``status`` 允许逗号分隔的多个状态（教师任务页的 Tab）。
 
     前端「草稿」Tab 实际是 draft + ready 两个状态——若按单状态过滤，要么把 ready
     藏在列表里，要么客户端在已加载页里过滤（分页后就不准了）。逗号分隔让 Tab 的
@@ -434,22 +434,22 @@ def _status_clause(status: str | None):  # noqa: ANN202
     return Task.status.in_(values)
 
 
-def list_tasks_by_parent(
+def list_tasks_by_teacher(
     *,
     session: Session,
-    parent_id: uuid.UUID,
+    teacher_id: uuid.UUID,
     status: str | None = None,
     page_size: int | None = None,
     cursor: str | None = None,
 ) -> list[Task]:
-    """家长名下任务（可选按状态过滤），新建在前。
+    """教师名下任务（可选按状态过滤），新建在前。
 
     ``get_draft_tasks`` 是其 ``status="draft"`` 的特例；查询工具走本函数（含各状态）。
 
     ``cursor`` / ``page_size``（ADR-0053）：给了游标就走 keyset，两者都给 None 则
     不分页（AI 查询工具与旧调用点行为不变）。
     """
-    stmt = select(Task).where(Task.parent_id == parent_id)
+    stmt = select(Task).where(Task.teacher_id == teacher_id)
     clause = _status_clause(status)
     if clause is not None:
         stmt = stmt.where(clause)
@@ -473,28 +473,28 @@ def list_tasks_by_parent(
     )
 
 
-def count_tasks_by_parent(
-    *, session: Session, parent_id: uuid.UUID, status: str | None = None
+def count_tasks_by_teacher(
+    *, session: Session, teacher_id: uuid.UUID, status: str | None = None
 ) -> int:
-    """家长名下任务总数（过滤条件与 :func:`list_tasks_by_parent` 一致）。"""
-    stmt = select(Task).where(Task.parent_id == parent_id)
+    """教师名下任务总数（过滤条件与 :func:`list_tasks_by_teacher` 一致）。"""
+    stmt = select(Task).where(Task.teacher_id == teacher_id)
     clause = _status_clause(status)
     if clause is not None:
         stmt = stmt.where(clause)
     return count_of(session=session, stmt=stmt)
 
 
-def count_tasks_by_parent_grouped(
-    *, session: Session, parent_id: uuid.UUID
+def count_tasks_by_teacher_grouped(
+    *, session: Session, teacher_id: uuid.UUID
 ) -> dict[str, int]:
-    """按状态分组计数（家长任务页三个 Tab 的徽标）。
+    """按状态分组计数（教师任务页三个 Tab 的徽标）。
 
     一次 group by 取全部分组，不为每个状态发一条查询——四个状态四条查询在列表接口
     里是纯粹的浪费。
     """
     rows = session.exec(
         select(Task.status, func.count())
-        .where(Task.parent_id == parent_id)
+        .where(Task.teacher_id == teacher_id)
         .group_by(Task.status)
     ).all()
     return {status: n for status, n in rows}
@@ -547,9 +547,9 @@ def discard_draft_task(*, session: Session, task_id: uuid.UUID) -> bool:
 
 
 def assign_task(
-    *, session: Session, task_id: uuid.UUID, child_id: uuid.UUID
+    *, session: Session, task_id: uuid.UUID, student_id: uuid.UUID
 ) -> Task | None:
-    """ready → assigned：派发给娃娃，绑 child_id（ADR-0004 D7）。
+    """ready → assigned：派发给学生，绑 student_id（ADR-0004 D7）。
 
     TaskQuestion 创建时已是独立副本，assigned 后只读，无需再深拷贝。
     """
@@ -557,20 +557,20 @@ def assign_task(
     if task is None or task.status != "ready":
         return None
     task.status = "assigned"
-    task.child_id = child_id
+    task.student_id = student_id
     session.add(task)
     session.commit()
     session.refresh(task)
     return task
 
 
-def get_child_tasks_today(*, session: Session, child_id: uuid.UUID) -> list[Task]:
-    """娃娃今日任务：只返回 assigned/done 态（draft/ready 不可见，ADR-0004 D1）。"""
+def get_student_tasks_today(*, session: Session, student_id: uuid.UUID) -> list[Task]:
+    """学生今日任务：只返回 assigned/done 态（draft/ready 不可见，ADR-0004 D1）。"""
     today = datetime.now(UTC).date()
     return list(
         session.exec(
             select(Task).where(
-                Task.child_id == child_id,
+                Task.student_id == student_id,
                 Task.status.in_(["assigned", "done"]),
                 func.date(Task.created_at) == today,
             )
@@ -583,7 +583,7 @@ def create_answer_record(
     *,
     session: Session,
     question_id: uuid.UUID,
-    child_id: uuid.UUID,
+    student_id: uuid.UUID,
     student_answer: str,
     correct: bool,
     score: float,
@@ -591,7 +591,7 @@ def create_answer_record(
 ) -> AnswerRecord:
     rec = AnswerRecord(
         question_id=question_id,
-        child_id=child_id,
+        student_id=student_id,
         student_answer=student_answer,
         correct=correct,
         score=score,
@@ -606,20 +606,20 @@ def create_answer_record(
 def create_checkin(
     *,
     session: Session,
-    child_id: uuid.UUID,
+    student_id: uuid.UUID,
     task_id: uuid.UUID,
     checkin_date: date,
 ) -> Checkin:
     existing = session.exec(
         select(Checkin).where(
-            Checkin.child_id == child_id,
+            Checkin.student_id == student_id,
             Checkin.task_id == task_id,
             Checkin.checkin_date == checkin_date,
         )
     ).first()
     if existing:
         return existing
-    c = Checkin(child_id=child_id, task_id=task_id, checkin_date=checkin_date)
+    c = Checkin(student_id=student_id, task_id=task_id, checkin_date=checkin_date)
     session.add(c)
     session.commit()
     session.refresh(c)
@@ -638,11 +638,11 @@ def _compute_streak(checkin_dates: list[date]) -> int:
     return streak
 
 
-def get_progress(*, session: Session, child_id: uuid.UUID) -> tuple[int, int, int, int]:
+def get_progress(*, session: Session, student_id: uuid.UUID) -> tuple[int, int, int, int]:
     total = (
         session.scalar(
             select(func.count(AnswerRecord.id)).where(
-                AnswerRecord.child_id == child_id
+                AnswerRecord.student_id == student_id
             )
         )
         or 0
@@ -650,14 +650,14 @@ def get_progress(*, session: Session, child_id: uuid.UUID) -> tuple[int, int, in
     correct = (
         session.scalar(
             select(func.count(AnswerRecord.id)).where(
-                AnswerRecord.child_id == child_id,
+                AnswerRecord.student_id == student_id,
                 AnswerRecord.correct == True,  # noqa: E712
             )
         )
         or 0
     )
     checkin_dates = list(
-        session.exec(select(Checkin.checkin_date).where(Checkin.child_id == child_id)).all()
+        session.exec(select(Checkin.checkin_date).where(Checkin.student_id == student_id)).all()
     )
     checkin_days = len(set(checkin_dates))
     streak = _compute_streak(checkin_dates)
@@ -669,7 +669,7 @@ def upsert_wrong_question(
     *,
     session: Session,
     question_id: uuid.UUID,
-    child_id: uuid.UUID,
+    student_id: uuid.UUID,
 ) -> WrongQuestion:
     """答错归集错题（故事 13）：已存在则次数 +1 不建多条。
 
@@ -678,7 +678,7 @@ def upsert_wrong_question(
     """
     existing = session.exec(
         select(WrongQuestion).where(
-            WrongQuestion.child_id == child_id,
+            WrongQuestion.student_id == student_id,
             WrongQuestion.question_id == question_id,
         )
     ).first()
@@ -686,7 +686,7 @@ def upsert_wrong_question(
         return apply_review_outcome(session=session, wq=existing, correct=False)
     now = datetime.now(UTC)
     wq = WrongQuestion(
-        child_id=child_id,
+        student_id=student_id,
         question_id=question_id,
         wrong_count=1,
         review_stage=0,
@@ -702,7 +702,7 @@ def upsert_wrong_question(
 def list_wrong_questions(
     *,
     session: Session,
-    child_id: uuid.UUID,
+    student_id: uuid.UUID,
     page_size: int | None = None,
     cursor: str | None = None,
     scope: str = "active",
@@ -714,12 +714,12 @@ def list_wrong_questions(
 
     ``scope``（ADR-0053 P2）：``active``（默认，未毕业）/ ``graduated``（只看已掌握）。
     毕业（末位阶段答对）不再物理删除，而是打 ``graduated_at`` 时间戳——默认过滤掉，
-    但痕迹留着，家长端「已掌握」分区能翻出来看。
+    但痕迹留着，教师端「已掌握」分区能翻出来看。
     """
     stmt = (
         select(WrongQuestion, Question)
         .join(Question, Question.id == WrongQuestion.question_id)
-        .where(WrongQuestion.child_id == child_id)
+        .where(WrongQuestion.student_id == student_id)
     )
     if scope == "active":
         stmt = stmt.where(WrongQuestion.graduated_at.is_(None))  # type: ignore[union-attr]
@@ -754,14 +754,14 @@ def list_wrong_questions(
 
 
 def count_wrong_questions(
-    *, session: Session, child_id: uuid.UUID, scope: str = "active"
+    *, session: Session, student_id: uuid.UUID, scope: str = "active"
 ) -> int:
     """错题总数（过滤条件与 :func:`list_wrong_questions` 一致）。
 
     ``scope`` 同 :func:`list_wrong_questions`；``graduated`` 即「已掌握」条数，
-    用于家长端「已掌握（N）」分区标题。
+    用于教师端「已掌握（N）」分区标题。
     """
-    stmt = select(WrongQuestion).where(WrongQuestion.child_id == child_id)
+    stmt = select(WrongQuestion).where(WrongQuestion.student_id == student_id)
     if scope == "active":
         stmt = stmt.where(WrongQuestion.graduated_at.is_(None))  # type: ignore[union-attr]
     elif scope == "graduated":
@@ -770,19 +770,19 @@ def count_wrong_questions(
 
 
 def rejoin_wrong_question(
-    *, session: Session, child_id: uuid.UUID, wrong_id: uuid.UUID
+    *, session: Session, student_id: uuid.UUID, wrong_id: uuid.UUID
 ) -> WrongQuestion:
     """把已毕业（已掌握）的错题重新加入复习（ADR-0053 P2）。
 
     清 ``graduated_at``、阶段归 0、``due_at = now``（立刻可复习），保留 ``wrong_count``
     与 ``first_wrong_at``——学习痕迹不因为「重新来过」而清零。
 
-    归属判据走 ``child_id`` 作用域查询（不是手写 ``==`` 比较后内联判定）：找不到即
-    抛不存在，避免跨孩子改数据。
+    归属判据走 ``student_id`` 作用域查询（不是手写 ``==`` 比较后内联判定）：找不到即
+    抛不存在，避免跨学生改数据。
     """
     wq = session.exec(
         select(WrongQuestion).where(
-            WrongQuestion.id == wrong_id, WrongQuestion.child_id == child_id
+            WrongQuestion.id == wrong_id, WrongQuestion.student_id == student_id
         )
     ).first()
     if wq is None:

@@ -105,7 +105,7 @@ def assemble_question(
     """
     stem = raw.get("stem") or ""
     # 模型偶发不守 output_schema，把全部选项揉进一个字符串或某一列表元素；
-    # 切分成「每个选项一段」再落库，否则娃娃端会看到一长串选项挤在一行（无法逐条选）。
+    # 切分成「每个选项一段」再落库，否则学生端会看到一长串选项挤在一行（无法逐条选）。
     options = normalize_options(raw.get("options"))
     answer = raw.get("answer") or ""
     explanation = raw.get("explanation") or ""

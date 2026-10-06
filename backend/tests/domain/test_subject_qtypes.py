@@ -6,7 +6,6 @@ from pydantic import ValidationError
 from app.domain.subjects import (
     SUBJECTS,
     default_qtype,
-    is_supported_subject,
     qtypes_for,
 )
 from app.features.tasks.schemas import TaskSpec

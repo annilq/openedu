@@ -34,9 +34,9 @@ def _validate(req: ExportSheetReq) -> None:
         raise AppErrorException(
             ErrCode.EXPORT_SOURCE_UNKNOWN, f"未知的导出来源：{req.source}"
         )
-    if req.source == "wrong_book" and req.child_id is None:
+    if req.source == "wrong_book" and req.student_id is None:
         raise AppErrorException(
-            ErrCode.EXPORT_CHILD_REQUIRED, "导出错题请指定娃娃"
+            ErrCode.EXPORT_CHILD_REQUIRED, "导出错题请指定学生"
         )
 
 
@@ -64,12 +64,12 @@ def _wrong_book_title(req: ExportSheetReq) -> str:
     return "今日复习" if req.due_only else "错题练习"
 
 
-def build_document(*, session: Session, parent_id: uuid.UUID, req: ExportSheetReq) -> ExportDocument:
+def build_document(*, session: Session, teacher_id: uuid.UUID, req: ExportSheetReq) -> ExportDocument:
     """装配导出文档（不含编译，纯数据库 + 纯函数，可独立测试）。"""
     _validate(req)
     if req.source == "bank":
         questions = repository.load_bank_questions(
-            session=session, parent_id=parent_id, question_ids=req.ids
+            session=session, teacher_id=teacher_id, question_ids=req.ids
         )
         document = build_export_document(
             title=_bank_title(req, questions),
@@ -77,7 +77,7 @@ def build_document(*, session: Session, parent_id: uuid.UUID, req: ExportSheetRe
         )
     elif req.source == "task":
         groups = repository.load_task_groups(
-            session=session, parent_id=parent_id, task_ids=req.ids
+            session=session, teacher_id=teacher_id, task_ids=req.ids
         )
         if req.title:
             title = req.title
@@ -86,11 +86,11 @@ def build_document(*, session: Session, parent_id: uuid.UUID, req: ExportSheetRe
             title = titles[0] if len(titles) == 1 else "任务练习"
         document = build_export_document(title=title, groups=groups)
     else:
-        assert req.child_id is not None  # _validate 已保证
+        assert req.student_id is not None  # _validate 已保证
         questions = repository.load_wrong_book_questions(
             session=session,
-            parent_id=parent_id,
-            child_id=req.child_id,
+            teacher_id=teacher_id,
+            student_id=req.student_id,
             due_only=req.due_only,
         )
         document = build_export_document(
@@ -107,9 +107,9 @@ def build_document(*, session: Session, parent_id: uuid.UUID, req: ExportSheetRe
     return document
 
 
-def build_sheet_pdf(*, session: Session, parent_id: uuid.UUID, req: ExportSheetReq) -> bytes:
+def build_sheet_pdf(*, session: Session, teacher_id: uuid.UUID, req: ExportSheetReq) -> bytes:
     """完整链路：装配 + 编译。CPU 密集的编译由路由层放进线程池执行。"""
-    document = build_document(session=session, parent_id=parent_id, req=req)
+    document = build_document(session=session, teacher_id=teacher_id, req=req)
     return render_sheet_pdf(document)
 
 

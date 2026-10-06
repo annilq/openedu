@@ -1,6 +1,6 @@
 """学情查询 SubAgent（ADR-0033 / 文件夹化）：只读业务查询的唯一入口。
 
-家长说「我的任务有哪些 / 小明最近错题多吗」、娃娃说「今天有什么作业」时由 runtime
+教师说「我的任务有哪些 / 小明最近错题多吗」、学生说「今天有什么作业」时由 runtime
 路由到此（``priority=12``，接住原 ``tasks`` 为抢「任务题目」而设的权重）。与另两个
 subagent 的关键差异：**本 subagent 声明真实工具**（``tools=QUERY_TOOLS``），
 runtime 走 ``run_with_tools`` 的 tool loop 调度，模型经原生 function calling 选型，
@@ -13,7 +13,7 @@ runtime 走 ``run_with_tools`` 的 tool loop 调度，模型经原生 function c
   契约见 ADR-0042，core 仍只负责信封，不认识任何卡片语义）；
 - ``ASSISTANT_MESSAGE``：模型收尾结论。
 
-业务边界（``parent_id`` / ``child_id`` / ``role``）全部走 ``SubAgentContext``；
+业务边界（``teacher_id`` / ``student_id`` / ``role``）全部走 ``SubAgentContext``；
 内核与适配器不感知任何教育语义。角色裁剪不在本文件——工具出参先过
 ``_shared.project_for_role``，本文件只负责提示词与展示投影。
 """
@@ -30,8 +30,8 @@ _SYSTEM = """你是「学情查询」助手，只负责查询本家庭的学习�
 
 规则：
 - 只依据工具返回的数据回答，绝不编造数字、题目、姓名或日期；数据为空就如实说「没有查到」。
-- 需要定位某个娃娃时用 `child_name`（昵称）**直接查明细**，不必先取 `child_id`；
-  只有昵称有歧义（命中多个娃娃）时才先调 `list_children` 拿 id。不确定对象就先问清。
+- 需要定位某个学生时用 `student_name`（昵称）**直接查明细**，不必先取 `student_id`；
+  只有昵称有歧义（命中多个学生）时才先调 `list_students` 拿 id。不确定对象就先问清。
 - 一次问题只调必要的工具，不要重复调用同一个工具；同一轮需要多项数据时可并行调多个工具。
 - 用一两句话概括结论，不要复述原始 JSON 字段，也不要罗列全部明细。
 - 用户想**选题 / 找参考题**时直接用 `list_bank_questions` 查出来给他，不要只反问
@@ -40,17 +40,17 @@ _SYSTEM = """你是「学情查询」助手，只负责查询本家庭的学习�
 - 与学情数据无关的请求（闲聊、解题、出题）不要用查询工具硬凑，直接说明你能查什么。"""
 
 _CHILD_HINT = (
-    "当前提问者是**娃娃本人**：只能查询他自己的数据，不要提及其他娃娃，"
+    "当前提问者是**学生本人**：只能查询他自己的数据，不要提及其他学生，"
     "也不得输出任何题目的答案或解析。"
 )
-_PARENT_HINT = "当前提问者是**家长**：可以查询名下所有娃娃的数据（含答案与解析，仅限本家庭）。"
+_PARENT_HINT = "当前提问者是**教师**：可以查询名下所有学生的数据（含答案与解析，仅限本家庭）。"
 
 
 class QuerySubAgent(BaseSubAgent):
     business = "query"
 
     # 结论必须有据（ADR-0033）：本 subagent 的每一句结论都得来自工具数据。整轮零工具调用
-    # 却给出正文＝模型在编（真机：本地小模型流式下直接编出「3 个娃娃 / 掌握度 85%」），
+    # 却给出正文＝模型在编（真机：本地小模型流式下直接编出「3 个学生 / 掌握度 85%」），
     # 此时由 runtime 硬失败拦截，而不是把编造内容下发给用户。
     # 代价：「你能查什么」这类元问题也会被拦（它同样是不查就答）——安全优先于体验。
     requires_tool_data = True
@@ -63,7 +63,7 @@ class QuerySubAgent(BaseSubAgent):
     # ── tool loop 的初轮消息 ──
     def initial_system(self, message: str, ctx: SubAgentContext) -> str:
         role = (ctx.role or "").strip().lower()
-        parts = [_SYSTEM, _CHILD_HINT if role == "child" else _PARENT_HINT]
+        parts = [_SYSTEM, _CHILD_HINT if role == "student" else _PARENT_HINT]
         if ctx.skills:
             parts.append(ctx.skills)
         return "\n\n".join(p for p in parts if p)

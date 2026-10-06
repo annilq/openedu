@@ -30,7 +30,7 @@ from app.features.tasks.schemas import AnswerResult
 
 
 class ReviewNotFound(Exception):
-    """复习项不存在或不属于该娃娃（路由翻译为 404）。"""
+    """复习项不存在或不属于该学生（路由翻译为 404）。"""
 
 
 class ReviewNotDue(Exception):
@@ -55,7 +55,7 @@ def review_item_to_resp(
         scene_spec = scene_spec_for_read(
             session,
             snapshot=q.scene_spec,
-            parent_id=q.parent_id,
+            teacher_id=q.teacher_id,
             subject=q.subject,
             grade=q.grade,
             knowledge_point=q.knowledge_point,
@@ -83,9 +83,9 @@ def review_item_to_resp(
     )
 
 
-def list_due_reviews(*, session: Session, child_id: UUID) -> list[ReviewItemResp]:
-    """娃娃的待复习队列：遗忘曲线到点的错题（不含答案，防作弊）。"""
-    rows = list_due_wrong_questions(session=session, child_id=child_id)
+def list_due_reviews(*, session: Session, student_id: UUID) -> list[ReviewItemResp]:
+    """学生的待复习队列：遗忘曲线到点的错题（不含答案，防作弊）。"""
+    rows = list_due_wrong_questions(session=session, student_id=student_id)
     # 同一页里同一知识点的题共用一份模板解析结果。
     scene_cache: dict[tuple, dict | None] = {}
     return [
@@ -95,15 +95,15 @@ def list_due_reviews(*, session: Session, child_id: UUID) -> list[ReviewItemResp
 
 
 def submit_answer(
-    *, session: Session, child_id: UUID, submit: ReviewAnswerSubmit
+    *, session: Session, student_id: UUID, submit: ReviewAnswerSubmit
 ) -> AnswerResult:
     """复习作答：批改 + 落库 + 遗忘曲线调度（写路径收口于此，router 仅做 HTTP 翻译）。
 
-    raises ReviewNotFound: 复习项不存在/不归属该娃娃，或对应题目不存在。
+    raises ReviewNotFound: 复习项不存在/不归属该学生，或对应题目不存在。
     raises ReviewNotDue: 复习项尚未到期（防止连对提前毕业绕过遗忘曲线）。
     """
     wq = session.get(WrongQuestion, submit.wrong_question_id)
-    if wq is None or wq.child_id != child_id:
+    if wq is None or wq.student_id != student_id:
         raise ReviewNotFound()
     # 已毕业（已掌握）的错题不在复习队列里（ADR-0053 P2 起毕业不删行）：
     # 拿它作答会重复推进一个已经走完的阶段，属于越界请求。
@@ -122,11 +122,11 @@ def submit_answer(
         raise ReviewNotFound()
 
     # 批改经归一封装构造 provider（ADR-0034 Phase 2）；复习作答不携带 per-task model，
-    # 回落「模型管理」中本家长的默认模型，统一走 ai_plumbing 单一入口。
-    child = session.get(User, child_id)
-    parent_id = child.parent_id if child is not None else None
+    # 回落「模型管理」中本教师的默认模型，统一走 ai_plumbing 单一入口。
+    student = session.get(User, student_id)
+    teacher_id = student.teacher_id if student is not None else None
     grader = Grader(
-        build_ai_provider(parent_id=parent_id, session=session)
+        build_ai_provider(teacher_id=teacher_id, session=session)
     )
     try:
         result = grader.grade(question=question, student_answer=submit.student_answer)
@@ -136,7 +136,7 @@ def submit_answer(
     create_answer_record(
         session=session,
         question_id=question.id,
-        child_id=child_id,
+        student_id=student_id,
         student_answer=submit.student_answer,
         correct=result["correct"],
         score=result["score"],

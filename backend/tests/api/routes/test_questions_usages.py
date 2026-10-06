@@ -6,10 +6,10 @@ from sqlmodel import Session as DBSession
 
 from app.core.db import engine
 from app.db.models import Question, Task, TaskQuestion
-from tests.utils.user import auth_headers, register_parent
+from tests.utils.user import auth_headers, register_teacher
 
 
-def _parent_id(client, token: str) -> uuid.UUID:
+def _teacher_id(client, token: str) -> uuid.UUID:
     r = client.get("/api/v1/auth/me", headers=auth_headers(token))
     assert r.status_code == 200, r.text
     return uuid.UUID(r.json()["id"])
@@ -23,17 +23,17 @@ def _seed_usage(pid: uuid.UUID):
     task_b_id = uuid.uuid4()
     with DBSession(engine) as s:
         s.add(Question(
-            id=q_used_id, parent_id=pid, subject="数学", grade=2,
+            id=q_used_id, teacher_id=pid, subject="数学", grade=2,
             knowledge_point="加法", qtype="calc", stem="1+1=?", answer="2",
             explanation="", difficulty="easy",
         ))
         s.add(Question(
-            id=q_free_id, parent_id=pid, subject="语文", grade=2,
+            id=q_free_id, teacher_id=pid, subject="语文", grade=2,
             knowledge_point="字词", qtype="fill", stem="填空", answer="x",
             explanation="", difficulty="easy",
         ))
-        s.add(Task(id=task_a_id, title="引用任务A", status="draft", parent_id=pid))
-        s.add(Task(id=task_b_id, title="引用任务B", status="assigned", parent_id=pid))
+        s.add(Task(id=task_a_id, title="引用任务A", status="draft", teacher_id=pid))
+        s.add(Task(id=task_b_id, title="引用任务B", status="assigned", teacher_id=pid))
         s.commit()
         s.add(TaskQuestion(
             task_id=task_a_id, question_id=q_used_id, subject="数学", grade=2,
@@ -50,9 +50,9 @@ def _seed_usage(pid: uuid.UUID):
 
 
 def test_usages_lists_referencing_tasks(client):
-    r = register_parent(client, username="use_parent_1")
+    r = register_teacher(client, username="use_teacher_1")
     ptoken = r.json()["access_token"]
-    pid = _parent_id(client, ptoken)
+    pid = _teacher_id(client, ptoken)
     q_used_id, q_free_id = _seed_usage(pid)
 
     r = client.get(
@@ -73,23 +73,23 @@ def test_usages_lists_referencing_tasks(client):
     assert r2.json()["items"] == []
 
 
-def test_usages_forbidden_for_other_parent(client):
-    ra = register_parent(client, username="use_parent_a")
+def test_usages_forbidden_for_other_teacher(client):
+    ra = register_teacher(client, username="use_teacher_a")
     rtoken = ra.json()["access_token"]
-    rid = _parent_id(client, rtoken)
-    rb = register_parent(client, username="use_parent_b")
+    rid = _teacher_id(client, rtoken)
+    rb = register_teacher(client, username="use_teacher_b")
     btoken = rb.json()["access_token"]
 
     q_id = uuid.uuid4()
     with DBSession(engine) as s:
         s.add(Question(
-            id=q_id, parent_id=rid, subject="数学", grade=2,
+            id=q_id, teacher_id=rid, subject="数学", grade=2,
             knowledge_point="加法", qtype="calc", stem="1+1=?", answer="2",
             explanation="", difficulty="easy",
         ))
         s.commit()
 
-    # 家长 B 查询家长 A 的题 → 403
+    # 教师 B 查询教师 A 的题 → 403
     r = client.get(
         f"/api/v1/questions/{q_id}/usages",
         headers=auth_headers(btoken),

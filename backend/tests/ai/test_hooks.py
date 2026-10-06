@@ -123,13 +123,13 @@ def test_run_with_tools_no_hooks_default():
 def test_runtime_forwards_hooks():
     provider = FakeLLMProvider(tool_script=[("echo", {"text": "hi"})])
     manifest = SubAgentManifest(
-        business="hook_echo", name="echo", roles=["parent", "child"], agent_cls=_EchoAgent
+        business="hook_echo", name="echo", roles=["teacher", "student"], agent_cls=_EchoAgent
     )
     runtime = AgentRuntime({"hook_echo": manifest})
     hooks = _RecordingHooks()
     deps = RuntimeDeps(provider=provider, hooks=hooks)
     events = asyncio.run(
-        _collect(runtime.run("hi", role="parent", ctx=SubAgentContext(), deps=deps, business="hook_echo"))
+        _collect(runtime.run("hi", role="teacher", ctx=SubAgentContext(), deps=deps, business="hook_echo"))
     )
     # 经 runtime.run → run_with_tools(hooks=deps.hooks)，钩子被触发
     assert len(hooks.after_tools) == 1

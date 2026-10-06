@@ -3,7 +3,7 @@
 字体这块有三个坑，都踩过：
 
 1. **编码问题** vs **字体缺失** 是两件事。前者表现为乱码，后者表现为豆腐块；
-   两者对家长都是「打印了一堆废纸」，所以必须在**启动期**就暴露，而不是等导出时。
+   两者对教师都是「打印了一堆废纸」，所以必须在**启动期**就暴露，而不是等导出时。
 2. ``frontend/assets/fonts/NotoSansSC.ttf`` 是**可变字体且默认实例 Thin**，
    Typst 不会按目标字重实例化它 → 直接拿来排版，纸上是细笔画。
    静态 Regular 的生成见 ``scripts/build_export_font.py``。
@@ -60,7 +60,7 @@ def check_export_font_health() -> None:
 
 
 def require_font_dir() -> Path:
-    """取字体目录；不可用则抛 ``503``，由前端如实告诉家长「服务端没配好」。"""
+    """取字体目录；不可用则抛 ``503``，由前端如实告诉教师「服务端没配好」。"""
     if not font_available():
         raise AppErrorException(
             ErrCode.EXPORT_FONT_MISSING,

@@ -159,8 +159,8 @@ def test_empty_options_entries_are_dropped():
 def test_strip_rich_text_keeps_fill_blanks():
     """填空的下划线不能被当成 Markdown 强调剥掉。
 
-    题干里 `____` 就是「孩子要在这里写字」，剥掉它等于把纸上的空抹了——
-    孩子看着一句话却不知道往哪填。判据：强调必须**紧贴文字**，被空格孤立的
+    题干里 `____` 就是「学生要在这里写字」，剥掉它等于把纸上的空抹了——
+    学生看着一句话却不知道往哪填。判据：强调必须**紧贴文字**，被空格孤立的
     一串下划线是留白，不是强调。
     """
     from app.features.export.document import strip_rich_text

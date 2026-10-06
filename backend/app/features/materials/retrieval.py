@@ -5,10 +5,10 @@
 实现取舍：
 - **dense**：查询经 embedding 服务向量化，与 chunk 的 float32 BLOB 算余弦；
 - **sparse → 词法现算**：BGE-M3 的 sparse 输出要本地权重（不进镜像），改为对
-  候选片段做查询时 BM25-lite（字符二元组 + ASCII 词）——单家长数千片段，
+  候选片段做查询时 BM25-lite（字符二元组 + ASCII 词）——单教师数千片段，
   现算比维护稀疏索引便宜，效果同族（抓「37+48」这类 dense 区分度差的精确词）；
 - **RRF 融合**：只看排名不看分数尺度（``1/(k+rank)``，k=60）；
-- **过滤**：parent + subject + grade（自动过滤，家长不勾选）+ 版本戳——
+- **过滤**：teacher + subject + grade（自动过滤，教师不勾选）+ 版本戳——
   ``embed_model`` / ``chunker_ver`` 与当前配置不符的行**直接跳过**（stale
   语义在检索侧的落点，双保险：状态机管展示，版本戳管真值）；
 - embedding 不可用 / 失败**不阻塞出题**：降级为纯词法检索并告警。
@@ -96,11 +96,11 @@ def _rrf_fuse(rankings: list[list[int]], top_k: int) -> list[int]:
 
 
 class VectorKnowledgeRetriever:
-    """家长私有资料库检索：结构化四元组查询 → 排序后的 KnowledgeChunk。"""
+    """教师私有资料库检索：结构化四元组查询 → 排序后的 KnowledgeChunk。"""
 
-    def __init__(self, session: Session, parent_id: uuid.UUID):
+    def __init__(self, session: Session, teacher_id: uuid.UUID):
         self._session = session
-        self._parent_id = parent_id
+        self._teacher_id = teacher_id
 
     def retrieve(
         self,
@@ -110,15 +110,15 @@ class VectorKnowledgeRetriever:
         knowledge_point: str,
         query: str,
     ) -> list[KnowledgeChunk]:
-        # 候选集硬边界：家长归属 + 版本戳（stale 向量天然出局）。
+        # 候选集硬边界：教师归属 + 版本戳（stale 向量天然出局）。
         # 学科 / 年级是「已知时」的便利过滤（ADR-0055 §13 原为出题管线设计，那时
         # subject+grade 一定随请求带来）。但答疑问答（tutor）往往拿不到：
-        #   家长端 grade 恒为 0、自由文本又几乎无法可靠识别学科（「轴对称图形」不含
+        #   教师端 grade 恒为 0、自由文本又几乎无法可靠识别学科（「轴对称图形」不含
         #   「数学」二字）。若在此强过滤，候选集直接被打空 → RAG 静默失效，
         #   模型只能凭自身知识编造。故 subject 为空 / grade<=0 时退化为跨全库语义检索，
-        #   隔离仍由 parent_id 保证（ADR-0055 §2：检索范围永远按家长归属隔离）。
+        #   隔离仍由 teacher_id 保证（ADR-0055 §2：检索范围永远按教师归属隔离）。
         conditions = [
-            MaterialChunk.parent_id == self._parent_id,
+            MaterialChunk.teacher_id == self._teacher_id,
             MaterialChunk.embed_model == settings.EMBEDDING_MODEL,
             MaterialChunk.chunker_ver == CHUNKER_VERSION,
         ]

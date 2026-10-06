@@ -4,8 +4,8 @@
 对应 SubAgent，以 SSE 流式推送 AG-UI 事件帧（USER_MESSAGE / THINKING / TOOL_CALL /
 TOOL_RESULT / DATA / ASSISTANT_MESSAGE / DONE）。
 
-- 双端通用：家长与孩子共用此端点（Caller 依赖解析角色）。
-- 娃娃端角色感知 + 输入安全（ADR-008）；家长端可出题/查任务/伴学。
+- 双端通用：教师与学生共用此端点（Caller 依赖解析角色）。
+- 学生端角色感知 + 输入安全（ADR-008）；教师端可出题/查任务/伴学。
 - 会话持久化复用 ``Conversation`` / ``Message``（ADR-0022 升级为助手会话，supersede）。
 - 统一编排由 agent_core 提供（ADR-0031）：``AgentRuntime`` + ``RuntimeDeps``（provider /
   retriever / safety 注入）+ ``SubAgentContext``（业务字段走 ``extra``）。本端点只负责
@@ -24,7 +24,7 @@ from uuid import UUID
 from fastapi import APIRouter, Query
 from fastapi.responses import StreamingResponse
 
-from app.core.deps import CallerDep, CurrentParent, SessionDep
+from app.core.deps import CallerDep, CurrentTeacher, SessionDep
 from app.core.errors import AppErrorException, ErrCode
 from app.core.guard import require_owned
 from app.db.models import Conversation
@@ -61,33 +61,33 @@ async def assistant_chat(req: AssistantChatReq, caller: CallerDep, session: Sess
 def list_conversations(
     *,
     session: SessionDep,
-    parent: CurrentParent,
+    teacher: CurrentTeacher,
     limit: int = Query(default=50, ge=1, le=200),
 ) -> list[AssistantConversationResp]:
-    """家长的历史会话列表（含名下娃娃的），最近活动倒序（ADR-0048）。
+    """教师的历史会话列表（含名下学生的），最近活动倒序（ADR-0048）。
 
-    **家长专属**（``CurrentParent``）：娃娃端的会话列表被有意留空——孩子看到自己
-    「被拦过」的记录是负面强化，而「找回我问过的那道题」对孩子是次要需求。
-    这是不对称，不是遗漏。故本轮也没有 child-scoped 的等价路由。
+    **教师专属**（``CurrentTeacher``）：学生端的会话列表被有意留空——学生看到自己
+    「被拦过」的记录是负面强化，而「找回我问过的那道题」对学生是次要需求。
+    这是不对称，不是遗漏。故本轮也没有 student-scoped 的等价路由。
     """
     return assistant_service.list_conversations(
-        session=session, parent_id=parent.id, limit=limit
+        session=session, teacher_id=teacher.id, limit=limit
     )
 
 
 @router.get("/conversations/{conv_id}", response_model=AssistantConversationDetailResp)
 def get_conversation(
-    *, session: SessionDep, parent: CurrentParent, conv_id: UUID
+    *, session: SessionDep, teacher: CurrentTeacher, conv_id: UUID
 ) -> AssistantConversationDetailResp:
-    """一次会话的概要 + 全部气泡（回放 / 恢复续接）。越权（非本家长）→ 403。
+    """一次会话的概要 + 全部气泡（回放 / 恢复续接）。越权（非本教师）→ 403。
 
-    归属走 ``core.guard`` 单一实现；娃娃的会话也归家长所有（``parent_id`` 是家长），
-    所以孩子那条会话其家长能读到——这正是「家长可查看孩子在问什么」的实现方式，
-    读到的内容与孩子当时看到的一致（工具出参在落库前就按角色剥过答案，ADR-0033）。
+    归属走 ``core.guard`` 单一实现；学生的会话也归教师所有（``teacher_id`` 是教师），
+    所以学生那条会话其教师能读到——这正是「教师可查看学生在问什么」的实现方式，
+    读到的内容与学生当时看到的一致（工具出参在落库前就按角色剥过答案，ADR-0033）。
     """
     conv = require_owned(
         session=session,
-        owner_id=parent.id,
+        owner_id=teacher.id,
         model=Conversation,
         obj_id=conv_id,
         code=ErrCode.FORBIDDEN,
@@ -98,17 +98,17 @@ def get_conversation(
 
 @router.delete("/conversations", response_model=int)
 def delete_conversations(
-    *, session: SessionDep, parent: CurrentParent, body: AssistantConversationsDeleteReq
+    *, session: SessionDep, teacher: CurrentTeacher, body: AssistantConversationsDeleteReq
 ) -> int:
-    """批量删除本家长名下的会话及其关联消息（多选删除，ADR-0048 补充）。
+    """批量删除本教师名下的会话及其关联消息（多选删除，ADR-0048 补充）。
 
-    **家长专属**（``CurrentParent``，与列表 / 回放同一口径）。``ids`` 只认
-    ``parent_id`` 匹配的会话——孩子的会话也归家长所有，一并可删；越权的 id
-    （其他家长 / 不存在）被归属过滤掉，静默忽略，不会误删他人数据。
+    **教师专属**（``CurrentTeacher``，与列表 / 回放同一口径）。``ids`` 只认
+    ``teacher_id`` 匹配的会话——学生的会话也归教师所有，一并可删；越权的 id
+    （其他教师 / 不存在）被归属过滤掉，静默忽略，不会误删他人数据。
 
     会话与消息是两张表、无 FK 级联（ADR-0048 有意不做的缺口），删除在 repository
     内按「先消息后会话」的顺序完成。返回实际删除的会话条数。
     """
     return assistant_service.delete_conversations(
-        session=session, parent_id=parent.id, ids=body.ids
+        session=session, teacher_id=teacher.id, ids=body.ids
     )

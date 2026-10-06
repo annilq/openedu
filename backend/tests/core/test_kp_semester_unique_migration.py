@@ -4,7 +4,7 @@
 （``ALTER TABLE knowledgepoint ADD COLUMN semester``），但 SQLite **没有**
 ``ALTER TABLE ... ADD CONSTRAINT`` —— ``ADD COLUMN`` 里写的 ``UNIQUE(...)``
 子句会被**静默忽略**。于是任何在加学期维度**之前**建库的库（含本机开发库）
-唯一约束仍是旧的 4 列 ``UNIQUE(parent_id, subject, grade, name)``。
+唯一约束仍是旧的 4 列 ``UNIQUE(teacher_id, subject, grade, name)``。
 
 后果不是「报错」而是**静默废掉 §J 承诺的核心能力**：同一知识点按学期各存一份
 （上/下学期各一份模板）根本存不进去 —— 名字一撞就撞唯一约束。
@@ -27,7 +27,7 @@ from app.core.db import _rebuild_kp_unique_with_semester
 _OLD_DDL = """
 CREATE TABLE knowledgepoint (
     id CHAR(32) NOT NULL,
-    parent_id CHAR(32) NOT NULL,
+    teacher_id CHAR(32) NOT NULL,
     subject VARCHAR(16) NOT NULL,
     grade INTEGER NOT NULL,
     name VARCHAR(128) NOT NULL,
@@ -37,11 +37,11 @@ CREATE TABLE knowledgepoint (
     semester VARCHAR(8) DEFAULT '',
     scenes TEXT,
     PRIMARY KEY (id),
-    UNIQUE (parent_id, subject, grade, name),
-    FOREIGN KEY(parent_id) REFERENCES user (id)
+    UNIQUE (teacher_id, subject, grade, name),
+    FOREIGN KEY(teacher_id) REFERENCES user (id)
 );
 CREATE INDEX ix_knowledgepoint_scope
-    ON knowledgepoint (parent_id, subject, grade);
+    ON knowledgepoint (teacher_id, subject, grade);
 """
 
 
@@ -64,7 +64,7 @@ def _insert_kp(path: str, *, name: str, semester: str, kp_id: str = "k1") -> Non
     conn = sqlite3.connect(path)
     conn.execute(
         "INSERT INTO knowledgepoint "
-        "(id, parent_id, subject, grade, name, status, source, created_at, semester, scenes)"
+        "(id, teacher_id, subject, grade, name, status, source, created_at, semester, scenes)"
         " VALUES (?, 'p1', '数学', 4, ?, 'curated', 'skeleton', '2026-10-05', ?, NULL)",
         (kp_id, name, semester),
     )
@@ -99,7 +99,7 @@ class TestStaleUniqueConstraint:
         """前置：确认我们造出来的确实是「老库形状」（否则下面测不出东西）。"""
         db = str(tmp_path / "old.db")
         _make_old_db(db)
-        assert _unique_cols(db) == ["parent_id", "subject", "grade", "name"]
+        assert _unique_cols(db) == ["teacher_id", "subject", "grade", "name"]
 
     def test_old_db_cannot_hold_same_name_across_semesters(self, tmp_path):
         """**复现原 bug**：老约束下同一 name 换学期就撞唯一约束。"""
@@ -114,7 +114,7 @@ class TestStaleUniqueConstraint:
         _make_old_db(db)
         _migrate(db)
         assert _unique_cols(db) == [
-            "parent_id",
+            "teacher_id",
             "subject",
             "grade",
             "name",
@@ -126,7 +126,7 @@ class TestStaleUniqueConstraint:
         db = str(tmp_path / "old.db")
         _make_old_db(db)
         _migrate(db)
-        assert _index_cols(db) == ["parent_id", "subject", "grade", "semester"]
+        assert _index_cols(db) == ["teacher_id", "subject", "grade", "semester"]
 
     def test_after_migration_same_name_coexists_across_semesters(self, tmp_path):
         """**核心断言**：迁移后 §J 承诺的能力才真正成立。"""
@@ -176,7 +176,7 @@ class TestStaleUniqueConstraint:
         conn = sqlite3.connect(db)
         conn.execute(
             "INSERT INTO knowledgepoint "
-            "(id, parent_id, subject, grade, name, status, source, created_at, semester, scenes)"
+            "(id, teacher_id, subject, grade, name, status, source, created_at, semester, scenes)"
             " VALUES ('k1','p1','数学',4,'A','curated','skeleton','2026-10-05','上学期',?)",
             ('[{"kind":"reflection"}]',),
         )

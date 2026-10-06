@@ -5,7 +5,7 @@
 折叠为持久化（Message 轨迹 + TutorLog 副作用）。
 
 ADR-0048 起还持有**会话历史的读编排**（列表 / 回放）：端点只做 HTTP 适配，三次查询的
-归并（会话 × 元信息 × 娃娃名）在这一层。
+归并（会话 × 元信息 × 学生名）在这一层。
 
 ``runtime`` 以可选参数注入（默认 ``get_runtime()`` 单例），便于单测用桩 ``AgentRuntime``
 替换，无需真实 ``discover()`` 与 HTTP 链路（见 ``tests/features/assistant/test_service.py``）。
@@ -32,9 +32,8 @@ from app.ai.engine import resolve_engine
 from app.ai.subagents.tutor.agent import detect_subject
 from app.db.models import Conversation, Message, get_datetime_utc
 from app.domain import build_provider, build_retriever
-from app.domain.safety import ChildSafety
+from app.domain.safety import StudentSafety
 from app.features.assistant.repository import (
-    child_names,
     conversation_meta,
     derive_title,
     get_conversation_by_id,
@@ -42,6 +41,7 @@ from app.features.assistant.repository import (
     load_chat_history_with_summary,
     next_turn,
     read_conversation_bubbles,
+    student_names,
     title_of,
 )
 from app.features.assistant.repository import (
@@ -99,28 +99,28 @@ async def chat(
     message = (req.message or "").strip()
 
     role = caller.role
-    if role == "child":
-        child_id = caller.user.id
-        parent_id = caller.user.parent_id
-    else:  # parent
-        parent_id = caller.user.id
-        child_id = None
+    if role == "student":
+        student_id = caller.user.id
+        teacher_id = caller.user.teacher_id
+    else:  # teacher
+        teacher_id = caller.user.id
+        student_id = None
 
     # subject 为教育特有概念，由端点计算并透传（agent_core 的 RouteDecision 不感知业务语义）。
     subject = detect_subject(message)
 
     # 构建运行时依赖（seam 注入）：provider 走单一解析链；retriever 默认 mock；
-    # 儿童端注入输入安全闸门（首层防御），家长端不拦截。
+    # 学生端注入输入安全闸门（首层防御），教师端不拦截。
     engine = (
-        resolve_engine(req.model, parent_id=parent_id, session=session)
-        if parent_id is not None
+        resolve_engine(req.model, teacher_id=teacher_id, session=session)
+        if teacher_id is not None
         else None
     )
     provider = build_provider(engine=engine)
-    # RAG（ADR-0055 §13）：家长端传 (session, parent_id) 启用资料库向量检索；
-    # 娃娃端 parent_id 为 None → 自动回落 mock（资料库是家长私有的）。
-    retriever = build_retriever(session=session, parent_id=parent_id)
-    safety = ChildSafety() if role == "child" else None
+    # RAG（ADR-0055 §13）：教师端传 (session, teacher_id) 启用资料库向量检索；
+    # 学生端 teacher_id 为 None → 自动回落 mock（资料库是教师私有的）。
+    retriever = build_retriever(session=session, teacher_id=teacher_id)
+    safety = StudentSafety() if role == "student" else None
     deps = RuntimeDeps(provider=provider, retriever=retriever, safety=safety)
 
     # 预路由：解析 business（不流式），供落库复用，消除端点对 THINKING(extra) 隐式契约。
@@ -139,8 +139,8 @@ async def chat(
             existing = None
         if (
             existing is not None
-            and existing.parent_id == parent_id
-            and existing.child_id == child_id
+            and existing.teacher_id == teacher_id
+            and existing.student_id == student_id
         ):
             # 归属校验通过：续接该会话，载入历史拼入 prompt
             conversation = existing
@@ -169,8 +169,8 @@ async def chat(
         conversation = Conversation(
             id=conv_id,
             kind=decision.business or "agent",  # 路由决策显式给出，不再依赖 THINKING(extra)
-            parent_id=parent_id,
-            child_id=child_id,
+            teacher_id=teacher_id,
+            student_id=student_id,
             model=req.model,
             # 会话名取首条用户消息截断（ADR-0048）：它同时是会话列表的行名。
             # 写入点唯一（会话只在这里建立），值天然稳定——首条消息不会变。
@@ -194,9 +194,9 @@ async def chat(
         skills="",  # runtime 会按 manifest 注入 skill_prompt
         extra={
             "subject": subject,
-            "parent_id": parent_id,
-            "child_id": child_id,
-            "grade": (caller.user.grade if role == "child" else 0) or 0,
+            "teacher_id": teacher_id,
+            "student_id": student_id,
+            "grade": (caller.user.grade if role == "student" else 0) or 0,
             "focus_interest": req.focus_interest,
             "session_id": str(conv_id),
         },
@@ -301,12 +301,12 @@ async def chat(
             # 不显式赋值它就跟 created_at 一样是死字段。
             conversation.updated_at = get_datetime_utc()
 
-            # ADR-008：娃娃端伴学交互落 TutorLog（家长可见，F-305）
-            if role == "child" and decision.business == "tutor":
+            # ADR-008：学生端伴学交互落 TutorLog（教师可见，F-305）
+            if role == "student" and decision.business == "tutor":
                 try:
                     create_tutor_log(
                         session=session,
-                        child_id=child_id,
+                        student_id=student_id,
                         grade=caller.user.grade or 0,
                         subject=subject,
                         knowledge_point="",
@@ -336,7 +336,7 @@ def _summary_of(
     conv: Conversation,
     *,
     first_user: str,
-    child_name: str | None,
+    student_name: str | None,
     bubble_count: int,
 ) -> AssistantConversationResp:
     """ORM 行 → 列表行契约（title 的回落规则收口在 ``repository.title_of``）。"""
@@ -344,8 +344,8 @@ def _summary_of(
         id=conv.id,
         title=title_of(conv, first_user),
         kind=conv.kind,
-        child_id=conv.child_id,
-        child_name=child_name,
+        student_id=conv.student_id,
+        student_name=student_name,
         bubble_count=bubble_count,
         created_at=conv.created_at,
         updated_at=conv.updated_at,
@@ -353,16 +353,16 @@ def _summary_of(
 
 
 def list_conversations(
-    *, session: Any, parent_id: UUID, limit: int = 50
+    *, session: Any, teacher_id: UUID, limit: int = 50
 ) -> list[AssistantConversationResp]:
-    """家长的历史会话列表（含名下娃娃的），最近活动倒序。
+    """教师的历史会话列表（含名下学生的），最近活动倒序。
 
-    「我的 / 孩子的」不在这里分段：分段是展示层决策（ADR-0048 选了按娃分两段），
-    服务端只保证每行带够判别信息（``child_id`` → 是否可续接，``child_name`` → 归属标签）。
+    「我的 / 学生的」不在这里分段：分段是展示层决策（ADR-0048 选了按娃分两段），
+    服务端只保证每行带够判别信息（``student_id`` → 是否可续接，``student_name`` → 归属标签）。
     """
-    convs = list_chat_conversations(session=session, parent_id=parent_id, limit=limit)
+    convs = list_chat_conversations(session=session, teacher_id=teacher_id, limit=limit)
     meta = conversation_meta(session, [c.id for c in convs])
-    names = child_names(session, [c.child_id for c in convs if c.child_id])
+    names = student_names(session, [c.student_id for c in convs if c.student_id])
     out: list[AssistantConversationResp] = []
     for conv in convs:
         m = meta.get(conv.id, {})
@@ -370,7 +370,7 @@ def list_conversations(
             _summary_of(
                 conv,
                 first_user=m.get("first_user", ""),
-                child_name=names.get(conv.child_id) if conv.child_id else None,
+                student_name=names.get(conv.student_id) if conv.student_id else None,
                 bubble_count=m.get("bubble_count", 0),
             )
         )
@@ -382,19 +382,19 @@ def conversation_detail(
 ) -> AssistantConversationDetailResp:
     """一次会话的概要 + 全部气泡。
 
-    只读回放（孩子的会话）与恢复续接（家长自己的会话）拿的是**同一份载荷**：
+    只读回放（学生的会话）与恢复续接（教师自己的会话）拿的是**同一份载荷**：
     两者只在「加载后能不能继续发消息」上有区别，那是前端的模式状态，不是两种数据。
     """
     bubbles = [
         AssistantBubbleResp(**b) for b in read_conversation_bubbles(session, conv.id)
     ]
     first_user = next((b.text for b in bubbles if b.role == "user"), "")
-    names = child_names(session, [conv.child_id] if conv.child_id else [])
+    names = student_names(session, [conv.student_id] if conv.student_id else [])
     return AssistantConversationDetailResp(
         conversation=_summary_of(
             conv,
             first_user=first_user,
-            child_name=names.get(conv.child_id) if conv.child_id else None,
+            student_name=names.get(conv.student_id) if conv.student_id else None,
             bubble_count=len(bubbles),
         ),
         bubbles=bubbles,
@@ -402,13 +402,13 @@ def conversation_detail(
 
 
 def delete_conversations(
-    *, session: Any, parent_id: UUID, ids: list[UUID]
+    *, session: Any, teacher_id: UUID, ids: list[UUID]
 ) -> int:
-    """批量删除本家长名下的会话及其消息（多选删除，ADR-0048 补充）。
+    """批量删除本教师名下的会话及其消息（多选删除，ADR-0048 补充）。
 
     归属校验与消息级联删除都收口在 repository（与读路径同一份可见轮次判定相反，
-    这里只做「按 id + parent_id 删干净」）。返回实际删掉的会话条数。
+    这里只做「按 id + teacher_id 删干净」）。返回实际删掉的会话条数。
     """
     return repo_delete_conversations(
-        session=session, parent_id=parent_id, ids=ids
+        session=session, teacher_id=teacher_id, ids=ids
     )

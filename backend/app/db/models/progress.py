@@ -10,7 +10,7 @@ from app.db.models.base import get_datetime_utc, get_review_due_utc
 class AnswerRecord(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     question_id: uuid.UUID = Field(foreign_key="question.id")
-    child_id: uuid.UUID = Field(foreign_key="user.id")
+    student_id: uuid.UUID = Field(foreign_key="user.id")
     student_answer: str
     correct: bool = False
     score: float = 0.0
@@ -23,13 +23,13 @@ class AnswerRecord(SQLModel, table=True):
 
 class Checkin(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    child_id: uuid.UUID = Field(foreign_key="user.id")
+    student_id: uuid.UUID = Field(foreign_key="user.id")
     task_id: uuid.UUID = Field(foreign_key="task.id")
     checkin_date: date = Field(default_factory=date.today)
 
 
 class WrongQuestion(SQLModel, table=True):
-    """错题集：按 child + question 唯一，重复答错只累加次数，不建多条（故事 13）。
+    """错题集：按 student + question 唯一，重复答错只累加次数，不建多条（故事 13）。
 
     遗忘曲线调度字段（故事 14/17）：
     - review_stage：当前阶段 0..4，对应间隔 1/2/4/7/15 天
@@ -37,15 +37,15 @@ class WrongQuestion(SQLModel, table=True):
     - due_at：下次复习到期时间
     """
 
-    # 错题本按 (child_id, first_wrong_at 倒序) 游标取页（ADR-0053）。
+    # 错题本按 (student_id, first_wrong_at 倒序) 游标取页（ADR-0053）。
     # 唯一约束保证「同一题只留一条，重复错只累加」。
     __table_args__ = (
-        UniqueConstraint("child_id", "question_id"),
-        Index("ix_wrongquestion_child_firstwrong", "child_id", "first_wrong_at"),
+        UniqueConstraint("student_id", "question_id"),
+        Index("ix_wrongquestion_student_firstwrong", "student_id", "first_wrong_at"),
     )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    child_id: uuid.UUID = Field(foreign_key="user.id", index=True)
+    student_id: uuid.UUID = Field(foreign_key="user.id", index=True)
     question_id: uuid.UUID = Field(foreign_key="question.id")
     first_wrong_at: datetime | None = Field(
         default_factory=get_datetime_utc,

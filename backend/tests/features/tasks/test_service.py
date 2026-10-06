@@ -66,17 +66,17 @@ def test_generate_task_stream_passthrough_and_ctx():
                 )
             ]
         )
-        parent = SimpleNamespace(id=uuid4())
+        teacher = SimpleNamespace(id=uuid4())
         session = SimpleNamespace()  # 透传路径不持久化，session 仅透传
 
-        gen = tasks_service.generate_task_stream(req=req, parent=parent, session=session, runtime=rt)
+        gen = tasks_service.generate_task_stream(req=req, teacher=teacher, session=session, runtime=rt)
         frames = asyncio.run(_drain(gen))
 
         assert len(frames) == 2
         assert rt.captured_business == "question"
         assert rt.captured_ctx is not None
         assert rt.captured_ctx.extra["subject"] == "数学"
-        assert rt.captured_ctx.extra["parent_id"] == parent.id
+        assert rt.captured_ctx.extra["teacher_id"] == teacher.id
     finally:
         tasks_service.build_ai_provider = orig_provider
         tasks_service.build_retriever = orig_retriever

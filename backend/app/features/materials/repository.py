@@ -18,7 +18,6 @@ from app.db.models.material import (
     INDEX_STATE_PENDING,
     INDEX_STATE_STALE,
     KP_SOURCE_EMERGED,
-    KP_SOURCE_SKELETON,
     KP_STATUS_CURATED,
     KP_STATUS_PENDING,
 )
@@ -27,12 +26,12 @@ UNINDEXED_STATES = (INDEX_STATE_PENDING, INDEX_STATE_FAILED, INDEX_STATE_STALE)
 
 
 def get_owned_folder(
-    session: Session, *, parent_id: uuid.UUID, folder_id: uuid.UUID
+    session: Session, *, teacher_id: uuid.UUID, folder_id: uuid.UUID
 ) -> MaterialFolder:
     # 不存在与越权抛同一错误（guard 纪律：不把越权降级成「不存在」），默认 403。
     return require_owned(
         session=session,
-        owner_id=parent_id,
+        owner_id=teacher_id,
         model=MaterialFolder,
         obj_id=folder_id,
         message="目录不存在或无权访问",
@@ -40,34 +39,34 @@ def get_owned_folder(
 
 
 def get_owned_material(
-    session: Session, *, parent_id: uuid.UUID, material_id: uuid.UUID
+    session: Session, *, teacher_id: uuid.UUID, material_id: uuid.UUID
 ) -> Material:
     return require_owned(
         session=session,
-        owner_id=parent_id,
+        owner_id=teacher_id,
         model=Material,
         obj_id=material_id,
         message="资料不存在或无权访问",
     )
 
 
-def list_folders(session: Session, *, parent_id: uuid.UUID) -> list[MaterialFolder]:
+def list_folders(session: Session, *, teacher_id: uuid.UUID) -> list[MaterialFolder]:
     stmt = (
         select(MaterialFolder)
-        .where(MaterialFolder.parent_id == parent_id)
+        .where(MaterialFolder.teacher_id == teacher_id)
         .order_by(MaterialFolder.created_at)
     )
     return list(session.exec(stmt).all())
 
 
 def folder_counts(
-    session: Session, *, parent_id: uuid.UUID
+    session: Session, *, teacher_id: uuid.UUID
 ) -> dict[uuid.UUID, tuple[int, int]]:
     """{folder_id: (直接资料数, 直接子目录数)}——一次聚合，列表页免 N+1。"""
     mat_counts: dict[uuid.UUID, int] = {}
     rows = session.exec(
         select(Material.folder_id, func.count(Material.id))
-        .where(Material.parent_id == parent_id)
+        .where(Material.teacher_id == teacher_id)
         .group_by(Material.folder_id)
     ).all()
     for folder_id, count in rows:
@@ -75,13 +74,13 @@ def folder_counts(
             mat_counts[folder_id] = count
     sub_counts: dict[uuid.UUID, int] = {}
     rows = session.exec(
-        select(MaterialFolder.parent_folder_id, func.count(MaterialFolder.id))
-        .where(MaterialFolder.parent_id == parent_id)
-        .group_by(MaterialFolder.parent_folder_id)
+        select(MaterialFolder.teacher_folder_id, func.count(MaterialFolder.id))
+        .where(MaterialFolder.teacher_id == teacher_id)
+        .group_by(MaterialFolder.teacher_folder_id)
     ).all()
-    for parent_folder_id, count in rows:
-        if parent_folder_id is not None:
-            sub_counts[parent_folder_id] = count
+    for teacher_folder_id, count in rows:
+        if teacher_folder_id is not None:
+            sub_counts[teacher_folder_id] = count
     return {
         fid: (mat_counts.get(fid, 0), sub_counts.get(fid, 0))
         for fid in set(mat_counts) | set(sub_counts)
@@ -89,12 +88,12 @@ def folder_counts(
 
 
 def count_folder_materials(
-    session: Session, *, parent_id: uuid.UUID, folder_id: uuid.UUID
+    session: Session, *, teacher_id: uuid.UUID, folder_id: uuid.UUID
 ) -> int:
     return len(
         session.exec(
             select(Material.id).where(
-                Material.parent_id == parent_id, Material.folder_id == folder_id
+                Material.teacher_id == teacher_id, Material.folder_id == folder_id
             )
         ).all()
     )
@@ -103,10 +102,10 @@ def count_folder_materials(
 def list_materials(
     session: Session,
     *,
-    parent_id: uuid.UUID,
+    teacher_id: uuid.UUID,
     folder_id: uuid.UUID | None = None,
 ) -> list[Material]:
-    stmt = select(Material).where(Material.parent_id == parent_id)
+    stmt = select(Material).where(Material.teacher_id == teacher_id)
     if folder_id is not None:
         stmt = stmt.where(Material.folder_id == folder_id)
     return list(session.exec(stmt.order_by(Material.created_at.desc())).all())
@@ -115,7 +114,7 @@ def list_materials(
 def prunable_knowledge_points(
     session: Session,
     *,
-    parent_id: uuid.UUID,
+    teacher_id: uuid.UUID,
     candidates: Iterable[tuple[str, int, str, str]],
     exclude_material_ids: set[uuid.UUID] = frozenset(),
 ) -> list[KnowledgePoint]:
@@ -129,8 +128,8 @@ def prunable_knowledge_points(
        的那一个」，不同学期是各自独立的知识点（各自配讲解模板）。
     2. **没有别的资料还在引用**：只要还有任一留存资料的知识清单里有这个名字
        （同 学科+年级，跨学期也算），就说明该知识点另有来源，不能删。
-    3. **从未被家长接管**：只删 ``source=emerged`` 且 ``status=pending`` 的行。
-       已转正（curated）说明家长显式确认过、可能还配好了讲解模板——那是家长
+    3. **从未被教师接管**：只删 ``source=emerged`` 且 ``status=pending`` 的行。
+       已转正（curated）说明教师显式确认过、可能还配好了讲解模板——那是教师
        的资产，删资料不该顺手抹掉；他要删请到「知识点管理」里手动删。
     """
     wanted: list[tuple[str, int, str, str]] = []
@@ -152,7 +151,7 @@ def prunable_knowledge_points(
             Material.subject,
             Material.grade,
             Material.knowledge_points,
-        ).where(Material.parent_id == parent_id)
+        ).where(Material.teacher_id == teacher_id)
     ).all()
     for material_id, subject, grade, kps in rows:
         if not subject or not grade or not kps:
@@ -167,12 +166,12 @@ def prunable_knowledge_points(
         if (subject, grade, name) in still_used:
             continue
         stmt = select(KnowledgePoint).where(
-            KnowledgePoint.parent_id == parent_id,
+            KnowledgePoint.teacher_id == teacher_id,
             KnowledgePoint.subject == subject,
             KnowledgePoint.grade == grade,
             KnowledgePoint.semester == semester,
             KnowledgePoint.name == name,
-            # 3. 只收回「系统自己涌现、家长从未接管」的行
+            # 3. 只收回「系统自己涌现、教师从未接管」的行
             KnowledgePoint.source == KP_SOURCE_EMERGED,
             KnowledgePoint.status == KP_STATUS_PENDING,
         )
@@ -181,11 +180,11 @@ def prunable_knowledge_points(
 
 
 def delete_knowledge_points(
-    session: Session, *, parent_id: uuid.UUID, ids: list[uuid.UUID]
+    session: Session, *, teacher_id: uuid.UUID, ids: list[uuid.UUID]
 ) -> int:
-    """批量删除本家长名下的知识点，返回实际删除条数。
+    """批量删除本教师名下的知识点，返回实际删除条数。
 
-    归属口径就是 ``parent_id``：越权 / 不存在的 id 被这层过滤静默跳过，不会误删
+    归属口径就是 ``teacher_id``：越权 / 不存在的 id 被这层过滤静默跳过，不会误删
     他人数据（与 ``assistant.delete_conversations`` 同一手法）。
     """
     if not ids:
@@ -193,7 +192,7 @@ def delete_knowledge_points(
     owned_ids = list(
         session.exec(
             select(KnowledgePoint.id).where(
-                KnowledgePoint.parent_id == parent_id,
+                KnowledgePoint.teacher_id == teacher_id,
                 KnowledgePoint.id.in_(ids),  # type: ignore[attr-defined]
             )
         ).all()
@@ -209,10 +208,10 @@ def delete_knowledge_points(
     return len(rows)
 
 
-def count_unindexed(session: Session, *, parent_id: uuid.UUID) -> int:
+def count_unindexed(session: Session, *, teacher_id: uuid.UUID) -> int:
     """未参与检索的资料数（pending/failed/stale）——出题提示「有 N 份资料未参与」。"""
     stmt = select(Material.id).where(
-        Material.parent_id == parent_id,
+        Material.teacher_id == teacher_id,
         Material.index_state.in_(UNINDEXED_STATES),  # type: ignore[attr-defined]
     )
     return len(session.exec(stmt).all())
@@ -241,13 +240,36 @@ def delete_material_cascade(
     return len(chunks), len(knowledge_points)
 
 
+def count_materials_in_scope(
+    session: Session,
+    *,
+    teacher_id: uuid.UUID,
+    subject: str,
+    grade: int,
+) -> int:
+    """该 (学科, 年级) 下一共传了几份教材——用于解释「为什么没有知识点」。
+
+    只服务于「空目录文案」这一处，所以不过滤学期：这里要回答的是「有没有传过
+    教材」，而不是哪个学期传的。
+    """
+    return len(
+        session.exec(
+            select(Material.id).where(
+                Material.teacher_id == teacher_id,
+                Material.subject == subject,
+                Material.grade == grade,
+            )
+        ).all()
+    )
+
+
 # ── 知识点目录 ──────────────────────────────────────────────────────────
 
 
 def list_knowledge_points(
     session: Session,
     *,
-    parent_id: uuid.UUID,
+    teacher_id: uuid.UUID,
     subject: str,
     grade: int,
     semester: str = "",
@@ -259,10 +281,10 @@ def list_knowledge_points(
       早期实现按 ``semester == ''`` 精确匹配，而资料涌现出的知识点几乎都带
       「上/下学期」，于是「不限学期」永远返回空——布置任务表单默认态看不到任何
       真实知识点、只剩骨架兜底，看起来就像「知识点不随学期切换」。
-    - ``semester='上/下学期'`` → 精确匹配该学期（家长明确限定了学期就该只看它）。
+    - ``semester='上/下学期'`` → 精确匹配该学期（教师明确限定了学期就该只看它）。
     """
     stmt = select(KnowledgePoint).where(
-        KnowledgePoint.parent_id == parent_id,
+        KnowledgePoint.teacher_id == teacher_id,
         KnowledgePoint.subject == subject,
         KnowledgePoint.grade == grade,
     )
@@ -275,14 +297,14 @@ def list_knowledge_points(
 def find_knowledge_point(
     session: Session,
     *,
-    parent_id: uuid.UUID,
+    teacher_id: uuid.UUID,
     subject: str,
     grade: int,
     name: str,
     semester: str = "",
 ) -> KnowledgePoint | None:
     stmt = select(KnowledgePoint).where(
-        KnowledgePoint.parent_id == parent_id,
+        KnowledgePoint.teacher_id == teacher_id,
         KnowledgePoint.subject == subject,
         KnowledgePoint.grade == grade,
         KnowledgePoint.semester == semester,
@@ -294,7 +316,7 @@ def find_knowledge_point(
 def upsert_pending_knowledge_point(
     session: Session,
     *,
-    parent_id: uuid.UUID,
+    teacher_id: uuid.UUID,
     subject: str,
     grade: int,
     name: str,
@@ -303,7 +325,7 @@ def upsert_pending_knowledge_point(
     """涌现知识点落库：已存在则原样返回（不动状态），不存在则新建**待审**。"""
     existing = find_knowledge_point(
         session,
-        parent_id=parent_id,
+        teacher_id=teacher_id,
         subject=subject,
         grade=grade,
         name=name,
@@ -312,7 +334,7 @@ def upsert_pending_knowledge_point(
     if existing is not None:
         return existing
     kp = KnowledgePoint(
-        parent_id=parent_id,
+        teacher_id=teacher_id,
         subject=subject,
         grade=grade,
         semester=semester,
@@ -335,7 +357,7 @@ def confirm_knowledge_point(session: Session, kp: KnowledgePoint) -> KnowledgePo
 def confirm_knowledge_points_by_name(
     session: Session,
     *,
-    parent_id: uuid.UUID,
+    teacher_id: uuid.UUID,
     subject: str,
     grade: int,
     names: list[str],
@@ -343,13 +365,15 @@ def confirm_knowledge_points_by_name(
 ) -> int:
     """按概念名跨学期转正（修复 ADR-0055 §4 的确认盲区）。
 
-    同一 ``(parent_id, subject, grade, name)`` 可能按学期拆成多行——整学年 / 上学期 /
-    下学期各一份（支持各学期独立讲解模板，见 ``scene_fusion`` 的学期回落）。家长在
+    同一 ``(teacher_id, subject, grade, name)`` 可能按学期拆成多行——整学年 / 上学期 /
+    下学期各一份（支持各学期独立讲解模板，见 ``scene_fusion`` 的学期回落）。教师在
     「整学年」视图确认某个概念时，应当把该名下**所有**学期行的 ``pending`` 一并转正，
     而不是只翻当前筛选学期那一行。旧实现按 ``semester`` 精确 ``find``，导致同名其它
     学期的待审永远翻不动，列表里长期并存「待审 + 已转正」两条同名数据。
 
-    ``semester`` 仅用于名下无行时新建骨架条的默认学期（默认整学年）。
+    ADR-0065 起不再代建条目：目录里能勾到的一定是已经落库的行（预置骨架已下线），
+    所以传一个库里没有的名字只会**被忽略**——确认是把已有条目的状态往前推，不是
+    录入新知识点。留着「名下无行就新建」那条兜底，等于给「凭空造点」留后门。
     """
     confirmed = 0
     for raw in names:
@@ -358,34 +382,19 @@ def confirm_knowledge_points_by_name(
             continue
         rows = session.exec(
             select(KnowledgePoint).where(
-                KnowledgePoint.parent_id == parent_id,
+                KnowledgePoint.teacher_id == teacher_id,
                 KnowledgePoint.subject == subject,
                 KnowledgePoint.grade == grade,
                 KnowledgePoint.name == name,
             )
         ).all()
-        if not rows:
-            # 名下无行：按 semester 兜底新建一条 curated（骨架来源）。学期必须具体
-            # （2026-10-05 决策：不再允许空），整学年视图确认时退上学期。
-            kp = KnowledgePoint(
-                parent_id=parent_id,
-                subject=subject,
-                grade=grade,
-                semester=semester or "上学期",
-                name=name,
-                status=KP_STATUS_CURATED,
-                source=KP_SOURCE_SKELETON,
-            )
-            session.add(kp)
-            confirmed += 1
-        else:
-            flipped = False
-            for kp in rows:
-                if kp.status == KP_STATUS_PENDING:
-                    kp.status = KP_STATUS_CURATED
-                    flipped = True
-                    confirmed += 1
-            if flipped:
-                session.add_all(rows)
+        flipped = False
+        for kp in rows:
+            if kp.status == KP_STATUS_PENDING:
+                kp.status = KP_STATUS_CURATED
+                flipped = True
+                confirmed += 1
+        if flipped:
+            session.add_all(rows)
     session.commit()
     return confirmed

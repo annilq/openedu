@@ -26,11 +26,11 @@ KIND = "guide"
 
 # 受控跳转目标（线协议常量，前端 `ShellDestination.fromTarget` 是唯一的解读者）。
 #
-# 值域刻意是**枚举而非 URL**：助手在服务端，导航在客户端（且家长端助手是 push 的整页，
-# 娃娃端是壳内页签，同一个目标在两端落点不同）。下发 URL 等于让服务端描述客户端导航，
+# 值域刻意是**枚举而非 URL**：助手在服务端，导航在客户端（且教师端助手是 push 的整页，
+# 学生端是壳内页签，同一个目标在两端落点不同）。下发 URL 等于让服务端描述客户端导航，
 # 也把 ADR-0042「不做服务端 UI schema」那条线一起越过了。
-TARGET_CREATE_TASK = "parent_create_task"
-TARGET_QUESTION_BANK = "parent_question_bank"
+TARGET_CREATE_TASK = "teacher_create_task"
+TARGET_QUESTION_BANK = "teacher_question_bank"
 
 # 收尾话术：说清「为什么不能」——只回「我不能创建」而不给理由，用户只会再问一遍。
 _FINISH = (
@@ -38,7 +38,7 @@ _FINISH = (
     "不能代你创建或派发。入口在下面。"
 )
 
-_CARD_TEXT = "到「布置任务」页选好题目，确认后发布给娃娃。"
+_CARD_TEXT = "到「布置任务」页选好题目，确认后发布给学生。"
 
 
 class GuideSubAgent(BaseSubAgent):

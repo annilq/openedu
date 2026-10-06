@@ -131,20 +131,20 @@ class MockKnowledgeRetriever(KnowledgeRetriever):
 
 
 def build_retriever(
-    session: object | None = None, parent_id: object | None = None
+    session: object | None = None, teacher_id: object | None = None
 ) -> KnowledgeRetriever:
     """按配置选择检索实现；未知值回退 mock 并告警，保证服务始终可启动。
 
-    ``vector`` 分支需要 (session, parent_id) 做家长私有的资料库检索——调用方
+    ``vector`` 分支需要 (session, teacher_id) 做教师私有的资料库检索——调用方
     在出题上下文里传入；两者缺任一则降级 mock（assistant 等无 DB 上下文的
     调用点行为不变）。
     """
     provider = settings.RETRIEVER_PROVIDER
-    if provider == "vector" and session is not None and parent_id is not None:
+    if provider == "vector" and session is not None and teacher_id is not None:
         # 延迟 import：domain 层不反向依赖 features（分层纪律），运行时才落到具体实现
         from app.features.materials.retrieval import VectorKnowledgeRetriever
 
-        return VectorKnowledgeRetriever(session, parent_id)  # type: ignore[arg-type]
+        return VectorKnowledgeRetriever(session, teacher_id)  # type: ignore[arg-type]
     if provider not in ("mock", "builtin", "vector"):
         warnings.warn(
             f"未知 RETRIEVER_PROVIDER={provider!r}，回退到内置 mock 检索",

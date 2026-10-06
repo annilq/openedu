@@ -10,7 +10,7 @@
 - ``coalesce`` 是跨库一致性的需要：SQLite 把 NULL 当最小值、PostgreSQL 把 NULL 当
   最大值，``ORDER BY created_at DESC`` 在两库下 NULL 行的位置**相反**。统一 coalesce
   到 epoch 后，NULL 行在两库都排在最后，游标比较也随之确定。
-  代价是该表达式用不上 ``(parent_id, created_at)`` 索引；本应用单库规模在千级，
+  代价是该表达式用不上 ``(teacher_id, created_at)`` 索引；本应用单库规模在千级，
   正确性优先于索引命中。
 
 游标是不透明字符串（URL-safe base64），客户端只能原样回传，不得解析。

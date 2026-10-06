@@ -33,9 +33,9 @@ class KnowledgePointAgg:
 
 
 def get_knowledge_point_mastery(
-    *, session: Session, child_id: uuid.UUID
+    *, session: Session, student_id: uuid.UUID
 ) -> list[KnowledgePointAgg]:
-    """聚合某娃娃的按知识点掌握度输入数据。
+    """聚合某学生的按知识点掌握度输入数据。
 
     - 作答记录按 created_at 倒序取最近 RECENT_WINDOW 次作为「近期表现」。
     - 活跃错题（未毕业）计入 active_wrong 与最高复习阶段 max_review_stage。
@@ -45,7 +45,7 @@ def get_knowledge_point_mastery(
     records = session.exec(
         select(AnswerRecord, Question)
         .join(Question, Question.id == AnswerRecord.question_id)
-        .where(AnswerRecord.child_id == child_id)
+        .where(AnswerRecord.student_id == student_id)
         .order_by(AnswerRecord.created_at.desc(), AnswerRecord.id.desc())
     ).all()
     for rec, q in records:
@@ -67,7 +67,7 @@ def get_knowledge_point_mastery(
         select(WrongQuestion, Question)
         .join(Question, Question.id == WrongQuestion.question_id)
         .where(
-            WrongQuestion.child_id == child_id,
+            WrongQuestion.student_id == student_id,
             # 已毕业（已掌握）的错题不算「活跃」（ADR-0053 P2 起毕业不删行，
             # 这里必须显式排除，否则掌握度会被一条已经掌握的错题永久封顶）。
             WrongQuestion.graduated_at.is_(None),  # type: ignore[union-attr]

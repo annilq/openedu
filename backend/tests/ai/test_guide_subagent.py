@@ -1,6 +1,6 @@
 """``guide`` 任务引导 SubAgent 契约测试（写意图的出口）。
 
-**真机报障（2026-09-17）**：家长对助手说「帮我创建一个任务，包含四年级数学题」，
+**真机报障（2026-09-17）**：教师对助手说「帮我创建一个任务，包含四年级数学题」，
 得到的是「我这边只能查询学习数据，不能生成或派发任务…请到『任务/作业』相关页面操作」。
 
 这句回答本身**没有幻觉**——助手确实只读。问题出在两个叠加的缺口：
@@ -15,7 +15,7 @@
 
 - 写意图归 ``guide``（含真机原句），而**查询意图仍归 ``query``**——这是本 subagent
   最容易搞坏的地方：把词表放宽一点，它就开始抢查询；
-- 娃娃端看不到 ``guide``（没有布置任务的入口，也不能因此暴露写能力的暗示）；
+- 学生端看不到 ``guide``（没有布置任务的入口，也不能因此暴露写能力的暗示）；
 - ``priority`` 必须始终压过 ``query``（结构不变量，防止将来被调低而静默退化）；
 - 卡片载荷的形状与 target 值域：target 是**受控枚举**，不在值域内即视为契约破损。
 """
@@ -51,7 +51,7 @@ async def _collect(agent, message: str, role: str) -> list[Any]:
     return [ev async for ev in agent.run(message, ctx)]
 
 
-def _run_guide(message: str = "帮我创建一个任务", role: str = "parent") -> list[Any]:
+def _run_guide(message: str = "帮我创建一个任务", role: str = "teacher") -> list[Any]:
     agent = build_subagent(
         discover_subagent_manifests(), "guide", provider=FakeLLMProvider()
     )
@@ -62,10 +62,10 @@ def _run_guide(message: str = "帮我创建一个任务", role: str = "parent") 
 # ───────────────────────── 1. 清单与优先级不变量 ─────────────────────────
 
 
-def test_manifest_declares_guide_and_is_parent_only():
+def test_manifest_declares_guide_and_is_teacher_only():
     m = discover_subagent_manifests()["guide"]
     assert (m.business, m.name) == ("guide", "任务引导")
-    assert m.roles == ["parent"]
+    assert m.roles == ["teacher"]
     # hints 必须留空：写意图要的是高精度，启发式兜底会把查询意图一并抢走。
     assert m.hints == []
 
@@ -94,26 +94,26 @@ def test_agent_carries_no_tools():
 
 def test_reported_write_intent_goes_to_guide():
     """真机报障的原句——修复前它路由到 ``query``。"""
-    assert _route("帮我创建一个任务，包含四年级数学题", "parent") == "guide"
-    assert _route("创建一个任务", "parent") == "guide"
-    assert _route("帮我建个作业，放2道四年级数学题", "parent") == "guide"
+    assert _route("帮我创建一个任务，包含四年级数学题", "teacher") == "guide"
+    assert _route("创建一个任务", "teacher") == "guide"
+    assert _route("帮我建个作业，放2道四年级数学题", "teacher") == "guide"
 
 
 def test_read_intent_still_goes_to_query():
     """词表放宽的第一批受害者就是这些句子——它们必须仍归只读查询。"""
-    assert _route("查一下我创建过的任务", "parent") == "query"
-    assert _route("今天有什么作业", "parent") == "query"
-    assert _route("我的错题本里有哪些题", "parent") == "query"
+    assert _route("查一下我创建过的任务", "teacher") == "query"
+    assert _route("今天有什么作业", "teacher") == "query"
+    assert _route("我的错题本里有哪些题", "teacher") == "query"
 
 
 def test_question_intent_still_goes_to_question():
-    assert _route("帮我出2道四年级数学题", "parent") == "question"
+    assert _route("帮我出2道四年级数学题", "teacher") == "question"
 
 
-def test_child_never_sees_guide():
-    """娃娃端没有布置任务入口，也不该被引导到一个它进不去的页面。"""
-    assert "guide" not in AgentRuntime.discover().visible_businesses("child")
-    assert _route("帮我创建一个任务", "child") != "guide"
+def test_student_never_sees_guide():
+    """学生端没有布置任务入口，也不该被引导到一个它进不去的页面。"""
+    assert "guide" not in AgentRuntime.discover().visible_businesses("student")
+    assert _route("帮我创建一个任务", "student") != "guide"
 
 
 # ───────────────────────── 3. 卡片形状与 target 值域 ─────────────────────────

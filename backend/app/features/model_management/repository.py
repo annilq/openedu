@@ -9,24 +9,24 @@ from app.core.guard import find_owned
 from app.db.models import ModelConfig
 
 
-def list_model_configs(*, session: Session, parent_id: uuid.UUID) -> list[ModelConfig]:
-    """家长自定义模型列表（不含 api_key 明文）。"""
+def list_model_configs(*, session: Session, teacher_id: uuid.UUID) -> list[ModelConfig]:
+    """教师自定义模型列表（不含 api_key 明文）。"""
     return list(
-        session.exec(select(ModelConfig).where(ModelConfig.parent_id == parent_id)).all()
+        session.exec(select(ModelConfig).where(ModelConfig.teacher_id == teacher_id)).all()
     )
 
 
 def get_model_config(
-    *, session: Session, id: uuid.UUID, parent_id: uuid.UUID
+    *, session: Session, id: uuid.UUID, teacher_id: uuid.UUID
 ) -> ModelConfig | None:
-    """按 id 取自定义模型；越权（非本家长）返回 None。"""
-    return find_owned(session=session, owner_id=parent_id, model=ModelConfig, obj_id=id)
+    """按 id 取自定义模型；越权（非本教师）返回 None。"""
+    return find_owned(session=session, owner_id=teacher_id, model=ModelConfig, obj_id=id)
 
 
 def create_model_config(
     *,
     session: Session,
-    parent_id: uuid.UUID,
+    teacher_id: uuid.UUID,
     label: str,
     provider: str,
     base_url: str | None,
@@ -37,11 +37,11 @@ def create_model_config(
     if is_default:
         session.execute(
             update(ModelConfig)
-            .where(ModelConfig.parent_id == parent_id)
+            .where(ModelConfig.teacher_id == teacher_id)
             .values(is_default=False)
         )
     mc = ModelConfig(
-        parent_id=parent_id,
+        teacher_id=teacher_id,
         label=label,
         provider=provider,
         base_url=base_url,
@@ -56,9 +56,9 @@ def create_model_config(
 
 
 def update_model_config(
-    *, session: Session, id: uuid.UUID, parent_id: uuid.UUID, **fields: object
+    *, session: Session, id: uuid.UUID, teacher_id: uuid.UUID, **fields: object
 ) -> ModelConfig | None:
-    mc = get_model_config(session=session, id=id, parent_id=parent_id)
+    mc = get_model_config(session=session, id=id, teacher_id=teacher_id)
     if mc is None:
         return None
     api_key = fields.pop("api_key", None)
@@ -67,7 +67,7 @@ def update_model_config(
     if fields.get("is_default"):
         session.execute(
             update(ModelConfig)
-            .where(ModelConfig.parent_id == parent_id, ModelConfig.id != id)
+            .where(ModelConfig.teacher_id == teacher_id, ModelConfig.id != id)
             .values(is_default=False)
         )
     for key, value in fields.items():
@@ -79,8 +79,8 @@ def update_model_config(
     return mc
 
 
-def delete_model_config(*, session: Session, id: uuid.UUID, parent_id: uuid.UUID) -> bool:
-    mc = get_model_config(session=session, id=id, parent_id=parent_id)
+def delete_model_config(*, session: Session, id: uuid.UUID, teacher_id: uuid.UUID) -> bool:
+    mc = get_model_config(session=session, id=id, teacher_id=teacher_id)
     if mc is None:
         return False
     session.delete(mc)
@@ -89,10 +89,10 @@ def delete_model_config(*, session: Session, id: uuid.UUID, parent_id: uuid.UUID
 
 
 def get_default_model_config(
-    *, session: Session, parent_id: uuid.UUID
+    *, session: Session, teacher_id: uuid.UUID
 ) -> ModelConfig | None:
     return session.exec(
         select(ModelConfig).where(
-            ModelConfig.parent_id == parent_id, ModelConfig.is_default.is_(True)
+            ModelConfig.teacher_id == teacher_id, ModelConfig.is_default.is_(True)
         )
     ).first()

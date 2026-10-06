@@ -11,26 +11,26 @@ from sqlmodel import Session, select
 from app.core.db import engine
 from app.db.models import AnswerRecord, WrongQuestion
 from tests.utils.paging import page_items
-from tests.utils.user import auth_headers, login, register_parent
+from tests.utils.user import auth_headers, login, register_teacher
 
 
-def _create_child(client, ptoken, username="rv_kid"):
+def _create_student(client, ptoken, username="rv_kid"):
     r = client.post(
-        "/api/v1/children",
+        "/api/v1/students",
         headers=auth_headers(ptoken),
         json={
             "username": username,
             "password": "kid123456",
-            "display_name": "娃娃",
+            "display_name": "学生",
             "grade": 2,
-            "role": "child",
+            "role": "student",
         },
     )
     assert r.status_code == 201, r.text
     return r.json()
 
 
-def _make_task(client, ptoken, child_id):
+def _make_task(client, ptoken, student_id):
     # 单流：以「已生成题卡」直接落库（POST /tasks/from-generated，唯一业务写库点，ADR-0023）。
     # 不再走已删除的 batch-generate（生成期自写库分叉）。
     r = client.post(
@@ -38,7 +38,7 @@ def _make_task(client, ptoken, child_id):
         headers=auth_headers(ptoken),
         json={
             "title": "复习测试",
-            "child_id": child_id,
+            "student_id": student_id,
             "specs": [
                 {
                     "subject": "数学",
@@ -72,7 +72,7 @@ def _make_task(client, ptoken, child_id):
     ag = client.post(
         f"/api/v1/tasks/{tid}/assign",
         headers=auth_headers(ptoken),
-        params={"child_id": child_id},
+        params={"student_id": student_id},
     )
     assert ag.status_code == 200, ag.text
     return ag.json()
@@ -89,24 +89,24 @@ def _answer_wrong(client, ctoken, task, student_answer="__wrong__"):
     return q, r.json()
 
 
-def _setup(client, parent_username, child_username):
-    r = register_parent(client, username=parent_username)
+def _setup(client, teacher_username, student_username):
+    r = register_teacher(client, username=teacher_username)
     assert r.status_code == 200
     ptoken = r.json()["access_token"]
-    child = _create_child(client, ptoken, username=child_username)
-    task = _make_task(client, ptoken, child["id"])
-    lr = login(client, child_username, "kid123456")
+    student = _create_student(client, ptoken, username=student_username)
+    task = _make_task(client, ptoken, student["id"])
+    lr = login(client, student_username, "kid123456")
     assert lr.status_code == 200
     ctoken = lr.json()["access_token"]
     q, _ = _answer_wrong(client, ctoken, task)
-    return ptoken, child, task, ctoken, q
+    return ptoken, student, task, ctoken, q
 
 
-def _load_wq(child_id, question_id) -> WrongQuestion:
+def _load_wq(student_id, question_id) -> WrongQuestion:
     with Session(engine) as s:
         return s.exec(
             select(WrongQuestion).where(
-                WrongQuestion.child_id == uuid.UUID(child_id),
+                WrongQuestion.student_id == uuid.UUID(student_id),
                 WrongQuestion.question_id == uuid.UUID(question_id),
             )
         ).one()
@@ -126,12 +126,12 @@ def _force_state(wrong_question_id, *, stage=0, due_in_past=True):
 
 def test_not_due_until_interval_elapses(client):
     """刚答错的题 1 天后才到期：初始 /review/due 为空，强制到期后出现且不含答案。"""
-    _ptoken, child, _task, ctoken, q = _setup(client, "rv1_parent", "rv1_kid")
+    _ptoken, student, _task, ctoken, q = _setup(client, "rv1_teacher", "rv1_kid")
 
     r = client.get("/api/v1/review/due", headers=auth_headers(ctoken))
     assert r.status_code == 200 and r.json() == []
 
-    wq = _load_wq(child["id"], q["question_id"])
+    wq = _load_wq(student["id"], q["question_id"])
     _force_state(wq.id)
 
     r = client.get("/api/v1/review/due", headers=auth_headers(ctoken))
@@ -145,13 +145,13 @@ def test_not_due_until_interval_elapses(client):
     assert item["wrong_count"] == 1
     assert item["review_stage"] == 0
     assert item["next_interval_days"] == 1
-    assert "answer" not in item  # 娃娃端防作弊
+    assert "answer" not in item  # 学生端防作弊
 
 
 def test_correct_review_advances_stage(client):
     """复习答对：阶段推进（0→1），下次间隔 2 天，错题仍在错题本。"""
-    _ptoken, child, task, ctoken, q = _setup(client, "rv2_parent", "rv2_kid")
-    wq = _load_wq(child["id"], q["question_id"])
+    _ptoken, student, task, ctoken, q = _setup(client, "rv2_teacher", "rv2_kid")
+    wq = _load_wq(student["id"], q["question_id"])
     _force_state(wq.id)
 
     r = client.post(
@@ -189,10 +189,10 @@ def test_final_correct_review_graduates(client):
     """末位阶段（15 天档）复习答对 = 毕业：退出复习队列，但**不再物理删除**（ADR-0053 P2）。
 
     「毕业」要的是「不用再复习」，不是「把这行抹掉」。行留着，默认列表过滤掉，
-    家长端「已掌握」分区还能翻出来回顾、或重新加入复习。
+    教师端「已掌握」分区还能翻出来回顾、或重新加入复习。
     """
-    _ptoken, child, task, ctoken, q = _setup(client, "rv3_parent", "rv3_kid")
-    wq = _load_wq(child["id"], q["question_id"])
+    _ptoken, student, task, ctoken, q = _setup(client, "rv3_teacher", "rv3_kid")
+    wq = _load_wq(student["id"], q["question_id"])
     _force_state(wq.id, stage=4)
 
     r = client.post(
@@ -210,9 +210,9 @@ def test_final_correct_review_graduates(client):
     due = client.get("/api/v1/review/due", headers=auth_headers(ctoken))
     assert due.json() == []
 
-    # 痕迹还在：家长端「已掌握」分区能翻出来（娃娃端没有这个分区，始终只看未毕业）
+    # 痕迹还在：教师端「已掌握」分区能翻出来（学生端没有这个分区，始终只看未毕业）
     graduated = client.get(
-        f"/api/v1/tasks/children/{child['id']}/wrong-questions?scope=graduated",
+        f"/api/v1/tasks/students/{student['id']}/wrong-questions?scope=graduated",
         headers=auth_headers(_ptoken),
     )
     items = page_items(graduated)
@@ -222,8 +222,8 @@ def test_final_correct_review_graduates(client):
 
 def test_wrong_review_resets_timer(client):
     """复习答错：计时器重置回 1 天首档，wrong_count 递增（故事 17）。"""
-    _ptoken, child, task, ctoken, q = _setup(client, "rv4_parent", "rv4_kid")
-    wq = _load_wq(child["id"], q["question_id"])
+    _ptoken, student, task, ctoken, q = _setup(client, "rv4_teacher", "rv4_kid")
+    wq = _load_wq(student["id"], q["question_id"])
     _force_state(wq.id, stage=2)
 
     r = client.post(
@@ -243,8 +243,8 @@ def test_wrong_review_resets_timer(client):
 
 def test_review_before_due_rejected(client):
     """未到期提交复习被拒（409）：防止连对提前毕业绕过遗忘曲线。"""
-    _ptoken, child, _task, ctoken, q = _setup(client, "rv6_parent", "rv6_kid")
-    wq = _load_wq(child["id"], q["question_id"])  # due 为 1 天后，未到期
+    _ptoken, student, _task, ctoken, q = _setup(client, "rv6_teacher", "rv6_kid")
+    wq = _load_wq(student["id"], q["question_id"])  # due 为 1 天后，未到期
 
     r = client.post(
         "/api/v1/review/answer",
@@ -261,8 +261,8 @@ def test_graduate_then_wrong_again_recollects(client):
     现在行还在，再答错是把同一条拉回 stage 0 —— 痕迹（wrong_count / 首次答错时间）
     连续，这才是「这题错过 5 次」该有的样子。
     """
-    _ptoken, child, task, ctoken, q = _setup(client, "rv7_parent", "rv7_kid")
-    wq = _load_wq(child["id"], q["question_id"])
+    _ptoken, student, task, ctoken, q = _setup(client, "rv7_teacher", "rv7_kid")
+    wq = _load_wq(student["id"], q["question_id"])
     _force_state(wq.id, stage=4)
     # 末位答对毕业
     r = client.post(
@@ -286,16 +286,16 @@ def test_graduate_then_wrong_again_recollects(client):
 
 
 def test_review_answer_ownership(client):
-    """权限边界：娃娃不能复习别人的复习项（404）。"""
-    _ptoken, _child, _task, ctoken, q = _setup(client, "rv5_parent", "rv5_kid")
-    other_parent = register_parent(client, username="rv5_other")
-    other_child = _create_child(client, other_parent.json()["access_token"], username="rv5_other_kid")
-    other_task = _make_task(client, other_parent.json()["access_token"], other_child["id"])
+    """权限边界：学生不能复习别人的复习项（404）。"""
+    _ptoken, _student, _task, ctoken, q = _setup(client, "rv5_teacher", "rv5_kid")
+    other_teacher = register_teacher(client, username="rv5_other")
+    other_student = _create_student(client, other_teacher.json()["access_token"], username="rv5_other_kid")
+    other_task = _make_task(client, other_teacher.json()["access_token"], other_student["id"])
     other_login = login(client, "rv5_other_kid", "kid123456")
     other_ctoken = other_login.json()["access_token"]
     other_q, _ = _answer_wrong(client, other_ctoken, other_task)
 
-    wq = _load_wq(other_child["id"], other_q["question_id"])
+    wq = _load_wq(other_student["id"], other_q["question_id"])
     r = client.post(
         "/api/v1/review/answer",
         headers=auth_headers(ctoken),  # rv5_kid 拿 rv5_other_kid 的复习项

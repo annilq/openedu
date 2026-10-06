@@ -63,10 +63,10 @@ class TaskGenerateReq(SQLModel):
 
     specs: list[TaskSpec]
     model: str | None = None
-    child_id: uuid.UUID | None = None
+    student_id: uuid.UUID | None = None
     focus_interest: list[str] | None = None
     # 反馈边（ADR-0060 D4）：随掌握度看板下发的代表错题 Question.id，服务端按
-    # parent_id + origin="ai" 解析为题干样例，注入出题 prompt 做同类题仿写。
+    # teacher_id + origin="ai" 解析为题干样例，注入出题 prompt 做同类题仿写。
     weak_example_ids: list[uuid.UUID] | None = None
 
 
@@ -79,7 +79,7 @@ class TaskFromGenerated(SQLModel):
     """
 
     title: str = Field(max_length=255)
-    child_id: uuid.UUID | None = None  # 可空，支持"先成卷晚点派"
+    student_id: uuid.UUID | None = None  # 可空，支持"先成卷晚点派"
     specs: list[TaskSpec]  # 原始规格，持久化到 Task.specs 以便整卷重生成
     # 兴趣题模式（WF-4）：显式聚焦的兴趣主题列表；与生成时保持一致。
     focus_interest: list[str] | None = None
@@ -96,14 +96,14 @@ class TaskResp(SQLModel):
     # 原始生成规格（整卷重生成可用；前端展示方便）
     specs: list[dict] | None = None
     questions: list["QuestionResp"] = []  # noqa: F821
-    # 派发对象（列表/详情展示“对应娃娃”用）
-    child_id: uuid.UUID | None = None
+    # 派发对象（列表/详情展示“对应学生”用）
+    student_id: uuid.UUID | None = None
     # 创建时间（列表排序/展示用）
     created_at: datetime | None = None
 
 
 class QuestionResp(SQLModel):
-    id: uuid.UUID  # TaskQuestion.id（娃娃端读快照）
+    id: uuid.UUID  # TaskQuestion.id（学生端读快照）
     question_id: uuid.UUID | None = None  # 源 Question.id，作答提交与错题归集用
     subject: str = ""
     grade: int = 0
@@ -116,7 +116,7 @@ class QuestionResp(SQLModel):
     semester: str = ""
     # 是否多选题（ADR-0004 D5）：choice 题且多选项时 True，前端渲染复选、批改按集合比对。
     multi: bool = False
-    # 娃娃端接口恒为 None，防作弊
+    # 学生端接口恒为 None，防作弊
     answer: str | None = None
 
 
@@ -132,7 +132,7 @@ class TaskSummaryResp(SQLModel):
     id: uuid.UUID
     title: str
     status: str
-    child_id: uuid.UUID | None = None
+    student_id: uuid.UUID | None = None
     created_at: datetime | None = None
     question_count: int = 0
     # 本卷涉及的学科（按题数降序），供卡片显示学科色条/标签；不内嵌题目本身。
@@ -140,7 +140,7 @@ class TaskSummaryResp(SQLModel):
 
 
 class TaskCounts(SQLModel):
-    """各状态任务数（家长任务页三个 Tab 的徽标）。
+    """各状态任务数（教师任务页三个 Tab 的徽标）。
 
     必须由服务端在分页响应里带出：徽标若靠客户端统计已加载页，就只有第一页的数，
     分页省下的流量又被徽标吃回去。
@@ -166,7 +166,7 @@ class TaskFromBankCreate(SQLModel):
     """选项 A：从题库新建任务。"""
 
     title: str = Field(max_length=255)
-    child_id: uuid.UUID | None = None
+    student_id: uuid.UUID | None = None
     question_ids: list[uuid.UUID]
 
 
@@ -193,7 +193,7 @@ class CheckinResult(SQLModel):
 
 
 class ProgressResp(SQLModel):
-    child_id: uuid.UUID
+    student_id: uuid.UUID
     total: int
     correct: int
     accuracy: float
@@ -222,7 +222,7 @@ class WrongQuestionResp(SQLModel):
     multi: bool = False
     # 毕业（已掌握）时间；None = 仍在复习队列里（ADR-0053 P2）。
     graduated_at: datetime | None = None
-    # 交互式讲解实例（ADR-0061）：题目知识点命中家长私有知识点模板时附上，
+    # 交互式讲解实例（ADR-0061）：题目知识点命中教师私有知识点模板时附上，
     # 前端在错题卡内联渲染。可空 = 该知识点暂无图形化讲解（维持原纯文本行为）。
     scene_spec: dict | None = None
 
@@ -230,10 +230,10 @@ class WrongQuestionResp(SQLModel):
 class WrongQuestionListResp(SQLModel):
     """错题本响应：游标分页信封（ADR-0053）。
 
-    家长端与娃娃端共用；``include_answer`` 由服务端按角色裁剪，不进查询参数。
+    教师端与学生端共用；``include_answer`` 由服务端按角色裁剪，不进查询参数。
 
-    ``graduated_total``（ADR-0053 P2）：该孩子「已掌握」的错题数。只在 ``scope=active``
-    时随页下发——家长端要在列表底部显示「已掌握（N）」入口，而它是全量计数，
+    ``graduated_total``（ADR-0053 P2）：该学生「已掌握」的错题数。只在 ``scope=active``
+    时随页下发——教师端要在列表底部显示「已掌握（N）」入口，而它是全量计数，
     不能靠已加载的页统计（那是 P0 刚修掉的老问题）。
     """
 
@@ -248,7 +248,7 @@ class TaskQuestionEdit(SQLModel):
     """PUT /tasks/{task_id}/questions/{tq_id} 编辑请求体（仅 draft 态）。
 
     可改：题干/选项/答案/解析/知识点（ADR-0004 D6）。
-    禁改：qtype（防娃娃端 UI 渲染崩），不在本 schema 暴露。
+    禁改：qtype（防学生端 UI 渲染崩），不在本 schema 暴露。
     """
 
     stem: str | None = None
@@ -260,8 +260,8 @@ class TaskQuestionEdit(SQLModel):
 class TaskMetaEdit(SQLModel):
     """PUT /tasks/{task_id} 元信息编辑请求体（仅 draft 态）。
 
-    可改：title（家长在草稿审核页改卷名）。
-    禁改：status / child_id / specs —— 状态流转走 confirm/assign/discard 专属
+    可改：title（教师在草稿审核页改卷名）。
+    禁改：status / student_id / specs —— 状态流转走 confirm/assign/discard 专属
     端点，specs 变更等价于重新生成（生成产物必须与规格一致），不在本端点放开。
     """
 

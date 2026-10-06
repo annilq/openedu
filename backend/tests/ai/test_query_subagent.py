@@ -5,12 +5,12 @@
 1. **清单与装配**：``query`` 被发现、``tasks`` 已消失、``priority=12``（压住 question 的
    泛触发词）、SOP 真被读进 prompt；SubAgent 实例携带全部 8 个工具（含题库查询）。
 2. **路由边界**：带查询语境的问句（任务/作业/错题/复习）归 ``query``，
-   「出题」意图仍归 ``question``；娃娃端可见 query 但「出题」仍被强制回 tutor。
+   「出题」意图仍归 ``question``；学生端可见 query 但「出题」仍被强制回 tutor。
 3. **展示投影**（决策 11 / ADR-0042）：卡片是**类型化**的——``kind`` 作判别键、
    载荷是结构化字段（``items`` / ``stats`` / ``total``），不是拼好的展示字符串；
    答案与解析永不进卡片，错误结果不炸流。
 4. **端到端 tool loop**：真 DB + 脚本化 provider 跑一轮，``TOOL_CALL`` → ``TOOL_RESULT``
-   → ``DATA`` → ``ASSISTANT_MESSAGE`` 齐备；**娃娃端帧里不出现答案/解析**，家长端对照
+   → ``DATA`` → ``ASSISTANT_MESSAGE`` 齐备；**学生端帧里不出现答案/解析**，教师端对照
    组证明这不是「数据为空」的假绿。
 """
 from __future__ import annotations
@@ -39,7 +39,7 @@ from app.ai.subagents.tutor import TutorSubAgent
 from app.core.db import engine
 from tests.ai.test_query_tools_contract import (
     EXPECTED_TOOL_NAMES,
-    _setup,  # 复用同一套数据装置（1 家长 + 2 娃娃 + 任务 + 错题 + 未派发草稿）
+    _setup,  # 复用同一套数据装置（1 教师 + 2 学生 + 任务 + 错题 + 未派发草稿）
 )
 from tests.utils.fake_provider import FakeLLMProvider
 
@@ -51,7 +51,7 @@ def test_manifest_absorbs_tasks_and_declares_query():
     assert "query" in manifests and "tasks" not in manifests
     m = manifests["query"]
     assert (m.business, m.name) == ("query", "学情查询")
-    assert m.roles == ["parent", "child"]
+    assert m.roles == ["teacher", "student"]
     assert m.priority == 12
     assert m.skills == ["query_sop"]
     assert "学情查询 SOP" in m.skill_prompt
@@ -69,11 +69,11 @@ def test_agent_carries_all_query_tools():
 
 def test_initial_system_carries_role_hint_and_sop():
     agent = QuerySubAgent(provider=FakeLLMProvider())
-    child = agent.initial_system("今天有什么作业", SubAgentContext(role="child", skills="SOP-X"))
-    parent = agent.initial_system("孩子错题", SubAgentContext(role="parent", skills="SOP-X"))
-    assert "娃娃本人" in child and "娃娃本人" not in parent
-    assert "家长" in parent
-    assert child.endswith("SOP-X") and parent.endswith("SOP-X")
+    student = agent.initial_system("今天有什么作业", SubAgentContext(role="student", skills="SOP-X"))
+    teacher = agent.initial_system("学生错题", SubAgentContext(role="teacher", skills="SOP-X"))
+    assert "学生本人" in student and "学生本人" not in teacher
+    assert "教师" in teacher
+    assert student.endswith("SOP-X") and teacher.endswith("SOP-X")
 
 
 # ───────────────────────── 2. 路由边界 ─────────────────────────
@@ -89,37 +89,37 @@ def _route(text: str, role: str) -> str:
 
 def test_task_question_goes_to_query_not_question():
     """原 tasks 抬 priority 到 10 就为抢这句；query 用 12 接住。"""
-    assert _route("查看我的任务题目", "parent") == "query"
-    assert _route("我的错题本里有哪些题", "parent") == "query"
+    assert _route("查看我的任务题目", "teacher") == "query"
+    assert _route("我的错题本里有哪些题", "teacher") == "query"
 
 
 def test_question_intent_still_goes_to_question():
-    assert _route("帮我出 3 道三年级分数选择题", "parent") == "question"
-    assert _route("来几道数学题练练", "parent") == "question"
+    assert _route("帮我出 3 道三年级分数选择题", "teacher") == "question"
+    assert _route("来几道数学题练练", "teacher") == "question"
 
 
 def test_tutor_intent_unaffected():
-    assert _route("为什么天空是蓝色的？帮我讲解", "parent") == "tutor"
+    assert _route("为什么天空是蓝色的？帮我讲解", "teacher") == "tutor"
 
 
 def test_wrong_question_phrasing_goes_to_query_not_tutor():
     """回归（2026-09-22）：『我错了哪些题』原落 tutor 兜底（无取数工具，让用户发题目），
 
     现已在 query triggers 覆盖——只加带『哪些/错过』的精确短语，不抢伴学答疑。"""
-    assert _route("我错了哪些题", "parent") == "query"
-    assert _route("我错过的题", "parent") == "query"
-    assert _route("做错了哪些题", "parent") == "query"
+    assert _route("我错了哪些题", "teacher") == "query"
+    assert _route("我错过的题", "teacher") == "query"
+    assert _route("做错了哪些题", "teacher") == "query"
     # 伴学答疑句仍归 tutor，不被新词抢走（ADR-0024/0030）
-    assert _route("这道题我哪里做错了，为什么", "parent") == "tutor"
-    assert _route("为什么天空是蓝色的？帮我讲解", "parent") == "tutor"
-    # 娃娃端同样归 query（查自己错题，ADR-008），不被角色拦回 tutor
-    assert _route("我错了哪些题", "child") == "query"
+    assert _route("这道题我哪里做错了，为什么", "teacher") == "tutor"
+    assert _route("为什么天空是蓝色的？帮我讲解", "teacher") == "tutor"
+    # 学生端同样归 query（查自己错题，ADR-008），不被角色拦回 tutor
+    assert _route("我错了哪些题", "student") == "query"
 
 
-def test_child_out_of_scope_stays_tutor():
-    """娃娃问「出题」依旧被角色可见性拦到 tutor（ADR-0026 不变量未破）。"""
-    assert _route("帮我出几道数学题", "child") == "tutor"
-    assert _route("今天有什么作业", "child") == "query"
+def test_student_out_of_scope_stays_tutor():
+    """学生问「出题」依旧被角色可见性拦到 tutor（ADR-0026 不变量未破）。"""
+    assert _route("帮我出几道数学题", "student") == "tutor"
+    assert _route("今天有什么作业", "student") == "query"
 
 
 # ───────────────────────── 3. 展示投影 ─────────────────────────
@@ -127,9 +127,9 @@ def test_child_out_of_scope_stays_tutor():
 
 def _envelope(items: list[Any]) -> dict[str, Any]:
     return {
-        "children": [{"id": "c1", "name": "小明", "grade": 2, "items": items, "meta": {}}],
+        "students": [{"id": "c1", "name": "小明", "grade": 2, "items": items, "meta": {}}],
         "unassigned_items": [],
-        "total_children": 1,
+        "total_students": 1,
         "total_items": len(items),
     }
 
@@ -172,9 +172,9 @@ def test_render_cards_handles_empty_error_tools_and_caps_items():
     assert empty[0].payload["text"] == "今天没有任务。"
     assert "items" not in empty[0].payload  # 没明细就不发空数组
 
-    err = render_cards("get_progress", {"error": "没有找到该娃娃。"})
+    err = render_cards("get_progress", {"error": "没有找到该学生。"})
     assert err[0].kind == "notice"
-    assert err[0].payload["text"] == "查询失败：没有找到该娃娃。"
+    assert err[0].payload["text"] == "查询失败：没有找到该学生。"
 
     many = render_cards("list_due_reviews", _envelope([{"stem": f"题 {i}"} for i in range(12)]))
     capped = many[0]
@@ -182,9 +182,9 @@ def test_render_cards_handles_empty_error_tools_and_caps_items():
     assert capped.payload["total"] == 12  # 但如实报总数（前端渲染「共 12 条」）
     assert capped.payload["items"][0]["stem"] == "题 0"
 
-    children = render_cards("list_children", _envelope([]))
-    assert children[0].kind == "child_list"
-    assert children[0].payload["text"] == "可查询的娃娃"
+    students = render_cards("list_students", _envelope([]))
+    assert students[0].kind == "student_list"
+    assert students[0].payload["text"] == "可查询的学生"
 
 
 def test_render_cards_progress_uses_stats_not_items():
@@ -207,10 +207,10 @@ def test_render_cards_progress_uses_stats_not_items():
 def test_render_cards_unassigned_items_keep_structure():
     """未指派草稿走同一套结构化明细，只是归属标签不同。"""
     result = {
-        "children": [],
+        "students": [],
         "unassigned_items": [{"title": "草稿卷", "status": "draft", "questions": [{}, {}]}],
     }
-    cards = render_cards("list_parent_tasks", result)
+    cards = render_cards("list_teacher_tasks", result)
     assert cards[0].payload["title"] == "任务·未指派"
     assert cards[0].payload["subject"] == "未指派"
     assert cards[0].payload["items"] == [
@@ -316,8 +316,8 @@ def _payloads(events: list[Any], event_type: str) -> str:
 
 def test_tool_loop_emits_full_event_chain(client):
     setup = _setup(client, "qs")
-    ctx = SubAgentContext(role="parent", extra={"parent_id": setup["parent_id"]})
-    provider = _ScriptedProvider("list_children")
+    ctx = SubAgentContext(role="teacher", extra={"teacher_id": setup["teacher_id"]})
+    provider = _ScriptedProvider("list_students")
     events = _drive(QuerySubAgent(provider=provider), ctx)
 
     types = [ev.eventType for ev in events]
@@ -328,35 +328,35 @@ def test_tool_loop_emits_full_event_chain(client):
     assert types.index(EVENT_TOOL_RESULT) < types.index(EVENT_DATA)
 
 
-def test_child_frames_never_carry_answers_and_parent_control_does(client):
+def test_student_frames_never_carry_answers_and_teacher_control_does(client):
     """ADR-008 硬门槛在**帧层**再守一道（工具层已由契约测试守）。"""
     setup = _setup(client, "qa")
     tool = "list_wrong_questions"
 
-    child_ctx = SubAgentContext(
-        role="child",
-        extra={"child_id": setup["a"]["id"], "parent_id": setup["parent_id"]},
+    student_ctx = SubAgentContext(
+        role="student",
+        extra={"student_id": setup["a"]["id"], "teacher_id": setup["teacher_id"]},
     )
-    child_events = _drive(QuerySubAgent(provider=_ScriptedProvider(tool)), child_ctx)
-    child_text = _payloads(child_events, EVENT_TOOL_RESULT) + _payloads(child_events, EVENT_DATA)
-    assert "错题" in child_text, "娃娃端没查到错题 → 断言失去意义（假绿）"
+    student_events = _drive(QuerySubAgent(provider=_ScriptedProvider(tool)), student_ctx)
+    student_text = _payloads(student_events, EVENT_TOOL_RESULT) + _payloads(student_events, EVENT_DATA)
+    assert "错题" in student_text, "学生端没查到错题 → 断言失去意义（假绿）"
     for field in ANSWER_FIELDS:
-        assert field not in child_text, f"娃娃端帧里泄漏了 {field}"
+        assert field not in student_text, f"学生端帧里泄漏了 {field}"
 
-    parent_ctx = SubAgentContext(
-        role="parent",
-        extra={"parent_id": setup["parent_id"], "child_id": setup["a"]["id"]},
+    teacher_ctx = SubAgentContext(
+        role="teacher",
+        extra={"teacher_id": setup["teacher_id"], "student_id": setup["a"]["id"]},
     )
-    parent_events = _drive(QuerySubAgent(provider=_ScriptedProvider(tool)), parent_ctx)
-    parent_text = _payloads(parent_events, EVENT_TOOL_RESULT)
-    assert '"answer"' in parent_text, "家长对照组拿不到答案 → 上一条断言可能是假绿"
+    teacher_events = _drive(QuerySubAgent(provider=_ScriptedProvider(tool)), teacher_ctx)
+    teacher_text = _payloads(teacher_events, EVENT_TOOL_RESULT)
+    assert '"answer"' in teacher_text, "教师对照组拿不到答案 → 上一条断言可能是假绿"
 
 
 def test_run_degrades_explicitly_when_tools_missing():
     """``run`` 兜底路径：装配异常（tools 空）必须显式报不可用，不静默退化成纯聊天。"""
     agent = QuerySubAgent(provider=FakeLLMProvider())
     agent.tools = []
-    ctx = SubAgentContext(role="parent", extra={"parent_id": "x"})
+    ctx = SubAgentContext(role="teacher", extra={"teacher_id": "x"})
 
     async def _go() -> list[Any]:
         return [ev async for ev in agent.run("我的任务", ctx)]

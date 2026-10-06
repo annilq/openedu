@@ -66,7 +66,7 @@ def _build_question_clause(
     elif interests:
         clause = (
             f"请为{grade}年级《{subject}》（{sem_hint}）的“{knowledge_point}”出一道{qtype}题，"
-            f"难度{difficulty}。可结合娃娃兴趣（{', '.join(interests)}）作情境包装，"
+            f"难度{difficulty}。可结合学生兴趣（{', '.join(interests)}）作情境包装，"
             f"但必须紧扣知识点，不得偏离教材。"
         )
     else:
@@ -119,10 +119,10 @@ def _build_question_prompt(
             for m in history[-6:]
         )
         clause += f"\n\n【前面已聊过的内容，供参考】\n{lines}"
-    # ADR-0060 D4：同类题仿写——把该孩子此前做错的同类题作为样例塞进 prompt，
+    # ADR-0060 D4：同类题仿写——把该学生此前做错的同类题作为样例塞进 prompt，
     # 让模型参考其考查角度与表述风格，出一道**全新**的同类题，而非凭空出题。
     # 这是「反馈边」廉价的实现：不引入向量检索/相似度算法，只把原题题干当上下文。
-    # 仿写只作用于 AI 生成题（origin="ai"），不会把家长从教辅录入的题再繁衍（ADR-0020）。
+    # 仿写只作用于 AI 生成题（origin="ai"），不会把教师从教辅录入的题再繁衍（ADR-0020）。
     if weak_examples:
         samples = []
         for i, ex in enumerate(weak_examples[:3], 1):
@@ -136,7 +136,7 @@ def _build_question_prompt(
                 sample += f"\n答案：{ex['answer']}"
             samples.append(sample)
         clause += (
-            "\n\n以下是这个孩子此前做错的同类题样例，仅供你参考其考查角度与常见表述，"
+            "\n\n以下是这个学生此前做错的同类题样例，仅供你参考其考查角度与常见表述，"
             "不要照抄或改写原题，而要据此出一道**全新的、同知识点同难度**的题，"
             "考查角度可与样例互补：\n" + "\n\n".join(samples)
         )

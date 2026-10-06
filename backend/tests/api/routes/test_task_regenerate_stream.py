@@ -6,7 +6,7 @@
   2) 无可用 LLM 引擎：流内回 ERROR 帧（流已开，不能再改 HTTP 状态码），不抛 500。
 
 存在理由：同步版 ``/regenerate`` 是一次同步 LLM 调用，实测超过前端普通请求的 30 秒
-receiveTimeout，家长点「换一题」会长时间无反馈甚至超时；流式版是这个体验问题的
+receiveTimeout，教师点「换一题」会长时间无反馈甚至超时；流式版是这个体验问题的
 修复手段，本测试守住「帧协议 + 落库 + 错误帧」三件事，防止重构时悄悄退化。
 
 THINKING 帧是「点了会转进度但看不到模型在写什么」这个 bug 的回归防线：出题管线
@@ -23,10 +23,10 @@ from app.core.db import engine
 from app.db.models import Task, TaskQuestion
 from app.domain.provider import GeneratedQuestion, QuestionCard, ReasoningDelta
 from app.features.tasks import service as tasks_service
-from tests.utils.user import auth_headers, register_parent
+from tests.utils.user import auth_headers, register_teacher
 
 
-def _parent_id(client, token: str) -> uuid.UUID:
+def _teacher_id(client, token: str) -> uuid.UUID:
     r = client.get("/api/v1/auth/me", headers=auth_headers(token))
     assert r.status_code == 200, r.text
     return uuid.UUID(r.json()["id"])
@@ -34,7 +34,7 @@ def _parent_id(client, token: str) -> uuid.UUID:
 
 def _make_draft(pid: uuid.UUID, n: int = 2) -> tuple[uuid.UUID, list[uuid.UUID]]:
     with DBSession(engine) as s:
-        task = Task(title="草稿", status="draft", parent_id=pid)
+        task = Task(title="草稿", status="draft", teacher_id=pid)
         s.add(task)
         s.commit()
         s.refresh(task)
@@ -72,8 +72,8 @@ def _frames(body: str) -> list[dict]:
 
 
 def test_stream_regenerate_persists_new_question(client, monkeypatch):
-    ptoken = register_parent(client, username="sse_regen_p1").json()["access_token"]
-    pid = _parent_id(client, ptoken)
+    ptoken = register_teacher(client, username="sse_regen_p1").json()["access_token"]
+    pid = _teacher_id(client, ptoken)
     task_id, tq_ids = _make_draft(pid, n=2)
 
     async def _fake_stream(engine, **kw):
@@ -107,7 +107,7 @@ def test_stream_regenerate_persists_new_question(client, monkeypatch):
 
     frames = _frames(body)
     types = [f["eventType"] for f in frames]
-    # THINKING 必须有：模型实时文本此前被同步 drain 版吞掉，家长只能看进度跳变。
+    # THINKING 必须有：模型实时文本此前被同步 drain 版吞掉，教师只能看进度跳变。
     assert "THINKING" in types, types
     assert types[0] == "RUN_STARTED"
     assert types[-1] == "DONE"
@@ -130,8 +130,8 @@ def test_stream_regenerate_persists_new_question(client, monkeypatch):
 
 def test_stream_regenerate_reports_error_in_stream(client):
     """无可用 AI 出题引擎：同步版 500，流式版必须在流内以 ERROR 帧收尾。"""
-    ptoken = register_parent(client, username="sse_regen_p2").json()["access_token"]
-    pid = _parent_id(client, ptoken)
+    ptoken = register_teacher(client, username="sse_regen_p2").json()["access_token"]
+    pid = _teacher_id(client, ptoken)
     task_id, tq_ids = _make_draft(pid, n=1)
 
     with client.stream(

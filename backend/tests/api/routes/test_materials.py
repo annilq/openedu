@@ -5,18 +5,19 @@
 """
 
 import io
+import uuid
 from pathlib import Path
 
 import pytest
 
 from app.features.materials.embedder import EmbeddingUnavailableError
-from tests.utils.user import auth_headers, login, register_parent
+from tests.utils.user import auth_headers, login, register_teacher
 
 
 @pytest.fixture()
 def ptoken(client):
-    register_parent(client, username="mat_parent", password="pw123456")
-    r = login(client, "mat_parent", "pw123456")
+    register_teacher(client, username="mat_teacher", password="pw123456")
+    r = login(client, "mat_teacher", "pw123456")
     return r.json()["access_token"]
 
 
@@ -95,17 +96,17 @@ class TestUploadAndParse:
         r = _upload(client, ptoken, filename="blank.txt", content=b"   \n  ")
         assert r.status_code == 422
 
-    def test_requires_parent(self, client, ptoken, upload_root):
-        # 娃娃账号无资料库
+    def test_requires_teacher(self, client, ptoken, upload_root):
+        # 学生账号无资料库
         r = client.post(
-            "/api/v1/children",
+            "/api/v1/students",
             headers=auth_headers(ptoken),
             json={
                 "username": "mat_kid",
                 "password": "kid123456",
                 "display_name": "娃",
                 "grade": 3,
-                "role": "child",
+                "role": "student",
             },
         )
         assert r.status_code == 201, r.text
@@ -134,19 +135,19 @@ class TestFolders:
         r = client.patch(
             f"/api/v1/materials/folders/{sub['id']}",
             headers=auth_headers(ptoken),
-            json={"parent_folder_id": str(folder["id"])},
+            json={"teacher_folder_id": str(folder["id"])},
         )
         assert r.status_code == 200
         r = client.patch(
             f"/api/v1/materials/folders/{folder['id']}",
             headers=auth_headers(ptoken),
-            json={"parent_folder_id": sub["id"]},
+            json={"teacher_folder_id": sub["id"]},
         )
         assert r.status_code == 422
 
-    def test_cross_parent_invisible(self, client, ptoken, upload_root):
+    def test_cross_teacher_invisible(self, client, ptoken, upload_root):
         folder = _create_folder(client, ptoken)
-        register_parent(client, username="mat_other", password="pw123456")
+        register_teacher(client, username="mat_other", password="pw123456")
         other = login(client, "mat_other", "pw123456").json()["access_token"]
         r = client.get(
             f"/api/v1/materials?folder_id={folder['id']}", headers=auth_headers(other)
@@ -217,7 +218,7 @@ class TestMaterialLifecycle:
         )
         assert r.status_code == 200 and len(r.json()) == 1
         # 越权目录被拒（403，不降级成 404）
-        register_parent(client, username="mat_move_other", password="pw123456")
+        register_teacher(client, username="mat_move_other", password="pw123456")
         other_p = login(client, "mat_move_other", "pw123456").json()["access_token"]
         r = client.patch(
             f"/api/v1/materials/{mat_id}",
@@ -227,109 +228,252 @@ class TestMaterialLifecycle:
         assert r.status_code == 403
 
 
+@pytest.fixture()
+def solo(client):
+    """**独立账号** (token, teacher_id)——知识点用例断言「空」的前提。
+
+    为什么不用文件顶那个共享的 ``ptoken``：全量跑时它的名下已经堆了别的文件里上传
+    的资料与知识点，「这个范围应该没有知识点」这类断言会随机失败。知识点用例大多
+    在钉「某个范围里没有东西」，账号必须是干净的。
+
+    teacher_id 按 username 精确取（不能用 ``select(User).first()``）：全量顺序下
+    first() 拿到的是别人，写进去的知识点会落到另一家名下、查询侧永远看不到——
+    这正是历史上「本地单跑绿、全量红」的成因。
+    """
+    from sqlmodel import Session as DBSession
+    from sqlmodel import select
+
+    from app.core.db import engine
+    from app.db.models import User
+
+    username = f"kp_{uuid.uuid4().hex[:10]}"
+    register_teacher(client, username=username, password="pw123456")
+    token = login(client, username, "pw123456").json()["access_token"]
+    with DBSession(engine) as s:
+        teacher_id = s.exec(select(User.id).where(User.username == username)).one()
+    return token, teacher_id
+
+
 class TestKnowledgePoints:
-    def test_skeleton_fallback_and_confirm(self, client, ptoken, upload_root):
+    def test_scope_without_material_is_empty_and_explained(self, client, solo):
+        """没上传过教材的范围必须是空的，并且说清**为什么空**（ADR-0065）。
+
+        回归背景：原先这里由骨架目录兜底——一份教材都没传的「3 年级数学」也列出
+        十几条预置知识点，教师勾选确认拿到的却是和学生无关的空目录。这里钉住
+        「没有教材就是没有知识点」，并顺带钉住空态文案必须点出下一步做什么
+        （ADR-0051：空态要回答「为什么空」+「下一步做什么」）。
+        """
+        token, _ = solo
         r = client.get(
             "/api/v1/materials/knowledge-points?subject=数学&grade=3",
-            headers=auth_headers(ptoken),
+            headers=auth_headers(token),
         )
         assert r.status_code == 200
-        items = r.json()["items"]
-        assert items, "骨架兜底不应为空（ADR-0055 §4 冷启动）"
-        assert all(
-            i["source"] == "skeleton" and i["status"] == "curated" for i in items
-        )
-        # 确认骨架条目 → 落库转正
-        r = client.post(
-            "/api/v1/materials/knowledge-points/confirm",
-            headers=auth_headers(ptoken),
-            json={"names": [items[0]["name"]], "subject": "数学", "grade": 3},
-        )
-        assert r.status_code == 200 and r.json()["confirmed"] == 1
-        r = client.get(
-            "/api/v1/materials/knowledge-points?subject=数学&grade=3",
-            headers=auth_headers(ptoken),
-        )
-        db_rows = [i for i in r.json()["items"] if i["id"] is not None]
-        assert len(db_rows) == 1 and db_rows[0]["name"] == items[0]["name"]
-        # 不重复：确认后列表长度不变（DB 行顶掉骨架位）
-        r2 = client.get(
-            "/api/v1/materials/knowledge-points?subject=数学&grade=3",
-            headers=auth_headers(ptoken),
-        )
-        assert len(r2.json()["items"]) == len(items)
+        body = r.json()
+        assert body["items"] == []
+        assert "还没有上传过教材" in body["notice"], "空列表本身不解释任何事"
+        assert "资料库" in body["notice"], "要指出下一步去哪"
 
-    def test_notice_explains_skeleton_only_scope(self, client, ptoken, upload_root):
-        """只有骨架兜底时必须**明说**（ADR-0061 §L）。
+    def test_uploaded_material_without_kps_is_distinguished(
+        self, client, solo, upload_root
+    ):
+        """传了教材但没识别出知识点 ≠ 没传教材，两种空必须给不同说法。
 
-        回归背景：骨架是分不出学期的大颗粒目录，家长在某范围切学期时下拉逐字相同，
-        不解释就像「联动坏了」。这里钉住 notice 的出现条件。
+        前者要多做一步「重新提取」，后者要先去上传——文案说错了，教师照着做就是
+        白跑一趟。
         """
-        # 空账号 + 未确认任何知识点 → 上/下学期都只剩骨架
-        for semester in ("上学期", "下学期"):
-            r = client.get(
-                f"/api/v1/materials/knowledge-points?subject=数学&grade=5&semester={semester}",
-                headers=auth_headers(ptoken),
+        token, _ = solo
+        folder = _create_folder(
+            client, token, name="三年级数学", subject="数学", grade=3
+        )
+        _upload(
+            client,
+            token,
+            filename="单元练习.txt",
+            content="一些正文。".encode(),
+            folder_id=folder["id"],
+        )
+        r = client.get(
+            "/api/v1/materials/knowledge-points?subject=数学&grade=3",
+            headers=auth_headers(token),
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["items"] == []
+        assert "1 份教材" in body["notice"], "应说明资料存在但尚未识别出知识点"
+        assert "重新提取" in body["notice"]
+
+    def test_legacy_skeleton_rows_are_hidden(self, client, solo):
+        """历史遗留的 skeleton 行（当年教师确认过的预置条目）不再出现在目录里。
+
+        为什么不删库：这些行可能挂着交互讲解模板（scenes），删除不可逆。屏蔽是
+        可逆的——哪天要恢复，去掉这一行过滤即可。
+        """
+        from sqlmodel import Session as DBSession
+
+        from app.core.db import engine
+        from app.db.models import KnowledgePoint
+
+        token, teacher_id = solo
+        with DBSession(engine) as s:
+            s.add(
+                KnowledgePoint(
+                    teacher_id=teacher_id,
+                    subject="数学",
+                    grade=6,
+                    semester="上学期",
+                    name="分数加减法",
+                    status="curated",
+                    source="skeleton",
+                )
             )
-            assert r.status_code == 200
-            body = r.json()
-            assert all(i["id"] is None for i in body["items"]), "前置：应只有骨架"
-            assert body["notice"], f"只有骨架的 {semester} 范围必须给出说明"
-            assert "不分学期" in body["notice"]
+            s.commit()
 
-        # 不限学期（''）=并集语义，不属于「某学期没有」的场景 → 不出notice
         r = client.get(
-            "/api/v1/materials/knowledge-points?subject=数学&grade=5",
-            headers=auth_headers(ptoken),
+            "/api/v1/materials/knowledge-points?subject=数学&grade=6",
+            headers=auth_headers(token),
         )
-        assert r.json()["notice"] == ""
+        assert r.status_code == 200
+        assert [i["name"] for i in r.json()["items"]] == []
 
-        # 该学期有真实知识点后 → notice 消失
-        client.post(
-            "/api/v1/materials/knowledge-points/confirm",
-            headers=auth_headers(ptoken),
-            json={
-                "names": ["真实点"],
-                "subject": "数学",
-                "grade": 5,
-                "semester": "上学期",
-            },
+    def test_scopes_only_lists_uploaded_materials(self, client, upload_root):
+        """范围清单 = 实际上传过教材的 (学科, 年级, 学期)（ADR-0065）。
+
+        教师的提问原型：「我只传了 4 年级数学上下册，那知识点管理里就该只有 4 年级
+        数学」。学期必须落在文件名推断出的那个值上——本学期口径与知识点诞生时不一
+        致，下拉里就会出现「4 年级数学上学期」点进去却空空如也的死入口。
+        """
+        def _scopes(token: str) -> dict:
+            r = client.get(
+                "/api/v1/materials/knowledge-points/scopes",
+                headers=auth_headers(token),
+            )
+            assert r.status_code == 200, r.text
+            return r.json()
+
+        _new = lambda username: (  # noqa: E731  测试内的小工具，省三段重复注册代码
+            register_teacher(client, username=username, password="pw123456"),
+            login(client, username, "pw123456").json()["access_token"],
+        )[1]
+
+        mine = _new("scope_upper_lower")
+        assert _scopes(mine)["scopes"] == [], "前置：新账号还没传资料"
+
+        folder = _create_folder(client, mine, name="四年级数学", subject="数学", grade=4)
+        for filename in ("四年级上册.txt", "四年级下册.txt"):
+            _upload(
+                client,
+                mine,
+                filename=filename,
+                content="教材正文。".encode(),
+                folder_id=folder["id"],
+            )
+
+        body = _scopes(mine)
+        scopes = {(s["subject"], s["grade"], s["semester"]) for s in body["scopes"]}
+        assert scopes == {
+            ("数学", 4, "上学期"),
+            ("数学", 4, "下学期"),
+        }, "只应有真实传过教材的范围，且学期靠文件名（上/下册）推断出来"
+        assert body["unscoped_count"] == 0
+
+    def test_scopes_reports_unscoped_materials(self, client, upload_root):
+        """学科 / 年级缺失的资料归不到任何范围，必须**计数回报**。
+
+        不回报的话，教师传了资料却在下拉里找不到对应年级，第一反应是「上传丢了」。
+        """
+        register_teacher(client, username="scope_unscoped", password="pw123456")
+        token = login(client, "scope_unscoped", "pw123456").json()["access_token"]
+
+        def _unscoped() -> int:
+            r = client.get(
+                "/api/v1/materials/knowledge-points/scopes",
+                headers=auth_headers(token),
+            )
+            assert r.status_code == 200, r.text
+            return r.json()["unscoped_count"]
+
+        baseline = _unscoped()
+        # 不挂任何目录 → 没有学科 / 年级可继承
+        _upload(
+            client, token, filename="杂记.txt", content="没有目录归属。".encode()
         )
+        assert _unscoped() == baseline + 1
+
+    def test_scopes_merges_count_and_isolates_by_teacher(self, client, upload_root):
+        """同一范围的多份资料**合并计数**；范围清单按教师隔离。
+
+        合并而不是逐条列出：下拉里出现两条「2 年级语文 上学期」等于把目录层级混进
+        了范围维度，教师没法判断该选哪个。
+        """
+        register_teacher(client, username="scope_merge", password="pw123456")
+        token = login(client, "scope_merge", "pw123456").json()["access_token"]
+        register_teacher(client, username="scope_other", password="pw123456")
+        other = login(client, "scope_other", "pw123456").json()["access_token"]
+
+        folder = _create_folder(client, token, name="二年级语文", subject="语文", grade=2)
+        for name in ("识字一.txt", "课文.txt"):
+            _upload(
+                client,
+                token,
+                filename=name,
+                content="识字。".encode(),
+                folder_id=folder["id"],
+            )
+
         r = client.get(
-            "/api/v1/materials/knowledge-points?subject=数学&grade=5&semester=上学期",
-            headers=auth_headers(ptoken),
+            "/api/v1/materials/knowledge-points/scopes", headers=auth_headers(token)
         )
-        assert r.json()["notice"] == "", "有真实知识点后不该再提示骨架兜底"
+        assert r.status_code == 200
+        scopes = r.json()["scopes"]
+        assert len(scopes) == 1, "同 (学科,年级,学期) 要合并计数而不是逐条列出"
+        assert scopes[0]["material_count"] == 2
 
-    def test_semester_scope_union_vs_exact(self, client, ptoken, upload_root):
+        # 别家教师看不到这家的教材范围
+        r = client.get(
+            "/api/v1/materials/knowledge-points/scopes", headers=auth_headers(other)
+        )
+        assert r.status_code == 200 and r.json()["scopes"] == []
+
+    def test_semester_scope_union_vs_exact(self, client, solo):
         """学期维度（ADR-0061）：不限学期 = 并集；限定学期 = 精确匹配。
 
         回归背景：早期实现对 ``semester=''`` 也做精确匹配，而资料涌现的知识点几乎
-        都带「上/下学期」——于是布置任务表单默认态（不限学期）永远只拿到骨架兜底，
-        家长看到的就是「知识点不随学期切换」。这里钉住两态语义。
+        都带「上/下学期」——于是布置任务表单默认态（不限学期）永远捞不到东西，
+        教师看到的就是「知识点不随学期切换」。这里钉住两态语义。
+
+        知识点插库为 ``emerged``：ADR-0065 起确认接口不再代建条目，目录里的每一行
+        都必须能追溯到某份具体的教材。
         """
-        # 确认三个同学科同学年级、不同学期的知识点落库。
-        for semester, name in (
-            ("上学期", "上册专属点"),
-            ("下学期", "下册专属点"),
-        ):
-            r = client.post(
-                "/api/v1/materials/knowledge-points/confirm",
-                headers=auth_headers(ptoken),
-                json={
-                    "names": [name],
-                    "subject": "数学",
-                    "grade": 4,
-                    "semester": semester,
-                },
-            )
-            assert r.status_code == 200, r.text
+        from sqlmodel import Session as DBSession
+
+        from app.core.db import engine
+        from app.db.models import KnowledgePoint
+
+        token, teacher_id = solo
+        with DBSession(engine) as s:
+            for semester, name in (
+                ("上学期", "上册专属点"),
+                ("下学期", "下册专属点"),
+            ):
+                s.add(
+                    KnowledgePoint(
+                        teacher_id=teacher_id,
+                        subject="数学",
+                        grade=4,
+                        semester=semester,
+                        name=name,
+                        status="pending",
+                        source="emerged",
+                    )
+                )
+            s.commit()
 
         def _names(semester: str | None) -> list[str]:
             url = "/api/v1/materials/knowledge-points?subject=数学&grade=4"
             if semester is not None:
                 url += f"&semester={semester}"
-            r = client.get(url, headers=auth_headers(ptoken))
+            r = client.get(url, headers=auth_headers(token))
             assert r.status_code == 200, r.text
             return [i["name"] for i in r.json()["items"] if i["id"] is not None]
 
@@ -343,13 +487,33 @@ class TestKnowledgePoints:
         # 响应带semester 字段（前端据此给跨学期并集加后缀标注）。
         r = client.get(
             "/api/v1/materials/knowledge-points?subject=数学&grade=4",
-            headers=auth_headers(ptoken),
+            headers=auth_headers(token),
         )
         by_name = {i["name"]: i.get("semester") for i in r.json()["items"]}
         assert by_name["上册专属点"] == "上学期"
         assert by_name["下册专属点"] == "下学期"
 
-    def test_confirm_flips_all_semester_variants(self, client, ptoken):
+    def test_confirm_ignores_names_not_in_directory(self, client, solo):
+        """确认接口不再代建条目（ADR-0065）。
+
+        知识点只认已上传教材里涌现的那些，所以勾一个库里没有的名字不该凭空造一行
+        ——目录里能勾到的一定是已有行，留着「名下无行就新建」就是给「手动录入知识
+        点」留后门。
+        """
+        token, _ = solo
+        r = client.post(
+            "/api/v1/materials/knowledge-points/confirm",
+            headers=auth_headers(token),
+            json={"names": ["天外飞来的点"], "subject": "数学", "grade": 8},
+        )
+        assert r.status_code == 200 and r.json()["confirmed"] == 0
+        r = client.get(
+            "/api/v1/materials/knowledge-points?subject=数学&grade=8",
+            headers=auth_headers(token),
+        )
+        assert r.json()["items"] == []
+
+    def test_confirm_flips_all_semester_variants(self, client, solo):
         """确认按概念名跨学期生效（修复同名待审残留）。
 
         同一概念「图形的运动」按学期拆成 上学期(pending) + 下学期(pending) 两行；
@@ -357,18 +521,17 @@ class TestKnowledgePoints:
         semester 精确 find，导致同名其它学期的待审永远翻不动）。学期不再允许空
         （2026-10-05 决策），故以两个具体学期模拟「重名两行」。
         """
+        from sqlmodel import Session as DBSession
+
         from app.core.db import engine
-        from sqlmodel import Session as DBSession, select
+        from app.db.models import KnowledgePoint
 
-        from app.db.models import KnowledgePoint, User
-
+        token, teacher_id = solo
         with DBSession(engine) as s:
-            parent = s.exec(select(User)).first()
-            assert parent is not None
             for sem in ("上学期", "下学期"):
                 s.add(
                     KnowledgePoint(
-                        parent_id=parent.id,
+                        teacher_id=teacher_id,
                         subject="数学",
                         grade=3,
                         semester=sem,
@@ -382,7 +545,7 @@ class TestKnowledgePoints:
         # 在「整学年」视图确认该概念（semester 默认 ''）
         r = client.post(
             "/api/v1/materials/knowledge-points/confirm",
-            headers=auth_headers(ptoken),
+            headers=auth_headers(token),
             json={"names": ["图形的运动"], "subject": "数学", "grade": 3},
         )
         assert r.status_code == 200, r.text
@@ -391,7 +554,7 @@ class TestKnowledgePoints:
         # 两条同名数据都应已转正（不再并存「待审 + 已转正」）
         r = client.get(
             "/api/v1/materials/knowledge-points?subject=数学&grade=3",
-            headers=auth_headers(ptoken),
+            headers=auth_headers(token),
         )
         assert r.status_code == 200, r.text
         rows = [
@@ -548,8 +711,8 @@ class TestVectorRetrieval:
         from app.db.models import User
         from app.domain.retriever import build_retriever
 
-        parent = db.exec(select(User).where(User.username == "mat_parent")).one()
-        retriever = build_retriever(session=db, parent_id=parent.id)
+        teacher = db.exec(select(User).where(User.username == "mat_teacher")).one()
+        retriever = build_retriever(session=db, teacher_id=teacher.id)
         chunks = retriever.retrieve(subject="数学", grade=3, knowledge_point="鸡兔同笼", query="鸡兔同笼")
         assert chunks, "向量+词法双路不应为空"
         assert all(c.source == "vector" for c in chunks)
@@ -565,13 +728,13 @@ class TestVectorRetrieval:
         from app.features.materials import repository as repo
         from app.features.materials.retrieval import VectorKnowledgeRetriever
 
-        parent = db.exec(select(User).where(User.username == "mat_parent")).one()
-        mats = repo.list_materials(db, parent_id=parent.id, folder_id=None)
+        teacher = db.exec(select(User).where(User.username == "mat_teacher")).one()
+        mats = repo.list_materials(db, teacher_id=teacher.id, folder_id=None)
         assert mats, "前置：已有已上传资料"
         old = mats[0]
         db.add(
             MaterialChunk(
-                parent_id=parent.id,
+                teacher_id=teacher.id,
                 material_id=old.id,
                 seq=0,
                 content="旧模型的孤儿片段不该被召回",
@@ -582,7 +745,7 @@ class TestVectorRetrieval:
             )
         )
         db.commit()
-        retriever = VectorKnowledgeRetriever(db, parent.id)
+        retriever = VectorKnowledgeRetriever(db, teacher.id)
         chunks = retriever.retrieve(
             subject=old.subject or "数学",
             grade=old.grade or 3,

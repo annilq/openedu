@@ -8,7 +8,7 @@ from sqlmodel import Field, SQLModel
 
 
 class BankQuestionItem(SQLModel):
-    """题库列表项（家长私有视图，即可见 answer）。"""
+    """题库列表项（教师私有视图，即可见 answer）。"""
 
     id: UUID
     subject: str = ""
@@ -52,7 +52,7 @@ class TaskFromBankCreate(SQLModel):
     """选项 A：从题库新建任务。"""
 
     title: str = Field(max_length=255)
-    child_id: UUID | None = None
+    student_id: UUID | None = None
     question_ids: list[UUID]
 
 
@@ -73,19 +73,19 @@ class DeleteQuestionsResult(SQLModel):
 
     - ``deleted``：成功删除的题库题 id；
     - ``deleted_tasks``：因失去全部题目而被连带删除的任务 id；
-    - ``skipped_forbidden``：不存在 / 非本家长所有、未删除的 id。
+    - ``skipped_forbidden``：不存在 / 非本教师所有、未删除的 id。
     """
 
     deleted: list[UUID] = []
     deleted_tasks: list[UUID] = []  # 因变空而被连带删除的任务
-    skipped_forbidden: list[UUID] = []  # 不存在 / 非本家长所有，跳过
+    skipped_forbidden: list[UUID] = []  # 不存在 / 非本教师所有，跳过
 
 
 class ArchiveQuestionsReq(SQLModel):
     """批量归档 / 恢复题库题（ADR-0053 P2）。
 
     ``archived=True`` 归档、``False`` 恢复。恢复是归档存在的理由——被任务引用的题
-    删不掉，家长只能堆着；可恢复才敢点。
+    删不掉，教师只能堆着；可恢复才敢点。
     """
 
     ids: list[UUID]
@@ -96,7 +96,7 @@ class ArchiveQuestionsResult(SQLModel):
     """批量归档 / 恢复结果。"""
 
     updated: list[UUID] = []
-    skipped_forbidden: list[UUID] = []  # 不存在 / 非本家长所有，跳过
+    skipped_forbidden: list[UUID] = []  # 不存在 / 非本教师所有，跳过
 
 
 class QuestionUsageItem(SQLModel):

@@ -10,7 +10,7 @@ class FolderCreate(SQLModel):
     """新建资料目录。subject / grade 可留空（仅作分组，不参与元数据继承）。"""
 
     name: str = Field(min_length=1, max_length=128)
-    parent_folder_id: UUID | None = None
+    teacher_folder_id: UUID | None = None
     subject: str | None = Field(default=None, max_length=16)
     grade: int | None = Field(default=None, ge=1, le=9)
     # 学期范围维度（ADR-0055 §2 补）：None = 未设置（继承）；''/上学期/下学期。
@@ -24,7 +24,7 @@ class FolderUpdate(SQLModel):
     subject: str | None = Field(default=None, max_length=16)
     grade: int | None = Field(default=None, ge=1, le=9)
     semester: str | None = Field(default=None, max_length=8)
-    parent_folder_id: UUID | None = None
+    teacher_folder_id: UUID | None = None
 
 
 class FolderResp(SQLModel):
@@ -32,7 +32,7 @@ class FolderResp(SQLModel):
 
     id: UUID
     name: str
-    parent_folder_id: UUID | None = None
+    teacher_folder_id: UUID | None = None
     subject: str | None = None
     grade: int | None = None
     semester: str | None = None
@@ -73,7 +73,7 @@ class MaterialDelete(SQLModel):
     """批量删除资料（多选）。
 
     ``cascade_knowledge_points`` 为真时顺带清理**孤儿知识点**——仅由这批资料
-    涌现、且没有任何其它资料还在引用、也从未被家长确认过的知识点
+    涌现、且没有任何其它资料还在引用、也从未被教师确认过的知识点
     （见 ``service.delete_materials`` 的口径）。默认关闭，保证删除语义默认最小。
     """
 
@@ -92,7 +92,7 @@ class UploadResult(SQLModel):
 
     material: MaterialResp
     # extracted = AI 提取成功；skipped_unsafe = 安全闸门拦截；skipped_no_engine =
-    # 未配置模型；failed = 引擎报错——四态都照常入库，家长可手动重试提取。
+    # 未配置模型；failed = 引擎报错——四态都照常入库，教师可手动重试提取。
     extraction: str = "extracted"
     extraction_error: str | None = None
 
@@ -120,7 +120,7 @@ class MaterialMeta(SQLModel):
 class KnowledgePointResp(SQLModel):
     """知识点选择器条目（目录优先 + 骨架兜底，ADR-0055 §4）。"""
 
-    # None = 骨架条目（家长确认后才落库获得 id）
+    # None = 骨架条目（教师确认后才落库获得 id）
     id: UUID | None = None
     name: str
     # pending = 待审（可出题可检索、不计掌握度）；curated = 已转正
@@ -131,7 +131,7 @@ class KnowledgePointResp(SQLModel):
     scenes: list[dict] | None = None
     # 所属学期（ADR-0061 发布任务对接资料库）：'' = 整学年；'上学期' / '下学期'。
     # 「不限学期」查询会并集多个学期，前端据此给知识点加学期后缀标注，
-    # 避免家长在跨学期并集里看到同名却不知属于哪个学期。
+    # 避免教师在跨学期并集里看到同名却不知属于哪个学期。
     semester: str = ""
 
 
@@ -144,17 +144,42 @@ class KnowledgePointScenesUpdate(SQLModel):
     scenes: list[dict] = Field(default_factory=list)
 
 
+class KnowledgePointScopeResp(SQLModel):
+    """一个「教师真的上传过教材」的知识点范围（ADR-0065）。
+
+    学科 / 年级取自资料本身；学期口径与知识点诞生时**逐字一致**（见 service
+    ``knowledge_point_scope``）——不一致的话教师选中了这个范围却查不到
+    当初涌现出来的知识点，等于把入口做成死的。
+    """
+
+    subject: str
+    grade: int
+    semester: str
+    material_count: int = 0
+
+
+class KnowledgePointScopeListResp(SQLModel):
+    """可选范围清单；空列表 = 一份教材都还没上传。
+
+    [unscoped_count] 是**学科或年级缺失**的资料数（提取没跑出来 / 还没提取）。
+    它们没法归到任何范围，知识点管理页必须把这件事说出来——否则教师传了资料却在
+    下拉里找不到对应年级，只会以为上传丢了。
+    """
+
+    scopes: list[KnowledgePointScopeResp] = Field(default_factory=list)
+    unscoped_count: int = 0
+
+
 class KnowledgePointListResp(SQLModel):
     items: list[KnowledgePointResp]
     pending_count: int = 0
-    # 目录来源说明（ADR-0061 §L）：**当前范围没有真实知识点、只剩骨架兜底**时
-    # 给出人话解释。骨架是「冷启动不空窗」的通用目录、**不分学期**，所以在没有
-    # 资料知识点的范围里，切学期拿到的下拉会逐字相同——不解释就像「联动坏了」。
+    # 空目录的**原因**（给教师看的一句话）：这个范围压根没上传过教材？还是传了但
+    # 还没识别出知识点？空列表本身不解释任何事，教师不知道下一步做什么。
     notice: str = ""
 
 
 class KnowledgePointConfirm(SQLModel):
-    """家长确认待审知识点（pending → curated），或批量确认骨架条目落库。"""
+    """教师确认待审知识点（pending → curated），或批量确认骨架条目落库。"""
 
     names: list[str] = Field(min_length=1, max_length=50)
     subject: str = Field(max_length=16)

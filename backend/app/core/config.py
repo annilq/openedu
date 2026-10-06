@@ -75,7 +75,7 @@ class Settings(BaseSettings):
     )
 
     API_V1_STR: str = "/api/v1"
-    PROJECT_NAME: str = "娃娃学习App"
+    PROJECT_NAME: str = "学生学习App"
     SECRET_KEY: str = "changeme"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8
     FASTAPI_ENV: Literal["development", "production"] | None = "development"
@@ -98,14 +98,14 @@ class Settings(BaseSettings):
         return self
 
     # —— 多模型接入（ADR-0015 / ADR-0039）：Genkit 编排流式 flow ——
-    # 所有引擎配置统一收敛到「模型管理」：模型一律由家长在客户端手动录入，落
+    # 所有引擎配置统一收敛到「模型管理」：模型一律由教师在客户端手动录入，落
     # ModelConfig 表（api_key 经 Fernet 加密），再于「模型管理」中「设为默认」。
     # （已移除：管理员内置模型目录 BUILTIN_MODELS，以及本地 LLM_PROVIDER /
     #   DEEPSEEK_* / LLM_* 等旁路 env —— 模型来源单点化，消除双份声明的漂移。）
     #   未配置任何模型时引擎解析返回 None，上层下发「未配置模型」提示，出题/答疑/批改不可用。
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     MODEL_APIKEY_SECRET: str = ""  # Fernet 密钥，用于加密 ModelConfig.api_key（建议显式固定，见 ADR-0038）
-    # 「测试连接」的单次超时（秒）：家长在表单里点一下就该有结论，厂商侧挂住
+    # 「测试连接」的单次超时（秒）：教师在表单里点一下就该有结论，厂商侧挂住
     # 不能把整个请求线程拖死（本地 Ollama 首次拉模型可能长达数十秒，故给足 20s）。
     MODEL_PROBE_TIMEOUT_S: float = 20.0
 
@@ -123,8 +123,8 @@ class Settings(BaseSettings):
     MATERIAL_MAX_BYTES: int = 64 * 1024 * 1024
 
     # —— embedding 服务端基础设施（ADR-0055 §8，显式豁免 ADR-0039）——
-    # embedding **不进家长 ModelConfig**：向量绑定模型是物理约束——若跟着家长的
-    # 聊天模型走，家长换一次默认模型，全部存量向量跨空间作废。这不违反 0039 的
+    # embedding **不进教师 ModelConfig**：向量绑定模型是物理约束——若跟着教师的
+    # 聊天模型走，教师换一次默认模型，全部存量向量跨空间作废。这不违反 0039 的
     # 立法目的（消灭免鉴权的引擎解析路径）：embedding 不经 LLM 生成路径、不涉密钥托管。
     # none = 未启用（向量化端点显式报错，不静默假装成功）；
     # ollama = POST {base}/api/embed；openai_compat = POST {base}/embeddings。
@@ -143,7 +143,7 @@ class Settings(BaseSettings):
     # 绝不静默渲染出一堆豆腐块。
     EXPORT_FONT_DIR: str = str(_BACKEND_DIR / "assets" / "fonts")
     # 单次导出的题量硬边界：防 CPU 密集排版把请求拖超时。
-    # 软提示（建议分批）在客户端给，服务端不拦「家长要印 100 题」这种合理需求。
+    # 软提示（建议分批）在客户端给，服务端不拦「教师要印 100 题」这种合理需求。
     EXPORT_MAX_QUESTIONS: int = 200
 
     def _check_default_secret(self, var_name: str, value: str | None) -> None:

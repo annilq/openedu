@@ -13,7 +13,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 def register(*, session: SessionDep, user_in: UserCreate) -> Token:
     if get_user_by_username(session=session, username=user_in.username):
         raise AppErrorException(ErrCode.AUTH_USERNAME_TAKEN, "用户名已注册")
-    user = create_user(session=session, user_create=user_in, role="parent")
+    user = create_user(session=session, user_create=user_in, role="teacher")
     return create_token_for(user)
 
 

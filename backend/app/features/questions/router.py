@@ -1,6 +1,6 @@
-"""题库复用闭环：题库浏览、删除与引用反查（家长作用域）。
+"""题库复用闭环：题库浏览、删除与引用反查（教师作用域）。
 
-- GET /questions：按 parent 作用域过滤分页浏览题库，含每题复用度 usage_count。
+- GET /questions：按 teacher 作用域过滤分页浏览题库，含每题复用度 usage_count。
 - DELETE /questions：批量硬删题库题，并全量级联清理引用它的数据（任务里的题目副本、
   AnswerRecord、WrongQuestion；任务因此变空则连任务一并删）。返回
   deleted / deleted_tasks / skipped_forbidden 三组 id。
@@ -11,7 +11,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query
 
-from app.core.deps import CurrentParent, SessionDep
+from app.core.deps import CurrentTeacher, SessionDep
 from app.core.pagination import clamp_page_size, encode_cursor
 from app.features.materials.scene_fusion import scene_spec_for_read
 from app.features.questions.repository import (
@@ -38,7 +38,7 @@ router = APIRouter(prefix="/questions", tags=["questions"])
 def list_bank(
     *,
     session: SessionDep,
-    parent: CurrentParent,
+    teacher: CurrentTeacher,
     subject: str | None = None,
     grade: int | None = None,
     knowledge_point: str | None = None,
@@ -49,7 +49,7 @@ def list_bank(
     page_size: int = Query(20, ge=1, le=100),
     cursor: str | None = None,
 ) -> BankListResp:
-    """家长题库浏览（owner 隔离）。学科/年级/知识点/题型/关键词过滤 + 游标分页。
+    """教师题库浏览（owner 隔离）。学科/年级/知识点/题型/关键词过滤 + 游标分页。
 
     给了 ``cursor`` 就走 keyset 游标（忽略 ``page``）；不给则退回 offset，兼容旧客户端
     与 AI 查询工具（ADR-0053）。
@@ -59,7 +59,7 @@ def list_bank(
     page_size = clamp_page_size(page_size)
     items, total, usage = list_bank_questions(
         session=session,
-        parent_id=parent.id,
+        teacher_id=teacher.id,
         subject=subject,
         grade=grade,
         knowledge_point=knowledge_point,
@@ -102,7 +102,7 @@ def list_bank(
                 scene_spec=scene_spec_for_read(
                     session,
                     snapshot=q.scene_spec,
-                    parent_id=q.parent_id,
+                    teacher_id=q.teacher_id,
                     subject=q.subject,
                     grade=q.grade,
                     knowledge_point=q.knowledge_point,
@@ -125,7 +125,7 @@ def list_bank(
 def delete_questions(
     *,
     session: SessionDep,
-    parent: CurrentParent,
+    teacher: CurrentTeacher,
     body: DeleteQuestionsReq,
 ) -> DeleteQuestionsResult:
     """批量硬删题库题，并全量级联清理引用它的数据。
@@ -135,7 +135,7 @@ def delete_questions(
     一并删。返回 deleted / deleted_tasks / skipped_forbidden 三组 id。
     """
     result = delete_bank_questions(
-        session=session, parent_id=parent.id, question_ids=body.ids
+        session=session, teacher_id=teacher.id, question_ids=body.ids
     )
     return DeleteQuestionsResult(**result)
 
@@ -144,7 +144,7 @@ def delete_questions(
 def archive_questions(
     *,
     session: SessionDep,
-    parent: CurrentParent,
+    teacher: CurrentTeacher,
     body: ArchiveQuestionsReq,
 ) -> ArchiveQuestionsResult:
     """批量归档 / 恢复题库题（ADR-0053 P2）。
@@ -154,7 +154,7 @@ def archive_questions(
     """
     result = set_bank_questions_archived(
         session=session,
-        parent_id=parent.id,
+        teacher_id=teacher.id,
         question_ids=body.ids,
         archived=body.archived,
     )
@@ -165,7 +165,7 @@ def archive_questions(
 def question_usages(
     *,
     session: SessionDep,
-    parent: CurrentParent,
+    teacher: CurrentTeacher,
     question_id: UUID,
 ) -> QuestionUsagesResp:
     """反查某题库题被哪些任务引用（owner 隔离）。
@@ -173,7 +173,7 @@ def question_usages(
     闭环「用过 N 次 → 在哪里用」：前端「用过 N 次」标签可点击，弹出引用任务列表并跳转。
     """
     tasks = get_question_usages(
-        session=session, parent_id=parent.id, question_id=question_id
+        session=session, teacher_id=teacher.id, question_id=question_id
     )
     return QuestionUsagesResp(
         items=[

@@ -1,6 +1,6 @@
 """Repository layer for the AI observability (debug) feature.
 
-**只读回放**：家长查看自家 AI 运行（``Conversation`` / ``Message``），供
+**只读回放**：教师查看自家 AI 运行（``Conversation`` / ``Message``），供
 ``/ai/debug/conversations`` 端点消费。
 
 写入侧不在此模块：会话/消息的落库已收敛到 ``app.features.assistant``（ADR-0026 废除
@@ -17,15 +17,15 @@ from app.db.models import Conversation, Message
 def list_conversations(
     *,
     session: Session,
-    parent_id: uuid.UUID,
-    child_id: uuid.UUID | None = None,
+    teacher_id: uuid.UUID,
+    student_id: uuid.UUID | None = None,
     kind: str | None = None,
     limit: int = 100,
 ) -> list[Conversation]:
-    """按 owner(parent_id) 查 AI 运行；可再按 child/kind 过滤，时间倒序。"""
-    stmt = select(Conversation).where(Conversation.parent_id == parent_id)
-    if child_id is not None:
-        stmt = stmt.where(Conversation.child_id == child_id)
+    """按 owner(teacher_id) 查 AI 运行；可再按 student/kind 过滤，时间倒序。"""
+    stmt = select(Conversation).where(Conversation.teacher_id == teacher_id)
+    if student_id is not None:
+        stmt = stmt.where(Conversation.student_id == student_id)
     if kind is not None:
         stmt = stmt.where(Conversation.kind == kind)
     return list(

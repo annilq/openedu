@@ -1,10 +1,10 @@
-"""工具 ``list_bank_questions``：题库题目查询（仅家长）。
+"""工具 ``list_bank_questions``：题库题目查询（仅教师）。
 
-题库归属家长（``Question.parent_id`` owner 隔离），与任何娃娃无外键关联——
-故本工具**不接受** child 定位参数、不按娃娃分组、娃娃端直接返回「仅家长可用」。
-复用 query SubAgent 的统一出参信封（``children`` / ``unassigned_items`` /
+题库归属教师（``Question.teacher_id`` owner 隔离），与任何学生无外键关联——
+故本工具**不接受** student 定位参数、不按学生分组、学生端直接返回「仅教师可用」。
+复用 query SubAgent 的统一出参信封（``students`` / ``unassigned_items`` /
 ``total_*``），单块以合成 ``{id:"bank", name:"题库"}`` 承载（契约测试断言每块
-含 ``id/name/grade/items/meta``）。参考 ``list_parent_tasks`` 的实现形态。
+含 ``id/name/grade/items/meta``）。参考 ``list_teacher_tasks`` 的实现形态。
 """
 from __future__ import annotations
 
@@ -18,13 +18,13 @@ from app.ai.subagents.query.tools._shared import (
     envelope,
     optional_int,
     optional_str,
-    resolve_parent,
+    resolve_teacher,
 )
 from app.features.questions import service as questions_service
 
 NAME = "list_bank_questions"
 DESCRIPTION = (
-    "查询题库里的题目（仅家长）。可按学科、年级、知识点、题型、关键词过滤，"
+    "查询题库里的题目（仅教师）。可按学科、年级、知识点、题型、关键词过滤，"
     "返回题目列表（含每题被任务引用的复用次数）。用于「我题库里有哪些一元二次方程的题」"
     "「三年级语文题库有几道」。"
 )
@@ -33,12 +33,12 @@ _MAX_LIMIT = 200
 
 
 async def handler(args: dict[str, Any], *, ctx: SubAgentContext, session: Any = None) -> Any:
-    # 仅家长：题库是家长私有出题素材池，娃娃端直接失败——既避免「拿别人题库」，
-    # 也避免把家长私有池暴露给娃娃（ADR-008 最小暴露）。娃娃查题走 错题本 / 待复习。
-    if caller_role(ctx) == "child":
-        raise ToolArgumentError("题库查询仅家长可用；娃娃请在错题本 / 待复习里查自己的题。")
+    # 仅教师：题库是教师私有出题素材池，学生端直接失败——既避免「拿别人题库」，
+    # 也避免把教师私有池暴露给学生（ADR-008 最小暴露）。学生查题走 错题本 / 待复习。
+    if caller_role(ctx) == "student":
+        raise ToolArgumentError("题库查询仅教师可用；学生请在错题本 / 待复习里查自己的题。")
 
-    parent = resolve_parent(session=session, ctx=ctx)
+    teacher = resolve_teacher(session=session, ctx=ctx)
 
     # 缺席归一（ADR-0040）：strict 模式会替模型补 ""/0，模型也可能自发填 all/none。
     subject = optional_str(args.get("subject"))
@@ -55,7 +55,7 @@ async def handler(args: dict[str, Any], *, ctx: SubAgentContext, session: Any = 
 
     items = questions_service.list_bank_questions(
         session=session,
-        parent_id=parent.id,
+        teacher_id=teacher.id,
         subject=subject,
         grade=grade,
         knowledge_point=knowledge_point,
@@ -64,13 +64,13 @@ async def handler(args: dict[str, Any], *, ctx: SubAgentContext, session: Any = 
         since_days=since_days,
         limit=limit,
     )
-    # 题库是家长私有池、非按娃娃分组的资源：用合成块承载，复用统一信封形状。
+    # 题库是教师私有池、非按学生分组的资源：用合成块承载，复用统一信封形状。
     block = {
         "id": "bank",
         "name": "题库",
         "grade": None,
         "items": items,
-        "meta": {"parent_id": str(parent.id)},
+        "meta": {"teacher_id": str(teacher.id)},
     }
     return envelope([block])
 

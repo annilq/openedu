@@ -45,12 +45,12 @@ from app.ai import resolve_engine
 from app.core.ai_plumbing import build_ai_provider
 from app.core.async_bridge import run_async
 from app.core.errors import AppErrorException, ErrCode
-from app.core.guard import require_owned, require_owned_child
+from app.core.guard import require_owned, require_owned_student
 from app.core.pagination import clamp_page_size, encode_cursor
 from app.db.models import Question, Task, TaskQuestion, User, WrongQuestion
 from app.domain import Grader, build_retriever
-from app.domain.structured import normalize_options
 from app.domain.provider import GeneratedQuestion, QuestionCard, QuestionStreamEvent
+from app.domain.structured import normalize_options
 from app.features.materials.scene_fusion import (
     build_scene_spec_for_question,
     scene_spec_for_read,
@@ -60,18 +60,18 @@ from app.features.tasks.repository import (
     assign_task,
     batch_generate_task,
     confirm_task,
-    count_tasks_by_parent,
-    count_tasks_by_parent_grouped,
+    count_tasks_by_teacher,
+    count_tasks_by_teacher_grouped,
     count_wrong_questions,
     create_answer_record,
     create_checkin,
     create_task_from_bank,
     discard_draft_task,
-    get_child_tasks_today,
     get_progress,
+    get_student_tasks_today,
     get_task_question,
     get_task_questions,
-    list_tasks_by_parent,
+    list_tasks_by_teacher,
     promote_task_question,
     regenerate_all_task_questions,
     regenerate_one_task_question,
@@ -103,7 +103,7 @@ from app.features.tasks.schemas import (
 
 
 def question_to_resp(tq: TaskQuestion, *, include_answer: bool) -> QuestionResp:
-    """TaskQuestion → QuestionResp；``include_answer=False`` 抹掉答案（娃娃端防作弊）。"""
+    """TaskQuestion → QuestionResp；``include_answer=False`` 抹掉答案（学生端防作弊）。"""
     return QuestionResp(
         id=tq.id,
         question_id=tq.question_id,
@@ -131,7 +131,7 @@ def task_to_resp(
         status=task.status,
         specs=task.specs,
         questions=[question_to_resp(q, include_answer=include_answer) for q in questions],
-        child_id=task.child_id,
+        student_id=task.student_id,
         created_at=task.created_at,
     )
 
@@ -168,7 +168,7 @@ def wrong_question_to_resp(
         scene_spec=scene_spec_for_read(
             session,
             snapshot=q.scene_spec,
-            parent_id=q.parent_id,
+            teacher_id=q.teacher_id,
             subject=q.subject,
             grade=q.grade,
             knowledge_point=q.knowledge_point,
@@ -181,11 +181,11 @@ def wrong_question_to_resp(
 
 
 def _valid_choice_options(options: object) -> bool:
-    """选择题必须有 ≥2 个非空选项，否则落库后娃娃端会退化成文本框、无法选择。
+    """选择题必须有 ≥2 个非空选项，否则落库后学生端会退化成文本框、无法选择。
 
     这是「选择题必须可选项」的硬约束：模型偶发会把 ``qtype`` 标成 ``choice`` 却
     不给 ``options``（或不给够），若照存，今日练习里就变成填空题输入框。在落库前
-    拦掉，让家长重新生成，而不是存一份答不了的残缺题。
+    拦掉，让教师重新生成，而不是存一份答不了的残缺题。
     """
     if not isinstance(options, list):
         return False
@@ -196,40 +196,40 @@ def _valid_choice_options(options: object) -> bool:
 # ───────────────────────── 只读用例 ─────────────────────────
 
 
-def list_parent_tasks(
-    *, session: Session, parent_id: UUID, status: str | None = None
+def list_teacher_tasks(
+    *, session: Session, teacher_id: UUID, status: str | None = None
 ) -> list[TaskResp]:
-    """家长任务列表（含答案，供审阅/核查）。"""
+    """教师任务列表（含答案，供审阅/核查）。"""
     return [
         task_to_resp(
             t,
             get_task_questions(session=session, task_id=t.id),
             include_answer=True,
         )
-        for t in list_tasks_by_parent(
-            session=session, parent_id=parent_id, status=status
+        for t in list_tasks_by_teacher(
+            session=session, teacher_id=teacher_id, status=status
         )
     ]
 
 
-def list_parent_tasks_page(
+def list_teacher_tasks_page(
     *,
     session: Session,
-    parent_id: UUID,
+    teacher_id: UUID,
     status: str | None = None,
     cursor: str | None = None,
     page_size: int | None = None,
 ) -> TaskListResp:
-    """家长任务列表（REST，ADR-0053）：摘要分页 + 三个 Tab 的状态计数。
+    """教师任务列表（REST，ADR-0053）：摘要分页 + 三个 Tab 的状态计数。
 
-    与 :func:`list_parent_tasks` 的区别只有投影：那个返回完整 ``TaskResp``（内嵌题目，
+    与 :func:`list_teacher_tasks` 的区别只有投影：那个返回完整 ``TaskResp``（内嵌题目，
     供 AI 查询工具一次取够），这个返回摘要（列表卡片只需要题目数与学科）。
     两者共用同一条 repository 查询，不复制过滤逻辑。
     """
     size = clamp_page_size(page_size)
-    tasks = list_tasks_by_parent(
+    tasks = list_tasks_by_teacher(
         session=session,
-        parent_id=parent_id,
+        teacher_id=teacher_id,
         status=status,
         cursor=cursor,
         page_size=size,
@@ -237,7 +237,7 @@ def list_parent_tasks_page(
     breakdown = task_question_breakdown(
         session=session, task_ids=[t.id for t in tasks]
     )
-    grouped = count_tasks_by_parent_grouped(session=session, parent_id=parent_id)
+    grouped = count_tasks_by_teacher_grouped(session=session, teacher_id=teacher_id)
     # 本页取满才可能有下一页：取不满说明已是最后一批（不能拿 total 判断，它是快照）。
     next_cursor = (
         encode_cursor(created_at=tasks[-1].created_at, id_=tasks[-1].id)
@@ -250,7 +250,7 @@ def list_parent_tasks_page(
                 id=t.id,
                 title=t.title,
                 status=t.status,
-                child_id=t.child_id,
+                student_id=t.student_id,
                 created_at=t.created_at,
                 question_count=sum(n for _, n in breakdown.get(t.id, [])),
                 subjects=[
@@ -262,8 +262,8 @@ def list_parent_tasks_page(
             )
             for t in tasks
         ],
-        total=count_tasks_by_parent(
-            session=session, parent_id=parent_id, status=status
+        total=count_tasks_by_teacher(
+            session=session, teacher_id=teacher_id, status=status
         ),
         page_size=size,
         next_cursor=next_cursor,
@@ -276,24 +276,24 @@ def list_parent_tasks_page(
     )
 
 
-def list_today_tasks(*, session: Session, child_id: UUID) -> list[TaskResp]:
-    """娃娃今日任务（assigned/done；不含答案）。"""
+def list_today_tasks(*, session: Session, student_id: UUID) -> list[TaskResp]:
+    """学生今日任务（assigned/done；不含答案）。"""
     return [
         task_to_resp(
             t,
             get_task_questions(session=session, task_id=t.id),
             include_answer=False,
         )
-        for t in get_child_tasks_today(session=session, child_id=child_id)
+        for t in get_student_tasks_today(session=session, student_id=student_id)
     ]
 
 
 def list_wrong_questions(
-    *, session: Session, child_id: UUID, include_answer: bool
+    *, session: Session, student_id: UUID, include_answer: bool
 ) -> list[WrongQuestionResp]:
     """错题本。``include_answer`` 由调用方按角色决定；查询工具恒传 True 后交
     ``project_for_role`` 统一裁剪（ADR-0033 决策 9）。"""
-    rows = repo_list_wrong_questions(session=session, child_id=child_id)
+    rows = repo_list_wrong_questions(session=session, student_id=student_id)
     scene_cache: dict = {}
     return [
         wrong_question_to_resp(
@@ -306,7 +306,7 @@ def list_wrong_questions(
 def list_wrong_questions_page(
     *,
     session: Session,
-    child_id: UUID,
+    student_id: UUID,
     include_answer: bool,
     cursor: str | None = None,
     page_size: int | None = None,
@@ -314,7 +314,7 @@ def list_wrong_questions_page(
 ) -> WrongQuestionListResp:
     """错题本（REST，ADR-0053）：游标分页信封。
 
-    ``include_answer`` 由**调用方按角色**决定（家长 True / 娃娃 False），不进查询参数——
+    ``include_answer`` 由**调用方按角色**决定（教师 True / 学生 False），不进查询参数——
     答案能不能看是鉴权问题，不能让客户端自己选。
 
     ``scope``（ADR-0053 P2）：``active``（默认）/ ``graduated``（只看已掌握）。
@@ -322,7 +322,7 @@ def list_wrong_questions_page(
     size = clamp_page_size(page_size)
     rows = repo_list_wrong_questions(
         session=session,
-        child_id=child_id,
+        student_id=student_id,
         cursor=cursor,
         page_size=size,
         scope=scope,
@@ -341,14 +341,14 @@ def list_wrong_questions_page(
             for wq, q in rows
         ],
         total=count_wrong_questions(
-            session=session, child_id=child_id, scope=scope
+            session=session, student_id=student_id, scope=scope
         ),
         page_size=size,
         next_cursor=next_cursor,
         # 「已掌握（N）」是全量计数，不能拿已加载的页统计（P0 刚修掉的老问题）。
         graduated_total=(
             count_wrong_questions(
-                session=session, child_id=child_id, scope="graduated"
+                session=session, student_id=student_id, scope="graduated"
             )
             if scope == "active"
             else 0
@@ -356,13 +356,13 @@ def list_wrong_questions_page(
     )
 
 
-def child_progress(*, session: Session, child_id: UUID) -> ProgressResp:
+def student_progress(*, session: Session, student_id: UUID) -> ProgressResp:
     """学习进度（纯读取，不做鉴权）。"""
     total, correct, checkin_days, streak = get_progress(
-        session=session, child_id=child_id
+        session=session, student_id=student_id
     )
     return ProgressResp(
-        child_id=child_id,
+        student_id=student_id,
         total=total,
         correct=correct,
         accuracy=round(correct / total, 2) if total else 0.0,
@@ -371,31 +371,31 @@ def child_progress(*, session: Session, child_id: UUID) -> ProgressResp:
     )
 
 
-# ───────────────────────── 家长视角复合用例（鉴权 + 读取） ─────────────────────────
+# ───────────────────────── 教师视角复合用例（鉴权 + 读取） ─────────────────────────
 
 
-def list_owned_child_wrong_questions(
-    *, session: Session, parent: User, child_id: UUID
+def list_owned_student_wrong_questions(
+    *, session: Session, teacher: User, student_id: UUID
 ) -> list[WrongQuestionResp]:
-    """家长查某娃娃错题本（含答案/解析供核查）；先校验归属。"""
-    require_owned_child(session=session, owner_id=parent.id, child_id=child_id)
-    return list_wrong_questions(session=session, child_id=child_id, include_answer=True)
+    """教师查某学生错题本（含答案/解析供核查）；先校验归属。"""
+    require_owned_student(session=session, owner_id=teacher.id, student_id=student_id)
+    return list_wrong_questions(session=session, student_id=student_id, include_answer=True)
 
 
-def owned_child_wrong_questions_page(
+def owned_student_wrong_questions_page(
     *,
     session: Session,
-    parent: User,
-    child_id: UUID,
+    teacher: User,
+    student_id: UUID,
     cursor: str | None = None,
     page_size: int | None = None,
     scope: str = "active",
 ) -> WrongQuestionListResp:
-    """家长查某娃娃错题本（REST 分页版，含答案/解析供核查）；先校验归属。"""
-    require_owned_child(session=session, owner_id=parent.id, child_id=child_id)
+    """教师查某学生错题本（REST 分页版，含答案/解析供核查）；先校验归属。"""
+    require_owned_student(session=session, owner_id=teacher.id, student_id=student_id)
     return list_wrong_questions_page(
         session=session,
-        child_id=child_id,
+        student_id=student_id,
         include_answer=True,
         cursor=cursor,
         page_size=page_size,
@@ -403,16 +403,16 @@ def owned_child_wrong_questions_page(
     )
 
 
-def rejoin_child_wrong_question(
-    *, session: Session, parent: User, child_id: UUID, wrong_id: UUID
+def rejoin_student_wrong_question(
+    *, session: Session, teacher: User, student_id: UUID, wrong_id: UUID
 ) -> WrongQuestionResp:
-    """家长把某条「已掌握」的错题重新加入复习（ADR-0053 P2）。
+    """教师把某条「已掌握」的错题重新加入复习（ADR-0053 P2）。
 
-    先校验归属（家长 → 孩子），再由 repository 按 child 作用域改数据。
+    先校验归属（教师 → 学生），再由 repository 按 student 作用域改数据。
     """
-    require_owned_child(session=session, owner_id=parent.id, child_id=child_id)
+    require_owned_student(session=session, owner_id=teacher.id, student_id=student_id)
     wq = rejoin_wrong_question(
-        session=session, child_id=child_id, wrong_id=wrong_id
+        session=session, student_id=student_id, wrong_id=wrong_id
     )
     question = session.get(Question, wq.question_id)
     if question is None:
@@ -422,26 +422,26 @@ def rejoin_child_wrong_question(
     )
 
 
-def owned_child_progress(*, session: Session, parent: User, child_id: UUID) -> ProgressResp:
-    """家长查某娃娃学习进度；先校验归属。"""
-    require_owned_child(session=session, owner_id=parent.id, child_id=child_id)
-    return child_progress(session=session, child_id=child_id)
+def owned_student_progress(*, session: Session, teacher: User, student_id: UUID) -> ProgressResp:
+    """教师查某学生学习进度；先校验归属。"""
+    require_owned_student(session=session, owner_id=teacher.id, student_id=student_id)
+    return student_progress(session=session, student_id=student_id)
 
 
 # ───────────────────────── 写路径：内部构件 ─────────────────────────
 
 
-def _extract_interests_pool(child: User | None) -> list[str] | None:
-    """从娃娃画像抽取轻融入兴趣池（WF-3）：受控分类叶子 + 自由文本。
+def _extract_interests_pool(student: User | None) -> list[str] | None:
+    """从学生画像抽取轻融入兴趣池（WF-3）：受控分类叶子 + 自由文本。
 
     返回扁平字符串列表（如 ["恐龙", "太空", "养蚕"]），空则 None。
     注：自由文本（free_text）经生成 _SYSTEM 年龄/内容约束兜底；显式安全闸门见 WF-6。
     """
-    if child is None or not child.interests:
+    if student is None or not student.interests:
         return None
-    cat = child.interests.get("categories") or []
+    cat = student.interests.get("categories") or []
     pool = [c for c in cat if isinstance(c, str)]
-    free = child.interests.get("free_text")
+    free = student.interests.get("free_text")
     if isinstance(free, str) and free.strip():
         pool.append(free.strip())
     return pool or None
@@ -464,7 +464,7 @@ async def _gen_question_stream(
     这是重生成能出「实时文本」的关键：底下 ``pipeline.stream_question`` 本来就会
     逐段 yield ``ReasoningDelta``（模型出题思路）再给 ``QuestionCard``。此前同步版
     ``generate_question`` 把这条流 drain 掉只留最终题卡，增量文本全丢；流式端点即使
-    建了 SSE 也只能推「第 i/N 题」这类进度锚点，家长看不到任何模型输出。
+    建了 SSE 也只能推「第 i/N 题」这类进度锚点，教师看不到任何模型输出。
 
     同步版与流式版共用本函数（单一事实源）：同步版 drain 取题卡，流式版逐事件转帧。
     """
@@ -583,7 +583,7 @@ async def _stream_question_frames(
 ) -> AsyncIterator[str]:
     """单题出题的 SSE 帧流：**透传模型实时文本**，题卡收进 [sink] 不外发。
 
-    - ``ReasoningDelta`` → THINKING 帧（这就是家长看到的「实时文本」，经
+    - ``ReasoningDelta`` → THINKING 帧（这就是教师看到的「实时文本」，经
       ``translate_stream`` 攒批，不会一个 token 一帧）。
     - ``QuestionCard`` → 只入 ``sink``：题卡要等落库拿到 id 才有意义，调用方落库后
       再发自己的 DATA 帧，避免前端看到「未落库的题」。
@@ -648,7 +648,7 @@ def _expand_spec_items(specs: list[dict]) -> list[dict]:
     """把 specs 摊平成「一题一项」的规格列表（按 count 展开）。
 
     整卷同步生成与流式逐题生成共用：前者一次性跑完，后者每跑完一项就推一帧
-    STEP 进度，家长能看到「第 i/N 题」而不是干等。
+    STEP 进度，教师能看到「第 i/N 题」而不是干等。
     """
     items: list[dict] = []
     for sp in specs:
@@ -685,7 +685,7 @@ def _gen_tq_for_spec_item(
 ) -> TaskQuestion:
     """按单项规格出一道题（草稿态：task_id / question_id 均为 None）。
 
-    ``scene_ctx=(session, parent_id)`` 非空时**顺带落场景快照**（ADR-0061 §M）：
+    ``scene_ctx=(session, teacher_id)`` 非空时**顺带落场景快照**（ADR-0061 §M）：
     「知识点模板 + 本题数值」融合成 SceneSpec 写进 ``TaskQuestion.scene_spec``，
     于是草稿预览就能内联渲染交互讲解，且模板后续改动不影响已生成的题。
     为 None（无 DB 上下文的纯出题路径 / 测试）时跳过，行为与旧版一致。
@@ -707,7 +707,7 @@ def _gen_tq_for_spec_item(
         sess, pid = scene_ctx
         scene_spec = build_scene_spec_for_question(
             sess,
-            parent_id=pid,
+            teacher_id=pid,
             subject=g.subject,
             grade=g.grade,
             knowledge_point=g.knowledge_point,
@@ -754,7 +754,7 @@ def _generate_task_questions_for_specs(
     ``scene_ctx`` 透传给 :func:`_gen_tq_for_spec_item` 落场景快照（ADR-0061 §M）。
 
     兴趣注入（WF-3/WF-4）：
-    - `interests`：轻融入兴趣池（娃娃画像 categories），整卷统一下传。
+    - `interests`：轻融入兴趣池（学生画像 categories），整卷统一下传。
     - `focus_interests`：兴趣题模式聚焦主题（list）；非空时按题轮询均分（第 i 题取
       focus_interests[i % n]），且此时不再轻融入兴趣池（避免双模式叠加）。
     """
@@ -771,14 +771,14 @@ def _generate_task_questions_for_specs(
     ]
 
 
-def _owned_task(*, session: Session, parent: User, task_id: UUID) -> Task:
-    """取任务并断言归属当前家长；不存在/越权统一报「任务不存在」（404）。
+def _owned_task(*, session: Session, teacher: User, task_id: UUID) -> Task:
+    """取任务并断言归属当前教师；不存在/越权统一报「任务不存在」（404）。
 
     「越权伪装成不存在」是本端点的对外契约，判归属本身委托 ``core.guard``。
     """
     return require_owned(
         session=session,
-        owner_id=parent.id,
+        owner_id=teacher.id,
         model=Task,
         obj_id=task_id,
         code=ErrCode.TASK_NOT_FOUND,
@@ -807,9 +807,9 @@ def _draft_item(*, session: Session, task: Task, tq_id: UUID) -> TaskQuestion:
 def create_from_bank(
     *,
     session: Session,
-    parent_id: UUID,
+    teacher_id: UUID,
     title: str,
-    child_id: UUID | None,
+    student_id: UUID | None,
     question_ids: list[UUID],
 ) -> TaskResp:
     """选项 A：从题库新建任务（draft）。深拷贝选中题为 TaskQuestion 并回填 question_id。"""
@@ -817,9 +817,9 @@ def create_from_bank(
         raise AppErrorException(ErrCode.TASK_EMPTY_SPECS, "请至少选择一道题")
     task = create_task_from_bank(
         session=session,
-        parent_id=parent_id,
+        teacher_id=teacher_id,
         title=title,
-        child_id=child_id,
+        student_id=student_id,
         question_ids=question_ids,
     )
     return task_to_resp(
@@ -830,9 +830,9 @@ def create_from_bank(
 def create_from_generated(
     *,
     session: Session,
-    parent_id: UUID,
+    teacher_id: UUID,
     title: str,
-    child_id: UUID | None,
+    student_id: UUID | None,
     questions: list[dict],
     specs: list[dict],
     focus_interest: list[str] | None,
@@ -848,14 +848,14 @@ def create_from_generated(
     if not questions:
         raise AppErrorException(ErrCode.TASK_EMPTY_SPECS, "请先生成题目再保存")
 
-    # child 归属校验（防越权把题卡挂到他人娃娃下）。
-    if child_id is not None:
-        require_owned_child(
+    # student 归属校验（防越权把题卡挂到他人学生下）。
+    if student_id is not None:
+        require_owned_student(
             session=session,
-            owner_id=parent_id,
-            child_id=child_id,
+            owner_id=teacher_id,
+            student_id=student_id,
             code=ErrCode.TASK_CHILD_NOT_OWNED,
-            message="该娃娃不属于你的账号",
+            message="该学生不属于你的账号",
         )
 
     # 已生成题卡 → TaskQuestion 草稿项（不预写 Question，与 batch-generate 一致）。
@@ -869,13 +869,13 @@ def create_from_generated(
         semester = str(q.get("semester", "") or "")
         stem = str(q.get("stem", ""))
         # 模型不守 output_schema 时可能把选项揉成一个字符串 / 一个列表元素；
-        # 落库前切分成「每项一段」，否则娃娃端选项挤在一行无法选择。
+        # 落库前切分成「每项一段」，否则学生端选项挤在一行无法选择。
         options = normalize_options(q.get("options"))  # list[str] | None
         qtype = str(q.get("qtype", "open"))
         # 多选题标记（ADR-0004 D5）：随题卡透传；非 choice / 无选项题恒 False。
         multi = bool(q.get("multi", False)) and qtype == "choice" and bool(_valid_choice_options(options))
         # 选择题必须带有效选项：模型偶发把 qtype 标成 choice 却不给 options，
-        # 照存会让娃娃端渲染成文本框、无法选择。落库前拦掉，让家长重新生成。
+        # 照存会让学生端渲染成文本框、无法选择。落库前拦掉，让教师重新生成。
         if qtype == "choice" and not _valid_choice_options(options):
             raise AppErrorException(
                 ErrCode.TASK_CHOICE_NO_OPTIONS,
@@ -890,7 +890,7 @@ def create_from_generated(
         else:
             scene_spec = build_scene_spec_for_question(
                 session,
-                parent_id=parent_id,
+                teacher_id=teacher_id,
                 subject=subject,
                 grade=grade,
                 knowledge_point=kp,
@@ -921,9 +921,9 @@ def create_from_generated(
 
     task = batch_generate_task(
         session=session,
-        parent_id=parent_id,
+        teacher_id=teacher_id,
         title=title,
-        child_id=child_id,
+        student_id=student_id,
         specs_dicts=specs,
         task_questions=draft_questions,
         focus_interest=focus_interest,
@@ -934,20 +934,20 @@ def create_from_generated(
     )
 
 
-def task_detail(*, session: Session, parent: User, task_id: UUID) -> TaskResp:
-    """家长查单个 Task（草稿 / 锁定 / 派发 / 完成 都能看）。"""
-    task = _owned_task(session=session, parent=parent, task_id=task_id)
+def task_detail(*, session: Session, teacher: User, task_id: UUID) -> TaskResp:
+    """教师查单个 Task（草稿 / 锁定 / 派发 / 完成 都能看）。"""
+    task = _owned_task(session=session, teacher=teacher, task_id=task_id)
     tqs = get_task_questions(session=session, task_id=task.id)
-    # 家长端：草稿/锁定/派发后都能看到答案（审阅 + 核查）。
-    include_answer = task.status in ("draft", "ready") or task.parent_id == parent.id
+    # 教师端：草稿/锁定/派发后都能看到答案（审阅 + 核查）。
+    include_answer = task.status in ("draft", "ready") or task.teacher_id == teacher.id
     return task_to_resp(task, tqs, include_answer=include_answer)
 
 
 def promote_one(
-    *, session: Session, parent: User, task_id: UUID, tq_id: UUID
+    *, session: Session, teacher: User, task_id: UUID, tq_id: UUID
 ) -> QuestionResp:
     """草稿题 → 加入题库（R-Q1=c：写 Question 行并回填 question_id）。幂等。"""
-    task = _owned_task(session=session, parent=parent, task_id=task_id)
+    task = _owned_task(session=session, teacher=teacher, task_id=task_id)
     _require_draft(task)
     _draft_item(session=session, task=task, tq_id=tq_id)
     updated = promote_task_question(session=session, tq_id=tq_id)
@@ -956,9 +956,9 @@ def promote_one(
     return question_to_resp(updated, include_answer=True)
 
 
-def promote_all(*, session: Session, parent: User, task_id: UUID) -> TaskResp:
+def promote_all(*, session: Session, teacher: User, task_id: UUID) -> TaskResp:
     """一键把当前草稿所有未入库的题批量加入题库。已入库的跳过（幂等）。"""
-    task = _owned_task(session=session, parent=parent, task_id=task_id)
+    task = _owned_task(session=session, teacher=teacher, task_id=task_id)
     _require_draft(task)
     for tq in get_task_questions(session=session, task_id=task.id):
         if tq.question_id is None:
@@ -968,10 +968,10 @@ def promote_all(*, session: Session, parent: User, task_id: UUID) -> TaskResp:
 
 
 def add_from_bank(
-    *, session: Session, parent: User, task_id: UUID, question_ids: list[UUID]
+    *, session: Session, teacher: User, task_id: UUID, question_ids: list[UUID]
 ) -> TaskResp:
     """选项 B：把题库题追加到已有草稿任务（仅 draft；同题去重；越权题忽略）。"""
-    task = _owned_task(session=session, parent=parent, task_id=task_id)
+    task = _owned_task(session=session, teacher=teacher, task_id=task_id)
     _require_draft(task)
     if not question_ids:
         raise AppErrorException(ErrCode.TASK_EMPTY_SPECS, "请至少选择一道题")
@@ -987,9 +987,9 @@ def add_from_bank(
     )
 
 
-def remove_one(*, session: Session, parent: User, task_id: UUID, tq_id: UUID) -> None:
+def remove_one(*, session: Session, teacher: User, task_id: UUID, tq_id: UUID) -> None:
     """删除草稿项。R-Q5=b：同时物理删关联 Question 行（若 question_id 非空）。"""
-    task = _owned_task(session=session, parent=parent, task_id=task_id)
+    task = _owned_task(session=session, teacher=teacher, task_id=task_id)
     _require_draft(task)
     _draft_item(session=session, task=task, tq_id=tq_id)
     if not remove_task_question(session=session, tq_id=tq_id):
@@ -1009,21 +1009,21 @@ def _swap_question(
 
 
 def _regenerate_one_inputs(
-    *, session: Session, parent: User, task_id: UUID, tq_id: UUID
+    *, session: Session, teacher: User, task_id: UUID, tq_id: UUID
 ) -> tuple[TaskQuestion, object, list[str] | None, str | None]:
     """单题重生成的公共前置：鉴权 + 引擎 + 兴趣设定（同步版与流式版共用）。
 
     返回 ``(tq, engine, interests_pool, focus)``。``interests_pool`` 与 ``focus``
     二选一下传：显式聚焦主题时不轻融入画像，避免两种兴趣模式叠加。
     """
-    task = _owned_task(session=session, parent=parent, task_id=task_id)
+    task = _owned_task(session=session, teacher=teacher, task_id=task_id)
     _require_draft(task)
     tq = _draft_item(session=session, task=task, tq_id=tq_id)
     # 沿用本任务所选模型（无则出题核心失败并抛 LLM_UNAVAILABLE）；与整卷重生成保持一致。
-    engine = resolve_engine(task.model, parent_id=parent.id, session=session)
+    engine = resolve_engine(task.model, teacher_id=teacher.id, session=session)
     # 单题重生成复现兴趣设定：沿用整卷聚焦主题的轮询分配（按当前题序），否则轻融入画像。
     interests_pool = _extract_interests_pool(
-        session.get(User, task.child_id) if task.child_id else None
+        session.get(User, task.student_id) if task.student_id else None
     )
     focus: str | None = None
     focus_interests = task.focus_interest
@@ -1047,7 +1047,7 @@ def _gen_for_swap(
 ) -> Question:
     """按原题的 subject/grade/knowledge_point/qtype/difficulty 拉一道新题。
 
-    ``scene_ctx=(session, parent_id)`` 非空时给新题融合场景快照（ADR-0061 §M）——
+    ``scene_ctx=(session, teacher_id)`` 非空时给新题融合场景快照（ADR-0061 §M）——
     新题stem/options 与旧题不同，必须重算而不是沿用 ``tq.scene_spec``。
     """
     g = _gen_question(
@@ -1066,7 +1066,7 @@ def _gen_for_swap(
         sess, pid = scene_ctx
         scene_spec = build_scene_spec_for_question(
             sess,
-            parent_id=pid,
+            teacher_id=pid,
             subject=g.subject,
             grade=g.grade,
             knowledge_point=g.knowledge_point,
@@ -1083,36 +1083,36 @@ def _gen_for_swap(
 
 
 def regenerate_one(
-    *, session: Session, parent: User, task_id: UUID, tq_id: UUID
+    *, session: Session, teacher: User, task_id: UUID, tq_id: UUID
 ) -> QuestionResp:
     """单题重生成：沿用原题的 subject/grade/knowledge_point/qtype/difficulty 拉新。"""
     tq, engine, interests_pool, focus = _regenerate_one_inputs(
-        session=session, parent=parent, task_id=task_id, tq_id=tq_id
+        session=session, teacher=teacher, task_id=task_id, tq_id=tq_id
     )
     new_q = _gen_for_swap(
         tq,
         engine,
         interests_pool=interests_pool,
         focus=focus,
-        scene_ctx=(session, parent.id),
+        scene_ctx=(session, teacher.id),
     )
     return _swap_question(session=session, tq_id=tq_id, gen_question=new_q)
 
 
 async def regenerate_one_stream(
-    *, session: Session, parent: User, task_id: UUID, tq_id: UUID
+    *, session: Session, teacher: User, task_id: UUID, tq_id: UUID
 ) -> AsyncIterator[str]:
     """单题重生成的流式版：与 ``/tasks/generate`` 同一套 AG-UI 事件协议。
 
     为什么要有它：单题重生成是一次同步 LLM 调用，实测远超前端普通请求的 30 秒
-    receiveTimeout——家长点「换一题」后界面长时间无反馈，超时后只弹一句「请求超时」，
+    receiveTimeout——教师点「换一题」后界面长时间无反馈，超时后只弹一句「请求超时」，
     体感就是按钮点不动。走 SSE 后复用流式端点的长超时（10 分钟），并在生成期间逐帧
     推进度，前端能立刻渲染「正在换一题…」。落库与同步版完全一致（同一
     ``_swap_question``），不引入第二条写路径。
 
     帧序：RUN_STARTED → STEP(换一题) → [THINKING × n] → DATA(question) 或 ERROR → DONE。
     THINKING 就是模型的实时出题思路——此前同步版把整段推理 drain 掉只留题卡，
-    家长只能干等进度文案；现在逐帧透传，前端能打字机式渲染。
+    教师只能干等进度文案；现在逐帧透传，前端能打字机式渲染。
     落库与同步版完全一致（同一 ``_swap_question``），不引入第二条写路径。
 
     前置校验同样在流内收口（越权 / 非草稿 / 题不存在 → ERROR 帧）：异步生成器里
@@ -1120,7 +1120,7 @@ async def regenerate_one_stream(
     """
     try:
         tq, engine, interests_pool, focus = _regenerate_one_inputs(
-            session=session, parent=parent, task_id=task_id, tq_id=tq_id
+            session=session, teacher=teacher, task_id=task_id, tq_id=tq_id
         )
     except AppErrorException as e:
         yield error_event(e.message, code=getattr(e.code, "value", str(e.code))).to_sse()
@@ -1167,25 +1167,25 @@ async def regenerate_one_stream(
 
 
 def _regenerate_all_inputs(
-    *, session: Session, parent: User, task_id: UUID
+    *, session: Session, teacher: User, task_id: UUID
 ) -> tuple[Task, list[dict], list[str] | None, object]:
     """整卷重生成的公共前置：鉴权 + 规格校验 + 兴趣设定 + 引擎（同步版与流式版共用）。
 
     返回 ``(task, spec_items, interests_pool, engine)``。``spec_items`` 已按 count
     摊平成「一题一项」，流式版本据此逐题推进度。
     """
-    task = _owned_task(session=session, parent=parent, task_id=task_id)
+    task = _owned_task(session=session, teacher=teacher, task_id=task_id)
     _require_draft(task)
     specs = task.specs
     if not specs:
         raise AppErrorException(
             ErrCode.TASK_EMPTY_SPECS, "当前草稿无生成规格，无法整卷重生成，请返回出题页重新创建"
         )
-    # 整卷重生成复现兴趣设定（WF-3/WF-4）：沿用原娃娃画像轻融入 + 原聚焦主题。
-    child = session.get(User, task.child_id) if task.child_id else None
-    interests_pool = _extract_interests_pool(child)
+    # 整卷重生成复现兴趣设定（WF-3/WF-4）：沿用原学生画像轻融入 + 原聚焦主题。
+    student = session.get(User, task.student_id) if task.student_id else None
+    interests_pool = _extract_interests_pool(student)
     # 沿用本任务所选模型（无则出题核心失败并抛 LLM_UNAVAILABLE）。
-    engine = resolve_engine(task.model, parent_id=parent.id, session=session)
+    engine = resolve_engine(task.model, teacher_id=teacher.id, session=session)
     return task, _expand_spec_items(specs), interests_pool, engine
 
 
@@ -1205,14 +1205,14 @@ def _commit_regenerated(
     )
 
 
-def regenerate_all(*, session: Session, parent: User, task_id: UUID) -> TaskResp:
+def regenerate_all(*, session: Session, teacher: User, task_id: UUID) -> TaskResp:
     """整卷重生成（R-Q2=c）：按 Task.specs 原规格重跑，全量替换草稿项。
 
-    若 Task.specs 为空（非本版流程创建的草稿），抛 VALIDATION 错误，要求家长
+    若 Task.specs 为空（非本版流程创建的草稿），抛 VALIDATION 错误，要求教师
     返回出题页重新生成。
     """
     task, spec_items, interests_pool, engine = _regenerate_all_inputs(
-        session=session, parent=parent, task_id=task_id
+        session=session, teacher=teacher, task_id=task_id
     )
     new_tqs = [
         _gen_tq_for_spec_item(
@@ -1221,7 +1221,7 @@ def regenerate_all(*, session: Session, parent: User, task_id: UUID) -> TaskResp
             interests=interests_pool,
             focus_interests=task.focus_interest,
             engine=engine,
-            scene_ctx=(session, parent.id),
+            scene_ctx=(session, teacher.id),
         )
         for idx, item in enumerate(spec_items)
     ]
@@ -1229,10 +1229,10 @@ def regenerate_all(*, session: Session, parent: User, task_id: UUID) -> TaskResp
 
 
 def edit_question(
-    *, session: Session, parent: User, task_id: UUID, tq_id: UUID, edits: dict
+    *, session: Session, teacher: User, task_id: UUID, tq_id: UUID, edits: dict
 ) -> QuestionResp:
     """编辑草稿快照题（仅 draft 态，R-Q4：仅题干/选项/答案/解析，知识点/题型等过滤）。"""
-    task = _owned_task(session=session, parent=parent, task_id=task_id)
+    task = _owned_task(session=session, teacher=teacher, task_id=task_id)
     _require_draft(task)
     _draft_item(session=session, task=task, tq_id=tq_id)
     # 严格按 R-Q4：只允许 stem/options/answer/explanation；剔除 knowledge_point 等。
@@ -1245,14 +1245,14 @@ def edit_question(
 
 
 def edit_task_meta(
-    *, session: Session, parent: User, task_id: UUID, edits: dict
+    *, session: Session, teacher: User, task_id: UUID, edits: dict
 ) -> TaskResp:
     """编辑任务元信息（仅 draft 态；当前仅 title，见 TaskMetaEdit）。
 
-    specs / status / child_id 有各自的专属流转（重生成 / confirm / assign），
+    specs / status / student_id 有各自的专属流转（重生成 / confirm / assign），
     本端点刻意不放开——生成产物必须与规格一致，改规格等价于重新生成。
     """
-    task = _owned_task(session=session, parent=parent, task_id=task_id)
+    task = _owned_task(session=session, teacher=teacher, task_id=task_id)
     _require_draft(task)
     allowed = {"title"}
     filtered = {k: v for k, v in edits.items() if k in allowed}
@@ -1266,13 +1266,13 @@ def edit_task_meta(
     )
 
 
-def confirm(*, session: Session, parent: User, task_id: UUID) -> TaskResp:
+def confirm(*, session: Session, teacher: User, task_id: UUID) -> TaskResp:
     """draft → ready：锁定题集成卷。
 
     R-Q1=c 业务前自动补齐：锁定前把所有未入题库的草稿题批量 promote 入题库
-    （家长"锁定成卷"即表示已经认可这些题可入题库，无需额外两次点击）。
+    （教师"锁定成卷"即表示已经认可这些题可入题库，无需额外两次点击）。
     """
-    task = _owned_task(session=session, parent=parent, task_id=task_id)
+    task = _owned_task(session=session, teacher=teacher, task_id=task_id)
     _require_draft(task)
     # 自动 promote-all：未入题库的题在锁定前一次性写 Question + 回填 question_id
     for tq in get_task_questions(session=session, task_id=task.id):
@@ -1285,18 +1285,18 @@ def confirm(*, session: Session, parent: User, task_id: UUID) -> TaskResp:
 
 
 def assign(
-    *, session: Session, parent: User, task_id: UUID, child_id: UUID
+    *, session: Session, teacher: User, task_id: UUID, student_id: UUID
 ) -> TaskResp:
-    """ready → assigned：派发给娃娃，绑 child_id。"""
-    require_owned_child(
+    """ready → assigned：派发给学生，绑 student_id。"""
+    require_owned_student(
         session=session,
-        owner_id=parent.id,
-        child_id=child_id,
+        owner_id=teacher.id,
+        student_id=student_id,
         code=ErrCode.TASK_CHILD_NOT_OWNED,
-        message="该娃娃不属于你的账号",
+        message="该学生不属于你的账号",
     )
-    _owned_task(session=session, parent=parent, task_id=task_id)
-    updated = assign_task(session=session, task_id=task_id, child_id=child_id)
+    _owned_task(session=session, teacher=teacher, task_id=task_id)
+    updated = assign_task(session=session, task_id=task_id, student_id=student_id)
     if updated is None:
         raise AppErrorException(
             ErrCode.TASK_STATUS_READY_REQUIRED, "Task 不在 ready 态，无法派发"
@@ -1306,42 +1306,42 @@ def assign(
     )
 
 
-def discard(*, session: Session, parent: User, task_id: UUID) -> None:
+def discard(*, session: Session, teacher: User, task_id: UUID) -> None:
     """作废草稿（draft/ready 可删，assigned/done 不允许）。
 
     R-Q5=b：级联删所有草稿 TaskQuestion 及其已入题库的 Question 行。
     """
-    task = _owned_task(session=session, parent=parent, task_id=task_id)
+    task = _owned_task(session=session, teacher=teacher, task_id=task_id)
     if task.status in ("assigned", "done"):
         raise AppErrorException(
-            ErrCode.FORBIDDEN, "已派发/完成的任务不可作废，请在娃娃端处理"
+            ErrCode.FORBIDDEN, "已派发/完成的任务不可作废，请在学生端处理"
         )
     if not discard_draft_task(session=session, task_id=task_id):
         raise AppErrorException(ErrCode.TASK_NOT_FOUND, "作废失败，任务不存在或状态不允许")
 
 
 def _answerable_task(*, session: Session, user: User, task_id: UUID) -> tuple[Task, UUID]:
-    """取可作答/打卡的任务并解析「实际作答的娃娃 id」。
+    """取可作答/打卡的任务并解析「实际作答的学生 id」。
 
-    娃娃只能答派给自己的任务；家长代答需证明那是自家娃娃。返回 ``(task, actor_child_id)``。
+    学生只能答派给自己的任务；教师代答需证明那是自家学生。返回 ``(task, actor_student_id)``。
     """
     task = session.get(Task, task_id)
     if task is None:
         raise AppErrorException(ErrCode.TASK_NOT_FOUND, "任务不存在")
-    if task.child_id is None:
-        raise AppErrorException(ErrCode.TASK_NOT_ASSIGNED, "Task 尚未派发给任何娃娃")
-    if user.role == "child":
-        if task.child_id != user.id:
+    if task.student_id is None:
+        raise AppErrorException(ErrCode.TASK_NOT_ASSIGNED, "Task 尚未派发给任何学生")
+    if user.role == "student":
+        if task.student_id != user.id:
             raise AppErrorException(ErrCode.TASK_NOT_OWNED, "这不是派发给你的任务")
         return task, user.id
-    require_owned_child(
+    require_owned_student(
         session=session,
         owner_id=user.id,
-        child_id=task.child_id,
-        code=ErrCode.TASK_NOT_YOUR_CHILD,
-        message="这不是你家娃娃的任务",
+        student_id=task.student_id,
+        code=ErrCode.TASK_NOT_YOUR_STUDENT,
+        message="这不是你家学生的任务",
     )
-    return task, task.child_id
+    return task, task.student_id
 
 
 def answer(
@@ -1352,8 +1352,8 @@ def answer(
     question_id: UUID,
     student_answer: str,
 ) -> AnswerResult:
-    """娃娃答题 / 家长代答。身份 + 状态双校验，作答/错题归集统一挂 task.child_id。"""
-    task, actor_child_id = _answerable_task(session=session, user=user, task_id=task_id)
+    """学生答题 / 教师代答。身份 + 状态双校验，作答/错题归集统一挂 task.student_id。"""
+    task, actor_student_id = _answerable_task(session=session, user=user, task_id=task_id)
     if task.status not in ("assigned", "done"):
         raise AppErrorException(
             ErrCode.TASK_STATUS_ASSIGNED_REQUIRED,
@@ -1373,11 +1373,11 @@ def answer(
     if tq is None:
         raise AppErrorException(ErrCode.TASK_QUESTION_NOT_FOUND, "题目不在当前任务里")
 
-    # 批改经归一封装构造 provider：尊重 task.model / 家长 ModelConfig（ADR-0034 Phase 2），
-    # 消除「批改忽略 model」的分裂；task.model 为 None 时回退本家长默认模型（模型管理）。
+    # 批改经归一封装构造 provider：尊重 task.model / 教师 ModelConfig（ADR-0034 Phase 2），
+    # 消除「批改忽略 model」的分裂；task.model 为 None 时回退本教师默认模型（模型管理）。
     try:
         result = Grader(
-            build_ai_provider(task.model, parent_id=task.parent_id, session=session)
+            build_ai_provider(task.model, teacher_id=task.teacher_id, session=session)
         ).grade(question=tq, student_answer=student_answer)
     except ProviderRequestError as exc:
         # 厂商拒绝请求（认证失败/限流/网络）：如实回报，不笼统归成「未配置模型」（ADR-0038）。
@@ -1386,7 +1386,7 @@ def answer(
     create_answer_record(
         session=session,
         question_id=record_question_id,
-        child_id=actor_child_id,
+        student_id=actor_student_id,
         student_answer=student_answer,
         correct=result["correct"],
         score=result["score"],
@@ -1395,7 +1395,7 @@ def answer(
         upsert_wrong_question(
             session=session,
             question_id=record_question_id,
-            child_id=actor_child_id,
+            student_id=actor_student_id,
         )
     return AnswerResult(
         correct=result["correct"],
@@ -1405,15 +1405,15 @@ def answer(
 
 
 def checkin(*, session: Session, user: User, task_id: UUID) -> CheckinResult:
-    """娃娃打卡 / 家长代打卡。"""
-    task, actor_child_id = _answerable_task(session=session, user=user, task_id=task_id)
+    """学生打卡 / 教师代打卡。"""
+    task, actor_student_id = _answerable_task(session=session, user=user, task_id=task_id)
     if task.status != "assigned":
         raise AppErrorException(
             ErrCode.TASK_STATUS_ASSIGNED_REQUIRED, "仅 assigned 态可打卡"
         )
     cin = create_checkin(
         session=session,
-        child_id=actor_child_id,
+        student_id=actor_student_id,
         task_id=task.id,
         checkin_date=date.today(),
     )
@@ -1424,7 +1424,7 @@ def checkin(*, session: Session, user: User, task_id: UUID) -> CheckinResult:
 
 
 async def generate_task_stream(
-    *, req: TaskGenerateReq, parent: User, session: Session,
+    *, req: TaskGenerateReq, teacher: User, session: Session,
     runtime: AgentRuntime | None = None,
 ) -> AsyncIterator[str]:
     """结构化出题流式端点（ADR-0034 Phase 1）的业务层。
@@ -1434,18 +1434,18 @@ async def generate_task_stream(
     本函数不做任何持久化。``runtime`` 可选注入（默认 ``get_runtime()`` 单例），便于单测。
     """
     rt = runtime or get_runtime()
-    parent_id = parent.id
-    child_id = req.child_id
+    teacher_id = teacher.id
+    student_id = req.student_id
 
     # 出题 provider 经归一封装构造（ADR-0034 Phase 2）：统一由 resolve_engine 解析
-    # req.model / 家长 ModelConfig，与批改 / 伴学走同一条模型解析链。
-    provider = build_ai_provider(req.model, parent_id=parent_id, session=session)
-    # RAG（ADR-0055 §13）：vector 模式下传 (session, parent_id) 启用家长私有资料库检索
-    retriever = build_retriever(session=session, parent_id=parent_id)
+    # req.model / 教师 ModelConfig，与批改 / 伴学走同一条模型解析链。
+    provider = build_ai_provider(req.model, teacher_id=teacher_id, session=session)
+    # RAG（ADR-0055 §13）：vector 模式下传 (session, teacher_id) 启用教师私有资料库检索
+    retriever = build_retriever(session=session, teacher_id=teacher_id)
     deps = RuntimeDeps(provider=provider, retriever=retriever, safety=None)
 
     # 反馈边（ADR-0060 D4）：把看板下发的代表错题解析为题干样例，注入出题 prompt。
-    # 仅取本家长且 AI 生成的题（parent_id + origin="ai"），避免把家长从教辅录入的
+    # 仅取本教师且 AI 生成的题（teacher_id + origin="ai"），避免把教师从教辅录入的
     # 题当仿写样例（版权红线，ADR-0020）。解析后在 ctx.extra 透传给 question subagent。
     weak_examples: list[dict] | None = None
     if req.weak_example_ids:
@@ -1457,7 +1457,7 @@ async def generate_task_stream(
         rows = session.exec(
             select(Question).where(
                 Question.id.in_(req.weak_example_ids),  # type: ignore[union-attr]
-                Question.parent_id == parent_id,
+                Question.teacher_id == teacher_id,
                 Question.origin == QUESTION_ORIGIN_AI,
             )
         ).all()
@@ -1479,19 +1479,19 @@ async def generate_task_stream(
     try:
         from app.features.materials import repository as materials_repo
 
-        unindexed = materials_repo.count_unindexed(session, parent_id=parent_id)
+        unindexed = materials_repo.count_unindexed(session, teacher_id=teacher_id)
     except Exception:  # noqa: BLE001
         unindexed = 0
     ctx = SubAgentContext(
-        role="parent",
+        role="teacher",
         message="",  # 结构化规格走 ctx.extra["specs"]，不依赖自由文本
         history=None,
         model=req.model,
         skills="",
         extra={
             "subject": subject,
-            "parent_id": parent_id,
-            "child_id": child_id,
+            "teacher_id": teacher_id,
+            "student_id": student_id,
             "grade": 0,
             "focus_interest": req.focus_interest,
             "session_id": None,
@@ -1502,6 +1502,6 @@ async def generate_task_stream(
     )
 
     async for ev in rt.run(
-        "", role="parent", ctx=ctx, deps=deps, business="question", session=session
+        "", role="teacher", ctx=ctx, deps=deps, business="question", session=session
     ):
         yield ev.to_sse()

@@ -1,6 +1,6 @@
 """工具 ``list_wrong_questions``：错题本查询（双端）。
 
-家长视角含答案与解析（供核查）；娃娃端由 ``project_for_role`` 统一剥掉
+教师视角含答案与解析（供核查）；学生端由 ``project_for_role`` 统一剥掉
 ``answer`` / ``explanation``（ADR-008 硬门槛）——本工具**恒以全量查询**，
 不自行判断角色，裁剪只发生在投影层。
 """
@@ -12,19 +12,19 @@ from agent_core.subagent import SubAgentContext
 from agent_core.tools import ToolSpec
 from app.ai.subagents.query.tools._shared import (
     LOCATOR_PROPS,
-    child_block,
     dump,
     envelope,
     optional_int,
     optional_str,
     project_for_role,
-    resolve_children,
+    resolve_students,
+    student_block,
 )
 from app.features.tasks import service as tasks_service
 
 NAME = "list_wrong_questions"
 DESCRIPTION = (
-    "查询错题本。家长可看到每题答案与解析；娃娃端自动隐藏答案。"
+    "查询错题本。教师可看到每题答案与解析；学生端自动隐藏答案。"
     "可用 subject 按学科过滤。用于「最近错了哪些题」「哪块知识老出错」。"
 )
 
@@ -38,23 +38,23 @@ async def handler(args: dict[str, Any], *, ctx: SubAgentContext, session: Any = 
     if limit is not None:
         limit = min(limit, MAX_LIMIT)
 
-    children = resolve_children(
+    students = resolve_students(
         session=session,
         ctx=ctx,
-        child_id=args.get("child_id"),
-        child_name=args.get("child_name"),
+        student_id=args.get("student_id"),
+        student_name=args.get("student_name"),
     )
 
     blocks = []
-    for child in children:
+    for student in students:
         rows = tasks_service.list_wrong_questions(
-            session=session, child_id=child.id, include_answer=True
+            session=session, student_id=student.id, include_answer=True
         )
         if subject:
             rows = [r for r in rows if r.subject == subject]
         if limit is not None:
             rows = rows[:limit]
-        blocks.append(child_block(child, dump(rows)))
+        blocks.append(student_block(student, dump(rows)))
 
     return project_for_role(envelope(blocks), ctx.role)
 

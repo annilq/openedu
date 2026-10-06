@@ -11,17 +11,17 @@ from uuid import UUID
 from sqlmodel import Session
 
 from app.core.errors import AppErrorException, ErrCode
-from app.core.guard import require_owned_child
+from app.core.guard import require_owned_student
 from app.db.models import User
 from app.domain.mastery import compute_mastery_score, mastery_level
 from app.features.mastery.repository import get_knowledge_point_mastery
 from app.features.mastery.schemas import KnowledgeMasteryResp, MasteryResp
 
 
-def build_mastery(*, session: Session, child_id: UUID) -> MasteryResp:
-    """纯聚合：算某娃娃的掌握度看板（不做鉴权，供已校验归属的调用方复用）。"""
+def build_mastery(*, session: Session, student_id: UUID) -> MasteryResp:
+    """纯聚合：算某学生的掌握度看板（不做鉴权，供已校验归属的调用方复用）。"""
     items: list[KnowledgeMasteryResp] = []
-    for agg in get_knowledge_point_mastery(session=session, child_id=child_id):
+    for agg in get_knowledge_point_mastery(session=session, student_id=student_id):
         score = compute_mastery_score(
             total_answers=agg.total_answers,
             correct_answers=agg.correct_answers,
@@ -52,7 +52,7 @@ def build_mastery(*, session: Session, child_id: UUID) -> MasteryResp:
             )
         )
     return MasteryResp(
-        child_id=child_id,
+        student_id=student_id,
         total_knowledge_points=len(items),
         mastered_count=sum(1 for i in items if i.level == "已掌握"),
         items=items,
@@ -60,21 +60,21 @@ def build_mastery(*, session: Session, child_id: UUID) -> MasteryResp:
 
 
 def get_mastery_for_user(
-    *, session: Session, user: User, child_id: UUID
+    *, session: Session, user: User, student_id: UUID
 ) -> MasteryResp:
-    """双角色鉴权后取看板：娃娃仅可看自己，家长仅可看自家娃娃。
+    """双角色鉴权后取看板：学生仅可看自己，教师仅可看自家学生。
 
     错误码/文案与 ADR-0033 之前的路由实现逐字一致（避免 REST 响应体变化）。
     """
-    if user.role == "child":
-        if child_id != user.id:
+    if user.role == "student":
+        if student_id != user.id:
             raise AppErrorException(ErrCode.TASK_NOT_OWNED, "这不是你的掌握度")
-    else:  # parent
-        require_owned_child(
+    else:  # teacher
+        require_owned_student(
             session=session,
             owner_id=user.id,
-            child_id=child_id,
-            code=ErrCode.TASK_NOT_YOUR_CHILD,
-            message="这不是你家娃娃的掌握度",
+            student_id=student_id,
+            code=ErrCode.TASK_NOT_YOUR_STUDENT,
+            message="这不是你家学生的掌握度",
         )
-    return build_mastery(session=session, child_id=child_id)
+    return build_mastery(session=session, student_id=student_id)

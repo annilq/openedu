@@ -10,7 +10,7 @@ from app.db.models import ModelConfig
 class ModelConfigCreate(BaseModel):
     """新增模型请求（ADR-0039）：api_key **必填**。
 
-    模型一律由家长手动录入、必须自带可用凭据——历史上允许 api_key 缺省，
+    模型一律由教师手动录入、必须自带可用凭据——历史上允许 api_key 缺省，
     结果是存下一行解不开密钥的配置，直到用户提问时才以「模型不支持工具调用」
     之类的错误暴露（事故见 ADR-0038）。此处前置拦截：空 / 纯空白一律 422。
     """
@@ -81,7 +81,7 @@ class ProviderPreset(BaseModel):
 
 
 class ModelListResp(BaseModel):
-    """家长可见的模型清单（ADR-0039：无内置模型，全部为自建）。"""
+    """教师可见的模型清单（ADR-0039：无内置模型，全部为自建）。"""
 
     custom: list[ModelConfigResp]
 
@@ -94,7 +94,7 @@ class ModelProbeReq(BaseModel):
     """「测试连接」请求：一组**可能还没落库**的模型参数。
 
     两种用法：
-    - 新增表单：只带 provider / base_url / model_name / api_key（parent 刚敲进去的明文）；
+    - 新增表单：只带 provider / base_url / model_name / api_key（teacher 刚敲进去的明文）；
     - 编辑表单或列表页：带 ``model_id``，以库里已存的配置与**加密密钥**为底，
       其余字段只作覆盖（编辑时 API Key 留空 = 不修改，故必须用库里的那份去试）。
 
@@ -121,9 +121,9 @@ class ModelProbeResp(BaseModel):
 
     ok: bool
     latency_ms: int
-    message: str  # 面向家长的单句结论
+    message: str  # 面向教师的单句结论
     error_kind: str | None = None
-    detail: str | None = None  # 厂商原始原因（已脱敏、截断），供家长自行核对
+    detail: str | None = None  # 厂商原始原因（已脱敏、截断），供教师自行核对
 
 
 def _to_resp(mc: ModelConfig) -> ModelConfigResp:

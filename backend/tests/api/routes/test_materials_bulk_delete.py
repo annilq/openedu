@@ -25,20 +25,20 @@ from app.db.models.material import (
     KP_STATUS_CURATED,
     KP_STATUS_PENDING,
 )
-from tests.utils.user import auth_headers, login, register_parent
+from tests.utils.user import auth_headers, login, register_teacher
 
 
 @pytest.fixture()
 def ptoken(client):
-    register_parent(client, username="matdel_parent", password="pw123456")
-    return login(client, "matdel_parent", "pw123456").json()["access_token"]
+    register_teacher(client, username="matdel_teacher", password="pw123456")
+    return login(client, "matdel_teacher", "pw123456").json()["access_token"]
 
 
 @pytest.fixture()
-def parent_id() -> uuid.UUID:
+def teacher_id() -> uuid.UUID:
     with DBSession(engine) as s:
         return s.exec(
-            select(User.id).where(User.username == "matdel_parent")
+            select(User.id).where(User.username == "matdel_teacher")
         ).one()
 
 
@@ -54,7 +54,7 @@ def _upload(client, token, *, filename: str, content: bytes, folder_id=None) -> 
 
 def _seed_material(
     *,
-    parent_id: uuid.UUID,
+    teacher_id: uuid.UUID,
     name: str,
     knowledge_points: list[str],
     subject: str = "数学",
@@ -68,9 +68,9 @@ def _seed_material(
     """
     with DBSession(engine) as s:
         mat = Material(
-            parent_id=parent_id,
+            teacher_id=teacher_id,
             name=name,
-            storage_key=f"{parent_id}/{uuid.uuid4()}.txt",
+            storage_key=f"{teacher_id}/{uuid.uuid4()}.txt",
             size_bytes=10,
             text="占位正文",
             subject=subject,
@@ -86,7 +86,7 @@ def _seed_material(
 
 def _seed_kp(
     *,
-    parent_id: uuid.UUID,
+    teacher_id: uuid.UUID,
     name: str,
     subject: str = "数学",
     grade: int = 3,
@@ -96,7 +96,7 @@ def _seed_kp(
 ) -> uuid.UUID:
     with DBSession(engine) as s:
         kp = KnowledgePoint(
-            parent_id=parent_id,
+            teacher_id=teacher_id,
             subject=subject,
             grade=grade,
             semester=semester,
@@ -110,26 +110,26 @@ def _seed_kp(
         return kp.id
 
 
-def _kp_names(parent_id: uuid.UUID) -> set[str]:
+def _kp_names(teacher_id: uuid.UUID) -> set[str]:
     with DBSession(engine) as s:
         return set(
             s.exec(select(KnowledgePoint.name).where(
-                KnowledgePoint.parent_id == parent_id
+                KnowledgePoint.teacher_id == teacher_id
             )).all()
         )
 
 
-def _material_names(parent_id: uuid.UUID) -> set[str]:
+def _material_names(teacher_id: uuid.UUID) -> set[str]:
     with DBSession(engine) as s:
         return set(
             s.exec(select(Material.name).where(
-                Material.parent_id == parent_id
+                Material.teacher_id == teacher_id
             )).all()
         )
 
 
 class TestBulkDeleteMaterials:
-    def test_only_selected_are_deleted(self, client, ptoken, parent_id):
+    def test_only_selected_are_deleted(self, client, ptoken, teacher_id):
         _upload(client, ptoken, filename="保留.txt", content="保留保留保留".encode())
         gone1 = _upload(client, ptoken, filename="甲.txt", content="甲甲甲甲甲甲".encode())
         gone2 = _upload(client, ptoken, filename="乙.txt", content="乙乙乙乙乙乙".encode())
@@ -143,7 +143,7 @@ class TestBulkDeleteMaterials:
         body = r.json()
         assert body["deleted_count"] == 2
 
-        remaining = _material_names(parent_id)
+        remaining = _material_names(teacher_id)
         assert "保留.txt" in remaining
         assert "甲.txt" not in remaining and "乙.txt" not in remaining
 
@@ -157,8 +157,8 @@ class TestBulkDeleteMaterials:
         assert r.status_code == 200, r.text
         assert r.json()["deleted_count"] == 1, "重复 id 不该让计数虚高"
 
-    def test_other_parent_material_403(self, client, ptoken):
-        register_parent(client, username="matdel_other", password="pw123456")
+    def test_other_teacher_material_403(self, client, ptoken):
+        register_teacher(client, username="matdel_other", password="pw123456")
         other = login(client, "matdel_other", "pw123456").json()["access_token"]
         mine = _upload(client, ptoken, filename="我的.txt", content="我的我的我的".encode())
         r = client.post(
@@ -172,16 +172,16 @@ class TestBulkDeleteMaterials:
         assert r.status_code == 200
         assert any(m["name"] == "我的.txt" for m in r.json())
 
-    def test_chunks_are_removed_together(self, client, ptoken, parent_id):
+    def test_chunks_are_removed_together(self, client, ptoken, teacher_id):
         """资料删了，它的片段必须跟着删——孤儿 chunk 会被检索静默召回。"""
         mat = _seed_material(
-            parent_id=parent_id, name="有片段.txt", knowledge_points=["周长公式"]
+            teacher_id=teacher_id, name="有片段.txt", knowledge_points=["周长公式"]
         )
         with DBSession(engine) as s:
             for seq in range(3):
                 s.add(
                     MaterialChunk(
-                        parent_id=parent_id,
+                        teacher_id=teacher_id,
                         material_id=mat.id,
                         seq=seq,
                         content=f"片段{seq}",
@@ -213,11 +213,11 @@ class TestBulkDeleteMaterials:
 class TestCascadePruning:
     """删除资料时的知识点连带口径：只收回「无人认领」的待审涌现点。"""
 
-    def test_orphan_pending_point_is_pruned(self, client, ptoken, parent_id):
+    def test_orphan_pending_point_is_pruned(self, client, ptoken, teacher_id):
         mat = _seed_material(
-            parent_id=parent_id, name="唯一来源.txt", knowledge_points=["两位数乘法"]
+            teacher_id=teacher_id, name="唯一来源.txt", knowledge_points=["两位数乘法"]
         )
-        _seed_kp(parent_id=parent_id, name="两位数乘法", status=KP_STATUS_PENDING)
+        _seed_kp(teacher_id=teacher_id, name="两位数乘法", status=KP_STATUS_PENDING)
 
         r = client.post(
             "/api/v1/materials/bulk-delete",
@@ -226,14 +226,14 @@ class TestCascadePruning:
         )
         assert r.status_code == 200, r.text
         assert r.json()["knowledge_points_removed"] == 1
-        assert "两位数乘法" not in _kp_names(parent_id)
+        assert "两位数乘法" not in _kp_names(teacher_id)
 
-    def test_default_off(self, client, ptoken, parent_id):
+    def test_default_off(self, client, ptoken, teacher_id):
         """不带开关 = 不碰知识点：删除的副作用必须显式要求才发生。"""
         mat = _seed_material(
-            parent_id=parent_id, name="默认不级联.txt", knowledge_points=["面积单位"]
+            teacher_id=teacher_id, name="默认不级联.txt", knowledge_points=["面积单位"]
         )
-        _seed_kp(parent_id=parent_id, name="面积单位", status=KP_STATUS_PENDING)
+        _seed_kp(teacher_id=teacher_id, name="面积单位", status=KP_STATUS_PENDING)
 
         r = client.post(
             "/api/v1/materials/bulk-delete",
@@ -242,19 +242,19 @@ class TestCascadePruning:
         )
         assert r.status_code == 200, r.text
         assert r.json()["knowledge_points_removed"] == 0
-        assert "面积单位" in _kp_names(parent_id)
+        assert "面积单位" in _kp_names(teacher_id)
 
     def test_keeps_point_referenced_by_another_material(
-        self, client, ptoken, parent_id
+        self, client, ptoken, teacher_id
     ):
         """同名的另一份资料还在 → 知识点有别的来源，不能删。"""
         to_delete = _seed_material(
-            parent_id=parent_id, name="要删的.txt", knowledge_points=["分数的意义"]
+            teacher_id=teacher_id, name="要删的.txt", knowledge_points=["分数的意义"]
         )
         _seed_material(
-            parent_id=parent_id, name="留存的.txt", knowledge_points=["分数的意义"]
+            teacher_id=teacher_id, name="留存的.txt", knowledge_points=["分数的意义"]
         )
-        _seed_kp(parent_id=parent_id, name="分数的意义", status=KP_STATUS_PENDING)
+        _seed_kp(teacher_id=teacher_id, name="分数的意义", status=KP_STATUS_PENDING)
 
         r = client.post(
             "/api/v1/materials/bulk-delete",
@@ -263,14 +263,14 @@ class TestCascadePruning:
         )
         assert r.status_code == 200, r.text
         assert r.json()["knowledge_points_removed"] == 0
-        assert "分数的意义" in _kp_names(parent_id)
+        assert "分数的意义" in _kp_names(teacher_id)
 
-    def test_keeps_curated_point(self, client, ptoken, parent_id):
-        """家长确认过（curated）的知识点是家长的资产：删资料不该顺手抹掉。"""
+    def test_keeps_curated_point(self, client, ptoken, teacher_id):
+        """教师确认过（curated）的知识点是教师的资产：删资料不该顺手抹掉。"""
         mat = _seed_material(
-            parent_id=parent_id, name="已确认.txt", knowledge_points=["圆的周长"]
+            teacher_id=teacher_id, name="已确认.txt", knowledge_points=["圆的周长"]
         )
-        _seed_kp(parent_id=parent_id, name="圆的周长", status=KP_STATUS_CURATED)
+        _seed_kp(teacher_id=teacher_id, name="圆的周长", status=KP_STATUS_CURATED)
 
         r = client.post(
             "/api/v1/materials/bulk-delete",
@@ -279,15 +279,15 @@ class TestCascadePruning:
         )
         assert r.status_code == 200, r.text
         assert r.json()["knowledge_points_removed"] == 0
-        assert "圆的周长" in _kp_names(parent_id)
+        assert "圆的周长" in _kp_names(teacher_id)
 
-    def test_keeps_skeleton_point(self, client, ptoken, parent_id):
-        """骨架（家长自编）与资料无关，永远不该被资料删除带走。"""
+    def test_keeps_skeleton_point(self, client, ptoken, teacher_id):
+        """骨架（教师自编）与资料无关，永远不该被资料删除带走。"""
         mat = _seed_material(
-            parent_id=parent_id, name="骨架旁.txt", knowledge_points=["分数的加减法"]
+            teacher_id=teacher_id, name="骨架旁.txt", knowledge_points=["分数的加减法"]
         )
         _seed_kp(
-            parent_id=parent_id,
+            teacher_id=teacher_id,
             name="分数的加减法",
             status=KP_STATUS_PENDING,
             source=KP_SOURCE_SKELETON,
@@ -300,18 +300,18 @@ class TestCascadePruning:
         )
         assert r.status_code == 200, r.text
         assert r.json()["knowledge_points_removed"] == 0
-        assert "分数的加减法" in _kp_names(parent_id)
+        assert "分数的加减法" in _kp_names(teacher_id)
 
-    def test_semester_scope_is_respected(self, client, ptoken, parent_id):
+    def test_semester_scope_is_respected(self, client, ptoken, teacher_id):
         """下学期那份不动：学期是独立的第四维（各自配讲解模板）。"""
         mat = _seed_material(
-            parent_id=parent_id,
+            teacher_id=teacher_id,
             name="上册.txt",
             knowledge_points=["位置与方向"],
             semester="上学期",
         )
-        _seed_kp(parent_id=parent_id, name="位置与方向", semester="上学期")
-        _seed_kp(parent_id=parent_id, name="位置与方向", semester="下学期")
+        _seed_kp(teacher_id=teacher_id, name="位置与方向", semester="上学期")
+        _seed_kp(teacher_id=teacher_id, name="位置与方向", semester="下学期")
 
         r = client.post(
             "/api/v1/materials/bulk-delete",
@@ -324,25 +324,25 @@ class TestCascadePruning:
         with DBSession(engine) as s:
             rows = s.exec(
                 select(KnowledgePoint.semester).where(
-                    KnowledgePoint.parent_id == parent_id,
+                    KnowledgePoint.teacher_id == teacher_id,
                     KnowledgePoint.name == "位置与方向",
                 )
             ).all()
         assert rows == ["下学期"]
 
-    def test_cascade_does_not_touch_other_parent(self, client, ptoken, parent_id):
+    def test_cascade_does_not_touch_other_teacher(self, client, ptoken, teacher_id):
         """清理只按自己名下算：别人家的同名知识点既不算「仍被引用」也不被删。"""
-        register_parent(client, username="matdel_kp_other", password="pw123456")
+        register_teacher(client, username="matdel_kp_other", password="pw123456")
         with DBSession(engine) as s:
             other_id = s.exec(
                 select(User.id).where(User.username == "matdel_kp_other")
             ).one()
 
         mat = _seed_material(
-            parent_id=parent_id, name="自家.txt", knowledge_points=["百分数"]
+            teacher_id=teacher_id, name="自家.txt", knowledge_points=["百分数"]
         )
-        _seed_kp(parent_id=parent_id, name="百分数", status=KP_STATUS_PENDING)
-        _seed_kp(parent_id=other_id, name="百分数", status=KP_STATUS_PENDING)
+        _seed_kp(teacher_id=teacher_id, name="百分数", status=KP_STATUS_PENDING)
+        _seed_kp(teacher_id=other_id, name="百分数", status=KP_STATUS_PENDING)
 
         r = client.post(
             "/api/v1/materials/bulk-delete",
@@ -351,14 +351,14 @@ class TestCascadePruning:
         )
         assert r.status_code == 200, r.text
         assert r.json()["knowledge_points_removed"] == 1
-        assert "百分数" not in _kp_names(parent_id)
+        assert "百分数" not in _kp_names(teacher_id)
         assert "百分数" in _kp_names(other_id), "别家的同名知识点必须原样保留"
 
 
 class TestBulkDeleteKnowledgePoints:
-    def test_delete_selected_points(self, client, ptoken, parent_id):
-        a = _seed_kp(parent_id=parent_id, name="要删点甲")
-        _seed_kp(parent_id=parent_id, name="保留点乙")
+    def test_delete_selected_points(self, client, ptoken, teacher_id):
+        a = _seed_kp(teacher_id=teacher_id, name="要删点甲")
+        _seed_kp(teacher_id=teacher_id, name="保留点乙")
 
         r = client.post(
             "/api/v1/materials/knowledge-points/bulk-delete",
@@ -368,18 +368,18 @@ class TestBulkDeleteKnowledgePoints:
         assert r.status_code == 200, r.text
         assert r.json()["deleted_count"] == 1
 
-        names = _kp_names(parent_id)
+        names = _kp_names(teacher_id)
         assert "要删点甲" not in names
         assert "保留点乙" in names
 
-    def test_foreign_ids_are_skipped(self, client, ptoken, parent_id):
+    def test_foreign_ids_are_skipped(self, client, ptoken, teacher_id):
         """越权 id 静默跳过（不动他人数据），且不谎报成功。"""
-        register_parent(client, username="matdel_kp_other2", password="pw123456")
+        register_teacher(client, username="matdel_kp_other2", password="pw123456")
         with DBSession(engine) as s:
             other_id = s.exec(
                 select(User.id).where(User.username == "matdel_kp_other2")
             ).one()
-        foreign = _seed_kp(parent_id=other_id, name="别家的点")
+        foreign = _seed_kp(teacher_id=other_id, name="别家的点")
 
         r = client.post(
             "/api/v1/materials/knowledge-points/bulk-delete",
@@ -390,8 +390,18 @@ class TestBulkDeleteKnowledgePoints:
         assert r.json()["deleted_count"] == 0
         assert "别家的点" in _kp_names(other_id)
 
-    def test_delete_curated_point_created_via_confirm(self, client, ptoken, parent_id):
-        """端到端：确认骨架 → 落库 → 再删掉（知识点管理页「删除选中」的主链路）。"""
+    def test_delete_curated_point_end_to_end(self, client, ptoken, teacher_id):
+        """端到端：教材涌现 → 教师确认转正 → 再删掉（知识点管理页「删除选中」主链路）。
+
+        知识点由 `_seed_kp` 以 ``emerged`` 落库，而不是靠 confirm 接口新建——
+        ADR-0065 起确认只翻转已有行的状态，不再代建条目（知识点必须能追溯到教材）。
+        """
+        _seed_kp(
+            teacher_id=teacher_id,
+            name="临时知识点",
+            status=KP_STATUS_PENDING,
+            source=KP_SOURCE_EMERGED,
+        )
         client.post(
             "/api/v1/materials/knowledge-points/confirm",
             headers=auth_headers(ptoken),
@@ -405,7 +415,7 @@ class TestBulkDeleteKnowledgePoints:
             ).json()["items"]
             if i["id"] is not None and i["name"] == "临时知识点"
         ]
-        assert rows, "前置：确认后应已落库"
+        assert rows and rows[0]["status"] == "curated", "前置：确认后应已转正"
 
         r = client.post(
             "/api/v1/materials/knowledge-points/bulk-delete",
@@ -414,4 +424,4 @@ class TestBulkDeleteKnowledgePoints:
         )
         assert r.status_code == 200, r.text
         assert r.json()["deleted_count"] == 1
-        assert "临时知识点" not in _kp_names(parent_id)
+        assert "临时知识点" not in _kp_names(teacher_id)

@@ -23,7 +23,7 @@ from app.db.models import (
 def list_bank_questions(
     *,
     session: Session,
-    parent_id: uuid.UUID,
+    teacher_id: uuid.UUID,
     subject: str | None = None,
     grade: int | None = None,
     knowledge_point: str | None = None,
@@ -35,7 +35,7 @@ def list_bank_questions(
     page_size: int = 20,
     cursor: str | None = None,
 ) -> tuple[list[Question], int, dict[uuid.UUID, int]]:
-    """题库浏览（家长作用域）：过滤分页 + 每题被多少 Task 引用的复用度。
+    """题库浏览（教师作用域）：过滤分页 + 每题被多少 Task 引用的复用度。
 
     返回 (items, total, usage)，usage 为 question_id -> 引用次数 映射。
 
@@ -50,7 +50,7 @@ def list_bank_questions(
     （新题从顶部插入时 offset 会重复/漏行），AI 查询工具走 offset + 大 ``page_size``
     一次性取够（对话场景不需要翻页）。
     """
-    stmt = select(Question).where(Question.parent_id == parent_id)
+    stmt = select(Question).where(Question.teacher_id == teacher_id)
     if subject:
         stmt = stmt.where(Question.subject == subject)
     if grade is not None:
@@ -101,30 +101,30 @@ def list_bank_questions(
 def delete_bank_questions(
     *,
     session: Session,
-    parent_id: uuid.UUID,
+    teacher_id: uuid.UUID,
     question_ids: list[uuid.UUID],
 ) -> dict[str, list[uuid.UUID]]:
     """批量硬删题库题，并全量级联清理所有引用它的数据。
 
-    级联范围（owner 隔离，只处理本家长拥有的题）：
+    级联范围（owner 隔离，只处理本教师拥有的题）：
     - ``TaskQuestion``：删除所有任务里指向该题的快照副本（即「任务中关联的题目」）；
     - ``AnswerRecord`` / ``WrongQuestion``：删除该题的学生作答与错题记录
       （二者 ``question_id`` 为非空外键，不清理会产生悬空 / 外键冲突）；
     - 若某任务因此失去全部题目（``TaskQuestion`` 数为 0），连该任务一并删除
       （含其 ``Checkin``，并将 ``Conversation.ref_task_id`` 置空）。
 
-    不存在 / 非本家长所有的题归为 ``skipped_forbidden``，不删。
+    不存在 / 非本教师所有的题归为 ``skipped_forbidden``，不删。
 
     与归档（``set_bank_questions_archived``）的分工：归档是可逆的「先收起来」
     （被引用也能归档、随时恢复）；删除是「彻底不要了」，所以才需要级联清掉
     引用它的副本与记录，否则会破坏外键完整性。
     """
-    # 本家长拥有的题（owner 隔离）
+    # 本教师拥有的题（owner 隔离）
     owned = {
         q.id: q
         for q in session.exec(
             select(Question).where(
-                Question.id.in_(question_ids), Question.parent_id == parent_id
+                Question.id.in_(question_ids), Question.teacher_id == teacher_id
             )
         ).all()
     }
@@ -187,7 +187,7 @@ def delete_bank_questions(
 def set_bank_questions_archived(
     *,
     session: Session,
-    parent_id: uuid.UUID,
+    teacher_id: uuid.UUID,
     question_ids: list[uuid.UUID],
     archived: bool,
 ) -> dict[str, list[uuid.UUID]]:
@@ -197,13 +197,13 @@ def set_bank_questions_archived(
     - **被任务引用的题也能归档**：删除会破坏历史任务，归档不会（题还在，只是默认不显示）；
     - **可逆**：``archived=False`` 即恢复。
 
-    owner 隔离：只处理本家长拥有的题；其余归为 skipped_forbidden。
+    owner 隔离：只处理本教师拥有的题；其余归为 skipped_forbidden。
     """
     owned = {
         q.id: q
         for q in session.exec(
             select(Question).where(
-                Question.id.in_(question_ids), Question.parent_id == parent_id
+                Question.id.in_(question_ids), Question.teacher_id == teacher_id
             )
         ).all()
     }
@@ -223,16 +223,16 @@ def set_bank_questions_archived(
 
 
 def get_question_usages(
-    *, session: Session, parent_id: uuid.UUID, question_id: uuid.UUID
+    *, session: Session, teacher_id: uuid.UUID, question_id: uuid.UUID
 ) -> list[Task]:
     """反查某题库题被哪些任务引用（owner 隔离）。
 
     闭环「用过 N 次 → 在哪里用」：通过 TaskQuestion.question_id 反查
-    引用该源题的 Task（去重）。题不在本家长题库 → 抛权限错误。
+    引用该源题的 Task（去重）。题不在本教师题库 → 抛权限错误。
     """
     require_owned(
         session=session,
-        owner_id=parent_id,
+        owner_id=teacher_id,
         model=Question,
         obj_id=question_id,
         code=ErrCode.QUESTION_ACCESS_DENIED,
@@ -243,7 +243,7 @@ def get_question_usages(
         .join(TaskQuestion, TaskQuestion.task_id == Task.id)
         .where(
             TaskQuestion.question_id == question_id,
-            Task.parent_id == parent_id,
+            Task.teacher_id == teacher_id,
         )
         .order_by(Task.created_at.desc())
     ).all()

@@ -87,7 +87,7 @@ class _SpyProvider(FakeLLMProvider):
 def test_question_agent_injects_sop_into_user_prompt():
     provider = _SpyProvider()
     agent = QuestionSubAgent(provider=provider)
-    ctx = SubAgentContext(role="parent", message="帮我出3道三年级数学选择题", skills="SOP-XYZ")
+    ctx = SubAgentContext(role="teacher", message="帮我出3道三年级数学选择题", skills="SOP-XYZ")
 
     async def _go():
         return [ev async for ev in agent.run(ctx.message or "", ctx)]
@@ -100,7 +100,7 @@ def test_question_agent_injects_sop_into_user_prompt():
 def test_tutor_agent_injects_sop_into_context():
     provider = _SpyProvider()
     agent = TutorSubAgent(provider=provider)
-    ctx = SubAgentContext(role="child", message="为什么分数要通分", skills="SOP-ABC")
+    ctx = SubAgentContext(role="student", message="为什么分数要通分", skills="SOP-ABC")
 
     async def _go():
         return [ev async for ev in agent.run(ctx.message or "", ctx)]
@@ -114,13 +114,13 @@ def test_real_sop_does_not_trip_input_safety():
     """回归：真实的 tutor_sop.md 含「越狱/成人/暴力/政治」等安全词。
 
     SOP 是系统受控资产，必须在输入闸门**之后**注入。若把它并进 check_input 的
-    扫描范围，每条娃娃提问都会被自己的安全 SOP 判为不安全（整条伴学链路报废）。
+    扫描范围，每条学生提问都会被自己的安全 SOP 判为不安全（整条伴学链路报废）。
     """
     sop = discover_subagent_manifests()["tutor"].skill_prompt
     assert not check_input(sop).safe  # SOP 本身确实会命中词表
 
     agent = TutorSubAgent(provider=_SpyProvider())
-    ctx = SubAgentContext(role="child", message="为什么分数要通分", skills=sop)
+    ctx = SubAgentContext(role="student", message="为什么分数要通分", skills=sop)
 
     async def _go():
         return [ev async for ev in agent.run(ctx.message or "", ctx)]

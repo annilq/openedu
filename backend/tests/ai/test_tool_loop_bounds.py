@@ -100,7 +100,7 @@ def _spec(name: str = "list_x", *, handler=None) -> ToolSpec:
     return ToolSpec(
         name=name,
         description=f"查询 {name}",
-        schema={"type": "object", "properties": {"child_id": {"type": "string"}}},
+        schema={"type": "object", "properties": {"student_id": {"type": "string"}}},
         handler=handler or _default,
     )
 
@@ -176,7 +176,7 @@ def test_tool_unsupported_is_hard_failure_and_stops():
 def test_loop_stops_when_model_stops_calling_tools():
     provider = _ScriptedProvider(
         [
-            [ToolCall(name="list_x", args={"child_id": "c1"})],
+            [ToolCall(name="list_x", args={"student_id": "c1"})],
             [TextDelta(delta="查到了 2 个任务。")],
         ]
     )
@@ -239,7 +239,7 @@ def test_tool_result_history_is_json_safe_for_non_serializable_values():
     from uuid import UUID
 
     async def _handler(args, *, ctx, session=None):
-        return {"child_id": UUID("12345678-1234-5678-1234-567812345678")}
+        return {"student_id": UUID("12345678-1234-5678-1234-567812345678")}
 
     provider = _ScriptedProvider(
         [[ToolCall(name="list_x")], [TextDelta(delta="done")]]
@@ -326,11 +326,11 @@ def test_handler_receives_ctx_and_session():
 
     provider = _ScriptedProvider([[ToolCall(name="list_x")], [TextDelta(delta="d")]])
     agent = _Agent(provider=provider, tools=[_spec(handler=_handler)])
-    ctx = SubAgentContext(role="child")
+    ctx = SubAgentContext(role="student")
 
     asyncio.run(_collect(agent, "查", ctx=ctx, session="SESSION"))
 
-    assert seen == {"role": "child", "session": "SESSION"}
+    assert seen == {"role": "student", "session": "SESSION"}
 
 
 # ── 渲染 hook：TOOL_RESULT 存原始 + hook 补发 DATA 卡 ──
@@ -390,7 +390,7 @@ def test_text_tool_call_protocol_is_not_leaked_as_answer():
     """
     leaked = (
         'Let me call the tool.<invoke name="list_x">'
-        '<parameter name="child_id" string="true">c1</parameter></invoke>'
+        '<parameter name="student_id" string="true">c1</parameter></invoke>'
     )
     provider = _ScriptedProvider([[TextDelta(delta=leaked)]])
     agent = _Agent(provider=provider, tools=[_spec()])
@@ -424,7 +424,7 @@ def _fabricated_call_draft() -> str:
     """真机原文：模型把调用写成 XML，且工具名是**编的**（真实工具名另有其名）。"""
     return (
         '<invoke name="get_mistakes">\n'
-        '<parameter name="child_id">a13be10f-e02c-4169-929f-2088b505f3d0</parameter>\n'
+        '<parameter name="student_id">a13be10f-e02c-4169-929f-2088b505f3d0</parameter>\n'
         "</invoke>"
     )
 
@@ -459,7 +459,7 @@ def test_fabricated_tool_name_after_successful_call_reports_partial():
     provider = _ScriptedProvider(
         [[ToolCall(name="list_x", args={})], [TextDelta(delta=leaked)]]
     )
-    agent = _Agent(provider=provider, tools=[_spec()], rendered="child")
+    agent = _Agent(provider=provider, tools=[_spec()], rendered="student")
 
     events = asyncio.run(_collect(agent))
 
@@ -517,7 +517,7 @@ def _plain_monologue() -> str:
     对纯自然语言独白完全无效，于是它被当作最终答案下发（用户看到一段英文思考）。
     """
     return (
-        "Need child_id for lsc. Then query wrong questions. Let me call the tool. "
+        "Need student_id for lsc. Then query wrong questions. Let me call the tool. "
         "What is the tool name? Probably list_x. I shouldn't guess tool names... but I need to."
     )
 
@@ -613,11 +613,11 @@ def test_unverified_answer_is_blocked_when_subagent_requires_tool_data():
     """回归（真机 2026-09-22）：本地小模型流式下不产出原生 ToolCall，直接编造业务结论。
 
     形态与「把调用写成文本」**不同**：正文干干净净、没有任何协议标记，就是一段像模像样的
-    答复（「你有 3 个娃娃：小明 / 小红 / 小华」）。旧的四档硬失败（引擎不支持 / 无正文 /
+    答复（「你有 3 个学生：小明 / 小红 / 小华」）。旧的四档硬失败（引擎不支持 / 无正文 /
     正文即协议 / 轮次超限）一档都命中不了，编造内容被当作查询结论下发——数据权限其实没
     被绕过（工具根本没执行），但用户看到的是假的。
     """
-    fabricated = "当前名下的娃娃有3个，分别是：小明、小红、小华。"
+    fabricated = "当前名下的学生有3个，分别是：小明、小红、小华。"
     provider = _ScriptedProvider([[TextDelta(delta=fabricated)]])
     agent = _Agent(provider=provider, tools=[_spec()], requires_tool_data=True)
 
@@ -651,7 +651,7 @@ def test_verified_answer_passes_after_successful_tool_call():
     是正常的 tool loop 收尾，拦了就等于每次都报假故障。
     """
     provider = _ScriptedProvider(
-        [[ToolCall(name="list_x", args={})], [TextDelta(delta="查到 1 个娃娃：lsc。")]]
+        [[ToolCall(name="list_x", args={})], [TextDelta(delta="查到 1 个学生：lsc。")]]
     )
     agent = _Agent(provider=provider, tools=[_spec()], requires_tool_data=True)
 
@@ -659,7 +659,7 @@ def test_verified_answer_passes_after_successful_tool_call():
 
     assert EVENT_ERROR not in _types(events)
     assert [ev.text for ev in events if ev.eventType == EVENT_ASSISTANT_MESSAGE] == [
-        "查到 1 个娃娃：lsc。"
+        "查到 1 个学生：lsc。"
     ]
 
 
