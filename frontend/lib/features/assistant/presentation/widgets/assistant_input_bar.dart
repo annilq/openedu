@@ -38,6 +38,13 @@ class AssistantInputBar extends ConsumerStatefulWidget {
 class _AssistantInputBarState extends ConsumerState<AssistantInputBar> {
   late final FocusNode _focusNode;
 
+  /// 输入区当前是「键盘」还是「语音」（微信式切换）。
+  ///
+  /// 为什么是**两种互斥模式**而不是「输入框旁边挂一个麦按钮」：后者把两种输入
+  /// 挤在同一行，麦按钮只能做成 40px 的小图标——儿童手指点不准，而真正的语音
+  /// 输入需要一块能按住的大靶面。切成模式后，语音态下整条输入区都是「按住 说话」。
+  bool _voiceMode = false;
+
   @override
   void initState() {
     super.initState();
@@ -73,12 +80,34 @@ class _AssistantInputBarState extends ConsumerState<AssistantInputBar> {
 
   void _cancelVoice() => ref.read(voiceSessionProvider.notifier).cancel();
 
+  /// 键盘 / 语音两种模式互换（微信式）。
+  ///
+  /// 图标表示**当前**模式：键盘态显示键盘、语音态显示麦——点它就是要换成另一种。
+  void _toggleMode() {
+    if (widget.sending) return;
+    final toVoice = !_voiceMode;
+    setState(() => _voiceMode = toVoice);
+    if (toVoice) {
+      // 语音态下输入框整个被「按住 说话」取代，键盘留着只会挡住这块靶面。
+      _focusNode.unfocus();
+    } else {
+      if (ref.read(voiceSessionProvider).listening) _stopVoice();
+      _focusNode.requestFocus();
+    }
+  }
+
   /// 「重说」（ADR-0063 §7）：清空草稿重新录制。
   ///
   /// 一二年级儿童识字量有限，看到转错的「三分之二」改不出来——「落草稿可改」对他们
   /// 是伪能力，所以主行动是整句重说，而不是让用户去编辑。
   void _respeak() {
     widget.controller.clear();
+    // 重说就是要重新录：顺手切到语音态，否则用户点的「重说」会把界面留在键盘态，
+    // 而录音已经在跑，看起来像点了个没反应的按钮。
+    if (!_voiceMode) {
+      setState(() => _voiceMode = true);
+      _focusNode.unfocus();
+    }
     ref.read(voiceSessionProvider.notifier).start(
           baseText: '',
           silenceTimeout: _silenceTimeoutOf(context),
@@ -113,6 +142,10 @@ class _AssistantInputBarState extends ConsumerState<AssistantInputBar> {
       }
     });
 
+    // 门禁不放行时不允许停在语音态：探测是异步的，可能先按 `denied` 放过、随后
+    // 才定成 `unsupported`，这里按最新结果兜住，避免留一块点不动的「按住 说话」。
+    final voiceMode = _voiceMode && session.voiceVisible;
+
     return SafeArea(
       top: false,
       // 与消息列表同宽同轴：助手整页可能 push 在壳外（家长端），不套上限的话大屏下
@@ -125,46 +158,27 @@ class _AssistantInputBarState extends ConsumerState<AssistantInputBar> {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Expanded(
-                child: ShadInput(
-                  controller: widget.controller,
-                  focusNode: _focusNode,
-                  enabled: !widget.sending,
-                  minLines: 1,
-                  maxLines: 4,
-                  style: text.bodyLarge?.copyWith(color: scheme.onSurface),
-                  placeholder: Text('输入你的学习问题…',
-                      style: text.bodyMedium
-                          ?.copyWith(color: scheme.onSurfaceVariant)),
-                  cursorColor: scheme.primary,
-                  // 单行高度取「主行动档」，与右侧发送按钮同档：两者是同一组
-                  // 控件，必须同高。此前输入框靠 `vertical: 14` 撑到 51px、按钮
-                  // 硬编码 52、再用 `Padding(bottom: 2)` 手工找平——三个魔数互相
-                  // 追着补。现在高度由同一令牌决定，竖向 padding 只负责多行时的
-                  // 呼吸感（8+单行+8 = 37 < 48，单行仍是精确的 48，多行按内容增高）。
-                  constraints: BoxConstraints(
-                      minHeight: AppControl.heightLgOf(context)),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  leading: Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: Icon(LucideIcons.pencil,
-                        color: scheme.onSurfaceVariant, size: 20),
-                  ),
-                  // 麦按钮与「重说」都收在输入框尾部：与输入共用一行，不额外占
-                  // 宽度、不引入新的纵向层。门禁不放行时整个 trailing 为 null。
-                  trailing: _trailing(session),
-                  decoration: ShadDecoration(
-                    disableSecondaryBorder: true,
-                    color: scheme.surfaceContainerLow,
-                    border: ShadBorder.all(
-                      color: scheme.outline,
-                      width: 1,
-                      radius: BorderRadius.circular(AppRadius.input),
-                    ),
-                  ),
-                  onSubmitted: (_) => _send(),
-                ),
+                child: voiceMode ? _holdToTalk(session) : _inputField(scheme, text),
               ),
+              const SizedBox(width: AppSpacing.md),
+              // 「重说」只在键盘态出现：语音态的输入区已经是「按住 说话」，
+              // 再挂一个文字按钮会把这条靶面挤窄。
+              if (!voiceMode &&
+                  session.spoken &&
+                  !session.listening &&
+                  !widget.sending) ...[
+                AppTextAction(label: '重说', onPressed: _respeak),
+                const SizedBox(width: AppSpacing.sm),
+              ],
+              // 模式切换按钮。门禁不放行时**整个不渲染**（ADR-0063 §2）——不是渲染
+              // 一个禁用图标，那会让人反复去点。
+              if (session.voiceVisible)
+                AppIconAction(
+                  icon: voiceMode ? LucideIcons.mic : LucideIcons.keyboard,
+                  semanticLabel:
+                      voiceMode ? '当前语音输入，点此切回键盘' : '切换到语音输入',
+                  onPressed: _toggleMode,
+                ),
               const SizedBox(width: AppSpacing.md),
               AppPrimaryButton(
                 label: '发送',
@@ -182,22 +196,56 @@ class _AssistantInputBarState extends ConsumerState<AssistantInputBar> {
     );
   }
 
-  Widget? _trailing(VoiceSessionState session) {
-    final children = <Widget>[
-      if (session.spoken && !session.listening && !widget.sending)
-        AppTextAction(label: '重说', onPressed: _respeak),
-      if (session.voiceVisible)
-        AppVoiceButton(
-          visible: true,
-          listening: session.listening,
-          onStart: _startVoice,
-          onStop: _stopVoice,
-          onCancel: _cancelVoice,
+  /// 语音态：整条输入区就是「按住 说话」。
+  ///
+  /// 草稿直接显示在这条上，用户不必先切回键盘才知道听到了什么。
+  Widget _holdToTalk(VoiceSessionState session) => AppVoiceButton(
+        visible: true,
+        expanded: true,
+        listening: session.listening,
+        label: session.draft,
+        onStart: _startVoice,
+        onStop: _stopVoice,
+        onCancel: _cancelVoice,
+      );
+
+  /// 键盘态的输入框。`scheme` / `text` 由调用方传入——本方法在 build 之外，够不到
+  /// build 里的局部变量。
+  Widget _inputField(AppColors scheme, AppText text) => ShadInput(
+        controller: widget.controller,
+        focusNode: _focusNode,
+        enabled: !widget.sending,
+        minLines: 1,
+        maxLines: 4,
+        style: text.bodyLarge?.copyWith(color: scheme.onSurface),
+        placeholder: Text('输入你的学习问题…',
+            style:
+                text.bodyMedium?.copyWith(color: scheme.onSurfaceVariant)),
+        cursorColor: scheme.primary,
+        // 单行高度取「主行动档」，与右侧发送按钮同档：两者是同一组控件，必须同高。
+        // 此前输入框靠 `vertical: 14` 撑到 51px、按钮硬编码 52、再用
+        // `Padding(bottom: 2)` 手工找平——三个魔数互相追着补。现在高度由同一令牌
+        // 决定，竖向 padding 只负责多行时的呼吸感（8+单行+8 = 37 < 48，单行仍是
+        // 精确的 48，多行按内容增高）。
+        constraints:
+            BoxConstraints(minHeight: AppControl.heightLgOf(context)),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        leading: Padding(
+          padding: const EdgeInsets.only(right: 8),
+          child: Icon(LucideIcons.pencil,
+              color: scheme.onSurfaceVariant, size: 20),
         ),
-    ];
-    if (children.isEmpty) return null;
-    return Row(mainAxisSize: MainAxisSize.min, children: children);
-  }
+        decoration: ShadDecoration(
+          disableSecondaryBorder: true,
+          color: scheme.surfaceContainerLow,
+          border: ShadBorder.all(
+            color: scheme.outline,
+            width: 1,
+            radius: BorderRadius.circular(AppRadius.input),
+          ),
+        ),
+        onSubmitted: (_) => _send(),
+      );
 
   void _applyDraft(String value) {
     if (widget.controller.text == value) return;

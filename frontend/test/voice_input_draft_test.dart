@@ -17,6 +17,7 @@ import 'package:kids_learn/features/assistant/presentation/widgets/assistant_inp
 import 'package:kids_learn/shared/domain/providers/voice_input_provider.dart';
 import 'package:kids_learn/shared/domain/voice_input.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
+import 'package:kids_learn/shared/widgets/app_actions.dart';
 import 'package:kids_learn/shared/widgets/app_voice_button.dart';
 
 /// 假端口：按用例注入门禁结果与转写流，不碰任何平台通道。
@@ -78,7 +79,11 @@ Future<_Harness> _pump(
   addTearDown(controller.dispose);
 
   await tester.pumpWidget(
+    // ⚠️ 每个用例都用新的 key：`tester.pumpWidget` 在同类型、同位置的 widget 上会
+    // **复用 element**，于是上一用例留下的 `_voiceMode`（键盘/语音）会带到下一用例
+    // ——表现为「切换按钮找不到」「语音态莫名其妙已经开着」。key 一换即强制重建。
     ProviderScope(
+      key: UniqueKey(),
       overrides: [voiceInputProvider.overrideWithValue(port)],
       // 必须显式传 theme：`ShadApp.custom` 不传会退回 shadcn 默认主题（ADR-0046
       // 记录过这个坑）。`appBuilder` 那条路径不会自动装 ShadToaster（只有传 `child`
@@ -116,10 +121,14 @@ Future<_Harness> _pump(
   return _Harness(port, controller, sends);
 }
 
-/// 按下并等到长按生效，返回手势供调用方决定何时松手。
+/// 先进语音模式，再按住「按住 说话」，返回手势供调用方决定何时松手。
 ///
-/// 测试里的默认平台是 Android，走的就是移动端「长按说话」这条主路径。
+/// 输入栏现在是微信式的**两态切换**：默认键盘态没有麦按钮，输入区要先切成
+/// 「按住 说话」才能录音（ADR-0063 §5）。测试里的默认平台是 Android，走的正是
+/// 移动端「长按说话」这条主路径。
 Future<TestGesture> _hold(WidgetTester tester) async {
+  await tester.tap(find.byType(AppIconAction));
+  await tester.pumpAndSettle();
   final gesture =
       await tester.startGesture(tester.getCenter(find.byType(AppVoiceButton)));
   await tester.pump(kLongPressTimeout);
@@ -134,11 +143,14 @@ void main() {
     expect(find.byType(AppVoiceButton), findsNothing,
         reason: 'ADR-0063 §2：不可用时不渲染，而不是渲染一个禁用按钮');
     expect(find.byIcon(LucideIcons.mic), findsNothing);
+    expect(find.byIcon(LucideIcons.keyboard), findsNothing,
+        reason: '门禁不放行时连模式切换按钮都不该出现——点了也没用');
   });
 
   testWidgets('长按说话：转写落草稿，绝不自动发送', (tester) async {
     final h = await _pump(tester, availability: VoiceAvailability.ready);
-    expect(find.byType(AppVoiceButton), findsOneWidget);
+    expect(find.byIcon(LucideIcons.keyboard), findsOneWidget,
+        reason: '默认键盘态：麦按钮不常驻，要先切模式（ADR-0063 §5）');
 
     final gesture = await _hold(tester);
     expect(h.port.startCount, 1);
@@ -186,6 +198,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(h.controller.text, '三分之二加五分之一');
 
+    // 「重说」只在键盘态出现（语音态的输入区整条都是「按住 说话」），先切回去。
+    await tester.tap(find.byType(AppIconAction));
+    await tester.pumpAndSettle();
     expect(find.text('重说'), findsOneWidget);
     await tester.tap(find.text('重说'));
     await tester.pumpAndSettle();
@@ -215,8 +230,8 @@ void main() {
   testWidgets('权限被拒时按钮仍在，点击给出引导', (tester) async {
     await _pump(tester, availability: VoiceAvailability.denied);
 
-    expect(find.byType(AppVoiceButton), findsOneWidget,
-        reason: 'denied 是可恢复状态，按钮消失会让人以为没有这个功能');
+    expect(find.byIcon(LucideIcons.keyboard), findsOneWidget,
+        reason: 'denied 是可恢复状态，切换按钮消失会让人以为没有这个功能');
     final gesture = await _hold(tester);
     await gesture.up();
     await tester.pumpAndSettle();
