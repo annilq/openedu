@@ -1,12 +1,13 @@
-// 教师调参弹窗的布局守卫（ADR-0061 §O/①A 回归）。
+// 教师调参弹窗的布局守卫（ADR-0061 §V/①A 回归）。
 //
 // 实测过的 bug：把 `editable` 从 false 改成 true（让学生能拖轴）之后，**预览区
 // 也长出 3 个轴滑块** —— 而面板上方本来就有同样的 3 个，纯重复；加上预览画布是
 // 「边长 = 宽度」的正方形，536 宽的弹窗直接溢出 306px（黄黑条）。
 //
-// 这里钉三件事：
-// 1. 弹窗内容**不溢出**（套了 SingleChildScrollView + 预览压窄）；
-// 2. **预览区不重复**轴滑块（editable:false），否则白占地方还撑爆弹窗；
+// §V 之后：面板用图形画廊选图形（不再在面板里挂轴滑块），轴滑块只在「点图形弹出的
+// 对折演示弹窗」里出现（editable 时 3 个轴 + 1 个对折进度）。这里钉三件事：
+// 1. 弹窗内容**不溢出**（套了 SingleChildScrollView + 画廊替代下拉，预选图形不撑爆）；
+// 2. **面板不渲染轴滑块**（它们在弹窗里）——否则白占地方还撑爆弹窗；
 // 3. **保存进库的那份是 editable:true** —— 学生端必须能拖轴（①A 的本意）。
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -19,6 +20,8 @@ import 'package:kids_learn/features/home/presentation/widgets/teacher/knowledge_
 import 'package:kids_learn/features/home/providers/home_provider.dart';
 import 'package:kids_learn/features/home/providers/knowledge_manage_provider.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
+import 'package:kids_learn/shared/widgets/app_focusable_action.dart';
+import 'package:kids_learn/shared/widgets/app_slider.dart';
 import 'package:kids_learn/shared/widgets/scene_interpreter/reflection_scene.dart';
 
 /// 记录 saveScenes 收到的 spec，用来断言「保存的那份 editable=true」。
@@ -43,9 +46,8 @@ class _StubRepo implements MaterialRepository {
 /// 一份合法的「已配置」reflection 模板：图形=房子（默认竖轴 90°）。
 ///
 /// `pumpEditor` 默认就传它：编辑器仅在「已配置」（`initialScenes` 非空）时才渲染
-/// 完整表单（图形选择 + 3 轴滑块 + 预览 + 保存按钮）；`unconfigured` 时只显示
-/// 开发者指引（ADR-0061：交互讲解模板是开发者实现的组件、不是教师在前端手配的），
-/// 不挂滑块/预览/保存按钮。多数测试要验的就是完整表单，故设为默认。
+/// 完整表单（图形画廊 + 保存按钮）；`unconfigured` 时只显示开发者指引（ADR-0061：
+/// 交互讲解模板是开发者实现的组件、不是教师在前端手配的），不挂滑块/预览/保存按钮。
 const List<Map<String, dynamic>> _configuredScenes = [
   {
     'kind': 'reflection',
@@ -153,29 +155,38 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('弹窗内容不溢出（回归：曾溢出 306px）', (tester) async {
+  /// 画廊里点开某个图形（按中文名定位卡片）。
+  Finder _galleryCard(String figureLabel) =>
+      find.ancestor(of: find.text(figureLabel), matching: find.byType(AppFocusableAction));
+
+  testWidgets('弹窗内容不溢出（画廊 + 滚动兜底）', (tester) async {
     await pumpEditor(tester);
     expect(tester.takeException(), isNull, reason: '弹窗不应出现 RenderFlex 溢出');
   });
 
-  testWidgets('预览区不重复轴滑块（editable:false）', (tester) async {
+  testWidgets('面板不渲染轴滑块；轴滑块在弹窗内（editable）', (tester) async {
     await pumpEditor(tester);
-    // 面板自己 3 个轴滑块（角度/水平/垂直，显式设 max）+ 预览内 1 个对折进度条
-    // （未设 max → null）= 4。若预览仍带 editable:true，这里会是 7（多出 3 个重复
-    // 的轴滑块）。
-    final sliders = tester.widgetList<ShadSlider>(find.byType(ShadSlider)).toList();
+    // §V：面板用图形画廊选图形，本身**不挂**轴滑块；轴滑块在点图形弹出的弹窗里。
+    expect(find.byType(AppSlider), findsNothing,
+        reason: '面板不应有轴滑块（§O 的「预览重复滑块」回归）');
+
+    // 点房子 → 弹窗内出现 3 个轴控制 + 1 个对折进度条（共 4 个 AppSlider）。
+    await tester.tap(_galleryCard('房子'));
+    await tester.pumpAndSettle();
+    final sliders =
+        tester.widgetList<AppSlider>(find.byType(AppSlider)).toList();
     final axisSliders = sliders.where((s) => s.max != null).toList();
     expect(
       axisSliders,
       hasLength(3),
-      reason: '轴滑块只应来自面板上方那3 个；预览重复画一遍就是回归',
+      reason: '弹窗内 3 个轴滑块（角度/水平/垂直）；面板不重复',
     );
   });
 
   testWidgets('保存的那份 editable=true（①A：学生端能拖轴）', (tester) async {
     await pumpEditor(tester);
     // 直接读 spec 构造逻辑：保存走 editable:true，预览走 false。
-    // 这里通过「预览里没有轴滑块」+ 保存后 spec 值双侧断言。
+    // 这里通过「保存后 spec 值」断言。
     final notifier = ProviderScope.containerOf(
       tester.element(find.byType(KnowledgePointSceneEditor)),
     ).read(knowledgeManageProvider.notifier) as _RecordingManageNotifier;
@@ -222,16 +233,22 @@ void main() {
     expect(find.byType(SingleChildScrollView), findsWidgets);
   });
 
-  testWidgets('换图形后轴角度跟随该图形默认轴（预览同步刷新）', (tester) async {
-    // pumpEditor 默认已传 _configuredScenes（编辑器渲染完整表单 + 预览）。
+  testWidgets('换图形后轴角度跟随该图形默认轴（弹窗内演示同步刷新）', (tester) async {
+    // pumpEditor 默认已传 _configuredScenes（编辑器渲染完整表单 + 画廊）。
     await pumpEditor(tester);
-    // 初始房子= 竖轴 90
-    final before = tester
-        .widgetList<ReflectionSceneWidget>(find.byType(ReflectionSceneWidget))
-        .first
+    // 点房子：弹窗内演示用房子默认竖轴 90°
+    await tester.tap(_galleryCard('房子'));
+    await tester.pumpAndSettle();
+    final axisAngle = tester
+        .widget<ReflectionSceneWidget>(
+          find.descendant(
+            of: find.byType(ShadDialog),
+            matching: find.byType(ReflectionSceneWidget),
+          ),
+        )
         .data
         .axisAngle;
-    expect(before, 90);
+    expect(axisAngle, 90);
   });
 
   testWidgets('未配置时显示开发者指引、不渲染表单（ADR-0061 §O）', (tester) async {
@@ -242,6 +259,6 @@ void main() {
     expect(find.text('尚未配置交互讲解模板（开发者任务）'), findsOneWidget);
     // 表单组件在 unconfigured 下不出现：
     expect(find.text('保存讲解'), findsNothing);
-    expect(find.byType(ShadSlider), findsNothing);
+    expect(find.byType(AppSlider), findsNothing);
   });
 }
