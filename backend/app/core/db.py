@@ -368,10 +368,14 @@ def run_migrations() -> None:
             # 偏序迁移：表还没建（首次启动由 init_db 建表并带新列），跳过即可。
             pass
 
-        # —— model_config（家长自定义模型，ADR-0015）——
+        # —— modelconfig（家长自定义模型，ADR-0015）——
+        # ⚠️ 表名必须用模型默认生成的 `modelconfig`（ModelConfig → 小写无下划线，
+        # 与 materialfolder/wrongquestion/answerrecord 同款约定），不能用 `model_config`。
+        # 旧迁移曾误建成带下划线的 `model_config` 孤儿空表，此处先清掉再建正确表名。
+        conn.execute(text("DROP TABLE IF EXISTS model_config"))  # 清理误建孤儿表
         conn.execute(
             text(
-                "CREATE TABLE IF NOT EXISTS model_config ("
+                "CREATE TABLE IF NOT EXISTS modelconfig ("
                 " id VARCHAR(36) PRIMARY KEY,"
                 " teacher_id VARCHAR(36),"
                 " label VARCHAR(64),"
@@ -585,7 +589,7 @@ def _rename_ownership_columns(conn, is_sqlite: bool) -> None:
     角色枚举值同步映射：``parent``→``teacher``、``child``→``student``。
     """
     renames = [
-        ("model_config", "parent_id", "teacher_id"),
+        ("modelconfig", "parent_id", "teacher_id"),
         ("question", "parent_id", "teacher_id"),
         ("conversation", "parent_id", "teacher_id"),
         ("conversation", "child_id", "student_id"),
@@ -593,13 +597,17 @@ def _rename_ownership_columns(conn, is_sqlite: bool) -> None:
         ("task", "child_id", "student_id"),
         ("user", "parent_id", "teacher_id"),
         ("materialfolder", "parent_id", "teacher_id"),
+        # 目录自引用父目录：parent_folder_id → teacher_folder_id（网盘式目录树）
+        ("materialfolder", "parent_folder_id", "teacher_folder_id"),
         ("material", "parent_id", "teacher_id"),
         ("materialchunk", "parent_id", "teacher_id"),
         ("knowledgepoint", "parent_id", "teacher_id"),
         ("wrongquestion", "child_id", "student_id"),
         ("answerrecord", "child_id", "student_id"),
         ("checkin", "child_id", "student_id"),
-        ("tutor", "child_id", "student_id"),
+        # ⚠️ 表名必须是 TutorLog 默认派生的 `tutorlog`（小写无下划线），
+        # 不能用 `tutor`（旧迁移 typo，会静默跳过导致 child_id 不改名）。
+        ("tutorlog", "child_id", "student_id"),
     ]
     for table, old, new in renames:
         try:
