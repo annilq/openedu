@@ -6,11 +6,9 @@ import 'package:kids_learn/features/home/providers/knowledge_manage_provider.dar
 
 class _MockRepo extends Mock implements MaterialRepository {}
 
-/// 两个掉库知识点 + 两个骨架（id 为 null）。骨架是「确认才落库」的候选，
-/// 在 DB 里还没有行 —— 这是「删除选中」必须处理好的边界。
+/// 两个已落库的知识点（ADR-0065：目录条目一律来自已上传的教材，所以都有 id）。
 final _curated = KnowledgePointOption(id: 'k1', name: '两位数乘法', status: 'curated');
 final _pending = KnowledgePointOption(id: 'k2', name: '面积单位', status: 'pending');
-final _skeleton = KnowledgePointOption(name: '骨架甲');
 
 void main() {
   group('KnowledgeManageNotifier 删除选中', () {
@@ -27,30 +25,23 @@ void main() {
         (_) async => KnowledgePointDirectory(items: [
           _curated,
           _pending,
-          _skeleton,
         ]),
       );
       when(() => repo.deleteKnowledgePoints(any())).thenAnswer((_) async => 2);
       notifier = KnowledgeManageNotifier(repo);
     });
 
-    test('deletableSelectedCount 只数已落库的行', () async {
+    test('deletableSelectedCount 跟着勾选走', () async {
       await notifier.load();
+      expect(notifier.state.deletableSelectedCount, 0);
+
       notifier.toggle('两位数乘法');
       expect(notifier.state.deletableSelectedCount, 1);
-
-      notifier.toggle('骨架甲');
-      // 骨架被勾上但删不掉：计数必须仍是 1，否则按钮会显示「删除选中（2）」
-      // 而实际只删 1 条。
-      expect(notifier.state.deletableSelectedCount, 1);
-      expect(notifier.state.selectedNames.length, 2);
     });
 
-    test('只把有 id 的知识点的 id 发给后端', () async {
+    test('只把勾选到的 id 发给后端', () async {
       await notifier.load();
-      notifier
-        ..toggle('两位数乘法')
-        ..toggle('骨架甲');
+      notifier.toggle('两位数乘法');
 
       await notifier.deleteSelected();
 
@@ -59,9 +50,8 @@ void main() {
       expect(notifier.state.notice, contains('已删除 2 个知识点'));
     });
 
-    test('全勾骨架时不发起删除请求', () async {
+    test('没勾任何东西时不发起删除请求', () async {
       await notifier.load();
-      notifier.toggle('骨架甲');
 
       await notifier.deleteSelected();
 

@@ -9,16 +9,15 @@
 /// 这里只暴露表单需要的最小面，避免 home 反向依赖一个还没落地的 feature。
 library;
 
-/// 知识点选择器条目（ADR-0055 §4）：涌现目录（含待审）+ 骨架兜底。
+/// 知识点选择器条目（ADR-0066）：一律来自已上传的教材，所以**必有 id**。
 class KnowledgePointOption {
-  /// null = 骨架条目（家长确认后才落库获得 id）。
   final String? id;
   final String name;
 
   /// pending = 待审（可出题可检索、不计掌握度）；curated = 已转正。
   final String status;
 
-  /// emerged = 资料涌现；skeleton = 自编骨架。
+  /// emerged = 教材涌现（唯一的来源口径）。
   final String source;
 
   /// 默认交互式讲解模板（ADR-0061）：[{kind, inputs, controls, ...}]；null = 暂未配置。
@@ -50,11 +49,11 @@ class KnowledgePointOption {
       );
 }
 
-/// 知识点目录响应（ADR-0061 §L）：条目 + **来源说明**。
+/// 知识点目录响应：条目 + **空目录的原因**。
 ///
-/// [notice] 非空 = 当前范围没有真实知识点、只剩骨架兜底。骨架是分不出学期的大颗粒
-/// 目录，所以那种情况下切学期拿到的下拉会逐字相同——把这句话透到 UI 上，家长才
-/// 不会误判成「联动坏了」。
+/// [notice] 非空 = 这个范围一条知识点都没有，并说明下一步该做什么（ADR-0051）：
+/// 「还没上传过教材」与「有教材但没识别出知识点」是两件不同的事，空列表本身不说
+/// 这个区别，家长照着错的提示做就是白跑一趟。
 class KnowledgePointDirectory {
   final List<KnowledgePointOption> items;
   final String notice;
@@ -71,7 +70,60 @@ class KnowledgePointDirectory {
       );
 }
 
+/// 知识点选择器的一个可选范围 = **家长真的传过教材**的 (学科, 年级, 学期)（ADR-0065）。
+///
+/// 后端按家长名下资料聚合出来：没传过教材的学科 / 年级不会出现在列表里——让家长
+/// 在 9 年级 × 3 学科里逐个试空门没有意义。
+class KnowledgePointScope {
+  final String subject;
+  final int grade;
+  final String semester;
+
+  /// 该范围下的教材份数（下拉里显示出来，印证「这里为什么有知识点」）。
+  final int materialCount;
+
+  const KnowledgePointScope({
+    required this.subject,
+    required this.grade,
+    required this.semester,
+    this.materialCount = 0,
+  });
+
+  factory KnowledgePointScope.fromJson(Map<String, dynamic> json) =>
+      KnowledgePointScope(
+        subject: json['subject'] as String? ?? '',
+        grade: json['grade'] as int? ?? 0,
+        semester: json['semester'] as String? ?? '',
+        materialCount: json['material_count'] as int? ?? 0,
+      );
+}
+
+/// 范围清单；[unscopedCount] 是**没识别出学科 / 年级**的教材数（ADR-0065）。
+///
+/// 这些资料归不到任何范围，UI 必须说出来——家长传了书却在下拉里找不到对应年级，
+/// 第一反应会是「上传丢了」。
+class KnowledgePointScopeList {
+  final List<KnowledgePointScope> scopes;
+
+  /// 学科或年级缺失、归不到任何范围的资料数。
+  final int unscopedCount;
+
+  const KnowledgePointScopeList({this.scopes = const [], this.unscopedCount = 0});
+
+  factory KnowledgePointScopeList.fromJson(Map<String, dynamic> json) =>
+      KnowledgePointScopeList(
+        scopes: (json['scopes'] as List? ?? const [])
+            .map((e) =>
+                KnowledgePointScope.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList(),
+        unscopedCount: json['unscoped_count'] as int? ?? 0,
+      );
+}
+
 abstract class MaterialRepository {
+  /// 家长实际上传过教材的知识点范围（ADR-0065）：下拉据此构造，不做全量 9×3 枚举。
+  Future<KnowledgePointScopeList> getKnowledgePointScopes();
+
   Future<KnowledgePointDirectory> getKnowledgePointDirectory({
     required String subject,
     required int grade,
@@ -80,7 +132,7 @@ abstract class MaterialRepository {
     String semester = '',
   });
 
-  /// 确认（批量转正）知识点：pending→curated；骨架条目落库为 curated（ADR-0055 §4）。
+  /// 确认（批量转正）知识点：pending→curated。只翻转已有行的状态，不代建条目。
   Future<void> confirmKnowledgePoints({
     required String subject,
     required int grade,
@@ -94,7 +146,7 @@ abstract class MaterialRepository {
     required List<Map<String, dynamic>> scenes,
   });
 
-  /// 批量删除知识点（多选）。骨架条目还没有 id，只有**已落库**的行能走这条。
+  /// 批量删除知识点（多选）。
   ///
   /// 删除只影响目录本身：知识点到题目是快照式引用（题中存的是名字串），所以已出的
   /// 题与掌握度统计不会被破坏——只是这个范围的下拉里不再有它。

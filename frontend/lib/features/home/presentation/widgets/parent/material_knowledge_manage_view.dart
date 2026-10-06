@@ -17,8 +17,9 @@ import '../../../../../shared/widgets/app_toast.dart';
 import '../../../providers/knowledge_manage_provider.dart';
 import 'knowledge_point_scene_editor.dart';
 
-/// 知识点管理视图（ADR-0055 §4 确认页）：按 (学科, 年级) 列出知识点目录，
-/// 勾选待审 / 骨架条目并批量确认转正。从资料库页分段切换进来。
+/// 知识点管理视图（ADR-0055 §4 确认页 / ADR-0066 范围来自教材）：
+/// 按 (学科, 年级, 学期) 列出知识点目录，
+/// 勾选待审知识点并批量确认转正。从资料库页分段切换进来。
 ///
 /// [km.items] 元素的静态类型来自 [knowledgeManageProvider] 暴露的
 /// [KnowledgeManageState]，本文件不显式 import `data/` 层（R4）。
@@ -33,6 +34,15 @@ class MaterialKnowledgeManageView extends ConsumerStatefulWidget {
 class _MaterialKnowledgeManageViewState
     extends ConsumerState<MaterialKnowledgeManageView> {
   @override
+  void initState() {
+    super.initState();
+    // 入口先拉「传过教材的范围」：下拉由它派生，范围清单为空时整页走空态。
+    Future.microtask(
+      () => ref.read(knowledgeManageProvider.notifier).loadScopes(),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     final km = ref.watch(knowledgeManageProvider);
     final app = AppTheme.colorsOf(context);
@@ -44,7 +54,7 @@ class _MaterialKnowledgeManageViewState
         ref.read(knowledgeManageProvider.notifier).consumeNotice();
       }
     });
-    // 可删除条数：只有已落库（有 id）的行能删，骨架条目在 DB 里还不存在。
+    // 可删除条数：只有已落库（有 id）的行能删。
     final deletable = km.deletableSelectedCount;
 
     return AppCard(
@@ -52,43 +62,28 @@ class _MaterialKnowledgeManageViewState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 范围：知识点是家长私有的，必须锁死 (学科, 年级, 学期)。
-          Row(
-            children: [
-              Expanded(
-                child: AppPickerField<String>(
-                  label: '学科',
-                  values: const ['数学', '语文', '英语'],
-                  labels: const ['数学', '语文', '英语'],
-                  value: km.subject,
-                  onChanged: (v) => notifier.setScope(v, km.grade, km.semester),
+          // 一份教材都还没传：整个页面就是一句「去上传」，下拉一个都不给——
+          // 摆出 9 年级 × 3 学科的空门只会让人挨个试。
+          if (km.scopes.isEmpty && !km.loading)
+            AppEmptyState(
+              icon: LucideIcons.tags,
+              title: '还没有知识点来源',
+              message: '知识点来自你上传的教材：到「资料库」上传并完成提取后，'
+                  '这里会按教材所在的范围列出知识点。',
+            )
+          else ...[
+            _ScopeBar(km: km),
+            if (km.unscopedCount > 0)
+              Padding(
+                padding: const EdgeInsets.only(top: AppSpacing.sm),
+                child: Text(
+                  '有 ${km.unscopedCount} 份教材没识别出学科或年级，暂时归不到上面的范围；'
+                  '到「资料库」对它们点「重新提取」即可。',
+                  style: text.bodySmall?.copyWith(color: app.secondary),
                 ),
               ),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: AppPickerField<int>(
-                  label: '年级',
-                  values: List.generate(9, (i) => i + 1),
-                  labels: List.generate(9, (i) => '${i + 1}年级'),
-                  value: km.grade,
-                  onChanged: (v) => notifier.setScope(km.subject, v, km.semester),
-                ),
-              ),
-              const SizedBox(width: AppSpacing.md),
-              Expanded(
-                child: AppPickerField<String>(
-                  label: '学期',
-                  // '' = 整学年/不限；其余为具体学期（与后端一致）。
-                  values: const ['', '上学期', '下学期'],
-                  labels: const ['整学年', '上学期', '下学期'],
-                  value: km.semester,
-                  onChanged: (v) => notifier.setScope(km.subject, km.grade, v),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.md),
-          if (km.pendingCount > 0)
+            const SizedBox(height: AppSpacing.md),
+            if (km.pendingCount > 0)
             Padding(
               padding: const EdgeInsets.only(bottom: AppSpacing.sm),
               child: Text(
@@ -108,22 +103,25 @@ class _MaterialKnowledgeManageViewState
               child: Center(child: AppLoading()),
             )
           else if (km.items.isEmpty)
-            const AppEmptyState(
+            // 空列表的**原因**由后端 notice 给出（没传教材 / 传了但没识别出知识点
+            // 是两种截然不同的下一步），这里只做兜底文案。
+            AppEmptyState(
               icon: LucideIcons.tags,
               title: '该范围暂无知识点',
-              message: '上传并向量化资料后，AI 会从中涌现知识点',
+              message: km.notice?.isNotEmpty == true
+                  ? km.notice!
+                  : '这份教材还没识别出知识点',
             )
           else ...[
             ...km.items.map((kp) {
               // kp 静态类型由 KnowledgeManageState.items 提供；在此闭包内
               // 访问 .name/.status/.id 不触发 dynamic 告警，也无需 import data 层。
               final selected = km.selectedNames.contains(kp.name);
-              // 状态徽标：待审（secondary）/ 已转正（primary）/ 骨架（灰，id 为 null）。
+              // 状态徽标：待审（secondary）/ 已转正（primary）。ADR-0065 起目录里
+              // 不再有「骨架」那种 DB 里还不存在的条目，所以不画第三种状态。
               final (label, color) = switch (kp.status) {
                 'pending' => ('待审', app.secondary),
-                'curated' => (kp.id == null
-                    ? ('骨架', app.onSurfaceVariant)
-                    : ('已转正', app.primary)),
+                'curated' => ('已转正', app.primary),
                 _ => ('', app.onSurfaceVariant),
               };
               return Padding(
@@ -235,6 +233,7 @@ class _MaterialKnowledgeManageViewState
             ),
           ],
         ],
+        ],
       ),
     );
   }
@@ -293,3 +292,62 @@ class _MaterialKnowledgeManageViewState
     );
   }
 }
+
+/// 范围选择条：**只列出真的传过教材的**学科 / 年级 / 学期（ADR-0065）。
+///
+/// 单独成 widget 是为了守 ADR-0058 的 400 行上限，但更实际的理由是级联逻辑在这里
+/// 收口：切学科时年级要当场换成新学科的第一个可用年级（否则短暂出现一个不属于该
+/// 学科的组合），切年级同理要把学期退回「整学年」。
+class _ScopeBar extends ConsumerWidget {
+  const _ScopeBar({required this.km});
+
+  final KnowledgeManageState km;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    void setScope(String subject, int grade, String semester) =>
+        ref
+            .read(knowledgeManageProvider.notifier)
+            .setScope(subject, grade, semester);
+
+    return Row(
+      children: [
+        Expanded(
+          child: AppPickerField<String>(
+            label: '学科',
+            values: km.subjects,
+            labels: km.subjects,
+            value: km.subject,
+            onChanged: (v) => setScope(v, km.gradesOf(v).first, ''),
+          ),
+        ),
+        const SizedBox(width: AppSpacing.md),
+        Expanded(
+          child: AppPickerField<int>(
+            label: '年级',
+            values: km.grades,
+            labels: [for (final g in km.grades) '$g年级'],
+            value: km.grade,
+            // 换年级后旧学期可能不再存在（如只有上册）→ 退回「整学年」并集。
+            onChanged: (v) => setScope(km.subject, v, ''),
+          ),
+        ),
+        const SizedBox(width: AppSpacing.md),
+        Expanded(
+          child: AppPickerField<String>(
+            label: '学期',
+            values: km.semesters,
+            labels: [
+              for (final s in km.semesters)
+                s.isEmpty ? '整学年' : s,
+            ],
+            value: km.semester,
+            onChanged: (v) => setScope(km.subject, km.grade, v),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+  

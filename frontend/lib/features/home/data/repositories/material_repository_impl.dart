@@ -11,6 +11,12 @@ class MaterialRepositoryImpl implements MaterialRepository {
   final NetworkService _network;
 
   @override
+  Future<KnowledgePointScopeList> getKnowledgePointScopes() async {
+    final data = await _network.get('/materials/knowledge-points/scopes');
+    return KnowledgePointScopeList.fromJson(decodeMap(data));
+  }
+
+  @override
   Future<KnowledgePointDirectory> getKnowledgePointDirectory({
     required String subject,
     required int grade,
