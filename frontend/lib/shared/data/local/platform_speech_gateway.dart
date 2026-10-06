@@ -1,6 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'
+    show debugPrint, kDebugMode, kIsWeb;
 import 'package:speech_to_text/speech_recognition_error.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart';
@@ -34,7 +35,10 @@ class PlatformSpeechGateway implements VoiceInputPort {
 
   Future<VoiceAvailability> _probeOnce() async {
     // Web 不做（ADR-0063 §3）：Chrome/Edge 把音频送 Google 云端，国内不可达。
-    if (kIsWeb) return VoiceAvailability.unsupported;
+    if (kIsWeb) {
+      _log('probe → unsupported（Web 明确不做，ADR-0063 §3）');
+      return VoiceAvailability.unsupported;
+    }
 
     try {
       final ok = await _speech.initialize(
@@ -42,13 +46,26 @@ class PlatformSpeechGateway implements VoiceInputPort {
         onError: _onError,
       );
       // initialize 返回 false「通常意味着用户拒绝了权限」，按插件文档即 [denied]。
-      return ok ? VoiceAvailability.ready : VoiceAvailability.denied;
-    } catch (_) {
+      final availability =
+          ok ? VoiceAvailability.ready : VoiceAvailability.denied;
+      // 门禁结果决定麦按钮**出不出现**，而 unsupported 时界面上什么都不显示——
+      // 少了这行日志，「按钮没出现」就完全无从归因（ADR-0063 §2 的静默失效风险）。
+      _log('probe → $availability');
+      return availability;
+    } catch (error) {
       // Linux 等插件未实现的平台：MethodChannel 无注册实现，调用**抛**
       // MissingPluginException，而不是返回 false。不接住就判定不了门禁，
       // 后果是在 Linux 上渲染出一个点了必然失败的麦按钮。
+      //
+      // 另一种常见成因：跑的是**旧进程**。新增原生插件后 Hot Restart 不补原生
+      // 注册，channel 调不通也走这条分支——此时完整重跑即可，不是代码问题。
+      _log('probe → unsupported（插件不可用：$error）');
       return VoiceAvailability.unsupported;
     }
+  }
+
+  void _log(String message) {
+    if (kDebugMode) debugPrint('[voice] $message');
   }
 
   @override
@@ -114,6 +131,7 @@ class PlatformSpeechGateway implements VoiceInputPort {
   }
 
   void _onStatus(String status) {
+    _log('status=$status');
     final controller = _session;
     if (controller == null || controller.isClosed) return;
     if (status == 'notListening' || status == 'done') {
@@ -122,6 +140,7 @@ class PlatformSpeechGateway implements VoiceInputPort {
   }
 
   void _onError(SpeechRecognitionError error) {
+    _log('error=${error.errorMsg} permanent=${error.permanent}');
     final controller = _session;
     if (controller == null || controller.isClosed) return;
     _fail(controller, VoiceInputFailure(error.errorMsg));
