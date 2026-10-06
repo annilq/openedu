@@ -18,9 +18,11 @@ from app.features.materials.schemas import (
     FolderResp,
     FolderUpdate,
     KnowledgePointConfirm,
+    KnowledgePointDelete,
     KnowledgePointListResp,
     KnowledgePointResp,
     KnowledgePointScenesUpdate,
+    MaterialDelete,
     MaterialMove,
     MaterialResp,
     UploadResult,
@@ -139,6 +141,35 @@ def update_knowledge_point_scenes_endpoint(
     return KnowledgePointResp(
         id=kp.id, name=kp.name, status=kp.status, source=kp.source, scenes=kp.scenes
     )
+
+
+@router.post("/bulk-delete")
+def bulk_delete_materials(
+    session: SessionDep, user: CurrentParent, req: MaterialDelete
+) -> dict:
+    """批量删除资料（多选）。
+
+    ``cascade_knowledge_points`` 为真时顺带清理**孤儿知识点**（仅由这批资料涌现、
+    已无其它资料引用、且家长从未确认过的待审条目）；已转正的知识点不会被清理，
+    那是家长的资产，请到「知识点管理」里手动删。
+    """
+    return service.delete_materials(
+        session,
+        parent_id=user.id,
+        material_ids=req.ids,
+        cascade_knowledge_points=req.cascade_knowledge_points,
+    )
+
+
+@router.post("/knowledge-points/bulk-delete")
+def bulk_delete_knowledge_points(
+    session: SessionDep, user: CurrentParent, req: KnowledgePointDelete
+) -> dict:
+    """批量删除知识点（多选）。越权 / 不存在的 id 静默跳过，不会误删他人数据。"""
+    removed = service.delete_knowledge_points(
+        session, parent_id=user.id, ids=req.ids
+    )
+    return {"deleted": True, "deleted_count": removed}
 
 
 @router.get("/{material_id}", response_model=MaterialResp)

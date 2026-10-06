@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from pathlib import Path
 
 from sqlmodel import Session
@@ -418,20 +419,113 @@ def get_material(
     )
 
 
+def _knowledge_point_scope(material: Material) -> tuple[str, int, str] | None:
+    """资料对应的知识点作用域 ``(学科, 年级, 学期)``；信息不齐时返回 ``None``。
+
+    学期口径必须与提取时（``_extract_and_align``）**逐字一致**：资料显式学期 >
+    文件名推断（上册/下册）> 上学期。差一个字就定位不到当初涌现出的那一行，
+    级联清理会静默失效。
+    """
+    if not material.subject or not material.grade:
+        return None
+    semester = (
+        material.semester or _semester_from_name(material.name) or "上学期"
+    )
+    return material.subject, material.grade, semester
+
+
+def _prune_knowledge_points(
+    session: Session,
+    *,
+    parent_id: uuid.UUID,
+    materials: Sequence[Material],
+) -> list[KnowledgePoint]:
+    """算出这批资料删掉之后**无人认领**的知识点（详见 repository 的三条口径）。"""
+    candidates: list[tuple[str, int, str, str]] = []
+    for material in materials:
+        scope = _knowledge_point_scope(material)
+        if scope is None:
+            continue
+        subject, grade, semester = scope
+        for name in material.knowledge_points or []:
+            candidates.append((subject, grade, semester, name))
+    if not candidates:
+        return []
+    return repo.prunable_knowledge_points(
+        session,
+        parent_id=parent_id,
+        candidates=candidates,
+        exclude_material_ids={m.id for m in materials},
+    )
+
+
+def delete_materials(
+    session: Session,
+    *,
+    parent_id: uuid.UUID,
+    material_ids: Sequence[uuid.UUID],
+    cascade_knowledge_points: bool = False,
+) -> dict:
+    """删除一批资料（单个走同一路径，<｜hy_place▁holder▁no▁813｜> ids 长 1）。
+
+    ``cascade_knowledge_points`` 为真时**顺带清理孤儿知识点**——判定口径见
+    :func:`repository.prunable_knowledge_points`（只收回没被引用的待审涌现点）。
+    为什么默认关闭：删除不可逆，副作用越少越安全；前端多选删除时显式询问后
+    带上这个开关，但 API 默认必须保持「删什么就是什么」。
+    """
+    # 去重保序：多选 UI 可能给出重复 id，重复会让计数虚高。
+    seen: set[uuid.UUID] = set()
+    materials: list[Material] = []
+    for material_id in material_ids:
+        if material_id in seen:
+            continue
+        seen.add(material_id)
+        materials.append(
+            repo.get_owned_material(
+                session, parent_id=parent_id, material_id=material_id
+            )
+        )
+    if not materials:
+        return {
+            "deleted": True,
+            "deleted_count": 0,
+            "chunks_removed": 0,
+            "knowledge_points_removed": 0,
+        }
+
+    kp_rows = (
+        _prune_knowledge_points(session, parent_id=parent_id, materials=materials)
+        if cascade_knowledge_points
+        else []
+    )
+    chunks_removed = 0
+    for index, material in enumerate(materials):
+        # 知识点行只在最后一份资料上删一次：它们不属于某个具体 material。
+        chunks, _ = repo.delete_material_cascade(
+            session, material, kp_rows if index == len(materials) - 1 else ()
+        )
+        chunks_removed += chunks
+        # 落盘文件 best-effort 清理：DB 已删，残留文件不影响正确性（检索走 DB）
+        try:
+            path = Path(settings.MATERIAL_UPLOAD_ROOT) / material.storage_key
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+    return {
+        "deleted": True,
+        "deleted_count": len(materials),
+        "chunks_removed": chunks_removed,
+        "knowledge_points_removed": len(kp_rows),
+    }
+
+
 def delete_material(
     session: Session, *, parent_id: uuid.UUID, material_id: uuid.UUID
 ) -> dict:
-    material = repo.get_owned_material(
-        session, parent_id=parent_id, material_id=material_id
+    """删单份资料：**不级联知识点**（保留既有语义）。需要清理请用批量端点。"""
+    return delete_materials(
+        session, parent_id=parent_id, material_ids=[material_id]
     )
-    chunk_count = repo.delete_material_cascade(session, material)
-    # 落盘文件 best-effort 清理：DB 已删，残留文件不影响正确性（检索走 DB）
-    try:
-        path = Path(settings.MATERIAL_UPLOAD_ROOT) / material.storage_key
-        path.unlink(missing_ok=True)
-    except OSError:
-        pass
-    return {"deleted": True, "chunks_removed": chunk_count}
 
 
 def move_material(
@@ -542,6 +636,18 @@ def update_knowledge_point_scenes(
     session.commit()
     session.refresh(kp)
     return kp
+
+
+def delete_knowledge_points(
+    session: Session, *, parent_id: uuid.UUID, ids: Sequence[uuid.UUID]
+) -> int:
+    """批量删除知识点（多选），返回实际删除条数。
+
+    删除本身是安全的：知识点到题目是**快照式**引用（``Question`` / ``Task`` 只存
+    知识点名字串，不建外键），所以删掉目录里的这一行不会破坏已出的题与掌握度
+    统计——只是这个范围的下拉里不再有它、后续出题也不会再选它。
+    """
+    return repo.delete_knowledge_points(session, parent_id=parent_id, ids=list(ids))
 
 
 def confirm_knowledge_points(

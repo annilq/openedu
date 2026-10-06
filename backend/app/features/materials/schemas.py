@@ -69,6 +69,24 @@ class MaterialMove(SQLModel):
     folder_id: UUID | None = None
 
 
+class MaterialDelete(SQLModel):
+    """批量删除资料（多选）。
+
+    ``cascade_knowledge_points`` 为真时顺带清理**孤儿知识点**——仅由这批资料
+    涌现、且没有任何其它资料还在引用、也从未被家长确认过的知识点
+    （见 ``service.delete_materials`` 的口径）。默认关闭，保证删除语义默认最小。
+    """
+
+    ids: list[UUID] = Field(min_length=1, max_length=100)
+    cascade_knowledge_points: bool = False
+
+
+class KnowledgePointDelete(SQLModel):
+    """批量删除知识点（多选）。骨架条目没有 id，只能删已落库的行。"""
+
+    ids: list[UUID] = Field(min_length=1, max_length=200)
+
+
 class UploadResult(SQLModel):
     """上传响应：资料本体 + 元数据提取结果（提取失败不阻塞入库）。"""
 
