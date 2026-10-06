@@ -10,6 +10,7 @@
 - ⚠️ 本机 `grep` 是 BSD 版，不支持 `a\|b` → 用 `grep -E`；`grep -c` 得0不等于没有，用 Grep 工具复核。
 - ⚠️ **新 ADR 取号前查目录最大号 + `git status docs/adr/` + memory 预留**（撞车三次：0055/0058）。
 - ⚠️ ADR-0061（资料库/场景）改动在 working tree 未提交，与已提交 D5 改动分离；提交前 `git status` 确认范围。
+- ⚠️ **SwiftPM 依赖解析走 libgit2**：不读 `http_proxy`/系统代理，也**不认 gitconfig 的 `insteadOf`**（那是 git 命令行特性）；唯一生效的是 SwiftPM mirror（`~/.swiftpm/configuration/mirrors.json` + 工程 `xcshareddata/swiftpm/configuration/mirrors.json`，schema `{"version":1,"object":[{mirror,original}]}`）。gitconfig `safe.bareRepository=explicit` 会让 libgit2 拒开裸库、报同样的「Couldn't get the list of tags」。本机验证用 `swift package resolve --disable-sandbox`（沙盒下必须关沙盒），不必跑 xcodebuild。脚本 `frontend/scripts/patch_spm_cwl_mirror.py`（幂等+`--check`）。
 
 ## 1. 前端分层（ADR-0036/0037）
 - AI 唯一入口 `assistantNotifierProvider`+`AssistantMessageList`；后端唯一端点 `POST /api/v1/assistant/chat`。**助手路由优先级即功能**（ADR-0054）：写意图走 `guide`(20)；不高于 `query`(12) 被只读查询接走。
