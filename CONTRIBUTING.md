@@ -152,15 +152,123 @@ Info.plist、entitlements、AndroidManifest），只在改的那台机器上生�
 |------|----------|----------------|
 | `patch_macos_network.py` | macOS entitlements 的 `network.client` 与 Info.plist 的 `NSAllowsLocalNetworking` | 重新生成 macOS 平台后；App 发不出 HTTP 且后端零日志时先跑它 |
 | `patch_voice_permissions.py` | iOS/macOS 的 `NSMicrophoneUsageDescription` + `NSSpeechRecognitionUsageDescription`、macOS 的 `com.apple.security.device.audio-input`、Android 的 `RECORD_AUDIO` | 重新生成平台目录或换机器后；助手语音输入（ADR-0063）生效前 |
+| `patch_spm_cwl_mirror.py` | SwiftPM 对 `CwlCatchException` 的 mirror 映射 + 本机 bare 镜像 + gitconfig 清障（`speech_to_text` 的远程依赖，ADR-0063） | 换机器 / 清过 SwiftPM 缓存后；`flutter run -d macos` 报 `Couldn't get the list of tags` 时 |
 
 ```bash
 python3 frontend/scripts/patch_voice_permissions.py           # 补齐
 python3 frontend/scripts/patch_voice_permissions.py --check    # 只检查不写入，缺则退出码 1
+
+python3 frontend/scripts/patch_spm_cwl_mirror.py              # 补齐
+python3 frontend/scripts/patch_spm_cwl_mirror.py --check       # 只检查不写入，缺则退出码 1
 ```
+
+> 这两个脚本改的是**机器级 / 平台目录**的东西（`~/.swiftpm`、`~/.openedu-deps`、
+> gitconfig、`macos/**`），都不在版本控制里，所以只能靠脚本复现；换机器后重跑即可。
 
 `--check` 是给 CI / 构建前自检用的。原生权限缺失的失效方式是**静默**的——
 界面上看不出任何异常（语音能力门禁会判定 `unsupported`、麦按钮根本不渲染），
 只有 `--check` 能把它变成一条会失败的检查。
+
+### Apple 构建：`CwlCatchException` 解析到本机镜像（不需要访问 github）
+
+ADR-0063 引入的 `speech_to_text`（7.5.0）在 `darwin/speech_to_text/Package.swift` 里
+**硬依赖** `https://github.com/mattgallagher/CwlCatchException.git`（`from: "2.0.0"`）。
+Flutter 默认开启 Swift Package Manager，于是 iOS/macOS 构建必须先解析这个包；解析不通
+时报 `Could not resolve package dependencies: Couldn't get the list of tags`。
+
+**解法：跑一次补丁脚本，之后全程离线**（本机级改动，不在版本控制里，所以必须脚本化）：
+
+```bash
+python3 frontend/scripts/patch_spm_cwl_mirror.py           # 补齐（幂等，可反复跑）
+python3 frontend/scripts/patch_spm_cwl_mirror.py --check    # 只检查不写入，缺则退出码 1
+cd frontend && flutter clean && flutter run -d macos
+```
+
+它做三件事：
+
+1. 在 `~/.openedu-deps/CwlCatchException.git` 放一份 bare 镜像——优先从 SwiftPM 自己的
+   缓存 `~/Library/Caches/org.swift.swiftpm/repositories/CwlCatchException-*` 复制（离线
+   可得）；缓存没有才 `git clone --mirror`（git 命令行会读 gitconfig 的代理，能通）。
+2. 写 SwiftPM mirror 映射，让 libgit2 改从 `file://` 拿 refs：全局
+   `~/.swiftpm/configuration/mirrors.json` + 工程级两份
+   `macos/**/xcshareddata/swiftpm/configuration/mirrors.json`（两个 workspace 都写）。
+3. 清掉 gitconfig 里会挡路的 `safe.bareRepository = explicit`（见下，原值自动备份）。
+
+实测（2026-10-06）：配好后 `swift package resolve` 输出
+`Fetching file:///Users/…/CwlCatchException.git` → `resolved at 2.2.1`（revision
+`07b2ba21…`，与官方 tag 一致），全程约 2 秒，零网络访问。
+
+#### 为什么「配了 gitconfig 还是报同样的错」——两根暗桩
+
+| 暗桩 | 真相 |
+|---|---|
+| `url.<x>.insteadOf` | **libgit2 不认它**。SwiftPM 拉 git 依赖用 libgit2，不是 git 命令行；`insteadOf` 是命令行的特性。所以配了它，SwiftPM 照旧直连 github。唯一生效的是 SwiftPM 自己的 mirror 配置 |
+| `safe.bareRepository = explicit` | 若全局 gitconfig 里有这一项，libgit2 会拒绝打开 SwiftPM 的**裸**缓存仓库：`fatal: cannot use bare repository '…' (safe.bareRepository is 'explicit')`。症状同样是「Couldn't get the list of tags」，但根因已经在本地了 |
+
+另外 mirrors.json 的 schema **以 `swift package config set-mirror` 的实际输出为准**：
+`{"version": 1, "object": [{"mirror": …, "original": …}]}`。网上老资料里的
+`{"object": {"mirrors": [...]}}` 会让 SwiftPM 直接崩
+`DecodingError.typeMismatch: expected Array<Any> … Path: object`。
+
+**不要**用 `flutter config --no-enable-swift-package-manager` 退回 CocoaPods：它是机器
+全局配置（影响其他项目）、Flutter 官方声明未来版本不允许禁用，而且**对这个问题无效**——
+`speech_to_text.podspec` 同样声明了 `s.ios/s.osx.dependency 'CwlCatchException'`。
+
+#### 别试图「换掉这个依赖」——它不是我们引入的，也没有等价替代
+
+`CwlCatchException` 写在插件自己的两个清单里，**不在本项目 `pubspec.yaml`**，改不了：
+
+- `darwin/speech_to_text/Package.swift` → `.package(url: "…/CwlCatchException.git", from: "2.0.0")`
+- `darwin/speech_to_text.podspec` → `s.ios/s.osx.dependency 'CwlCatchException'`
+- 且插件源码 `SpeechToTextPlugin.swift`（981 行）里 3 处 `try catchExceptionAsError { }`
+  是**真在用**——Swift 无法直接 catch Objective-C 异常，靠这个库桥接。不是误引入。
+
+已验证的三条死路：
+
+| 做法 | 结果 |
+|---|---|
+| 升级到 `7.6.0-beta.4`（最新） | ❌ `Package.swift` 与 podspec 一字未改，同样依赖 |
+| 退回 CocoaPods | ❌ podspec 同样声明，见上 |
+| 换 `manual_speech_to_text` | ❌ 它本身就是 `speech_to_text` 的包装，依赖里就有它 |
+
+其他候选也不成立：`speech_recognition` 只支持 iOS/Android（我们要 macOS 主力）；
+`whisper_ggml` / `vosk_flutter_2` / `sherpa_onnx` 属端侧模型方案，要额外下载几十 MB～
+GB 级模型文件，与 ADR-0063 §2「音频不出设备 + 零模型配置即可用」的定案冲突。
+
+⇒ 结论：**保留 `speech_to_text`**，它是「系统自带听写 + 零配置」这条定位上唯一的选择。
+
+#### 排查「别的 SwiftPM 依赖连不上」时：先分清是哪条通道坏了
+
+> 这一节只在排查**镜像之外**的远程依赖时才用得上；`CwlCatchException` 走上面的脚本，
+> 已不需要联网解析。
+
+`speech_to_text` 的这个依赖是**硬需求**——插件源码 `SpeechToTextPlugin.swift` 里
+真的 `import CwlCatchException`（2.2.1），绕不开。
+
+关键在于 **Xcode / SwiftPM 只认「系统代理」，不认 `http_proxy` 环境变量**。所以
+`curl https://github.com/...` 返回 200 **不能**证明 Xcode 也通，反之亦然——两条路
+根本不是同一条。
+
+```bash
+scutil --proxy                                     # 取系统代理的 host:port（Xcode 走这条）
+curl -m 15 -x http://127.0.0.1:<port> -o /dev/null -w '代理→%{http_code}\n' \
+  'https://github.com/mattgallagher/CwlCatchException.git/info/refs?service=git-upload-pack'
+curl -m 15 --noproxy '*' -o /dev/null -w '直连→%{http_code}\n' \
+  'https://github.com/mattgallagher/CwlCatchException.git/info/refs?service=git-upload-pack'
+```
+
+**单次 curl 的结果会骗人**：github 在本机是间歇性可达的，务必**连测 3～5 次**再下结论。
+
+⚠️ 最危险的误判是照着某一次的「直连通」去**关代理**或**把 github 加进绕过列表**：本机
+直连 github 实测多为 000，代理才是稳定通路。那样改会把本来能通的路堵死。
+
+⇒ 连测确认可达后重试即可；`flutter config --no-enable-swift-package-manager` 退回
+CocoaPods **没用**（podspec 同样声明了这个依赖）。真正一劳永逸的做法还是照上面的
+脚本把依赖解析到本机镜像。
+
+⚠️ 另有一条独立的坑：新增原生插件后 **Hot Restart 不补原生注册**，
+`flutter run` 必须完整重跑（彻底退出 App 再跑），否则插件 channel 调不通、
+语音能力门禁判 `unsupported`，麦按钮按设计不渲染——控制台同样什么都不说。
 
 ### CI（`.github/workflows/`）
 

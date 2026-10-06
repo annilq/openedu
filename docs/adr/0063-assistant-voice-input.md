@@ -150,6 +150,22 @@ CI 也构建不出来。
 `[ok]`、`--check` 退 0；Android manifest 经 `ElementTree` 校验，`uses-permission` 位于
 `<manifest>` 直接子元素、`<application>` 之外。
 
+**同一对策的第二处应用**：`speech_to_text` 的 `darwin/Package.swift` 硬依赖远程包
+`CwlCatchException`（`from: "2.0.0"`），它写在插件自己的清单里、不在本仓库，删不掉也换
+不掉（三条替代路线均已验证不通）。该依赖解析不通时 iOS/macOS 直接构建失败
+（`Couldn't get the list of tags`）。因为它同样是「不在版本控制里的本机状态」
+（`~/.swiftpm`、gitconfig、SwiftPM 缓存、平台目录），对策同样是**打补丁脚本**
+`frontend/scripts/patch_spm_cwl_mirror.py`：把该仓库在本机做成 bare 镜像，再写 SwiftPM
+mirror 映射，让依赖解析走 `file://` 而非 github。
+
+- ⚠️ 关键事实：**libgit2 不认 gitconfig 的 `url.<x>.insteadOf`**（那是 git 命令行的特性），
+  所以早期「配了 insteadOf」完全没有生效；真正生效的只有 SwiftPM 自己的 mirror 配置。
+- ⚠️ 第二根暗桩：全局 gitconfig 的 `safe.bareRepository = explicit` 会让 libgit2 拒绝打开
+  SwiftPM 的裸缓存仓库，报出**一模一样**的错误信息，但根因已在本地。脚本负责清掉它
+  （原值备份，可还原）。
+- 实测：`swift package resolve` 从本地镜像解析出 `2.2.1`（revision `07b2ba21…`），约 2 秒，
+  零网络访问。
+
 ### 11. UI 层：受控组件、共用一行、以及四个实测事实
 
 **已落地（2026-10-06）**：
