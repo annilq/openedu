@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../domain/assistant_courseware_context.dart';
 import '../../domain/assistant_requests.dart';
 import '../../domain/repositories/assistant_repository.dart';
 import '../../providers/assistant_provider.dart';
@@ -34,7 +35,8 @@ class AssistantMessage {
   /// 回放气泡**没有 `blocked`**：`Message` 上那组安全标记列从未被写入（真正的被拦记录
   /// 在 TutorLog，即 F-305 的「已拦截」徽标），所以历史消息上不会出现安全提示——
   /// 这是有意的不对称，别用「顺带补个字段」把它掩盖成看起来能用的空值。
-  factory AssistantMessage.fromBubble(AssistantBubble bubble) => AssistantMessage(
+  factory AssistantMessage.fromBubble(AssistantBubble bubble) =>
+      AssistantMessage(
         role: bubble.role == 'assistant' ? 'ai' : 'user',
         text: bubble.text,
         cards: bubble.cards.isEmpty ? null : bubble.cards,
@@ -84,21 +86,28 @@ class AssistantNotifier extends StateNotifier<AssistantState> {
 
   /// 把气泡列表压成后端契约的 history（`{"role", "content"}`），只保留最近 [_historyLimit] 条。
   List<Map<String, dynamic>> _tailHistory(List<AssistantMessage> messages) {
-    final pairs = messages
-        .where((m) => !m.thinking)
-        .map((m) => {
-              // UI 侧 role 是 'ai'，后端契约是 'assistant'（agent_core/ports.py）；
-              // 键名是 content 而非 text——否则适配器取不到文本，整条被丢弃。
-              'role': m.role == 'ai' ? 'assistant' : 'user',
-              'content': m.text,
-            })
-        .toList();
+    final pairs =
+        messages
+            .where((m) => !m.thinking)
+            .map(
+              (m) => {
+                // UI 侧 role 是 'ai'，后端契约是 'assistant'（agent_core/ports.py）；
+                // 键名是 content 而非 text——否则适配器取不到文本，整条被丢弃。
+                'role': m.role == 'ai' ? 'assistant' : 'user',
+                'content': m.text,
+              },
+            )
+            .toList();
     if (pairs.length <= _historyLimit) return pairs;
     return pairs.sublist(pairs.length - _historyLimit);
   }
 
   /// 发送一条消息并消费 SSE 事件流。角色由后端 JWT 解析（教师 / 学生自动分流）。
-  Future<void> send(String raw, {String? model}) async {
+  Future<void> send(
+    String raw, {
+    String? model,
+    AssistantCoursewareContext? courseware,
+  }) async {
     final message = raw.trim();
     if (message.isEmpty || _submitting) return;
     _submitting = true;
@@ -109,8 +118,9 @@ class AssistantNotifier extends StateNotifier<AssistantState> {
     };
 
     final current = switch (state) {
-      AssistantActive(:final messages) =>
-        List<AssistantMessage>.from(messages.where((m) => !m.thinking)),
+      AssistantActive(:final messages) => List<AssistantMessage>.from(
+        messages.where((m) => !m.thinking),
+      ),
       _ => <AssistantMessage>[],
     };
     current.add(AssistantMessage(role: 'user', text: message));
@@ -125,6 +135,7 @@ class AssistantNotifier extends StateNotifier<AssistantState> {
           sessionId: _currentSessionId,
           history: history,
           model: model,
+          courseware: courseware,
         ),
       )) {
         // 会话身份随 DONE 帧回写：首轮建立；归属校验失败时后端换新 id，此处自愈覆盖。
@@ -188,29 +199,31 @@ class AssistantNotifier extends StateNotifier<AssistantState> {
       if (streaming) {
         // 占位气泡带上阶段文案：路由/工具帧到达时把「思考中…」换成
         // 「已选择助手：X / 正在查询××」，用户能看到推进而不是干等。
-        out.add(AssistantMessage(
-          role: 'ai',
-          thinking: true,
-          stage: fold.stage,
-        ));
+        out.add(
+          AssistantMessage(role: 'ai', thinking: true, stage: fold.stage),
+        );
       }
       return out;
     }
     if (fold.text.isNotEmpty || fold.cards.isNotEmpty) {
-      out.add(AssistantMessage(
-        role: 'ai',
-        text: fold.text,
-        cards: fold.cards.isEmpty ? null : fold.cards,
-        blocked: fold.blocked,
-        sources: fold.sources,
-      ));
+      out.add(
+        AssistantMessage(
+          role: 'ai',
+          text: fold.text,
+          cards: fold.cards.isEmpty ? null : fold.cards,
+          blocked: fold.blocked,
+          sources: fold.sources,
+        ),
+      );
     }
     if (fold.hasError) {
-      out.add(AssistantMessage(
-        role: 'ai',
-        text: fold.errorText!,
-        blocked: fold.blocked,
-      ));
+      out.add(
+        AssistantMessage(
+          role: 'ai',
+          text: fold.errorText!,
+          blocked: fold.blocked,
+        ),
+      );
     }
     return out;
   }
@@ -218,6 +231,6 @@ class AssistantNotifier extends StateNotifier<AssistantState> {
 
 final assistantNotifierProvider =
     StateNotifierProvider<AssistantNotifier, AssistantState>((ref) {
-  final repo = ref.watch(assistantRepositoryProvider);
-  return AssistantNotifier(repo);
-});
+      final repo = ref.watch(assistantRepositoryProvider);
+      return AssistantNotifier(repo);
+    });

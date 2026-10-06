@@ -1,4 +1,5 @@
 import '../../../shared/domain/models/models.dart';
+import 'assistant_courseware_context.dart';
 
 /// 悬浮助手对话请求体（ADR-0024）：只需自由文本 + 角色（由后端 JWT 解析）。
 /// 学科 / 意图由后端 AgentRuntime 自动识别，前端无需预填。
@@ -8,6 +9,7 @@ class AssistantChatReq {
   final String? model;
   final List<Map<String, dynamic>>? history;
   final List<String>? focusInterest;
+  final AssistantCoursewareContext? courseware;
 
   const AssistantChatReq({
     required this.message,
@@ -15,15 +17,17 @@ class AssistantChatReq {
     this.model,
     this.history,
     this.focusInterest,
+    this.courseware,
   });
 
   Map<String, dynamic> toJson() => {
-        'message': message,
-        if (sessionId != null) 'session_id': sessionId,
-        if (model != null) 'model': model,
-        if (history != null) 'history': history,
-        if (focusInterest != null) 'focus_interest': focusInterest,
-      };
+    'message': message,
+    if (sessionId != null) 'session_id': sessionId,
+    if (model != null) 'model': model,
+    if (history != null) 'history': history,
+    if (focusInterest != null) 'focus_interest': focusInterest,
+    if (courseware != null) 'courseware': courseware!.toJson(),
+  };
 }
 
 /// 结构化出题请求体（ADR-0034 P1）：把教师选的规格原样直传后端，
@@ -45,10 +49,10 @@ class TaskGenerateReq {
   });
 
   Map<String, dynamic> toJson() => {
-        'specs': specs.map((s) => s.toJson()).toList(),
-        if (model != null) 'model': model,
-        if (focusInterest != null) 'focus_interest': focusInterest,
-        if (studentId != null) 'student_id': studentId,
-        if (weakExampleIds != null) 'weak_example_ids': weakExampleIds,
-      };
+    'specs': specs.map((s) => s.toJson()).toList(),
+    if (model != null) 'model': model,
+    if (focusInterest != null) 'focus_interest': focusInterest,
+    if (studentId != null) 'student_id': studentId,
+    if (weakExampleIds != null) 'weak_example_ids': weakExampleIds,
+  };
 }

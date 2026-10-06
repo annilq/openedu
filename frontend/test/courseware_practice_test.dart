@@ -1,0 +1,176 @@
+import 'dart:async';
+
+import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+
+import 'package:kids_learn/features/assistant/domain/assistant_courseware_context.dart';
+import 'package:kids_learn/features/assistant/domain/assistant_event.dart';
+import 'package:kids_learn/features/assistant/domain/assistant_requests.dart';
+import 'package:kids_learn/features/assistant/domain/repositories/assistant_repository.dart';
+import 'package:kids_learn/features/assistant/providers/assistant_provider.dart';
+import 'package:kids_learn/features/courseware/domain/models/courseware.dart';
+import 'package:kids_learn/features/courseware/domain/models/courseware_section.dart';
+import 'package:kids_learn/features/courseware/domain/models/courseware_section_kind.dart';
+import 'package:kids_learn/features/courseware/presentation/widgets/section_practice.dart';
+import 'package:kids_learn/shared/theme/app_theme.dart';
+
+class _RecordingAssistant extends Fake implements AssistantRepository {
+  _RecordingAssistant({this.fail = false, this.unconfigured = false});
+
+  final bool fail;
+  final bool unconfigured;
+  final List<AssistantChatReq> requests = [];
+
+  @override
+  Stream<AssistantEvent> chat(AssistantChatReq req) {
+    requests.add(req);
+    if (fail) return Stream.error(Exception('连接中断'));
+    final text =
+        unconfigured
+            ? '未配置模型，无法生成课堂练习。请在「模型管理」中添加模型并设为默认后重试。'
+            : requests.length == 1
+            ? '下面哪个图形是轴对称图形？\nA. 平行四边形\nB. 正方形'
+            : '先观察图形沿一条直线对折后，两侧能否完全重合。';
+    return Stream.fromIterable([
+      AssistantEvent(
+        eventType: AssistantEventType.assistantMessage,
+        text: text,
+      ),
+      AssistantEvent(
+        eventType: AssistantEventType.done,
+        sessionId: 'courseware-session',
+      ),
+    ]);
+  }
+}
+
+const _courseware = CoursewareModel(
+  id: 'cw-1',
+  subject: '数学',
+  grade: 4,
+  semester: '下学期',
+  kpName: '轴对称图形',
+  title: '图形的运动',
+);
+
+const _section = CoursewareSectionModel(
+  id: 'practice-1',
+  kind: CoursewareSectionKind.practice,
+  title: '课堂练习',
+  script: '下面哪些图形是轴对称图形？',
+  payload: {'qtype': 'choice', 'count': 1},
+);
+
+Future<void> _pumpPractice(
+  WidgetTester tester,
+  AssistantRepository repository,
+) async {
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [assistantRepositoryProvider.overrideWithValue(repository)],
+      // 刻意不套 Material：真实根节点是 ShadApp + CupertinoApp。
+      child: ShadApp.custom(
+        theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
+        appBuilder:
+            (_) => const CupertinoApp(
+              home: Directionality(
+                textDirection: TextDirection.ltr,
+                child: SizedBox(
+                  width: 900,
+                  height: 700,
+                  child: SectionPractice(
+                    courseware: _courseware,
+                    section: _section,
+                  ),
+                ),
+              ),
+            ),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+}
+
+void main() {
+  test('AssistantChatReq 仅在提供时序列化课件上下文', () {
+    const plain = AssistantChatReq(message: '你好');
+    expect(plain.toJson().containsKey('courseware'), isFalse);
+
+    final contextual =
+        const AssistantChatReq(
+          message: '出题',
+          courseware: _coursewareContext,
+        ).toJson();
+    expect(contextual['courseware'], {
+      'courseware_id': 'cw-1',
+      'section_id': 'practice-1',
+      'knowledge_point': '轴对称图形',
+      'subject': '数学',
+      'grade': 4,
+      'semester': '下学期',
+    });
+  });
+
+  testWidgets('无 Material 祖先下可出题、判错并请求分级提示', (tester) async {
+    final repository = _RecordingAssistant();
+    await _pumpPractice(tester, repository);
+
+    expect(find.text('下面哪些图形是轴对称图形？'), findsOneWidget);
+    await tester.tap(find.text('出题'));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(repository.requests, hasLength(1));
+    expect(repository.requests.first.courseware?.toJson(), {
+      'courseware_id': 'cw-1',
+      'section_id': 'practice-1',
+      'knowledge_point': '轴对称图形',
+      'subject': '数学',
+      'grade': 4,
+      'semester': '下学期',
+    });
+    expect(find.textContaining('正方形'), findsOneWidget);
+    expect(find.text('对'), findsOneWidget);
+    expect(find.text('错'), findsOneWidget);
+
+    await tester.tap(find.text('错'));
+    await tester.pumpAndSettle();
+
+    expect(repository.requests, hasLength(2));
+    expect(repository.requests.last.message, contains('第 1 级提示'));
+    expect(repository.requests.last.message, contains('不要直接说答案'));
+    expect(repository.requests.last.courseware?.sectionId, 'practice-1');
+    expect(find.textContaining('先观察图形'), findsOneWidget);
+  });
+
+  testWidgets('请求失败显示明确兜底文案', (tester) async {
+    await _pumpPractice(tester, _RecordingAssistant(fail: true));
+
+    await tester.tap(find.text('出题'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('课堂练习请求失败，请检查网络或模型配置后重试。'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('未配置模型时直接展示可操作提示', (tester) async {
+    await _pumpPractice(tester, _RecordingAssistant(unconfigured: true));
+
+    await tester.tap(find.text('出题'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('未配置模型'), findsOneWidget);
+    expect(find.text('重新出题'), findsOneWidget);
+  });
+}
+
+const _coursewareContext = AssistantCoursewareContext(
+  coursewareId: 'cw-1',
+  sectionId: 'practice-1',
+  knowledgePoint: '轴对称图形',
+  subject: '数学',
+  grade: 4,
+  semester: '下学期',
+);

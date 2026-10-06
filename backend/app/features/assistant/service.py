@@ -25,7 +25,7 @@ from agent_core.protocol import (
     EVENT_TOOL_RESULT,
     AssistantEvent,
 )
-from agent_core.runtime import AgentRuntime
+from agent_core.runtime import AgentRuntime, RouteDecision
 from agent_core.runtime_singleton import get_runtime
 from agent_core.subagent import SubAgentContext
 from app.ai.engine import resolve_engine
@@ -106,8 +106,18 @@ async def chat(
         teacher_id = caller.user.id
         student_id = None
 
+    # 课件练习与普通助手共用唯一入口；上下文只透传给 SubAgent，不建立 Task / 作答实体。
+    courseware = (
+        req.courseware.model_dump(mode="json", exclude_none=True)
+        if req.courseware is not None
+        else None
+    )
+
     # subject 为教育特有概念，由端点计算并透传（agent_core 的 RouteDecision 不感知业务语义）。
-    subject = detect_subject(message)
+    # 课件元数据比按钮文案更可靠：答错后的短句通常不会再次写出学科。
+    subject = (
+        (req.courseware.subject or "") if req.courseware is not None else ""
+    ) or detect_subject(message)
 
     # 构建运行时依赖（seam 注入）：provider 走单一解析链；retriever 默认 mock；
     # 学生端注入输入安全闸门（首层防御），教师端不拦截。
@@ -125,6 +135,20 @@ async def chat(
 
     # 预路由：解析 business（不流式），供落库复用，消除端点对 THINKING(extra) 隐式契约。
     decision = await rt.decide(message, role=role, deps=deps)
+    # 课堂请求仍先走既有路由规则，再做上下文定向：出题进入 guide；答错后的
+    # 「提示」进入 tutor。这样不改 manifest 优先级，也不让 query 的泛词「学生」抢走提示。
+    if req.courseware is not None:
+        courseware_business = None
+        if "提示" in message:
+            courseware_business = "tutor"
+        elif decision.business == "question":
+            courseware_business = "guide"
+        if courseware_business is not None:
+            decision = RouteDecision(
+                business=courseware_business,
+                name=rt.name_of(courseware_business),
+                extra={**decision.extra, "courseware_practice": True},
+            )
 
     # ── 会话持久化（复用 Conversation/Message，ADR-0026 多轮） ──
     # 优先按 session_id 续接已有会话并载入历史；否则新建。
@@ -196,8 +220,13 @@ async def chat(
             "subject": subject,
             "teacher_id": teacher_id,
             "student_id": student_id,
-            "grade": (caller.user.grade if role == "student" else 0) or 0,
+            "grade": (
+                req.courseware.grade
+                if req.courseware is not None and req.courseware.grade is not None
+                else ((caller.user.grade if role == "student" else 0) or 0)
+            ),
             "focus_interest": req.focus_interest,
+            "courseware": courseware,
             "session_id": str(conv_id),
         },
     )

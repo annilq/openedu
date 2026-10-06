@@ -1,0 +1,350 @@
+import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+
+import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/app_actions.dart';
+import '../../../../shared/widgets/app_buttons.dart';
+import '../../../../shared/widgets/app_empty_state.dart';
+import '../../../../shared/widgets/app_error.dart';
+import '../../../../shared/widgets/app_loading.dart';
+import '../../../../shared/widgets/app_pushed_page.dart';
+import '../../domain/models/courseware.dart';
+import '../../domain/models/courseware_section.dart';
+import '../../domain/models/courseware_section_kind.dart';
+import '../../providers/courseware_provider.dart';
+import '../widgets/courseware_present_step_bar.dart';
+import '../widgets/section_interactive_scene.dart';
+import '../widgets/section_media_gallery.dart';
+
+/// 讲课演示页（ADR-0067 §6 切片 4b）。
+///
+/// 教室里的形态：**push 出去的全屏页，不带侧栏 / 底栏**（§3.8）——备课要编辑入口，
+/// 讲课要零干扰，两者诉求相反，靠 push 出去这一层隔开。
+///
+/// 自上而下四区（§3.8）：
+/// - **头部**：课件标题 + `学科 · 年级 · 学期` + 右侧「退出演示」；
+/// - **步骤条**：环节横排，当前项实心高亮，可点直接跳；
+/// - **主区**：环节标题 + 话术提问卡 + 按 kind 分派的环节内容（唯一可变区）；
+/// - **底部**：上一步 / `2 / 4` / 下一步。
+///
+/// ⚠️ 布局只按**可用宽度**取档（[LayoutBuilder]），不写死分辨率：投影常见
+/// 1920×1080 / 1366×768 与平板 1024×768 走的是同一套判定，只是落在不同的档上
+/// （§3.7 要求首轮补大尺寸验证，别让课件成为第一个在投影下溢出的页面）。
+class CoursewarePresentPage extends ConsumerStatefulWidget {
+  const CoursewarePresentPage({
+    super.key,
+    required this.coursewareId,
+  });
+
+  /// 课件 id。数据一律走 [coursewareDetailProvider]（R4：presentation 不碰 `data/`）。
+  final String coursewareId;
+
+  @override
+  ConsumerState<CoursewarePresentPage> createState() =>
+      _CoursewarePresentPageState();
+}
+
+class _CoursewarePresentPageState
+    extends ConsumerState<CoursewarePresentPage> {
+  /// 当前环节下标。切换是**页内状态**而不是 push 新路由（§3.8 纪律 3）：
+  /// push 会丢掉「现在讲到第几环节」，返回时还要重新找。
+  int _index = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final app = AppTheme.colorsOf(context);
+    final async = ref.watch(coursewareDetailProvider(widget.coursewareId));
+    return switch (async) {
+      AsyncData(:final value) => value == null
+          ? AppPushedPage(
+              background: app.surface,
+              child: const Center(
+                child: AppEmptyState(
+                  icon: LucideIcons.fileWarning,
+                  title: '这份课件已经不存在了',
+                  message: '它可能已被删除。回到知识点列表重新打开一份课件。',
+                ),
+              ),
+            )
+          : _buildPresent(app, value),
+      AsyncError(:final error) => AppPushedPage(
+          background: app.surface,
+          child: Center(
+            child: AppError(
+              message: '课件加载失败：$error',
+              onRetry: () => ref.invalidate(
+                coursewareDetailProvider(widget.coursewareId),
+              ),
+            ),
+          ),
+        ),
+      _ => AppPushedPage(
+          background: app.surface,
+          child: const Center(child: AppLoading()),
+        ),
+    };
+  }
+
+  Widget _buildPresent(AppColors app, CoursewareModel courseware) {
+    if (courseware.isEmpty) {
+      return AppPushedPage(
+        background: app.surface,
+        child: const Center(
+          child: AppEmptyState(
+            icon: LucideIcons.layoutGrid,
+            title: '这份课件还没有环节',
+            message: '课件是一串讲解环节，现在一个都没有。'
+                '回到课件编辑页用 AI 起草，或手动加第一个环节。',
+            steps: [
+              '在课件编辑页点「AI 起草」生成环节草稿',
+              '调顺序、改标题、换素材',
+              '回到演示页逐环节投给学生',
+            ],
+          ),
+        ),
+      );
+    }
+    // 环节数可能因外部改动而变短，切页前先把下标夹回合法区间。
+    final index = _index.clamp(0, courseware.sections.length - 1);
+    return AppPushedPage(
+      background: app.surface,
+      child: Column(
+        children: [
+          _buildHeader(context, courseware),
+          CoursewarePresentStepBar(
+            sections: courseware.sections,
+            index: index,
+            onSelect: (i) => setState(() => _index = i),
+          ),
+          Expanded(child: _PresentStage(section: courseware.sections[index])),
+          _PresentFooter(
+            index: index,
+            total: courseware.sections.length,
+            onPrev: index > 0 ? () => setState(() => _index = index - 1) : null,
+            onNext: index < courseware.sections.length - 1
+                ? () => setState(() => _index = index + 1)
+                : null,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context, CoursewareModel courseware) {
+    final app = AppTheme.colorsOf(context);
+    final text = AppTheme.textOf(context);
+    final meta = [
+      if (courseware.subject != null && courseware.subject!.isNotEmpty)
+        courseware.subject!,
+      if (courseware.grade != null) '${courseware.grade}年级',
+      if (courseware.semester != null && courseware.semester!.isNotEmpty)
+        courseware.semester!,
+    ].join(' · ');
+    return Container(
+      decoration: BoxDecoration(
+        color: app.surfaceRaised,
+        border: Border(
+          bottom: BorderSide(
+            color: app.outline,
+            width: AppElevation.borderWidthHairline,
+          ),
+        ),
+      ),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.md,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  courseware.displayTitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: text.headlineLarge?.copyWith(color: app.onSurface),
+                ),
+                if (meta.isNotEmpty) ...[
+                  const SizedBox(height: AppSpacing.xs2),
+                  Text(
+                    meta,
+                    style: text.bodySmall?.copyWith(
+                      color: app.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          AppTextAction(
+            label: '退出演示',
+            semanticLabel: '退出演示',
+            // maybePop 而非 pop：本页可能在只剩一条路由的 Navigator 里被直接当
+            // home 挂载，pop 会弹掉根栈（整个 App）并撞 _history 断言。
+            // 与 [AppPushedPage] 内部 `leave()` 落到同一个调用，Esc 走的是同一条路。
+            onPressed: () => Navigator.of(context).maybePop(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 主区：环节标题 + 话术提问卡 + 按 kind 分派的环节内容。
+///
+/// 话术**不折叠**（决策 15）：投影时教师屏 = 学生所见，做「仅教师可见」在单屏下
+/// 物理上不可能；且「这些图形有什么共同点？」抛出去才是引导学生观察，藏起来反而
+/// 没了教学动作。
+class _PresentStage extends StatelessWidget {
+  const _PresentStage({required this.section});
+
+  final CoursewareSectionModel section;
+
+  @override
+  Widget build(BuildContext context) {
+    final app = AppTheme.colorsOf(context);
+    final text = AppTheme.textOf(context);
+    return Padding(
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            section.title,
+            style: text.titleLarge?.copyWith(color: app.onSurface),
+          ),
+          if (section.script.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.md),
+            _buildScriptCard(context, app, text),
+          ],
+          const SizedBox(height: AppSpacing.lg),
+          Expanded(child: SingleChildScrollView(child: _buildBody(context))),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScriptCard(
+    BuildContext context,
+    AppColors app,
+    AppText text,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: app.surfaceContainer,
+        borderRadius: BorderRadius.circular(AppRadius.card),
+        border: Border.all(
+          color: app.outline,
+          width: AppElevation.borderWidthHairline,
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '提问',
+            style: text.labelSmall?.copyWith(
+              color: app.onSurfaceVariant,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.xs2),
+          Text(
+            section.script,
+            style: text.titleMedium?.copyWith(
+              color: app.onSurface,
+              height: 1.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBody(BuildContext context) {
+    return switch (section.kind) {
+      CoursewareSectionKind.mediaGallery =>
+        SectionMediaGallery(section: section),
+      CoursewareSectionKind.interactiveScene =>
+        SectionInteractiveScene(section: section),
+      // practice 由 D 线交付（切片 7）；null = 后端先登记了前端还没枚举的新类型。
+      // 两者都给降级提示而不是白屏——课堂上白屏等于「课件坏了」。
+      CoursewareSectionKind.practice || null => AppEmptyState(
+          icon: LucideIcons.circleAlert,
+          title: section.isUnknownKind ? '暂不支持的环节类型' : '课堂练习还没接入',
+          message: section.isUnknownKind
+              ? '这份课件里有本版本还不认识的环节类型，这一段先用文字讲。'
+              : '课堂练习走助手「课件练习」上下文，还没接进演示页，这一段先用文字讲。',
+        ),
+    };
+  }
+}
+
+/// 底部：上一步 / `2 / 4` / 下一步。
+class _PresentFooter extends StatelessWidget {
+  const _PresentFooter({
+    required this.index,
+    required this.total,
+    required this.onPrev,
+    required this.onNext,
+  });
+
+  final int index;
+  final int total;
+  final VoidCallback? onPrev;
+  final VoidCallback? onNext;
+
+  @override
+  Widget build(BuildContext context) {
+    final app = AppTheme.colorsOf(context);
+    final text = AppTheme.textOf(context);
+    return Container(
+      decoration: BoxDecoration(
+        color: app.surfaceRaised,
+        border: Border(
+          top: BorderSide(
+            color: app.outline,
+            width: AppElevation.borderWidthHairline,
+          ),
+        ),
+      ),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.lg,
+        vertical: AppSpacing.md,
+      ),
+      child: Row(
+        children: [
+          AppPrimaryButton(
+            label: '上一步',
+            icon: LucideIcons.chevronLeft,
+            fullWidth: false,
+            height: AppControl.heightLgOf(context),
+            onPressed: onPrev,
+          ),
+          Expanded(
+            child: Center(
+              child: Text(
+                '${index + 1} / $total',
+                style: text.titleSmall?.copyWith(color: app.onSurface),
+              ),
+            ),
+          ),
+          AppPrimaryButton(
+            label: '下一步',
+            icon: LucideIcons.chevronRight,
+            fullWidth: false,
+            height: AppControl.heightLgOf(context),
+            onPressed: onNext,
+          ),
+        ],
+      ),
+    );
+  }
+}

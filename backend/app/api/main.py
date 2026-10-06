@@ -3,6 +3,8 @@ from fastapi import APIRouter
 from app.features.ai.router import router as ai_router
 from app.features.assistant.router import router as assistant_router
 from app.features.auth.router import router as auth_router
+from app.features.courseware.asset_router import router as courseware_asset_router
+from app.features.courseware.router import router as courseware_router
 from app.features.export.router import router as export_router
 from app.features.health.router import router as health_router
 from app.features.mastery.router import router as mastery_router
@@ -21,6 +23,11 @@ api_router.include_router(tasks_router)
 api_router.include_router(review_router)
 api_router.include_router(mastery_router)
 api_router.include_router(materials_router)
+# —— 课件（ADR-0067）——
+# ⚠️ 这两行由**批次 0 一次性写好**：素材线与课件线并行开发，两线都不再改本文件
+# （两个会话对同一行做 Edit 必然互相覆盖，见 §6.3 冲突矩阵）。
+api_router.include_router(courseware_asset_router)
+api_router.include_router(courseware_router)
 api_router.include_router(tutor_router)
 api_router.include_router(questions_router)
 api_router.include_router(export_router)

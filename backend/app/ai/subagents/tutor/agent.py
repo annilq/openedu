@@ -24,6 +24,24 @@ def detect_subject(text: str) -> str:
     return ""
 
 
+def _courseware_hint_context(
+    courseware: dict, base_context: str | None
+) -> str:
+    """课件答错场景的分级提示约束；身份仍是教师，内容受众是学生。"""
+    classroom = (
+        "【课堂练习分级提示】\n"
+        "这是教师账户为大屏前学生触发的口头答错引导，不是可复核作答。\n"
+        "按教师消息中指定的级别只给一级提示："
+        "第1级只提醒观察方向；第2级拆出关键条件；第3级指出下一步操作。\n"
+        "任何级别都不得直接给出答案、最终结论或完整解法；"
+        "不得创建任务，不得记录作答、错题或掌握度。\n"
+        f"课件：{courseware.get('courseware_id') or '未指定'}；"
+        f"环节：{courseware.get('section_id') or '未指定'}；"
+        f"知识点：{courseware.get('knowledge_point') or '未指定'}。"
+    )
+    return f"{base_context}\n\n{classroom}" if base_context else classroom
+
+
 class TutorSubAgent(BaseSubAgent):
     business = "tutor"
 
@@ -45,8 +63,17 @@ class TutorSubAgent(BaseSubAgent):
 
     async def run(self, message: str, ctx: SubAgentContext, *, session=None):
         """悬浮助手入口：自由文本 → 适龄讲解（流式 ASSISTANT_MESSAGE）。"""
-        subject = detect_subject(message) or (ctx.extra.get("subject") or "")
-        grade = int(ctx.extra.get("grade") or 0)
+        courseware = ctx.extra.get("courseware")
+        is_courseware = isinstance(courseware, dict)
+        courseware = courseware if is_courseware else {}
+        subject = str(courseware.get("subject") or "") or detect_subject(message) or (
+            ctx.extra.get("subject") or ""
+        )
+        grade = int(courseware.get("grade") or ctx.extra.get("grade") or 0)
+        knowledge_point = str(courseware.get("knowledge_point") or "")
+        base_context = ctx.extra.get("context")
+        if is_courseware:
+            base_context = _courseware_hint_context(courseware, base_context)
         tc = self._tool("tutor_explain", label="伴学答疑")
         yield tc.call
         # 流式讲解：溯源（rag_sources）先于正文下发，正文逐 token 下推，
@@ -55,8 +82,8 @@ class TutorSubAgent(BaseSubAgent):
         async for chunk in self.service.aexplain_stream(
             grade=grade,
             subject=subject,
-            knowledge_point="",
-            context=self._effective_context(subject, ctx.extra.get("context")),
+            knowledge_point=knowledge_point,
+            context=self._effective_context(subject, base_context),
             question=message,
             history=ctx.history,
             # ADR-0030：SOP 在输入安全闸门之后注入（见 TutorService.aexplain_stream）
@@ -77,4 +104,9 @@ class TutorSubAgent(BaseSubAgent):
                 yield tc.result({"blocked": chunk.blocked})
                 # 仅拦截态才补一条收尾消息（拒绝话术）；正常流正文已由 delta 拼出。
                 if chunk.blocked:
-                    yield self._finish(chunk.answer or "", blocked=True)
+                    answer = chunk.answer or ""
+                    if is_courseware and chunk.reason == "llm_unavailable":
+                        answer = (
+                            "未配置模型，无法生成课堂提示。请在「模型管理」中添加模型并设为默认后重试。"
+                        )
+                    yield self._finish(answer, blocked=True)

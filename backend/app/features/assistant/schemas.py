@@ -16,6 +16,21 @@ from uuid import UUID
 from sqlmodel import Field, SQLModel
 
 
+class CoursewareContext(SQLModel):
+    """课堂课件练习上下文（ADR-0067 §3.6）。
+
+    与 ``focus_interest`` 同样只经 ``SubAgentContext.extra`` 透传，不对应任务、
+    作答或掌握度实体；字段可空以兼容孤儿课件与尚未补齐的旧草稿。
+    """
+
+    courseware_id: UUID | None = None
+    section_id: str | None = None
+    knowledge_point: str | None = None
+    subject: str | None = None
+    grade: int | None = None
+    semester: str | None = None
+
+
 class AssistantChatReq(SQLModel):
     """悬浮助手对话请求体。
 
@@ -28,6 +43,8 @@ class AssistantChatReq(SQLModel):
     model: str | None = None
     history: list[dict] | None = None
     focus_interest: list[str] | None = None
+    # ADR-0067：课件练习只把课堂语境透传给 SubAgent，不创建任务或作答记录。
+    courseware: CoursewareContext | None = None
 
 
 class AssistantConversationResp(SQLModel):
