@@ -9,10 +9,10 @@ class TutorLogsRepositoryImpl implements TutorLogsRepository {
   final NetworkService _network;
 
   @override
-  Future<List<TutorLogModel>> logs(String childId) async {
+  Future<List<TutorLogModel>> logs(String studentId) async {
     final data = await _network.get(
       '/tutor/logs',
-      query: {'child_id': childId},
+      query: {'student_id': studentId},
     );
     return decodeList(data, TutorLogModel.fromJson);
   }

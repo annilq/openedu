@@ -9,14 +9,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-import 'package:kids_learn/features/children/domain/repositories/children_repository.dart';
-import 'package:kids_learn/features/children/presentation/providers/children_notifier.dart';
-import 'package:kids_learn/features/children/providers/children_provider.dart'
-    show childrenNotifierProvider;
+import 'package:kids_learn/features/students/domain/repositories/students_repository.dart';
+import 'package:kids_learn/features/students/presentation/providers/students_notifier.dart';
+import 'package:kids_learn/features/students/providers/students_provider.dart'
+    show studentsNotifierProvider;
 import 'package:kids_learn/features/home/domain/repositories/tasks_repository.dart';
-import 'package:kids_learn/features/home/presentation/providers/selected_child_provider.dart';
-import 'package:kids_learn/features/home/presentation/widgets/parent/parent_overview_view.dart';
-import 'package:kids_learn/features/home/presentation/widgets/parent/parent_tasks_view.dart';
+import 'package:kids_learn/features/home/presentation/providers/selected_student_provider.dart';
+import 'package:kids_learn/features/home/presentation/widgets/teacher/teacher_overview_view.dart';
+import 'package:kids_learn/features/home/presentation/widgets/teacher/teacher_tasks_view.dart';
 import 'package:kids_learn/features/home/providers/home_provider.dart';
 import 'package:kids_learn/shared/domain/models/models.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
@@ -24,24 +24,24 @@ import 'package:kids_learn/shared/widgets/app_empty_state.dart';
 import 'package:kids_learn/shared/widgets/app_card.dart';
 
 /// 只为构造 notifier 存在；本测试不经它取数（状态由仓库桩直接返回）。
-class _UnusedChildrenRepo implements ChildrenRepository {
+class _UnusedChildrenRepo implements StudentsRepository {
   @override
   dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError();
 }
 
 class _SeededChildrenNotifier extends ChildrenNotifier {
-  _SeededChildrenNotifier(List<UserModel> children)
+  _SeededChildrenNotifier(List<UserModel> students)
       : super(_UnusedChildrenRepo()) {
-    state = ChildrenLoaded(children);
+    state = StudentsLoaded(students);
   }
 }
 
 class _StubTasksRepository implements TasksRepository {
-  _StubTasksRepository(this.parent);
-  final List<TaskModel> parent;
+  _StubTasksRepository(this.teacher);
+  final List<TaskModel> teacher;
 
   @override
-  Future<TaskPage> parentTasks({
+  Future<TaskPage> teacherTasks({
     String? status,
     String? cursor,
     int pageSize = 20,
@@ -52,8 +52,8 @@ class _StubTasksRepository implements TasksRepository {
       return TaskPage(items: const [], total: 0, pageSize: pageSize, counts: counts);
     }
     final items = status == null || status.isEmpty
-        ? parent
-        : parent.where((t) => status.split(',').contains(t.status)).toList();
+        ? teacher
+        : teacher.where((t) => status.split(',').contains(t.status)).toList();
     return TaskPage(
       items: items.take(pageSize).toList(),
       total: items.length,
@@ -63,18 +63,18 @@ class _StubTasksRepository implements TasksRepository {
   }
 
   TaskCounts _counts() => TaskCounts(
-        draft: parent.where((t) => t.status == 'draft').length,
-        ready: parent.where((t) => t.status == 'ready').length,
-        assigned: parent.where((t) => t.status == 'assigned').length,
-        done: parent.where((t) => t.status == 'done').length,
+        draft: teacher.where((t) => t.status == 'draft').length,
+        ready: teacher.where((t) => t.status == 'ready').length,
+        assigned: teacher.where((t) => t.status == 'assigned').length,
+        done: teacher.where((t) => t.status == 'done').length,
       );
 
   @override
   Future<List<TaskModel>> todayTasks() async => const <TaskModel>[];
 
   @override
-  Future<ProgressModel> progress(String childId) async => ProgressModel(
-        childId: childId,
+  Future<ProgressModel> progress(String studentId) async => ProgressModel(
+        studentId: studentId,
         total: 0,
         correct: 0,
         accuracy: 0,
@@ -83,8 +83,8 @@ class _StubTasksRepository implements TasksRepository {
       );
 
   @override
-  Future<MasteryModel> mastery(String childId) async => MasteryModel(
-        childId: childId,
+  Future<MasteryModel> mastery(String studentId) async => MasteryModel(
+        studentId: studentId,
         totalKnowledgePoints: 0,
         masteredCount: 0,
         items: const <KnowledgeMasteryModel>[],
@@ -116,14 +116,14 @@ void main() {
       ProviderScope(
         overrides: [
           tasksRepositoryProvider.overrideWithValue(_StubTasksRepository(tasks)),
-          childrenNotifierProvider
+          studentsNotifierProvider
               .overrideWith((ref) => _SeededChildrenNotifier(const <UserModel>[])),
         ],
         child: ShadApp.custom(
           // 断言几何必须传真实主题：不传会走 shadcn 默认主题，量出来的尺寸与产品不符。
-          theme: AppTheme.shadFor(false, AppUserMode.parent, AppDensity.compact),
+          theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
           appBuilder: (context) => MaterialApp(
-            home: ParentTasksView(
+            home: TeacherTasksView(
               onNavigateToReview: (_) {},
               onNavigateToCreate: onCreate,
             ),
@@ -143,7 +143,7 @@ void main() {
     for (final step in const [
       '选学科与知识点，让 AI 出题',
       '复核题目、删掉不合适的',
-      '派给娃娃，完成后自动归档',
+      '派给学生，完成后自动归档',
     ]) {
       expect(find.text(step), findsOneWidget);
     }
@@ -161,7 +161,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('没有进行中的任务'), findsOneWidget);
-    expect(find.text('任务都已完成。娃娃做完后会自动归档到「已完成」。'),
+    expect(find.text('任务都已完成。学生做完后会自动归档到「已完成」。'),
         findsOneWidget);
     expect(find.text('去派发草稿'), findsNothing,
         reason: '草稿也是 0，把用户指过去等于送进第二个空页');
@@ -190,7 +190,7 @@ void main() {
   testWidgets('两种变体的几何与强调态前景', (tester) async {
     await tester.pumpWidget(
       ShadApp.custom(
-        theme: AppTheme.shadFor(false, AppUserMode.parent, AppDensity.compact),
+        theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
         appBuilder: (context) => MaterialApp(
           home: const Column(
             children: [
@@ -231,19 +231,19 @@ void main() {
         overrides: [
           tasksRepositoryProvider
               .overrideWithValue(_StubTasksRepository(const <TaskModel>[])),
-          childrenNotifierProvider
+          studentsNotifierProvider
               .overrideWith((ref) => _SeededChildrenNotifier(const <UserModel>[])),
-          selectedChildProvider.overrideWith((ref) {
-            final notifier = SelectedChildNotifier(ref);
+          selectedStudentProvider.overrideWith((ref) {
+            final notifier = SelectedStudentNotifier(ref);
             // 直接种状态：走 select() 会触发四个 load，与本测试无关。
-            notifier.state = const SelectedChild(id: 'c1', grade: 2);
+            notifier.state = const SelectedStudent(id: 'c1', grade: 2);
             return notifier;
           }),
         ],
         child: ShadApp.custom(
-          theme: AppTheme.shadFor(false, AppUserMode.parent, AppDensity.compact),
+          theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
           appBuilder: (context) => MaterialApp(
-            home: ParentOverviewView(
+            home: TeacherOverviewView(
               onNavigateToReview: (_) {},
               onNavigateToCreate: () => createTaps++,
             ),

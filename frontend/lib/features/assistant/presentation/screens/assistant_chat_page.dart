@@ -21,17 +21,17 @@ import '../../../../shared/widgets/app_actions.dart';
 
 /// AI 单入口整页形态（ADR-0036 / ADR-0047）：**双端唯一的助手页面**。
 ///
-/// - 娃娃端：导航空壳的「问 AI 老师」页签（[showBack] = false）；
-/// - 家长端：浮动按钮 push 出来的整页（[showBack] = true，[isParent] = true）。
+/// - 学生端：导航空壳的「问 AI 老师」页签（[showBack] = false）；
+/// - 教师端：浮动按钮 push 出来的整页（[showBack] = true，[isTeacher] = true）。
 ///
 /// 两端共用同一 [assistantNotifierProvider] 与同一 [AssistantMessageList]——同一个 AI
-/// 能力、同一份会话、同一套渲染，只用 [isParent] 切换标题与空态引导的口径。
+/// 能力、同一份会话、同一套渲染，只用 [isTeacher] 切换标题与空态引导的口径。
 ///
-/// 本页可能经 `Navigator.push` 打开（家长端），此时它**不在导航壳的宽度兜底范围内**
+/// 本页可能经 `Navigator.push` 打开（教师端），此时它**不在导航壳的宽度兜底范围内**
 /// （ADR-0045），所以整页自带 `contentWide` 上限：消息列表与输入栏同宽同轴，大屏下
 /// 不会出现「气泡收在中间一列、输入框横贯全屏」的错位。
 ///
-/// 家长端在本页内还有「历史会话」与「只读回放」两种模式，**页内切换、不新增路由**：
+/// 教师端在本页内还有「历史会话」与「只读回放」两种模式，**页内切换、不新增路由**：
 /// 本页已经是 push 出来的整页，再叠「列表页 → 回放页」就成三层栈，输入栏逻辑也会
 /// 分到两处（ADR-0048）。
 ///
@@ -43,17 +43,17 @@ enum _AssistantMode { chat, history, reading }
 class AssistantChatPage extends ConsumerStatefulWidget {
   final bool showBack;
 
-  /// 家长形态：标题与空态引导按家长口径渲染，并开放历史会话入口。
+  /// 教师形态：标题与空态引导按教师口径渲染，并开放历史会话入口。
   ///
-  /// 家长能出题 / 查任务 / 查学情，娃娃端只暴露伴学答疑（后端
+  /// 教师能出题 / 查任务 / 查学情，学生端只暴露伴学答疑（后端
   /// `AgentRuntime.visible_businesses(role)` 是唯一真相源），所以「只讲学习内容」这句
-  /// 边界提示不能照搬给家长。
-  final bool isParent;
+  /// 边界提示不能照搬给教师。
+  final bool isTeacher;
 
   const AssistantChatPage({
     super.key,
     this.showBack = false,
-    this.isParent = false,
+    this.isTeacher = false,
   });
 
   @override
@@ -73,7 +73,7 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
   /// 历史列表里正在打开的那一段（行内加载态）。
   String? _openingId;
 
-  /// 只读回放的内容（孩子的会话）。家长自己的会话走 [_resumeToChat]，不进这里。
+  /// 只读回放的内容（学生的会话）。教师自己的会话走 [_resumeToChat]，不进这里。
   AssistantConversationDetail? _replay;
 
   /// 是否处于「多选管理」态：是则历史行可勾选、不可点开。
@@ -209,8 +209,8 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
 
   /// 引导卡出口：把「要去哪」交给壳，再关掉自己（若本页是 push 出来的整页）。
   ///
-  /// 家长端本页是 `Navigator.push` 的整页，壳在它**下面**——所以不能自己 push，
-  /// 得先退回去、由 [HomeScreen] 消费意图切到目标页。娃娃端本页是壳内页签
+  /// 教师端本页是 `Navigator.push` 的整页，壳在它**下面**——所以不能自己 push，
+  /// 得先退回去、由 [HomeScreen] 消费意图切到目标页。学生端本页是壳内页签
   /// （[showBack] = false），原地不动等壳自己切。
   ///
   /// 认不出的 target 什么也不做：后端的 target 是受控枚举，前端猜一个近似落点
@@ -237,10 +237,10 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
     });
   }
 
-  /// 打开一段历史会话：我的 → 恢复续接；孩子的 → 只读回放。
+  /// 打开一段历史会话：我的 → 恢复续接；学生的 → 只读回放。
   ///
   /// 分叉的依据是条目本身的归属（[AssistantConversation.isMine]），不是模式状态：
-  /// 孩子的会话**不能**续接（家长发请求时 child_id 恒为 None，过不了后端归属校验，
+  /// 学生的会话**不能**续接（教师发请求时 student_id 恒为 None，过不了后端归属校验，
   /// 后端会另建一段而屏幕上像续上了）。
   Future<void> _open(AssistantConversation conv) async {
     setState(() => _openingId = conv.id);
@@ -309,7 +309,7 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
               child: AppContentFrame(
                 child: switch (_mode) {
                     _AssistantMode.chat => messages.isEmpty
-                        ? _WelcomeHint(isParent: widget.isParent)
+                        ? _WelcomeHint(isTeacher: widget.isTeacher)
                         : AssistantMessageList(
                             messages: messages,
                             controller: _scroll,
@@ -342,7 +342,7 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
             ],
             if (_mode == _AssistantMode.reading) ...[
               _hairline(scheme),
-              _ReadOnlyNotice(childName: replay?.conversation.childName),
+              _ReadOnlyNotice(studentName: replay?.conversation.studentName),
             ],
           ],
         ),
@@ -358,11 +358,11 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
     switch (_mode) {
       case _AssistantMode.chat:
         return AppTopBar(
-          title: widget.isParent ? 'AI 学习助手' : '问 AI 老师',
+          title: widget.isTeacher ? 'AI 学习助手' : '问 AI 老师',
           showBack: widget.showBack,
-          // 历史入口**只给家长**：后端没有 child-scoped 的会话列表路由，且孩子看到
+          // 历史入口**只给教师**：后端没有 child-scoped 的会话列表路由，且学生看到
           // 自己「被拦过」的记录是负面强化（ADR-0048 记录了这个有意的不对称）。
-          trailing: widget.isParent
+          trailing: widget.isTeacher
               ? AppIconAction(
                   icon: LucideIcons.history,
                   iconSize: 20,
@@ -394,7 +394,7 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
                 ),
         );
       case _AssistantMode.reading:
-        final name = _replay?.conversation.childName;
+        final name = _replay?.conversation.studentName;
         return AppTopBar(
           title: name == null ? '会话回放' : '$name的对话',
           showBack: true,
@@ -412,34 +412,34 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
 
 /// 空态引导：告诉使用者这个入口能问什么、边界在哪。
 ///
-/// 文案按角色分叉（见 [AssistantChatPage.isParent]）：娃娃端强调「只讲学习内容」的
-/// 边界，家长端强调「能出题 / 查任务 / 看学情」的能力。骨架走 [AssistantHintCard]，
+/// 文案按角色分叉（见 [AssistantChatPage.isTeacher]）：学生端强调「只讲学习内容」的
+/// 边界，教师端强调「能出题 / 查任务 / 看学情」的能力。骨架走 [AssistantHintCard]，
 /// 与历史空态是同一个东西。
 ///
-/// ⚠️ 家长端那句曾是「一句话就能布置任务」——**它做不到**：助手是只读的（写操作
+/// ⚠️ 教师端那句曾是「一句话就能布置任务」——**它做不到**：助手是只读的（写操作
 /// 一律引导到对应页面）。空态是承诺最密集的位置，写一句做不到的话，用户只会在
 /// 试过之后觉得「这助手坏了」。空态只说**真能做的**，「布置任务」由引导卡给出口。
 class _WelcomeHint extends StatelessWidget {
-  final bool isParent;
+  final bool isTeacher;
 
-  const _WelcomeHint({required this.isParent});
+  const _WelcomeHint({required this.isTeacher});
 
   @override
   Widget build(BuildContext context) => AssistantHintCard(
         icon: LucideIcons.sparkles,
-        title: isParent ? '可以出题、查学情、看错题' : '有问题就问 AI 老师吧',
-        body: isParent ? '布置与派发任务请到「布置任务」页' : '只讲学习内容，其他问题不回答哦',
+        title: isTeacher ? '可以出题、查学情、看错题' : '有问题就问 AI 老师吧',
+        body: isTeacher ? '布置与派发任务请到「布置任务」页' : '只讲学习内容，其他问题不回答哦',
       );
 }
 
-/// 只读回放的底栏：孩子的会话不能续接，输入栏换成一句说明。
+/// 只读回放的底栏：学生的会话不能续接，输入栏换成一句说明。
 ///
 /// **替换而不是隐藏**：直接去掉底栏会让人以为界面坏了，而这里必须说清**为什么**
 /// 不能输入——否则用户会反复点空白处，以为是自己没点对。
 class _ReadOnlyNotice extends StatelessWidget {
-  final String? childName;
+  final String? studentName;
 
-  const _ReadOnlyNotice({this.childName});
+  const _ReadOnlyNotice({this.studentName});
 
   @override
   Widget build(BuildContext context) {
@@ -459,7 +459,7 @@ class _ReadOnlyNotice extends StatelessWidget {
               const SizedBox(width: AppSpacing.sm),
               Expanded(
                 child: Text(
-                  '这是${childName ?? '孩子'}的对话，只能查看，不能继续提问',
+                  '这是${studentName ?? '学生'}的对话，只能查看，不能继续提问',
                   style: text.bodyMedium
                       ?.copyWith(color: scheme.onSurfaceVariant),
                 ),

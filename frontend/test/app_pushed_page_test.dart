@@ -14,7 +14,7 @@ Future<void> _pumpPushed(WidgetTester tester, Widget page) async {
   final navigatorKey = GlobalKey<NavigatorState>();
   await tester.pumpWidget(
     ShadApp.custom(
-      theme: AppTheme.shadFor(false, AppUserMode.parent, AppDensity.compact),
+      theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
       appBuilder: (_) => MaterialApp(
         navigatorKey: navigatorKey,
         home: const Text('来源页'),

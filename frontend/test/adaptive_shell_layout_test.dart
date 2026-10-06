@@ -4,7 +4,7 @@
 //
 // 曾经还有「大屏 + detail 走 master-detail 双栏、中屏 detail 整幅顶替 body」一组
 // 用例——detail 已在 ADR-0059 移除（壳只认一个 body），那组用例随之删除。
-// 若有人把 detail 加回来，test/parent_nav_single_source_test.dart 会红。
+// 若有人把 detail 加回来，test/teacher_nav_single_source_test.dart 会红。
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -44,7 +44,7 @@ void main() {
         child: Directionality(
           textDirection: TextDirection.ltr,
           child: AdaptiveShell(
-            mode: AppUserMode.parent,
+            mode: AppUserMode.teacher,
             destinations: const [
               AdaptiveNavDestination(
                   icon: LucideIcons.house, label: '首页', active: true),
@@ -91,7 +91,7 @@ void main() {
         child: Directionality(
           textDirection: TextDirection.ltr,
           child: AdaptiveShell(
-            mode: AppUserMode.parent,
+            mode: AppUserMode.teacher,
             destinations: const [
               AdaptiveNavDestination(
                   icon: LucideIcons.house, label: '首页', active: true),

@@ -76,7 +76,7 @@ double _fill(WidgetTester tester) {
 /// reduce-motion 通过**包一层 MediaQuery** 注入（`copyWith` 保留 size 等字段，
 /// 直接 `MediaQueryData(disableAnimations: true)` 会把 size 变成 Size.zero）。
 Widget _host(double value, {bool reduceMotion = false}) => ShadApp.custom(
-      theme: AppTheme.shadFor(false, AppUserMode.parent, AppDensity.compact),
+      theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
       appBuilder: (_) => CupertinoApp(
         home: Builder(
           builder: (context) => MediaQuery(

@@ -20,14 +20,14 @@ class MaterialLibraryRepositoryImpl implements MaterialLibraryRepository {
   @override
   Future<void> createFolder({
     required String name,
-    String? parentFolderId,
+    String? teacherFolderId,
     String? subject,
     int? grade,
     String? semester,
   }) async {
     await _network.post('/materials/folders', body: {
       'name': name,
-      if (parentFolderId != null) 'parent_folder_id': parentFolderId,
+      if (teacherFolderId != null) 'teacher_folder_id': teacherFolderId,
       'subject': subject,
       'grade': grade,
       'semester': semester,
@@ -113,7 +113,7 @@ class MaterialLibraryRepositoryImpl implements MaterialLibraryRepository {
     String? subject,
     int? grade,
     String? semester,
-    String? parentFolderId,
+    String? teacherFolderId,
   }) async {
     // 只传非空字段：PATCH 语义下，后端按「出现即改写」处理（含显式 null）。
     // 本客户端不提供「清空某字段」入口，故 null 一律省略，避免误清空既有值。
@@ -122,7 +122,7 @@ class MaterialLibraryRepositoryImpl implements MaterialLibraryRepository {
     if (subject != null) body['subject'] = subject;
     if (grade != null) body['grade'] = grade;
     if (semester != null) body['semester'] = semester;
-    if (parentFolderId != null) body['parent_folder_id'] = parentFolderId;
+    if (teacherFolderId != null) body['teacher_folder_id'] = teacherFolderId;
     final data = await _network.patch('/folders/$folderId', body: body);
     return MaterialFolderModel.fromJson(
         Map<String, dynamic>.from((data as Map)));

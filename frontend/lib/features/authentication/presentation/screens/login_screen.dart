@@ -122,7 +122,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     const SizedBox(height: AppSpacing.lg),
                     Center(
                       child: Text(
-                        '娃娃学习',
+                        '学生学习',
                         style: text.headlineMedium?.copyWith(
                           fontWeight: FontWeight.w700,
                           letterSpacing: -0.5,
@@ -132,7 +132,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     const SizedBox(height: AppSpacing.xs),
                     Center(
                       child: Text(
-                        _isRegister ? '创建家长账号，和孩子一起成长' : '欢迎回来，继续今天的学习',
+                        _isRegister ? '创建教师账号，和学生一起成长' : '欢迎回来，继续今天的学习',
                         style: text.bodyLarge?.copyWith(
                           color: app.onSurfaceVariant,
                         ),
@@ -199,7 +199,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                     },
                               foregroundColor: app.primary,
                               child: Text(
-                                _isRegister ? '已有账号？去登录' : '没有账号？注册家长账号',
+                                _isRegister ? '已有账号？去登录' : '没有账号？注册教师账号',
                                 style: text.bodyMedium,
                               ),
                             ),
@@ -211,7 +211,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     const SizedBox(height: AppSpacing.xl),
                     Center(
                       child: Text(
-                        '护眼模式 · 适合孩子的舒适界面',
+                        '护眼模式 · 适合学生的舒适界面',
                         style: text.bodySmall?.copyWith(
                           color: app.onSurfaceVariant,
                         ),

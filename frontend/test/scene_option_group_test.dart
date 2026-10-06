@@ -74,7 +74,7 @@ Future<void> _pumpScene(
   addTearDown(() => tester.binding.setSurfaceSize(null));
   await tester.pumpWidget(
     ShadApp.custom(
-      theme: AppTheme.shadFor(false, AppUserMode.parent, AppDensity.compact),
+      theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
       appBuilder: (context) => MaterialApp(
         home: Scaffold(body: SceneInterpreter(kind: 'reflection', spec: spec)),
       ),

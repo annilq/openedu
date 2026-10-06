@@ -10,7 +10,7 @@ import '../theme/app_theme.dart';
 /// - bottom = [AppSpacing.sm] (8)：标题 → 内容的统一间隔。
 /// - 水平 0：标题左缘与全宽卡片（AppCard）左缘对齐；页面不要再给卡片套
 ///   `Padding(horizontal: lg)`，否则会与标题错位 ~12px。
-/// 所有家长/设置页共用此节奏，确保跨页面 UI 一致。
+/// 所有教师/设置页共用此节奏，确保跨页面 UI 一致。
 class SectionTitle extends StatelessWidget {
   final String text;
   final Widget? trailing;

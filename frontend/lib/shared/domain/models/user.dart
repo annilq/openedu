@@ -1,7 +1,7 @@
 // 领域模型：与后端 SQLModel schema 对齐的纯 Dart 模型。
 // 注意：所有 ID 均为 UUID 字符串（后端用 uuid.UUID）。
 
-/// 娃娃兴趣画像（WF-1 定稿）：受控分类叶子 key 列表 + 「其他爱好」自由文本（≤50 字）。
+/// 学生兴趣画像（WF-1 定稿）：受控分类叶子 key 列表 + 「其他爱好」自由文本（≤50 字）。
 /// 与后端 `User.interests` 的 {categories, free_text} 形态对齐。
 class InterestsModel {
   final List<String> categories; // 受控分类叶子 key（含二级，如 "恐龙"）
@@ -34,7 +34,7 @@ class UserModel {
   final String id;
   final String username;
   final String displayName;
-  final String role; // parent | child
+  final String role; // teacher | child
   final int? grade;
   final bool isActive;
   final InterestsModel? interests; // 兴趣画像（WF-1/WF-2）
@@ -74,5 +74,5 @@ class UserModel {
     'interests': interests?.toJson(),
   };
 
-  bool get isParent => role == 'parent';
+  bool get isTeacher => role == 'teacher';
 }

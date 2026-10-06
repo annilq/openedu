@@ -79,7 +79,7 @@ void main() {
 
       final state = notifier.state as AssistantActive;
       expect(state.streaming, isFalse);
-      // 只剩娃娃那条 user 气泡，AI 占位已清掉。
+      // 只剩学生那条 user 气泡，AI 占位已清掉。
       expect(state.messages.where((m) => m.thinking), isEmpty);
       expect(state.messages.map((m) => m.role).toList(), ['user']);
     });

@@ -6,7 +6,7 @@ import '../theme/app_theme.dart';
 /// AI 气泡正文 Markdown 渲染（B-4，ADR-0036 单入口）。
 ///
 /// 把设计令牌（[AppColors] / [AppText]）映成一套 gpt_markdown 样式表，
-/// Parent/Child 双模式 + 亮暗下与全站排版一致。要点：
+/// Teacher/Child 双模式 + 亮暗下与全站排版一致。要点：
 ///
 /// - 代码块复制按钮**关闭**（`CodeBlockStyle.showCopyButton: false`）——
 ///   沿用原生 [_CopyButton]（整条消息复制），不引入 Material 渲染栈

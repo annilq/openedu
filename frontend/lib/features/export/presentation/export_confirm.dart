@@ -14,7 +14,7 @@ import '../domain/export_repository.dart';
 /// 留在调用点——两边传给服务端的 `source` / `title` / `downgradedCount` 本来就不同。
 ///
 /// 返回 `true` = 继续导出；`false` = 用户取消。**未超软上限时直接返回 true**，
-/// 不弹窗（软提示不硬拦：家长要印 100 题的复习卷是合理需求，服务端另有硬边界）。
+/// 不弹窗（软提示不硬拦：教师要印 100 题的复习卷是合理需求，服务端另有硬边界）。
 Future<bool> confirmLargeExport(
   BuildContext context, {
   required int count,

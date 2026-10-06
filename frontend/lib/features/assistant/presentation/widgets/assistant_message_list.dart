@@ -19,7 +19,7 @@ import '../../../../shared/widgets/app_card.dart';
 
 /// 统一的 AI 消息列表渲染（ADR-0036 单入口 / ADR-0042 卡片协议）。
 ///
-/// 助手整页 [AssistantChatPage]（娃娃端页签 / 家长端浮球打开的都是它）渲染本组件，
+/// 助手整页 [AssistantChatPage]（学生端页签 / 教师端浮球打开的都是它）渲染本组件，
 /// 保证两个角色对卡片、`blocked`、复制按钮的渲染行为完全一致——收敛前悬浮面板与整页
 /// 各写一份渲染，整页只渲染纯文本、静默吞掉 DATA 帧，是「两份渲染」的直接后果。
 ///
@@ -35,7 +35,7 @@ class AssistantMessageList extends StatelessWidget {
 
   /// 卡片动作出口（引导卡用），透传给 [AssistantCardTile]。
   ///
-  /// 由页面注入：同一条卡片在家长端是 push 的整页、在娃娃端是壳内页签，
+  /// 由页面注入：同一条卡片在教师端是 push 的整页、在学生端是壳内页签，
   /// 「动作之后怎么走」只有宿主知道（见 `assistant_chat_page.dart`）。
   final void Function(AssistantCardAction action)? onCardAction;
 
@@ -218,7 +218,7 @@ class _BubbleBody extends StatelessWidget {
           // 调用帧都会改写它（「正在检索错题」→「正在汇总」）。直接换文本是硬切，
           // 恰恰把「又推进了一步」读成了闪烁。换成淡入 + 轻微上浮，推进变成可见的。
           //
-          // key 必须绑文本：AnimatedSwitcher 靠 key 判别「换了一个孩子」，
+          // key 必须绑文本：AnimatedSwitcher 靠 key 判别「换了一个学生」，
           // 用 const key 会让整段动画静默失效。
           AnimatedSwitcher(
             duration: reducedMotionOf(context) ? Duration.zero : AppMotion.state,

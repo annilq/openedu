@@ -15,9 +15,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// ## 用法
 /// ```dart
 /// ref.loadWhenIdle(
-///   parentTasksNotifierProvider,
+///   teacherTasksNotifierProvider,
 ///   (s) => s is ResourceIdle,
-///   () => ref.read(parentTasksNotifierProvider.notifier).load(),
+///   () => ref.read(teacherTasksNotifierProvider.notifier).load(),
 /// );
 /// ```
 ///

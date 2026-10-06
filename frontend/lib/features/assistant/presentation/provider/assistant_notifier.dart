@@ -68,7 +68,7 @@ class AssistantNotifier extends StateNotifier<AssistantState> {
 
   /// 当前会话 id：首轮由后端 DONE 帧回写，之后每轮原样带回以续接上下文。
   ///
-  /// 后端对该 id 做「parent_id + child_id」归属校验（`features/assistant/service.py`）：
+  /// 后端对该 id 做「teacher_id + student_id」归属校验（`features/assistant/service.py`）：
   /// 不匹配时不报错，而是**另建会话并回写新 id**，这里随之覆盖（自愈，不会读到他人会话）。
   /// 只存内存——**有意如此**（产品决策 2026-09-16）：打开助手默认空态，不自动续接
   /// 历史会话；首轮发消息才新建会话。要接着上次聊就点「历史会话」里的对应行
@@ -97,7 +97,7 @@ class AssistantNotifier extends StateNotifier<AssistantState> {
     return pairs.sublist(pairs.length - _historyLimit);
   }
 
-  /// 发送一条消息并消费 SSE 事件流。角色由后端 JWT 解析（家长 / 娃娃自动分流）。
+  /// 发送一条消息并消费 SSE 事件流。角色由后端 JWT 解析（教师 / 学生自动分流）。
   Future<void> send(String raw, {String? model}) async {
     final message = raw.trim();
     if (message.isEmpty || _submitting) return;
@@ -152,8 +152,8 @@ class AssistantNotifier extends StateNotifier<AssistantState> {
   /// 恢复一段历史会话（ADR-0048 的「我的对话」条目）：换掉当前会话身份与气泡，
   /// 之后的 [send] 会续接到它（后端按 session_id 归属校验后续接，零后端改动）。
   ///
-  /// **只对家长自己的会话开放**：[AssistantConversation.isMine] 为 false 的（孩子的
-  /// 会话）只能只读回放——家长发请求时 `child_id` 恒为 `None`，拿孩子的 session_id
+  /// **只对教师自己的会话开放**：[AssistantConversation.isMine] 为 false 的（学生的
+  /// 会话）只能只读回放——教师发请求时 `student_id` 恒为 `None`，拿学生的 session_id
   /// 续接必然过不了归属校验，后端会另建一段并回写新 id，屏幕上却像续上了。
   void resume({
     required String sessionId,

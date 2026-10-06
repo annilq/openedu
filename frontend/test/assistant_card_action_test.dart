@@ -1,6 +1,6 @@
 // 守住「写意图有出口」这条路：引导卡的动作解析 + 受控 target 映射 + 按钮真的可点。
 //
-// 背景（2026-09-17 真机报障）：家长说「帮我创建一个任务，包含四年级数学题」，
+// 背景（2026-09-17 真机报障）：教师说「帮我创建一个任务，包含四年级数学题」，
 // 助手回「我这边只能查询…请到『任务/作业』相关页面操作」——回答没幻觉，
 // 但**用户拿不到那个页面**：卡片协议当时只有 title/items/stats/text，
 // 没有任何位置能放一个出口。后端补了 `guide` 卡与受控 target，
@@ -19,10 +19,10 @@ Map<String, dynamic> _guideData() => {
       'type': 'guide',
       'result': {
         'title': '布置任务',
-        'text': '到「布置任务」页选好题目，确认后发布给娃娃。',
+        'text': '到「布置任务」页选好题目，确认后发布给学生。',
         'actions': [
-          {'label': '去布置任务', 'target': 'parent_create_task'},
-          {'label': '先看看题库', 'target': 'parent_question_bank'},
+          {'label': '去布置任务', 'target': 'teacher_create_task'},
+          {'label': '先看看题库', 'target': 'teacher_question_bank'},
         ],
       },
     };
@@ -34,7 +34,7 @@ void main() {
       expect(card.kind, AssistantCardKind.guide);
       expect(card.actions.length, 2);
       expect(card.actions.first.label, '去布置任务');
-      expect(card.actions.first.target, 'parent_create_task');
+      expect(card.actions.first.target, 'teacher_create_task');
     });
 
     test('缺 label 或 target 的一项整条丢弃——半张动作卡点了像界面坏了', () {
@@ -44,8 +44,8 @@ void main() {
           'title': '布置任务',
           'actions': [
             {'label': '好的', 'target': ''},
-            {'target': 'parent_create_task'},
-            {'label': '去布置任务', 'target': 'parent_create_task'},
+            {'target': 'teacher_create_task'},
+            {'label': '去布置任务', 'target': 'teacher_create_task'},
           ],
         },
       })!;
@@ -68,9 +68,9 @@ void main() {
     test('覆盖后端全部 target 常量', () {
       // 这三个字符串与后端 `app/ai/subagents/guide/agent.py` 的 TARGET_* 逐字对齐。
       for (final target in const [
-        'parent_create_task',
-        'parent_task_list',
-        'parent_question_bank',
+        'teacher_create_task',
+        'teacher_task_list',
+        'teacher_question_bank',
       ]) {
         expect(
           ShellDestination.fromTarget(target),
@@ -81,7 +81,7 @@ void main() {
     });
 
     test('未知 target 返回 null——宁可不动，也不猜一个近似落点', () {
-      expect(ShellDestination.fromTarget('parent_delete_all_tasks'), isNull);
+      expect(ShellDestination.fromTarget('teacher_delete_all_tasks'), isNull);
       expect(ShellDestination.fromTarget(''), isNull);
       expect(ShellDestination.fromTarget('https://evil.example.com'), isNull);
     });
@@ -111,8 +111,8 @@ void main() {
       await tester.pumpAndSettle();
 
       // 回调只交回动作本身：**怎么退、退到哪是宿主的事**
-      // （家长端是 push 的整页、娃娃端是壳内页签），卡片不自己导航。
-      expect(tapped?.target, 'parent_create_task');
+      // （教师端是 push 的整页、学生端是壳内页签），卡片不自己导航。
+      expect(tapped?.target, 'teacher_create_task');
     });
 
     testWidgets('宿主没给处理器时不画按钮（只读回放里点不动的按钮更糟）',
@@ -123,7 +123,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // 说明还在，出口不画。
-      expect(find.text('到「布置任务」页选好题目，确认后发布给娃娃。'), findsOneWidget);
+      expect(find.text('到「布置任务」页选好题目，确认后发布给学生。'), findsOneWidget);
       expect(find.text('去布置任务'), findsNothing);
     });
 

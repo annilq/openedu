@@ -9,7 +9,7 @@ import '../../domain/assistant_source.dart';
 /// 直接回答「这条回答引用了资料库里的哪些内容」（ADR-0055 §13 引用透明）。
 ///
 /// 单份资料可能命中多个片段：按 `materialId` 去重，片段拼接展示。点击资料名可展开
-/// 看实际注入的片段摘要（清洗后的 snippet），让家长 / 学生核对出处。
+/// 看实际注入的片段摘要（清洗后的 snippet），让教师 / 学生核对出处。
 class AssistantSourcesBar extends StatefulWidget {
   final List<RagSource> sources;
 

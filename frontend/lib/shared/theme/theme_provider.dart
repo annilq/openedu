@@ -25,10 +25,10 @@ final themeModeProvider =
   return ThemeModeController(storage, storage.getThemeMode());
 });
 
-/// 用户模式（家长工作台 / 娃娃学习台），持久化到本地存储。
+/// 用户模式（教师工作台 / 学生学习台），持久化到本地存储。
 ///
 /// 读取：[ref.watch(userModeProvider)] 得到当前 [AppUserMode]。
-/// 写入：[ref.read(userModeProvider.notifier).setMode(AppUserMode.child)]。
+/// 写入：[ref.read(userModeProvider.notifier).setMode(AppUserMode.student)]。
 class UserModeController extends StateNotifier<AppUserMode> {
   UserModeController(this._storage, AppUserMode initial) : super(initial);
 
@@ -48,7 +48,7 @@ final userModeProvider =
 
 /// 控件密度（compact / normal），持久化到本地存储。
 ///
-/// **默认 [AppDensity.compact]**（parent 32 / child 40）。与亮暗、用户模式正交：
+/// **默认 [AppDensity.compact]**（teacher 32 / child 40）。与亮暗、用户模式正交：
 /// 三者共同喂给 `AppTheme.shadFor(isDark, mode, density)`，决定 shadcn 主题里的
 /// 控件高度，让裸 `ShadButton` / `ShadInput` 与 `App*` 组件严格同高。
 ///

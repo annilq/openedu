@@ -64,10 +64,10 @@ class TaskReviewRepositoryImpl implements TaskReviewRepository {
   @override
   Future<TaskModel> assign({
     required String taskId,
-    required String childId,
+    required String studentId,
   }) async {
     final data =
-        await _network.post('/tasks/$taskId/assign?child_id=$childId');
+        await _network.post('/tasks/$taskId/assign?student_id=$studentId');
     return TaskModel.fromJson(decodeMap(data));
   }
 

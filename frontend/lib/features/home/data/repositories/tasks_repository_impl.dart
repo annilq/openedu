@@ -15,7 +15,7 @@ class TasksRepositoryImpl implements TasksRepository {
   }
 
   @override
-  Future<TaskPage> parentTasks({
+  Future<TaskPage> teacherTasks({
     String? status,
     String? cursor,
     int pageSize = 20,
@@ -29,14 +29,14 @@ class TasksRepositoryImpl implements TasksRepository {
   }
 
   @override
-  Future<ProgressModel> progress(String childId) async {
-    final data = await _network.get('/tasks/children/$childId/progress');
+  Future<ProgressModel> progress(String studentId) async {
+    final data = await _network.get('/tasks/students/$studentId/progress');
     return ProgressModel.fromJson(decodeMap(data));
   }
 
   @override
-  Future<MasteryModel> mastery(String childId) async {
-    final data = await _network.get('/tasks/children/$childId/mastery');
+  Future<MasteryModel> mastery(String studentId) async {
+    final data = await _network.get('/tasks/students/$studentId/mastery');
     return MasteryModel.fromJson(decodeMap(data));
   }
 

@@ -1,4 +1,4 @@
-// 守住 ADR-0047：家长端 AI 助手是**整页**，不是浮层。
+// 守住 ADR-0047：教师端 AI 助手是**整页**，不是浮层。
 //
 // 起因：浮球原先点开的是固定 380×540 的浮层面板——它与导航壳（侧栏 / 内容宽度）无关，
 // 桌面 / 平板下压在内容上。所以这里断言的是「打开的容器铺满可用宽度」，而不是只断言
@@ -50,7 +50,7 @@ void main() {
         // 必须显式传 theme：`ShadApp.custom` 不传会退回 shadcn 默认主题（ADR-0046 记录过
         // 这个坑），按钮被压到裁字，看起来像产品缺陷其实是测试替身。
         child: ShadApp.custom(
-          theme: AppTheme.shadFor(false, AppUserMode.parent, AppDensity.compact),
+          theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
           appBuilder: (context) => CupertinoApp(
             home: FloatingAssistant(child: const SizedBox.expand(key: bodyKey)),
           ),
@@ -80,7 +80,7 @@ void main() {
         reason: '整页必须铺满可用宽度；浮层时代这里是 380（AppLayout.contentFloat）');
   });
 
-  testWidgets('家长形态用家长口径的标题', (tester) async {
+  testWidgets('教师形态用教师口径的标题', (tester) async {
     await pumpHost(tester);
 
     await tester.tap(find.byType(AssistantLauncher));
@@ -88,7 +88,7 @@ void main() {
 
     expect(find.text('AI 学习助手'), findsOneWidget);
     expect(find.text('问 AI 老师'), findsNothing,
-        reason: '「问 AI 老师」是娃娃端页签的名字');
+        reason: '「问 AI 老师」是学生端页签的名字');
   });
 
   testWidgets('浮球键盘可达：Tab 到它、Enter 打开整页', (tester) async {

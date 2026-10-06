@@ -96,7 +96,7 @@ class ResourceNotifier<T> extends StateNotifier<Resource<T>>
   Future<void> load() => _run(_fetch);
 }
 
-/// 取数依赖入参的只读资源（如「按 childId 取进度」）。
+/// 取数依赖入参的只读资源（如「按 studentId 取进度」）。
 ///
 /// [A] 是入参类型；不需要入参时用 [ResourceNotifier]。
 class ParamResourceNotifier<T, A> extends StateNotifier<Resource<T>>

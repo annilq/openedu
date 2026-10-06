@@ -161,7 +161,7 @@ void main() {
           'qtype': 'calc',
           'stem': '7 × 8 = ?',
           'options': null,
-          'answer': null, // 娃娃端不含答案
+          'answer': null, // 学生端不含答案
           'explanation': '',
           'wrong_count': 1,
           'first_wrong_at': '2026-08-20T00:00:00',
@@ -169,7 +169,7 @@ void main() {
           'due_at': '2026-08-21T00:00:00',
         };
 
-    test('娃娃自查命中 /tasks/wrong-questions', () async {
+    test('学生自查命中 /tasks/wrong-questions', () async {
       final network = FakeNetwork(responses: {
         '/tasks/wrong-questions': _page([wrongJson()]),
       });
@@ -185,16 +185,16 @@ void main() {
       expect(items.first.wrongCount, 1);
     });
 
-    test('家长查看命中 /tasks/children/{id}/wrong-questions 且含答案', () async {
+    test('教师查看命中 /tasks/students/{id}/wrong-questions 且含答案', () async {
       final network = FakeNetwork(responses: {
-        '/tasks/children/c1/wrong-questions': _page([
+        '/tasks/students/c1/wrong-questions': _page([
           {...wrongJson(), 'answer': '56'},
         ]),
       });
       final notifier =
           ParamPagingNotifier<WrongQuestionModel, String>(
         (id, {cursor}) =>
-            ReviewRepositoryImpl(network).parentWrongQuestions(id),
+            ReviewRepositoryImpl(network).teacherWrongQuestions(id),
       );
 
       await notifier.load('c1');
@@ -206,7 +206,7 @@ void main() {
   group('掌握度模型解析', () {
     test('MasteryModel 解析字段', () {
       final json = {
-        'child_id': 'c1',
+        'student_id': 'c1',
         'total_knowledge_points': 2,
         'mastered_count': 1,
         'items': [

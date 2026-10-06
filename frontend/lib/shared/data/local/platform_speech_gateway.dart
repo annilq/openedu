@@ -98,7 +98,7 @@ class PlatformSpeechGateway implements VoiceInputPort {
           // interim 结果要实时流入输入框（ADR-0063 §4）。
           partialResults: true,
           cancelOnError: true,
-          // 静默多久算说完：儿童说话停顿多，阈值由调用方按角色注入（§6）。
+          // 静默多久算说完：学生说话停顿多，阈值由调用方按角色注入（§6）。
           pauseFor: silenceTimeout,
           listenFor: maxListenFor,
           // 问句比指令长，用听写模式而不是默认的 confirmation。

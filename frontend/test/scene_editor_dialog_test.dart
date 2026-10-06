@@ -15,7 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:kids_learn/features/home/domain/repositories/material_repository.dart';
-import 'package:kids_learn/features/home/presentation/widgets/parent/knowledge_point_scene_editor.dart';
+import 'package:kids_learn/features/home/presentation/widgets/teacher/knowledge_point_scene_editor.dart';
 import 'package:kids_learn/features/home/providers/home_provider.dart';
 import 'package:kids_learn/features/home/providers/knowledge_manage_provider.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
@@ -115,7 +115,7 @@ void main() {
         ],
         child: ShadApp.custom(
           theme:
-              AppTheme.shadFor(false, AppUserMode.parent, AppDensity.compact),
+              AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
           appBuilder: (context) => MaterialApp(
             home: CupertinoTheme(
               // 本测试用 MaterialApp 作壳（与真实调用点 CupertinoApp 不同），但产品树

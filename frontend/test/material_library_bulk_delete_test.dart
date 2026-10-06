@@ -85,7 +85,7 @@ void main() {
           cascadeKnowledgePoints: any(named: 'cascadeKnowledgePoints')));
     });
 
-    test('删除失败保留勾选：家长可直接重试或改选', () async {
+    test('删除失败保留勾选：教师可直接重试或改选', () async {
       when(() => repo.bulkDeleteMaterials(any(),
               cascadeKnowledgePoints: any(named: 'cascadeKnowledgePoints')))
           .thenThrow(Exception('网络断了'));

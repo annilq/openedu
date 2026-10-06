@@ -13,7 +13,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:kids_learn/features/assistant/domain/repositories/assistant_repository.dart';
 import 'package:kids_learn/features/assistant/providers/assistant_provider.dart';
 import 'package:kids_learn/features/home/domain/repositories/task_review_repository.dart';
-import 'package:kids_learn/features/home/presentation/screens/parent_task_review_screen.dart';
+import 'package:kids_learn/features/home/presentation/screens/teacher_task_review_screen.dart';
 import 'package:kids_learn/features/home/providers/home_provider.dart';
 import 'package:kids_learn/shared/domain/models/models.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
@@ -99,9 +99,9 @@ void main() {
         ],
         child: ShadApp.custom(
           // 断言几何必须传真实主题：不传会走 shadcn 默认主题（内边距/高度都不同）。
-          theme: AppTheme.shadFor(false, AppUserMode.parent, AppDensity.compact),
+          theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
           appBuilder: (context) => CupertinoApp(
-            home: ParentTaskReviewScreen(
+            home: TeacherTaskReviewScreen(
               task: task,
               onBackToHome: () {},
             ),

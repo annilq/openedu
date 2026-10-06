@@ -26,7 +26,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 新增裸站点会直接红 → 内容高度有界的场景请在**行内**用 `IntrinsicHeight` 包住 Row；
 /// 父级高度已有界的场景请登记到此处并注明依据。
 const _knownBareRowStretch = <String>{
-  'features/home/presentation/widgets/child_home.dart::_TaskCard',
+  'features/home/presentation/widgets/student_home.dart::_TaskCard',
   'features/practice/presentation/widgets/practice_question_view.dart::PracticeQuestionView',
   'features/practice/presentation/widgets/practice_review_view.dart::_WrongToFixCard',
   'features/review/presentation/screens/wrong_questions_screen.dart::_WrongQuestionCard',

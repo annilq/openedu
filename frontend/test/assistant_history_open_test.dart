@@ -90,9 +90,9 @@ void main() {
           assistantRepositoryProvider.overrideWithValue(_FakeRepo(details)),
         ],
         child: ShadApp.custom(
-          theme: AppTheme.shadFor(false, AppUserMode.parent, AppDensity.compact),
+          theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
           appBuilder: (context) => CupertinoApp(
-            home: const AssistantChatPage(showBack: true, isParent: true),
+            home: const AssistantChatPage(showBack: true, isTeacher: true),
           ),
         ),
       ),

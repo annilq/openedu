@@ -1,7 +1,7 @@
 /// 由生成规格反推「应出题数」（ADR-0057）。
 ///
 /// 少题（[isUnderdelivered]）此前只活在出题那一刻的前端 state
-/// （`TaskGenSuccess.expected`），一旦落库就蒸发了——家长隔天打开草稿页完全看不出
+/// （`TaskGenSuccess.expected`），一旦落库就蒸发了——教师隔天打开草稿页完全看不出
 /// 这份少题，而少题的草稿派发出去就是一份少题的作业。
 ///
 /// 其实草稿页自己算得出来：`Task.specs` 是持久化的（后端 `db/models/task.py`），

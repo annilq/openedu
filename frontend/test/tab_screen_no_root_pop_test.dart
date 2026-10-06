@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// 壳内页签（**非 push 路由**）不得直接 `Navigator.pop` —— 静态守卫。
 ///
-/// 线上事故：娃娃端复习页是导航空壳 `IndexedStack` 里的一个页签，底下没有可 pop
+/// 线上事故：学生端复习页是导航空壳 `IndexedStack` 里的一个页签，底下没有可 pop
 /// 的路由。页内的 `Navigator.of(context).pop()` 弹的是**根导航栈的最后一条路由**
 /// （整个 App）：点一下白屏，下一次重建撞 `NavigatorState.build` 的
 /// `assert(_history.isNotEmpty)`。
@@ -16,12 +16,12 @@ import 'package:flutter_test/flutter_test.dart';
 /// 页面」。push 出来的整页（`assistant_chat_page` / `export_preview_page` /
 /// `practice_screen`）不在此列——它们真的在路由栈上，pop 是对的。
 const _tabMountedScreens = <String>[
-  // 娃娃端底部导航的五个页签（home_screen 的 IndexedStack）
-  'lib/features/home/presentation/widgets/child_home.dart',
+  // 学生端底部导航的五个页签（home_screen 的 IndexedStack）
+  'lib/features/home/presentation/widgets/student_home.dart',
   'lib/features/review/presentation/screens/review_screen.dart',
   'lib/features/review/presentation/widgets/review_empty_view.dart',
   'lib/features/review/presentation/screens/wrong_questions_screen.dart',
-  'lib/features/home/presentation/screens/child_mastery_screen.dart',
+  'lib/features/home/presentation/screens/student_mastery_screen.dart',
 ];
 
 void main() {

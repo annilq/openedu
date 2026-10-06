@@ -26,7 +26,7 @@ class AvatarSquircle extends StatelessWidget {
     this.fg,
   }) : size = 40;
 
-  /// 紧凑预设：用于侧栏/顶栏的触发芯片（如切换娃娃按钮），比 [small] 更小。
+  /// 紧凑预设：用于侧栏/顶栏的触发芯片（如切换学生按钮），比 [small] 更小。
   const AvatarSquircle.xs({
     super.key,
     required this.name,

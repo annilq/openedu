@@ -51,7 +51,7 @@ Widget _host(
 Future<double> _measure(
   WidgetTester tester,
   Widget child, {
-  AppUserMode mode = AppUserMode.parent,
+  AppUserMode mode = AppUserMode.teacher,
   AppDensity density = AppDensity.compact,
 }) async {
   await tester.pumpWidget(_host(child, mode: mode, density: density));
@@ -74,23 +74,23 @@ void main() {
     });
 
     test('阶梯取值表与文档一致（改动即需同步 AppControl 文档与 ADR-0044）', () {
-      // 「child 比 parent 大一档」与「normal 比 compact 大一档」是同一个 +8 位移，
-      // 故 child·compact 与 parent·normal 必然同值。
-      expect(AppControl.heightSm(AppUserMode.parent, AppDensity.compact), 32);
-      expect(AppControl.height(AppUserMode.parent, AppDensity.compact), 40);
-      expect(AppControl.heightLg(AppUserMode.parent, AppDensity.compact), 48);
+      // 「child 比 teacher 大一档」与「normal 比 compact 大一档」是同一个 +8 位移，
+      // 故 child·compact 与 teacher·normal 必然同值。
+      expect(AppControl.heightSm(AppUserMode.teacher, AppDensity.compact), 32);
+      expect(AppControl.height(AppUserMode.teacher, AppDensity.compact), 40);
+      expect(AppControl.heightLg(AppUserMode.teacher, AppDensity.compact), 48);
 
-      expect(AppControl.heightSm(AppUserMode.parent, AppDensity.normal), 40);
-      expect(AppControl.height(AppUserMode.parent, AppDensity.normal), 48);
-      expect(AppControl.heightLg(AppUserMode.parent, AppDensity.normal), 56);
+      expect(AppControl.heightSm(AppUserMode.teacher, AppDensity.normal), 40);
+      expect(AppControl.height(AppUserMode.teacher, AppDensity.normal), 48);
+      expect(AppControl.heightLg(AppUserMode.teacher, AppDensity.normal), 56);
 
-      expect(AppControl.heightSm(AppUserMode.child, AppDensity.compact), 40);
-      expect(AppControl.height(AppUserMode.child, AppDensity.compact), 48);
-      expect(AppControl.heightLg(AppUserMode.child, AppDensity.compact), 56);
+      expect(AppControl.heightSm(AppUserMode.student, AppDensity.compact), 40);
+      expect(AppControl.height(AppUserMode.student, AppDensity.compact), 48);
+      expect(AppControl.heightLg(AppUserMode.student, AppDensity.compact), 56);
 
-      expect(AppControl.heightSm(AppUserMode.child, AppDensity.normal), 48);
-      expect(AppControl.height(AppUserMode.child, AppDensity.normal), 56);
-      expect(AppControl.heightLg(AppUserMode.child, AppDensity.normal), 64);
+      expect(AppControl.heightSm(AppUserMode.student, AppDensity.normal), 48);
+      expect(AppControl.height(AppUserMode.student, AppDensity.normal), 56);
+      expect(AppControl.heightLg(AppUserMode.student, AppDensity.normal), 64);
     });
 
     test('标准档不低于触控下限（Material 48dp 下一档 = 40）', () {
@@ -107,8 +107,8 @@ void main() {
   });
 
   group('实测渲染高度与标准档严格相等', () {
-    testWidgets('parent / compact（默认档）', (tester) async {
-      final std = AppControl.height(AppUserMode.parent, AppDensity.compact);
+    testWidgets('teacher / compact（默认档）', (tester) async {
+      final std = AppControl.height(AppUserMode.teacher, AppDensity.compact);
 
       expect(await _measure(tester, ShadInput(key: _k, placeholder: const Text('x'))),
           std, reason: 'ShadInput');
@@ -169,7 +169,7 @@ void main() {
       // 要守的是它内部那个 ShadInput（真正与按钮同行比对的控件）。
       await tester.pumpWidget(_host(
         AppTextField(label: '总题数', controller: TextEditingController()),
-        mode: AppUserMode.parent,
+        mode: AppUserMode.teacher,
         density: AppDensity.compact,
       ));
       await tester.pumpAndSettle();
@@ -178,41 +178,41 @@ void main() {
     });
 
     testWidgets('child / compact 随模式放大一档', (tester) async {
-      final std = AppControl.height(AppUserMode.child, AppDensity.compact);
+      final std = AppControl.height(AppUserMode.student, AppDensity.compact);
       expect(std, 48);
       expect(
           await _measure(tester, ShadInput(key: _k, placeholder: const Text('x')),
-              mode: AppUserMode.child),
+              mode: AppUserMode.student),
           std, reason: 'ShadInput child');
       expect(
           await _measure(tester,
               ShadButton(key: _k, onPressed: () {}, child: const Text('按钮')),
-              mode: AppUserMode.child),
+              mode: AppUserMode.student),
           std, reason: 'ShadButton child');
       expect(
           await _measure(tester,
               ShadButton.ghost(key: _k, onPressed: () {}, child: const Text('按钮')),
-              mode: AppUserMode.child),
+              mode: AppUserMode.student),
           std, reason: 'ShadButton.ghost child');
     });
 
-    testWidgets('parent / normal 随密度放大一档', (tester) async {
-      final std = AppControl.height(AppUserMode.parent, AppDensity.normal);
+    testWidgets('teacher / normal 随密度放大一档', (tester) async {
+      final std = AppControl.height(AppUserMode.teacher, AppDensity.normal);
       expect(std, 48);
       expect(
           await _measure(tester, ShadInput(key: _k, placeholder: const Text('x')),
               density: AppDensity.normal),
-          std, reason: 'ShadInput parent/normal');
+          std, reason: 'ShadInput teacher/normal');
       expect(
           await _measure(tester,
               ShadButton(key: _k, onPressed: () {}, child: const Text('按钮')),
               density: AppDensity.normal),
-          std, reason: 'ShadButton parent/normal');
+          std, reason: 'ShadButton teacher/normal');
     });
 
     testWidgets('紧凑档与主行动档同样严格落在令牌上', (tester) async {
-      final sm = AppControl.heightSm(AppUserMode.parent, AppDensity.compact);
-      final lg = AppControl.heightLg(AppUserMode.parent, AppDensity.compact);
+      final sm = AppControl.heightSm(AppUserMode.teacher, AppDensity.compact);
+      final lg = AppControl.heightLg(AppUserMode.teacher, AppDensity.compact);
       expect(
           await _measure(tester,
               ShadButton(

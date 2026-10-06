@@ -35,8 +35,8 @@ abstract class TaskReviewRepository {
   /// 锁定草稿成卷（R-Q1=c 自动 promote-all）。
   Future<TaskModel> confirm(String taskId);
 
-  /// 派发给指定娃娃。
-  Future<TaskModel> assign({required String taskId, required String childId});
+  /// 派发给指定学生。
+  Future<TaskModel> assign({required String taskId, required String studentId});
 
   /// 作废草稿（R-Q5=b，级联删 Question）。
   Future<void> discard(String taskId);

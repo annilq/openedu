@@ -5,7 +5,7 @@ import 'date_parse.dart';
 import 'paging.dart';
 
 class WrongQuestionPage extends CursorPage<WrongQuestionModel> {
-  /// 该孩子已毕业（已掌握）的错题总数；只在「只看未毕业」时由服务端下发。
+  /// 该学生已毕业（已掌握）的错题总数；只在「只看未毕业」时由服务端下发。
   final int graduatedTotal;
 
   const WrongQuestionPage({
@@ -39,7 +39,7 @@ class WrongQuestionPage extends CursorPage<WrongQuestionModel> {
 }
 
 class WrongQuestionModel {
-  /// 错题项（错题本）。`answer` 在娃娃端恒为 null（防作弊），家长端含答案。
+  /// 错题项（错题本）。`answer` 在学生端恒为 null（防作弊），教师端含答案。
   final String id;
   final String questionId;
   final String subject;
@@ -58,7 +58,7 @@ class WrongQuestionModel {
   /// 毕业（已掌握）时间（ADR-0053 P2）；null = 仍在复习队列里。
   final DateTime? graduatedAt;
 
-  /// 交互式讲解实例（ADR-0061）：题目知识点命中家长私有知识点模板时由后端附带，
+  /// 交互式讲解实例（ADR-0061）：题目知识点命中教师私有知识点模板时由后端附带，
   /// 错题卡据此内联渲染交互演示。可空 = 该知识点暂无图形化讲解。
   final Map<String, dynamic>? sceneSpec;
 
@@ -104,7 +104,7 @@ class WrongQuestionModel {
 }
 
 class ReviewItemModel {
-  /// 到期复习项（娃娃端）：含题干、不含答案，附调度进度。
+  /// 到期复习项（学生端）：含题干、不含答案，附调度进度。
   final String wrongQuestionId;
   final String questionId;
   final String subject;

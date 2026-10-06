@@ -13,7 +13,7 @@ import 'package:kids_learn/features/model_management/domain/repositories/models_
 import 'package:kids_learn/features/model_management/domain/model_requests.dart';
 import 'package:kids_learn/features/model_management/presentation/providers/models_notifier.dart';
 import 'package:kids_learn/features/model_management/presentation/screens/model_form_dialog.dart';
-import 'package:kids_learn/features/model_management/presentation/screens/parent_model_management_screen.dart';
+import 'package:kids_learn/features/model_management/presentation/screens/teacher_model_management_screen.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
 
 class _StubRepo implements ModelsRepository {
@@ -79,13 +79,13 @@ void main() {
         ],
         child: ShadApp.custom(
           theme: AppTheme.shadFor(
-              false, AppUserMode.parent, AppDensity.compact),
+              false, AppUserMode.teacher, AppDensity.compact),
           appBuilder: (context) => MaterialApp(
             home: Scaffold(
               body: SizedBox(
                 width: size.width,
                 height: size.height,
-                child: const ParentModelManagementScreen(),
+                child: const TeacherModelManagementScreen(),
               ),
             ),
           ),
@@ -148,7 +148,7 @@ void main() {
         ],
         child: ShadApp.custom(
           theme: AppTheme.shadFor(
-              false, AppUserMode.parent, AppDensity.compact),
+              false, AppUserMode.teacher, AppDensity.compact),
           appBuilder: (context) => MaterialApp(
             home: Scaffold(
               body: SizedBox(

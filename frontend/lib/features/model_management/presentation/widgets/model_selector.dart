@@ -8,7 +8,7 @@ import '../providers/models_notifier.dart';
 ///
 /// - 默认含首项「默认（后端自动）」（值为 null，以空串 '' 在 picker 中表示）；
 ///   出题场景可传 [showDefaultOption] = false 隐藏该项，强制显式选择模型。
-/// - 数据来自 [modelsNotifierProvider]（GET /models，仅家长可见自己录入的模型）。
+/// - 数据来自 [modelsNotifierProvider]（GET /models，仅教师可见自己录入的模型）。
 /// - 未加载时自动触发一次拉取；调用方也可在 initState 预加载。
 ///
 /// 归位说明（ADR-0037）：本组件认识 isDefault 等模型域语义，且直接订阅

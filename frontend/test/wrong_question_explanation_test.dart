@@ -1,7 +1,7 @@
-// 家长端「查看解析」的交互讲解（ADR-0061 §Q）。
+// 教师端「查看解析」的交互讲解（ADR-0061 §Q）。
 //
-// 回归背景：家长端「查看解析」原本只有一行 `解析：{文字}`，与学生端错题卡
-// （早就渲染 scene_spec）行为分叉——家长看不到图形，就理解不了「为什么选 C」。
+// 回归背景：教师端「查看解析」原本只有一行 `解析：{文字}`，与学生端错题卡
+// （早就渲染 scene_spec）行为分叉——教师看不到图形，就理解不了「为什么选 C」。
 //
 // 这里钉三件事：
 // 1. 有 scene_spec 时展开区出图（图形在文字解析**之后**）；
@@ -11,7 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-import 'package:kids_learn/features/home/presentation/widgets/parent/wrong_question_explanation.dart';
+import 'package:kids_learn/features/home/presentation/widgets/teacher/wrong_question_explanation.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
 import 'package:kids_learn/shared/widgets/scene_interpreter/reflection_scene.dart';
 
@@ -37,7 +37,7 @@ const List<List<double>> _squarePoints = [
 ];
 
 Widget _wrap(Widget child) => ShadApp.custom(
-      theme: AppTheme.shadFor(false, AppUserMode.parent, AppDensity.compact),
+      theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
       appBuilder: (context) => MaterialApp(
         home: Scaffold(body: child),
       ),
@@ -119,7 +119,7 @@ void main() {
     expect(data.points, hasLength(4), reason: '正方形必须是 4 个顶点');
   });
 
-  testWidgets('editable=true → 学生/家长都能拖轴自己试', (tester) async {
+  testWidgets('editable=true → 学生/教师都能拖轴自己试', (tester) async {
     await _pump(tester, WrongQuestionExplanation(explanation: 'x', sceneSpec: _squareSpec()),);
     await tester.tap(find.text('查看解析'));
     await tester.pumpAndSettle();

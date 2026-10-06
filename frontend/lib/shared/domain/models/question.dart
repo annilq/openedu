@@ -5,9 +5,9 @@ import 'date_parse.dart';
 import 'paging.dart';
 
 class QuestionModel {
-  /// 题目（娃娃端读 TaskQuestion 快照）。`id` = TaskQuestion.id，
+  /// 题目（学生端读 TaskQuestion 快照）。`id` = TaskQuestion.id，
   /// `questionId` = 源 Question.id（作答提交与错题归集用，ADR-0004 D3）。
-  /// `answer` 在娃娃端恒为 null（防作弊）。
+  /// `answer` 在学生端恒为 null（防作弊）。
   final String id;
   final String? questionId;
   final String subject;
@@ -27,7 +27,7 @@ class QuestionModel {
   /// 学期（ADR-0061 发布任务对接资料库）：'' = 不限/整学年；'上学期' / '下学期'。
   final String semester;
 
-  /// 交互式讲解实例（ADR-0061）：题目知识点命中家长私有知识点模板时由后端附带，
+  /// 交互式讲解实例（ADR-0061）：题目知识点命中教师私有知识点模板时由后端附带，
   /// 题卡解析区据此内联渲染。可空 = 该知识点暂无图形化讲解。
   final Map<String, dynamic>? sceneSpec;
 

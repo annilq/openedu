@@ -4,7 +4,7 @@
 class MaterialFolderModel {
   final String id;
   final String name;
-  final String? parentFolderId;
+  final String? teacherFolderId;
   final String? subject;
   final int? grade;
   final String? semester;
@@ -14,7 +14,7 @@ class MaterialFolderModel {
   const MaterialFolderModel({
     required this.id,
     required this.name,
-    this.parentFolderId,
+    this.teacherFolderId,
     this.subject,
     this.grade,
     this.semester,
@@ -26,7 +26,7 @@ class MaterialFolderModel {
       MaterialFolderModel(
         id: json['id'] as String,
         name: json['name'] as String? ?? '',
-        parentFolderId: json['parent_folder_id'] as String?,
+        teacherFolderId: json['teacher_folder_id'] as String?,
         subject: json['subject'] as String?,
         grade: json['grade'] as int?,
         semester: json['semester'] as String?,
@@ -94,13 +94,13 @@ class MaterialItemModel {
       );
 }
 
-/// 家长端资料库仓库：目录 + 文件 + 向量化动作。
+/// 教师端资料库仓库：目录 + 文件 + 向量化动作。
 abstract class MaterialLibraryRepository {
   Future<List<MaterialFolderModel>> getFolders();
 
   Future<void> createFolder({
     required String name,
-    String? parentFolderId,
+    String? teacherFolderId,
     String? subject,
     int? grade,
     String? semester,
@@ -147,6 +147,6 @@ abstract class MaterialLibraryRepository {
     String? subject,
     int? grade,
     String? semester,
-    String? parentFolderId,
+    String? teacherFolderId,
   });
 }

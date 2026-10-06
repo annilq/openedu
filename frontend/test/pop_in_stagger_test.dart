@@ -127,13 +127,13 @@ double _opacityOf(WidgetTester tester, String key) => tester
 
 /// 宿主：MediaQuery 必须放在 `CupertinoApp` **之内**——`pumpWidget` 的根之上
 /// 没有 MediaQuery 祖先，在外面 `MediaQuery.of` 会直接抛。
-Widget _host(List<Widget> children, {bool reduceMotion = false}) => CupertinoApp(
+Widget _host(List<Widget> students, {bool reduceMotion = false}) => CupertinoApp(
       home: Builder(
         builder: (context) => MediaQuery(
           data: MediaQuery.of(context)
               .copyWith(disableAnimations: reduceMotion),
           child: Center(
-            child: Column(mainAxisSize: MainAxisSize.min, children: children),
+            child: Column(mainAxisSize: MainAxisSize.min, children: students),
           ),
         ),
       ),

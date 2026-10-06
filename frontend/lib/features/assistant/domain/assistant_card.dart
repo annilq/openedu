@@ -42,7 +42,7 @@ class AssistantCard {
   /// 卡片上的**受控跳转出口**（目前只有引导卡 `guide` 会用）。
   ///
   /// 载荷里给的是 `target`（受控枚举），不是 URL——助手在服务端、导航在客户端，
-  /// 且同一个目标在家长端（push 的整页）与娃娃端（壳内页签）落点不同。由
+  /// 且同一个目标在教师端（push 的整页）与学生端（壳内页签）落点不同。由
   /// `ShellDestination.fromTarget` 解读，认不出的 target 什么也不做。
   final List<AssistantCardAction> actions;
 
@@ -138,7 +138,7 @@ class AssistantCard {
 
 /// 卡片上的一个受控跳转动作：显示文案 + 线协议 target。
 ///
-/// [target] 是**受控枚举**（如 `parent_create_task`），不是 URL 也不是路由名——
+/// [target] 是**受控枚举**（如 `teacher_create_task`），不是 URL 也不是路由名——
 /// 由 `shared/presentation/shell_navigation.dart#ShellDestination.fromTarget` 解读。
 class AssistantCardAction {
   final String label;
@@ -164,7 +164,7 @@ class AssistantCardKind {
   /// 出题引擎的题目卡（`app/ai/subagents/question/translate.py`）。
   static const question = 'question';
 
-  /// 任务列表（`list_parent_tasks` / `list_today_tasks`）。
+  /// 任务列表（`list_teacher_tasks` / `list_today_tasks`）。
   static const taskList = 'task_list';
 
   /// 错题列表（`list_wrong_questions`）。
@@ -176,13 +176,13 @@ class AssistantCardKind {
   /// 知识点掌握度（`get_mastery`）。
   static const masteryList = 'mastery_list';
 
-  /// 可查询的娃娃（`list_children`）。
+  /// 可查询的学生（`list_students`）。
   static const childList = 'child_list';
 
   /// 学习进度指标（`get_progress`）。
   static const progress = 'progress';
 
-  /// 题库题目列表（`list_bank_questions`，仅家长可见）。
+  /// 题库题目列表（`list_bank_questions`，仅教师可见）。
   static const questionBankList = 'question_bank_list';
 
   /// 任务引导卡（后端 `guide` SubAgent 直接产出，**不来自工具结果**）。

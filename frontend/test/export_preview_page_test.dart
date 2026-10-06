@@ -54,7 +54,7 @@ Future<void> _pump(
         if (opener != null) pdfDocumentOpenerProvider.overrideWithValue(opener),
       ],
       child: ShadApp.custom(
-        theme: AppTheme.shadFor(false, AppUserMode.parent, AppDensity.compact),
+        theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
         appBuilder: (context) => MaterialApp(home: child),
       ),
     ),
@@ -105,7 +105,7 @@ Future<void> _pumpPushed(WidgetTester tester) async {
         exportRepositoryProvider.overrideWithValue(_FailingExportRepository()),
       ],
       child: ShadApp.custom(
-        theme: AppTheme.shadFor(false, AppUserMode.parent, AppDensity.compact),
+        theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
         appBuilder: (_) => MaterialApp(
           navigatorKey: navigatorKey,
           home: const Text('来源页'),
@@ -151,7 +151,7 @@ void main() {
       );
 
       // 在页面自己的子树里找：**不能**从 ExportPreviewPage 的 element 往上找——
-      // Align / ConstrainedBox 是它 build 出来的孩子，不是祖先。
+      // Align / ConstrainedBox 是它 build 出来的学生，不是祖先。
       final align = tester.widget<Align>(
         find
             .descendant(

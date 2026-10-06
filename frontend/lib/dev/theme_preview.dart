@@ -46,7 +46,7 @@ class ThemePreviewApp extends StatefulWidget {
 
 class _ThemePreviewAppState extends State<ThemePreviewApp> {
   bool _dark = false;
-  AppUserMode _mode = AppUserMode.parent;
+  AppUserMode _mode = AppUserMode.teacher;
   AppDensity _density = AppControl.defaultDensity;
 
   @override
@@ -89,9 +89,9 @@ class _ThemePreviewAppState extends State<ThemePreviewApp> {
           mode: _mode,
           density: _density,
           onToggleDark: () => setState(() => _dark = !_dark),
-          onToggleMode: () => setState(() => _mode = _mode == AppUserMode.parent
-              ? AppUserMode.child
-              : AppUserMode.parent),
+          onToggleMode: () => setState(() => _mode = _mode == AppUserMode.teacher
+              ? AppUserMode.student
+              : AppUserMode.teacher),
           onToggleDensity: () => setState(() => _density =
               _density == AppDensity.compact ? AppDensity.normal : AppDensity.compact),
         ),
@@ -223,7 +223,7 @@ class _PreviewHomeState extends State<_PreviewHome> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
-                    widget.mode == AppUserMode.child
+                    widget.mode == AppUserMode.student
                         ? LucideIcons.baby
                         : LucideIcons.userCog,
                     size: 14,
@@ -231,9 +231,9 @@ class _PreviewHomeState extends State<_PreviewHome> {
                   ),
                   const SizedBox(width: AppSpacing.sm),
                   Text(
-                    widget.mode == AppUserMode.child
+                    widget.mode == AppUserMode.student
                         ? 'Child Mode（放大一档）'
-                        : 'Parent Mode（密排）',
+                        : 'Teacher Mode（密排）',
                     style: t.labelMedium?.copyWith(color: app.onSurface),
                   ),
                 ],
@@ -683,7 +683,7 @@ class _PreviewHomeState extends State<_PreviewHome> {
       tag: '控件高度',
       title: '控件高度 · 密度感知令牌',
       desc: '输入框 / 按钮 / 选择器共用同一高度，由 `AppControl` 按「用户模式 × 密度」'
-          '从间距令牌推导，无硬编码。顶部切 Parent/Child 与 Normal/Compact 看高度联动；'
+          '从间距令牌推导，无硬编码。顶部切 Teacher/Child 与 Normal/Compact 看高度联动；'
           '下方输入框与按钮渲染高度严格相等（用尺子/对齐印证）。',
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -715,7 +715,7 @@ class _PreviewHomeState extends State<_PreviewHome> {
           const SizedBox(height: AppSpacing.xl),
           Text(
             '当前解析高度：主控件 ${h.toStringAsFixed(0)}px · 紧凑控件 ${hSm.toStringAsFixed(0)}px'
-            '（parent/compact=32·28【默认】，parent/normal=40·32，'
+            '（teacher/compact=32·28【默认】，teacher/normal=40·32，'
             'child/compact=40·32，child/normal=48·40）',
             style: t.bodySmall,
           ),

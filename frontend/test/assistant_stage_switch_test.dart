@@ -13,7 +13,7 @@ import 'package:kids_learn/shared/theme/app_theme.dart';
 /// 「又推进了一步」读成了闪烁——这正是要有的那个信号，不能丢。
 ///
 /// 判据是「过渡期间新旧文案**同时**在树上」：`AnimatedSwitcher` 靠 key 判别换了
-/// 孩子，把 key 写成 `const` 会让整段过渡静默失效，而屏幕上只是「换得干脆了点」。
+/// 学生，把 key 写成 `const` 会让整段过渡静默失效，而屏幕上只是「换得干脆了点」。
 ///
 /// **不用 `pumpAndSettle`**：这个气泡里挂着不确定态的 `CircularProgressIndicator`，
 /// 它永远排下一帧，settle 必然超时。
@@ -65,7 +65,7 @@ AssistantMessage _thinking(String stage) =>
 
 Widget _host(List<AssistantMessage> messages, {bool reduceMotion = false}) =>
     ShadApp.custom(
-      theme: AppTheme.shadFor(false, AppUserMode.parent, AppDensity.compact),
+      theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
       appBuilder: (_) => CupertinoApp(
         home: Builder(
           builder: (context) => MediaQuery(

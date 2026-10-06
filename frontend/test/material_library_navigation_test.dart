@@ -15,7 +15,7 @@ void main() {
     final rootFolder =
         MaterialFolderModel(id: 'a', name: '4年级数学上册');
     final subFolder =
-        MaterialFolderModel(id: 'b', name: '第一章', parentFolderId: 'a');
+        MaterialFolderModel(id: 'b', name: '第一章', teacherFolderId: 'a');
     final matInA = MaterialItemModel(id: 'm1', name: '练习册', folderId: 'a');
     final matRoot =
         MaterialItemModel(id: 'm0', name: '通用资料', folderId: null);
@@ -34,56 +34,56 @@ void main() {
       await notifier.openFolder('a');
 
       expect(notifier.state.currentFolderId, 'a');
-      // parentFolderId 显式写入：a 是根级目录，父为 null。
-      expect(notifier.state.parentFolderId, isNull);
+      // teacherFolderId 显式写入：a 是根级目录，父为 null。
+      expect(notifier.state.teacherFolderId, isNull);
       expect(notifier.state.materials.map((m) => m.id), ['m1']);
       expect(
         notifier.state.folders
-            .where((f) => f.parentFolderId == 'a')
+            .where((f) => f.teacherFolderId == 'a')
             .map((f) => f.id),
         ['b'],
       );
     });
 
-    test('点击「返回」(openFolder(b.parentFolderId)) 回上层并改写 parentFolderId',
+    test('点击「返回」(openFolder(b.teacherFolderId)) 回上层并改写 teacherFolderId',
         () async {
       when(() => repo.getMaterials(folderId: 'a'))
           .thenAnswer((_) async => [matInA]);
       when(() => repo.getMaterials(folderId: 'b'))
           .thenAnswer((_) async => <MaterialItemModel>[]);
 
-      // 先进入 b（父为 a），再点返回回到 a：parentFolderId 应随 a 重写。
+      // 先进入 b（父为 a），再点返回回到 a：teacherFolderId 应随 a 重写。
       await notifier.openFolder('b');
       expect(notifier.state.currentFolderId, 'b');
-      expect(notifier.state.parentFolderId, 'a');
+      expect(notifier.state.teacherFolderId, 'a');
 
-      await notifier.openFolder(notifier.state.parentFolderId); // == 'a'
+      await notifier.openFolder(notifier.state.teacherFolderId); // == 'a'
 
       expect(notifier.state.currentFolderId, 'a');
-      expect(notifier.state.parentFolderId, isNull); // a 是根级 → 父为 null
+      expect(notifier.state.teacherFolderId, isNull); // a 是根级 → 父为 null
       expect(
         notifier.state.folders
-            .where((f) => f.parentFolderId == 'a')
+            .where((f) => f.teacherFolderId == 'a')
             .map((f) => f.id),
         ['b'],
       );
     });
 
-    test('根目录无上层：openFolder(null 的 parent) 仍是根', () async {
+    test('根目录无上层：openFolder(null 的 teacher) 仍是根', () async {
       when(() => repo.getMaterials(folderId: null))
           .thenAnswer((_) async => [matRoot]);
 
-      // 根目录的 parentFolderId 为 null，点返回即回到根，不报错也不越界。
-      await notifier.openFolder(rootFolder.parentFolderId); // == null
+      // 根目录的 teacherFolderId 为 null，点返回即回到根，不报错也不越界。
+      await notifier.openFolder(rootFolder.teacherFolderId); // == null
 
       expect(notifier.state.currentFolderId, isNull);
-      expect(notifier.state.parentFolderId, isNull);
+      expect(notifier.state.teacherFolderId, isNull);
       expect(notifier.state.materials.map((m) => m.id), ['m0']);
     });
 
     test('从「根级子目录」点返回 → 回到根且 header 状态清空', () async {
-      // 复现用户场景：进入根级目录 a（parentFolderId=null），再点返回
-      // （a.parentFolderId=null）→ 应回到根；此时 currentFolderId/parentFolderId
+      // 复现用户场景：进入根级目录 a（teacherFolderId=null），再点返回
+      // （a.teacherFolderId=null）→ 应回到根；此时 currentFolderId/teacherFolderId
       // 都为 null，视图侧 folderById 必须返回 null（否则会残留返回键 + 目录名）。
       when(() => repo.getMaterials(folderId: 'a'))
           .thenAnswer((_) async => [matInA]);
@@ -92,12 +92,12 @@ void main() {
 
       await notifier.openFolder('a');
       expect(notifier.state.currentFolderId, 'a');
-      expect(notifier.state.parentFolderId, isNull);
+      expect(notifier.state.teacherFolderId, isNull);
 
-      await notifier.openFolder(notifier.state.parentFolderId); // == null
+      await notifier.openFolder(notifier.state.teacherFolderId); // == null
 
       expect(notifier.state.currentFolderId, isNull);
-      expect(notifier.state.parentFolderId, isNull);
+      expect(notifier.state.teacherFolderId, isNull);
       // 视图契约：根目录时 folderById(null) 必须返回 null，head（返回键 + 目录名）才会隐藏。
       expect(notifier.state.folderById(notifier.state.currentFolderId), isNull);
       expect(notifier.state.materials.map((m) => m.id), ['m0']);
@@ -120,7 +120,7 @@ void main() {
       await Future.wait([slow, fast]);
 
       expect(notifier.state.currentFolderId, 'b');
-      expect(notifier.state.parentFolderId, 'a');
+      expect(notifier.state.teacherFolderId, 'a');
     });
   });
 }

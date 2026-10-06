@@ -5,7 +5,7 @@
 /// 加学期后缀标注，presentation 直接 import `data/repositories/material_repository_impl.dart`
 /// 就是倒挂依赖。选项模型与接口属「业务契约」放domain，实现在 data。
 ///
-/// 家长端资料库的完整管理（上传 / 目录 / 向量化）属 materials feature（B6）；
+/// 教师端资料库的完整管理（上传 / 目录 / 向量化）属 materials feature（B6）；
 /// 这里只暴露表单需要的最小面，避免 home 反向依赖一个还没落地的 feature。
 library;
 
@@ -53,7 +53,7 @@ class KnowledgePointOption {
 ///
 /// [notice] 非空 = 这个范围一条知识点都没有，并说明下一步该做什么（ADR-0051）：
 /// 「还没上传过教材」与「有教材但没识别出知识点」是两件不同的事，空列表本身不说
-/// 这个区别，家长照着错的提示做就是白跑一趟。
+/// 这个区别，教师照着错的提示做就是白跑一趟。
 class KnowledgePointDirectory {
   final List<KnowledgePointOption> items;
   final String notice;
@@ -70,9 +70,9 @@ class KnowledgePointDirectory {
       );
 }
 
-/// 知识点选择器的一个可选范围 = **家长真的传过教材**的 (学科, 年级, 学期)（ADR-0065）。
+/// 知识点选择器的一个可选范围 = **教师真的传过教材**的 (学科, 年级, 学期)（ADR-0065）。
 ///
-/// 后端按家长名下资料聚合出来：没传过教材的学科 / 年级不会出现在列表里——让家长
+/// 后端按教师名下资料聚合出来：没传过教材的学科 / 年级不会出现在列表里——让教师
 /// 在 9 年级 × 3 学科里逐个试空门没有意义。
 class KnowledgePointScope {
   final String subject;
@@ -100,7 +100,7 @@ class KnowledgePointScope {
 
 /// 范围清单；[unscopedCount] 是**没识别出学科 / 年级**的教材数（ADR-0065）。
 ///
-/// 这些资料归不到任何范围，UI 必须说出来——家长传了书却在下拉里找不到对应年级，
+/// 这些资料归不到任何范围，UI 必须说出来——教师传了书却在下拉里找不到对应年级，
 /// 第一反应会是「上传丢了」。
 class KnowledgePointScopeList {
   final List<KnowledgePointScope> scopes;
@@ -121,7 +121,7 @@ class KnowledgePointScopeList {
 }
 
 abstract class MaterialRepository {
-  /// 家长实际上传过教材的知识点范围（ADR-0065）：下拉据此构造，不做全量 9×3 枚举。
+  /// 教师实际上传过教材的知识点范围（ADR-0065）：下拉据此构造，不做全量 9×3 枚举。
   Future<KnowledgePointScopeList> getKnowledgePointScopes();
 
   Future<KnowledgePointDirectory> getKnowledgePointDirectory({

@@ -6,7 +6,7 @@ import '../../domain/assistant_card.dart';
 import '../../domain/card_payload.dart';
 import 'assistant_card_header.dart';
 
-/// 列表卡（任务 / 错题 / 到期复习 / 掌握度 / 题库 / 孩子 等带 `items` 的种类）。
+/// 列表卡（任务 / 错题 / 到期复习 / 掌握度 / 题库 / 学生 等带 `items` 的种类）。
 ///
 /// 一种明细一套投影，投影本身在 [cardRowOf]——本文件只管把行画出来，
 /// 「哪个字段当主行、哪个当标签」的判断不放在这里，否则复制纯文本那份会跟着漂移。

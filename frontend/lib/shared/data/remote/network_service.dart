@@ -30,6 +30,6 @@ abstract class NetworkService {
   ///
   /// 非 2xx 时必须保留后端错误体里的 code / message——二进制响应的错误体
   /// 仍是 JSON 文本，吞掉它会把「越权 403」和「字体缺失 503」都挤成
-  /// 「请求失败 (xxx)」，家长无法判断该重试还是该找人。
+  /// 「请求失败 (xxx)」，教师无法判断该重试还是该找人。
   Future<Uint8List> postBytes(String path, {Map<String, dynamic>? body});
 }

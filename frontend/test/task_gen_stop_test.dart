@@ -70,16 +70,16 @@ class _FakeTasks extends TasksRepository {
   @override
   Future<List<TaskModel>> todayTasks() => throw UnimplementedError();
   @override
-  Future<TaskPage> parentTasks({
+  Future<TaskPage> teacherTasks({
     String? status,
     String? cursor,
     int pageSize = 20,
   }) =>
       throw UnimplementedError();
   @override
-  Future<ProgressModel> progress(String childId) => throw UnimplementedError();
+  Future<ProgressModel> progress(String studentId) => throw UnimplementedError();
   @override
-  Future<MasteryModel> mastery(String childId) => throw UnimplementedError();
+  Future<MasteryModel> mastery(String studentId) => throw UnimplementedError();
   @override
   Future<TaskModel> persistGenerated(Map<String, dynamic> body) =>
       throw UnimplementedError();
@@ -92,7 +92,7 @@ void main() {
 
     // 不 await：流由 _resume 控制，generate 在 release 前不会自然结束。
     final future = notifier.generate(
-      childId: 'c1',
+      studentId: 'c1',
       title: '单元测',
       specs: [
         TaskSpecModel(

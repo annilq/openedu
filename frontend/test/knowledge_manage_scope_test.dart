@@ -6,7 +6,7 @@ import 'package:kids_learn/features/home/providers/knowledge_manage_provider.dar
 
 class _MockRepo extends Mock implements MaterialRepository {}
 
-/// 家长的提问原型：只传了 4 年级数学上下册 + 2 年级语文上册 → 范围里就该只有这三项。
+/// 教师的提问原型：只传了 4 年级数学上下册 + 2 年级语文上册 → 范围里就该只有这三项。
 final _scopes = [
   const KnowledgePointScope(
       subject: '数学', grade: 4, semester: '上学期', materialCount: 1),
@@ -46,7 +46,7 @@ void main() {
       expect(notifier.state.subject, '数学');
       expect(notifier.state.grade, 4);
       // 默认给「整学年」并集：只传了上册时切到「下学期」会看到空列表，
-      // 家长的第一反应是「联动坏了」，所以默认必须是并集。
+      // 教师的第一反应是「联动坏了」，所以默认必须是并集。
       expect(notifier.state.semester, '');
       verify(() => repo.getKnowledgePointDirectory(
             subject: '数学',
@@ -89,7 +89,7 @@ void main() {
       notifier.setScope('语文', 2, '上学期');
       expect(notifier.state.subject, '语文');
 
-      // 家长在资料库删光了语文教材：下一次进来不该停在已经消失的范围上
+      // 教师在资料库删光了语文教材：下一次进来不该停在已经消失的范围上
       when(() => repo.getKnowledgePointScopes()).thenAnswer(
         (_) async => const KnowledgePointScopeList(scopes: [
           KnowledgePointScope(subject: '数学', grade: 4, semester: '上学期'),
@@ -104,7 +104,7 @@ void main() {
 
     test('切学科时级联到该学科第一个年级，学期退回整学年', () async {
       await notifier.loadScopes();
-      // 模拟下拉回调：家长在学科下拉里选了「语文」
+      // 模拟下拉回调：教师在学科下拉里选了「语文」
       final firstGrade = notifier.state.gradesOf('语文').first;
       notifier.setScope('语文', firstGrade, '');
 

@@ -13,7 +13,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-import 'package:kids_learn/features/home/presentation/widgets/parent/bank_question_detail.dart';
+import 'package:kids_learn/features/home/presentation/widgets/teacher/bank_question_detail.dart';
 import 'package:kids_learn/shared/domain/models/question.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
 import 'package:kids_learn/shared/widgets/scene_interpreter/reflection_scene.dart';
@@ -65,7 +65,7 @@ Future<void> _pump(WidgetTester tester, BankQuestionItem item) async {
   await tester.binding.setSurfaceSize(const Size(700, 2000));
   addTearDown(() => tester.binding.setSurfaceSize(null));
   await tester.pumpWidget(ShadApp.custom(
-    theme: AppTheme.shadFor(false, AppUserMode.parent, AppDensity.compact),
+    theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
     appBuilder: (context) => MaterialApp(home: Scaffold(body: BankQuestionDetail(item: item))),
   ));
   await tester.pumpAndSettle();
@@ -122,7 +122,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(700, 2000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(ShadApp.custom(
-      theme: AppTheme.shadFor(false, AppUserMode.parent, AppDensity.compact),
+      theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
       appBuilder: (context) => MaterialApp(
         home: Scaffold(
           body: Builder(

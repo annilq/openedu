@@ -62,7 +62,7 @@ class TaskModel {
   final List<TaskSpecModel> specs;
 
   /// 派发对象（创建时可选预先绑定，锁定→派发时强制绑定）。
-  final String? childId;
+  final String? studentId;
 
   /// 创建时间（ISO8601 字符串，列表排序/展示用）。
   final String? createdAt;
@@ -98,7 +98,7 @@ class TaskModel {
     required this.status,
     required this.questions,
     this.specs = const [],
-    this.childId,
+    this.studentId,
     this.createdAt,
     this.focusInterest,
     this.questionCount,
@@ -111,7 +111,7 @@ class TaskModel {
     String? status,
     List<QuestionModel>? questions,
     List<TaskSpecModel>? specs,
-    String? childId,
+    String? studentId,
     String? createdAt,
     List<String>? focusInterest,
     int? questionCount,
@@ -123,7 +123,7 @@ class TaskModel {
       status: status ?? this.status,
       questions: questions ?? this.questions,
       specs: specs ?? this.specs,
-      childId: childId ?? this.childId,
+      studentId: studentId ?? this.studentId,
       createdAt: createdAt ?? this.createdAt,
       focusInterest: focusInterest ?? this.focusInterest,
       questionCount: questionCount ?? this.questionCount,
@@ -139,7 +139,7 @@ class TaskModel {
       id: json['id'] as String,
       title: json['title'] as String,
       status: json['status'] as String? ?? 'draft',
-      childId: json['child_id'] as String?,
+      studentId: json['student_id'] as String?,
       createdAt: json['created_at'] as String?,
       specs: specList,
       focusInterest: (json['focus_interest'] as List?)
@@ -155,7 +155,7 @@ class TaskModel {
   }
 }
 
-/// 各状态任务数（家长任务页三个 Tab 的徽标，ADR-0053）。
+/// 各状态任务数（教师任务页三个 Tab 的徽标，ADR-0053）。
 ///
 /// 由服务端在分页响应里带出——徽标若靠客户端统计已加载页，就只有第一页的数。
 class TaskCounts {

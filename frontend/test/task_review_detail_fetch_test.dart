@@ -3,7 +3,7 @@
 // 背景（ADR-0053 引入的回归）：列表接口 `GET /tasks` 改成只回摘要——`question_count`
 // 加学科，**不再内嵌题目**。列表卡片改用 `displayQuestionCount` 显示题数（数字仍准），
 // 但点卡片时传下去的这份 `TaskModel` 的 `questions` 恒为空。审核页当时直接拿它当
-// initial state、从不调用 `load()`，于是家长看到的是「卡片写 3 题 / 详情说草稿暂未包含
+// initial state、从不调用 `load()`，于是教师看到的是「卡片写 3 题 / 详情说草稿暂未包含
 // 任何题目（题目数 0）」——题一直在 `task_question` 表里，列表题数也是每次现算的，
 // 只是没人去取。`flutter analyze` 照不出这类断链（类型全对），只能守行为。
 import 'package:cupertino_ui/cupertino_ui.dart';
@@ -14,7 +14,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:kids_learn/features/assistant/domain/repositories/assistant_repository.dart';
 import 'package:kids_learn/features/assistant/providers/assistant_provider.dart';
 import 'package:kids_learn/features/home/domain/repositories/task_review_repository.dart';
-import 'package:kids_learn/features/home/presentation/screens/parent_task_review_screen.dart';
+import 'package:kids_learn/features/home/presentation/screens/teacher_task_review_screen.dart';
 import 'package:kids_learn/features/home/providers/home_provider.dart';
 import 'package:kids_learn/shared/domain/models/models.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
@@ -84,9 +84,9 @@ void main() {
           assistantRepositoryProvider.overrideWithValue(_StubAssistant()),
         ],
         child: ShadApp.custom(
-          theme: AppTheme.shadFor(false, AppUserMode.parent, AppDensity.compact),
+          theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
           appBuilder: (context) => CupertinoApp(
-            home: ParentTaskReviewScreen(
+            home: TeacherTaskReviewScreen(
               task: summary,
               onBackToHome: () {},
             ),
@@ -130,9 +130,9 @@ void main() {
           overrides: overrides,
           child: ShadApp.custom(
             theme:
-                AppTheme.shadFor(false, AppUserMode.parent, AppDensity.compact),
+                AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
             appBuilder: (context) => CupertinoApp(
-              home: ParentTaskReviewScreen(
+              home: TeacherTaskReviewScreen(
                 task: task,
                 onBackToHome: () {},
               ),

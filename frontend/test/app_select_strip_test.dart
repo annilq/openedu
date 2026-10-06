@@ -7,7 +7,7 @@ import 'package:kids_learn/shared/widgets/app_select_strip.dart';
 
 /// 守卫 AppSelectStrip 的渲染与状态文案：非勾选态入口、勾选态计数、hint 引导语。
 Widget _host(Widget child) => ShadApp.custom(
-      theme: AppTheme.shadFor(false, AppUserMode.parent, AppDensity.compact),
+      theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
       appBuilder: (context) => CupertinoApp(home: child),
     );
 

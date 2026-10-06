@@ -11,7 +11,7 @@ import '../../domain/expected_question_count.dart';
 import '../../domain/repositories/tasks_repository.dart';
 import '../../providers/home_provider.dart';
 
-// —— 家长端：生成任务 ——
+// —— 教师端：生成任务 ——
 sealed class TaskGenState {
   const TaskGenState();
 }
@@ -102,10 +102,10 @@ class _Pending {
   });
 }
 
-/// 生成结束、**尚未落库**，停在生成页等家长确认（ADR-0056 审阅闸门）。
+/// 生成结束、**尚未落库**，停在生成页等教师确认（ADR-0056 审阅闸门）。
 ///
 /// 这一态的存在意义是「落库时机后移」：题卡只在内存里，数据库里没有任何行。
-/// 因此此态下家长可以安全地「重新生成」（不会留下第二份草稿）或「放弃」
+/// 因此此态下教师可以安全地「重新生成」（不会留下第二份草稿）或「放弃」
 /// （不需要调任何删除接口）。确认后才 [TaskGenNotifier.confirm] 落库为 draft。
 class TaskGenReady extends TaskGenState {
   final List<QuestionPreview> questions;
@@ -122,7 +122,7 @@ class TaskGenReady extends TaskGenState {
   /// 有几份资料未参与本次出题（未向量化 / 失败 / 过期）；0 = 全部参与。
   final int unindexedMaterials;
 
-  /// 是否由家长主动停止（ADR-0057 Q1=B）：是则中性陈述「已停止 · 保留 N 题」，
+  /// 是否由教师主动停止（ADR-0057 Q1=B）：是则中性陈述「已停止 · 保留 N 题」，
   /// 不当成故障报警——自己按的停止不该被渲染成系统出错。
   final bool stopped;
 
@@ -166,7 +166,7 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
   /// 把结构化 specs 经 `/tasks/generate` 直传后端（ADR-0034 P1）：服务端据此构造
   /// 出题 prompt 并走 question subagent 流式返回题卡，不再拼自然语言走 /assistant/chat。
   Future<void> generate({
-    required String childId,
+    required String studentId,
     required String title,
     required List<TaskSpecModel> specs,
     List<String>? focusInterest,
@@ -189,12 +189,12 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
           specs: specs,
           model: model,
           focusInterest: focusInterest,
-          childId: childId,
+          studentId: studentId,
           weakExampleIds: weakExampleIds,
         ),
       );
       await for (final ev in stream) {
-        // ADR-0057 Q1=B：家长主动停止 → 立即停在当前题边界，已出的题原样保留。
+        // ADR-0057 Q1=B：教师主动停止 → 立即停在当前题边界，已出的题原样保留。
         // `await for` 的订阅会随之取消，底层 SSE 的 HTTP 连接被关闭（best-effort；
         // 服务端断连感知为已知缺口，见 ADR-0057 后端事项）。
         if (_stopped) break;
@@ -227,7 +227,7 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
       // ③ 后端少一次必然发生的聚合写入——被放弃的生成在库里不留痕迹。
       _pending = _Pending(
         body: _buildBody(
-          childId: childId,
+          studentId: studentId,
           title: title,
           specs: specs,
           focusInterest: focusInterest,
@@ -256,7 +256,7 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
 
   /// 主动停止生成（ADR-0057）：客户端侧中断——保留已出题目并转为待确认态，
   /// 不再喂事件、不落库。与服务端是否立刻掐断当前那次 LLM 调用无关：本端只负责
-  /// 立即停在当前题边界，已出的题交给家长决定确认或放弃。
+  /// 立即停在当前题边界，已出的题交给教师决定确认或放弃。
   void stop() {
     if (state is! TaskGenPreview || !(state as TaskGenPreview).streaming) return;
     _stopped = true;
@@ -273,7 +273,7 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
   /// 确认并落库：把预览题卡 POST 到 /tasks/from-generated 落库为 draft 任务。
   ///
   /// 这是 [TaskGenReady] 之后的唯一出口。此前不存在任何数据库行，
-  /// 故此调用失败时家长仍停留在生成页，题卡未丢，可重试。
+  /// 故此调用失败时教师仍停留在生成页，题卡未丢，可重试。
   Future<void> confirm() async {
     final pending = _pending;
     if (pending == null) return;
@@ -306,7 +306,7 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
     try {
       final task = await _tasks.persistGenerated(body);
       // R3：生成后保持 draft 态，把确认/派发动作交给草稿审核页。
-      // 少题信息一并返回：草稿照常落库（不浪费已生成的题），由 UI 醒目提示家长补齐。
+      // 少题信息一并返回：草稿照常落库（不浪费已生成的题），由 UI 醒目提示教师补齐。
       state = TaskGenSuccess(
         task,
         expected: expected,
@@ -320,7 +320,7 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
   }
 
   Map<String, dynamic> _buildBody({
-    required String childId,
+    required String studentId,
     required String title,
     required List<TaskSpecModel> specs,
     List<String>? focusInterest,
@@ -328,13 +328,13 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
     List<String>? weakExampleIds,
   }) {
     final body = <String, dynamic>{
-      'child_id': childId,
+      'student_id': studentId,
       'title': title,
       'specs': specs.map((s) => s.toJson()).toList(),
     };
     // 兴趣题模式（WF-4）：显式聚焦主题放请求顶层；缺省=后端自动轻融入画像。
     if (focusInterest != null) body['focus_interest'] = focusInterest;
-    // 多模型（票据 08）：家长可选模型；null = 后端自动（默认/全局）。
+    // 多模型（票据 08）：教师可选模型；null = 后端自动（默认/全局）。
     if (model != null) body['model'] = model;
     // 反馈边（ADR-0060 D4）：代表错题 id，服务端据此做同类题仿写。
     if (weakExampleIds != null) body['weak_example_ids'] = weakExampleIds;
@@ -356,7 +356,7 @@ final taskGenNotifierProvider =
   );
 });
 
-// —— 娃娃端：今日任务 ——（GET /tasks/today，纯资源加载）
+// —— 学生端：今日任务 ——（GET /tasks/today，纯资源加载）
 final todayTasksNotifierProvider =
     StateNotifierProvider<ResourceNotifier<List<TaskModel>>, Resource<List<TaskModel>>>(
   (ref) => ResourceNotifier(
@@ -364,18 +364,18 @@ final todayTasksNotifierProvider =
   ),
 );
 
-// —— 家长端：查看娃娃进度 ——（路径依赖 childId）
+// —— 教师端：查看学生进度 ——（路径依赖 studentId）
 final progressNotifierProvider = StateNotifierProvider<
     ParamResourceNotifier<ProgressModel, String>, Resource<ProgressModel>>(
   (ref) => ParamResourceNotifier(
-    (childId) => ref.watch(tasksRepositoryProvider).progress(childId),
+    (studentId) => ref.watch(tasksRepositoryProvider).progress(studentId),
   ),
 );
 
-// —— 家长端：知识点掌握度看板 ——（路径依赖 childId）
+// —— 教师端：知识点掌握度看板 ——（路径依赖 studentId）
 final masteryNotifierProvider = StateNotifierProvider<
     ParamResourceNotifier<MasteryModel, String>, Resource<MasteryModel>>(
   (ref) => ParamResourceNotifier(
-    (childId) => ref.watch(tasksRepositoryProvider).mastery(childId),
+    (studentId) => ref.watch(tasksRepositoryProvider).mastery(studentId),
   ),
 );

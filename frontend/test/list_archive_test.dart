@@ -1,6 +1,6 @@
 // 守住归档的不变量（ADR-0053 P2）。
 //
-// 三个模块的归档是**三件不同的事**：题库是家长主动弃用（显式、可恢复），任务是
+// 三个模块的归档是**三件不同的事**：题库是教师主动弃用（显式、可恢复），任务是
 // 时间久远（按月分段，不加字段），错题是系统判定已掌握（毕业打时间戳而非删除）。
 // 本文件按模块分组，每组盯各自的语义——这正是「不共用一套 archived 字段」换来的
 // 可解释性，测试要把它钉住。
@@ -12,13 +12,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-import 'package:kids_learn/features/children/domain/repositories/children_repository.dart';
-import 'package:kids_learn/features/children/presentation/providers/children_notifier.dart';
-import 'package:kids_learn/features/children/providers/children_provider.dart'
-    show childrenNotifierProvider;
+import 'package:kids_learn/features/students/domain/repositories/students_repository.dart';
+import 'package:kids_learn/features/students/presentation/providers/students_notifier.dart';
+import 'package:kids_learn/features/students/providers/students_provider.dart'
+    show studentsNotifierProvider;
 import 'package:kids_learn/features/home/data/repositories/question_bank_repository_impl.dart';
 import 'package:kids_learn/features/home/domain/repositories/tasks_repository.dart';
-import 'package:kids_learn/features/home/presentation/widgets/parent/parent_tasks_view.dart';
+import 'package:kids_learn/features/home/presentation/widgets/teacher/teacher_tasks_view.dart';
 import 'package:kids_learn/features/home/providers/home_provider.dart';
 import 'package:kids_learn/features/review/data/repositories/review_repository_impl.dart';
 import 'package:kids_learn/features/review/presentation/providers/review_notifier.dart';
@@ -177,28 +177,28 @@ void main() {
 
     test('scope=graduated 命中「已掌握」分区，且不污染默认查询', () async {
       final network = _RecordingNetwork({
-        '/tasks/children/c1/wrong-questions': wrongPageOf([]),
+        '/tasks/students/c1/wrong-questions': wrongPageOf([]),
       });
       final repo = ReviewRepositoryImpl(network);
 
-      await repo.parentWrongQuestions('c1');
-      await repo.parentWrongQuestions('c1', scope: 'graduated');
+      await repo.teacherWrongQuestions('c1');
+      await repo.teacherWrongQuestions('c1', scope: 'graduated');
 
       expect(network.gets, [
-        '/tasks/children/c1/wrong-questions?page_size=20&scope=active',
-        '/tasks/children/c1/wrong-questions?page_size=20&scope=graduated',
+        '/tasks/students/c1/wrong-questions?page_size=20&scope=active',
+        '/tasks/students/c1/wrong-questions?page_size=20&scope=graduated',
       ]);
     });
 
     test('「已掌握（N）」取服务端全量计数，不是已加载页的条数', () async {
       final network = _RecordingNetwork({
-        '/tasks/children/c1/wrong-questions': wrongPageOf(
+        '/tasks/students/c1/wrong-questions': wrongPageOf(
           [wrongItemOf('w1')],
           graduatedTotal: 42,
         ),
       });
 
-      final page = await ReviewRepositoryImpl(network).parentWrongQuestions('c1');
+      final page = await ReviewRepositoryImpl(network).teacherWrongQuestions('c1');
 
       expect(page.graduatedTotal, 42);
       expect(page.items.length, 1, reason: '本页只有 1 条，N 必须是全量');
@@ -206,7 +206,7 @@ void main() {
 
     test('重新加入复习：清毕业时间戳（后端返回为准）', () async {
       final network = _RecordingNetwork({
-        '/tasks/children/c1/wrong-questions/w1/rejoin':
+        '/tasks/students/c1/wrong-questions/w1/rejoin':
             wrongItemOf('w1'), // 无 graduated_at = 已回到队列
       });
 
@@ -215,7 +215,7 @@ void main() {
 
       expect(rejoined.graduatedAt, isNull);
       expect(network.posts.single['path'],
-          '/tasks/children/c1/wrong-questions/w1/rejoin');
+          '/tasks/students/c1/wrong-questions/w1/rejoin');
     });
 
     test('graduatedTotalOf 只对已加载的未毕业列表有意义', () {
@@ -267,13 +267,13 @@ void main() {
           overrides: [
             tasksRepositoryProvider
                 .overrideWithValue(_StubTasksRepository(tasks)),
-            childrenNotifierProvider
+            studentsNotifierProvider
                 .overrideWith((ref) => _SeededChildrenNotifier(const <UserModel>[])),
           ],
           child: ShadApp.custom(
-            theme: AppTheme.shadFor(false, AppUserMode.parent, AppDensity.compact),
+            theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
             appBuilder: (context) => MaterialApp(
-              home: ParentTasksView(
+              home: TeacherTasksView(
                 onNavigateToReview: (_) {},
                 onNavigateToCreate: () {},
               ),
@@ -306,24 +306,24 @@ void main() {
 }
 
 /// 只为构造 notifier 存在；本测试不经它取数。
-class _UnusedChildrenRepo implements ChildrenRepository {
+class _UnusedChildrenRepo implements StudentsRepository {
   @override
   dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError();
 }
 
 class _SeededChildrenNotifier extends ChildrenNotifier {
-  _SeededChildrenNotifier(List<UserModel> children)
+  _SeededChildrenNotifier(List<UserModel> students)
       : super(_UnusedChildrenRepo()) {
-    state = ChildrenLoaded(children);
+    state = StudentsLoaded(students);
   }
 }
 
 class _StubTasksRepository implements TasksRepository {
-  _StubTasksRepository(this.parent);
-  final List<TaskModel> parent;
+  _StubTasksRepository(this.teacher);
+  final List<TaskModel> teacher;
 
   @override
-  Future<TaskPage> parentTasks({
+  Future<TaskPage> teacherTasks({
     String? status,
     String? cursor,
     int pageSize = 20,
@@ -334,8 +334,8 @@ class _StubTasksRepository implements TasksRepository {
           items: const [], total: 0, pageSize: pageSize, counts: counts);
     }
     final items = status == null || status.isEmpty
-        ? parent
-        : parent.where((t) => status.split(',').contains(t.status)).toList();
+        ? teacher
+        : teacher.where((t) => status.split(',').contains(t.status)).toList();
     return TaskPage(
       items: items.take(pageSize).toList(),
       total: items.length,
@@ -345,18 +345,18 @@ class _StubTasksRepository implements TasksRepository {
   }
 
   TaskCounts _counts() => TaskCounts(
-        draft: parent.where((t) => t.status == 'draft').length,
-        ready: parent.where((t) => t.status == 'ready').length,
-        assigned: parent.where((t) => t.status == 'assigned').length,
-        done: parent.where((t) => t.status == 'done').length,
+        draft: teacher.where((t) => t.status == 'draft').length,
+        ready: teacher.where((t) => t.status == 'ready').length,
+        assigned: teacher.where((t) => t.status == 'assigned').length,
+        done: teacher.where((t) => t.status == 'done').length,
       );
 
   @override
   Future<List<TaskModel>> todayTasks() async => const <TaskModel>[];
 
   @override
-  Future<ProgressModel> progress(String childId) async => ProgressModel(
-        childId: childId,
+  Future<ProgressModel> progress(String studentId) async => ProgressModel(
+        studentId: studentId,
         total: 0,
         correct: 0,
         accuracy: 0,
@@ -365,8 +365,8 @@ class _StubTasksRepository implements TasksRepository {
       );
 
   @override
-  Future<MasteryModel> mastery(String childId) async => MasteryModel(
-        childId: childId,
+  Future<MasteryModel> mastery(String studentId) async => MasteryModel(
+        studentId: studentId,
         totalKnowledgePoints: 0,
         masteredCount: 0,
         items: const <KnowledgeMasteryModel>[],

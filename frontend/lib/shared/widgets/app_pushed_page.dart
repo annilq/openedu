@@ -77,10 +77,10 @@ class AppPushedPage extends StatelessWidget {
               onBack: onBack,
               trailing: trailing,
             ),
-          // 用 Expanded 而不是直接塞进去：Column 给**非 flex 孩子**的是竖向无界约束，
-          // 页面的 children 里常有 Expanded（主体占满剩余、底部行动条收尾），
-          // 无界 + flex 会直接抛 "children have non-zero flex but incoming height
-          // constraints are unbounded"。套一层 flex 孩子才能把边界传下去。
+          // 用 Expanded 而不是直接塞进去：Column 给**非 flex 学生**的是竖向无界约束，
+          // 页面的 students 里常有 Expanded（主体占满剩余、底部行动条收尾），
+          // 无界 + flex 会直接抛 "students have non-zero flex but incoming height
+          // constraints are unbounded"。套一层 flex 学生才能把边界传下去。
           Expanded(child: child),
         ],
       ),

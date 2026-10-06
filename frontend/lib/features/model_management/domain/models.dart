@@ -7,7 +7,7 @@
 /// 无内置模型目录（ADR-0039），这些类也不该被其它 feature 引用。
 // ───────── AI 模型（票据 08 多模型流式） ─────────
 /// 内置服务商预设（GET /models/providers）：用于「添加模型」时自动带出
-/// base_url 与模型名建议，简化家长手动输入。
+/// base_url 与模型名建议，简化教师手动输入。
 library;
 class ModelProviderPreset {
   final String key; // deepseek / openai / ollama ...
@@ -44,7 +44,7 @@ class ModelProviderPreset {
   }
 }
 
-/// 单个可选模型（ADR-0039：模型一律由家长手动录入，不再区分内置/自定义）。
+/// 单个可选模型（ADR-0039：模型一律由教师手动录入，不再区分内置/自定义）。
 class ModelInfo {
   final String id;
   final String label;

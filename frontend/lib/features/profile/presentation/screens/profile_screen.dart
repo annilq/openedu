@@ -26,8 +26,8 @@ class ProfileScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final app = AppTheme.colorsOf(context);
     final text = AppTheme.textOf(context);
-    final roleTag = user.isParent
-        ? AppTags.normal('家长账号')
+    final roleTag = user.isTeacher
+        ? AppTags.normal('教师账号')
         : AppTags.info('${user.grade ?? "?"}年级');
 
     return ListView(
@@ -53,7 +53,7 @@ class ProfileScreen extends ConsumerWidget {
         ),
         const SizedBox(height: AppSpacing.sm),
         Center(child: roleTag),
-        if (!user.isParent) ...[
+        if (!user.isTeacher) ...[
           const SizedBox(height: AppSpacing.xs),
           Center(
             child: Text(
@@ -89,7 +89,7 @@ class ProfileScreen extends ConsumerWidget {
               _InfoRow(
                 icon: LucideIcons.bookOpen,
                 label: '角色',
-                value: user.isParent ? '家长' : '学生',
+                value: user.isTeacher ? '教师' : '学生',
               ),
               if (user.grade != null) ...[
                 _Divider(),
@@ -269,7 +269,7 @@ class _ThemeModeSetting extends ConsumerWidget {
   }
 }
 
-/// 界面模式：家长模式 / 娃娃模式（持久化，ADR-0014 双模式）。
+/// 界面模式：教师模式 / 学生模式（持久化，ADR-0014 双模式）。
 class _UserModeSetting extends ConsumerWidget {
   const _UserModeSetting();
 
@@ -302,15 +302,15 @@ class _UserModeSetting extends ConsumerWidget {
             child: Row(
               children: [
                 _buildSegment(
-                    context, '家长模式', AppUserMode.parent, mode, controller),
+                    context, '教师模式', AppUserMode.teacher, mode, controller),
                 _buildSegment(
-                    context, '娃娃模式', AppUserMode.child, mode, controller),
+                    context, '学生模式', AppUserMode.student, mode, controller),
               ],
             ),
           ),
           const SizedBox(height: AppSpacing.xs),
           Text(
-            '娃娃模式会放大字号、突出学科色，更适合低龄儿童使用',
+            '学生模式会放大字号、突出学科色，更适合低龄学生使用',
             style: text.bodySmall?.copyWith(color: app.onSurfaceVariant),
           ),
         ],

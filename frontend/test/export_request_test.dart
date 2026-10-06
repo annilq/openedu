@@ -3,7 +3,7 @@ import 'package:kids_learn/features/export/domain/export_repository.dart';
 
 void main() {
   group('ExportSheetRequest', () {
-    test('bank 来源只带 ids，不带 child_id', () {
+    test('bank 来源只带 ids，不带 student_id', () {
       final json = const ExportSheetRequest(source: 'bank', ids: ['a', 'b'])
           .toJson();
       expect(json, {
@@ -13,14 +13,14 @@ void main() {
       });
     });
 
-    test('wrong_book 来源带 child_id 与 due_only，title 缺省不下发', () {
+    test('wrong_book 来源带 student_id 与 due_only，title 缺省不下发', () {
       final json = const ExportSheetRequest(
         source: 'wrong_book',
-        childId: 'child-1',
+        studentId: 'child-1',
         dueOnly: true,
       ).toJson();
       expect(json['source'], 'wrong_book');
-      expect(json['child_id'], 'child-1');
+      expect(json['student_id'], 'child-1');
       expect(json['due_only'], true);
       expect(json.containsKey('title'), isFalse);
     });

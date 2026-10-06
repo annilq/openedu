@@ -3,7 +3,7 @@
 
 
 class ProgressModel {
-  final String childId;
+  final String studentId;
   final int total;
   final int correct;
   final double accuracy;
@@ -11,7 +11,7 @@ class ProgressModel {
   final int checkinDays;
 
   ProgressModel({
-    required this.childId,
+    required this.studentId,
     required this.total,
     required this.correct,
     required this.accuracy,
@@ -21,7 +21,7 @@ class ProgressModel {
 
   factory ProgressModel.fromJson(Map<String, dynamic> json) {
     return ProgressModel(
-      childId: json['child_id'] as String,
+      studentId: json['student_id'] as String,
       total: json['total'] as int,
       correct: json['correct'] as int,
       accuracy: (json['accuracy'] as num).toDouble(),
@@ -32,7 +32,7 @@ class ProgressModel {
 }
 
 class KnowledgeMasteryModel {
-  /// 单个知识点的掌握度（家长看板）。
+  /// 单个知识点的掌握度（教师看板）。
   final String knowledgePoint;
   final String subject;
   final int grade;
@@ -43,7 +43,7 @@ class KnowledgeMasteryModel {
   final int maxReviewStage;
   final double score;
   final String level;
-  // 代表错题（Question.id），最多 3 条（ADR-0060 D4）。家长据此走
+  // 代表错题（Question.id），最多 3 条（ADR-0060 D4）。教师据此走
   // 「就这个知识点出题」的同类题仿写；空列表 = 该知识点暂无活跃错题。
   final List<String> representativeWrongQuestionIds;
 
@@ -83,14 +83,14 @@ class KnowledgeMasteryModel {
 }
 
 class MasteryModel {
-  /// 知识点掌握度看板（家长端）。
-  final String childId;
+  /// 知识点掌握度看板（教师端）。
+  final String studentId;
   final int totalKnowledgePoints;
   final int masteredCount;
   final List<KnowledgeMasteryModel> items;
 
   MasteryModel({
-    required this.childId,
+    required this.studentId,
     required this.totalKnowledgePoints,
     required this.masteredCount,
     required this.items,
@@ -98,7 +98,7 @@ class MasteryModel {
 
   factory MasteryModel.fromJson(Map<String, dynamic> json) {
     return MasteryModel(
-      childId: json['child_id'] as String,
+      studentId: json['student_id'] as String,
       totalKnowledgePoints: json['total_knowledge_points'] as int? ?? 0,
       masteredCount: json['mastered_count'] as int? ?? 0,
       items: (json['items'] as List? ?? [])

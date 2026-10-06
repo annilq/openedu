@@ -22,7 +22,7 @@ String _fmtDate(DateTime? dt) {
   return '${l.year}-${l.month.toString().padLeft(2, '0')}-${l.day.toString().padLeft(2, '0')}';
 }
 
-/// 娃娃端错题本：v2 redesign - 用 AppTags 语义化、SectionTitle、空状态加图标。
+/// 学生端错题本：v2 redesign - 用 AppTags 语义化、SectionTitle、空状态加图标。
 class WrongQuestionsScreen extends ConsumerStatefulWidget {
   final bool showBack;
   const WrongQuestionsScreen({super.key, this.showBack = true});

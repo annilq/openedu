@@ -72,6 +72,6 @@ class AssistantEventType {
 class AssistantErrorCode {
   const AssistantErrorCode._();
 
-  /// 输入未通过儿童内容安全校验：前端要把气泡标为「已拦截」而非报错。
+  /// 输入未通过学生内容安全校验：前端要把气泡标为「已拦截」而非报错。
   static const inputUnsafe = 'INPUT_UNSAFE';
 }

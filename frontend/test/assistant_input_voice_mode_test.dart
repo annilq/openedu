@@ -80,7 +80,7 @@ Future<_Harness> _pump(
       key: UniqueKey(),
       overrides: [voiceInputProvider.overrideWithValue(port)],
       child: ShadApp.custom(
-        theme: AppTheme.shadFor(false, AppUserMode.child, AppDensity.compact),
+        theme: AppTheme.shadFor(false, AppUserMode.student, AppDensity.compact),
         appBuilder: (context) => CupertinoApp(
           home: ShadToaster(
             child: Directionality(
@@ -90,7 +90,7 @@ Future<_Harness> _pump(
                 child: SizedBox(
                   width: 420,
                   child: UserModeScope(
-                    mode: AppUserMode.child,
+                    mode: AppUserMode.student,
                     child: AssistantInputBar(
                       controller: controller,
                       sending: false,

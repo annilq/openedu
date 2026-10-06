@@ -20,8 +20,8 @@ class PracticeScreen extends ConsumerStatefulWidget {
   final TaskModel task;
   final VoidCallback? onDone;
 
-  /// 家长只读预览模式：禁用提交/打卡，仅浏览题目；
-  /// 显式「以娃娃身份代答」才进入交互态写入娃娃作答记录。
+  /// 教师只读预览模式：禁用提交/打卡，仅浏览题目；
+  /// 显式「以学生身份代答」才进入交互态写入学生作答记录。
   final bool preview;
 
   const PracticeScreen({
@@ -149,7 +149,7 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
     widget.onDone?.call();
   }
 
-  /// 家长从只读预览切到真正作答：重置到第一题，此后提交/打卡将写入娃娃记录。
+  /// 教师从只读预览切到真正作答：重置到第一题，此后提交/打卡将写入学生记录。
   void _enterInteractive() {
     setState(() => _preview = false);
     _answerController.clear();
@@ -193,7 +193,7 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
           const SizedBox(width: AppSpacing.sm),
           Expanded(
             child: Text(
-              '家长预览（只读）· 仅查看，不会写入娃娃作答记录',
+              '教师预览（只读）· 仅查看，不会写入学生作答记录',
               style: AppTheme.textOf(context)
                   .bodySmall
                   ?.copyWith(color: AppBrutal.ink),
@@ -203,7 +203,7 @@ class _PracticeScreenState extends ConsumerState<PracticeScreen> {
           
             onPressed: _enterInteractive,
             leading: const Icon(LucideIcons.pencil, size: 16),
-            child: const Text('以娃娃身份代答'),
+            child: const Text('以学生身份代答'),
           ),
         ],
       ),

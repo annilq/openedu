@@ -8,7 +8,7 @@ import 'package:kids_learn/shared/widgets/app_badge.dart';
 
 /// 守卫 AppBadge 的渲染：label 显示、outlined 默认底色、自定义底色/前景生效。
 Widget _host(Widget child) => ShadApp.custom(
-      theme: AppTheme.shadFor(false, AppUserMode.parent, AppDensity.compact),
+      theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
       appBuilder: (context) => CupertinoApp(home: child),
     );
 

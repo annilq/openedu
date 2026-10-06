@@ -25,7 +25,7 @@ class PracticeQuestionView extends StatelessWidget {
   final VoidCallback onAnswerChanged;
   final VoidCallback onSubmit;
 
-  /// 家长只读预览模式：隐藏提交，改为本地「下一题」翻页（不写作答记录）。
+  /// 教师只读预览模式：隐藏提交，改为本地「下一题」翻页（不写作答记录）。
   final bool preview;
 
   /// 只读预览下的翻页回调（交互态为 null）。

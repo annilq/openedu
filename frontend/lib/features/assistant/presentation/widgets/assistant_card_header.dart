@@ -72,7 +72,7 @@ class AssistantCardHeader extends StatelessWidget {
     final fill = familyFillOf(kind);
     return Row(
       children: [
-        // 图标底座 32×32 + 1.5px 墨黑描边，规格取自 `parent_question_card` 的题号徽标
+        // 图标底座 32×32 + 1.5px 墨黑描边，规格取自 `teacher_question_card` 的题号徽标
         // （密集小色块档 [AppElevation.borderWidthSm]）。
         //
         // 收敛前是一个 15px 的裸灰图标：9 种卡片在会话回放里长得一模一样，5 种列表卡

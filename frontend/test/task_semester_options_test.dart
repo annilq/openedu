@@ -12,7 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:kids_learn/features/home/domain/repositories/material_repository.dart';
-import 'package:kids_learn/features/home/presentation/widgets/parent/parent_task_spec_row.dart';
+import 'package:kids_learn/features/home/presentation/widgets/teacher/teacher_task_spec_row.dart';
 import 'package:kids_learn/features/home/providers/home_provider.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
 
@@ -54,7 +54,7 @@ class _SemesterAwareRepo implements MaterialRepository {
 /// 测试脚手架问题，不是被测行为。
 Widget _wrap(WidgetTester tester, Widget child) {
   return ShadApp.custom(
-    theme: AppTheme.shadFor(false, AppUserMode.parent, AppDensity.compact),
+    theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
     appBuilder: (context) => MaterialApp(
       home: Scaffold(
         body: SizedBox(width: 900, height: 700, child: child),

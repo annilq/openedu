@@ -110,12 +110,12 @@ class _CardRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final children = <Widget>[];
+    final students = <Widget>[];
     for (var c = 0; c < columns; c++) {
-      if (c > 0) children.add(const SizedBox(width: AppLayout.listColumnGap));
+      if (c > 0) students.add(const SizedBox(width: AppLayout.listColumnGap));
       final index = row * columns + c;
       // 顶部对齐而非拉伸：拉伸会让矮卡跟着同列最高的卡变高，留白反而更多。
-      children.add(
+      students.add(
         Expanded(
           child: index < itemCount
               ? itemBuilder(context, index)
@@ -125,7 +125,7 @@ class _CardRow extends StatelessWidget {
     }
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: children,
+      children: students,
     );
   }
 }

@@ -24,7 +24,7 @@ import 'reflection_scene_data.dart';
 ///
 /// 本渲染器**不再认识「房子/风筝」这类概念**，只吃一组顶点（ADR-0061 §O）：
 /// 图形数据是教学素材（见 `figures.dart`），由后端按题目选项下发或由内置预设兜底。
-/// `ReflectionFigure` / `ReflectionFigureX` 仅作为**兜底预设集**保留给教师调参
+/// `ReflectionFigure` / `ReflectionFigureX` 仅作为**兜底预设集**保留给家长调参
 /// 面板与「spec 未带points」的旧数据。
 
 /// 重合判定阈值（归一化空间）。
@@ -218,7 +218,16 @@ class _ReflectionPainter extends CustomPainter {
 class ReflectionSceneWidget extends StatefulWidget {
   final ReflectionSceneData data;
 
-  const ReflectionSceneWidget({super.key, required this.data});
+  /// 轴参数变更回调（编辑器语境）：用户拖动任一个轴滑块即触发，便于父级把当前轴
+  /// 写回自己的状态（如弹窗关闭后仍能按调过的轴保存默认讲解模板）。儿童 / 普通预览
+  /// 不传，无副作用。
+  final void Function(double angle, double x, double y)? onAxisChanged;
+
+  const ReflectionSceneWidget({
+    super.key,
+    required this.data,
+    this.onAxisChanged,
+  });
 
   @override
   State<ReflectionSceneWidget> createState() => _ReflectionSceneWidgetState();
@@ -256,7 +265,7 @@ class _ReflectionSceneWidgetState extends State<ReflectionSceneWidget>
       // 必须给 duration：`_play()` 走 `forward()`，没设 duration 会在点击播放时
       // 抛 "AnimationController.forward() called with no default duration"。
       // 取值对着 spec 的「速度」语义：一次完整对折（0→180°）1.4s，太快看不清
-      // 折叠过程，太慢会让学生等得不耐烦。reduce-motion 下 `_play()` 直接跳到
+      // 折叠过程，太慢会让儿童等得不耐烦。reduce-motion 下 `_play()` 直接跳到
       // 终点、根本不走动画（见 `_play`），所以这个时长不影响无障碍用户。
       duration: const Duration(milliseconds: 1400),
     )..addListener(() {
@@ -330,6 +339,10 @@ class _ReflectionSceneWidgetState extends State<ReflectionSceneWidget>
     _fold.value = v;
   }
 
+  /// 任一轴滑块变动后写回父级（编辑器弹出语境下让弹窗关闭后仍能按调过的轴保存）。
+  void _emitAxis() =>
+      widget.onAxisChanged?.call(_axisAngle, _axisX, _axisY);
+
   List<Widget> _axisControls() => [
         const SizedBox(height: AppSpacing.sm),
         _labeledSlider(
@@ -337,8 +350,10 @@ class _ReflectionSceneWidgetState extends State<ReflectionSceneWidget>
           _axisAngleC,
           0,
           180,
-          1,
-          (v) => setState(() => _axisAngle = v),
+          (v) {
+            setState(() => _axisAngle = v);
+            _emitAxis();
+          },
           '${_axisAngle.round()}°',
         ),
         _labeledSlider(
@@ -346,8 +361,10 @@ class _ReflectionSceneWidgetState extends State<ReflectionSceneWidget>
           _axisXC,
           0.3,
           0.7,
-          0.01,
-          (v) => setState(() => _axisX = v),
+          (v) {
+            setState(() => _axisX = v);
+            _emitAxis();
+          },
           _axisX.toStringAsFixed(2),
         ),
         _labeledSlider(
@@ -355,8 +372,10 @@ class _ReflectionSceneWidgetState extends State<ReflectionSceneWidget>
           _axisYC,
           0.3,
           0.7,
-          0.01,
-          (v) => setState(() => _axisY = v),
+          (v) {
+            setState(() => _axisY = v);
+            _emitAxis();
+          },
           _axisY.toStringAsFixed(2),
         ),
       ];
@@ -366,12 +385,10 @@ class _ReflectionSceneWidgetState extends State<ReflectionSceneWidget>
     ShadSliderController controller,
     double min,
     double max,
-    double step,
     ValueChanged<double>? onChanged,
     String display,
   ) {
     final t = AppTheme.textOf(context);
-    final divisions = ((max - min) / step).round();
     return Row(
       children: [
         SizedBox(width: 84, child: Text(label, style: t.labelSmall!)),
@@ -380,7 +397,6 @@ class _ReflectionSceneWidgetState extends State<ReflectionSceneWidget>
             controller: controller,
             min: min,
             max: max,
-            divisions: divisions,
             onChanged: onChanged,
           ),
         ),

@@ -23,7 +23,7 @@ import 'package:kids_learn/shared/widgets/app_inputs.dart';
 
 Widget _wrap(Widget child) {
   return ShadApp.custom(
-    theme: AppTheme.shadFor(false, AppUserMode.parent, AppDensity.compact),
+    theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
     appBuilder: (context) => MaterialApp(
       home: Scaffold(
         body: SizedBox(width: 900, height: 700, child: child),

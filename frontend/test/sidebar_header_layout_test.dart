@@ -1,4 +1,4 @@
-// 守住侧栏头部的布局契约（切换娃娃选择器 + 收缩按钮）。
+// 守住侧栏头部的布局契约（切换学生选择器 + 收缩按钮）。
 //
 // 背景：`sidebarTop` 原先没有内边距契约——选择器只给自己的右侧塞了 12px，宿主
 // （AppSidebar / 抽屉）一点不给。结果是同一侧栏里出现三种左边缘（头部 0 / 导航 8 /
@@ -10,11 +10,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-import 'package:kids_learn/features/children/domain/repositories/children_repository.dart';
-import 'package:kids_learn/features/children/presentation/providers/children_notifier.dart';
-import 'package:kids_learn/features/children/providers/children_provider.dart'
-    show childrenNotifierProvider;
-import 'package:kids_learn/features/home/presentation/widgets/parent/parent_child_selector.dart';
+import 'package:kids_learn/features/students/domain/repositories/students_repository.dart';
+import 'package:kids_learn/features/students/presentation/providers/students_notifier.dart';
+import 'package:kids_learn/features/students/providers/students_provider.dart'
+    show studentsNotifierProvider;
+import 'package:kids_learn/features/home/presentation/widgets/teacher/teacher_student_selector.dart';
 import 'package:kids_learn/shared/data/local/storage_service.dart';
 import 'package:kids_learn/shared/domain/models/models.dart';
 import 'package:kids_learn/shared/domain/providers/core_providers.dart';
@@ -29,7 +29,7 @@ import 'package:kids_learn/shared/widgets/app_card.dart';
 import 'package:kids_learn/shared/widgets/app_focusable_action.dart';
 
 /// 只为构造 notifier 存在；本测试不经它取数（状态由构造器直接种入）。
-class _UnusedChildrenRepo implements ChildrenRepository {
+class _UnusedChildrenRepo implements StudentsRepository {
   @override
   Future<List<UserModel>> getChildren() async => const [];
   @override
@@ -43,7 +43,7 @@ class _UnusedChildrenRepo implements ChildrenRepository {
       throw UnimplementedError();
   @override
   Future<UserModel> updateChild({
-    required String childId,
+    required String studentId,
     String? displayName,
     int? grade,
     InterestsModel? interests,
@@ -53,14 +53,14 @@ class _UnusedChildrenRepo implements ChildrenRepository {
 
 /// 直接种一个已加载状态，避开网络层。
 class _SeededChildrenNotifier extends ChildrenNotifier {
-  _SeededChildrenNotifier(List<UserModel> children)
+  _SeededChildrenNotifier(List<UserModel> students)
       : super(_UnusedChildrenRepo()) {
-    state = ChildrenLoaded(children);
+    state = StudentsLoaded(students);
   }
 }
 
 void main() {
-  final children = [
+  final students = [
     UserModel(
         id: 'c1', username: 'xiaoming', displayName: '小明', role: 'child', grade: 2),
     UserModel(
@@ -88,25 +88,25 @@ void main() {
       ProviderScope(
         overrides: [
           storageServiceProvider.overrideWithValue(storage),
-          childrenNotifierProvider
-              .overrideWith((ref) => _SeededChildrenNotifier(children)),
+          studentsNotifierProvider
+              .overrideWith((ref) => _SeededChildrenNotifier(students)),
         ],
         child: ShadApp.custom(
           // ⚠️ 必须传真实主题：`ShadApp.custom` 不传 `theme:` 会走 shadcn 默认主题
           // （默认浮层内边距是 `h12/v6`、按钮竖向内边距 8），量出来的浮层宽度与
           // 控件高度都跟产品不一致。断言几何的测试**必须**传真主题。
-          theme: AppTheme.shadFor(false, AppUserMode.parent, AppDensity.compact),
+          theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
           appBuilder: (context) => MaterialApp(
             home: Scaffold(
               body: AdaptiveShell(
-                mode: AppUserMode.parent,
+                mode: AppUserMode.teacher,
                 destinations: const [
                   AdaptiveNavDestination(
                       icon: LucideIcons.house, label: '首页', active: true),
                 ],
-                sidebarTop: ParentChildSelector(
-                  onNavigateToAddChild: () {},
-                  onNavigateToEditChild: (_) {},
+                sidebarTop: TeacherStudentSelector(
+                  onNavigateToAddStudent: () {},
+                  onNavigateToEditStudent: (_) {},
                 ),
                 body: const Placeholder(),
               ),
@@ -129,7 +129,7 @@ void main() {
     final storage = await makeStorage();
     await pumpShell(tester, storage);
 
-    final selectorLeft = tester.getTopLeft(find.byType(ParentChildSelector)).dx;
+    final selectorLeft = tester.getTopLeft(find.byType(TeacherStudentSelector)).dx;
     final pillLeft = tester.getTopLeft(navPill()).dx;
     final sidebarLeft = tester.getTopLeft(find.byType(AppSidebar)).dx;
 
@@ -142,7 +142,7 @@ void main() {
     final storage = await makeStorage();
     await pumpShell(tester, storage);
 
-    final selector = tester.getSize(find.byType(ParentChildSelector));
+    final selector = tester.getSize(find.byType(TeacherStudentSelector));
     final toggle = tester.getSize(find.ancestor(
             of: find.byIcon(LucideIcons.panelLeftClose),
             matching: find.byType(AppFocusableAction))
@@ -160,7 +160,7 @@ void main() {
     await pumpShell(tester, storage);
 
     final sidebar = tester.getTopLeft(find.byType(AppSidebar));
-    final selector = tester.getTopLeft(find.byType(ParentChildSelector));
+    final selector = tester.getTopLeft(find.byType(TeacherStudentSelector));
 
     expect(selector.dx - sidebar.dx, AppSpacing.sm);
     expect(selector.dy - sidebar.dy, AppSpacing.md,
@@ -173,7 +173,7 @@ void main() {
   /// 不是 `ShadDecorator`（探针实测：搜 `ShadDecorator` 找不到元素）。
   Finder triggerCard() => find
       .descendant(
-        of: find.byType(ParentChildSelector),
+        of: find.byType(TeacherStudentSelector),
         matching: find.byWidgetPredicate(
           (w) => w is Container && w.decoration is BoxDecoration &&
               (w.decoration! as BoxDecoration).border != null,
@@ -210,31 +210,31 @@ void main() {
 
     expect(tester.takeException(), isNull,
         reason: '轨态宽度只有 48px，展开态那行（头像+姓名+箭头）会 RenderFlex overflowed');
-    expect(find.byType(ParentChildSelector), findsOneWidget,
+    expect(find.byType(TeacherStudentSelector), findsOneWidget,
         reason: '轨态不能把「当前在看谁」直接丢掉');
     expect(find.byIcon(LucideIcons.chevronsUpDown), findsNothing,
         reason: '轨态不该渲染展开态的下拉箭头');
     expect(find.byType(AvatarSquircle), findsWidgets,
-        reason: '轨态应保留娃娃头像');
+        reason: '轨态应保留学生头像');
     // 收起按钮仍在，且能再展开。
     expect(find.byIcon(LucideIcons.panelLeftOpen), findsOneWidget);
   });
 
-  testWidgets('浮层：「添加娃娃」是主按钮，选项不再套一层带描边卡片', (tester) async {
+  testWidgets('浮层：「添加学生」是主按钮，选项不再套一层带描边卡片', (tester) async {
     final storage = await makeStorage();
     await pumpShell(tester, storage);
 
-    await tester.tap(find.byType(ParentChildSelector));
+    await tester.tap(find.byType(TeacherStudentSelector));
     await tester.pumpAndSettle();
 
     expect(find.byType(AppPrimaryButton), findsOneWidget,
-        reason: '「添加娃娃」是动作，必须与娃娃选项区分开（原先同形 → 读成第三个娃娃）');
+        reason: '「添加学生」是动作，必须与学生选项区分开（原先同形 → 读成第三个学生）');
     expect(find.byType(AppCard), findsOneWidget,
         reason: '浮层里只有触发器那一个 AppCard；选项若也用 AppCard 就是盒中盒');
-    // 两个娃娃选项各有一个可点药丸 + 编辑按钮。
+    // 两个学生选项各有一个可点药丸 + 编辑按钮。
     expect(find.text('小明'), findsWidgets);
     expect(find.text('小红'), findsWidgets);
-    expect(find.bySemanticsLabel('编辑娃娃资料'), findsNWidgets(2),
+    expect(find.bySemanticsLabel('编辑学生资料'), findsNWidgets(2),
         reason: '行内编辑按钮必须进焦点树（原先裸 GestureDetector，键盘 Tab 不到）');
   });
 
@@ -253,11 +253,11 @@ void main() {
     final storage = await makeStorage();
     await pumpShell(tester, storage);
 
-    await tester.tap(find.byType(ParentChildSelector));
+    await tester.tap(find.byType(TeacherStudentSelector));
     await tester.pumpAndSettle();
 
     final box = tester.getRect(popoverBox());
-    final trigger = tester.getRect(find.byType(ParentChildSelector));
+    final trigger = tester.getRect(find.byType(TeacherStudentSelector));
     final sidebar = tester.getRect(find.byType(AppSidebar));
 
     // 原先 shadcn 默认 anchor 是「相对触发卡水平居中」，而触发卡（171）比浮层（224）
@@ -278,10 +278,10 @@ void main() {
     final storage = await makeStorage();
     await pumpShell(tester, storage);
 
-    await tester.tap(find.byType(ParentChildSelector));
+    await tester.tap(find.byType(TeacherStudentSelector));
     await tester.pumpAndSettle();
 
-    // 选项药丸 = 选项那个 AppFocusableAction（语义标签是娃娃名）里的 Container。
+    // 选项药丸 = 选项那个 AppFocusableAction（语义标签是学生名）里的 Container。
     final option = find.descendant(
       of: find.byWidgetPredicate(
         (w) => w is AppFocusableAction && w.semanticLabel == '小明',
@@ -299,7 +299,7 @@ void main() {
     final storage = await makeStorage();
     await pumpShell(tester, storage);
 
-    await tester.tap(find.byType(ParentChildSelector));
+    await tester.tap(find.byType(TeacherStudentSelector));
     await tester.pumpAndSettle();
 
     final btn = find.byType(AppPrimaryButton);
@@ -318,11 +318,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
 
-    await tester.tap(find.byType(ParentChildSelector));
+    await tester.tap(find.byType(TeacherStudentSelector));
     await tester.pumpAndSettle();
 
     final box = tester.getRect(popoverBox());
-    final trigger = tester.getRect(find.byType(ParentChildSelector));
+    final trigger = tester.getRect(find.byType(TeacherStudentSelector));
     final icon = tester.getRect(find.byIcon(LucideIcons.house));
 
     // 轨态必然容不下 224 宽的浮层——这是飞出的菜单，允许盖住内容区。

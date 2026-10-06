@@ -33,7 +33,7 @@ void main() {
             width: width,
             height: 800,
             child: AdaptiveShell(
-              mode: AppUserMode.parent,
+              mode: AppUserMode.teacher,
               destinations: const [
                 AdaptiveNavDestination(
                     icon: LucideIcons.house, label: '首页', active: true),

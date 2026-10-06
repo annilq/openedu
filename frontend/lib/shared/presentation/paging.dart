@@ -119,7 +119,7 @@ extension PagingStateX<T> on PagingState<T> {
 /// 取一页的函数；``cursor`` 为 null 时取第一页。
 typedef PagingFetch<T> = Future<CursorPage<T>> Function({String? cursor});
 
-/// 取一页且依赖入参的函数（如「按 childId 取错题本」）。
+/// 取一页且依赖入参的函数（如「按 studentId 取错题本」）。
 typedef ParamPagingFetch<T, A> = Future<CursorPage<T>> Function(
   A arg, {
   String? cursor,
@@ -176,7 +176,7 @@ mixin _PagingLoader<T> on StateNotifier<PagingState<T>> {
       final next = await fetch(before.page.nextCursor!);
       final current = state;
       if (current is! PagingLoaded<T>) return;
-      // 期间换过查询条件（切 Tab / 改筛选 / 换孩子）→ 这一页已经不属于当前结果。
+      // 期间换过查询条件（切 Tab / 改筛选 / 换学生）→ 这一页已经不属于当前结果。
       if (generation != _generation) return;
       state = PagingLoaded<T>(current.page.append(next));
     } catch (e) {
@@ -203,14 +203,14 @@ class PagingNotifier<T> extends StateNotifier<PagingState<T>>
       runNextPage((cursor) => _fetch(cursor: cursor));
 }
 
-/// 取数依赖入参的分页资源（如「按 childId 取错题本」）。
+/// 取数依赖入参的分页资源（如「按 studentId 取错题本」）。
 class ParamPagingNotifier<T, A> extends StateNotifier<PagingState<T>>
     with _PagingLoader<T> {
   ParamPagingNotifier(this._fetch) : super(const PagingIdle());
 
   final ParamPagingFetch<T, A> _fetch;
 
-  /// 记住入参：[loadMore] 没处传 childId。
+  /// 记住入参：[loadMore] 没处传 studentId。
   A? _arg;
 
   Future<void> load(A arg) {

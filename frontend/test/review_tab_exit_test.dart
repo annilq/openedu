@@ -11,7 +11,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// 复习页「返回」的行为守卫。
 ///
-/// 背景（线上事故）：娃娃端复习页是导航空壳的**一个页签**（`IndexedStack` 常驻），
+/// 背景（线上事故）：学生端复习页是导航空壳的**一个页签**（`IndexedStack` 常驻），
 /// 不是 `Navigator.push` 出来的路由。它里面的两处 `Navigator.of(context).pop()`
 /// （空态「返回」、完成卡「返回首页」）弹的是**根导航栈的最后一条路由**——也就是
 /// 整个 App：点一下立刻白屏，之后任何一次重建都会撞上 `NavigatorState.build` 里的
@@ -33,7 +33,7 @@ Future<void> _pumpReview(
         reviewRepositoryProvider.overrideWithValue(_FakeReviewRepository(items)),
       ],
       child: ShadApp.custom(
-        theme: AppTheme.shadFor(false, AppUserMode.child, AppDensity.compact),
+        theme: AppTheme.shadFor(false, AppUserMode.student, AppDensity.compact),
         appBuilder: (_) => MaterialApp(
           home: Column(
             children: [
@@ -87,8 +87,8 @@ class _FakeReviewRepository implements ReviewRepository {
       throw UnimplementedError();
 
   @override
-  Future<WrongQuestionPage> parentWrongQuestions(
-    String childId, {
+  Future<WrongQuestionPage> teacherWrongQuestions(
+    String studentId, {
     String? cursor,
     int pageSize = 20,
     String scope = 'active',
@@ -97,7 +97,7 @@ class _FakeReviewRepository implements ReviewRepository {
 
   @override
   Future<WrongQuestionModel> rejoinWrongQuestion(
-    String childId,
+    String studentId,
     String wrongQuestionId,
   ) async =>
       throw UnimplementedError();
@@ -149,7 +149,7 @@ void main() {
               .overrideWithValue(_FakeReviewRepository(const [])),
         ],
         child: ShadApp.custom(
-          theme: AppTheme.shadFor(false, AppUserMode.child, AppDensity.compact),
+          theme: AppTheme.shadFor(false, AppUserMode.student, AppDensity.compact),
           appBuilder: (_) => const MaterialApp(
             home: Column(
               children: [

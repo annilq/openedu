@@ -46,12 +46,12 @@ class QuestionBankRepositoryImpl implements QuestionBankRepository {
   @override
   Future<TaskModel> createTaskFromBank({
     required String title,
-    required String childId,
+    required String studentId,
     required List<String> questionIds,
   }) async {
     final data = await _network.post('/tasks/from-bank', body: {
       'title': title,
-      'child_id': childId,
+      'student_id': studentId,
       'question_ids': questionIds,
     });
     return TaskModel.fromJson(decodeMap(data));

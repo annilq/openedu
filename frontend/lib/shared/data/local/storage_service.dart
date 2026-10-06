@@ -3,7 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../theme/app_theme.dart';
 
 /// 本地存储服务（shared_preferences 封装）。
-/// 存 token、当前用户 JSON、家长设置、主题模式。
+/// 存 token、当前用户 JSON、教师设置、主题模式。
 class StorageService {
   static const _keyToken = 'auth_token';
   static const _keyUser = 'current_user';
@@ -35,16 +35,16 @@ class StorageService {
   Future<void> saveThemeMode(AppThemeMode mode) =>
       _prefs.setString(_keyThemeMode, mode.name);
 
-  /// 用户模式：家长工作台 / 娃娃学习台（双模式，ADR-0014）。
+  /// 用户模式：教师工作台 / 学生学习台（双模式，ADR-0014）。
   AppUserMode getUserMode() {
     final raw = _prefs.getString(_keyUserMode);
-    return AppUserMode.values.asNameMap()[raw] ?? AppUserMode.parent;
+    return AppUserMode.values.asNameMap()[raw] ?? AppUserMode.teacher;
   }
 
   Future<void> saveUserMode(AppUserMode mode) =>
       _prefs.setString(_keyUserMode, mode.name);
 
-  /// 控件密度（compact / normal），默认 [AppDensity.compact]（parent 32 / child 40）。
+  /// 控件密度（compact / normal），默认 [AppDensity.compact]（teacher 32 / child 40）。
   AppDensity getDensity() {
     final raw = _prefs.getString(_keyDensity);
     return AppDensity.values.asNameMap()[raw] ?? AppControl.defaultDensity;

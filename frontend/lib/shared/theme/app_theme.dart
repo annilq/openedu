@@ -22,11 +22,11 @@ ThemeMode appThemeModeToMaterial(AppThemeMode mode) => switch (mode) {
       AppThemeMode.dark => ThemeMode.dark,
     };
 
-/// 用户模式（双模式，ADR-0014）：家长工作台 / 娃娃学习台。
+/// 用户模式（双模式，ADR-0014）：教师工作台 / 学生学习台。
 ///
 /// 独立于亮暗主题（[AppThemeMode]），控制字号阶梯与语气。
-/// 家长端 = 密排专业；娃娃端 = 更大字号 + 学科色 + 适度趣味。
-enum AppUserMode { parent, child }
+/// 教师端 = 密排专业；学生端 = 更大字号 + 学科色 + 适度趣味。
+enum AppUserMode { teacher, student }
 
 /// 学科色（ADR-0014 Subject Accent Tokens）。
 ///
@@ -337,7 +337,7 @@ class AppTheme {
 
   /// 暗色令牌（深炭纸 + 亮描边，ADR-0044）。
   ///
-  /// 暗色**不是优先目标**（`.impeccable.md` §Aesthetic Direction）：儿童端在暗底上
+  /// 暗色**不是优先目标**（`.impeccable.md` §Aesthetic Direction）：学生端在暗底上
   /// 撞色会失控。`outline` 取亮暖灰而非纯白——纯白描边在密集列表里会糊成一片，
   /// 此值待暗色专项打磨时再定。
   static const AppColors dark = AppColors(
@@ -398,14 +398,14 @@ class AppTheme {
   /// 取当前用户模式的排版集合。
   ///
   /// 默认从 [UserModeScope] 读取（由 [userModeProvider] 驱动，全局自动重建）；
-  /// 也可显式传 [mode] 覆盖（如测试或部分布局固定用家长尺度）。
+  /// 也可显式传 [mode] 覆盖（如测试或部分布局固定用教师尺度）。
   static AppText textOf(BuildContext context, {AppUserMode? mode}) {
     final isDark = CupertinoTheme.brightnessOf(context) == Brightness.dark;
     final m = mode ?? UserModeScope.of(context);
     if (isDark) {
-      return m == AppUserMode.child ? _darkTextChild : _darkText;
+      return m == AppUserMode.student ? _darkTextChild : _darkText;
     }
-    return m == AppUserMode.child ? _lightTextChild : _lightText;
+    return m == AppUserMode.student ? _lightTextChild : _lightText;
   }
 
   // ============ Cupertino 主题 ============
@@ -416,17 +416,17 @@ class AppTheme {
   static CupertinoThemeData cupertinoFor(bool isDark) =>
       _cupertino(isDark ? dark : light);
 
-  /// [density] 为全局控件密度（默认 [AppDensity.compact]，即 parent 32 / child 40）。
+  /// [density] 为全局控件密度（默认 [AppDensity.compact]，即 teacher 32 / child 40）。
   /// 密度与亮暗、用户模式正交：三者共同决定 shadcn 组件主题里的控件高度，
   /// 使裸 `ShadButton` / `ShadInput` 与 `App*` 组件严格同高。
   static ShadThemeData shadFor(
     bool isDark, [
-    AppUserMode mode = AppUserMode.parent,
+    AppUserMode mode = AppUserMode.teacher,
     AppDensity density = AppDensity.compact,
   ]) =>
       shadThemeData(
         isDark ? dark : light,
-        child: mode == AppUserMode.child,
+        child: mode == AppUserMode.student,
         density: density,
       );
 
@@ -569,8 +569,8 @@ class AppTheme {
   }) {
     // 交互控件（按钮 / 输入框 / 选择器）统一高度：主题层无 context，
     // 按「当前用户模式 × 全局密度」推导，与 AppControl.heightOf(context) 同源。
-    // 密度由 [densityProvider] 驱动（默认 compact → parent 32 / child 40）。
-    final mode = child ? AppUserMode.child : AppUserMode.parent;
+    // 密度由 [densityProvider] 驱动（默认 compact → teacher 32 / child 40）。
+    final mode = child ? AppUserMode.student : AppUserMode.teacher;
     final controlH = AppControl.height(mode, density);
     final controlSmH = AppControl.heightSm(mode, density);
     final controlLgH = AppControl.heightLg(mode, density);
@@ -714,7 +714,7 @@ class AppTheme {
         pressedBackgroundColor: c.surfaceActive,
         pressedForegroundColor: c.onSurface,
         // 次级按钮：描边加粗到 2px 但**不加**硬阴影——与浮起的 CTA 拉开层级，
-        // 避免家长端表单里一排按钮全部浮起造成视觉噪声。
+        // 避免教师端表单里一排按钮全部浮起造成视觉噪声。
         decoration: ShadDecoration(
           border: ShadBorder.all(
             color: c.outline,
@@ -957,7 +957,7 @@ class AppTheme {
       );
 
   /// 排版 → ShadTextTheme。复用 [AppText._typeScale] 单一事实源（设计系统约束 D），
-  /// Child Mode 在 Parent 基础上整体放大一档（ADR-0014）。
+  /// Child Mode 在 Teacher 基础上整体放大一档（ADR-0014）。
   static ShadTextTheme _shadTextTheme(AppColors c, {required bool child}) {
     double grow(double s) => child ? _childScale(s) : s;
 
@@ -1288,7 +1288,7 @@ class AppSpacing {
 /// - 内容宽度上限的作用是防止大屏下文本行过长、卡片被无限拉宽。约束值按**语义**
 ///   分档，禁止在页面里再写裸数字（否则「哪一档才是我该用的」无从判断）。
 class AppLayout {
-  /// 紧凑档上界：`width < compactMax` 走紧凑布局（娃娃端底栏 / 家长端汉堡抽屉）。
+  /// 紧凑档上界：`width < compactMax` 走紧凑布局（学生端底栏 / 教师端汉堡抽屉）。
   static const double compactMax = 700;
 
   /// 大屏档下界。
@@ -1354,7 +1354,7 @@ class AppLayout {
   /// 侧栏菜单最大高度；超出后菜单内部滚动。
   static const double menuMaxHeight = 400;
 
-  /// 家长端工作区内容最大宽度（列表 / 仪表盘 / 表单页）。
+  /// 教师端工作区内容最大宽度（列表 / 仪表盘 / 表单页）。
   static const double contentWide = 1080;
 
   /// 答题与阅读区内容最大宽度（缩短视线跨度，提升阅读舒适度）。
@@ -1404,7 +1404,7 @@ class AppLayout {
   ///
   /// 取 1048 = [contentWide] 1080 − 2 × [listGutter]，即大屏下列表区实际拿到的
   /// 宽度。此时两列各 (1048 − 12) / 2 = 518，比 [listColumnWidth]
-  /// 只差 2px——差 2px 就掉回一列会让家长拉窗口时列表在临界点反复跳列，所以阈值
+  /// 只差 2px——差 2px 就掉回一列会让教师拉窗口时列表在临界点反复跳列，所以阈值
   /// 取「两列都基本达到目标宽度」而不是「两列都必须 ≥ 520」。
   static const double listTwoColumnMin = contentWide - 2 * listGutter;
 
@@ -1440,7 +1440,7 @@ class AppRadius {
 /// 控件密度（交互控件紧凑度）。与亮暗（[AppThemeMode]）、用户模式（[AppUserMode]）正交，
 /// 用于推导统一的控件高度，使按钮 / 输入框 / 选择器随紧凑度缩放。
 ///
-/// **默认 [compact]**（parent 40 / child 48）。密度已全局接入：由 `densityProvider`
+/// **默认 [compact]**（teacher 40 / child 48）。密度已全局接入：由 `densityProvider`
 /// 持久化并驱动 `AppTheme.shadFor(isDark, mode, density)`，[DensityScope] 只需在
 /// 需要局部偏离的子树上包一层（如数据密集型表格切 [normal]）。
 /// 所有控件高度都由该维度推导，无硬编码魔法值。
@@ -1460,14 +1460,14 @@ enum AppDensity { normal, compact }
 /// 与 Apple HIG 的 44pt 都要满足，取 48 即同时达标。标准档与紧凑档由锚点向下推
 /// （各减一阶 / 两阶），所以**调档位时只需改锚点**，阶梯不会散架。
 ///
-/// | 档位 | parent·compact | parent·normal | child·compact | child·normal |
+/// | 档位 | teacher·compact | teacher·normal | child·compact | child·normal |
 /// |---|---|---|---|---|
 /// | [heightSm] 紧凑 | 32 | 40 | 40 | 48 |
 /// | [height] 标准 | **40** | 48 | 48 | 56 |
 /// | [heightLg] 主行动 | 48 | 56 | 56 | 64 |
 ///
-/// 「child 比 parent 大一档」与「normal 比 compact 大一档」是**同一个 +8 位移**，
-/// 所以 child·compact 与 parent·normal 数值完全相同——这不是巧合，而是阶梯的必然结果。
+/// 「child 比 teacher 大一档」与「normal 比 compact 大一档」是**同一个 +8 位移**，
+/// 所以 child·compact 与 teacher·normal 数值完全相同——这不是巧合，而是阶梯的必然结果。
 ///
 /// ## 为什么标准档是 40 而不是 32
 ///
@@ -1480,7 +1480,7 @@ enum AppDensity { normal, compact }
 /// 38 未采用：它是 Bootstrap 的实现副产物（12px padding×2 + 24px 行高 + 2px 描边），
 /// 不对应任何设计原则，也不落在本仓间距令牌的任何一档上，引入即新增魔法数字。
 class AppControl {
-  /// 全局默认密度（= [AppDensity.compact]，parent 40 / child 48）。
+  /// 全局默认密度（= [AppDensity.compact]，teacher 40 / child 48）。
   static const AppDensity defaultDensity = AppDensity.compact;
 
   /// 相邻档位的高度差（阶梯公差）。
@@ -1493,10 +1493,10 @@ class AppControl {
   ///
   /// 取 Material 的最小触控目标 48dp（Apple HIG 为 44pt，48 同时满足两者）。
   static double heightLg(AppUserMode mode, AppDensity density) => switch ((mode, density)) {
-        (AppUserMode.child, AppDensity.compact) => AppSpacing.xl5 + step, // 56
-        (AppUserMode.child, AppDensity.normal) => AppSpacing.xl5 + AppSpacing.lg, // 64
-        (AppUserMode.parent, AppDensity.compact) => AppSpacing.xl5, // 48
-        (AppUserMode.parent, AppDensity.normal) => AppSpacing.xl5 + step, // 56
+        (AppUserMode.student, AppDensity.compact) => AppSpacing.xl5 + step, // 56
+        (AppUserMode.student, AppDensity.normal) => AppSpacing.xl5 + AppSpacing.lg, // 64
+        (AppUserMode.teacher, AppDensity.compact) => AppSpacing.xl5, // 48
+        (AppUserMode.teacher, AppDensity.normal) => AppSpacing.xl5 + step, // 56
       };
 
   /// 标准档（表单输入框 / 选择器 / 表单内按钮）= 锚点下一阶。
@@ -1504,14 +1504,14 @@ class AppControl {
   /// **同行控件必须同用这一档**。三档都指「可见总高」（含描边），与「传给
   /// `ShadButton` 的 content-box 高」是两个量——换算见 [buttonContentHeight]。
   static double height(AppUserMode mode, AppDensity density) =>
-      heightLg(mode, density) - step; // parent 40 / child 48
+      heightLg(mode, density) - step; // teacher 40 / child 48
 
   /// 紧凑档（表格行内小按钮 / 行内操作）= 锚点下两阶。
   static double heightSm(AppUserMode mode, AppDensity density) =>
-      heightLg(mode, density) - 2 * step; // parent 32 / child 40
+      heightLg(mode, density) - 2 * step; // teacher 32 / child 40
 
   /// 从上下文解析当前模式 + 密度（[UserModeScope] / [DensityScope] 未挂载时回退
-  /// parent / [AppControl.defaultDensity]）。
+  /// teacher / [AppControl.defaultDensity]）。
   static double heightOf(BuildContext context) =>
       height(UserModeScope.of(context), DensityScope.of(context));
 
@@ -1588,15 +1588,15 @@ class AppMotion {
   static const Duration page = Duration(milliseconds: 300);
 
   /// 庆祝反馈：徽章解锁 / 连击 +1 / 打卡成功。**仅 Child Mode**（见
-  /// [celebrateFor]）；Parent Mode 不触发，避免游戏化。
+  /// [celebrateFor]）；Teacher Mode 不触发，避免游戏化。
   static const Duration celebrate = Duration(milliseconds: 450);
 
   /// 答对题的 scale-pop（Child Mode 微奖励）
   static const Duration pop = interaction;
 
-  /// 庆祝动效按用户模式取值：Child 走 450ms 庆祝档，Parent 退回状态切换档。
+  /// 庆祝动效按用户模式取值：Child 走 450ms 庆祝档，Teacher 退回状态切换档。
   static Duration celebrateFor(AppUserMode mode) =>
-      mode == AppUserMode.child ? celebrate : state;
+      mode == AppUserMode.student ? celebrate : state;
 }
 
 /// 转场曲线令牌（与 [AppMotion] 配套，禁止裸写 Curves.*）。
@@ -1654,7 +1654,7 @@ bool reducedMotionOf(BuildContext context) =>
 ///
 /// [AppTheme.textOf] 通过它读取模式，从而所有 `Text(style: AppTheme.textOf(context)...)`
 /// 在模式切换时自动重建——无需逐个 widget 监听 [userModeProvider]。
-/// 未挂载时默认 [AppUserMode.parent]，避免脱离作用域调用崩溃。
+/// 未挂载时默认 [AppUserMode.teacher]，避免脱离作用域调用崩溃。
 class UserModeScope extends InheritedWidget {
   final AppUserMode mode;
 
@@ -1666,7 +1666,7 @@ class UserModeScope extends InheritedWidget {
 
   static AppUserMode of(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<UserModeScope>()?.mode ??
-      AppUserMode.parent;
+      AppUserMode.teacher;
 
   @override
   bool updateShouldNotify(UserModeScope old) => old.mode != mode;

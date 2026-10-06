@@ -1,6 +1,6 @@
 import 'assistant_card.dart';
 
-/// 会话历史（ADR-0048）：家长名下的「一段可续接的多轮对话」。
+/// 会话历史（ADR-0048）：教师名下的「一段可续接的多轮对话」。
 ///
 /// 与后端 `app/features/assistant/schemas.py` 的 `AssistantConversationResp` 对应。
 /// 三个容易混的概念在这里分清（术语见 `CONTEXT.md`）：
@@ -21,15 +21,15 @@ class AssistantConversation {
   /// 后面聊出什么都不会改这个值。
   final String kind;
 
-  /// `null` = 家长自己的会话（可**续接**）；非空 = 孩子的会话（只能**只读回放**）。
+  /// `null` = 教师自己的会话（可**续接**）；非空 = 学生的会话（只能**只读回放**）。
   ///
-  /// 这个分叉不是 UX 取舍，是后端语义：家长发请求时 `child_id` 恒为 `None`，
-  /// 拿孩子的 session_id 去续接会被归属校验拒掉并**另建一段会话**，而屏幕上看起来
-  /// 像续上了——顺带把孩子的消息当成家长的 prompt 历史灌进去。
-  final String? childId;
+  /// 这个分叉不是 UX 取舍，是后端语义：教师发请求时 `student_id` 恒为 `None`，
+  /// 拿学生的 session_id 去续接会被归属校验拒掉并**另建一段会话**，而屏幕上看起来
+  /// 像续上了——顺带把学生的消息当成教师的 prompt 历史灌进去。
+  final String? studentId;
 
-  /// 归属标签（孩子的显示名）；家长自己的会话为 null。
-  final String? childName;
+  /// 归属标签（学生的显示名）；教师自己的会话为 null。
+  final String? studentName;
 
   /// 可见轮次数（提问数 + 回答数），列表行上的「几轮」的来源。
   final int bubbleCount;
@@ -41,14 +41,14 @@ class AssistantConversation {
     required this.id,
     this.title = '',
     this.kind = '',
-    this.childId,
-    this.childName,
+    this.studentId,
+    this.studentName,
     this.bubbleCount = 0,
     this.updatedAt,
   });
 
-  /// 是否可续接（家长自己聊的）。孩子的会话为 false → 只读回放。
-  bool get isMine => childId == null;
+  /// 是否可续接（教师自己聊的）。学生的会话为 false → 只读回放。
+  bool get isMine => studentId == null;
 
   /// 提问次数 = ⌈气泡数 / 2⌉：回答最多与提问一样多，除不尽说明最后一次还没答完。
   int get roundCount => (bubbleCount + 1) ~/ 2;
@@ -58,8 +58,8 @@ class AssistantConversation {
         id: '${json['id']}',
         title: (json['title'] as String?)?.trim() ?? '',
         kind: '${json['kind'] ?? ''}',
-        childId: json['child_id'] as String?,
-        childName: json['child_name'] as String?,
+        studentId: json['student_id'] as String?,
+        studentName: json['student_name'] as String?,
         bubbleCount: _asInt(json['bubble_count']),
         updatedAt: json['updated_at'] as String?,
       );
@@ -91,7 +91,7 @@ class AssistantBubble {
 
 /// 一次会话的回放载荷：概要 + 全部气泡。
 ///
-/// 只读回放（孩子的会话）与恢复续接（家长自己的会话）拿的是**同一份载荷**——
+/// 只读回放（学生的会话）与恢复续接（教师自己的会话）拿的是**同一份载荷**——
 /// 区别只在「加载后能不能继续发消息」，那是前端的模式状态，不是两种数据。
 class AssistantConversationDetail {
   final AssistantConversation conversation;

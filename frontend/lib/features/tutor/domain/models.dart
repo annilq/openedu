@@ -1,7 +1,7 @@
 // 领域模型：与后端 SQLModel schema 对齐的纯 Dart 模型。
 // 注意：所有 ID 均为 UUID 字符串（后端用 uuid.UUID）。
 
-/// `features/tutor` 独占的领域模型：家长端 AI 伴学答疑日志（F-305）。
+/// `features/tutor` 独占的领域模型：教师端 AI 伴学答疑日志（F-305）。
 ///
 /// 从 `shared/domain/models/models.dart` 拆出——它是 tutor 一个 feature 的概念，
 /// 放在 shared 里会让「改 tutor 的模型」变成「动全工程的共享模型文件」。

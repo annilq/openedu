@@ -17,13 +17,13 @@ import '../../../../shared/presentation/shell_navigation.dart';
 import '../../../../shared/widgets/subject_mark_icon.dart';
 import '../providers/task_form_prefill.dart';
 
-/// 知识点掌握度看板（家长 / 娃娃共用）。
+/// 知识点掌握度看板（教师 / 学生共用）。
 ///
 /// 进度条与行首色点按学科色着色（ADR-0014 学科色消费），掌握等级用语义徽章
-/// 保留「薄弱 / 待加强」警示。娃端通过 [isChild] 切换第一人称文案。
+/// 保留「薄弱 / 待加强」警示。娃端通过 [isStudent] 切换第一人称文案。
 class MasteryBoard extends ConsumerWidget {
-  final bool isChild;
-  const MasteryBoard({super.key, this.isChild = false});
+  final bool isStudent;
+  const MasteryBoard({super.key, this.isStudent = false});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -38,8 +38,8 @@ class MasteryBoard extends ConsumerWidget {
           ? AppCard(
               child: AppEmptyState.inline(
                 icon: LucideIcons.lightbulb,
-                title: isChild ? '你还没有作答记录' : '还没有作答记录',
-                message: isChild ? '去做几道题，看看你掌握了什么吧～' : '先布置任务吧～',
+                title: isStudent ? '你还没有作答记录' : '还没有作答记录',
+                message: isStudent ? '去做几道题，看看你掌握了什么吧～' : '先布置任务吧～',
               ),
             )
           : AppCard(
@@ -51,7 +51,7 @@ class MasteryBoard extends ConsumerWidget {
                     text: TextSpan(
                       style: AppTheme.textOf(context).bodyLarge,
                       children: [
-                        TextSpan(text: isChild ? '你已掌握 ' : '已掌握 '),
+                        TextSpan(text: isStudent ? '你已掌握 ' : '已掌握 '),
                         TextSpan(
                           text: '${mastery.masteredCount}',
                           style: TextStyle(
@@ -83,9 +83,9 @@ class MasteryBoard extends ConsumerWidget {
                         padding: const EdgeInsets.only(bottom: AppSpacing.md),
                         child: _MasteryBar(
                           item: m,
-                          // 反馈边入口（ADR-0060 D1）：仅家长、且仅当该知识点有活跃
+                          // 反馈边入口（ADR-0060 D1）：仅教师、且仅当该知识点有活跃
                           // 错题时，提供「就这个知识点出题」——把薄弱点直接喂回出题。
-                          onGenerate: (!isChild && m.activeWrong > 0)
+                          onGenerate: (!isStudent && m.activeWrong > 0)
                               ? () {
                                   ref
                                       .read(taskFormPrefillProvider.notifier)
@@ -96,7 +96,7 @@ class MasteryBoard extends ConsumerWidget {
                                   );
                                   ref
                                       .read(shellNavigationProvider.notifier)
-                                      .request(ShellDestination.parentCreateTask);
+                                      .request(ShellDestination.teacherCreateTask);
                                 }
                               : null,
                         ),
@@ -126,7 +126,7 @@ Widget _levelBadge(String level) {
 class _MasteryBar extends StatelessWidget {
   final KnowledgeMasteryModel item;
   // 反馈边入口（ADR-0060 D1）：点击跳到出题表单并预填本知识点 + 代表错题。
-  // 仅在家长端且有活跃错题时由父级传入（见 [MasteryBoard]）。
+  // 仅在教师端且有活跃错题时由父级传入（见 [MasteryBoard]）。
   final VoidCallback? onGenerate;
   const _MasteryBar({required this.item, this.onGenerate});
 

@@ -41,7 +41,7 @@ class _AssistantInputBarState extends ConsumerState<AssistantInputBar> {
   /// 输入区当前是「键盘」还是「语音」（微信式切换）。
   ///
   /// 为什么是**两种互斥模式**而不是「输入框旁边挂一个麦按钮」：后者把两种输入
-  /// 挤在同一行，麦按钮只能做成 40px 的小图标——儿童手指点不准，而真正的语音
+  /// 挤在同一行，麦按钮只能做成 40px 的小图标——学生手指点不准，而真正的语音
   /// 输入需要一块能按住的大靶面。切成模式后，语音态下整条输入区都是「按住 说话」。
   bool _voiceMode = false;
 
@@ -57,13 +57,13 @@ class _AssistantInputBarState extends ConsumerState<AssistantInputBar> {
     super.dispose();
   }
 
-  /// 静音阈值按角色分档（ADR-0063 §6）：儿童说话停顿多，阈值要放宽。
+  /// 静音阈值按角色分档（ADR-0063 §6）：学生说话停顿多，阈值要放宽。
   ///
   /// 角色直接读 [UserModeScope] 而不从页面传参——助手整页已 473 行并登记在
   /// 文件规模棘轮基线里（ADR-0058，只许下调），为一个新增参数把它顶到 479 会
   /// 撞棘轮；而「当前是谁在用」本就是全局信号，不该逐层透传。
   Duration _silenceTimeoutOf(BuildContext context) =>
-      UserModeScope.of(context) == AppUserMode.parent
+      UserModeScope.of(context) == AppUserMode.teacher
           ? VoiceSilence.adult
           : VoiceSilence.child;
 
@@ -98,7 +98,7 @@ class _AssistantInputBarState extends ConsumerState<AssistantInputBar> {
 
   /// 「重说」（ADR-0063 §7）：清空草稿重新录制。
   ///
-  /// 一二年级儿童识字量有限，看到转错的「三分之二」改不出来——「落草稿可改」对他们
+  /// 一二年级学生识字量有限，看到转错的「三分之二」改不出来——「落草稿可改」对他们
   /// 是伪能力，所以主行动是整句重说，而不是让用户去编辑。
   void _respeak() {
     widget.controller.clear();
@@ -148,7 +148,7 @@ class _AssistantInputBarState extends ConsumerState<AssistantInputBar> {
 
     return SafeArea(
       top: false,
-      // 与消息列表同宽同轴：助手整页可能 push 在壳外（家长端），不套上限的话大屏下
+      // 与消息列表同宽同轴：助手整页可能 push 在壳外（教师端），不套上限的话大屏下
       // 输入框会横贯全屏、气泡却收在中间一列。
       child: AppContentFrame(
         child: Padding(

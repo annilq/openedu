@@ -10,7 +10,7 @@ import 'package:cupertino_ui/cupertino_ui.dart';
 /// 卡片强度变体（ADR-0044「列表降噪」）。
 /// - [standard]：2px 墨黑描边 + 硬阴影，用于独立卡片 / 强调件。
 /// - [listRow]：1px 墨黑描边 + 无阴影，用于密集列表的逐行卡片——避免每行
-///   都压 2px 边 + 硬阴影导致家长端看板视觉过载（「统一到家长端上限」的代价补偿）。
+///   都压 2px 边 + 硬阴影导致教师端看板视觉过载（「统一到教师端上限」的代价补偿）。
 ///
 /// ⚠️ **卡片比内容高时，内容会贴顶、不会垂直居中**：底层 [ShadCard] 内部固定是
 /// `Row(crossAxisAlignment: start)` → `Column(mainAxisSize: min)`，内容只按自身高度
@@ -99,9 +99,9 @@ class AppCard extends StatelessWidget {
     // (`Row(mainAxisSize: min) → Flexible → Column → Flexible → child`) then
     // passes down as UNBOUNDED width. Any `Expanded`/`Flexible` inside the
     // card content (e.g. the task-list card's `Row(Expanded)`) then throws
-    // "RenderFlex children have non-zero flex but incoming width constraints
+    // "RenderFlex students have non-zero flex but incoming width constraints
     // are unbounded". A bare `GestureDetector` is pass-through: it imposes no
-    // width constraint, so the card receives the parent's bounded width and
+    // width constraint, so the card receives the teacher's bounded width and
     // still fills it via its own `Expanded` content. `GestureDetector` needs
     // no `Material` ancestor, so it is safe under `ShadApp`.
     if (onTap == null) {

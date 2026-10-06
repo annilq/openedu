@@ -2,8 +2,8 @@
 //
 // 断言的是**行为分叉**而不是「渲染了某个组件」：
 // - 我的会话点开 → 回到对话模式且历史气泡在里面（可以接着聊）；
-// - 孩子的会话点开 → 只读回放（没有输入框），并说明为什么不能输入。
-// 第二条是这套设计的核心约束：拿孩子的 session_id 去续接会被后端归属校验拒掉并
+// - 学生的会话点开 → 只读回放（没有输入框），并说明为什么不能输入。
+// 第二条是这套设计的核心约束：拿学生的 session_id 去续接会被后端归属校验拒掉并
 // 另建一段会话，而屏幕上看起来像续上了。
 import 'dart:async';
 
@@ -35,8 +35,8 @@ const _kid = AssistantConversation(
   id: 'kid-1',
   title: '23 + 45 怎么算',
   kind: 'tutor',
-  childId: 'child-1',
-  childName: '小明',
+  studentId: 'child-1',
+  studentName: '小明',
   bubbleCount: 4,
   updatedAt: '2026-09-16T01:30:00+00:00',
 );
@@ -45,7 +45,7 @@ const _mineDetail = AssistantConversationDetail(
   conversation: _mine,
   bubbles: [
     AssistantBubble(role: 'user', text: '我都有哪些娃'),
-    AssistantBubble(role: 'assistant', text: '你有 2 个孩子。'),
+    AssistantBubble(role: 'assistant', text: '你有 2 个学生。'),
   ],
 );
 
@@ -165,7 +165,7 @@ void main() {
   Future<void> pumpPage(
     WidgetTester tester,
     _FakeAssistant repo, {
-    bool isParent = true,
+    bool isTeacher = true,
     bool showBack = false,
   }) async {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
@@ -176,14 +176,14 @@ void main() {
         // 显式传主题：`ShadApp.custom` 不传会退回 shadcn 默认主题，几何断言量到的是
         // 与产品不符的数（ADR-0046 记录过这个坑）。
         child: ShadApp.custom(
-          theme: AppTheme.shadFor(false, AppUserMode.parent, AppDensity.compact),
+          theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
           appBuilder: (context) => CupertinoApp(
             // 与线上一致：线上由 CupertinoApp.builder 内的 ShadAppBuilder 提供
             // `ShadToaster`；测试直接包一层等价的 `ShadToaster`，否则 `AppToast.show`
             // 会抛「找不到 ShadToaster」，删除成功的提示无法断言。
             builder: (context, child) =>
                 ShadToaster(child: child ?? const SizedBox.shrink()),
-            home: AssistantChatPage(showBack: showBack, isParent: isParent),
+            home: AssistantChatPage(showBack: showBack, isTeacher: isTeacher),
           ),
         ),
       ),
@@ -196,7 +196,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('家长端顶栏有历史入口，点开进入历史列表', (tester) async {
+  testWidgets('教师端顶栏有历史入口，点开进入历史列表', (tester) async {
     await pumpPage(tester, _FakeAssistant());
     expect(find.text('AI 学习助手'), findsOneWidget);
 
@@ -205,13 +205,13 @@ void main() {
     expect(find.text('历史会话'), findsOneWidget);
     expect(find.text('我的对话'), findsOneWidget);
     expect(find.text('小明的对话'), findsOneWidget,
-        reason: '孩子的会话按娃分段，段名用娃娃显示名');
+        reason: '学生的会话按娃分段，段名用学生显示名');
     expect(find.text('只读'), findsOneWidget, reason: '只读这件事要写在行上，'
         '而不是等用户点进去才发现输入框没了');
   });
 
   testWidgets('「我的对话」置顶，不受最近活动时间影响', (tester) async {
-    // 装置里孩子那段更近（排在前面）——「我的对话」仍应在最上。
+    // 装置里学生那段更近（排在前面）——「我的对话」仍应在最上。
     await pumpPage(tester, _FakeAssistant());
     await openHistory(tester);
 
@@ -236,7 +236,7 @@ void main() {
     expect(find.byType(ShadInput), findsOneWidget, reason: '自己的会话可以继续提问');
   });
 
-  testWidgets('点孩子的会话：只读回放——有气泡、无输入框、且说明原因', (tester) async {
+  testWidgets('点学生的会话：只读回放——有气泡、无输入框、且说明原因', (tester) async {
     final repo = _FakeAssistant();
     await pumpPage(tester, repo);
     await openHistory(tester);
@@ -248,7 +248,7 @@ void main() {
     expect(find.text('这是小明的对话，只能查看，不能继续提问'), findsOneWidget,
         reason: '输入框被撤掉时必须说明原因，否则用户会以为界面坏了');
     expect(find.byType(ShadInput), findsNothing,
-        reason: '孩子的会话不能续接：后端归属校验会另建一段，屏幕上却像续上了');
+        reason: '学生的会话不能续接：后端归属校验会另建一段，屏幕上却像续上了');
     expect(find.text('23 + 45 怎么算'), findsOneWidget, reason: '回放气泡要看得到');
   });
 
@@ -281,9 +281,9 @@ void main() {
 
     expect(find.text('我都有哪些娃'), findsNothing,
         reason: '不显式断开 session_id 的话，「新对话」只是一句空话');
-    // 家长口径空态：文案在 ADR-0054 里改成「只说做得到的」——原文案
+    // 教师口径空态：文案在 ADR-0054 里改成「只说做得到的」——原文案
     // 「一句话就能布置任务」是做不到的承诺（助手只读），正是那次报障的预期来源。
-    expect(find.text('可以出题、查学情、看错题'), findsOneWidget, reason: '回到家长口径的空态');
+    expect(find.text('可以出题、查学情、看错题'), findsOneWidget, reason: '回到教师口径的空态');
   });
 
   testWidgets('历史入口键盘可达：Tab 到它、Enter 进入列表', (tester) async {
@@ -300,12 +300,12 @@ void main() {
             '而 flutter analyze 照不出来');
   });
 
-  testWidgets('娃娃端没有历史入口（有意的不对称）', (tester) async {
-    await pumpPage(tester, _FakeAssistant(), isParent: false);
+  testWidgets('学生端没有历史入口（有意的不对称）', (tester) async {
+    await pumpPage(tester, _FakeAssistant(), isTeacher: false);
 
     expect(find.text('问 AI 老师'), findsOneWidget);
     expect(find.byIcon(LucideIcons.history), findsNothing,
-        reason: '后端没有 child-scoped 会话列表路由；且孩子看到自己「被拦过」的'
+        reason: '后端没有 child-scoped 会话列表路由；且学生看到自己「被拦过」的'
             '记录是负面强化——这是有意留的不对称，不是漏做');
   });
 
@@ -360,7 +360,7 @@ void main() {
     await tester.pumpAndSettle();
     // 「已选 N 项」同时出现在顶栏标题与列表操作条，文本命中 2 处；这里只验存在。
     expect(find.text('已选 2 项'), findsWidgets,
-        reason: '默认列表 2 段（我的 + 孩子的），全选应全中');
+        reason: '默认列表 2 段（我的 + 学生的），全选应全中');
     expect(find.byIcon(LucideIcons.checkCircle2), findsNWidgets(2));
 
     // 全选后按钮变「取消全选」，再点一次清空。

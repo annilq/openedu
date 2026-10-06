@@ -39,14 +39,14 @@ class ReviewRepositoryImpl implements ReviewRepository {
   }
 
   @override
-  Future<WrongQuestionPage> parentWrongQuestions(
-    String childId, {
+  Future<WrongQuestionPage> teacherWrongQuestions(
+    String studentId, {
     String? cursor,
     int pageSize = 20,
     String scope = 'active',
   }) async {
     final data = await _network.get(
-      '/tasks/children/$childId/wrong-questions',
+      '/tasks/students/$studentId/wrong-questions',
       query: {
         'page_size': pageSize,
         'scope': scope,
@@ -58,11 +58,11 @@ class ReviewRepositoryImpl implements ReviewRepository {
 
   @override
   Future<WrongQuestionModel> rejoinWrongQuestion(
-    String childId,
+    String studentId,
     String wrongQuestionId,
   ) async {
     final data = await _network.post(
-      '/tasks/children/$childId/wrong-questions/$wrongQuestionId/rejoin',
+      '/tasks/students/$studentId/wrong-questions/$wrongQuestionId/rejoin',
     );
     return WrongQuestionModel.fromJson(decodeMap(data));
   }

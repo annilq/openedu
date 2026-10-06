@@ -100,7 +100,7 @@ void main() {
             invocation.namedArguments[#listenOptions] as SpeechListenOptions);
       });
 
-      // 儿童端要放宽到 3s 以上：孩子说「那个…三分之二…加…」停顿很多，
+      // 学生端要放宽到 3s 以上：学生说「那个…三分之二…加…」停顿很多，
       // 平台默认 1–1.5s 会在句中掐断。
       gateway().listen(silenceTimeout: const Duration(seconds: 3));
       await pumpEventQueue();

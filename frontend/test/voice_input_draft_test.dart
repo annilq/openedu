@@ -3,7 +3,7 @@
 //   ② 转写落草稿，**绝不自动发送**（§4）；
 //   ③ 转写为空**不动输入框**，且必须提示（§4：不允许静默失败）；
 //   ④ 「重说」清空草稿重新录制（§7）；
-//   ⑤ 静默阈值按角色分档，儿童更宽（§6）；
+//   ⑤ 静默阈值按角色分档，学生更宽（§6）；
 //   ⑥ 移动端长按说话、桌面端点按切换（§5）。
 import 'dart:async';
 
@@ -71,7 +71,7 @@ class _Harness {
 Future<_Harness> _pump(
   WidgetTester tester, {
   required VoiceAvailability availability,
-  AppUserMode mode = AppUserMode.child,
+  AppUserMode mode = AppUserMode.student,
 }) async {
   final port = _FakeVoicePort(availability);
   final controller = TextEditingController();
@@ -100,7 +100,7 @@ Future<_Harness> _pump(
                 child: SizedBox(
                   width: 420,
                   // UserModeScope 决定静音阈值档位，必须显式挂载：未挂载时
-                  // `UserModeScope.of` 回退 parent，测儿童档会测错。
+                  // `UserModeScope.of` 回退 teacher，测学生档会测错。
                   child: UserModeScope(
                     mode: mode,
                     child: AssistantInputBar(
@@ -209,22 +209,22 @@ void main() {
     expect(h.port.startCount, 2);
   });
 
-  testWidgets('静默阈值按角色分档：儿童更宽', (tester) async {
+  testWidgets('静默阈值按角色分档：学生更宽', (tester) async {
     final child = await _pump(tester, availability: VoiceAvailability.ready);
     final first = await _hold(tester);
     expect(child.port.lastSilence, VoiceSilence.child);
     await first.up();
     await tester.pumpAndSettle();
 
-    final parent = await _pump(tester,
-        availability: VoiceAvailability.ready, mode: AppUserMode.parent);
+    final teacher = await _pump(tester,
+        availability: VoiceAvailability.ready, mode: AppUserMode.teacher);
     final second = await _hold(tester);
-    expect(parent.port.lastSilence, VoiceSilence.adult);
+    expect(teacher.port.lastSilence, VoiceSilence.adult);
     await second.up();
     await tester.pumpAndSettle();
 
     expect(VoiceSilence.child, greaterThanOrEqualTo(const Duration(seconds: 3)),
-        reason: 'ADR-0063 §6：儿童档不得窄于 3s');
+        reason: 'ADR-0063 §6：学生档不得窄于 3s');
   });
 
   testWidgets('权限被拒时按钮仍在，点击给出引导', (tester) async {
@@ -245,7 +245,7 @@ void main() {
     var stops = 0;
     await tester.pumpWidget(
       ShadApp.custom(
-        theme: AppTheme.shadFor(false, AppUserMode.parent, AppDensity.compact),
+        theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
         appBuilder: (context) => CupertinoApp(
           home: Directionality(
             textDirection: TextDirection.ltr,

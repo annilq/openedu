@@ -52,7 +52,7 @@ void main() {
 /// 最小宿主：必须显式传 `theme:`——`ShadApp.custom` 不传会退回 shadcn 默认主题，
 /// 量到的浮层内边距/按钮高度都不是产品的值。
 Widget _host(Widget child) => ShadApp.custom(
-      theme: AppTheme.shadFor(false, AppUserMode.parent, AppDensity.compact),
+      theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
       appBuilder: (_) => CupertinoApp(
         home: Center(child: child),
       ),

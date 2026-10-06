@@ -164,7 +164,7 @@ class QuestionBankNotifier extends StateNotifier<BankState> {
     }
   }
 
-  /// 选项 B 草稿选择器：拉取家长草稿列表。
+  /// 选项 B 草稿选择器：拉取教师草稿列表。
   Future<List<TaskModel>> fetchDraftTasks() async {
     return await _repo.getDraftTasks();
   }
@@ -198,14 +198,14 @@ class QuestionBankNotifier extends StateNotifier<BankState> {
 
   Future<void> createTaskFromBank({
     required String title,
-    required String childId,
+    required String studentId,
     required List<String> ids,
   }) async {
     state = const BankActionLoading();
     try {
       final task = await _repo.createTaskFromBank(
         title: title,
-        childId: childId,
+        studentId: studentId,
         questionIds: ids,
       );
       state = BankActionSuccess(task);

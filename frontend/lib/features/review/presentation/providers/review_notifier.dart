@@ -8,7 +8,7 @@ import '../../providers/review_provider.dart';
 /// 复习作答：与练习一致的批改结果（错题调度更新由后端完成）。
 typedef ReviewAnswerResult = AnswerResultModel;
 
-// —— 娃娃端：待复习队列 ——
+// —— 学生端：待复习队列 ——
 sealed class DueReviewState {
   const DueReviewState();
 }
@@ -67,11 +67,11 @@ final dueReviewNotifierProvider =
   return DueReviewNotifier(ref.watch(reviewRepositoryProvider));
 });
 
-// —— 错题本：娃娃自查 / 家长查看（游标分页，ADR-0053）——
+// —— 错题本：学生自查 / 教师查看（游标分页，ADR-0053）——
 //
-// 错题本会一直长（答错即入集），一次拉全量会让家长端几百张卡全部构建出来。
+// 错题本会一直长（答错即入集），一次拉全量会让教师端几百张卡全部构建出来。
 // 改成首屏一页 + 触底追加后，卡片构建与网络载荷都随视口走。
-/// 娃娃自查：错题本（不含答案）。
+/// 学生自查：错题本（不含答案）。
 final childWrongQuestionsProvider = StateNotifierProvider<
     PagingNotifier<WrongQuestionModel>, PagingState<WrongQuestionModel>>(
   (ref) => PagingNotifier<WrongQuestionModel>(
@@ -81,27 +81,27 @@ final childWrongQuestionsProvider = StateNotifierProvider<
   ),
 );
 
-/// 家长查看某娃娃的错题本（含答案）。
-final parentWrongQuestionsProvider = StateNotifierProvider<
+/// 教师查看某学生的错题本（含答案）。
+final teacherWrongQuestionsProvider = StateNotifierProvider<
     ParamPagingNotifier<WrongQuestionModel, String>,
     PagingState<WrongQuestionModel>>(
   (ref) => ParamPagingNotifier<WrongQuestionModel, String>(
-    (childId, {cursor}) => ref
+    (studentId, {cursor}) => ref
         .watch(reviewRepositoryProvider)
-        .parentWrongQuestions(childId, cursor: cursor),
+        .teacherWrongQuestions(studentId, cursor: cursor),
   ),
 );
 
-/// 家长端「已掌握」分区（ADR-0053 P2）：毕业的错题不再删行，只读回顾 +
+/// 教师端「已掌握」分区（ADR-0053 P2）：毕业的错题不再删行，只读回顾 +
 /// 可「重新加入复习」。与上面那份未毕业列表是两条独立的分页状态机——它们的
 /// 查询条件不同，合一条会让「翻页」和「切分区」互相踩。
-final parentGraduatedWrongQuestionsProvider = StateNotifierProvider<
+final teacherGraduatedWrongQuestionsProvider = StateNotifierProvider<
     ParamPagingNotifier<WrongQuestionModel, String>,
     PagingState<WrongQuestionModel>>(
   (ref) => ParamPagingNotifier<WrongQuestionModel, String>(
-    (childId, {cursor}) => ref
+    (studentId, {cursor}) => ref
         .watch(reviewRepositoryProvider)
-        .parentWrongQuestions(childId, cursor: cursor, scope: 'graduated'),
+        .teacherWrongQuestions(studentId, cursor: cursor, scope: 'graduated'),
   ),
 );
 
@@ -117,16 +117,16 @@ int graduatedTotalOf(PagingState<WrongQuestionModel> state) => switch (state) {
 /// 把一条「已掌握」的错题重新加入复习，并同步两条列表。
 ///
 /// 成功后必须**两边都刷**：它从「已掌握」里消失（清了 graduated_at），
-/// 同时出现在未毕业列表里。只刷一边会让家长点完看不到变化，以为没生效。
+/// 同时出现在未毕业列表里。只刷一边会让教师点完看不到变化，以为没生效。
 final rejoinWrongQuestionProvider =
-    Provider<Future<void> Function(String childId, String wrongId)>((ref) {
-  return (childId, wrongId) async {
+    Provider<Future<void> Function(String studentId, String wrongId)>((ref) {
+  return (studentId, wrongId) async {
     await ref
         .read(reviewRepositoryProvider)
-        .rejoinWrongQuestion(childId, wrongId);
-    await ref.read(parentWrongQuestionsProvider.notifier).load(childId);
+        .rejoinWrongQuestion(studentId, wrongId);
+    await ref.read(teacherWrongQuestionsProvider.notifier).load(studentId);
     await ref
-        .read(parentGraduatedWrongQuestionsProvider.notifier)
-        .load(childId);
+        .read(teacherGraduatedWrongQuestionsProvider.notifier)
+        .load(studentId);
   };
 });

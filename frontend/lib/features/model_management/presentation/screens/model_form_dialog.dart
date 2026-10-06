@@ -15,7 +15,7 @@ import '../../../../shared/widgets/app_buttons.dart';
 /// 新增 / 编辑模型的对话框（ShadDialog + 表单字段）。
 ///
 /// 通过 [presets] 渲染「服务商」下拉（DeepSeek / OpenAI / Ollama ...），
-/// 选中后自动带出 base_url 与模型名建议，大幅减少家长手动输入。
+/// 选中后自动带出 base_url 与模型名建议，大幅减少教师手动输入。
 ///
 /// [initial] 为 null 表示新增；否则为编辑（id 用于 PUT）。保存成功后关闭并回调 [onDone]。
 /// ADR-0039：新增时 API Key 必填（本地前置拦截 + 后端强制）；编辑留空 = 不修改。
@@ -311,7 +311,7 @@ class _ModelFormDialogState extends ConsumerState<ModelFormDialog> {
                   values: widget.presets.map((p) => p.key).toList(),
                   labels: widget.presets.map((p) => p.label).toList(),
                   // _presetKey 为 null 表示现有模型的 provider+baseUrl 匹配不到任何预设
-                  // （自定义服务商）——置空显示占位，而不是硬选第一个预设（会误导家长）。
+                  // （自定义服务商）——置空显示占位，而不是硬选第一个预设（会误导教师）。
                   value: _presetKey,
                   placeholder: '自定义（未匹配预设）',
                   onChanged: _onPresetChanged,

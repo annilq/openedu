@@ -8,18 +8,18 @@ import 'dart:typed_data';
 ///
 /// - `bank`：[ids] 是题目 id（题库页多选）。
 /// - `task`：[ids] 是任务 id（任务页多选，纸上印的是深拷贝快照）。
-/// - `wrong_book`：[childId] 必填；[dueOnly] 为 true 时只导今天到期的项。
+/// - `wrong_book`：[studentId] 必填；[dueOnly] 为 true 时只导今天到期的项。
 class ExportSheetRequest {
   final String source;
   final List<String> ids;
-  final String? childId;
+  final String? studentId;
   final bool dueOnly;
   final String? title;
 
   const ExportSheetRequest({
     required this.source,
     this.ids = const [],
-    this.childId,
+    this.studentId,
     this.dueOnly = false,
     this.title,
   });
@@ -27,7 +27,7 @@ class ExportSheetRequest {
   Map<String, dynamic> toJson() => {
         'source': source,
         'ids': ids,
-        if (childId != null) 'child_id': childId,
+        if (studentId != null) 'student_id': studentId,
         'due_only': dueOnly,
         if (title != null) 'title': title,
       };
@@ -35,7 +35,7 @@ class ExportSheetRequest {
 
 /// 单次导出题量的**软提示**阈值（服务端另有硬边界）。
 ///
-/// 家长要印 100 题的复习卷是合理需求，所以超过只提示「建议分批」、允许继续；
+/// 教师要印 100 题的复习卷是合理需求，所以超过只提示「建议分批」、允许继续；
 /// 拦截是服务端的事，客户端不替服务端做决定。
 const int kExportSoftLimit = 60;
 

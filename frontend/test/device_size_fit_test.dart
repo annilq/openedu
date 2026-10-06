@@ -11,8 +11,8 @@
 //      静态的多个宽度用例**全都照不出来**（每个用例都是新建 widget 树）。必须
 //      在同一个 tester 里 `setSurfaceSize` 两次才咬得住。
 //
-// 另外覆盖了此前几乎没人守的两条路径：紧凑·娃娃端**底栏 6 项**的边界（320 宽下
-// 每项只有 ~53px），以及**真实主屏**（`HomeScreen` 家长 / 娃娃两种角色）。
+// 另外覆盖了此前几乎没人守的两条路径：紧凑·学生端**底栏 6 项**的边界（320 宽下
+// 每项只有 ~53px），以及**真实主屏**（`HomeScreen` 教师 / 学生两种角色）。
 // `flutter analyze` 对这两件事一个字都说不出来——溢出不是类型错误。
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -50,7 +50,7 @@ Future<StorageService> _makeStorage() async {
   return s;
 }
 
-/// 娃娃端导航共 6 项（5 个页签 + 「我的」）——底栏最挤的真实规模，
+/// 学生端导航共 6 项（5 个页签 + 「我的」）——底栏最挤的真实规模，
 /// 不是 1 项的简化版：项数才是挤压的来源。
 List<AdaptiveNavDestination> _childDestinations() => const [
       AdaptiveNavDestination(
@@ -69,10 +69,10 @@ List<AdaptiveNavDestination> _childDestinations() => const [
 
 UserModel _user(String role) => UserModel(
       id: 'u1',
-      username: role == 'parent' ? 'parent1' : 'kid1',
-      displayName: role == 'parent' ? '妈妈' : '小明',
+      username: role == 'teacher' ? 'teacher1' : 'kid1',
+      displayName: role == 'teacher' ? '妈妈' : '小明',
       role: role,
-      grade: role == 'parent' ? null : 3,
+      grade: role == 'teacher' ? null : 3,
     );
 
 Widget _host(Widget child, AppUserMode mode) => ShadApp.custom(
@@ -112,7 +112,7 @@ void main() {
         if (entry.value.width < AppLayout.compactMax) {
           expect(find.byType(AppSidebar), findsNothing,
               reason: '紧凑档（<${AppLayout.compactMax}）不应出现侧栏');
-          if (mode == AppUserMode.child) {
+          if (mode == AppUserMode.student) {
             // 底栏项必须留在屏幕内——被挤出去时 find.text 仍找得到，
             // 但用户看不到，所以断言的是**几何**而不是存在性。
             for (final label in ['首页', '复习', '错题本', '我的']) {
@@ -159,11 +159,11 @@ void main() {
         overrides: [storageServiceProvider.overrideWithValue(storage)],
         child: _host(
           AdaptiveShell(
-            mode: AppUserMode.child,
+            mode: AppUserMode.student,
             destinations: _childDestinations(),
             body: const ColoredBox(color: Color(0xFFEEDDCC)),
           ),
-          AppUserMode.child,
+          AppUserMode.student,
         ),
       ),
     );
@@ -182,7 +182,7 @@ void main() {
   // 真实主屏（不是 Placeholder 代餐）：页面里那些 `Wrap` 芯片组、统计行、
   // 顶栏 trailing 才是窄宽下真正会挤爆的东西。
   for (final size in const [Size(393, 852), Size(360, 640), Size(320, 568)]) {
-    for (final role in const ['parent', 'child']) {
+    for (final role in const ['teacher', 'child']) {
       testWidgets('真实主屏 ${size.width.toInt()} 宽 · $role 不溢出', (tester) async {
         await tester.binding.setSurfaceSize(size);
         addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -193,7 +193,7 @@ void main() {
             overrides: [storageServiceProvider.overrideWithValue(storage)],
             child: _host(
               HomeScreen(user: _user(role), onLogout: () {}),
-              role == 'parent' ? AppUserMode.parent : AppUserMode.child,
+              role == 'teacher' ? AppUserMode.teacher : AppUserMode.student,
             ),
           ),
         );

@@ -20,9 +20,9 @@ import '../../../../shared/widgets/app_card.dart';
 ///
 /// 列表分两段（ADR-0048 Q5(b)）：
 /// - **我的对话**：可续接，点开就是继续聊；
-/// - **孩子的对话**：按娃分段，**只能只读回放**。这不是 UX 取舍——家长发请求时
-///   `child_id` 恒为 `None`，拿孩子的 session_id 去续接过不了后端归属校验，
-///   会另建一段会话而屏幕上像续上了，顺带把孩子的消息当成家长的 prompt 历史灌进去。
+/// - **学生的对话**：按娃分段，**只能只读回放**。这不是 UX 取舍——教师发请求时
+///   `student_id` 恒为 `None`，拿学生的 session_id 去续接过不了后端归属校验，
+///   会另建一段会话而屏幕上像续上了，顺带把学生的消息当成教师的 prompt 历史灌进去。
 class AssistantHistoryView extends ConsumerWidget {
   /// 点开某一段会话（调用方负责取回放载荷并决定进入聊天还是只读模式）。
   final ValueChanged<AssistantConversation> onOpen;
@@ -99,7 +99,7 @@ class AssistantHistoryView extends ConsumerWidget {
   }
 }
 
-/// 两段式分组的容器：先「我的对话」，再按娃分段的「孩子的对话」。
+/// 两段式分组的容器：先「我的对话」，再按娃分段的「学生的对话」。
 ///
 /// 顶部还放一条「多选 / 已选 N 项 / 全选」操作条（[AppSelectStrip]）——多选入口与
 /// 全选放在这里而非顶栏，是因为 [AppTopBar] 的 trailing 槽位只有 40px、只够放一个
@@ -135,17 +135,17 @@ class _ConversationGroups extends StatelessWidget {
     final kidNames = <String, String>{};
 
     for (final conv in all) {
-      final childId = conv.childId;
-      if (childId == null) {
+      final studentId = conv.studentId;
+      if (studentId == null) {
         mine.add(conv);
         continue;
       }
-      if (!kidItems.containsKey(childId)) {
-        kidOrder.add(childId);
-        kidItems[childId] = <AssistantConversation>[];
-        kidNames[childId] = conv.childName ?? '孩子';
+      if (!kidItems.containsKey(studentId)) {
+        kidOrder.add(studentId);
+        kidItems[studentId] = <AssistantConversation>[];
+        kidNames[studentId] = conv.studentName ?? '学生';
       }
-      kidItems[childId]!.add(conv);
+      kidItems[studentId]!.add(conv);
     }
 
     return Column(
@@ -163,11 +163,11 @@ class _ConversationGroups extends StatelessWidget {
             children: [
               if (mine.isNotEmpty)
                 ..._section(context, '我的对话', mine, readOnly: false),
-              for (final childId in kidOrder)
+              for (final studentId in kidOrder)
                 ..._section(
                   context,
-                  '${kidNames[childId]}的对话',
-                  kidItems[childId]!,
+                  '${kidNames[studentId]}的对话',
+                  kidItems[studentId]!,
                   readOnly: true,
                 ),
             ],
@@ -207,7 +207,7 @@ class _ConversationGroups extends StatelessWidget {
   ];
 }
 
-/// 列表一行：会话名 + 元信息（几轮 · 最近活动时间），孩子的条目带「只读」徽标。
+/// 列表一行：会话名 + 元信息（几轮 · 最近活动时间），学生的条目带「只读」徽标。
 ///
 /// 用 [AppCard.listRow] 而非标准卡：密集列表逐行套 2px 边 + 硬阴影会让整页过载
 /// （ADR-0044「列表降噪」）。行整体可点 → 走 [AppCard] 的 onTap（内部是

@@ -17,7 +17,7 @@ import '../../../../shared/widgets/app_actions.dart';
 import '../../../../shared/widgets/app_buttons.dart';
 import '../../../../shared/widgets/app_card.dart';
 
-/// 娃娃端复习作答页：逐题作答遗忘曲线到期的错题。
+/// 学生端复习作答页：逐题作答遗忘曲线到期的错题。
 /// v2 redesign：与 practice_screen 视觉一致（选项卡式答案、禁用提交、主题色弹窗）。
 class ReviewScreen extends ConsumerStatefulWidget {
   final bool showBack;
@@ -31,7 +31,7 @@ class ReviewScreen extends ConsumerStatefulWidget {
 
   /// 离开本页的出口（「返回」/「返回首页」），由组合根注入。
   ///
-  /// ⚠️ **本页不是 `Navigator.push` 出来的路由**：娃娃端它是导航空壳的一个页签
+  /// ⚠️ **本页不是 `Navigator.push` 出来的路由**：学生端它是导航空壳的一个页签
   /// （`IndexedStack` 常驻），底下压根没有可 pop 的路由。此时 `Navigator.pop`
   /// 弹的是**根导航栈的最后一条路由（整个 App）**——按一下就白屏，下一次重建还会
   /// 撞上 `NavigatorState.build` 的 `assert(_history.isNotEmpty)`。

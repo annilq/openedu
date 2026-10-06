@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart' show Icons;
 import 'package:flutter/widgets.dart';
 
-import '../../theme/app_theme.dart';
+import '../../domain/figures.dart';
 import '../app_empty_state.dart';
+import 'reflection_figure_gallery.dart';
 import 'reflection_scene.dart';
 import 'reflection_scene_data.dart';
+import 'reflection_scene_dialog.dart';
 
 // =====================================================================
 // §场景解释器（ADR-0061 决策 7 / 8）
@@ -31,9 +33,9 @@ extension SceneKindX on SceneKind {
 ///
 /// 未识别的 kind 走降级空态（ADR-0051：空态讲清「为什么空 + 下一步」）。
 ///
-/// **选项组优先**（ADR-0061 §O）：spec 带 `optionGroup` 时不渲染单个场景，而是
-/// 展开成「每个选项一个独立可交互场景」——同一份模板派生多份实例，学生逐个亲手
-/// 旋转/平移对称轴去验证，而不是看程序报答案。
+/// **选项组优先**（ADR-0061 §O / §V）：spec 带 `optionGroup` 时不渲染单个场景，而是
+/// 展开成**图形画廊**——平面图形库全部铺成网格，点一个图形弹对折演示对话框，儿童
+/// 逐个亲手旋转/平移对称轴去验证，而不是看程序报答案。
 class SceneInterpreter extends StatelessWidget {
   final String kind;
   final Map<String, dynamic> spec;
@@ -99,23 +101,20 @@ class SceneOptionItem {
       );
 }
 
-/// 选项组：同一模板派生 N 个独立可交互场景，**Wrap** 排布（ADR-0061 §O）。
+/// 选项组：图形画廊 + 点开进对折演示（ADR-0061 §V，取代 §O 的「N 个场景平铺」）。
 ///
-/// 为什么 Wrap 而不是固定两列网格：窄栏（紧凑档 <700）下固定两列会把每个场景
-/// 压到看不清顶点；Wrap 让每个场景拿到「至少能看清一条轴」的宽度，窄了就自动
-/// 换行，宽了就并排——对比着看正是这道题要的。
+/// **为什么不把每个选项各渲染一个完整场景平铺在页面上**（§O 旧做法）：
+/// [ReflectionSceneWidget] 的画布是「边长 = 可用宽度」的正方形，一个场景竖直方向就要
+/// 吃掉 画布 + 状态条 + 播放条 + 3 个轴滑块 ≈ 700px。4 个选项平铺 ≈ 2800px，儿童只能
+/// 靠滚动逐个看，「对比着看」实际变成「记不住上一个长什么样」。
 ///
-/// 每个场景是独立的 [ReflectionSceneWidget]（各自 State），所以拖 A 的轴不影响 B。
+/// 现在：图形库全部平面图形铺成网格（本题选项带 A/B/C/D 角标、排在最前），点一个
+/// 弹 [ReflectionSceneDialog]——里面是同一个 [ReflectionSceneWidget]，交互一件不少。
+/// 「先挑图形、再认真折」两步分开，正是对折这道题的操作顺序。
 class SceneOptionGroup extends StatelessWidget {
   /// 原始 spec（提供轴默认值、controls、narrative 等共享项）。
   final Map<String, dynamic> spec;
   final List<SceneOptionItem> items;
-
-  /// 每个场景的最小/最大宽度——低于 min 顶点与判定文字会糊在一起，高于 max 则
-  /// 画布过大（[ReflectionSceneWidget] 的画布是**边长= 宽度**的正方形，宽度直接
-  /// 决定高度；两列并排时 1200 宽的屏会让每个场景高达 ~590px，一屏放不下 4 个）。
-  static const double _minItemWidth = 240;
-  static const double _maxItemWidth = 360;
 
   const SceneOptionGroup({
     super.key,
@@ -133,64 +132,67 @@ class SceneOptionGroup extends StatelessWidget {
       );
     }
     final base = ReflectionSceneData.fromSpec(spec);
-    final text = AppTheme.textOf(context);
-    return Wrap(
-      spacing: AppSpacing.md,
-      runSpacing: AppSpacing.md,
-      children: [
-        for (final item in items)
-          SizedBox(
-            // 窄屏（< 2×min+spacing）时 Wrap 会自己给满宽，无需额外处理
-            width: _itemWidth(context),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 选项标号 + 图形名：让学生知道现在试的是哪个选项
-                Row(
-                  children: [
-                    Text(
-                      item.label,
-                      style: text.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    if (item.caption != null) ...[
-                      const SizedBox(width: AppSpacing.xs),
-                      Text(
-                        item.caption!,
-                        style: text.bodySmall?.copyWith(
-                          color: AppTheme.colorsOf(context).onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                // 该选项的独立场景：顶点来自 items，轴初始值用该图形自己的默认轴
-                // （spec 的 axisAngle 是**教师配的模板默认值**，不该覆盖每个图形
-                // 各自的正确初始轴——否则箭头会停在竖轴、一开始就不重合）。
-                ReflectionSceneWidget(
-                  key: ValueKey('scene_opt_${item.label}'),
-                  data: base.copyWith(
-                    points: item.points,
-                    figureLabel: item.caption,
-                    axisAngle: item.defaultAxisAngle ?? base.axisAngle,
-                  ),
-                ),
-              ],
-            ),
-          ),
-      ],
+    final matched = _matchFigures();
+    final labels = <String, String>{
+      for (final e in matched.entries) e.key: e.value.label,
+    };
+    return ReflectionFigureGallery(
+      // 整库铺开（儿童可自由探索任意图形），本题选项靠角标认出来。
+      figures: kFigureShapes,
+      optionLabels: labels,
+      hint: '点一个图形打开对折演示：拖对称轴、点播放，看到 180° 时两侧能否完全重合。',
+      onOpen: (figure) => ReflectionSceneDialog.show(
+        context,
+        data: base.copyWith(
+          // 顶点优先用后端下发的（ADR-0061 §O：顶点是权威）；图形库只是兜底。
+          points: matched[figure.key]?.points ??
+              figure.vertices.map((v) => Offset(v.x, v.y)).toList(growable: false),
+          figureLabel: figure.label,
+          // 轴初始值用**该图形自己的**默认轴，不用模板的（否则箭头停在竖轴、
+          // 一开始就不重合，儿童会以为题目错了）。
+          axisAngle: figure.defaultAxisAngle,
+        ),
+        optionLabel: labels[figure.key],
+      ),
     );
   }
 
-  /// 每项宽度：宽屏两列并排（对比着看），窄屏一列；始终夹在 [min, max] 之间。
-  double _itemWidth(BuildContext context) {
-    final available = MediaQuery.sizeOf(context).width;
-    final twoUp = _minItemWidth * 2 + AppSpacing.md;
-    final share = available >= twoUp * 1.6
-        ? (available - AppSpacing.md) / 2
-        : available;
-    return share.clamp(_minItemWidth, _maxItemWidth).toDouble();
+  /// 选项 → 图形库映射（key → 标号 + 顶点）。
+  ///
+  /// 先按图形名配（ caption 就是图形中文名），配不上再逐点比对顶点——两者都来自
+  /// 同一份镜像数据，正常必然命中；配不上说明后端下发了库外图形，那就当普通库内
+  /// 图形打开（画廊本来就是整库，不会因此少一个可探索的图形）。
+  Map<String, ({String label, List<Offset> points})> _matchFigures() {
+    final out = <String, ({String label, List<Offset> points})>{};
+    for (final item in items) {
+      final points = item.points;
+      if (points == null || points.length < 3) continue;
+      final figure = _matchFigure(item, points);
+      if (figure == null) continue;
+      out.putIfAbsent(figure.key, () => (label: item.label, points: points));
+    }
+    return out;
+  }
+
+  static FigureShape? _matchFigure(SceneOptionItem item, List<Offset> points) {
+    final caption = item.caption;
+    if (caption != null) {
+      for (final f in kFigureShapes) {
+        if (f.label == caption) return f;
+      }
+    }
+    for (final f in kFigureShapes) {
+      if (f.vertices.length != points.length) continue;
+      var same = true;
+      for (var i = 0; i < points.length; i++) {
+        if ((f.vertices[i].x - points[i].dx).abs() > 1e-6 ||
+            (f.vertices[i].y - points[i].dy).abs() > 1e-6) {
+          same = false;
+          break;
+        }
+      }
+      if (same) return f;
+    }
+    return null;
   }
 }

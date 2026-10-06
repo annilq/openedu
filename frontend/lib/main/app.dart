@@ -99,7 +99,7 @@ class _MyAppState extends ConsumerState<MyApp> {
     ref.listen(authExpiredProvider, (_, __) => _onAuthExpired());
     final themeMode = ref.watch(themeModeProvider);
     final userMode = ref.watch(userModeProvider);
-    // 全局控件密度（默认 compact → parent 32 / child 40）。与亮暗、用户模式正交，
+    // 全局控件密度（默认 compact → teacher 32 / child 40）。与亮暗、用户模式正交，
     // 三者一起决定 shadcn 主题里的控件高度，保证裸 Shad* 与 App* 组件同高。
     final density = ref.watch(densityProvider);
     final systemBrightness =
@@ -108,7 +108,7 @@ class _MyAppState extends ConsumerState<MyApp> {
         Brightness.dark;
     final active = isDark ? AppTheme.dark : AppTheme.light;
 
-    // AI 单入口（ADR-0036 / 0047）：家长端右下角浮球，点击进助手整页；娃娃端走
+    // AI 单入口（ADR-0036 / 0047）：教师端右下角浮球，点击进助手整页；学生端走
     // 「问 AI 老师」页签，不叠浮动入口——两者是同一个页面、共用同一个
     // assistantNotifierProvider 与消息渲染。
     final user = _currentUser;
@@ -116,7 +116,7 @@ class _MyAppState extends ConsumerState<MyApp> {
         ? const _SplashScreen()
         : user == null
             ? LoginScreen(onLoginSuccess: _onLoginSuccess)
-            : user.isParent
+            : user.isTeacher
                 ? FloatingAssistant(
                     child: HomeScreen(user: user, onLogout: _logout),
                   )
@@ -127,7 +127,7 @@ class _MyAppState extends ConsumerState<MyApp> {
       darkTheme: AppTheme.shadFor(true, userMode, density),
       themeMode: appThemeModeToMaterial(themeMode),
       appBuilder: (context) => CupertinoApp(
-          title: '娃娃学习',
+          title: '学生学习',
           debugShowCheckedModeBanner: false,
           theme: AppTheme.cupertinoFor(isDark),
           locale: const Locale('zh', 'CN'),

@@ -1,6 +1,6 @@
 // 守住列表密度的设计契约（ADR-0053 P1）。
 //
-// 背景：三个长列表（题库 / 任务 / 错题本）此前各有各的行距与页边距，家长错题卡
+// 背景：三个长列表（题库 / 任务 / 错题本）此前各有各的行距与页边距，教师错题卡
 // 把完整题干 + 答案 + 整段解析一次全展开，且题干没有行数上限——一屏只看得到
 // 三张半卡。这些都是「能跑但不好用」的问题，`flutter analyze` 照不出，只能守行为。
 //
@@ -11,8 +11,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-import 'package:kids_learn/features/home/presentation/providers/selected_child_provider.dart';
-import 'package:kids_learn/features/home/presentation/widgets/parent/parent_wrong_questions_view.dart';
+import 'package:kids_learn/features/home/presentation/providers/selected_student_provider.dart';
+import 'package:kids_learn/features/home/presentation/widgets/teacher/teacher_wrong_questions_view.dart';
 import 'package:kids_learn/features/review/presentation/providers/review_notifier.dart';
 import 'package:kids_learn/shared/domain/models/models.dart';
 import 'package:kids_learn/shared/presentation/paging.dart';
@@ -44,14 +44,14 @@ class _NoopRef implements Ref {
   dynamic noSuchMethod(Invocation invocation) => null;
 }
 
-class _SeededSelectedChild extends SelectedChildNotifier {
-  _SeededSelectedChild() : super(_NoopRef()) {
-    state = const SelectedChild(id: 'c1', grade: 2);
+class _SeededSelectedStudent extends SelectedStudentNotifier {
+  _SeededSelectedStudent() : super(_NoopRef()) {
+    state = const SelectedStudent(id: 'c1', grade: 2);
   }
 
   @override
   void select(String id, int grade) {
-    // 本测试不经它取数：避免触发 parentWrongQuestions 的真实加载。
+    // 本测试不经它取数：避免触发 teacherWrongQuestions 的真实加载。
   }
 }
 
@@ -90,7 +90,7 @@ void main() {
 
       await tester.pumpWidget(
         ShadApp.custom(
-          theme: AppTheme.shadFor(false, AppUserMode.parent, AppDensity.compact),
+          theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
           appBuilder: (context) => MaterialApp(
             // Center 是必需的：MaterialApp 给 home 的是紧约束，直接放
             // SizedBox(width: 700) 会被拉回视口宽度，列数就静默测错档。
@@ -149,7 +149,7 @@ void main() {
     });
   });
 
-  group('家长错题卡的密度', () {
+  group('教师错题卡的密度', () {
     Future<void> pumpCards(WidgetTester tester) async {
       await tester.binding.setSurfaceSize(const Size(900, 900));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -157,16 +157,16 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
-            selectedChildProvider
-                .overrideWith((ref) => _SeededSelectedChild()),
-            parentWrongQuestionsProvider
+            selectedStudentProvider
+                .overrideWith((ref) => _SeededSelectedStudent()),
+            teacherWrongQuestionsProvider
                 .overrideWith((ref) => _SeededWrongQuestions([_wrong(id: 'w1')])),
           ],
           child: ShadApp.custom(
             theme:
-                AppTheme.shadFor(false, AppUserMode.parent, AppDensity.compact),
+                AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
             appBuilder: (context) =>
-                const MaterialApp(home: ParentWrongQuestionsView()),
+                const MaterialApp(home: TeacherWrongQuestionsView()),
           ),
         ),
       );

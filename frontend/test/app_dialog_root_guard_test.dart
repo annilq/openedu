@@ -19,7 +19,7 @@ Future<void> _pumpShell(WidgetTester tester, Widget dialog) async {
   await tester.pumpWidget(
     ProviderScope(
       child: ShadApp.custom(
-        theme: AppTheme.shadFor(false, AppUserMode.parent, AppDensity.compact),
+        theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
         appBuilder: (_) => MaterialApp(
           home: Column(
             children: [

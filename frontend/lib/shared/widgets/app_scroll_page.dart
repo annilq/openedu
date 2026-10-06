@@ -3,10 +3,10 @@ import 'package:flutter/widgets.dart';
 import '../theme/app_theme.dart';
 import 'app_content_frame.dart';
 
-/// 家长端「滚动内容页」骨架：`SingleChildScrollView` + 宽度收口 + 纵向分区。
+/// 教师端「滚动内容页」骨架：`SingleChildScrollView` + 宽度收口 + 纵向分区。
 ///
 /// 收口前这 14 行在 **7 个页面里一字不差地抄了 7 遍**（overview / task_form /
-/// tutor_logs / model_management / child_mastery / task_review / wrong_questions）。
+/// tutor_logs / model_management / student_mastery / task_review / wrong_questions）。
 /// 它是 ADR-0058「Rule of Two」最典型的一例：第二次抄就该收口，结果抄到第七次。
 ///
 /// 为什么连 padding 一起收进来而不是留参数：这 7 处**连数值都一样**

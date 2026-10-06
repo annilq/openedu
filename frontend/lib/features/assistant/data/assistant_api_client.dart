@@ -75,7 +75,7 @@ extension TaskGenerateClient on AssistantApiClient {
   /// 单题重生成的流式版（草稿审核页「换一题」）。
   ///
   /// 同步版 `POST /tasks/{id}/questions/{tq}/regenerate` 是一次同步 LLM 调用，
-  /// 常常超过普通请求的 30 秒 receiveTimeout——家长点了长时间没反应。这里改走
+  /// 常常超过普通请求的 30 秒 receiveTimeout——教师点了长时间没反应。这里改走
   /// SSE：复用流式端点的长超时，并逐帧收 RUN_STARTED/STEP/DATA/ERROR，
   /// 事件协议与 `/tasks/generate` 完全一致，无需新的帧解析器。
   Stream<AssistantEvent> streamRegenerateOne({

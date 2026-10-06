@@ -33,8 +33,8 @@ class AssistantCardTile extends StatelessWidget {
 
   /// 卡片动作出口（目前只有引导卡的 [AssistantCard.actions] 会用）。
   ///
-  /// 由页面注入而不是卡片自己去 `Navigator.push`：同一条卡片在家长端是 push 的
-  /// 整页、在娃娃端是壳内页签，**怎么退、退到哪只有宿主知道**。
+  /// 由页面注入而不是卡片自己去 `Navigator.push`：同一条卡片在教师端是 push 的
+  /// 整页、在学生端是壳内页签，**怎么退、退到哪只有宿主知道**。
   /// 传 null（如只读回放）时按钮不渲染——点不动的按钮比没有按钮更糟。
   final void Function(AssistantCardAction action)? onAction;
 

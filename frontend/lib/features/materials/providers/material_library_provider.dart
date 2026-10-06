@@ -21,7 +21,7 @@ class MaterialLibraryState {
   /// 当前目录的父级 id（null = 当前就在根目录）。与 currentFolderId 一并写入，
   /// 返回按钮直接读它，不再依赖从 [folders] 反查——避免并发刷新时序下
   /// folders 未含当前目录导致返回失效（ADR-0055 B6 修复）。
-  final String? parentFolderId;
+  final String? teacherFolderId;
   final List<MaterialItemModel> materials;
   final bool loading;
   final String? error;
@@ -38,7 +38,7 @@ class MaterialLibraryState {
   const MaterialLibraryState({
     this.folders = const [],
     this.currentFolderId,
-    this.parentFolderId,
+    this.teacherFolderId,
     this.materials = const [],
     this.loading = false,
     this.error,
@@ -59,7 +59,7 @@ class MaterialLibraryState {
     List<MaterialFolderModel>? folders,
     Object? currentFolderId = _kUnset,
     bool clearFolder = false,
-    Object? parentFolderId = _kUnset,
+    Object? teacherFolderId = _kUnset,
     List<MaterialItemModel>? materials,
     bool? loading,
     String? error,
@@ -71,16 +71,16 @@ class MaterialLibraryState {
   }) =>
       MaterialLibraryState(
         folders: folders ?? this.folders,
-        // 与 parentFolderId 同用哨兵：显式传 null（如 load 回到根）必须清掉旧 id，
+        // 与 teacherFolderId 同用哨兵：显式传 null（如 load 回到根）必须清掉旧 id，
         // 否则 `null ?? this.currentFolderId` 会把旧目录 id 留下，导致「回到根却仍显示子目录」。
         currentFolderId: clearFolder
             ? null
             : (identical(currentFolderId, _kUnset)
                 ? this.currentFolderId
                 : currentFolderId as String?),
-        parentFolderId: identical(parentFolderId, _kUnset)
-            ? this.parentFolderId
-            : parentFolderId as String?,
+        teacherFolderId: identical(teacherFolderId, _kUnset)
+            ? this.teacherFolderId
+            : teacherFolderId as String?,
         materials: materials ?? this.materials,
         loading: loading ?? this.loading,
         error: clearError ? null : (error ?? this.error),
@@ -118,7 +118,7 @@ class MaterialLibraryNotifier extends StateNotifier<MaterialLibraryState> {
       state = state.copyWith(
         folders: folders,
         currentFolderId: target,
-        parentFolderId: current?.parentFolderId,
+        teacherFolderId: current?.teacherFolderId,
         materials: materials,
         loading: false,
         // 勾选跟着可见项走：换目录 / 删除后旧 id 可能已经不在屏上，留着就是
@@ -140,7 +140,7 @@ class MaterialLibraryNotifier extends StateNotifier<MaterialLibraryState> {
     try {
       await _repo.createFolder(
         name: name,
-        parentFolderId: state.currentFolderId,
+        teacherFolderId: state.currentFolderId,
         subject: subject,
         grade: grade,
         semester: semester,
@@ -259,13 +259,13 @@ class MaterialLibraryNotifier extends StateNotifier<MaterialLibraryState> {
     }
   }
 
-  /// 移动目录到其它目录（[parentFolderId] 为 null = 移到根目录）。
-  Future<void> moveFolder(String folderId, String? parentFolderId) async {
+  /// 移动目录到其它目录（[teacherFolderId] 为 null = 移到根目录）。
+  Future<void> moveFolder(String folderId, String? teacherFolderId) async {
     try {
-      await _repo.updateFolder(folderId, parentFolderId: parentFolderId);
+      await _repo.updateFolder(folderId, teacherFolderId: teacherFolderId);
       await load(keepFolder: true);
       state = state.copyWith(
-        notice: parentFolderId == null ? '目录已移到根目录' : '目录已移动',
+        notice: teacherFolderId == null ? '目录已移到根目录' : '目录已移动',
       );
     } catch (e) {
       state = state.copyWith(error: '移动目录失败：$e');
@@ -314,10 +314,10 @@ class MaterialLibraryNotifier extends StateNotifier<MaterialLibraryState> {
   /// 批量删除勾选的资料。
   ///
   /// [cascadeKnowledgePoints] 为真时顺带清理**孤儿知识点**——仅由这批资料涌现、
-  /// 已无其它资料引用、且从未被确认过的待审条目；家长已确认的知识点不会被带走
+  /// 已无其它资料引用、且从未被确认过的待审条目；教师已确认的知识点不会被带走
   /// （那是他自己的资产），需到「知识点管理」里手动删。
   ///
-  /// 失败时不退出多选：勾选还在，家长可以直接重试或改选。
+  /// 失败时不退出多选：勾选还在，教师可以直接重试或改选。
   Future<void> bulkDeleteMaterials({bool cascadeKnowledgePoints = true}) async {
     final ids = state.selectedMaterialIds.toList();
     if (ids.isEmpty) return;

@@ -66,7 +66,7 @@ class PracticeNotifier extends StateNotifier<PracticeState> {
     state = Practicing(task, 0, {});
   }
 
-  /// 仅本地翻页（家长只读预览用）：不调用后端、不写作答记录。
+  /// 仅本地翻页（教师只读预览用）：不调用后端、不写作答记录。
   void goTo(int index) {
     final current = state;
     if (current is! Practicing) return;

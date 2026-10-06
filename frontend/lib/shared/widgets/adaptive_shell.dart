@@ -32,7 +32,7 @@ class AdaptiveNavDestination {
 ///
 /// | 可用宽度 | 布局 |
 /// |---|---|
-/// | `< [AppLayout.compactMax]`（紧凑） | 娃娃端底部导航；家长端顶部汉堡 + 左抽屉 |
+/// | `< [AppLayout.compactMax]`（紧凑） | 学生端底部导航；教师端顶部汉堡 + 左抽屉 |
 /// | `[compactMax, largeMin)`（中屏） | 侧栏 240 ↔ 64 可收起 |
 /// | `≥ [AppLayout.largeMin]`（大屏） | 同上 |
 ///
@@ -95,7 +95,7 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
         final isCompact = width < AppLayout.compactMax;
 
         if (isCompact) {
-          return widget.mode == AppUserMode.child
+          return widget.mode == AppUserMode.student
               ? _buildCompactBottomNav(context)
               : _buildCompactDrawer(context);
         }
@@ -171,7 +171,7 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
         child: child,
       );
 
-  // ---- 紧凑·娃娃端：底部导航 ----
+  // ---- 紧凑·学生端：底部导航 ----
   Widget _buildCompactBottomNav(BuildContext context) {
     final scheme = AppTheme.colorsOf(context);
     final items = [...widget.destinations];
@@ -205,7 +205,7 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
     );
   }
 
-  // ---- 紧凑·家长端：顶部汉堡 + 左抽屉 ----
+  // ---- 紧凑·教师端：顶部汉堡 + 左抽屉 ----
   Widget _buildCompactDrawer(BuildContext context) {
     final scheme = AppTheme.colorsOf(context);
     final items = [...widget.destinations];
@@ -273,7 +273,7 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
   }
 }
 
-/// 底部导航项（紧凑·娃娃端）。等宽分布，选中态用 accent。
+/// 底部导航项（紧凑·学生端）。等宽分布，选中态用 accent。
 class _BottomNavItem extends StatelessWidget {
   final AdaptiveNavDestination destination;
   const _BottomNavItem({required this.destination});
@@ -308,7 +308,7 @@ class _BottomNavItem extends StatelessWidget {
   }
 }
 
-/// 抽屉导航项（紧凑·家长端）。图标 + 文字 + 选中药丸。
+/// 抽屉导航项（紧凑·教师端）。图标 + 文字 + 选中药丸。
 class _DrawerItem extends StatelessWidget {
   final AdaptiveNavDestination destination;
   const _DrawerItem({required this.destination});
@@ -363,7 +363,7 @@ class _DrawerItem extends StatelessWidget {
   }
 }
 
-/// 紧凑·家长端顶部条：汉堡按钮 + 应用名。
+/// 紧凑·教师端顶部条：汉堡按钮 + 应用名。
 class _CompactTopBar extends StatelessWidget {
   final VoidCallback onMenu;
   const _CompactTopBar({required this.onMenu});
@@ -392,7 +392,7 @@ class _CompactTopBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: AppSpacing.sm),
-          Text('娃娃学习',
+          Text('学生学习',
               style: AppTheme.textOf(context).titleMedium?.copyWith(
                     fontWeight: FontWeight.w700,
                   )),
@@ -405,7 +405,7 @@ class _CompactTopBar extends StatelessWidget {
 /// 导航壳底部用户区（侧栏 / 轨 / 抽屉共用）。
 ///
 /// 收缩态（通过 [SidebarCollapseScope] 注入；抽屉内无 scope 视为展开）只显示头像，
-/// 展开态显示头像 + 名称 + 副标题（年级 / 家长账号）+ 进入箭头。
+/// 展开态显示头像 + 名称 + 副标题（年级 / 教师账号）+ 进入箭头。
 class AdaptiveUserBlock extends StatelessWidget {
   final UserModel user;
   final VoidCallback onProfileTap;
@@ -425,7 +425,7 @@ class AdaptiveUserBlock extends StatelessWidget {
         context.dependOnInheritedWidgetOfExactType<SidebarCollapseScope>();
     final collapsed = scope?.collapsed ?? false;
     final name = user.displayName;
-    final sub = subtitle ?? '家长账号';
+    final sub = subtitle ?? '教师账号';
 
     if (collapsed) {
       return Container(

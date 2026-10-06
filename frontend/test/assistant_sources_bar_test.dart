@@ -35,7 +35,7 @@ Future<void> _pumpBar(WidgetTester tester, List<RagSource> sources) async {
     ProviderScope(
       // 刻意**不**套 Material：真实的 App 根就是 ShadApp + CupertinoApp。
       child: ShadApp.custom(
-        theme: AppTheme.shadFor(false, AppUserMode.parent, AppDensity.compact),
+        theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
         appBuilder: (context) => CupertinoApp(
           home: Directionality(
             textDirection: TextDirection.ltr,
