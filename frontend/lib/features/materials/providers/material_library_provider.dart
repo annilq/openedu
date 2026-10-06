@@ -29,6 +29,12 @@ class MaterialLibraryState {
   /// 动作结果提示（上传 / 向量化 / 删除），一次一条、展示后由 UI 消费清空。
   final String? notice;
 
+  /// 多选态（ADR-0058 补：资料批量删除）。false = 普通浏览，行内的操作按钮生效。
+  final bool selecting;
+
+  /// 已勾选的资料 id。切换目录 / 刷新列表时会被清空，避免勾到看不见的行。
+  final Set<String> selectedMaterialIds;
+
   const MaterialLibraryState({
     this.folders = const [],
     this.currentFolderId,
@@ -37,6 +43,8 @@ class MaterialLibraryState {
     this.loading = false,
     this.error,
     this.notice,
+    this.selecting = false,
+    this.selectedMaterialIds = const {},
   });
 
   /// 当前目录（null = 根）。
@@ -58,6 +66,8 @@ class MaterialLibraryState {
     bool clearError = false,
     String? notice,
     bool clearNotice = false,
+    bool? selecting,
+    Set<String>? selectedMaterialIds,
   }) =>
       MaterialLibraryState(
         folders: folders ?? this.folders,
@@ -75,6 +85,8 @@ class MaterialLibraryState {
         loading: loading ?? this.loading,
         error: clearError ? null : (error ?? this.error),
         notice: clearNotice ? null : (notice ?? this.notice),
+        selecting: selecting ?? this.selecting,
+        selectedMaterialIds: selectedMaterialIds ?? this.selectedMaterialIds,
       );
 }
 
@@ -109,6 +121,9 @@ class MaterialLibraryNotifier extends StateNotifier<MaterialLibraryState> {
         parentFolderId: current?.parentFolderId,
         materials: materials,
         loading: false,
+        // 勾选跟着可见项走：换目录 / 删除后旧 id 可能已经不在屏上，留着就是
+        // 「看不见却被选中」，全选计数会虚高、删除也会打到别的东西。
+        selectedMaterialIds: _pruneSelection(state.selectedMaterialIds, materials),
       );
     } catch (e) {
       if (seq != _loadSeq) return;
@@ -260,6 +275,72 @@ class MaterialLibraryNotifier extends StateNotifier<MaterialLibraryState> {
   Future<void> openFolder(String? folderId) => load(folderId: folderId);
 
   void consumeNotice() => state = state.copyWith(clearNotice: true);
+
+  // ── 多选删除（ADR-0055 补充）───────────────────────────────────────────
+
+  /// 只保留当前可见资料的勾选，返回新集合（避免「看不见却被选中」）。
+  static Set<String> _pruneSelection(
+          Set<String> selected, List<MaterialItemModel> visible) =>
+      visible.map((m) => m.id).toSet().intersection(selected);
+
+  /// 进入多选态：清空旧勾选，避免把上一次的选中带进来。
+  void enterSelecting() => state =
+      state.copyWith(selecting: true, selectedMaterialIds: const {});
+
+  /// 退出多选态（取消，或删除完成后收尾）。
+  void exitSelecting() => state =
+      state.copyWith(selecting: false, selectedMaterialIds: const {});
+
+  void toggleMaterialSelection(String materialId) {
+    final next = Set<String>.from(state.selectedMaterialIds);
+    if (next.contains(materialId)) {
+      next.remove(materialId);
+    } else {
+      next.add(materialId);
+    }
+    state = state.copyWith(selectedMaterialIds: next);
+  }
+
+  /// 全选 / 取消全选：已全选则清空，否则勾上当前目录全部资料。
+  void toggleSelectAllMaterials() {
+    final allIds = state.materials.map((m) => m.id).toSet();
+    final allSelected =
+        allIds.isNotEmpty && state.selectedMaterialIds.containsAll(allIds);
+    state = state.copyWith(
+      selectedMaterialIds: allSelected ? const {} : allIds,
+    );
+  }
+
+  /// 批量删除勾选的资料。
+  ///
+  /// [cascadeKnowledgePoints] 为真时顺带清理**孤儿知识点**——仅由这批资料涌现、
+  /// 已无其它资料引用、且从未被确认过的待审条目；家长已确认的知识点不会被带走
+  /// （那是他自己的资产），需到「知识点管理」里手动删。
+  ///
+  /// 失败时不退出多选：勾选还在，家长可以直接重试或改选。
+  Future<void> bulkDeleteMaterials({bool cascadeKnowledgePoints = true}) async {
+    final ids = state.selectedMaterialIds.toList();
+    if (ids.isEmpty) return;
+    state = state.copyWith(loading: true, clearError: true, clearNotice: true);
+    try {
+      final result = await _repo.bulkDeleteMaterials(
+        ids,
+        cascadeKnowledgePoints: cascadeKnowledgePoints,
+      );
+      final removed = result['deleted_count'] as int? ?? ids.length;
+      final kpRemoved = result['knowledge_points_removed'] as int? ?? 0;
+      await load(keepFolder: true);
+      state = state.copyWith(
+        selecting: false,
+        selectedMaterialIds: const {},
+        notice: kpRemoved > 0
+            ? '已删除 $removed 份资料，并清理 $kpRemoved 个不再被引用的知识点'
+            : '已删除 $removed 份资料',
+      );
+    } catch (e) {
+      state = state.copyWith(loading: false, error: '删除失败：$e');
+    }
+  }
 }
 
 final materialLibraryNotifierProvider =

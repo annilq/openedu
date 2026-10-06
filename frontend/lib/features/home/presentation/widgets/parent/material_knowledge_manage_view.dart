@@ -7,9 +7,9 @@ import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/widgets/app_buttons.dart';
 import '../../../../../shared/widgets/app_actions.dart';
 import '../../../../../shared/widgets/app_card.dart';
+import '../../../../../shared/widgets/app_checkbox.dart';
 import '../../../../../shared/widgets/app_dialog.dart';
 import '../../../../../shared/widgets/app_empty_state.dart';
-import '../../../../../shared/widgets/app_focusable_action.dart';
 import '../../../../../shared/widgets/app_inputs.dart';
 import '../../../../../shared/widgets/app_loading.dart';
 import '../../../../../shared/widgets/app_tags.dart';
@@ -44,6 +44,8 @@ class _MaterialKnowledgeManageViewState
         ref.read(knowledgeManageProvider.notifier).consumeNotice();
       }
     });
+    // 可删除条数：只有已落库（有 id）的行能删，骨架条目在 DB 里还不存在。
+    final deletable = km.deletableSelectedCount;
 
     return AppCard(
       padding: const EdgeInsets.all(AppSpacing.md),
@@ -128,9 +130,12 @@ class _MaterialKnowledgeManageViewState
                 padding: const EdgeInsets.only(bottom: AppSpacing.sm),
                 child: Row(
                   children: [
-                    _checkBox(
-                      selected,
-                      () => ref
+                    AppCheckbox(
+                      selected: selected,
+                      semanticLabel: selected
+                          ? '取消选择 ${kp.name}'
+                          : '选择 ${kp.name}',
+                      onTap: () => ref
                           .read(knowledgeManageProvider.notifier)
                           .toggle(kp.name),
                     ),
@@ -199,18 +204,58 @@ class _MaterialKnowledgeManageViewState
               );
             }),
             const SizedBox(height: AppSpacing.md),
-            AppPrimaryButton(
-              label: km.selectedNames.isEmpty
-                  ? '确认选中'
-                  : '确认选中（${km.selectedNames.length}）',
-              onPressed: km.selectedNames.isEmpty
-                  ? null
-                  : () => notifier.confirmSelected(),
+            // 同一份勾选服务于两个动作：**确认转正**（把候选变成可统计的知识点）
+            // 与**删除**（把这个范围里不再需要的候选清掉）。删除是破坏动作，走
+            // 全站统一的 `error` 文字操作语言，并单独二次确认。
+            Wrap(
+              spacing: AppSpacing.md,
+              runSpacing: AppSpacing.sm,
+              children: [
+                AppPrimaryButton(
+                  label: km.selectedNames.isEmpty
+                      ? '确认选中'
+                      : '确认选中（${km.selectedNames.length}）',
+                  fullWidth: false,
+                  onPressed: km.selectedNames.isEmpty
+                      ? null
+                      : () => notifier.confirmSelected(),
+                ),
+                AppTextAction(
+                  label: deletable == 0
+                      ? '删除选中'
+                      : '删除选中（$deletable）',
+                  color: app.error,
+                  semanticLabel: deletable == 0
+                      ? '删除选中的知识点'
+                      : '删除选中的 $deletable 个知识点',
+                  onPressed:
+                      deletable == 0 ? null : () => _confirmDelete(context, ref),
+                ),
+              ],
             ),
           ],
         ],
       ),
     );
+  }
+
+  /// 删除前先确认：知识点没有回收站，删掉就是删掉了。
+  ///
+  /// 文案必须说清**什么不会被删**——已出的题与学情统计是按知识点**名字**快照存的，
+  /// 删目录条目不会动它们；不清点这一点，家长会以为删了知识点历史就塌了。
+  Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {
+    final ok = await AppDialog.confirm(
+      context,
+      title: const Text('删除知识点'),
+      content: const Text(
+        '确认删除选中的知识点？删除后出题时不会再出现它们。\n\n'
+        '已经出过的题与学情记录不受影响，仍会按原知识点继续统计。',
+      ),
+      confirmLabel: '删除',
+      destructive: true,
+    );
+    if (ok != true) return;
+    await ref.read(knowledgeManageProvider.notifier).deleteSelected();
   }
 
   /// 打开交互讲解编辑器（ADR-0061）：为已落库知识点编写默认交互讲解模板。
@@ -244,28 +289,6 @@ class _MaterialKnowledgeManageViewState
             ),
           ),
         ),
-      ),
-    );
-  }
-
-  /// 可点击勾选框（neo-brutalist：明确描边，不依赖三方 checkbox 样式）。
-  Widget _checkBox(bool selected, VoidCallback onTap) {
-    final app = AppTheme.colorsOf(context);
-    return AppFocusableAction(
-      onTap: onTap,
-      semanticLabel: selected ? '取消选择' : '选择',
-      child: Container(
-        width: 20,
-        height: 20,
-        decoration: BoxDecoration(
-          color: selected ? app.primary : app.surfaceRaised,
-          border: Border.all(color: app.outline, width: 1.5),
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: selected
-            ? Center(
-                child: Icon(LucideIcons.check, size: 14, color: app.onPrimary))
-            : null,
       ),
     );
   }

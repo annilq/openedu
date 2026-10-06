@@ -21,6 +21,7 @@ import '../../../providers/knowledge_manage_provider.dart';
 import 'material_folder_actions.dart';
 import 'material_knowledge_manage_view.dart';
 import 'material_library_material_row.dart';
+import 'material_library_select_bar.dart';
 
 /// 资料库页（ADR-0055 B6）：网盘式目录 + 上传 + 手动向量化 + 状态徽标。
 ///
@@ -220,6 +221,10 @@ class _MaterialLibraryViewState extends ConsumerState<MaterialLibraryView> {
             ],
           ),
           const SizedBox(height: AppSpacing.md),
+          // 多选条：只在当前目录有资料时出现（没有东西可选，「多选」入口就是个空承诺）。
+          // 态内的「已选 / 全选 / 删除」由 [MaterialLibrarySelectBar] 自己决定。
+          if (state.materials.isNotEmpty) const MaterialLibrarySelectBar(),
+          const SizedBox(height: AppSpacing.xs),
           if (state.error != null)
             Padding(
               padding: const EdgeInsets.only(bottom: AppSpacing.sm),
@@ -259,7 +264,14 @@ class _MaterialLibraryViewState extends ConsumerState<MaterialLibraryView> {
             ..._withDividers([
               for (final f in subfolders) _folderRow(f),
               for (final m in state.materials)
-                MaterialLibraryMaterialRow(mat: m),
+                MaterialLibraryMaterialRow(
+                  mat: m,
+                  selecting: state.selecting,
+                  selected: state.selectedMaterialIds.contains(m.id),
+                  onToggleSelected: () => ref
+                      .read(materialLibraryNotifierProvider.notifier)
+                      .toggleMaterialSelection(m.id),
+                ),
             ], app),
             if (subfolders.isEmpty && state.materials.isEmpty)
               AppEmptyState(

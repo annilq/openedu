@@ -124,6 +124,17 @@ abstract class MaterialLibraryRepository {
   /// 手动重新提取元数据。
   Future<MaterialItemModel> reextract(String materialId);
 
+  /// 批量删除资料（多选）。[cascadeKnowledgePoints] 为真时顺带清理孤儿知识点
+  /// ——只收回「仅由这批资料涌现、已无其它资料引用、且从未被确认过」的待审条目，
+  /// 已转正的知识点需到「知识点管理」手动删。
+  ///
+  /// 返回删除结果的原始 map（含 deleted_count / chunks_removed /
+  /// knowledge_points_removed），由调用方决定怎么告诉用户。
+  Future<Map<String, dynamic>> bulkDeleteMaterials(
+    List<String> ids, {
+    bool cascadeKnowledgePoints = false,
+  });
+
   Future<void> deleteMaterial(String materialId);
 
   /// 移动资料到指定目录（[folderId] 为 null = 移回根目录，ADR-0055 B6 补全）。

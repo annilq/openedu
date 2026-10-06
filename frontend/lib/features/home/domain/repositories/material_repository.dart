@@ -93,4 +93,10 @@ abstract class MaterialRepository {
     required String kpId,
     required List<Map<String, dynamic>> scenes,
   });
+
+  /// 批量删除知识点（多选）。骨架条目还没有 id，只有**已落库**的行能走这条。
+  ///
+  /// 删除只影响目录本身：知识点到题目是快照式引用（题中存的是名字串），所以已出的
+  /// 题与掌握度统计不会被破坏——只是这个范围的下拉里不再有它。
+  Future<int> deleteKnowledgePoints(List<String> ids);
 }

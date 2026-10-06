@@ -78,6 +78,18 @@ class MaterialLibraryRepositoryImpl implements MaterialLibraryRepository {
   }
 
   @override
+  Future<Map<String, dynamic>> bulkDeleteMaterials(
+    List<String> ids, {
+    bool cascadeKnowledgePoints = false,
+  }) async {
+    final data = await _network.post(
+      '/materials/bulk-delete',
+      body: {'ids': ids, 'cascade_knowledge_points': cascadeKnowledgePoints},
+    );
+    return Map<String, dynamic>.from(data as Map);
+  }
+
+  @override
   Future<void> deleteMaterial(String materialId) =>
       _network.delete('/materials/$materialId');
 

@@ -62,6 +62,14 @@ class KnowledgeManageState {
   /// 待审条目数（pending）——确认后才参与掌握度统计。
   int get pendingCount =>
       items.where((e) => e.status == 'pending').length;
+
+  /// 已勾选且**已落库**（有 id）的条目数——「删除选中」的真实可用数量。
+  ///
+  /// 勾选集合是名字（确认接口就按名字跨学期生效），但骨架条目只有名字、没有 DB
+  /// 行，删不了。按钮文案必须用这个数而不是 [selectedNames.length]，否则会出现
+  /// 「删除选中（3）」却只删了 1 条。
+  int get deletableSelectedCount =>
+      items.where((e) => e.id != null && selectedNames.contains(e.name)).length;
 }
 
 class KnowledgeManageNotifier extends StateNotifier<KnowledgeManageState> {
@@ -134,6 +142,30 @@ class KnowledgeManageNotifier extends StateNotifier<KnowledgeManageState> {
       );
     } catch (e) {
       state = state.copyWith(loading: false, error: '确认失败：$e');
+    }
+  }
+
+  /// 批量删除勾选的知识点（多选删除）。
+  ///
+  /// 只处理**已落库**的行：骨架条目（id 为 null）在 DB 里根本不存在，删除无从
+  /// 谈起；它们本来也只是「确认才落库」的候选，勾了不删就等于没勾。
+  Future<void> deleteSelected() async {
+    final ids = state.items
+        .where((e) => e.id != null && state.selectedNames.contains(e.name))
+        .map((e) => e.id!)
+        .toList();
+    if (ids.isEmpty) return;
+    state = state.copyWith(loading: true, clearError: true, clearNotice: true);
+    try {
+      final removed = await _repo.deleteKnowledgePoints(ids);
+      await load();
+      state = state.copyWith(
+        loading: false,
+        selectedNames: const {},
+        notice: '已删除 $removed 个知识点',
+      );
+    } catch (e) {
+      state = state.copyWith(loading: false, error: '删除失败：$e');
     }
   }
 

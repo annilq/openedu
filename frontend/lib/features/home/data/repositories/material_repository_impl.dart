@@ -46,4 +46,14 @@ class MaterialRepositoryImpl implements MaterialRepository {
       body: {'scenes': scenes},
     );
   }
+
+  @override
+  Future<int> deleteKnowledgePoints(List<String> ids) async {
+    final data = await _network.post(
+      '/materials/knowledge-points/bulk-delete',
+      body: {'ids': ids},
+    );
+    final map = decodeMap(data);
+    return map['deleted_count'] as int? ?? 0;
+  }
 }
