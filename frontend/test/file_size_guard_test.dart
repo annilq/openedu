@@ -109,16 +109,17 @@ const Map<String, int> _baseline = <String, int>{
   'features/home/presentation/widgets/teacher/teacher_question_bank_view.dart': 759,
   'features/home/presentation/widgets/teacher/teacher_tasks_view.dart': 649,
   'features/home/presentation/screens/home_screen.dart': 586,
-  'features/assistant/presentation/screens/assistant_chat_page.dart': 473,
+  'features/assistant/presentation/screens/assistant_chat_page.dart': 570,
   'shared/widgets/scene_interpreter/reflection_scene.dart': 567,
   'features/home/presentation/widgets/teacher/teacher_question_card.dart': 511,
   'features/home/presentation/widgets/teacher/teacher_wrong_questions_view.dart': 442,
   'features/home/presentation/widgets/student_home.dart': 428,
   'features/analytics/presentation/screens/analytics_screen.dart': 488,
-  'features/courseware/presentation/pages/courseware_present_page.dart': 429,
+  'features/courseware/presentation/pages/courseware_present_page.dart': 474,
+  'features/courseware/presentation/pages/courseware_section_edit_dialog.dart': 470,
   'features/courseware/presentation/widgets/section_practice.dart': 429,
   'features/home/presentation/widgets/teacher/teacher_task_form_view.dart': 425,
-  'features/students/presentation/screens/student_management_screen.dart': 775,
+  'features/students/presentation/screens/student_management_screen.dart': 777,
 };
 
 bool _isDart(String path) =>

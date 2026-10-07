@@ -36,7 +36,6 @@ void main() {
   testWidgets('换 options 后下拉必须列出新项（ShadSelect 不得缓存旧列表）',
       (tester) async {
     var options = const ['上册A', '上册B', '上册C'];
-    String? picked;
 
     await tester.pumpWidget(_wrap(
       StatefulBuilder(
@@ -49,7 +48,7 @@ void main() {
                 values: options,
                 labels: options,
                 value: null,
-                onChanged: (v) => picked = v,
+                onChanged: (_) {},
               ),
             ),
           ),
@@ -79,7 +78,7 @@ void main() {
                 values: options,
                 labels: options,
                 value: null,
-                onChanged: (v) => picked = v,
+                onChanged: (_) {},
               ),
             ),
           ),

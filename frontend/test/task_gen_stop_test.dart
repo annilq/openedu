@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:kids_learn/features/assistant/domain/assistant_event.dart';
 import 'package:kids_learn/features/assistant/domain/assistant_requests.dart';
+import 'package:kids_learn/features/assistant/domain/assistant_suggested_action.dart';
 import 'package:kids_learn/features/assistant/domain/conversation.dart';
 import 'package:kids_learn/features/assistant/domain/repositories/assistant_repository.dart';
 import 'package:kids_learn/features/home/domain/repositories/tasks_repository.dart';
@@ -54,6 +55,9 @@ class _FakeAssistant extends AssistantRepository {
       throw UnimplementedError();
   @override
   Future<int> deleteConversations(List<String> ids) =>
+      throw UnimplementedError();
+  @override
+  Future<List<SuggestedAction>> suggestedActions({String? knowledgePointId}) =>
       throw UnimplementedError();
   @override
   ScheduledDeleteHandle scheduleDelete(

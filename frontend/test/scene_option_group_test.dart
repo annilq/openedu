@@ -14,7 +14,6 @@ import 'package:kids_learn/shared/widgets/app_focusable_action.dart';
 import 'package:kids_learn/shared/widgets/app_slider.dart';
 import 'package:kids_learn/shared/widgets/scene_interpreter/reflection_figure_gallery.dart';
 import 'package:kids_learn/shared/widgets/scene_interpreter/reflection_scene.dart';
-import 'package:kids_learn/shared/widgets/scene_interpreter/reflection_scene_data.dart';
 import 'package:kids_learn/shared/widgets/scene_interpreter/scene_interpreter.dart';
 
 Map<String, dynamic> _specWithGroup() => {

@@ -156,7 +156,7 @@ void main() {
   }
 
   /// 画廊里点开某个图形（按中文名定位卡片）。
-  Finder _galleryCard(String figureLabel) =>
+  Finder galleryCard(String figureLabel) =>
       find.ancestor(of: find.text(figureLabel), matching: find.byType(AppFocusableAction));
 
   testWidgets('弹窗内容不溢出（画廊 + 滚动兜底）', (tester) async {
@@ -171,7 +171,7 @@ void main() {
         reason: '面板不应有轴滑块（§O 的「预览重复滑块」回归）');
 
     // 点房子 → 弹窗内出现 3 个轴控制 + 1 个对折进度条（共 4 个 AppSlider）。
-    await tester.tap(_galleryCard('房子'));
+    await tester.tap(galleryCard('房子'));
     await tester.pumpAndSettle();
     final sliders =
         tester.widgetList<AppSlider>(find.byType(AppSlider)).toList();
@@ -237,7 +237,7 @@ void main() {
     // pumpEditor 默认已传 _configuredScenes（编辑器渲染完整表单 + 画廊）。
     await pumpEditor(tester);
     // 点房子：弹窗内演示用房子默认竖轴 90°
-    await tester.tap(_galleryCard('房子'));
+    await tester.tap(galleryCard('房子'));
     await tester.pumpAndSettle();
     final axisAngle = tester
         .widget<ReflectionSceneWidget>(

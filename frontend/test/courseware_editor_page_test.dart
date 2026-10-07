@@ -332,19 +332,19 @@ void main() {
   });
 
   group('媒体画廊内联增删素材项（T03）', () {
-    CoursewareSectionModel _gallery(String id, String title,
+    CoursewareSectionModel gallery(String id, String title,
             List<Map<String, String>> items) =>
         _sec(id, title).copyWith(
           payload: {'items': items},
         );
 
-    const _assetA = CoursewareAssetModel(
+    const assetA = CoursewareAssetModel(
       id: 'a1',
       name: '蝴蝶标本',
       mime: 'image/png',
       url: '/x/a1',
     );
-    const _assetB = CoursewareAssetModel(
+    const assetB = CoursewareAssetModel(
       id: 'b1',
       name: '建筑立面',
       mime: 'image/png',
@@ -354,11 +354,11 @@ void main() {
     testWidgets('内联添加素材项：开 picker 选图 → 持久化且项数 +1',
         (tester) async {
       final repo = _FakeRepo(_editorCourseware([
-        _gallery('a', '环节一', const [
+        gallery('a', '环节一', const [
           {'asset_id': 'a1', 'caption': '蝴蝶标本'},
         ]),
       ]));
-      await _pumpEditor(tester, repo: repo, assets: [_assetA, _assetB]);
+      await _pumpEditor(tester, repo: repo, assets: [assetA, assetB]);
 
       await tester.tap(find.text('环节一'));
       await tester.pumpAndSettle();
@@ -387,7 +387,7 @@ void main() {
     testWidgets('内联删除素材项：移除一项 → 持久化且项数 -1、不再出现',
         (tester) async {
       final repo = _FakeRepo(_editorCourseware([
-        _gallery('a', '环节一', const [
+        gallery('a', '环节一', const [
           {'asset_id': 'a1', 'caption': '蝴蝶标本'},
           {'asset_id': 'b1', 'caption': '建筑立面'},
         ]),
@@ -417,27 +417,27 @@ void main() {
   });
 
   group('素材库检索端点接入 picker（T04）', () {
-    CoursewareSectionModel _gallery(String id, String title,
+    CoursewareSectionModel gallery(String id, String title,
             List<Map<String, String>> items) =>
         _sec(id, title).copyWith(
           payload: {'items': items},
         );
 
-    const _assetA = CoursewareAssetModel(
+    const assetA = CoursewareAssetModel(
       id: 'a1',
       name: '蝴蝶标本',
       mime: 'image/png',
       url: '/x/a1',
     );
-    const _assetB = CoursewareAssetModel(
+    const assetB = CoursewareAssetModel(
       id: 'b1',
       name: '建筑立面',
       mime: 'image/png',
       url: '/x/b1',
     );
 
-    Future<void> _openPickerWithGallery(WidgetTester tester, _FakeRepo repo) async {
-      await _pumpEditor(tester, repo: repo, assets: [_assetA, _assetB]);
+    Future<void> openPickerWithGallery(WidgetTester tester, _FakeRepo repo) async {
+      await _pumpEditor(tester, repo: repo, assets: [assetA, assetB]);
       await tester.tap(find.text('环节一'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('添加素材'));
@@ -448,9 +448,9 @@ void main() {
     testWidgets('picker 并列展示素材库且选择回执形状不变（asset_id）',
         (tester) async {
       final repo = _FakeRepo(_editorCourseware([
-        _gallery('a', '环节一', const []),
+        gallery('a', '环节一', const []),
       ]));
-      await _openPickerWithGallery(tester, repo);
+      await openPickerWithGallery(tester, repo);
 
       // 「我的素材库」并列展示两个素材。
       expect(find.text('蝴蝶标本'), findsWidgets);
@@ -473,9 +473,9 @@ void main() {
 
     testWidgets('文件名检索框过滤素材库', (tester) async {
       final repo = _FakeRepo(_editorCourseware([
-        _gallery('a', '环节一', const []),
+        gallery('a', '环节一', const []),
       ]));
-      await _openPickerWithGallery(tester, repo);
+      await openPickerWithGallery(tester, repo);
 
       // 输入「建筑」→ 只剩建筑立面，蝴蝶标本被过滤掉。
       await tester.enterText(
@@ -493,16 +493,16 @@ void main() {
   });
 
   group('AI 重起草逐段 diff 预览 + 逐段接受（T07）', () {
-    CoursewareSectionModel _secX(String id, String title, String script) =>
+    CoursewareSectionModel secX(String id, String title, String script) =>
         _sec(id, title).copyWith(script: script);
 
-    final secA = _secX('a', '环节一', '旧话术');
-    final secA2 = _secX('a', '环节一', '新话术');
+    final secA = secX('a', '环节一', '旧话术');
+    final secA2 = secX('a', '环节一', '新话术');
     final secB = _sec('b', '环节二');
     final secC = _sec('c', '环节三');
     final secD = _sec('d', '环节四(新)');
 
-    CoursewareRedraftDiffModel _diff() => CoursewareRedraftDiffModel(diff: [
+    CoursewareRedraftDiffModel diff() => CoursewareRedraftDiffModel(diff: [
           CoursewareSectionDiffModel(
             status: CoursewareSectionDiffStatus.modified,
             current: secA,
@@ -523,7 +523,7 @@ void main() {
         ]);
 
     test('mergeRedraftChoices：默认全 true → 用新版/采用/删待删/未变留旧', () {
-      final merged = mergeRedraftChoices(_diff(), List.filled(4, true));
+      final merged = mergeRedraftChoices(diff(), List.filled(4, true));
       expect(merged.map((s) => s.id).toList(), ['a', 'd', 'b']);
       expect(merged[0].script, '新话术'); // modified 取 drafted
       expect(merged.length, 3); // removed 被删
@@ -532,7 +532,7 @@ void main() {
     test('mergeRedraftChoices：modified 留旧版 + removed 保留 → 旧序列 + 保留项', () {
       // 索引 0=modified 选 false，1=added true，2=unchanged，3=removed 选 false。
       final choices = [false, true, true, false];
-      final merged = mergeRedraftChoices(_diff(), choices);
+      final merged = mergeRedraftChoices(diff(), choices);
       expect(merged.map((s) => s.id).toList(), ['a', 'd', 'b', 'c']);
       expect(merged[0].script, '旧话术'); // modified 留旧
       expect(merged.last.id, 'c'); // removed 被保留
@@ -562,7 +562,7 @@ void main() {
         '编辑器：点「AI 重新起草」弹 diff 预览，逐段展示；应用后写回同一课件、不建副本',
         (tester) async {
       final repo = _FakeRepo(_editorCourseware([secA, secB, secC]));
-      repo.redraftDiff = _diff();
+      repo.redraftDiff = diff();
       await _pumpEditor(tester, repo: repo);
 
       // 弹窗前不应调用任何重起草 / 建删接口。
@@ -597,7 +597,7 @@ void main() {
 
     testWidgets('编辑器：diff 预览可取消，原课件不动、不落库', (tester) async {
       final repo = _FakeRepo(_editorCourseware([secA, secB, secC]));
-      repo.redraftDiff = _diff();
+      repo.redraftDiff = diff();
       await _pumpEditor(tester, repo: repo);
 
       await tester.tap(find.text('AI 重新起草'));
@@ -615,10 +615,10 @@ void main() {
   });
 
   group('平台 CC0 预置包入库 + 角标（T08）', () {
-    CoursewareSectionModel _gallery(String id, String title) =>
+    CoursewareSectionModel gallery(String id, String title) =>
         _sec(id, title).copyWith(payload: const {'items': <Map<String, String>>[]});
 
-    const _cc0 = CoursewareAssetModel(
+    const cc0 = CoursewareAssetModel(
       id: 'cc0-1',
       name: '蝴蝶标本（CC0）',
       mime: 'image/png',
@@ -627,7 +627,7 @@ void main() {
       sourceUrl: 'https://example.com/cc0',
       license: 'CC0 1.0',
     );
-    const _own = CoursewareAssetModel(
+    const own = CoursewareAssetModel(
       id: 'own-1',
       name: '我的素材',
       mime: 'image/png',
@@ -639,8 +639,8 @@ void main() {
 
     testWidgets('素材库 picker：CC0 与自有素材并列，CC0 带角标 + 来源/许可详情',
         (tester) async {
-      final repo = _FakeRepo(_editorCourseware([_gallery('a', '环节一')]));
-      await _pumpEditor(tester, repo: repo, assets: [_cc0, _own]);
+      final repo = _FakeRepo(_editorCourseware([gallery('a', '环节一')]));
+      await _pumpEditor(tester, repo: repo, assets: [cc0, own]);
 
       // 打开环节编辑对话框 → 添加素材 → 弹出素材库 picker。
       await tester.tap(find.text('环节一'));
@@ -661,8 +661,8 @@ void main() {
     });
 
     test('模型：isPlatformCc0 按 source 判定', () {
-      expect(_cc0.isPlatformCc0, isTrue);
-      expect(_own.isPlatformCc0, isFalse);
+      expect(cc0.isPlatformCc0, isTrue);
+      expect(own.isPlatformCc0, isFalse);
       expect(
         const CoursewareAssetModel(id: 'x', name: 'n').isPlatformCc0,
         isFalse,
@@ -671,12 +671,12 @@ void main() {
   });
 
   group('进入不自动建课件，显式发起 AI 生成（T09）', () {
-    CoursewareModel _emptyKpCourseware() => _editorCourseware(const []);
+    CoursewareModel emptyKpCourseware() => _editorCourseware(const []);
 
     testWidgets('进入无课件知识点：不自动建、显示「新增课件信息」按钮',
         (tester) async {
       // listCourseware 返回空 → 编辑器停在空态，不应自动调 createCourseware。
-      final repo = _FakeRepo(_emptyKpCourseware(), listReturnsEmpty: true);
+      final repo = _FakeRepo(emptyKpCourseware(), listReturnsEmpty: true);
       await _pumpEditor(tester, repo: repo);
 
       // 关键：进入页面没有自动请求 AI（createCourseware 调用计数为 0）。
@@ -690,7 +690,7 @@ void main() {
     });
 
     testWidgets('点「新增课件信息」触发 AI 生成并展示课件', (tester) async {
-      final repo = _FakeRepo(_emptyKpCourseware(), listReturnsEmpty: true);
+      final repo = _FakeRepo(emptyKpCourseware(), listReturnsEmpty: true);
       await _pumpEditor(tester, repo: repo);
       expect(repo.createCoursewareCalls, 0);
 
@@ -719,14 +719,14 @@ void main() {
   });
 
   group('interactiveScene 关联知识点场景（方案 A）', () {
-    CoursewareSectionModel _scene(String id) => CoursewareSectionModel(
+    CoursewareSectionModel scene(String id) => CoursewareSectionModel(
           id: id,
           kind: CoursewareSectionKind.interactiveScene,
           title: '动手画对称图形',
           payload: const {},
         );
 
-    final _reflectionSpec = <String, dynamic>{
+    final reflectionSpec = <String, dynamic>{
       'kind': 'reflection',
       'title': '图形的运动（轴对称）',
       'inputs': <dynamic>[],
@@ -736,7 +736,7 @@ void main() {
       'editable': true,
     };
 
-    Future<void> _openSceneDialog(WidgetTester tester, _FakeRepo repo) async {
+    Future<void> openSceneDialog(WidgetTester tester, _FakeRepo repo) async {
       await _pumpEditor(tester, repo: repo);
       await tester.tap(find.text('动手画对称图形'));
       await tester.pumpAndSettle();
@@ -745,9 +745,9 @@ void main() {
 
     testWidgets('交互讲解环节：对话框出现「关联知识点场景」并列出已配置模板',
         (tester) async {
-      final repo = _FakeRepo(_editorCourseware([_scene('a')]));
-      repo.kpScenes = [_reflectionSpec];
-      await _openSceneDialog(tester, repo);
+      final repo = _FakeRepo(_editorCourseware([scene('a')]));
+      repo.kpScenes = [reflectionSpec];
+      await openSceneDialog(tester, repo);
 
       expect(find.text('关联知识点场景'), findsOneWidget);
       // 模板按 title 列出，并有「选用」入口。
@@ -757,9 +757,9 @@ void main() {
     });
 
     testWidgets('选用模板 → 写入 payload 并随保存持久化', (tester) async {
-      final repo = _FakeRepo(_editorCourseware([_scene('a')]));
-      repo.kpScenes = [_reflectionSpec];
-      await _openSceneDialog(tester, repo);
+      final repo = _FakeRepo(_editorCourseware([scene('a')]));
+      repo.kpScenes = [reflectionSpec];
+      await openSceneDialog(tester, repo);
 
       await tester.tap(find.text('选用'));
       await tester.pumpAndSettle();
@@ -778,9 +778,9 @@ void main() {
 
     testWidgets('知识点未配置模板 → 提示去知识点页配置且无「选用」入口',
         (tester) async {
-      final repo = _FakeRepo(_editorCourseware([_scene('a')]));
+      final repo = _FakeRepo(_editorCourseware([scene('a')]));
       repo.kpScenes = const []; // 未配置
-      await _openSceneDialog(tester, repo);
+      await openSceneDialog(tester, repo);
 
       expect(find.text('关联知识点场景'), findsOneWidget);
       expect(
@@ -794,10 +794,10 @@ void main() {
 
     testWidgets('已关联后可「清除关联」，保存后 payload 为空', (tester) async {
       // 节本来就带一份关联（payload 非空）。
-      final sec = _scene('a').copyWith(payload: _reflectionSpec);
+      final sec = scene('a').copyWith(payload: reflectionSpec);
       final repo = _FakeRepo(_editorCourseware([sec]));
-      repo.kpScenes = [_reflectionSpec];
-      await _openSceneDialog(tester, repo);
+      repo.kpScenes = [reflectionSpec];
+      await openSceneDialog(tester, repo);
 
       expect(find.text('本环节已填入交互演示内容。'), findsOneWidget);
       await tester.tap(find.text('清除关联'));
