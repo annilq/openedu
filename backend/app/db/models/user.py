@@ -20,3 +20,5 @@ class User(UserBase, table=True):
     hashed_password: str
     # 教师 1—* 学生 自关联
     teacher_id: uuid.UUID | None = Field(default=None, foreign_key="user.id")
+    # 学生归属班级（可空：未分班 / 删班后降级）。班级实体见 app.db.models.class_entity。
+    class_id: uuid.UUID | None = Field(default=None, foreign_key="classes.id")

@@ -12,6 +12,7 @@ from app.db.models.base import (
     get_review_due_utc,
     get_usage_date_utc,
 )
+from app.db.models.class_entity import Class
 from app.db.models.conversation import Conversation, Message
 from app.db.models.courseware import (
     COURSEWARE_ASSET_MIMES,
@@ -38,6 +39,7 @@ from app.db.models.user import User, UserBase
 __all__ = [
     "User",
     "UserBase",
+    "Class",
     "Task",
     "TaskBase",
     "TaskQuestion",

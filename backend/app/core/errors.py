@@ -88,6 +88,9 @@ class ErrCode(str, Enum):
     COURSEWARE_ASSET_BAD_MIME = "CW_91005"  # 素材不是允许的图片格式（422）
     COURSEWARE_BAD_KIND = "CW_91006"  # 环节 kind 不在注册表内（422，拒绝自由字符串）
 
+    # 班级 92xxx（ADR-0068）
+    CLASS_NAME_TAKEN = "CLASS_92001"  # 同教师下班级重名（409，服务端显式查重）
+
 
 _HTTP_DEFAULT_STATUS: dict[ErrCode, int] = {
     ErrCode.UNAUTHORIZED: status.HTTP_401_UNAUTHORIZED,
@@ -142,6 +145,7 @@ _HTTP_DEFAULT_STATUS: dict[ErrCode, int] = {
     ErrCode.COURSEWARE_ASSET_TOO_LARGE: status.HTTP_413_CONTENT_TOO_LARGE,
     ErrCode.COURSEWARE_ASSET_BAD_MIME: status.HTTP_422_UNPROCESSABLE_CONTENT,
     ErrCode.COURSEWARE_BAD_KIND: status.HTTP_422_UNPROCESSABLE_CONTENT,
+    ErrCode.CLASS_NAME_TAKEN: status.HTTP_409_CONFLICT,
 }
 
 

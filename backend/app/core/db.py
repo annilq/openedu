@@ -248,6 +248,11 @@ def run_migrations() -> None:
             # 偏序迁移：表还没建（首次启动由 init_db 建表并带新列），跳过即可。
             pass
 
+        # —— 班级实体（ADR-0068 / teacher-scale-up 地基）——
+        # 新表走 CREATE TABLE IF NOT EXISTS：既有库启动期自动补齐；新库由 create_all 已建好，no-op。
+        # ``class_id`` 列补到 ``user`` 表供学生归属班级（删班后仅置空、不删学生）。
+        _add_classes(conn, is_sqlite)
+
         # —— 清理 JSON 列里的文本 'null'（ADR-0061 §T）——
         _nullify_text_json_nulls(conn)
 
@@ -691,6 +696,43 @@ def init_db() -> None:
 
     SQLModel.metadata.create_all(engine)
     run_migrations()
+
+
+def _add_classes(conn, is_sqlite: bool) -> None:
+    """班级实体表 + user.class_id 列（ADR-0068）。
+
+    新表用 ``CREATE TABLE IF NOT EXISTS``（既有库启动期补齐，新库由 create_all 已建，no-op）。
+    ``user.class_id`` 用 PRAGMA 探测后 ``ALTER TABLE ADD COLUMN``（SQLite 不可补 FK，故只补列），
+    Postgres 用 ``ADD COLUMN IF NOT EXISTS``。类名定为 ``classes``（避开 SQL 关键字 ``class``）。
+    """
+    conn.execute(
+        text(
+            "CREATE TABLE IF NOT EXISTS classes ("
+            " id VARCHAR(36) PRIMARY KEY,"
+            " teacher_id VARCHAR(36) NOT NULL,"
+            " name VARCHAR(64) NOT NULL,"
+            " grade INTEGER NOT NULL,"
+            " created_at TIMESTAMP WITH TIME ZONE,"
+            " FOREIGN KEY(teacher_id) REFERENCES \"user\" (id))"
+        )
+    )
+    try:
+        if is_sqlite:
+            user_cols = [
+                r[1]
+                for r in conn.execute(text('PRAGMA table_info("user")')).fetchall()
+            ]
+            if "class_id" not in user_cols:
+                conn.execute(
+                    text('ALTER TABLE "user" ADD COLUMN class_id VARCHAR(36)')
+                )
+        else:
+            conn.execute(
+                text('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS class_id UUID')
+            )
+    except OperationalError:
+        # 偏序迁移：user 表还没建（首次启动由 init_db 建表并带新列），跳过即可。
+        pass
 
 
 def _add_coursewareasset_cc0_columns(conn, is_sqlite: bool) -> None:
