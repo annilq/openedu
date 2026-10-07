@@ -19,7 +19,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from agent_core.adapters.genkit import Segment, SegmentKind
 from app.domain.provider import (
@@ -69,7 +69,12 @@ class QuestionSchema(BaseModel):
     qtype: str
     stem: str
     options: list[str] | None = None
-    answer: str
+    answer: str = Field(
+        description=(
+            "标准答案。数学填空/计算题请填「纯数值」或「数值+标准单位」（如 12、12厘米、0.12米），"
+            "分数用 a/b 形式（如 1/2）；多解用「或」分隔（如 12或15）。其余题型按原约定填写。"
+        )
+    )
     explanation: str
     difficulty: str
     reasoning: str = ""
