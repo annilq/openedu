@@ -20,7 +20,7 @@ import '../../../../export/domain/export_repository.dart';
 import '../../../../export/presentation/export_confirm.dart';
 import '../../../../export/presentation/export_preview_page.dart';
 import '../../providers/question_bank_notifier.dart';
-import '../../providers/selected_student_provider.dart';
+import 'student_picker.dart';
 import 'bank_question_row.dart';
 import '../../../../../shared/widgets/app_card.dart';
 import '../../../../../shared/widgets/app_focusable_action.dart';
@@ -167,19 +167,17 @@ class _TeacherQuestionBankViewState
       : _selectedIds.add(id));
 
   Future<void> _generate() async {
-    final selected = ref.read(selectedStudentProvider);
-    if (selected == null) {
-      AppToast.show(context, '请先在侧栏选择学生');
-      return;
-    }
     final ids = _selectedIds.toList();
     if (ids.isEmpty) return;
+    // 生成任务需要指定目标学生：在此显式选择，不再依赖全局「当前学生」。
+    final student = await pickStudent(context, ref);
+    if (student == null) return;
     final ok = await _showCreateDialog();
     if (ok != true) return;
     await ref.read(questionBankNotifierProvider.notifier).createTaskFromBank(
           title:
               _titleCtrl.text.trim().isEmpty ? '题库组卷' : _titleCtrl.text.trim(),
-          studentId: selected.id,
+          studentId: student.id,
           ids: ids,
         );
   }

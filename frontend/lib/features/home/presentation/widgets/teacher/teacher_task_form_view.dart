@@ -5,6 +5,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../../shared/domain/models/models.dart';
 import '../../../../../shared/theme/app_theme.dart';
+import '../../../../../shared/widgets/app_actions.dart';
 import '../../../../../shared/widgets/app_buttons.dart';
 import '../../../../../shared/widgets/app_card.dart';
 import '../../../../../shared/widgets/app_inputs.dart';
@@ -15,8 +16,8 @@ import '../../../../../shared/widgets/app_toast.dart';
 import '../../../../model_management/presentation/providers/models_notifier.dart';
 import '../../../../model_management/presentation/widgets/model_selector.dart';
 import '../../providers/home_notifier.dart';
-import '../../providers/selected_student_provider.dart';
 import '../../providers/task_form_prefill.dart';
+import 'student_picker.dart';
 import '../../../domain/repositories/material_repository.dart'
     show KnowledgePointOption;
 import 'teacher_task_interest_section.dart';
@@ -48,6 +49,8 @@ class TeacherTaskFormView extends ConsumerStatefulWidget {
 
 class _TeacherTaskFormViewState extends ConsumerState<TeacherTaskFormView> {
   final List<TaskSpecRow> _rows = [TaskSpecRow()];
+  /// 显式选择要布置的学生（替代全局 selectedStudentProvider 的隐式耦合）。
+  UserModel? _assignedStudent;
   final _totalCtrl = TextEditingController(text: '4');
   final _titleCtrl = TextEditingController(text: '今日练习');
 
@@ -113,6 +116,12 @@ class _TeacherTaskFormViewState extends ConsumerState<TeacherTaskFormView> {
     () => _rows.add(TaskSpecRow(subject: '语文', knowledgePoint: '字词积累')),
   );
 
+  /// 表单内显式选择学生：任务归属与年级兜底都来自这里，不再依赖全局选中态。
+  Future<void> _pickStudent() async {
+    final s = await pickStudent(context, ref);
+    if (s != null) setState(() => _assignedStudent = s);
+  }
+
   void _removeRow(int i) => setState(() {
     if (_rows.length > 1) {
       _rows[i].dispose();
@@ -134,8 +143,8 @@ class _TeacherTaskFormViewState extends ConsumerState<TeacherTaskFormView> {
     });
   }
 
-  List<TaskSpecModel> _currentSpecs(SelectedStudent selected) =>
-      _rows.map((r) => r.toSpec(selected.grade)).toList();
+  List<TaskSpecModel> _currentSpecs(int grade) =>
+      _rows.map((r) => r.toSpec(grade)).toList();
 
   /// 兴趣题模式（WF-4）：开启且至少选一个主题才下传聚焦主题；否则 null = 后端自动轻融入。
   List<String>? _currentFocus() =>
@@ -144,12 +153,11 @@ class _TeacherTaskFormViewState extends ConsumerState<TeacherTaskFormView> {
           : null;
 
   void _generate() {
-    final selected = ref.read(selectedStudentProvider);
-    if (selected == null) {
-      AppToast.show(context, '请先在侧栏选择学生');
+    if (_assignedStudent == null) {
+      AppToast.show(context, '请先选择要布置的学生');
       return;
     }
-    final specs = _currentSpecs(selected);
+    final specs = _currentSpecs(_assignedStudent!.grade ?? 2);
     if (specs.any((s) => s.subject.isEmpty || s.knowledgePoint.isEmpty)) {
       AppToast.show(context, '学科与知识点不能为空');
       return;
@@ -162,7 +170,7 @@ class _TeacherTaskFormViewState extends ConsumerState<TeacherTaskFormView> {
     ref
         .read(taskGenNotifierProvider.notifier)
         .generate(
-          studentId: selected.id,
+          studentId: _assignedStudent!.id,
           title: _titleCtrl.text,
           specs: specs,
           focusInterest: _currentFocus(),
@@ -182,6 +190,11 @@ class _TeacherTaskFormViewState extends ConsumerState<TeacherTaskFormView> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              _StudentAssignRow(
+                assigned: _assignedStudent,
+                onPick: _pickStudent,
+              ),
+              const SizedBox(height: AppSpacing.md),
               AppTextField(label: '试卷标题', controller: _titleCtrl),
               const SizedBox(height: AppSpacing.md),
               Row(
@@ -239,7 +252,6 @@ class _TeacherTaskFormViewState extends ConsumerState<TeacherTaskFormView> {
   /// 知识点目录按 (学科, 年级, 学期) 联动加载（ADR-0055 §4 / ADR-0061），加载失败
   /// 按空目录兜底——选项里仍保留当前文本，教师不至于被一次网络抖动卡死在表单上。
   List<Widget> _buildSpecRows() {
-    final selected = ref.watch(selectedStudentProvider);
     return [
       for (var i = 0; i < _rows.length; i++)
         TaskSpecRowEditor(
@@ -249,7 +261,7 @@ class _TeacherTaskFormViewState extends ConsumerState<TeacherTaskFormView> {
           qtype: _rows[i].qtype,
           onQtypeChanged: (v) => setState(() => _rows[i].qtype = v),
           count: _rows[i].count,
-          grade: _rows[i].grade ?? selected?.grade ?? 2,
+          grade: _rows[i].grade ?? _assignedStudent?.grade ?? 2,
           onGradeChanged: (v) => setState(() => _rows[i].grade = v),
           semester: _rows[i].semester,
           onSemesterChanged: (v) => setState(() => _rows[i].semester = v),
@@ -258,7 +270,7 @@ class _TeacherTaskFormViewState extends ConsumerState<TeacherTaskFormView> {
           onRemove: () => _removeRow(i),
           knowledgePointOptions: _knowledgePointOptions(
             _rows[i].subject,
-            _rows[i].grade ?? selected?.grade ?? 2,
+            _rows[i].grade ?? _assignedStudent?.grade ?? 2,
             _rows[i].semester,
           ),
         ),
@@ -286,7 +298,7 @@ class _TeacherTaskFormViewState extends ConsumerState<TeacherTaskFormView> {
     final async = ref.watch(
       knowledgePointsProvider((
         _rows.first.subject,
-        _rows.first.grade ?? ref.read(selectedStudentProvider)?.grade ?? 2,
+        _rows.first.grade ?? _assignedStudent?.grade ?? 2,
         _rows.first.semester,
       )),
     );
@@ -311,6 +323,7 @@ class _TeacherTaskFormViewState extends ConsumerState<TeacherTaskFormView> {
               _focusThemes.add(t);
             }
           }),
+      student: _assignedStudent,
     );
   }
 
@@ -374,6 +387,38 @@ class _TeacherTaskFormViewState extends ConsumerState<TeacherTaskFormView> {
     return Row(
       children: [
         Expanded(child: AppPrimaryButton(label: '生成任务', onPressed: _generate)),
+      ],
+    );
+  }
+}
+
+/// 表单内显式「布置给学生」选择器：未选时提示选择，已选时显示姓名 + 重选。
+/// 布置任务不再依赖全局「当前学生」，学生由本行显式指定。
+class _StudentAssignRow extends StatelessWidget {
+  final UserModel? assigned;
+  final VoidCallback onPick;
+  const _StudentAssignRow({required this.assigned, required this.onPick});
+
+  @override
+  Widget build(BuildContext context) {
+    final text = AppTheme.textOf(context);
+    final scheme = AppTheme.colorsOf(context);
+    return Row(
+      children: [
+        Text('布置给学生',
+            style: text.labelMedium?.copyWith(fontWeight: FontWeight.w600)),
+        const SizedBox(width: AppSpacing.sm),
+        Expanded(
+          child: Text(
+            assigned == null ? '未选择' : assigned!.displayName,
+            style: text.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        AppTextAction(
+          label: assigned == null ? '选择学生' : '重新选择',
+          onPressed: onPick,
+        ),
       ],
     );
   }

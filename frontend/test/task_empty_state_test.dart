@@ -14,7 +14,6 @@ import 'package:kids_learn/features/students/presentation/providers/students_not
 import 'package:kids_learn/features/students/providers/students_provider.dart'
     show studentsNotifierProvider;
 import 'package:kids_learn/features/home/domain/repositories/tasks_repository.dart';
-import 'package:kids_learn/features/home/presentation/providers/selected_student_provider.dart';
 import 'package:kids_learn/features/home/presentation/widgets/teacher/teacher_overview_view.dart';
 import 'package:kids_learn/features/home/presentation/widgets/teacher/teacher_tasks_view.dart';
 import 'package:kids_learn/features/home/providers/home_provider.dart';
@@ -22,6 +21,9 @@ import 'package:kids_learn/shared/domain/models/models.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
 import 'package:kids_learn/shared/widgets/app_empty_state.dart';
 import 'package:kids_learn/shared/widgets/app_card.dart';
+import 'package:kids_learn/features/analytics/domain/models/analytics_models.dart';
+import 'package:kids_learn/features/analytics/domain/repositories/analytics_repository.dart';
+import 'package:kids_learn/features/analytics/providers/analytics_provider.dart';
 
 /// 只为构造 notifier 存在；本测试不经它取数（状态由仓库桩直接返回）。
 class _UnusedChildrenRepo implements StudentsRepository {
@@ -100,6 +102,60 @@ TaskModel _task(String id, String status) => TaskModel(
       status: status,
       questions: const <QuestionModel>[],
     );
+
+const _fakeMastery = MasteryResp(
+  scope: 'all',
+  totalKnowledgePoints: 0,
+  masteredCount: 0,
+  items: <MasteryGroup>[],
+  orphanCount: 0,
+);
+
+const _fakeWrong = WrongDistributionResp(
+  scope: 'all',
+  dimension: 'knowledge_point',
+  totalActive: 0,
+  totalGraduated: 0,
+  total: 0,
+  groups: <WrongDistributionGroup>[],
+  orphanCount: 0,
+);
+
+const _fakeAccuracy = AccuracyResp(
+  scope: 'all',
+  dimension: 'knowledge_point',
+  source: 'all',
+  groups: <AccuracyGroup>[],
+  orphanCount: 0,
+);
+
+class _FakeAnalyticsRepository implements AnalyticsRepository {
+  @override
+  Future<WrongDistributionResp> getWrongDistribution({
+    required String scope,
+    String? studentId,
+    String? classId,
+    required String dimension,
+  }) async =>
+      _fakeWrong;
+
+  @override
+  Future<AccuracyResp> getAccuracy({
+    required String scope,
+    String? studentId,
+    String? classId,
+    required String dimension,
+  }) async =>
+      _fakeAccuracy;
+
+  @override
+  Future<MasteryResp> getMastery({
+    required String scope,
+    String? studentId,
+    String? classId,
+  }) async =>
+      _fakeMastery;
+}
 
 void main() {
   Future<void> pumpTasks(
@@ -233,12 +289,8 @@ void main() {
               .overrideWithValue(_StubTasksRepository(const <TaskModel>[])),
           studentsNotifierProvider
               .overrideWith((ref) => _SeededChildrenNotifier(const <UserModel>[])),
-          selectedStudentProvider.overrideWith((ref) {
-            final notifier = SelectedStudentNotifier(ref);
-            // 直接种状态：走 select() 会触发四个 load，与本测试无关。
-            notifier.state = const SelectedStudent(id: 'c1', grade: 2);
-            return notifier;
-          }),
+          analyticsRepositoryProvider
+              .overrideWithValue(_FakeAnalyticsRepository()),
         ],
         child: ShadApp.custom(
           theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),

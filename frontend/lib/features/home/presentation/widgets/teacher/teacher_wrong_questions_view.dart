@@ -16,7 +16,6 @@ import '../../../../../shared/widgets/app_toast.dart';
 import '../../../../export/domain/export_repository.dart';
 import '../../../../export/presentation/export_preview_page.dart';
 import '../../../../review/presentation/providers/review_notifier.dart';
-import '../../providers/selected_student_provider.dart';
 import '../../../../../shared/widgets/app_actions.dart';
 import '../../../../../shared/widgets/app_card.dart';
 import '../../../../../shared/widgets/app_section_title.dart';
@@ -28,8 +27,7 @@ import '../../../../../shared/widgets/app_tags.dart';
 /// 一次性构建**全部**卡片——几百条错题等于几百张卡全建出来，且接口不分页。
 /// 现在改成分页懒加载：首屏一页、触底追加。
 class TeacherWrongQuestionsView extends ConsumerStatefulWidget {
-  /// 指定学生时按该学生取数（学生详情页用）；为空则退回全局 `selectedStudentProvider`
-  /// （侧栏错题本入口用）。两种方式互斥、不共享状态。
+  /// 指定学生时按该学生取数（学生详情页用）；不传则不取数（空态）。两种来源互斥、不共享状态。
   final String? studentId;
 
   const TeacherWrongQuestionsView({super.key, this.studentId});
@@ -68,7 +66,7 @@ class _TeacherWrongQuestionsState
   void _switchGraduated(bool value) {
     if (value == _showGraduated) return;
     setState(() => _showGraduated = value);
-    final studentId = widget.studentId ?? ref.read(selectedStudentProvider)?.id;
+    final studentId = widget.studentId;
     if (studentId == null) return;
     if (value) {
       ref
@@ -88,7 +86,7 @@ class _TeacherWrongQuestionsState
 
   @override
   Widget build(BuildContext context) {
-    final studentId = widget.studentId ?? ref.watch(selectedStudentProvider)?.id;
+    final studentId = widget.studentId;
     if (studentId == null) return _emptyState(context);
 
     // 两个分区各自一份状态：查询条件不同（scope=active / graduated），
@@ -172,7 +170,7 @@ class _TeacherWrongQuestionsState
 
   /// 重新加入复习：成功后两条列表都会由 provider 刷新（它会从「已掌握」里消失）。
   Future<void> _rejoin(WrongQuestionModel item) async {
-    final studentId = widget.studentId ?? ref.read(selectedStudentProvider)?.id;
+    final studentId = widget.studentId;
     if (studentId == null) return;
     try {
       await ref
@@ -189,7 +187,7 @@ class _TeacherWrongQuestionsState
   /// 是同一份查询**（同一张错题表 + 到期时间过滤），所以复习入口不单列端点。
   /// 「已掌握」分区不提供导出——毕业的题不该再出现在要做的卷子上。
   Future<void> _exportWrongBook({required bool dueOnly}) async {
-    final studentId = widget.studentId ?? ref.read(selectedStudentProvider)?.id;
+    final studentId = widget.studentId;
     if (studentId == null) return;
     final state = ref.read(teacherWrongQuestionsProvider);
     // 降级题数由客户端自算（题面数据在手上）；只统计已加载的页——

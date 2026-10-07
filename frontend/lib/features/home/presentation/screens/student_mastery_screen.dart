@@ -20,7 +20,7 @@ class _StudentMasteryScreenState extends ConsumerState<StudentMasteryScreen> {
   @override
   void initState() {
     super.initState();
-    // 娃端以自身 id 拉取掌握度（教师端由 selectedStudentProvider 触发）。
+    // 娃端以自身 id 拉取掌握度（教师端由学生详情页按 user.id 触发）。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(masteryNotifierProvider.notifier).load(widget.user.id);
     });

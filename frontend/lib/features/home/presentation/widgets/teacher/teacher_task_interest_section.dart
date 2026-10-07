@@ -1,22 +1,19 @@
 import 'package:flutter/widgets.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/widgets/app_focusable_action.dart';
-import '../../../../students/presentation/providers/students_notifier.dart';
-import '../../../../students/providers/students_provider.dart';
-import '../../providers/selected_student_provider.dart';
+import '../../../../../shared/domain/models/user.dart';
 
 /// 「按兴趣出题」区块：开关 + 学生的兴趣主题芯片（WF-4）。
 ///
 /// 开关打开且至少选一个主题时，主题会随生成请求下传，题量在所选主题间轮询均分；
 /// 关闭时由后端把学生画像里的兴趣轻融入题目——两种模式都是有效行为，不是「没设置」。
 ///
-/// 主题列表由本区块自己从 `studentsNotifierProvider` + `selectedStudentProvider` 读：
-/// 这是**区块自己的取数**（ADR-0058 §4 的 Section 层），表单不该为了给区块喂数据
-/// 而去认识学生画像的结构。选中的主题集合仍归表单所有（要参与生成请求）。
-class TaskInterestSection extends ConsumerWidget {
+/// 兴趣主题由调用方通过 [student] 显式传入（不再自行读取全局选中态），
+/// 这样「布置任务」表单不再隐式依赖全局 `selectedStudentProvider`。
+class TaskInterestSection extends StatelessWidget {
+  final UserModel? student;
   final bool enabled;
   final ValueChanged<bool> onEnabledChanged;
   final Set<String> selectedThemes;
@@ -24,6 +21,7 @@ class TaskInterestSection extends ConsumerWidget {
 
   const TaskInterestSection({
     super.key,
+    this.student,
     required this.enabled,
     required this.onEnabledChanged,
     required this.selectedThemes,
@@ -31,11 +29,10 @@ class TaskInterestSection extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final app = AppTheme.colorsOf(context);
     final text = AppTheme.textOf(context);
-    final selected = ref.watch(selectedStudentProvider);
-    final childState = ref.watch(studentsNotifierProvider);
+    final themes = _themesOf(student);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -62,7 +59,7 @@ class TaskInterestSection extends ConsumerWidget {
         ),
         if (enabled) ...[
           const SizedBox(height: AppSpacing.md),
-          if (_themesOf(selected, childState).isEmpty)
+          if (themes.isEmpty)
             Container(
               padding: const EdgeInsets.all(AppSpacing.md),
               decoration: BoxDecoration(
@@ -78,7 +75,7 @@ class TaskInterestSection extends ConsumerWidget {
             Wrap(
               spacing: AppSpacing.sm,
               runSpacing: AppSpacing.sm,
-              children: _themesOf(selected, childState)
+              children: themes
                   .map(
                     (t) => _ThemeToggle(
                       label: t,
@@ -102,16 +99,13 @@ class TaskInterestSection extends ConsumerWidget {
 }
 
 /// 当前学生的兴趣主题（受控分类叶子 + 自由文本）。
-List<String> _themesOf(SelectedStudent? selected, ChildrenState state) {
-  if (selected == null || state is! StudentsLoaded) return const [];
-  for (final c in state.students) {
-    if (c.id != selected.id || c.interests == null) continue;
-    final themes = <String>[...c.interests!.categories];
-    final free = c.interests!.freeText;
-    if (free != null && free.isNotEmpty) themes.add(free);
-    return themes;
-  }
-  return const [];
+List<String> _themesOf(UserModel? student) {
+  final interests = student?.interests;
+  if (interests == null) return const [];
+  final themes = <String>[...interests.categories];
+  final free = interests.freeText;
+  if (free != null && free.isNotEmpty) themes.add(free);
+  return themes;
 }
 
 /// 兴趣主题芯片。视觉风格对齐 [interest_picker.dart] 的同类 chip。

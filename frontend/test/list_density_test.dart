@@ -11,7 +11,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-import 'package:kids_learn/features/home/presentation/providers/selected_student_provider.dart';
 import 'package:kids_learn/features/home/presentation/widgets/teacher/teacher_wrong_questions_view.dart';
 import 'package:kids_learn/features/review/presentation/providers/review_notifier.dart';
 import 'package:kids_learn/shared/domain/models/models.dart';
@@ -37,23 +36,6 @@ WrongQuestionModel _wrong({
       wrongCount: 2,
       reviewStage: 1,
     );
-
-/// 只为构造 notifier 存在：`select` 被覆盖成空实现，不会真的去取数。
-class _NoopRef implements Ref {
-  @override
-  dynamic noSuchMethod(Invocation invocation) => null;
-}
-
-class _SeededSelectedStudent extends SelectedStudentNotifier {
-  _SeededSelectedStudent() : super(_NoopRef()) {
-    state = const SelectedStudent(id: 'c1', grade: 2);
-  }
-
-  @override
-  void select(String id, int grade) {
-    // 本测试不经它取数：避免触发 teacherWrongQuestions 的真实加载。
-  }
-}
 
 /// 直接给已加载态：本测试只关心卡片怎么画，不关心取数。
 class _SeededWrongQuestions
@@ -157,8 +139,6 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
-            selectedStudentProvider
-                .overrideWith((ref) => _SeededSelectedStudent()),
             teacherWrongQuestionsProvider
                 .overrideWith((ref) => _SeededWrongQuestions([_wrong(id: 'w1')])),
           ],
@@ -166,7 +146,7 @@ void main() {
             theme:
                 AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
             appBuilder: (context) =>
-                const MaterialApp(home: TeacherWrongQuestionsView()),
+                MaterialApp(home: TeacherWrongQuestionsView(studentId: 'c1')),
           ),
         ),
       );

@@ -22,20 +22,17 @@ import '../../../review/presentation/screens/wrong_questions_screen.dart';
 import '../../../model_management/presentation/screens/teacher_model_management_screen.dart';
 import '../providers/home_notifier.dart';
 import '../providers/teacher_tasks_notifier.dart';
-import '../providers/selected_student_provider.dart';
 import '../teacher_pages.dart';
 import '../screens/student_detail_screen.dart';
 import '../screens/teacher_task_review_screen.dart';
 import 'teacher_destinations.dart';
 import '../widgets/student_home.dart';
-import '../widgets/teacher/teacher_student_selector.dart';
 import '../widgets/teacher/teacher_overview_view.dart';
 import '../widgets/teacher/teacher_task_form_view.dart';
-import '../widgets/teacher/teacher_tutor_logs_view.dart';
 import '../widgets/teacher/teacher_question_bank_view.dart';
 import '../widgets/teacher/teacher_tasks_view.dart';
-import '../widgets/teacher/teacher_wrong_questions_view.dart';
 import '../widgets/teacher/material_library_view.dart';
+import '../../../../features/courseware/presentation/screens/courseware_center_screen.dart';
 import 'student_mastery_screen.dart';
 import '../../../../shared/widgets/app_actions.dart';
 
@@ -109,24 +106,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     ref
         .read(teacherTasksNotifierProvider.notifier)
         .load(kAllTaskStatuses);
-    final selected = ref.read(selectedStudentProvider);
-    if (selected != null) {
-      ref.read(progressNotifierProvider.notifier).load(selected.id);
-      ref.read(masteryNotifierProvider.notifier).load(selected.id);
-      ref
-          .read(teacherWrongQuestionsProvider.notifier)
-          .load(selected.id);
-    }
     _go(highlightFor(_teacherPage));
   }
 
   /// StudentFormScreen 保存后的统一回调（创建 + 编辑共用）。
   void _onChildFormSaved(UserModel saved) {
-    // 列表已在 notifier 内刷新；这里同步选中并回到首页/关闭编辑层。
-    final sel = ref.read(selectedStudentProvider);
-    if (sel == null) {
-      ref.read(selectedStudentProvider.notifier).select(saved.id, saved.grade ?? 2);
-    }
+    // 列表已在 notifier 内刷新；回到首页/关闭编辑层。
     _go(const OverviewPage());
   }
 
@@ -193,8 +178,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ),
       // ADR-0057：生成页不再接跳转回调——收尾（含进草稿页）由本页的监听统一负责。
       CreateTaskPage() => const TeacherTaskFormView(),
-      WrongQuestionsPage() => const TeacherWrongQuestionsView(),
-      TutorLogsPage() => const TeacherTutorLogsView(),
       AddStudentPage() => StudentFormScreen(
           mode: ChildFormMode.create,
           onSaved: _onChildFormSaved,
@@ -210,11 +193,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           onNavigateToReview: _navigateToReview,
         ),
       MaterialLibraryPage() => const MaterialLibraryView(),
+      CoursewarePage() => const CoursewareCenterScreen(),
       ModelsPage() => const TeacherModelManagementScreen(),
       StudentManagementPage() => StudentManagementScreen(
-          onOpenStudent: (id) => _go(
-                StudentDetailPage(id, initialTab: StudentDetailTab.wrongQuestions),
-              )),
+          onOpenStudent: (id) {
+            _go(StudentDetailPage(id,
+                initialTab: StudentDetailTab.wrongQuestions));
+          },
+          onAddStudent: _onNavigateToAddStudent),
       AnalyticsPage() => const AnalyticsScreen(),
       TaskListPage() => TeacherTasksView(
           onNavigateToReview: _navigateToReview,
@@ -222,7 +208,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ),
       TaskReviewPage(task: final task) => TeacherTaskReviewScreen(
           task: task,
-          defaultChildId: task.studentId ?? ref.watch(selectedStudentProvider)?.id,
+          defaultChildId: task.studentId,
           onBackToHome: _backToHomeFromReview,
           onNavigateToPractice: (t) {
             // 仅教师显式点「查看练习」时进入。默认进只读预览，
@@ -237,6 +223,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           studentId: id,
           initialTab: tab,
           onBack: () => _go(const OverviewPage()),
+          onEditStudent: _onNavigateToEditStudent,
         ),
     };
   }
@@ -404,12 +391,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           AppToast.show(context, '已保存草稿，共 ${next.task.questions.length} 道题');
         }
         ref.read(taskGenNotifierProvider.notifier).reset();
-        final selected = ref.read(selectedStudentProvider);
-        if (selected != null) {
-          ref.read(progressNotifierProvider.notifier).load(selected.id);
-          ref.read(masteryNotifierProvider.notifier).load(selected.id);
-          ref.read(teacherWrongQuestionsProvider.notifier).load(selected.id);
-        }
         _navigateToReview(next.task);
       });
     });
@@ -427,13 +408,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         mode: AppUserMode.teacher,
         destinations: _destinations.teacher(_teacherPage, gen),
         profileDestination: _destinations.profile(active: _teacherPage is ProfilePage),
-        sidebarTop: TeacherStudentSelector(
-          onNavigateToAddStudent: _onNavigateToAddStudent,
-          onNavigateToEditStudent: _onNavigateToEditStudent,
-          onNavigateToDetail: (id) => _go(
-            StudentDetailPage(id, initialTab: StudentDetailTab.wrongQuestions),
-          ),
-        ),
+        // ADR-0070：顶部学生选择器菜单已移除，当前学生改由导航进入学生时写入
+        // （见 _setCurrentStudent），不再有常驻切换/添加菜单。
+        sidebarTop: null,
         sidebarBottom: AdaptiveUserBlock(
           user: widget.user,
           onProfileTap: _onProfileTap,
