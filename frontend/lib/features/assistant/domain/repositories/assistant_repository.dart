@@ -1,5 +1,6 @@
 import '../assistant_event.dart';
 import '../assistant_requests.dart';
+import '../assistant_suggested_action.dart';
 import '../conversation.dart';
 
 /// 延后删除的句柄：撤销时凭 [id] 找回到期定时器。
@@ -57,4 +58,9 @@ abstract class AssistantRepository {
   /// 撤销延后删除：句柄仍在窗口内（未过期）→ 取消定时器并移除、返回 true；
   /// 已过期执行（或句柄无效）→ 返回 false。
   bool cancelScheduledDelete(String handleId);
+
+  /// 空态推荐操作目录（ADR-0072，只读静态目录）：无 id→全局，有 id→知识点目录(叠加全局)。
+  ///
+  /// 服务端按角色分叉（教师「看看孩子错题」/ 学生「查看我的错题」）。
+  Future<List<SuggestedAction>> suggestedActions({String? knowledgePointId});
 }

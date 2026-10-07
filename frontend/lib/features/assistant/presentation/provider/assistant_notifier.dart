@@ -103,10 +103,13 @@ class AssistantNotifier extends StateNotifier<AssistantState> {
   }
 
   /// 发送一条消息并消费 SSE 事件流。角色由后端 JWT 解析（教师 / 学生自动分流）。
+  ///
+  /// [quiz] 为 ADR-0072 出题-判断-引导闭环触发标记（推荐操作「出一道判断题」使用）。
   Future<void> send(
     String raw, {
     String? model,
     AssistantCoursewareContext? courseware,
+    bool quiz = false,
   }) async {
     final message = raw.trim();
     if (message.isEmpty || _submitting) return;
@@ -136,6 +139,7 @@ class AssistantNotifier extends StateNotifier<AssistantState> {
           history: history,
           model: model,
           courseware: courseware,
+          quiz: quiz,
         ),
       )) {
         // 会话身份随 DONE 帧回写：首轮建立；归属校验失败时后端换新 id，此处自愈覆盖。

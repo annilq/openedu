@@ -1,5 +1,4 @@
 import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -18,6 +17,10 @@ import '../widgets/courseware_present_step_bar.dart';
 import '../widgets/courseware_script_view.dart';
 import '../widgets/section_interactive_scene.dart';
 import '../widgets/section_media_gallery.dart';
+import '../../../assistant/domain/assistant_courseware_context.dart';
+import '../../../assistant/presentation/screens/assistant_chat_page.dart';
+import '../../../assistant/presentation/widgets/floating_assistant.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
 
 /// 讲课演示页（ADR-0067 §6 切片 4b）。
 ///
@@ -179,17 +182,35 @@ class _CoursewarePresentPageState
                   onSelect: (i) => setState(() => _index = i),
                 ),
                 // T06：环节切换轻过渡；reduced-motion 下退化为瞬时（不破坏可读性）。
+                //
+                // 主区叠一个浮动的「问 AI 老师」入口（ADR-0072 L2）：讲课现场随时就
+                // 当前知识点提问 / 求讲解。浮球落在主区内、footer 之上——不压住底部
+                // 上一步 / 下一步，也不压住顶栏。复用同一 [AssistantLauncher] 与
+                // [AssistantChatPage]，只是额外带上 [AssistantCoursewareContext] 聚焦。
                 Expanded(
-                  child: AnimatedSwitcher(
-                    duration: reducedMotionOf(context)
-                        ? Duration.zero
-                        : const Duration(milliseconds: 200),
-                    transitionBuilder: (child, anim) =>
-                        FadeTransition(opacity: anim, child: child),
-                    child: _PresentStage(
-                      key: ValueKey(index),
-                      section: courseware.sections[index],
-                    ),
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: AnimatedSwitcher(
+                          duration: reducedMotionOf(context)
+                              ? Duration.zero
+                              : const Duration(milliseconds: 200),
+                          transitionBuilder: (child, anim) =>
+                              FadeTransition(opacity: anim, child: child),
+                          child: _PresentStage(
+                            key: ValueKey(index),
+                            section: courseware.sections[index],
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        right: AppSpacing.lg,
+                        bottom: AppSpacing.lg,
+                        child: AssistantLauncher(
+                          onTap: () => _openAssistant(context, courseware),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 _PresentFooter(
@@ -269,6 +290,30 @@ class _CoursewarePresentPageState
             onPressed: () => Navigator.of(context).maybePop(),
           ),
         ],
+      ),
+    );
+  }
+
+  /// 从讲课现场直接进助手并聚焦当前知识点（ADR-0072 L2）。
+  ///
+  /// 复用全局同一 [AssistantChatPage]，只额外带上 [AssistantCoursewareContext]：
+  /// 知识点 id 精确聚焦（无同名漂移），name / 学科 / 年级 / 学期作兼容与展示。
+  /// 教师端形态（[isTeacher] = true）——讲课是教师的动作。
+  void _openAssistant(BuildContext context, CoursewareModel courseware) {
+    Navigator.of(context).push(
+      CupertinoPageRoute<void>(
+        builder: (_) => AssistantChatPage(
+          showBack: true,
+          isTeacher: true,
+          coursewareContext: AssistantCoursewareContext(
+            coursewareId: courseware.id,
+            knowledgePointId: courseware.knowledgePointId,
+            knowledgePoint: courseware.kpName.isNotEmpty ? courseware.kpName : null,
+            subject: courseware.subject,
+            grade: courseware.grade,
+            semester: courseware.semester,
+          ),
+        ),
       ),
     );
   }

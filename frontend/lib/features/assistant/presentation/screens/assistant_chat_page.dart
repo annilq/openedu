@@ -9,8 +9,10 @@ import '../../../../shared/widgets/app_dialog.dart';
 import '../../../../shared/widgets/app_toast.dart';
 import '../../../../shared/widgets/app_top_bar.dart';
 import '../../domain/assistant_card.dart';
+import '../../domain/assistant_courseware_context.dart';
 import '../../domain/conversation.dart';
 import '../../providers/assistant_provider.dart';
+import '../widgets/assistant_suggested_actions.dart';
 import '../provider/assistant_notifier.dart';
 import '../provider/conversation_history_provider.dart';
 import '../widgets/assistant_hint_card.dart';
@@ -50,10 +52,16 @@ class AssistantChatPage extends ConsumerStatefulWidget {
   /// 边界提示不能照搬给教师。
   final bool isTeacher;
 
+  /// 课件练习透传的课堂上下文（ADR-0072 L2）：非空时本页聚焦到该知识点——
+  /// 空态渲染推荐操作目录、内容区顶部展示知识点徽标。课件演示页入口会带此参数；
+  /// 全局浮动入口与「问 AI 老师」页签不带（走全局能力目录）。
+  final AssistantCoursewareContext? coursewareContext;
+
   const AssistantChatPage({
     super.key,
     this.showBack = false,
     this.isTeacher = false,
+    this.coursewareContext,
   });
 
   @override
@@ -94,7 +102,12 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
     final text = _ctrl.text.trim();
     if (text.isEmpty) return;
     _ctrl.clear();
-    ref.read(assistantNotifierProvider.notifier).send(text);
+    // 把课件上下文（若有）随每条消息带下去：L2 聚焦只依赖后端 req.courseware，
+    // 不必区分首轮 / 续轮——后端每次按 courseware 重新解析知识点上下文。
+    ref.read(assistantNotifierProvider.notifier).send(
+          text,
+          courseware: widget.coursewareContext,
+        );
   }
 
   /// 进入历史列表。每次都重新取列表：会话可能刚在别处被建立 / 续接，缓存会过时。
@@ -207,7 +220,7 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
         _replay = null;
       });
 
-  /// 引导卡出口：把「要去哪」交给壳，再关掉自己（若本页是 push 出来的整页）。
+  /// 把「要去哪」交给壳，再关掉自己（若本页是 push 出来的整页）。
   ///
   /// 教师端本页是 `Navigator.push` 的整页，壳在它**下面**——所以不能自己 push，
   /// 得先退回去、由 [HomeScreen] 消费意图切到目标页。学生端本页是壳内页签
@@ -216,12 +229,18 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
   /// 认不出的 target 什么也不做：后端的 target 是受控枚举，前端猜一个近似落点
   /// 只会把「协议新增了值、前端还没跟上」变成一个莫名其妙的跳转，
   /// 而不是一个能被守卫测出来的失败。
-  void _handleCardAction(AssistantCardAction action) {
-    final destination = ShellDestination.fromTarget(action.target);
+  ///
+  /// 引导卡出口与推荐操作（navigate 类）共用同一条分发路径——两者 payload 都是
+  /// 既有 [ShellDestination] 受控枚举。
+  void _dispatchTarget(String target) {
+    final destination = ShellDestination.fromTarget(target);
     if (destination == null) return;
     ref.read(shellNavigationProvider.notifier).request(destination);
     if (widget.showBack) Navigator.of(context).maybePop();
   }
+
+  void _handleCardAction(AssistantCardAction action) =>
+      _dispatchTarget(action.target);
 
   void _backToHistory() => _showHistory();
 
@@ -307,33 +326,43 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
               // 宽度上限 + 贴顶：**不用 `Center`**——它连竖向一起居中，消息少时整列
               // 气泡浮在屏幕中间，与本仓「内容贴顶自然布局」的口径冲突（ADR-0045）。
               child: AppContentFrame(
-                child: switch (_mode) {
-                    _AssistantMode.chat => messages.isEmpty
-                        ? _WelcomeHint(isTeacher: widget.isTeacher)
-                        : AssistantMessageList(
-                            messages: messages,
-                            controller: _scroll,
-                            onCardAction: _handleCardAction,
-                          ),
-                    _AssistantMode.history => AssistantHistoryView(
-                        onOpen: _open,
-                        openingId: _openingId,
-                        selecting: _selecting,
-                        selectedIds: _selectedIds,
-                        onToggleSelection: _toggleSelection,
-                        onEnterSelecting: _enterSelecting,
-                        onToggleSelectAll: _toggleSelectAll,
-                      ),
-                    _AssistantMode.reading => replay == null
-                        ? const SizedBox.shrink()
-                        : AssistantMessageList(
-                            messages: [
-                              for (final b in replay.bubbles)
-                                AssistantMessage.fromBubble(b),
-                            ],
-                            controller: _replayScroll,
-                          ),
-                  },
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // 知识点聚焦徽标（L2）：课件入口带 coursewareContext 时出现，
+                    // 与内容同宽同轴（AppTopBar 没有 subtitle 槽，故不走顶栏）。
+                    if (widget.coursewareContext != null) _knowledgePointBadge(),
+                    Expanded(
+                      child: switch (_mode) {
+                          _AssistantMode.chat => messages.isEmpty
+                              ? _buildEmptyState()
+                              : AssistantMessageList(
+                                  messages: messages,
+                                  controller: _scroll,
+                                  onCardAction: _handleCardAction,
+                                ),
+                          _AssistantMode.history => AssistantHistoryView(
+                              onOpen: _open,
+                              openingId: _openingId,
+                              selecting: _selecting,
+                              selectedIds: _selectedIds,
+                              onToggleSelection: _toggleSelection,
+                              onEnterSelecting: _enterSelecting,
+                              onToggleSelectAll: _toggleSelectAll,
+                            ),
+                          _AssistantMode.reading => replay == null
+                              ? const SizedBox.shrink()
+                              : AssistantMessageList(
+                                  messages: [
+                                    for (final b in replay.bubbles)
+                                      AssistantMessage.fromBubble(b),
+                                  ],
+                                  controller: _replayScroll,
+                                ),
+                        },
+                    ),
+                  ],
+                ),
               ),
             ),
             if (_mode == _AssistantMode.chat) ...[
@@ -408,6 +437,74 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
         height: AppElevation.borderWidthHairline,
         color: scheme.outline,
       );
+
+  /// 空态：引导卡（按角色分叉）+ 推荐操作目录（L1 chips）。
+  ///
+  /// 目录由 [AssistantSuggestedActions] 从后端静态目录拉取，目录内容随
+  /// [widget.coursewareContext] 是否聚焦知识点而变化（全局能力 vs 知识点聚焦）。
+  Widget _buildEmptyState() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _WelcomeHint(isTeacher: widget.isTeacher),
+        AssistantSuggestedActions(
+          coursewareContext: widget.coursewareContext,
+          onPrompt: (payload, quiz) => ref
+              .read(assistantNotifierProvider.notifier)
+              .send(payload, courseware: widget.coursewareContext, quiz: quiz),
+          onNavigate: _dispatchTarget,
+        ),
+      ],
+    );
+  }
+
+  /// 知识点聚焦徽标（L2）：课件入口带 [widget.coursewareContext] 时出现，
+  /// 展示「知识点名 · 学科 · 年级 · 学期」，让使用者一眼知道这段对话聚焦在哪。
+  ///
+  /// 走 surfaceContainer 底 + hairline 边，与 `_PresentStage` 的提问卡同一视觉档；
+  /// 放在内容区顶部、与消息 / 输入框同宽同轴（AppTopBar 无 subtitle 槽，故不放顶栏）。
+  Widget _knowledgePointBadge() {
+    final scheme = AppTheme.colorsOf(context);
+    final text = AppTheme.textOf(context);
+    final ctx = widget.coursewareContext!;
+    final meta = [
+      if (ctx.subject != null && ctx.subject!.isNotEmpty) ctx.subject!,
+      if (ctx.grade != null) '${ctx.grade}年级',
+      if (ctx.semester != null && ctx.semester!.isNotEmpty) ctx.semester!,
+    ].join(' · ');
+    final name = ctx.knowledgePoint ?? '知识点';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.xl2, AppSpacing.md, AppSpacing.xl2, AppSpacing.lg),
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainer,
+          borderRadius: BorderRadius.circular(AppRadius.card),
+          border: Border.all(
+            color: scheme.outline,
+            width: AppElevation.borderWidthHairline,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(LucideIcons.target, size: 16, color: scheme.onSurfaceVariant),
+            const SizedBox(width: AppSpacing.sm),
+            Flexible(
+              child: Text(
+                meta.isEmpty ? name : '$name · $meta',
+                style: text.labelMedium
+                    ?.copyWith(color: scheme.onSurfaceVariant),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 /// 空态引导：告诉使用者这个入口能问什么、边界在哪。

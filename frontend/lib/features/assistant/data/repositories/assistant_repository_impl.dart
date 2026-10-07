@@ -4,6 +4,7 @@ import '../../../../shared/data/remote/network_service.dart';
 import '../../../../shared/utils/json_decode.dart';
 import '../../domain/assistant_event.dart';
 import '../../domain/assistant_requests.dart';
+import '../../domain/assistant_suggested_action.dart';
 import '../../domain/conversation.dart';
 import '../../domain/repositories/assistant_repository.dart';
 import '../assistant_api_client.dart';
@@ -89,6 +90,15 @@ class AssistantRepositoryImpl implements AssistantRepository {
     if (entry == null) return false;
     entry.timer.cancel();
     return true;
+  }
+
+  @override
+  Future<List<SuggestedAction>> suggestedActions({String? knowledgePointId}) async {
+    final path = knowledgePointId != null
+        ? '/assistant/suggested-actions?knowledge_point_id=$knowledgePointId'
+        : '/assistant/suggested-actions';
+    final data = await _network.get(path);
+    return decodeList(data, SuggestedAction.fromJson);
   }
 }
 

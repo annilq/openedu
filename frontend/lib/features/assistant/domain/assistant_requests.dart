@@ -10,6 +10,9 @@ class AssistantChatReq {
   final List<Map<String, dynamic>>? history;
   final List<String>? focusInterest;
   final AssistantCoursewareContext? courseware;
+  // ADR-0072：出题-判断-引导闭环触发标记。为真时后端绕开常规 LLM 路由，
+  // 直接复用 question 管线出一道判断题并等待用户自然语言 yes/no 判定。仅推荐操作使用。
+  final bool quiz;
 
   const AssistantChatReq({
     required this.message,
@@ -18,6 +21,7 @@ class AssistantChatReq {
     this.history,
     this.focusInterest,
     this.courseware,
+    this.quiz = false,
   });
 
   Map<String, dynamic> toJson() => {
@@ -27,6 +31,7 @@ class AssistantChatReq {
     if (history != null) 'history': history,
     if (focusInterest != null) 'focus_interest': focusInterest,
     if (courseware != null) 'courseware': courseware!.toJson(),
+    if (quiz) 'quiz': quiz,
   };
 }
 
