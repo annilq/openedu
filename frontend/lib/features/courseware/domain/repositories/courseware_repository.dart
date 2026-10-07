@@ -1,5 +1,6 @@
 import '../models/courseware.dart';
 import '../models/courseware_asset.dart';
+import '../models/courseware_redraft_diff.dart';
 import '../models/courseware_section.dart';
 
 /// 课件仓库（ADR-0067）：素材 + 课件 + 环节序列。
@@ -8,7 +9,12 @@ import '../models/courseware_section.dart';
 /// `domain/models/*` 钉死——**改任一侧都要同步另一侧**。
 abstract class CoursewareRepository {
   // ── 素材 ──
-  Future<List<CoursewareAssetModel>> getAssets();
+  /// 素材库检索（T04）：默认返回本人全部素材；可传 [knowledgePointId] / [filename]
+  /// 在服务端过滤（按知识点 / 文件名子串）。两者皆空 = 全部。
+  Future<List<CoursewareAssetModel>> getAssets({
+    String? knowledgePointId,
+    String? filename,
+  });
 
   /// 上传一张图片素材（multipart）。后端按 COURSEWARE_ASSET_MAX_BYTES 与
   /// COURSEWARE_ASSET_MIMES 校验，超限 / 非图片抛错由调用方转提示。
@@ -57,4 +63,8 @@ abstract class CoursewareRepository {
   );
 
   Future<void> deleteCourseware(String coursewareId);
+
+  /// 重起草：取新草稿相对当前稿的逐段 diff（不新建副本）。教师逐段选完后把合并
+  /// 结果经 [updateSections] 写回同一课件。
+  Future<CoursewareRedraftDiffModel> getRedraftDiff(String coursewareId);
 }

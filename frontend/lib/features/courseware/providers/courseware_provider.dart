@@ -46,3 +46,15 @@ final coursewareRecentProvider = FutureProvider.autoDispose<CoursewareModel?>(
 final coursewareAssetsProvider =
     FutureProvider.autoDispose<List<CoursewareAssetModel>>(
         (ref) => ref.watch(coursewareRepositoryProvider).getAssets());
+
+/// 素材库检索查询条件（T04）：可选知识点 + 文件名子串。两者皆空 = 全部。
+typedef CoursewareAssetQuery = ({String? knowledgePointId, String? filename});
+
+/// 素材库检索（T04）：复用 /assets 端点，按知识点 / 文件名服务端过滤。
+/// 默认（两者皆空）返回本人全部素材，与 [coursewareAssetsProvider] 同数据源。
+final coursewareAssetLibraryProvider = FutureProvider.autoDispose
+    .family<List<CoursewareAssetModel>, CoursewareAssetQuery>((ref, q) =>
+        ref.watch(coursewareRepositoryProvider).getAssets(
+              knowledgePointId: q.knowledgePointId,
+              filename: q.filename,
+            ));

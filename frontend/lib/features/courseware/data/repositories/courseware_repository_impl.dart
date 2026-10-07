@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 
 import '../../domain/models/courseware.dart';
 import '../../domain/models/courseware_asset.dart';
+import '../../domain/models/courseware_redraft_diff.dart';
 import '../../domain/models/courseware_section.dart';
 import '../../domain/repositories/courseware_repository.dart';
 import '../../../../shared/data/remote/network_service.dart';
@@ -15,8 +16,17 @@ class CoursewareRepositoryImpl implements CoursewareRepository {
   // ── 素材 ──
 
   @override
-  Future<List<CoursewareAssetModel>> getAssets() async {
-    final data = await _network.get('/courseware/assets');
+  Future<List<CoursewareAssetModel>> getAssets({
+    String? knowledgePointId,
+    String? filename,
+  }) async {
+    final data = await _network.get(
+      '/courseware/assets',
+      query: {
+        if (knowledgePointId != null) 'knowledge_point': knowledgePointId,
+        if (filename != null && filename.isNotEmpty) 'filename': filename,
+      },
+    );
     return (data as List? ?? const [])
         .map((e) =>
             CoursewareAssetModel.fromJson(Map<String, dynamic>.from(e as Map)))
@@ -118,5 +128,13 @@ class CoursewareRepositoryImpl implements CoursewareRepository {
   @override
   Future<void> deleteCourseware(String coursewareId) async {
     await _network.delete('/courseware/$coursewareId');
+  }
+
+  @override
+  Future<CoursewareRedraftDiffModel> getRedraftDiff(String coursewareId) async {
+    final data = await _network.post('/courseware/$coursewareId/redraft');
+    return CoursewareRedraftDiffModel.fromJson(
+      Map<String, dynamic>.from(data as Map),
+    );
   }
 }
