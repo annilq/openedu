@@ -45,3 +45,6 @@ C 系列 · 导航与统计（ADR-0070）
 1. `gh auth login`
 2. 按编号顺序逐张建 issue，`Blocked by` 指向 blocking issue 编号
 3. 全部打 `ready-for-agent` 标签
+
+## Backlog（延后待办，不在本轮 16 票内）
+- **17 文件规模棘轮补登债务（跨 epic）**：4 个此前提交漏登 >400 基线的文件——`analytics_screen` 488 / `courseware_present_page` 429 / `section_practice` 429 / `teacher_task_form_view` 425——已于 `ce4d1de` 临时补登保测试绿，但仍锁在高位违背棘轮「只许下调」方向。须各自 owner 认领：拆小到 ≤400 或正式确认基线。详见 `issues/17-file-size-ratchet-debt.md`。
