@@ -34,6 +34,7 @@ from app.features.assistant.schemas import (
     AssistantConversationDetailResp,
     AssistantConversationResp,
     AssistantConversationsDeleteReq,
+    SuggestedAction,
 )
 
 router = APIRouter(prefix="/assistant", tags=["assistant"])
@@ -54,6 +55,23 @@ async def assistant_chat(req: AssistantChatReq, caller: CallerDep, session: Sess
         await assistant_service.chat(caller=caller, req=req, session=session),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.get("/suggested-actions", response_model=list[SuggestedAction])
+def suggested_actions(
+    *, session: SessionDep, caller: CallerDep,
+    knowledge_point_id: UUID | None = Query(default=None),
+) -> list[SuggestedAction]:
+    """空态推荐操作目录（ADR-0072，只读静态目录）：无 id→全局，有 id→知识点目录(叠加全局)。
+
+    教师/学生通用（``CallerDep`` 解析角色）；知识点归属经 ``require_owned`` 校验，
+    越权或查不到回落全局目录。导航类动作的 payload 是既有 ``ShellDestination`` 枚举。
+    """
+    teacher_id = caller.user.id if caller.role == "teacher" else caller.user.teacher_id
+    return assistant_service.build_suggested_actions(
+        knowledge_point_id=knowledge_point_id, role=caller.role,
+        teacher_id=teacher_id, session=session,
     )
 
 

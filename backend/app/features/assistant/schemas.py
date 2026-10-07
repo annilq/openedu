@@ -26,9 +26,31 @@ class CoursewareContext(SQLModel):
     courseware_id: UUID | None = None
     section_id: str | None = None
     knowledge_point: str | None = None
+    # ADR-0072：知识点精确 id（无同名漂移）。优先于 `knowledge_point` name 口径；
+    # 缺失时回落 name（保持对 SectionPractice 的兼容）。
+    knowledge_point_id: UUID | None = None
     subject: str | None = None
     grade: int | None = None
     semester: str | None = None
+
+
+class SuggestedAction(SQLModel):
+    """助手空态下方的「推荐操作」（ADR-0072）。
+
+    由服务端按上下文从固定目录装配（**非 LLM 生成**），零延迟、可控、可单测。
+    与 ADR-0042 的 `actions`（纯导航枚举）是两套概念：本类是会话空态的*建议入口*。
+
+    - ``kind='prompt'``：``payload`` 是预置提示文本，前端点击即 ``send(payload)``。
+    - ``kind='navigate'``：``payload`` 是既有 ``ShellDestination`` 枚举（如
+      ``teacher_question_bank``），前端点击走壳导航。
+    - ``quiz``：True 时该 prompt 动作触发出题-判断-引导闭环（后端出判断题 + 写
+      pending_quiz），前端以 ``send(payload, quiz: true)`` 下发。仅 prompt 类使用。
+    """
+
+    label: str
+    kind: str  # 'prompt' | 'navigate'
+    payload: str
+    quiz: bool = False
 
 
 class AssistantChatReq(SQLModel):
@@ -43,6 +65,9 @@ class AssistantChatReq(SQLModel):
     model: str | None = None
     history: list[dict] | None = None
     focus_interest: list[str] | None = None
+    # ADR-0072：出题-判断-引导闭环的触发标记。为真时后端绕开常规 LLM 路由，
+    # 直接复用 question 管线出一道判断题并写入 pending_quiz，等待用户自然语言 yes/no 判定。
+    quiz: bool = Field(default=False)
     # ADR-0067：课件练习只把课堂语境透传给 SubAgent，不创建任务或作答记录。
     courseware: CoursewareContext | None = None
 

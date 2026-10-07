@@ -53,6 +53,7 @@ def _build_question_clause(
     interests: list[str] | None,
     focus_interest: str | None,
     multi: bool = False,
+    judge: bool = False,
 ) -> str:
     """出题语境内核（情境/难度/兴趣包装）：流式与落库共用，保证口径一致
     （ADR-0021：RAG / 学科 Persona 在调用方注入）。"""
@@ -90,6 +91,15 @@ def _build_question_clause(
             "（如 12、12厘米、0.12米、3/4），分数用 a/b 形式（如 1/2），"
             "不要写单位换算过程或多余说明；若有多解用「或」分隔（如 12或15）。"
         )
+    # 判断题（ADR-0072 闭环）：强制「陈述句题干 + 仅两个选项『对』『错』」，
+    # answer 填『对』或『错』，让后端确定性判定用户自然语言 yes/no。
+    if judge:
+        clause += (
+            "这是一道**判断题**：题干应为一个陈述句（如「平行四边形是轴对称图形」），"
+            "请只给出两个选项，分别为「对」和「错」（不要加 A./B. 等前缀），"
+            "并在 answer 字段填写「对」或「错」（按该陈述是否正确）。"
+            "不要给出除这两个选项以外的答案变体。"
+        )
     return clause
 
 
@@ -108,12 +118,14 @@ def _build_question_prompt(
     history: list[dict] | None = None,
     weak_examples: list[dict] | None = None,
     multi: bool = False,
+    judge: bool = False,
 ) -> str:
     """出题 prompt（流式与落库**同一份**，模型产出受 ``QuestionSchema`` 约束）。"""
     clause = _build_question_clause(
         subject=subject, grade=grade, knowledge_point=knowledge_point,
         qtype=qtype, difficulty=difficulty, semester=semester,
         interests=interests, focus_interest=focus_interest, multi=multi,
+        judge=judge,
     )
     if persona_hint:
         clause += f"\n\n{persona_hint}"
@@ -170,6 +182,7 @@ def build_question_prompts(
     history: list[dict] | None = None,
     weak_examples: list[dict] | None = None,
     multi: bool = False,
+    judge: bool = False,
 ) -> tuple[str, str, QuestionSpec]:
     """组装出题 prompt（ADR-0030 收口 #4：prompt 组装从 provider 搬到调用方）。
 
@@ -187,7 +200,7 @@ def build_question_prompts(
         difficulty=difficulty, semester=semester, interests=interests,
         focus_interest=focus_interest, rag_context=rag_context,
         persona_hint=persona_hint, history=history, weak_examples=weak_examples,
-        multi=multi,
+        multi=multi, judge=judge,
     )
     spec = QuestionSpec(
         subject=subject,
@@ -271,6 +284,7 @@ async def generate_question(
     persona_hint: str | None = None,
     history: list[dict] | None = None,
     multi: bool = False,
+    judge: bool = False,
 ) -> GeneratedQuestion | None:
     """非流式出题（落库路径）：内部 drain ``stream_question`` 取题卡。
 
@@ -281,7 +295,7 @@ async def generate_question(
         subject=subject, grade=grade, knowledge_point=knowledge_point, qtype=qtype,
         difficulty=difficulty, semester=semester, interests=interests,
         focus_interest=focus_interest, rag_context=rag_context,
-        persona_hint=persona_hint, history=history, multi=multi,
+        persona_hint=persona_hint, history=history, multi=multi, judge=judge,
     )
     async for ev in stream_question(
         provider, system_prompt=system_prompt, user_prompt=user_prompt, spec=spec, history=history

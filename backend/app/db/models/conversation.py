@@ -24,6 +24,12 @@ class Conversation(SQLModel, table=True):
     model: str | None = Field(default=None, max_length=255)
     title: str | None = Field(default=None, max_length=255)
     ref_task_id: uuid.UUID | None = Field(default=None, foreign_key="task.id")
+    # ADR-0072：出题-判断-引导闭环的跨轮状态。存当前挂起的判断题
+    # ``{'answer': <正确选项文本>, 'question': <题干>, 'kp_id': <知识点 id>, ...}``；
+    # 用户作答并判定后清空。可空、不建外键（快照式，与 ADR-0061 同纪律）。
+    # `none_as_null=True`：Python None 真正落库为 SQL NULL，避免文本 'null' 让
+    # 「非空计数」失真（ADR-0061 §M 实测踩过）。
+    pending_quiz: dict | None = Field(default=None, sa_type=JSON(none_as_null=True))
     status: str = Field(default="running", max_length=16)
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,

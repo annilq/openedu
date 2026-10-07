@@ -13,6 +13,7 @@ ADR-0048 起还持有**会话历史的读编排**（列表 / 回放）：端点�
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from dataclasses import asdict
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -24,13 +25,21 @@ from agent_core.protocol import (
     EVENT_TOOL_CALL,
     EVENT_TOOL_RESULT,
     AssistantEvent,
+    assistant_message,
+    data_event,
+    done,
+    run_started,
 )
 from agent_core.runtime import AgentRuntime, RouteDecision
 from agent_core.runtime_singleton import get_runtime
 from agent_core.subagent import SubAgentContext
 from app.ai.engine import resolve_engine
+from app.ai.subagents.question.pipeline import generate_question
 from app.ai.subagents.tutor.agent import detect_subject
+from app.core.errors import AppErrorException
+from app.core.guard import require_owned
 from app.db.models import Conversation, Message, get_datetime_utc
+from app.db.models.material import KnowledgePoint
 from app.domain import build_provider, build_retriever
 from app.domain.safety import StudentSafety
 from app.features.assistant.repository import (
@@ -52,6 +61,7 @@ from app.features.assistant.schemas import (
     AssistantChatReq,
     AssistantConversationDetailResp,
     AssistantConversationResp,
+    SuggestedAction,
 )
 from app.features.tutor.repository import create_tutor_log
 
@@ -81,6 +91,297 @@ async def _summarize_dropped(provider, dropped: list[dict]) -> str | None:
         return None
     text = "".join(parts).strip()
     return text or None
+
+
+# ── ADR-0072：推荐操作目录 + 判断题闭环 ────────────────────────────────────────
+#
+# 推荐操作是服务端静态目录（零延迟、可控、可单测），不靠 LLM 生成；判断题闭环复用
+# question 管线生成 + 确定性 yes/no 小词典判定，不靠 LLM 自由判定（ADR-0040/0042）。
+
+
+async def _stream_sse(events: AsyncIterator) -> AsyncIterator[str]:
+    """把内部子生成器产出的 AssistantEvent 统一转成 SSE 帧。
+
+    ``chat`` 是普通 async 函数（返回异步生成器，而非自身成为生成器），故 quiz / judge
+    子生成器产出的事件在这里收口成 ``to_sse()`` 字符串——与常规路径的 ``event_stream``
+    一致，避免 ``StreamingResponse`` 拿到裸事件对象、产出非 SSE 文本。
+    """
+    async for ev in events:
+        yield ev.to_sse()
+
+_JUDGE_TRUE = {
+    "对", "正确", "是的", "对的", "是", "没错", "同意", "当然", "对呀",
+    "恩", "嗯", "yes", "y", "true", "t", "√",
+}
+_JUDGE_FALSE = {
+    "错", "错误", "不对", "不是", "否", "no", "n", "false", "f", "×", "不对呀",
+}
+_EXPLAIN_HINTS = (
+    "讲解", "讲一下", "为什么", "教我", "不懂", "不明白", "解释", "说说", "怎么理解",
+)
+
+
+def _judge_answer_bool(answer_text: str | None) -> bool:
+    """把生成的判断题 answer 文本（对/错/正确/错误…）收口成布尔。"""
+    a = (answer_text or "").strip().lower()
+    if a in ("错", "错误", "false", "f", "no", "n", "×", "不对", "不是"):
+        return False
+    # 对 / 正确 / yes / true / 是 / 或其它合法表述 → True
+    return True
+
+
+def _parse_yes_no(text: str | None) -> bool | None:
+    """确定性解析用户自然语言对错判定；无明确信号返回 None（让用户重答）。
+
+    false 词优先：避免「不对，应该是错的」被 true 词误判。
+    """
+    t = (text or "").strip().lower()
+    if any(w in t for w in _JUDGE_FALSE):
+        return False
+    if any(w in t for w in _JUDGE_TRUE):
+        return True
+    return None
+
+
+def _is_explain_request(text: str | None) -> bool:
+    return any(h in (text or "") for h in _EXPLAIN_HINTS)
+
+
+def _resolve_kp_context(
+    *, session: Any, teacher_id: UUID, req: AssistantChatReq
+) -> tuple[str, int, str, str] | None:
+    """返回 (subject, grade, semester, name) 用于出题/聚焦；缺失返回 None。
+
+    优先级：``knowledge_point_id``（require_owned 精确）> courseware 的 name+subject+grade。
+    越权或查不到落入 except → 回落 name 口径或 None。
+    """
+    cw = req.courseware
+    kp_id = cw.knowledge_point_id if cw is not None else None
+    if kp_id is not None:
+        try:
+            kp = require_owned(
+                session=session, owner_id=teacher_id, model=KnowledgePoint, obj_id=kp_id
+            )
+        except AppErrorException:
+            kp = None
+        if kp is not None:
+            return (kp.subject, kp.grade, kp.semester, kp.name)
+    if cw is not None and cw.subject and cw.grade and cw.knowledge_point:
+        return (cw.subject, cw.grade, cw.semester or "", cw.knowledge_point)
+    return None
+
+
+def build_suggested_actions(
+    *, knowledge_point_id: UUID | None, role: str, teacher_id: UUID, session: Any
+) -> list[SuggestedAction]:
+    """ADR-0072：按上下文从固定目录装配推荐操作。
+
+    - 全局目录：问答 / 出几道题练练 / 看错题（角色分叉）/ 查学习进度。
+    - 知识点目录（带 id）：举例 / 出一道判断题(quiz) / 讲解，并叠加全局能力。
+    越权或 id 缺失 → 回落全局目录。
+    """
+    global_actions: list[SuggestedAction] = [
+        SuggestedAction(
+            label="我要问个问题", kind="prompt",
+            payload="我有学习上的疑问，请帮我解答。",
+        ),
+        SuggestedAction(
+            label="出几道题练练", kind="prompt",
+            payload="请给我出几道练习题，巩固一下最近学的知识。",
+        ),
+    ]
+    global_actions.append(
+        SuggestedAction(
+            label="查看我的错题" if role == "student" else "看看孩子错题",
+            kind="navigate",
+            payload="teacher_task_list",
+        )
+    )
+    global_actions.append(
+        SuggestedAction(
+            label="查学习进度", kind="prompt",
+            payload="请帮我分析一下最近的学习进度和掌握情况。",
+        )
+    )
+
+    if knowledge_point_id is None:
+        return global_actions
+
+    kp = None
+    try:
+        kp = require_owned(
+            session=session, owner_id=teacher_id, model=KnowledgePoint,
+            obj_id=knowledge_point_id,
+        )
+    except AppErrorException:
+        kp = None
+    if kp is None:
+        return global_actions
+    name = kp.name
+
+    kp_actions = [
+        SuggestedAction(
+            label="举几个生活例子", kind="prompt",
+            payload=f"请为「{name}」举几个生活中的实际例子，帮助我理解。",
+        ),
+        SuggestedAction(
+            label="出一道判断题", kind="prompt",
+            payload=f"请为「{name}」出一道判断题，只展示题目和两个选项，等我回答。",
+            quiz=True,
+        ),
+        SuggestedAction(
+            label="讲解这个知识点", kind="prompt",
+            payload=f"请详细讲解「{name}」这个知识点，包括定义、关键性质与常见误区。",
+        ),
+    ]
+    return kp_actions + global_actions
+
+
+async def _quiz_generate_stream(
+    *, session: Any, conv_id: UUID, req: AssistantChatReq, teacher_id: UUID, provider: Any
+) -> AsyncIterator[str]:
+    """ADR-0072 判断题闭环·出题：复用 question 管线出判断题，下发题面 + 写 pending_quiz。
+
+    题卡不下发答案/解析，避免用户作答前泄露；正确答案存 pending_quiz 待判定。
+    """
+    kp = _resolve_kp_context(session=session, teacher_id=teacher_id, req=req)
+    if kp is None:
+        yield run_started()
+        yield assistant_message("缺少知识点上下文，无法出题。请在课件页进入助手后再试～")
+        yield done(session_id=str(conv_id))
+        return
+    subject, grade, semester, name = kp
+    q = await generate_question(
+        provider,
+        subject=subject, grade=grade, knowledge_point=name,
+        qtype="choice", difficulty="easy", semester=semester, judge=True,
+    )
+    if q is None:
+        yield run_started()
+        yield assistant_message("暂时没法生成题目，请稍后再试或换个方式～")
+        yield done(session_id=str(conv_id))
+        return
+
+    # 题卡剥离答案/解析（不提前泄露）；正确答案布尔存 pending_quiz。
+    card = asdict(q)
+    card["answer"] = ""
+    card["explanation"] = ""
+    card["reasoning"] = ""
+    pending = {
+        "answer": _judge_answer_bool(q.answer),
+        "subject": subject, "grade": grade, "semester": semester, "name": name,
+        "stem": q.stem, "options": q.options, "answer_text": q.answer,
+        "explanation": q.explanation, "attempts": 0,
+    }
+    conv = session.get(Conversation, conv_id)
+    conv.pending_quiz = pending
+    session.add(
+        Message(
+            conversation_id=conv_id, turn=next_turn(session, conv_id),
+            role="assistant", step="output",
+            content=f"来一道关于「{name}」的判断题：",
+            payload={"cards": [{"type": "question", "result": card}]},
+        )
+    )
+    session.commit()
+
+    yield run_started()
+    yield assistant_message(f"来一道关于「{name}」的判断题，请判断下面的说法对不对：")
+    yield data_event(card, extra={"type": "question"})
+    yield done(session_id=str(conv_id))
+
+
+async def _quiz_judge_stream(
+    *, session: Any, conv: Conversation, conv_id: UUID, message: str
+) -> AsyncIterator[str]:
+    """ADR-0072 判断题闭环·判定：确定性解析用户 yes/no，比对已知答案并给反馈。
+
+    用户消息已在续接分支的 upsert 中落库，这里只记录助手反馈。求讲解 → 揭示答案+解析；
+    答对 → 鼓励（不泄题）；答错 → 分级支架引导（不直接给答案），两次仍错则讲解。
+    """
+    pending = dict(conv.pending_quiz or {})
+    name = pending.get("name") or "这个知识点"
+
+    # 求讲解：揭示答案 + 解析（闭环第 5 步）。
+    if _is_explain_request(message):
+        verdict = "对" if pending.get("answer") else "错"
+        expl = pending.get("explanation") or "（暂无详细解析）"
+        text = (
+            f"关于「{name}」：\n「{pending.get('stem', '')}」\n"
+            f"正确的判断是「{verdict}」。{expl}"
+        )
+        conv.pending_quiz = None
+        session.add(
+            Message(conversation_id=conv_id, turn=next_turn(session, conv_id),
+                    role="assistant", step="output", content=text)
+        )
+        session.commit()
+        yield run_started()
+        yield assistant_message(text)
+        yield done(session_id=str(conv_id))
+        return
+
+    verdict = _parse_yes_no(message)
+    if verdict is None:
+        text = "请用「对」或「错」回答这道题哦～"
+        session.add(
+            Message(conversation_id=conv_id, turn=next_turn(session, conv_id),
+                    role="assistant", step="output", content=text)
+        )
+        session.commit()
+        yield run_started()
+        yield assistant_message(text)
+        yield done(session_id=str(conv_id))
+        return
+
+    correct = verdict == bool(pending.get("answer"))
+    if correct:
+        text = f"答对啦！👍 你对「{name}」的判断很准确，继续保持这种思考方式～"
+        conv.pending_quiz = None
+        session.add(
+            Message(conversation_id=conv_id, turn=next_turn(session, conv_id),
+                    role="assistant", step="output", content=text)
+        )
+        session.commit()
+        yield run_started()
+        yield assistant_message(text)
+        yield done(session_id=str(conv_id))
+        return
+
+    attempts = int(pending.get("attempts", 0)) + 1
+    if attempts < 2:
+        pending["attempts"] = attempts
+        conv.pending_quiz = pending
+        text = (
+            f"再想想看～ 判断「{name}」相关的命题，关键是看它是否符合定义或性质。"
+            f"要不要我举一个类似的例子帮你判断？或者回复「讲解」让我详细说说。"
+        )
+        session.add(
+            Message(conversation_id=conv_id, turn=next_turn(session, conv_id),
+                    role="assistant", step="output", content=text)
+        )
+        session.commit()
+        yield run_started()
+        yield assistant_message(text)
+        yield done(session_id=str(conv_id))
+        return
+
+    # 两次都错：直接讲解并揭示答案（不再无限追问）。
+    verdict_word = "对" if pending.get("answer") else "错"
+    expl = pending.get("explanation") or "（暂无详细解析）"
+    text = (
+        f"没关系，这个判断确实容易混淆。\n「{pending.get('stem', '')}」\n"
+        f"正确的判断是「{verdict_word}」。{expl}"
+    )
+    conv.pending_quiz = None
+    session.add(
+        Message(conversation_id=conv_id, turn=next_turn(session, conv_id),
+                role="assistant", step="output", content=text)
+    )
+    session.commit()
+    yield run_started()
+    yield assistant_message(text)
+    yield done(session_id=str(conv_id))
 
 
 async def chat(
@@ -209,6 +510,25 @@ async def chat(
         # 无 session_id：兼容客户端自带历史（兜底）
         history = req.history
 
+    # ── ADR-0072 判断题闭环 ──
+    # 出题优先：req.quiz 直接走 question 管线，绕开常规 LLM 路由，并写 pending_quiz。
+    # 子生成器产出 AssistantEvent，经 _stream_sse 收口成 SSE 帧（与常规路径一致）。
+    if req.quiz:
+        return _stream_sse(
+            _quiz_generate_stream(
+                session=session, conv_id=conv_id, req=req,
+                teacher_id=teacher_id, provider=provider,
+            )
+        )
+    # 续接既有会话且处于待判定态：进入确定性 yes/no 判定，不进 LLM。
+    # （用户在续接轮发出的消息已由上面 upsert 落库，这里只做判定与回复。）
+    if conversation is not None and conversation.pending_quiz is not None:
+        return _stream_sse(
+            _quiz_judge_stream(
+                session=session, conv=conversation, conv_id=conv_id, message=message
+            )
+        )
+
     # 业务字段经 ctx.extra 透传（agent_core 不感知任何教育语义）。
     ctx = SubAgentContext(
         role=role,
@@ -227,6 +547,12 @@ async def chat(
             ),
             "focus_interest": req.focus_interest,
             "courseware": courseware,
+            # ADR-0072：显式下钻知识点 id，便于 SubAgent 精确聚焦（与 courseware 并存）。
+            "knowledge_point_id": (
+                req.courseware.knowledge_point_id
+                if req.courseware is not None
+                else None
+            ),
             "session_id": str(conv_id),
         },
     )

@@ -472,6 +472,26 @@ def run_migrations() -> None:
             )
         )
 
+        # —— conversation.pending_quiz（ADR-0072 出题-判断-引导闭环的跨轮状态）——
+        # 仅补列：无索引 / 无 FK（快照式，与 ADR-0061 同纪律）。SQLite 用 TEXT 存 JSON，
+        # postgres 用 JSON（与项目其余 JSON 列约定一致）。ADD COLUMN 在 SQLite 下被静默
+        # 忽略约束（ADR-0061 §R），本列无需约束，故直接补即可，无需重建表。
+        if is_sqlite:
+            conv_cols = [
+                r[1]
+                for r in conn.execute(text("PRAGMA table_info(conversation)")).fetchall()
+            ]
+            if "pending_quiz" not in conv_cols:
+                conn.execute(
+                    text("ALTER TABLE conversation ADD COLUMN pending_quiz TEXT")
+                )
+        else:  # postgres
+            conn.execute(
+                text(
+                    "ALTER TABLE conversation ADD COLUMN IF NOT EXISTS pending_quiz JSON"
+                )
+            )
+
 
 def _nullify_text_json_nulls(conn) -> None:
     """把 JSON 列里「文本 ``'null'``」改回真正的 SQL NULL（ADR-0061 §T）。
