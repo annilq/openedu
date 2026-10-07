@@ -253,6 +253,12 @@ def run_migrations() -> None:
         # ``class_id`` 列补到 ``user`` 表供学生归属班级（删班后仅置空、不删学生）。
         _add_classes(conn, is_sqlite)
 
+        # —— 作业派发关系表（ADR-0069）——
+        # 新表用 CREATE TABLE IF NOT EXISTS；唯一约束 (task_id, student_id) 必须写进
+        # CREATE TABLE（SQLite ALTER 静默忽略 UNIQUE，ADR-0061 §R）。旧单列 task.student_id
+        # 幂等回填为关系行（仅当该 (task,student) 尚不存在）。
+        _add_task_assignments(conn, is_sqlite)
+
         # —— 清理 JSON 列里的文本 'null'（ADR-0061 §T）——
         _nullify_text_json_nulls(conn)
 
@@ -732,6 +738,57 @@ def _add_classes(conn, is_sqlite: bool) -> None:
             )
     except OperationalError:
         # 偏序迁移：user 表还没建（首次启动由 init_db 建表并带新列），跳过即可。
+        pass
+
+
+def _add_task_assignments(conn, is_sqlite: bool) -> None:
+    """作业派发关系表（ADR-0069）+ 旧单列回填。
+
+    新表用 ``CREATE TABLE IF NOT EXISTS``：唯一约束 ``(task_id, student_id)`` 必须写进
+    ``CREATE TABLE``（SQLite 的 ``ALTER TABLE ADD CONSTRAINT`` 被静默忽略，ADR-0061 §R）。
+    回填：旧库里 ``task.student_id`` 非空的行 → 生成一条 assignment（已存在则跳过，幂等）。
+    ``completed_at`` 仅当任务已 ``done`` 时回填（无精确完成时间，用任务创建时间近似）。
+    """
+    conn.execute(
+        text(
+            "CREATE TABLE IF NOT EXISTS taskassignment ("
+            " id VARCHAR(36) PRIMARY KEY,"
+            " task_id VARCHAR(36) NOT NULL,"
+            " student_id VARCHAR(36) NOT NULL,"
+            " assigned_at TIMESTAMP WITH TIME ZONE,"
+            " completed_at TIMESTAMP WITH TIME ZONE,"
+            " FOREIGN KEY(task_id) REFERENCES task (id),"
+            " FOREIGN KEY(student_id) REFERENCES \"user\" (id),"
+            " UNIQUE(task_id, student_id))"
+        )
+    )
+    try:
+        if is_sqlite:
+            # INSERT OR IGNORE：靠 UNIQUE 约束去重，重跑为 no-op。
+            conn.execute(
+                text(
+                    "INSERT OR IGNORE INTO taskassignment "
+                    "(id, task_id, student_id, assigned_at, completed_at) "
+                    "SELECT lower(hex(randomblob(16))), t.id, t.student_id, t.created_at, "
+                    "  CASE WHEN t.status = 'done' THEN t.created_at ELSE NULL END "
+                    "FROM task t WHERE t.student_id IS NOT NULL"
+                )
+            )
+        else:
+            conn.execute(
+                text(
+                    "INSERT INTO taskassignment "
+                    "(id, task_id, student_id, assigned_at, completed_at) "
+                    "SELECT gen_random_uuid(), t.id, t.student_id, t.created_at, "
+                    "  CASE WHEN t.status = 'done' THEN t.created_at ELSE NULL END "
+                    "FROM task t WHERE t.student_id IS NOT NULL "
+                    "  AND NOT EXISTS ("
+                    "    SELECT 1 FROM taskassignment ta"
+                    "    WHERE ta.task_id = t.id AND ta.student_id = t.student_id)"
+                )
+            )
+    except OperationalError:
+        # 偏序迁移：task 表还没建（首次启动由 init_db 建表并带新列），跳过即可。
         pass
 
 

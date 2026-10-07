@@ -47,7 +47,14 @@ from app.core.async_bridge import run_async
 from app.core.errors import AppErrorException, ErrCode
 from app.core.guard import require_owned, require_owned_student
 from app.core.pagination import clamp_page_size, encode_cursor
-from app.db.models import Question, Task, TaskQuestion, User, WrongQuestion
+from app.db.models import (
+    Question,
+    Task,
+    TaskAssignment,
+    TaskQuestion,
+    User,
+    WrongQuestion,
+)
 from app.domain import Grader, build_retriever
 from app.domain.provider import GeneratedQuestion, QuestionCard, QuestionStreamEvent
 from app.domain.structured import normalize_options
@@ -59,19 +66,26 @@ from app.features.tasks.repository import (
     add_bank_questions_to_task,
     assign_task,
     batch_generate_task,
+    bulk_create_assignments,
+    cancel_assignments,
     confirm_task,
+    count_assignments,
+    count_completed_assignments,
     count_tasks_by_teacher,
     count_tasks_by_teacher_grouped,
     count_wrong_questions,
     create_answer_record,
     create_checkin,
+    create_task_assignment,
     create_task_from_bank,
     discard_draft_task,
     get_progress,
     get_student_tasks_today,
     get_task_question,
     get_task_questions,
+    is_student_assigned,
     list_tasks_by_teacher,
+    mark_assignment_completed,
     promote_task_question,
     regenerate_all_task_questions,
     regenerate_one_task_question,
@@ -1287,7 +1301,11 @@ def confirm(*, session: Session, teacher: User, task_id: UUID) -> TaskResp:
 def assign(
     *, session: Session, teacher: User, task_id: UUID, student_id: UUID
 ) -> TaskResp:
-    """ready → assigned：派发给学生，绑 student_id。"""
+    """ready → assigned：派发给学生，绑 student_id。
+
+    兼容路径：单学生派发仍写 ``task.student_id``（下游 legacy 读取），同时落一条
+    派发关系行，使「多学生派发」与「单学生派发」走同一套关系事实源（ADR-0069）。
+    """
     require_owned_student(
         session=session,
         owner_id=teacher.id,
@@ -1295,14 +1313,136 @@ def assign(
         code=ErrCode.TASK_CHILD_NOT_OWNED,
         message="该学生不属于你的账号",
     )
-    _owned_task(session=session, teacher=teacher, task_id=task_id)
+    task = _owned_task(session=session, teacher=teacher, task_id=task_id)
     updated = assign_task(session=session, task_id=task_id, student_id=student_id)
     if updated is None:
         raise AppErrorException(
             ErrCode.TASK_STATUS_READY_REQUIRED, "Task 不在 ready 态，无法派发"
         )
+    create_task_assignment(
+        session=session, task_id=task.id, student_id=student_id
+    )
     return task_to_resp(
         updated, get_task_questions(session=session, task_id=task_id), include_answer=True
+    )
+
+
+def _recompute_task_status(*, session: Session, task: Task) -> Task:
+    """按派发关系重算任务整体状态（ADR-0069 状态语义）。
+
+    - 无派发对象 → ready（待派发）；
+    - 有派发对象且全部 completed_at 非空 → done；
+    - 其余 → assigned。
+    调用方负责先改完关系再调用本函数。
+    """
+    total = count_assignments(session=session, task_id=task.id)
+    if total == 0:
+        task.status = "ready"
+    else:
+        completed = count_completed_assignments(session=session, task_id=task.id)
+        task.status = "done" if completed >= total else "assigned"
+    session.add(task)
+    session.commit()
+    session.refresh(task)
+    return task
+
+
+def bulk_assign_task(
+    *,
+    session: Session,
+    teacher: User,
+    task_id: UUID,
+    class_ids: list[UUID] | None = None,
+    student_ids: list[UUID] | None = None,
+) -> TaskResp:
+    """整班 / 多学生批量派发（ADR-0069）。
+
+    把「班级列表 + 学生列表」展开后按学生去重、原子写入派发关系；任务首次派发后置
+    ``assigned``。下游作答/打卡/错题按各自 ``student_id`` 归集，不受影响。
+    """
+    task = _owned_task(session=session, teacher=teacher, task_id=task_id)
+    if task.status not in ("ready", "assigned"):
+        raise AppErrorException(
+            ErrCode.TASK_STATUS_READY_REQUIRED, "任务不在 ready/assigned 态，无法派发"
+        )
+
+    target: set[UUID] = set(student_ids or [])
+    if class_ids:
+        rows = session.exec(
+            select(User.id).where(
+                User.class_id.in_(class_ids),  # type: ignore[union-attr]
+                User.teacher_id == teacher.id,
+                User.role == "student",
+            )
+        ).all()
+        target.update(rows)
+    if not target:
+        raise AppErrorException(
+            ErrCode.VALIDATION, "派发对象为空：班级列表与学生列表不能同时为空"
+        )
+
+    # 越权防护：派发对象必须都属于当前教师。
+    owned = set(
+        session.exec(
+            select(User.id).where(
+                User.id.in_(target), User.teacher_id == teacher.id  # type: ignore[union-attr]
+            )
+        ).all()
+    )
+    if len(owned) != len(target):
+        raise AppErrorException(
+            ErrCode.TASK_CHILD_NOT_OWNED, "部分学生不属于你的账号"
+        )
+
+    # 原子写入（去重 + 单事务），返回新增条数。
+    bulk_create_assignments(
+        session=session, task_id=task.id, student_ids=list(target)
+    )
+    # 单学生派发保留 legacy 单列（下游 today 列表兼容）；多学生则不写该列。
+    if len(target) == 1:
+        only = next(iter(target))
+        if task.student_id != only:
+            task.student_id = only
+            session.add(task)
+    if task.status == "ready":
+        task.status = "assigned"
+        session.add(task)
+        session.commit()
+        session.refresh(task)
+    return task_to_resp(
+        task, get_task_questions(session=session, task_id=task.id), include_answer=True
+    )
+
+
+def cancel_task_assignments(
+    *,
+    session: Session,
+    teacher: User,
+    task_id: UUID,
+    student_ids: list[UUID] | None = None,
+) -> TaskResp:
+    """取消派发（ADR-0069）：``student_ids`` 为空 → 取消全部；否则仅移除指定学生。
+
+    取消后按剩余派发关系重算任务状态（全部清空 → ready；其余按完成度 → assigned/done）。
+    """
+    task = _owned_task(session=session, teacher=teacher, task_id=task_id)
+    if student_ids:
+        for sid in student_ids:
+            ta = session.exec(
+                select(TaskAssignment).where(
+                    TaskAssignment.task_id == task_id,
+                    TaskAssignment.student_id == sid,
+                )
+            ).first()
+            if ta is not None:
+                session.delete(ta)
+        session.commit()
+    else:
+        cancel_assignments(session=session, task_id=task_id)
+    return task_to_resp(
+        _recompute_task_status(session=session, task=task),
+        get_task_questions(session=session, task_id=task.id),
+        include_answer=True,
     )
 
 
@@ -1323,17 +1463,22 @@ def discard(*, session: Session, teacher: User, task_id: UUID) -> None:
 def _answerable_task(*, session: Session, user: User, task_id: UUID) -> tuple[Task, UUID]:
     """取可作答/打卡的任务并解析「实际作答的学生 id」。
 
-    学生只能答派给自己的任务；教师代答需证明那是自家学生。返回 ``(task, actor_student_id)``。
+    学生只能答派给自己的任务：多学生派发下以派发关系判定（不再只看 ``task.student_id``）；
+    教师代答沿用 legacy 单列 ``task.student_id``（单学生路径）。返回 ``(task, actor_student_id)``。
     """
     task = session.get(Task, task_id)
     if task is None:
         raise AppErrorException(ErrCode.TASK_NOT_FOUND, "任务不存在")
-    if task.student_id is None:
-        raise AppErrorException(ErrCode.TASK_NOT_ASSIGNED, "Task 尚未派发给任何学生")
     if user.role == "student":
-        if task.student_id != user.id:
+        in_relation = is_student_assigned(
+            session=session, task_id=task_id, student_id=user.id
+        )
+        if not in_relation and task.student_id != user.id:
             raise AppErrorException(ErrCode.TASK_NOT_OWNED, "这不是派发给你的任务")
         return task, user.id
+    # 教师代答：沿用 legacy 单列判定（多学生派发不在代答范围）。
+    if task.student_id is None:
+        raise AppErrorException(ErrCode.TASK_NOT_ASSIGNED, "Task 尚未派发给任何学生")
     require_owned_student(
         session=session,
         owner_id=user.id,
@@ -1405,11 +1550,15 @@ def answer(
 
 
 def checkin(*, session: Session, user: User, task_id: UUID) -> CheckinResult:
-    """学生打卡 / 教师代打卡。"""
+    """学生打卡 / 教师代打卡。
+
+    打卡完成某学生在本次派发中的份额：标记派发关系的 ``completed_at``，再按整体完成度
+    重算任务状态（全部完成 → done，否则保持 assigned，ADR-0069 状态语义）。
+    """
     task, actor_student_id = _answerable_task(session=session, user=user, task_id=task_id)
-    if task.status != "assigned":
+    if task.status not in ("assigned", "done"):
         raise AppErrorException(
-            ErrCode.TASK_STATUS_ASSIGNED_REQUIRED, "仅 assigned 态可打卡"
+            ErrCode.TASK_STATUS_ASSIGNED_REQUIRED, "仅 assigned/done 态可打卡"
         )
     cin = create_checkin(
         session=session,
@@ -1417,9 +1566,10 @@ def checkin(*, session: Session, user: User, task_id: UUID) -> CheckinResult:
         task_id=task.id,
         checkin_date=date.today(),
     )
-    task.status = "done"
-    session.add(task)
-    session.commit()
+    mark_assignment_completed(
+        session=session, task_id=task.id, student_id=actor_student_id
+    )
+    _recompute_task_status(session=session, task=task)
     return CheckinResult(ok=True, checkin_date=cin.checkin_date)
 
 

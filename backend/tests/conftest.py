@@ -20,6 +20,7 @@ from app.db.models import (  # noqa: E402
     ModelConfig,
     Question,
     Task,
+    TaskAssignment,
     TutorLog,
     User,
     WrongQuestion,
@@ -61,6 +62,7 @@ def db() -> Generator[Session]:
             ModelConfig,
             Question,
             Task,
+            TaskAssignment,
             User,
         ):
             session.execute(delete(model))

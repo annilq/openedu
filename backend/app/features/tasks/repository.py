@@ -13,6 +13,7 @@ from app.db.models import (
     Checkin,
     Question,
     Task,
+    TaskAssignment,
     TaskQuestion,
     WrongQuestion,
 )
@@ -565,16 +566,147 @@ def assign_task(
 
 
 def get_student_tasks_today(*, session: Session, student_id: uuid.UUID) -> list[Task]:
-    """学生今日任务：只返回 assigned/done 态（draft/ready 不可见，ADR-0004 D1）。"""
+    """学生今日任务：只返回 assigned/done 态（draft/ready 不可见，ADR-0004 D1）。
+
+    学生可见范围 = legacy 单列 ``task.student_id`` 命中 **或** 在派发关系里（多学生派发，
+    ADR-0069）——两条来源并集，保证整班派发的任务也能出现在该学生今日列表。
+    """
     today = datetime.now(UTC).date()
+    assigned_ids = select(TaskAssignment.task_id).where(
+        TaskAssignment.student_id == student_id
+    )
     return list(
         session.exec(
             select(Task).where(
-                Task.student_id == student_id,
                 Task.status.in_(["assigned", "done"]),
                 func.date(Task.created_at) == today,
+                (Task.id.in_(assigned_ids)) | (Task.student_id == student_id),
             )
         )
+    )
+
+
+# ───────── 作业派发关系（ADR-0069） ─────────
+def create_task_assignment(
+    *, session: Session, task_id: uuid.UUID, student_id: uuid.UUID
+) -> TaskAssignment:
+    """写入单条派发关系（幂等：已存在则直接返回现有行）。"""
+    existing = session.exec(
+        select(TaskAssignment).where(
+            TaskAssignment.task_id == task_id,
+            TaskAssignment.student_id == student_id,
+        )
+    ).first()
+    if existing is not None:
+        return existing
+    ta = TaskAssignment(task_id=task_id, student_id=student_id)
+    session.add(ta)
+    session.commit()
+    session.refresh(ta)
+    return ta
+
+
+def bulk_create_assignments(
+    *, session: Session, task_id: uuid.UUID, student_ids: list[uuid.UUID]
+) -> int:
+    """原子写入一批派发关系（按学生去重），返回实际新增条数。
+
+    已在关系里的学生不重复写；整批在一个事务内提交，部分失败整体回滚。
+    """
+    if not student_ids:
+        return 0
+    existing_ids = set(
+        row[0]
+        for row in session.exec(
+            select(TaskAssignment.student_id).where(
+                TaskAssignment.task_id == task_id,
+                TaskAssignment.student_id.in_(student_ids),
+            )
+        ).all()
+    )
+    to_add = [sid for sid in dict.fromkeys(student_ids) if sid not in existing_ids]
+    for sid in to_add:
+        session.add(TaskAssignment(task_id=task_id, student_id=sid))
+    session.commit()
+    return len(to_add)
+
+
+def get_assigned_student_ids(
+    *, session: Session, task_id: uuid.UUID
+) -> list[uuid.UUID]:
+    """某任务全部派发对象的学生 id（去重天然由 UNIQUE 约束保证）。"""
+    return list(
+        session.exec(
+            select(TaskAssignment.student_id)
+            .where(TaskAssignment.task_id == task_id)
+            .order_by(TaskAssignment.student_id)
+        ).all()
+    )
+
+
+def count_assignments(*, session: Session, task_id: uuid.UUID) -> int:
+    return session.scalar(
+        select(func.count())
+        .select_from(TaskAssignment)
+        .where(TaskAssignment.task_id == task_id)
+    ) or 0
+
+
+def count_completed_assignments(*, session: Session, task_id: uuid.UUID) -> int:
+    return session.scalar(
+        select(func.count())
+        .select_from(TaskAssignment)
+        .where(
+            TaskAssignment.task_id == task_id,
+            TaskAssignment.completed_at.is_not(None),  # type: ignore[union-attr]
+        )
+    ) or 0
+
+
+def mark_assignment_completed(
+    *, session: Session, task_id: uuid.UUID, student_id: uuid.UUID
+) -> None:
+    """把某学生在该任务的派发关系标为已完成（completed_at=now）。"""
+    ta = session.exec(
+        select(TaskAssignment).where(
+            TaskAssignment.task_id == task_id,
+            TaskAssignment.student_id == student_id,
+        )
+    ).first()
+    if ta is None:
+        # 兜底：关系缺失时补一行（不应发生，仅防御并发竞态）。
+        ta = TaskAssignment(task_id=task_id, student_id=student_id)
+        session.add(ta)
+    if ta.completed_at is None:
+        ta.completed_at = datetime.now(UTC)
+    session.add(ta)
+    session.commit()
+
+
+def cancel_assignments(*, session: Session, task_id: uuid.UUID) -> int:
+    """删除某任务全部派发关系，返回删除条数（取消派发 / 取消全部）。"""
+    rows = session.exec(
+        select(TaskAssignment).where(TaskAssignment.task_id == task_id)
+    ).all()
+    n = len(rows)
+    for ta in rows:
+        session.delete(ta)
+    session.commit()
+    return n
+
+
+def is_student_assigned(
+    *, session: Session, task_id: uuid.UUID, student_id: uuid.UUID
+) -> bool:
+    """该学生是否在本任务的派发关系里（多学生派发下作答/打卡的可答判定）。"""
+    return (
+        session.exec(
+            select(TaskAssignment.id).where(
+                TaskAssignment.task_id == task_id,
+                TaskAssignment.student_id == student_id,
+            )
+        ).first()
+        is not None
     )
 
 

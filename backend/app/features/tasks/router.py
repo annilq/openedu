@@ -23,6 +23,8 @@ from app.features.tasks import service as tasks_service
 from app.features.tasks.schemas import (
     AnswerResult,
     AnswerSubmit,
+    BulkAssignReq,
+    CancelAssignReq,
     CheckinResult,
     ProgressResp,
     QuestionResp,
@@ -337,6 +339,47 @@ def assign(
     """ready → assigned：派发给学生，绑 student_id。"""
     return tasks_service.assign(
         session=session, teacher=teacher, task_id=task_id, student_id=student_id
+    )
+
+
+@router.post("/{task_id}/assign-bulk", response_model=TaskResp)
+def assign_bulk(
+    *,
+    session: SessionDep,
+    teacher: CurrentTeacher,
+    task_id: UUID,
+    body: BulkAssignReq,
+) -> TaskResp:
+    """整班 / 多学生批量派发（ADR-0069）：班级列表 + 学生列表并集去重、原子写入。
+
+    首次派发置 ``assigned``；任务列表仍是 1 条。两个列表都空 → 422。
+    """
+    return tasks_service.bulk_assign_task(
+        session=session,
+        teacher=teacher,
+        task_id=task_id,
+        class_ids=body.class_ids,
+        student_ids=body.student_ids,
+    )
+
+
+@router.post("/{task_id}/assignments/cancel", response_model=TaskResp)
+def cancel_assignments(
+    *,
+    session: SessionDep,
+    teacher: CurrentTeacher,
+    task_id: UUID,
+    body: CancelAssignReq,
+) -> TaskResp:
+    """取消派发（ADR-0069）：``student_ids`` 为空 → 取消全部；否则仅移除指定学生。
+
+    取消后按剩余派发关系重算任务整体状态（全部清空 → ready；其余按完成度 → assigned/done）。
+    """
+    return tasks_service.cancel_task_assignments(
+        session=session,
+        teacher=teacher,
+        task_id=task_id,
+        student_ids=body.student_ids,
     )
 
 

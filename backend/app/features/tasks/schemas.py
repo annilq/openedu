@@ -170,6 +170,22 @@ class TaskFromBankCreate(SQLModel):
     question_ids: list[uuid.UUID]
 
 
+class BulkAssignReq(SQLModel):
+    """整班 / 多学生批量派发（ADR-0069）：班级与学生列表并集去重。
+
+    两者都空 → 422（ticket 验收明确要求）。班级展开为该教师名下这些班级的全部学生。
+    """
+
+    class_ids: list[uuid.UUID] | None = None
+    student_ids: list[uuid.UUID] | None = None
+
+
+class CancelAssignReq(SQLModel):
+    """取消派发（ADR-0069）：``student_ids`` 为空 → 取消全部；否则仅移除指定学生。"""
+
+    student_ids: list[uuid.UUID] | None = None
+
+
 class BankQuestionsAdd(SQLModel):
     """选项 B：加入已有草稿任务。"""
 
