@@ -66,4 +66,19 @@ class StudentsRemoteDataSource {
     return (data as Map<String, dynamic>)
         .map((k, v) => MapEntry(k, v as int));
   }
+
+  /// 批量移入/移出班级（ticket 03）：[classId] 为 null 表示移出归入未分班，
+  /// 否则移入该班级。服务端单事务，越权即整体失败。
+  Future<void> batchReassign({
+    required String? classId,
+    required List<String> studentIds,
+  }) async {
+    await _network.post(
+      '/students/batch-reassign',
+      body: {
+        'class_id': classId,
+        'student_ids': studentIds,
+      },
+    );
+  }
 }

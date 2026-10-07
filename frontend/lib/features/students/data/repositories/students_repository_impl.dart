@@ -66,4 +66,15 @@ class StudentsRepositoryImpl implements StudentsRepository {
   Future<Map<String, int>> getWrongQuestionCounts() async {
     return await _dataSource.getWrongQuestionCounts();
   }
+
+  @override
+  Future<void> batchReassign({
+    required String? classId,
+    required List<String> studentIds,
+  }) async {
+    await _dataSource.batchReassign(
+      classId: classId,
+      studentIds: studentIds,
+    );
+  }
 }

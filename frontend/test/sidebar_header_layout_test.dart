@@ -58,6 +58,12 @@ class _UnusedChildrenRepo implements StudentsRepository {
   @override
   Future<Map<String, int>> getWrongQuestionCounts() async =>
       throw UnimplementedError();
+  @override
+  Future<void> batchReassign({
+    required String? classId,
+    required List<String> studentIds,
+  }) async =>
+      throw UnimplementedError();
 }
 
 /// 直接种一个已加载状态，避开网络层。

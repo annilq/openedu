@@ -24,4 +24,10 @@ abstract class StudentsRepository {
 
   /// 各学生活跃错题数（{student_id: count}）。
   Future<Map<String, int>> getWrongQuestionCounts();
+
+  /// 批量移入/移出班级（ticket 03）。[classId] 为 null = 移出归入未分班。
+  Future<void> batchReassign({
+    required String? classId,
+    required List<String> studentIds,
+  });
 }

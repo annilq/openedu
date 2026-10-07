@@ -19,11 +19,14 @@ import 'package:kids_learn/shared/data/local/storage_service.dart';
 import 'package:kids_learn/shared/domain/models/models.dart';
 import 'package:kids_learn/shared/domain/providers/core_providers.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
+import 'package:kids_learn/shared/widgets/app_card.dart';
 
-/// 桩：只实现管理页用到的三个取数方法，其余走 noSuchMethod（不会被执行到）。
+/// 桩：只实现管理页用到的取数方法，其余走 noSuchMethod（不会被执行到）。
 class _FakeStudentsRepo implements StudentsRepository {
   final List<UserModel> students;
   final Map<String, int> counts;
+  /// 记录批量重分班调用（验证 UI → 端点链路）。
+  final List<Map<String, dynamic>> batchCalls = [];
   _FakeStudentsRepo(this.students, this.counts);
 
   @override
@@ -38,6 +41,14 @@ class _FakeStudentsRepo implements StudentsRepository {
 
   @override
   Future<Map<String, int>> getWrongQuestionCounts() async => counts;
+
+  @override
+  Future<void> batchReassign({
+    required String? classId,
+    required List<String> studentIds,
+  }) async {
+    batchCalls.add({'class_id': classId, 'student_ids': studentIds});
+  }
 }
 
 class _FakeClassesRepo implements ClassesRepository {
@@ -106,8 +117,12 @@ void main() {
         ],
         child: ShadApp.custom(
           theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
+          // appBuilder 不装 ShadToaster，须在 CupertinoApp 内显式包一层（Directionality
+          // 由 CupertinoApp 提供），才能弹 toast（否则 AppToast.show 抛错）。
           appBuilder: (context) => CupertinoApp(
-            home: StudentManagementScreen(onOpenStudent: onOpenStudent),
+            home: ShadToaster(
+              child: StudentManagementScreen(onOpenStudent: onOpenStudent),
+            ),
           ),
         ),
       ),
@@ -152,5 +167,67 @@ void main() {
     expect(find.text('全部'), findsWidgets);
     expect(find.text('未分班'), findsWidgets);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('选择模式下批量移入班级：勾选 → 移入 → 触发 batchReassign',
+      (tester) async {
+    final fake = _FakeStudentsRepo(students, counts);
+    SharedPreferences.setMockInitialValues({});
+    final storage = StorageService();
+    await storage.init();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          storageServiceProvider.overrideWithValue(storage),
+          studentsRepositoryProvider.overrideWithValue(fake),
+          classesRepositoryProvider.overrideWithValue(_FakeClassesRepo(classes)),
+        ],
+        child: ShadApp.custom(
+          theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
+          appBuilder: (context) => CupertinoApp(
+            home: ShadToaster(
+              child: StudentManagementScreen(onOpenStudent: (_) {}),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(tester.takeException(), isNull);
+
+    // 进入选择模式。
+    await tester.tap(find.text('选择'));
+    await tester.pump();
+    expect(find.text('已选 0'), findsOneWidget);
+
+    // 勾选小明、小红。
+    await tester.tap(find.text('小明'));
+    await tester.pump();
+    await tester.tap(find.text('小红'));
+    await tester.pump();
+    expect(find.text('已选 2'), findsOneWidget);
+
+    // 点「移入班级」→ 弹出班级选择器。
+    await tester.tap(find.text('移入班级'));
+    await tester.pump();
+    expect(find.text('移入到班级'), findsOneWidget);
+
+    // 选择器里有真实班级行；点三(2)班（其 AppCard 为该文本唯一祖先）。
+    final classTile = find.ancestor(
+      of: find.text('三(2)班'),
+      matching: find.byWidgetPredicate((w) => w is AppCard),
+    );
+    expect(classTile, findsOneWidget);
+    await tester.tap(classTile);
+    await tester.pumpAndSettle();
+
+    // 触发 batchReassign，参数为选中的两名 + 目标班级 c2。
+    expect(fake.batchCalls, hasLength(1));
+    expect(fake.batchCalls.first['class_id'], 'c2');
+    expect(fake.batchCalls.first['student_ids'], containsAll(['s1', 's2']));
+
+    // 成功后退出选择模式。
+    expect(find.text('选择'), findsOneWidget);
   });
 }

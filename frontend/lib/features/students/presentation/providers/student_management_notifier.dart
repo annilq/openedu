@@ -76,4 +76,14 @@ class StudentManagementNotifier
       state = StudentManagementError(e.toString());
     }
   }
+
+  /// 批量移入/移出班级（ticket 03）：[classId] 为 null = 移出归入未分班。
+  /// 成功后重新加载，让分组人数即时刷新。失败抛出由调用方（UI）用 toast 提示。
+  Future<void> batchReassign({
+    required String? classId,
+    required List<String> studentIds,
+  }) async {
+    await _students.batchReassign(classId: classId, studentIds: studentIds);
+    await load();
+  }
 }
