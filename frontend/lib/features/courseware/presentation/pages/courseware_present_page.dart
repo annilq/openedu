@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -14,6 +15,7 @@ import '../../domain/models/courseware_section.dart';
 import '../../domain/models/courseware_section_kind.dart';
 import '../../providers/courseware_provider.dart';
 import '../widgets/courseware_present_step_bar.dart';
+import '../widgets/courseware_script_view.dart';
 import '../widgets/section_interactive_scene.dart';
 import '../widgets/section_media_gallery.dart';
 
@@ -50,6 +52,53 @@ class _CoursewarePresentPageState
   /// 当前环节下标。切换是**页内状态**而不是 push 新路由（§3.8 纪律 3）：
   /// push 会丢掉「现在讲到第几环节」，返回时还要重新找。
   int _index = 0;
+
+  // T06：键盘 / 翻页笔翻页。独立 focusNode，挂载后抢焦点，与 AppPushedPage 的
+  // Esc Shortcuts 并存（Esc 由祖先 Shortcuts 拦截，方向键 / 空格落到本节点）。
+  final FocusNode _focusNode = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    // 首帧后抢焦点：AppPushedPage 自带 autofocus 焦点节点，须主动覆盖才能收到方向键。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focusNode.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  /// 右键 = 下一步；左键 = 上一步。与底部按钮完全等价，供翻页笔 / 键盘遥控。
+  KeyEventResult _onKeyEvent(KeyEvent event, int index, int total) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    if ({
+      LogicalKeyboardKey.arrowRight,
+      LogicalKeyboardKey.arrowDown,
+      LogicalKeyboardKey.space,
+    }.contains(event.logicalKey)) {
+      if (index < total - 1) setState(() => _index = index + 1);
+      return KeyEventResult.handled;
+    }
+    if ({
+      LogicalKeyboardKey.arrowLeft,
+      LogicalKeyboardKey.arrowUp,
+    }.contains(event.logicalKey)) {
+      if (index > 0) setState(() => _index = index - 1);
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  /// T06：字号随可用宽度升档（守 1080 居中列，不破坏切片 8「不溢出」结论）。
+  static double fontScaleFor(double width) {
+    if (width >= 1600) return 1.2;
+    if (width >= 1280) return 1.1;
+    return 1.0;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -109,24 +158,54 @@ class _CoursewarePresentPageState
     final index = _index.clamp(0, courseware.sections.length - 1);
     return AppPushedPage(
       background: app.surface,
-      child: Column(
-        children: [
-          _buildHeader(context, courseware),
-          CoursewarePresentStepBar(
-            sections: courseware.sections,
-            index: index,
-            onSelect: (i) => setState(() => _index = i),
+      child: SafeArea(
+        // T06：键盘 / 翻页笔翻页（与底部按钮翻页等价并存）。
+        child: KeyboardListener(
+          focusNode: _focusNode,
+          onKeyEvent: (e) => _onKeyEvent(e, index, courseware.sections.length),
+          // T06：字号随可用宽度升档，守 AppContentFrame 的 1080 居中列。
+          child: MediaQuery(
+            data: MediaQuery.of(context).copyWith(
+              textScaler: TextScaler.linear(
+                fontScaleFor(MediaQuery.sizeOf(context).width),
+              ),
+            ),
+            child: Column(
+              children: [
+                _buildHeader(context, courseware),
+                CoursewarePresentStepBar(
+                  sections: courseware.sections,
+                  index: index,
+                  onSelect: (i) => setState(() => _index = i),
+                ),
+                // T06：环节切换轻过渡；reduced-motion 下退化为瞬时（不破坏可读性）。
+                Expanded(
+                  child: AnimatedSwitcher(
+                    duration: reducedMotionOf(context)
+                        ? Duration.zero
+                        : const Duration(milliseconds: 200),
+                    transitionBuilder: (child, anim) =>
+                        FadeTransition(opacity: anim, child: child),
+                    child: _PresentStage(
+                      key: ValueKey(index),
+                      section: courseware.sections[index],
+                    ),
+                  ),
+                ),
+                _PresentFooter(
+                  index: index,
+                  total: courseware.sections.length,
+                  onPrev: index > 0
+                      ? () => setState(() => _index = index - 1)
+                      : null,
+                  onNext: index < courseware.sections.length - 1
+                      ? () => setState(() => _index = index + 1)
+                      : null,
+                ),
+              ],
+            ),
           ),
-          Expanded(child: _PresentStage(section: courseware.sections[index])),
-          _PresentFooter(
-            index: index,
-            total: courseware.sections.length,
-            onPrev: index > 0 ? () => setState(() => _index = index - 1) : null,
-            onNext: index < courseware.sections.length - 1
-                ? () => setState(() => _index = index + 1)
-                : null,
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -201,7 +280,7 @@ class _CoursewarePresentPageState
 /// 物理上不可能；且「这些图形有什么共同点？」抛出去才是引导学生观察，藏起来反而
 /// 没了教学动作。
 class _PresentStage extends StatelessWidget {
-  const _PresentStage({required this.section});
+  const _PresentStage({super.key, required this.section});
 
   final CoursewareSectionModel section;
 
@@ -218,7 +297,7 @@ class _PresentStage extends StatelessWidget {
             section.title,
             style: text.titleLarge?.copyWith(color: app.onSurface),
           ),
-          if (section.script.isNotEmpty) ...[
+          if (section.displaySegments.isNotEmpty) ...[
             const SizedBox(height: AppSpacing.md),
             _buildScriptCard(context, app, text),
           ],
@@ -256,9 +335,9 @@ class _PresentStage extends StatelessWidget {
             ),
           ),
           const SizedBox(height: AppSpacing.xs2),
-          Text(
-            section.script,
-            style: text.titleMedium?.copyWith(
+          CoursewareScriptSegmentsView(
+            segments: section.displaySegments,
+            baseStyle: text.titleMedium?.copyWith(
               color: app.onSurface,
               height: 1.5,
             ),

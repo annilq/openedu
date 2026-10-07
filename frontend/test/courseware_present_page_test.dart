@@ -11,6 +11,8 @@
 // 3. 素材 id 失效时显示「素材已移除」，而不是「暂无图片」（§4.2）；
 // 4. `interactive_scene` 的 payload 原样喂 SceneInterpreter（切片 6 零渲染器改动）。
 import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart' as loc;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -99,9 +101,27 @@ Future<void> _pumpPresent(
   List<CoursewareAssetModel> assets = const <CoursewareAssetModel>[],
   Size size = const Size(1366, 768),
   bool settle = true,
+  bool reducedMotion = false,
+  Size? mediaQuerySize,
 }) async {
   await tester.binding.setSurfaceSize(size);
   addTearDown(() => tester.binding.setSurfaceSize(null));
+  // reduced-motion 注入 disableAnimations；mediaQuerySize 注入窗口宽度（T06 字号升档，
+  // 因本 harness 下 setSurfaceSize 不反映到 MediaQuery.sizeOf）。
+  Widget page = CoursewarePresentPage(coursewareId: courseware.id);
+  if (reducedMotion || mediaQuerySize != null) {
+    page = MediaQuery(
+      data: MediaQueryData(
+        size: mediaQuerySize ?? const Size(1366, 768),
+        disableAnimations: reducedMotion,
+      ),
+      child: page,
+    );
+  }
+  final home = Directionality(
+    textDirection: TextDirection.ltr,
+    child: page,
+  );
   await tester.pumpWidget(
     ProviderScope(
       // 数据一律走 provider（R4）：测试不直连 repository / data 层。
@@ -112,10 +132,13 @@ Future<void> _pumpPresent(
       child: ShadApp.custom(
         theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
         appBuilder: (context) => CupertinoApp(
-          home: Directionality(
-            textDirection: TextDirection.ltr,
-            child: CoursewarePresentPage(coursewareId: courseware.id),
-          ),
+          // 与正式 app 一致：CupertinoApp 带 MaterialLocalizations 委托。
+          locale: const Locale('zh', 'CN'),
+          localizationsDelegates: [
+            loc.GlobalMaterialLocalizations.delegate,
+            ...GlobalCupertinoLocalizations.delegates,
+          ],
+          home: home,
         ),
       ),
     ),
@@ -317,5 +340,180 @@ void main() {
 
   testWidgets('平板 1024×768 不溢出（切片 8 / §3.7）', (tester) async {
     await _checkProjectable(tester, const Size(1024, 768));
+  });
+
+  testWidgets('话术多段化（T02）：多段 + 重点逐条投出', (tester) async {
+    await _pumpPresent(
+      tester,
+      courseware: _courseware([
+        CoursewareSectionModel(
+          id: 's1',
+          kind: CoursewareSectionKind.mediaGallery,
+          title: '观察素材',
+          scriptSegments: [
+            CoursewareScriptSegment(
+                text: '开场：看图观察', emphasis: CoursewareScriptEmphasis.bold),
+            CoursewareScriptSegment(
+                text: '追问：共同点？', emphasis: CoursewareScriptEmphasis.highlight),
+            const CoursewareScriptSegment(text: '收尾：小结'),
+          ],
+          payload: {'items': []},
+        ),
+      ]),
+      assets: const [_assetOk],
+    );
+    // 三段话术都作为提问卡内容逐条出现。
+    expect(find.text('开场：看图观察'), findsOneWidget);
+    expect(find.text('追问：共同点？'), findsOneWidget);
+    expect(find.text('收尾：小结'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('旧单串话术课件向后兼容（T02）：不空屏、不报错', (tester) async {
+    await _pumpPresent(
+      tester,
+      courseware: _courseware([
+        CoursewareSectionModel(
+          id: 's2',
+          kind: CoursewareSectionKind.mediaGallery,
+          title: '旧课件',
+          script: '这些图形有什么共同点？',
+          payload: {'items': []},
+        ),
+      ]),
+      assets: const [_assetOk],
+    );
+    expect(find.text('这些图形有什么共同点？'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('T03 媒体画廊：增删后的项集合在演示页画廊正确呈现', (tester) async {
+    const a1 = CoursewareAssetModel(
+      id: 'a1',
+      name: '蝴蝶标本',
+      mime: 'image/png',
+      url: '/x/a1',
+    );
+    const a2 = CoursewareAssetModel(
+      id: 'a2',
+      name: '建筑立面',
+      mime: 'image/png',
+      url: '/x/a2',
+    );
+    await _pumpPresent(
+      tester,
+      courseware: _courseware([
+        _gallerySection([
+          {'asset_id': 'a1', 'caption': '蝴蝶标本'},
+          {'asset_id': 'a2', 'caption': '建筑立面'},
+        ]),
+      ]),
+      assets: const [a1, a2],
+    );
+    // 两张有效素材 → 各自 caption 出现，且不应有「素材已移除」占位。
+    expect(find.text('蝴蝶标本'), findsOneWidget);
+    expect(find.text('建筑立面'), findsOneWidget);
+    expect(find.text('素材已移除'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('T06 键盘 / 翻页笔翻页与底部按钮完全等价', (tester) async {
+    await _pumpPresent(tester, courseware: _fourSections());
+
+    // 生产由 post-frame requestFocus 兜底；测试直接抓 KeyboardListener 节点聚焦更稳。
+    final kb =
+        tester.widget<KeyboardListener>(find.byType(KeyboardListener));
+    kb.focusNode.requestFocus();
+    await tester.pumpAndSettle();
+    expect(kb.focusNode.hasFocus, isTrue, reason: '监听器应已获得焦点');
+
+    expect(find.text('1 / 4'), findsOneWidget);
+
+    // 右方向键 → 下一步。
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+    expect(find.text('2 / 4'), findsOneWidget);
+
+    // 空格 → 下一步（翻页笔下一页键常映射为空格）。
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await tester.pumpAndSettle();
+    expect(find.text('3 / 4'), findsOneWidget);
+
+    // 下方向键 → 下一步。
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    expect(find.text('4 / 4'), findsOneWidget);
+
+    // 末环节：右 / 空格不再越界。
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+    expect(find.text('4 / 4'), findsOneWidget);
+
+    // 左方向键 → 上一步。
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pumpAndSettle();
+    expect(find.text('3 / 4'), findsOneWidget);
+
+    // 上方向键 → 上一步（idx 2 → 1，显示 2 / 4）。
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+    expect(find.text('2 / 4'), findsOneWidget);
+
+    // 已在首环节：左 / 上不再越界，停在 1 / 4。
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pumpAndSettle();
+    expect(find.text('1 / 4'), findsOneWidget);
+  });
+
+  testWidgets('T06 字号随可用宽度升档（≥1600→1.2, ≥1280→1.1, 否则 1.0）',
+      (tester) async {
+    final cases = {
+      const Size(1920, 1080): 1.2,
+      const Size(1366, 768): 1.1,
+      const Size(1024, 768): 1.0,
+    };
+    for (final entry in cases.entries) {
+      await _pumpPresent(
+        tester,
+        courseware: _fourSections(),
+        mediaQuerySize: entry.key,
+      );
+      // 演示页内我加的 MediaQuery 包裹 Column；SafeArea 也会插一个 MediaQuery，但都继承
+      // 同一 textScaler。只要树中存在期望档位的 MediaQuery 即说明升档生效。
+      final mqs = find
+          .descendant(
+            of: find.byType(CoursewarePresentPage),
+            matching: find.byType(MediaQuery),
+          )
+          .evaluate()
+          .map((e) => (e.widget as MediaQuery).data.textScaler.scale(1.0))
+          .toList();
+      final matched =
+          mqs.any((scale) => (scale - entry.value).abs() < 0.001);
+      expect(matched, isTrue,
+          reason: '宽度 ${entry.key.width} 应映射到档 ${entry.value}，'
+              '实际档位集合 $mqs');
+    }
+  });
+
+  testWidgets('T06 环节切换加轻过渡；reduced-motion 下退化为瞬时', (tester) async {
+    // 非减弱：过渡 200ms。
+    await _pumpPresent(tester, courseware: _fourSections());
+    final sw = tester.widget<AnimatedSwitcher>(find.byType(AnimatedSwitcher));
+    expect(sw.duration, const Duration(milliseconds: 200));
+
+    // 切到下一环节触发过渡（仅确认不报错）。
+    await tester.tap(find.text('下一步'));
+    await tester.pumpAndSettle();
+    expect(find.text('2 / 4'), findsOneWidget);
+
+    // reduced-motion：过渡持续时间为零。
+    await _pumpPresent(
+      tester,
+      courseware: _fourSections(),
+      reducedMotion: true,
+    );
+    final swr = tester.widget<AnimatedSwitcher>(find.byType(AnimatedSwitcher));
+    expect(swr.duration, Duration.zero);
   });
 }
