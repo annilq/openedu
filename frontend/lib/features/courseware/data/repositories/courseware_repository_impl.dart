@@ -137,4 +137,37 @@ class CoursewareRepositoryImpl implements CoursewareRepository {
       Map<String, dynamic>.from(data as Map),
     );
   }
+
+  @override
+  Future<List<Map<String, dynamic>>?> getKnowledgePointScenes({
+    required String kpId,
+    required String subject,
+    required int grade,
+    String semester = '',
+  }) async {
+    // 复用资料库目录端点：每个知识点条目已带 scenes（后端 KnowledgePointResp.scenes）。
+    final data = await _network.get(
+      '/materials/knowledge-points',
+      query: {
+        'subject': subject,
+        'grade': grade,
+        if (semester.isNotEmpty) 'semester': semester,
+      },
+    );
+    final items = (data as List? ?? const []);
+    for (final e in items) {
+      final m = Map<String, dynamic>.from(e as Map);
+      if (m['id'] == kpId) {
+        final scenes = m['scenes'];
+        if (scenes is List) {
+          return [
+            for (final s in scenes)
+              Map<String, dynamic>.from(s as Map),
+          ];
+        }
+        return null;
+      }
+    }
+    return null;
+  }
 }

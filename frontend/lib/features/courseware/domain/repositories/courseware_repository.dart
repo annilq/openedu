@@ -67,4 +67,19 @@ abstract class CoursewareRepository {
   /// 重起草：取新草稿相对当前稿的逐段 diff（不新建副本）。教师逐段选完后把合并
   /// 结果经 [updateSections] 写回同一课件。
   Future<CoursewareRedraftDiffModel> getRedraftDiff(String coursewareId);
+
+  /// 取某知识点已配置的交互讲解模板（KnowledgePoint.scenes）。
+  ///
+  /// 复用资料库目录端点（每项已带 scenes，后端 `KnowledgePointResp.scenes`），按
+  /// id 命中返回；无模板 / 找不到返回 null。课件编辑器「关联知识点场景」用它列出
+  /// 可复用模板（ADR-0067 §3.3 / 方案 A）——使「知识点没配就选不到」在课件里也成立。
+  ///
+  /// ⚠️ 这里跨 feature 直连了 materials 端点：同一个后端、shared 的 [NetworkService]，
+  /// 比让 courseware 表现层 import home provider 更干净（数据层收口端点契约）。
+  Future<List<Map<String, dynamic>>?> getKnowledgePointScenes({
+    required String kpId,
+    required String subject,
+    required int grade,
+    String semester = '',
+  });
 }

@@ -131,6 +131,10 @@ class _CoursewareEditorPageState extends ConsumerState<CoursewareEditorPage> {
       context,
       ref,
       section,
+      knowledgePointId: widget.knowledgePointId,
+      subject: widget.subject,
+      grade: widget.grade,
+      semester: widget.semester,
     );
     if (updated == null || _courseware == null) return;
     setState(() => _busy = true);

@@ -5,9 +5,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_actions.dart';
 import '../../../../shared/widgets/app_buttons.dart';
+import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/app_inputs.dart';
+import '../../../../shared/widgets/app_loading.dart';
+import '../../../../shared/widgets/app_toast.dart';
 import '../../domain/models/courseware_section.dart';
 import '../../domain/models/courseware_section_kind.dart';
+import '../../providers/courseware_provider.dart';
 import 'courseware_asset_picker_sheet.dart';
 
 /// 编辑单个讲解环节（ADR-0067 §3.3）：标题 + 教师话术（提问卡，可多段 + 重点）+ 按 kind 的专属内容。
@@ -19,20 +23,46 @@ import 'courseware_asset_picker_sheet.dart';
 /// - `interactiveScene`：场景由 AI 起草决定，此处只调标题 / 话术，重做场景走「AI 重新起草」。
 ///
 /// 返回更新后的 [CoursewareSectionModel]；取消则回 null，调用方不落库。
+///
+/// [knowledgePointId] / [subject] / [grade] / [semester] 用于 `interactiveScene`
+/// 环节「关联知识点场景」——按知识点拉取其已配置的讲解模板供复用（方案 A）。
+/// 课件孤儿（[knowledgePointId] 为 null）时该能力自动不可用。
 Future<CoursewareSectionModel?> showCoursewareSectionEditDialog(
   BuildContext context,
   WidgetRef ref,
-  CoursewareSectionModel section,
-) =>
+  CoursewareSectionModel section, {
+  String? knowledgePointId,
+  required String subject,
+  required int grade,
+  String semester = '',
+}) =>
     showDialog<CoursewareSectionModel>(
       context: context,
-      builder: (_) => _SectionEditDialog(section: section),
+      builder: (_) => _SectionEditDialog(
+        section: section,
+        knowledgePointId: knowledgePointId,
+        subject: subject,
+        grade: grade,
+        semester: semester,
+      ),
     );
 
 class _SectionEditDialog extends ConsumerStatefulWidget {
-  const _SectionEditDialog({required this.section});
+  const _SectionEditDialog({
+    required this.section,
+    this.knowledgePointId,
+    required this.subject,
+    required this.grade,
+    this.semester = '',
+  });
 
   final CoursewareSectionModel section;
+
+  /// 课件所属知识点 id（顶层关联）。null = 孤儿课件，无法关联场景。
+  final String? knowledgePointId;
+  final String subject;
+  final int grade;
+  final String semester;
 
   @override
   ConsumerState<_SectionEditDialog> createState() => _SectionEditDialogState();
@@ -44,6 +74,10 @@ class _SectionEditDialogState extends ConsumerState<_SectionEditDialog> {
   late List<TextEditingController> _segCtls;
   late List<CoursewareScriptEmphasis> _segEmphasis;
   late CoursewareSectionModel _draft;
+
+  /// `interactiveScene` 环节「关联知识点场景」：拉取的知识点模板与加载态。
+  List<Map<String, dynamic>>? _kpScenes;
+  bool _scenesLoading = false;
 
   @override
   void initState() {
@@ -63,7 +97,51 @@ class _SectionEditDialogState extends ConsumerState<_SectionEditDialog> {
     _segEmphasis = [for (final s in seed) s.emphasis];
 
     _draft = widget.section;
+
+    // interactiveScene 环节：进入即按知识点拉取其已配置的讲解模板（方案 A）。
+    // 知识点没配 → 拉到空列表 → UI 提示去知识点页配置；孤儿课件则根本不拉。
+    if (widget.section.kind == CoursewareSectionKind.interactiveScene &&
+        widget.knowledgePointId != null) {
+      _loadKnowledgePointScenes();
+    }
   }
+
+  Future<void> _loadKnowledgePointScenes() async {
+    if (widget.knowledgePointId == null) return;
+    setState(() => _scenesLoading = true);
+    try {
+      final scenes = await ref.read(coursewareRepositoryProvider).getKnowledgePointScenes(
+            kpId: widget.knowledgePointId!,
+            subject: widget.subject,
+            grade: widget.grade,
+            semester: widget.semester,
+          );
+      if (!mounted) return;
+      setState(() {
+        _kpScenes = scenes;
+        _scenesLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _kpScenes = null;
+        _scenesLoading = false;
+      });
+      AppToast.show(context, '读取知识点场景失败：$e');
+    }
+  }
+
+  /// 选中一份知识点模板 → 原样写进本节 payload（演示页直接渲染，见
+  /// [SectionInteractiveScene]）。这是「快照式」关联：复制进来，不随知识点后续改动自动更新。
+  void _associateScene(Map<String, dynamic> spec) => setState(
+        () => _draft = _draft.copyWith(
+          payload: Map<String, dynamic>.from(spec),
+        ),
+      );
+
+  /// 清除关联：payload 置空，演示页回落到「还没有配置交互演示」提示。
+  void _clearAssociation() =>
+      setState(() => _draft = _draft.copyWith(payload: const {}));
 
   @override
   void dispose() {
@@ -187,6 +265,9 @@ class _SectionEditDialogState extends ConsumerState<_SectionEditDialog> {
                         AppTextAction(label: '添加素材', onPressed: _addAsset),
                       ] else if (_draft.kind == CoursewareSectionKind.practice) ...[
                         AppTextField(label: '题型（qtype）', controller: _qtypeCtl),
+                      ] else if (_draft.kind ==
+                          CoursewareSectionKind.interactiveScene) ...[
+                        _interactiveSceneBlock(app, text),
                       ] else if (_draft.isUnknownKind) ...[
                         Text(
                           '未知环节类型，无法编辑内容。',
@@ -270,6 +351,120 @@ class _SectionEditDialogState extends ConsumerState<_SectionEditDialog> {
           ),
         ],
       ),
+    );
+  }
+
+  /// `interactiveScene` 环节：「关联知识点场景」（方案 A）。
+  ///
+  /// 列出该知识点在「讲解」里已配置的交互演示模板，点一份即复制进本节 payload；
+  /// 知识点没配 → 提示去知识点页配置；孤儿课件 → 直接不可用。
+  Widget _interactiveSceneBlock(AppColors app, AppText text) {
+    String titleOf(Map<String, dynamic> spec) =>
+        (spec['title'] as String?)?.isNotEmpty == true
+            ? spec['title'] as String
+            : ((spec['kind'] as String?)?.isNotEmpty == true
+                ? spec['kind'] as String
+                : '未命名模板');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('关联知识点场景', style: text.labelMedium),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          '复用该知识点在「讲解」入口配置好的交互演示模板；选中即填入本环节。',
+          style: text.bodySmall?.copyWith(color: app.onSurfaceVariant),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        if (widget.knowledgePointId == null)
+          Text(
+            '该课件的知识点已移除，无法关联场景。',
+            style: text.bodySmall?.copyWith(color: app.error),
+          )
+        else if (_scenesLoading)
+          const Center(child: AppLoading())
+        else if (_kpScenes == null)
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '读取知识点场景失败。',
+                  style: text.bodySmall?.copyWith(color: app.error),
+                ),
+              ),
+              AppTextAction(
+                label: '重试',
+                onPressed: _loadKnowledgePointScenes,
+              ),
+            ],
+          )
+        else if (_kpScenes!.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(AppSpacing.sm),
+            decoration: BoxDecoration(
+              color: app.secondary.withValues(alpha: 0.08),
+              border: Border.all(color: app.secondary, width: 1.5),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              '该知识点还没有配置交互讲解模板。请先到知识点页的「讲解」入口配置一份'
+              '（如轴对称选图形 + 调对称轴），这里才能选到它。',
+              style: text.bodySmall?.copyWith(color: app.onSurfaceVariant),
+            ),
+          )
+        else
+          ...[
+            for (final spec in _kpScenes!)
+              Padding(
+                padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                child: AppCard(
+                  onTap: () => _associateScene(spec),
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppSpacing.sm),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(titleOf(spec), style: text.titleSmall),
+                              const SizedBox(height: AppSpacing.xs),
+                              Text(
+                                '类型：${spec['kind'] ?? '未知'}',
+                                style: text.bodySmall
+                                    ?.copyWith(color: app.onSurfaceVariant),
+                              ),
+                            ],
+                          ),
+                        ),
+                        AppTextAction(
+                          label: '选用',
+                          onPressed: () => _associateScene(spec),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            if (_draft.payload.isNotEmpty) ...[
+              const SizedBox(height: AppSpacing.xs),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '本环节已填入交互演示内容。',
+                      style: text.bodySmall
+                          ?.copyWith(color: app.onSurfaceVariant),
+                    ),
+                  ),
+                  AppTextAction(
+                    label: '清除关联',
+                    onPressed: _clearAssociation,
+                  ),
+                ],
+              ),
+            ],
+          ],
+      ],
     );
   }
 }

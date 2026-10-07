@@ -110,6 +110,18 @@ class _FakeRepo extends CoursewareRepository {
     return redraftDiff ?? CoursewareRedraftDiffModel(diff: const []);
   }
 
+  /// 知识点讲解模板：测试里可注入，模拟「已配置 / 未配置」两种场景。
+  List<Map<String, dynamic>>? kpScenes;
+
+  @override
+  Future<List<Map<String, dynamic>>?> getKnowledgePointScenes({
+    required String kpId,
+    required String subject,
+    required int grade,
+    String semester = '',
+  }) async =>
+      kpScenes;
+
   @override
   Future<List<CoursewareAssetModel>> getAssets({
     String? knowledgePointId,
@@ -702,6 +714,101 @@ void main() {
       expect(repo.createCoursewareCalls, 0);
       expect(repo.redraftDiffCalls, 0);
       expect(find.text('环节一'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('interactiveScene 关联知识点场景（方案 A）', () {
+    CoursewareSectionModel _scene(String id) => CoursewareSectionModel(
+          id: id,
+          kind: CoursewareSectionKind.interactiveScene,
+          title: '动手画对称图形',
+          payload: const {},
+        );
+
+    final _reflectionSpec = <String, dynamic>{
+      'kind': 'reflection',
+      'title': '图形的运动（轴对称）',
+      'inputs': <dynamic>[],
+      'controls': <String, dynamic>{},
+      'narrative': '对折演示',
+      'outputs': <String, dynamic>{'isAxisymmetric': true},
+      'editable': true,
+    };
+
+    Future<void> _openSceneDialog(WidgetTester tester, _FakeRepo repo) async {
+      await _pumpEditor(tester, repo: repo);
+      await tester.tap(find.text('动手画对称图形'));
+      await tester.pumpAndSettle();
+      expect(find.text('编辑环节'), findsOneWidget);
+    }
+
+    testWidgets('交互讲解环节：对话框出现「关联知识点场景」并列出已配置模板',
+        (tester) async {
+      final repo = _FakeRepo(_editorCourseware([_scene('a')]));
+      repo.kpScenes = [_reflectionSpec];
+      await _openSceneDialog(tester, repo);
+
+      expect(find.text('关联知识点场景'), findsOneWidget);
+      // 模板按 title 列出，并有「选用」入口。
+      expect(find.text('图形的运动（轴对称）'), findsWidgets);
+      expect(find.text('选用'), findsWidgets);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('选用模板 → 写入 payload 并随保存持久化', (tester) async {
+      final repo = _FakeRepo(_editorCourseware([_scene('a')]));
+      repo.kpScenes = [_reflectionSpec];
+      await _openSceneDialog(tester, repo);
+
+      await tester.tap(find.text('选用'));
+      await tester.pumpAndSettle();
+      // 选用后本环节显示「已填入交互演示内容」+ 清除关联。
+      expect(find.text('本环节已填入交互演示内容。'), findsOneWidget);
+
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+
+      expect(repo.updateSectionsCalls, 1);
+      final payload = repo.lastUpdated!.first.payload;
+      expect(payload['kind'], 'reflection');
+      expect(payload['title'], '图形的运动（轴对称）');
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('知识点未配置模板 → 提示去知识点页配置且无「选用」入口',
+        (tester) async {
+      final repo = _FakeRepo(_editorCourseware([_scene('a')]));
+      repo.kpScenes = const []; // 未配置
+      await _openSceneDialog(tester, repo);
+
+      expect(find.text('关联知识点场景'), findsOneWidget);
+      expect(
+        find.text('该知识点还没有配置交互讲解模板。请先到知识点页的「讲解」入口配置一份'
+            '（如轴对称选图形 + 调对称轴），这里才能选到它。'),
+        findsOneWidget,
+      );
+      expect(find.text('选用'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('已关联后可「清除关联」，保存后 payload 为空', (tester) async {
+      // 节本来就带一份关联（payload 非空）。
+      final sec = _scene('a').copyWith(payload: _reflectionSpec);
+      final repo = _FakeRepo(_editorCourseware([sec]));
+      repo.kpScenes = [_reflectionSpec];
+      await _openSceneDialog(tester, repo);
+
+      expect(find.text('本环节已填入交互演示内容。'), findsOneWidget);
+      await tester.tap(find.text('清除关联'));
+      await tester.pumpAndSettle();
+      expect(find.text('本环节已填入交互演示内容。'), findsNothing);
+
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+
+      expect(repo.updateSectionsCalls, 1);
+      expect(repo.lastUpdated!.first.payload, isEmpty);
       expect(tester.takeException(), isNull);
     });
   });
