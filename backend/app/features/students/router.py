@@ -1,7 +1,8 @@
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, File, HTTPException, UploadFile, status
 
+from app.core.config import settings
 from app.core.deps import CurrentTeacher, SessionDep
 from app.core.errors import ErrCode
 from app.core.guard import require_owned_student
@@ -19,6 +20,8 @@ from app.features.auth.schemas import (
     UsersPublic,
     UserUpdate,
 )
+from app.features.students.schemas import StudentImportResult
+from app.features.students.service import import_students_from_xlsx
 
 router = APIRouter(prefix="/students", tags=["students"])
 
@@ -36,6 +39,31 @@ def create_student(
         teacher_id=teacher.id,
     )
     return student
+
+
+@router.post("/import", response_model=StudentImportResult)
+async def import_students(
+    *, session: SessionDep, teacher: CurrentTeacher, file: UploadFile = File(...)
+) -> StudentImportResult:
+    """批量导入学生（ADR-0068 §2.2）：上传 xlsx 花名册，username=学号、初始密码=配置值。
+
+    - 文件大小超限 → 413；缺必要列 / 行数超限 / 空文件 → 400。
+    - 逐行缺列或学号冲突 → 落 ``skipped`` 并回传行号，整体仍 200（见 ``StudentImportResult``）。
+    """
+    data = await file.read()
+    if len(data) > settings.STUDENT_IMPORT_MAX_BYTES:
+            raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail=f"文件过大，上限 {settings.STUDENT_IMPORT_MAX_BYTES} 字节",
+        )
+    try:
+        return import_students_from_xlsx(
+            session=session, teacher_id=teacher.id, data=data
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        )
 
 
 @router.put("/{student_id}", response_model=UserPublic)

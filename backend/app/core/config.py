@@ -128,6 +128,15 @@ class Settings(BaseSettings):
     # 沿用资料的 64MB 会让教师误把整本教材扫描件当素材传进来。
     COURSEWARE_ASSET_MAX_BYTES: int = 10 * 1024 * 1024
 
+    # —— 学生账号导入与导出（ADR-0068 §2.2）——
+    # 导入走 `POST /students/import`：xlsx 解析外部上传，是新增攻击面，必须限制大小与行数。
+    # 初始密码统一常量，导入时设定、账号表导出（07）时回显，二者须一致。
+    STUDENT_DEFAULT_PASSWORD: str = "123456"
+    # 单次上传文件大小上限：5MB 对一份花名册绰绰有余，超限直接 413 而非读完再拒。
+    STUDENT_IMPORT_MAX_BYTES: int = 5 * 1024 * 1024
+    # 单次导入行数上限：防超大表拖垮服务（openpyxl 逐行读但写库是循环，须有界）。
+    STUDENT_IMPORT_MAX_ROWS: int = 1000
+
     # —— embedding 服务端基础设施（ADR-0055 §8，显式豁免 ADR-0039）——
     # embedding **不进教师 ModelConfig**：向量绑定模型是物理约束——若跟着教师的
     # 聊天模型走，教师换一次默认模型，全部存量向量跨空间作废。这不违反 0039 的
