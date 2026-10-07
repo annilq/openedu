@@ -11,6 +11,11 @@ import 'package:kids_learn/shared/data/local/storage_service.dart';
 import 'package:kids_learn/shared/domain/models/models.dart';
 import 'package:kids_learn/shared/domain/providers/core_providers.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
+import 'package:kids_learn/features/classes/domain/models/class_model.dart';
+import 'package:kids_learn/features/classes/domain/repositories/classes_repository.dart';
+import 'package:kids_learn/features/classes/providers/classes_provider.dart';
+import 'package:kids_learn/features/students/domain/repositories/students_repository.dart';
+import 'package:kids_learn/features/students/providers/students_provider.dart';
 import 'package:kids_learn/shared/widgets/app_sidebar.dart' show AppSidebarItem;
 import 'package:kids_learn/shared/widgets/app_focusable_action.dart';
 
@@ -191,6 +196,49 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   });
+
+  group('行为：ticket 16 新增页面状态可达（学生管理 / 学生详情）', () {
+    // ⚠️ 这两个页面态（StudentManagementPage / StudentDetailPage）是 16 收尾新增的
+    // `TeacherPage` 分支；只靠 sealed 穷尽性只能保证「编译过」，UI 层若没真构建过
+    // 仍可能漏接 `onOpenStudent` 之类的跳转回调。`flutter analyze` 照不出来，必须真点。
+    testWidgets('教师端：点「学生」高亮唯一且渲染学生管理页', (tester) async {
+      await _pumpTeacherHome(tester);
+      expect(_activeLabels(tester), ['概览']);
+
+      await tester.tap(find.text('学生'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      expect(_activeLabels(tester), ['学生'],
+          reason: '同一时刻侧栏只能有一个高亮项（单一导航状态）');
+      expect(find.text('学生管理'), findsOneWidget,
+          reason: 'StudentManagementPage 应真正渲染');
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('教师端：从「学生」drill 进学生详情，侧栏零高亮且详情页渲染',
+        (tester) async {
+      await _pumpTeacherHome(tester);
+      expect(_activeLabels(tester), ['概览']);
+
+      await tester.tap(find.text('学生'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(_activeLabels(tester), ['学生']);
+      expect(find.text('学生管理'), findsOneWidget);
+
+      // 在管理页点学生行 → 经 HomeScreen 接好的 `onOpenStudent` 进入 StudentDetailPage。
+      await tester.tap(find.text('小明'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      expect(find.text('错题本'), findsWidgets,
+          reason: '学生详情页应渲染（页签「错题本」来自 StudentDetailTab.wrongQuestions）');
+      expect(_activeLabels(tester), isEmpty,
+          reason: '详情页是 drill-down，不应高亮任何顶级侧栏项（单一导航状态语义）');
+      expect(tester.takeException(), isNull);
+    });
+  });
 }
 
 /// 侧栏（AppSidebarItem）里处于高亮态的标签——「我的」不计入，它在侧栏底部用户区。
@@ -214,3 +262,72 @@ UserModel _child() => UserModel(
       role: 'child',
       grade: 2,
     );
+
+/// ticket 16 收尾：让「学生」入口真能加载出学生，从而 drill 进学生详情页。
+/// 桩只实现管理页用到的取数方法，其余走 noSuchMethod。
+final _classes = [
+  ClassModel(id: 'c1', name: '三(1)班', grade: 3, studentCount: 1),
+];
+final _students = [
+  UserModel(
+    id: 's1',
+    username: '2023001',
+    displayName: '小明',
+    role: 'child',
+    grade: 3,
+    classId: 'c1',
+  ),
+];
+final _wrongCounts = <String, int>{'s1': 0};
+
+class _FakeStudentsRepo implements StudentsRepository {
+  @override
+  dynamic noSuchMethod(Invocation i) => throw UnimplementedError();
+
+  @override
+  Future<List<UserModel>> getStudents({
+    String? classId,
+    String? keyword,
+  }) async =>
+      _students;
+
+  @override
+  Future<Map<String, int>> getWrongQuestionCounts() async => _wrongCounts;
+}
+
+class _FakeClassesRepo implements ClassesRepository {
+  @override
+  dynamic noSuchMethod(Invocation i) => throw UnimplementedError();
+
+  @override
+  Future<List<ClassModel>> getClasses() async => _classes;
+}
+
+/// 用桩 repository 泵起教师端 HomeScreen，使「学生」入口能渲染并 drill 进详情。
+Future<void> _pumpTeacherHome(
+  WidgetTester tester, {
+  List<Override> extra = const [],
+}) async {
+  SharedPreferences.setMockInitialValues({});
+  final storage = StorageService();
+  await storage.init();
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        storageServiceProvider.overrideWithValue(storage),
+        studentsRepositoryProvider
+            .overrideWithValue(_FakeStudentsRepo()),
+        classesRepositoryProvider.overrideWithValue(_FakeClassesRepo()),
+        ...extra,
+      ],
+      child: ShadApp.custom(
+        theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
+        appBuilder: (context) => CupertinoApp(
+          home: HomeScreen(user: _teacher(), onLogout: () {}),
+        ),
+      ),
+    ),
+  );
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 50));
+}

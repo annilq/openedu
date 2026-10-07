@@ -6,13 +6,15 @@
 
 **Blocked by:** 15: 删除全局 selectedStudentProvider（全局状态移除后顶部选择器才能删）
 
-**Status:** in-progress
+**Status:** done
 
 - [x] 侧栏已含「学生」「统计」入口，可达对应页（`teacher_destinations.dart:55-64`）
 - [x] 顶部选择器文件已删除（`teacher_student_selector.dart` 已从 git 移除）
-- [ ] 全局 `selectedStudentProvider` 删除后，顶部选择器残留浮层彻底消失（依赖 15）
-- [ ] 导航状态仍为唯一 sealed，新增页面状态已登记
-- [ ] 扩展既有 `teacher_nav_single_source_test.dart` 覆盖新增两个页面状态，不新建测试缝
-- [ ] 移除顶部选择器后 `flutter analyze` 零错误
+- [x] 全局 `selectedStudentProvider` 删除后，顶部选择器残留浮层彻底消失（依赖 15）
+- [x] 导航状态仍为唯一 sealed，新增页面状态已登记
+- [x] 扩展既有 `teacher_nav_single_source_test.dart` 覆盖新增两个页面状态，不新建测试缝
+- [x] 移除顶部选择器后 `flutter analyze` 零错误
+
+**Done note (2026-10-07):** 收尾落地：① 顶部选择器残留浮层已随 15 删 `selectedStudentProvider` 消失（`selectedStudentProvider` 仅剩注释引用，`teacher_student_selector.dart` 已从 git 移除）；② `TeacherPage`（`teacher_pages.dart:16`）已是 sealed，且已含 `StudentManagementPage`/`StudentDetailPage` 两分支，`home_screen.dart` 的 sealed switch 穷尽接线；③ `teacher_nav_single_source_test.dart` 新增两用例，真构建覆盖「学生」入口（`StudentManagementPage`）与 drill 进学生详情（`StudentDetailPage`，侧栏零高亮），共 7 例全过；④ `flutter analyze` 零 error。附带修 `analytics_screen_test` 的 `_FakeStudentsRepository` 补 `importStudents`（ticket 06 给 `StudentsRepository` 抽象加方法后的遗留缺口）。
 
 **决策锚点：** ADR-0070；顶部选择器与全局状态一体移除（15 已删 provider，本 ticket 收尾 UI）。C6（概览改教师工作台）按 spec 建议先出原型、延后单独排期，不在本轮 16 票内。

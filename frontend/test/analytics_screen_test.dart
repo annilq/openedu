@@ -18,6 +18,7 @@ import 'package:kids_learn/features/analytics/presentation/screens/analytics_scr
 import 'package:kids_learn/features/classes/domain/models/class_model.dart';
 import 'package:kids_learn/features/classes/domain/repositories/classes_repository.dart';
 import 'package:kids_learn/features/classes/providers/classes_provider.dart';
+import 'package:kids_learn/features/students/domain/models/student_import_result.dart';
 import 'package:kids_learn/features/students/domain/repositories/students_repository.dart';
 import 'package:kids_learn/features/students/providers/students_provider.dart';
 import 'package:kids_learn/shared/domain/models/user.dart';
@@ -160,6 +161,13 @@ class _FakeStudentsRepository implements StudentsRepository {
     required List<String> studentIds,
   }) async =>
       throw UnimplementedError();
+
+  @override
+  Future<StudentImportResultModel> importStudents({
+    required List<int> bytes,
+    required String filename,
+  }) async =>
+      StudentImportResultModel(created: 0, skipped: 0, errors: const []);
 }
 
 Future<void> _pumpScreen(WidgetTester tester) async {
