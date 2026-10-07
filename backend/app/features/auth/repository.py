@@ -66,10 +66,22 @@ def authenticate(*, session: Session, username: str, password: str) -> User | No
     return db_user
 
 
-def list_students(*, session: Session, teacher_id: uuid.UUID) -> list[User]:
+def list_students(
+    *,
+    session: Session,
+    teacher_id: uuid.UUID,
+    class_id: uuid.UUID | None = None,
+    keyword: str | None = None,
+) -> list[User]:
     from sqlmodel import select
 
-    return list(session.exec(select(User).where(User.teacher_id == teacher_id)))
+    stmt = select(User).where(User.teacher_id == teacher_id)
+    if class_id is not None:
+        stmt = stmt.where(User.class_id == class_id)
+    if keyword:
+        kw = f"%{keyword}%"
+        stmt = stmt.where((User.username.like(kw)) | (User.display_name.like(kw)))
+    return list(session.exec(stmt))
 
 
 def update_user(

@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, File, HTTPException, Response, UploadFile, status
+from fastapi import APIRouter, File, HTTPException, Query, Response, UploadFile, status
 
 from app.core.config import settings
 from app.core.deps import CurrentTeacher, SessionDep
@@ -105,8 +105,19 @@ def update_student(
 
 
 @router.get("", response_model=UsersPublic)
-def get_students(*, session: SessionDep, teacher: CurrentTeacher) -> UsersPublic:
-    students = list_students(session=session, teacher_id=teacher.id)
+def get_students(
+    *,
+    session: SessionDep,
+    teacher: CurrentTeacher,
+    class_id: UUID | None = Query(default=None, description="按班级筛选；不传=全部"),
+    keyword: str | None = Query(default=None, description="按姓名或学号模糊搜索"),
+) -> UsersPublic:
+    students = list_students(
+        session=session,
+        teacher_id=teacher.id,
+        class_id=class_id,
+        keyword=keyword,
+    )
     return UsersPublic(data=students, count=len(students))
 
 

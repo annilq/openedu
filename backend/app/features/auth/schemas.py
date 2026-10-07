@@ -30,6 +30,8 @@ class LoginRequest(SQLModel):
 
 class UserPublic(UserBase):
     id: UUID
+    # 供前端按班级分组（ADR-0068 §2.3 / ticket 02）；未分班学生为 None。
+    class_id: UUID | None = None
 
 
 class UsersPublic(SQLModel):
