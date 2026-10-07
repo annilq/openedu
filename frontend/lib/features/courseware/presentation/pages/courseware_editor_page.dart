@@ -64,15 +64,13 @@ class _CoursewareEditorPageState extends ConsumerState<CoursewareEditorPage> {
     setState(() => _loading = true);
     try {
       final repo = ref.read(coursewareRepositoryProvider);
-      // 一个知识点可有多份课件，取最新一份继续编辑（ADR-0067 §3.2）。
+      // 只查「这个知识点有没有课件」。**不自动建、不自动让 AI 起草**——没有就停在
+      // 空态，由用户点「新增课件信息」主动触发（决策 2 改为显式发起，避免进入即空白等待）。
       final list =
           await repo.listCourseware(knowledgePointId: widget.knowledgePointId);
-      final CoursewareModel cw = list.isNotEmpty
-          ? list.first
-          : await repo.createCourseware(knowledgePointId: widget.knowledgePointId);
       if (!mounted) return;
       setState(() {
-        _courseware = cw;
+        _courseware = list.isNotEmpty ? list.first : null;
         _loading = false;
       });
     } catch (e) {
@@ -81,6 +79,27 @@ class _CoursewareEditorPageState extends ConsumerState<CoursewareEditorPage> {
         _error = e.toString();
         _loading = false;
       });
+    }
+  }
+
+  /// 首次生成（决策 2 的显式发起）：用户点「新增课件信息」才调用，由后端按知识点
+  /// 跑 AI 起草并返回完整课件。期间保持 [_courseware] 为 null + [_busy] 为真，
+  /// 页面显示「AI 正在生成课件」提示，不再是毫无反馈的空白页。
+  Future<void> _createFirst() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final repo = ref.read(coursewareRepositoryProvider);
+      final created = await repo.createCourseware(
+          knowledgePointId: widget.knowledgePointId);
+      if (!mounted) return;
+      setState(() => _courseware = created);
+      AppToast.show(context, '已生成课件讲解安排');
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.show(context, '生成课件失败：$e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -188,13 +207,22 @@ class _CoursewareEditorPageState extends ConsumerState<CoursewareEditorPage> {
     if (_error != null) {
       return Center(child: AppError(message: _error!, onRetry: _loadOrCreate));
     }
+    // 显式生成中（点「新增课件信息」后）：明确告知 AI 正在起草，替代原无文案空白页。
+    if (_busy && _courseware == null) {
+      return const Center(
+        child: AppLoading(message: 'AI 正在生成课件，请稍候…'),
+      );
+    }
     final cw = _courseware;
     if (cw == null) {
-      return const Center(
+      // 还没有课件：停在空态，由用户主动发起（点「新增课件信息」才调 AI 起草）。
+      return Center(
         child: AppEmptyState(
-          icon: LucideIcons.fileWarning,
-          title: '课件为空',
-          message: '未能加载课件，请重试。',
+          icon: LucideIcons.sparkles,
+          title: '还没有课件',
+          message: '点「新增课件信息」按这个知识点生成一份讲解安排。',
+          actionLabel: '新增课件信息',
+          onAction: _createFirst,
         ),
       );
     }

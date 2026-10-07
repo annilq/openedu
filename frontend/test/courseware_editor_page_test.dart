@@ -43,8 +43,10 @@ CoursewareModel _editorCourseware(List<CoursewareSectionModel> sections) =>
 /// 内存假仓库：只实现编辑器用到的 [listCourseware] / [updateSections] / [getRedraftDiff]，
 /// 其余给计数占位，便于断言「重起草不新建/删除副本」。
 class _FakeRepo extends CoursewareRepository {
-  _FakeRepo(this._courseware);
+  _FakeRepo(this._courseware, {this.listReturnsEmpty = false});
   final CoursewareModel _courseware;
+  // 模拟「这个知识点还没有课件」：listCourseware 返回空（T09 进入即空态）。
+  final bool listReturnsEmpty;
   List<CoursewareSectionModel>? lastUpdated;
   int updateSectionsCalls = 0;
   int createCoursewareCalls = 0;
@@ -59,7 +61,7 @@ class _FakeRepo extends CoursewareRepository {
     int? grade,
     String? semester,
   }) async =>
-      [_courseware];
+      listReturnsEmpty ? <CoursewareModel>[] : [_courseware];
 
   @override
   Future<CoursewareModel> updateSections(
@@ -84,6 +86,8 @@ class _FakeRepo extends CoursewareRepository {
   Future<CoursewareModel> createCourseware(
           {required String knowledgePointId, String? title}) async {
     createCoursewareCalls++;
+    // 人为延迟，让「生成中」提示可被 widget 测试稳定观测（生产端是真 AI 起草，本就慢）。
+    await Future.delayed(const Duration(milliseconds: 50));
     return _courseware;
   }
 
@@ -651,6 +655,54 @@ void main() {
         const CoursewareAssetModel(id: 'x', name: 'n').isPlatformCc0,
         isFalse,
       );
+    });
+  });
+
+  group('进入不自动建课件，显式发起 AI 生成（T09）', () {
+    CoursewareModel _emptyKpCourseware() => _editorCourseware(const []);
+
+    testWidgets('进入无课件知识点：不自动建、显示「新增课件信息」按钮',
+        (tester) async {
+      // listCourseware 返回空 → 编辑器停在空态，不应自动调 createCourseware。
+      final repo = _FakeRepo(_emptyKpCourseware(), listReturnsEmpty: true);
+      await _pumpEditor(tester, repo: repo);
+
+      // 关键：进入页面没有自动请求 AI（createCourseware 调用计数为 0）。
+      expect(repo.createCoursewareCalls, 0);
+      // 空态给出下一步：主动发起按钮。
+      expect(find.text('还没有课件'), findsOneWidget);
+      expect(find.text('新增课件信息'), findsOneWidget);
+      // 没有环节列表、没有「开始讲课」（无课件不可讲）。
+      expect(find.text('开始讲课'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('点「新增课件信息」触发 AI 生成并展示课件', (tester) async {
+      final repo = _FakeRepo(_emptyKpCourseware(), listReturnsEmpty: true);
+      await _pumpEditor(tester, repo: repo);
+      expect(repo.createCoursewareCalls, 0);
+
+      await tester.tap(find.text('新增课件信息'));
+      // 生成中：明确提示，且仍在忙（不会闪过空白）。
+      await tester.pump();
+      expect(find.text('AI 正在生成课件，请稍候…'), findsOneWidget);
+
+      await tester.pumpAndSettle();
+      // 生成完成后展示课件内容（这里假仓库返回有环节的课件）。
+      expect(repo.createCoursewareCalls, 1);
+      expect(find.text('新增课件信息'), findsNothing);
+      expect(find.text('开始讲课'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('进入已有课件知识点：直接展示，不自动重起草', (tester) async {
+      // 正常有课件：进入即展示，不应有任何 AI 触发（create/redraft 调用计数均为 0）。
+      final repo = _FakeRepo(_editorCourseware([_sec('a', '环节一')]));
+      await _pumpEditor(tester, repo: repo);
+      expect(repo.createCoursewareCalls, 0);
+      expect(repo.redraftDiffCalls, 0);
+      expect(find.text('环节一'), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
   });
 }
