@@ -1,4 +1,5 @@
 import '../../../../shared/domain/models/models.dart';
+import '../models/student_import_result.dart';
 
 abstract class StudentsRepository {
   Future<UserModel> createChild({
@@ -29,5 +30,11 @@ abstract class StudentsRepository {
   Future<void> batchReassign({
     required String? classId,
     required List<String> studentIds,
+  });
+
+  /// 批量导入学生（ticket 06）：上传 xlsx，返回逐行结果。
+  Future<StudentImportResultModel> importStudents({
+    required List<int> bytes,
+    required String filename,
   });
 }

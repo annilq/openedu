@@ -1,3 +1,5 @@
+import 'package:dio/dio.dart';
+
 import '../../../../shared/data/remote/network_service.dart';
 
 class StudentsRemoteDataSource {
@@ -80,5 +82,17 @@ class StudentsRemoteDataSource {
         'student_ids': studentIds,
       },
     );
+  }
+
+  /// 批量导入学生（ticket 06 / ADR-0068 §2.2）：上传 xlsx 花名册。
+  /// 复用 `NetworkService.postForm` + `FormData`（与课件素材上传同构）。
+  Future<Map<String, dynamic>> importStudents({
+    required List<int> bytes,
+    required String filename,
+  }) async {
+    final form = FormData.fromMap({
+      'file': MultipartFile.fromBytes(bytes, filename: filename),
+    });
+    return await _network.postForm('/students/import', form);
   }
 }

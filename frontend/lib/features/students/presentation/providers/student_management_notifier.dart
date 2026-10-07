@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/domain/models/models.dart';
 import '../../../classes/domain/models/class_model.dart';
+import '../../domain/models/student_import_result.dart';
 import '../../../classes/domain/repositories/classes_repository.dart';
 import '../../domain/repositories/students_repository.dart';
 
@@ -85,5 +86,19 @@ class StudentManagementNotifier
   }) async {
     await _students.batchReassign(classId: classId, studentIds: studentIds);
     await load();
+  }
+
+  /// 批量导入学生（ticket 06）：上传 xlsx，返回逐行结果；成功后重新加载，
+  /// 让列表即时反映新增学生。失败抛出由调用方（UI）用 toast 提示。
+  Future<StudentImportResultModel> importStudents({
+    required List<int> bytes,
+    required String filename,
+  }) async {
+    final result = await _students.importStudents(
+      bytes: bytes,
+      filename: filename,
+    );
+    await load();
+    return result;
   }
 }

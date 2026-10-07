@@ -4,6 +4,7 @@ import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:file_picker/file_picker.dart';
 
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/theme/app_theme.dart';
@@ -21,6 +22,8 @@ import '../../../../shared/widgets/app_toast.dart';
 import '../../../classes/domain/models/class_model.dart';
 import '../providers/student_management_notifier.dart';
 import '../../providers/student_management_provider.dart';
+import '../../domain/models/student_import_result.dart';
+import '../widgets/student_import_sheet.dart';
 
 /// 学生管理页（ADR-0068 §2.3 / ticket 02 + 03）。
 ///
@@ -80,6 +83,12 @@ class _StudentManagementScreenState
 
   /// 班级选择浮层（移入班级时弹出）。
   bool _pickingClass = false;
+
+  /// 导入中（禁用导入按钮，避免重复上传）。
+  bool _importing = false;
+
+  /// 最近一次导入结果，非 null 时弹出结果浮层（ticket 06）。
+  StudentImportResultModel? _importResult;
 
   @override
   void initState() {
@@ -181,6 +190,33 @@ class _StudentManagementScreenState
     }
   }
 
+  Future<void> _pickAndImport() async {
+    final files = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['xlsx'],
+    );
+    if (files.isEmpty) return;
+    final file = files.single;
+    late final List<int> bytes;
+    try {
+      bytes = await file.readAsBytes();
+    } catch (e) {
+      if (mounted) AppToast.error(context, Exception('无法读取该文件'));
+      return;
+    }
+    setState(() => _importing = true);
+    try {
+      final res = await ref
+          .read(studentManagementProvider.notifier)
+          .importStudents(bytes: bytes, filename: file.name);
+      if (mounted) setState(() => _importResult = res);
+    } catch (e) {
+      if (mounted) AppToast.error(context, e);
+    } finally {
+      if (mounted) setState(() => _importing = false);
+    }
+  }
+
   List<_RowItem> _buildRows(
     List<UserModel> students,
     List<ClassModel> classes,
@@ -238,6 +274,7 @@ class _StudentManagementScreenState
               onToggleSelecting: _toggleSelecting,
               onSelectAll: () => _selectAll(students),
               onAddStudent: widget.onAddStudent,
+              onImport: _importing ? null : _pickAndImport,
             ),
             Padding(
               padding: const EdgeInsets.symmetric(
@@ -290,6 +327,11 @@ class _StudentManagementScreenState
             onPick: _moveToClass,
             onDismiss: () => setState(() => _pickingClass = false),
           ),
+        if (_importResult != null)
+          StudentImportSheet(
+            result: _importResult!,
+            onDismiss: () => setState(() => _importResult = null),
+          ),
       ],
     );
   }
@@ -304,6 +346,7 @@ class _PageHeader extends StatelessWidget {
   final VoidCallback onToggleSelecting;
   final VoidCallback onSelectAll;
   final VoidCallback? onAddStudent;
+  final VoidCallback? onImport;
 
   const _PageHeader({
     required this.state,
@@ -313,6 +356,7 @@ class _PageHeader extends StatelessWidget {
     required this.onToggleSelecting,
     required this.onSelectAll,
     this.onAddStudent,
+    this.onImport,
   });
 
   @override
@@ -341,6 +385,12 @@ class _PageHeader extends StatelessWidget {
               icon: LucideIcons.userPlus,
               semanticLabel: '添加学生',
               onPressed: onAddStudent,
+            ),
+          if (onImport != null)
+            AppIconAction(
+              icon: LucideIcons.upload,
+              semanticLabel: '批量导入',
+              onPressed: onImport,
             ),
           if (selecting) ...[
             AppBadge(

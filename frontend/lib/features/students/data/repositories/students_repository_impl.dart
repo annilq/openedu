@@ -1,5 +1,6 @@
 import '../../../../shared/domain/models/models.dart';
 import '../../data/datasource/students_remote_data_source.dart';
+import '../../domain/models/student_import_result.dart';
 import '../../domain/repositories/students_repository.dart';
 
 class StudentsRepositoryImpl implements StudentsRepository {
@@ -76,5 +77,15 @@ class StudentsRepositoryImpl implements StudentsRepository {
       classId: classId,
       studentIds: studentIds,
     );
+  }
+
+  @override
+  Future<StudentImportResultModel> importStudents({
+    required List<int> bytes,
+    required String filename,
+  }) async {
+    final data =
+        await _dataSource.importStudents(bytes: bytes, filename: filename);
+    return StudentImportResultModel.fromJson(data);
   }
 }
