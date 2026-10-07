@@ -10,9 +10,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// 1. **未登记的新文件不得超过 400 行**——这是 ADR-0058 的主要执行力：它拦不住
 ///    历史债务，但能拦住**下一个** `teacher_question_bank_view.dart`（现已拆出
 ///    `BankQuestionRow`，基线随之下调到 759）。
-/// 2. **已登记的超限文件不得继续增长**（棘轮）——现存 **12** 个超限文件登记在
-///    [_baseline] 里（另 `dev/theme_preview.dart` 1189 行走豁免、`teacher_student_selector.dart`
-///    正好 400 行未越线），基线**只许下调不许上调**：拆小了把基线跟着调小，长回去就失败。
+/// 2. **已登记的超限文件不得继续增长**（棘轮）——现存 **15** 个超限文件登记在
+///    [_baseline] 里（另 `dev/theme_preview.dart` 1189 行走豁免），基线**只许下调不许上调**：
+///    拆小了把基线跟着调小，长回去就失败。
 ///    它不强迫任何人现在就去拆分，但保证这些文件不会继续变长。
 ///
 /// 为什么用「棘轮」而不是「一次性把 16 个文件都拆完」：ADR-0044 定下的纪律是
@@ -96,7 +96,10 @@ void main() {
 }
 
 /// 现存超限文件的基线（2026-09-21 实测；2026-10-04 补登 reflection_scene.dart；
-/// 2026-10-05 拆出 BankQuestionRow 后下调 teacher_question_bank_view 838→759）。
+/// 2026-10-05 拆出 BankQuestionRow 后下调 teacher_question_bank_view 838→759；
+/// 2026-10-07 删除已不存在的 teacher_student_selector 登记、student_management_screen 771→775；
+/// 补登 4 个此前提交（analytics/courseware 等）已落地但未登记的 >400 文件：analytics_screen 488、
+/// courseware_present_page 429、section_practice 429、teacher_task_form_view 425）。
 /// **只许下调。**
 ///
 /// 拆分批次见 `docs/refactor/2026-09-21-flutter-ui-decomposition.md`（P0–P4）。
@@ -111,8 +114,11 @@ const Map<String, int> _baseline = <String, int>{
   'features/home/presentation/widgets/teacher/teacher_question_card.dart': 511,
   'features/home/presentation/widgets/teacher/teacher_wrong_questions_view.dart': 442,
   'features/home/presentation/widgets/student_home.dart': 428,
-  'features/home/presentation/widgets/teacher/teacher_overview_view.dart': 401,
-  'features/home/presentation/widgets/teacher/teacher_student_selector.dart': 404,
+  'features/analytics/presentation/screens/analytics_screen.dart': 488,
+  'features/courseware/presentation/pages/courseware_present_page.dart': 429,
+  'features/courseware/presentation/widgets/section_practice.dart': 429,
+  'features/home/presentation/widgets/teacher/teacher_task_form_view.dart': 425,
+  'features/students/presentation/screens/student_management_screen.dart': 775,
 };
 
 bool _isDart(String path) =>
