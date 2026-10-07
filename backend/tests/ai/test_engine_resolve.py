@@ -13,6 +13,7 @@ False，导致 ModelConfig 永不命中 → 回退本教师默认模型（模型
 from sqlmodel import Session
 
 from app.ai.engine import resolve_engine
+from app.core.crypto import encrypt
 from app.db.models import ModelConfig, User
 
 
@@ -35,7 +36,8 @@ def _make_model(db: Session, teacher: User, model_name: str = "gpt-4o-mini") -> 
         teacher_id=teacher.id,
         provider="openai_compat",
         model_name=model_name,
-        api_key_enc="dummy-enc",  # 解析只构造引擎，不发网络请求
+        # 用合法密文：解析只构造引擎不发网络，但 decrypt 失败会被当成「未配置密钥」回落。
+        api_key_enc=encrypt("sk-test-key"),
         base_url=None,
         label=model_name,
     )
@@ -73,3 +75,35 @@ def test_resolve_modelconfig_requires_session(db: Session) -> None:
 
     engine = resolve_engine(str(mc.id), teacher_id=str(teacher.id))  # 无 session
     assert engine is None
+
+
+def test_resolve_modelconfig_empty_key_returns_none(db: Session) -> None:
+    """空密钥的远程提供方（openai_compat）当作「未配置」回落，而非带着 None key 出去撞 401。"""
+    teacher = _make_teacher(db, 5)
+    mc = _make_model(db, teacher)
+    mc.api_key_enc = ""  # 密钥留空
+    db.add(mc)
+    db.commit()
+
+    engine = resolve_engine(str(mc.id), teacher_id=str(teacher.id), session=db)
+    assert engine is None
+
+
+def test_resolve_ollama_empty_key_still_usable(db: Session) -> None:
+    """ollama 本地运行无需密钥：空密钥仍应解析出引擎（不误判为未配置）。"""
+    teacher = _make_teacher(db, 6)
+    mc = ModelConfig(
+        teacher_id=teacher.id,
+        provider="ollama",
+        model_name="llama3",
+        api_key_enc="",  # ollama 无需密钥
+        base_url=None,
+        label="llama3",
+    )
+    db.add(mc)
+    db.commit()
+    db.refresh(mc)
+
+    engine = resolve_engine(str(mc.id), teacher_id=str(teacher.id), session=db)
+    assert engine is not None
+    assert engine.model.startswith("ollama/")

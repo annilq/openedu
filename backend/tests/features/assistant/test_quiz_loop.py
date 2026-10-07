@@ -14,6 +14,7 @@ from agent_core.protocol import (
     EVENT_ASSISTANT_MESSAGE,
     EVENT_DATA,
     EVENT_DONE,
+    EVENT_ERROR,
     EVENT_RUN_STARTED,
 )
 from app.db.models import Conversation
@@ -97,6 +98,12 @@ def _conv(db, *, teacher_id, conv_id: uuid.UUID) -> Conversation:
     return conv
 
 
+class _ConfiguredProvider:
+    """测试桩：模拟「已配置可用模型」的 provider（真实 GenkitProvider 的极小替身）。"""
+
+    configured = True
+
+
 def test_quiz_generate_strips_answer_and_writes_pending(db, monkeypatch):
     """出题：题卡剥离答案/解析后下发（不提前泄题），pending_quiz 写入正确答案与元信息。"""
     monkeypatch.setattr(
@@ -121,7 +128,8 @@ def test_quiz_generate_strips_answer_and_writes_pending(db, monkeypatch):
     frames = asyncio.run(
         _drain(
             _quiz_generate_stream(
-                session=db, conv_id=conv_id, req=req, teacher_id=tid, provider=None
+                session=db, conv_id=conv_id, req=req, teacher_id=tid,
+                provider=_ConfiguredProvider(),
             )
         )
     )
@@ -149,6 +157,92 @@ def test_quiz_generate_strips_answer_and_writes_pending(db, monkeypatch):
     assert pending["attempts"] == 0
     assert pending["answer_text"] == "错"
     assert pending["explanation"]
+
+
+class _UnconfiguredProvider:
+    """测试桩：模拟「未配置可用模型」的 provider（configured=False）。"""
+
+    configured = False
+
+
+def test_quiz_generate_unconfigured_provider_emits_hint(db):
+    """未配置模型：出题入口应下发干净的「未配置模型」提示，而非放出去撞 401。"""
+    tid = _teacher_id()
+    kp = KnowledgePoint(
+        teacher_id=tid, subject="数学", grade=4, semester="下学期", name="轴对称"
+    )
+    db.add(kp)
+    db.commit()
+    db.refresh(kp)
+
+    conv_id = uuid.uuid4()
+    _conv(db, teacher_id=tid, conv_id=conv_id)
+    req = AssistantChatReq(
+        message="出一道判断题",
+        courseware=CoursewareContext(knowledge_point_id=kp.id),
+        quiz=True,
+    )
+
+    frames = asyncio.run(
+        _drain(
+            _quiz_generate_stream(
+                session=db, conv_id=conv_id, req=req, teacher_id=tid,
+                provider=_UnconfiguredProvider(),
+            )
+        )
+    )
+    types = [f.eventType for f in frames]
+    assert EVENT_RUN_STARTED in types
+    assert EVENT_DONE in types
+    text = "".join(f.text for f in frames if f.eventType == EVENT_ASSISTANT_MESSAGE)
+    assert "尚未配置可用的模型" in text
+    # 未配置时不应触达 generate_question，也不应产出题卡。
+    assert not any(f.eventType == EVENT_DATA for f in frames)
+
+
+async def _boom_generate_question(provider, *, subject, grade, knowledge_point, qtype, difficulty, semester="", **kwargs):
+    """替身：恒定抛 ProviderRequestError（模拟 API key 失效 / 厂商拒绝）。"""
+    from agent_core.errors import ProviderRequestError
+
+    raise ProviderRequestError("auth failed", kind="auth")
+
+
+def test_quiz_generate_provider_failure_surfaced_as_error_frame(db, monkeypatch):
+    """provider 鉴权失败：必须转成 SSE ERROR 帧，不得让异常穿透生成器导致流被截断。"""
+    monkeypatch.setattr(
+        "app.features.assistant.service.generate_question", _boom_generate_question
+    )
+    tid = _teacher_id()
+    kp = KnowledgePoint(
+        teacher_id=tid, subject="数学", grade=4, semester="下学期", name="轴对称"
+    )
+    db.add(kp)
+    db.commit()
+    db.refresh(kp)
+
+    conv_id = uuid.uuid4()
+    _conv(db, teacher_id=tid, conv_id=conv_id)
+    req = AssistantChatReq(
+        message="出一道判断题",
+        courseware=CoursewareContext(knowledge_point_id=kp.id),
+        quiz=True,
+    )
+
+    frames = asyncio.run(
+        _drain(
+            _quiz_generate_stream(
+                session=db, conv_id=conv_id, req=req, teacher_id=tid,
+                provider=_ConfiguredProvider(),
+            )
+        )
+    )
+    types = [f.eventType for f in frames]
+    assert EVENT_RUN_STARTED in types
+    assert EVENT_DONE in types
+    error_frames = [f for f in frames if f.eventType == EVENT_ERROR]
+    assert len(error_frames) == 1
+    assert error_frames[0].code == "PROVIDER_ERROR"
+    assert "API Key" in error_frames[0].message  # 策展提示，不泄露原始报文
 
 
 def _pending_fixture(db, *, conv, answer=True) -> dict:

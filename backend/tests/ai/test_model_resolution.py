@@ -13,6 +13,7 @@ from __future__ import annotations
 from sqlmodel import Session
 
 from app.ai import resolve_engine
+from app.core.crypto import encrypt
 from app.db.models import ModelConfig, User
 
 
@@ -37,7 +38,8 @@ def _make_default_model(
         teacher_id=teacher.id,
         provider="openai_compat",
         model_name=model_name,
-        api_key_enc="dummy-enc",  # 解析只构造引擎，不发网络请求
+        # 合法密文：解析只构造引擎不发网络；decrypt 失败会被当成「未配置密钥」回落。
+        api_key_enc=encrypt("sk-test-key"),
         base_url=None,
         label=model_name,
         is_default=True,

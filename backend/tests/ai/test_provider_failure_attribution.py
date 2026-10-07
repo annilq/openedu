@@ -276,10 +276,13 @@ def _capture_engine_kwargs(monkeypatch) -> list[dict]:
     return captured
 
 
-def test_resolve_engine_never_passes_stored_ciphertext_as_api_key(
+def test_resolve_engine_rejects_undecryptable_key_without_building_engine(
     db: Session, monkeypatch
 ) -> None:
-    """ModelConfig 存了**解不开**的密文时，传给引擎的 api_key 必须为空，而非密文。"""
+    """ModelConfig 存了**解不开**的密文时，引擎根本不被构造（视为未配置密钥），
+    密文没有任何机会落到 provider——比「构造引擎但传 None」更彻底地杜绝密文外泄
+    （ADR-0038：密钥轮换后旧密文解不开 → 视为未配置，而非把密文当凭据发厂商）。
+    """
     monkeypatch.setattr(crypto.settings, "MODEL_APIKEY_SECRET", "", raising=False)
     monkeypatch.setattr(crypto.settings, "SECRET_KEY", "changeme", raising=False)
     captured = _capture_engine_kwargs(monkeypatch)
@@ -304,10 +307,9 @@ def test_resolve_engine_never_passes_stored_ciphertext_as_api_key(
 
     engine = resolve_engine(str(mc.id), teacher_id=str(teacher.id), session=db)
 
-    assert engine is not None
-    assert captured, "应经 build_genkit_engine 构造引擎"
-    assert captured[0]["api_key"] is None
-    assert stale not in str(captured[0]), "密文不得出现在任何传给引擎的参数里"
+    # 解不开的密钥 → 视为未配置 → 不构造引擎（密文零外泄风险）
+    assert engine is None
+    assert captured == [], "密文解不开时根本不构造引擎，彻底杜绝密文外泄"
 
 
 def test_resolve_engine_passes_decrypted_key_when_secret_matches(
