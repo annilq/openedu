@@ -19,8 +19,10 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 import warnings
+from collections import defaultdict
 
 from sqlmodel import Field, Session, SQLModel
 
@@ -40,10 +42,12 @@ from app.db.models import (
 from app.features.courseware import repository as repo
 from app.features.courseware.schemas import (
     CoursewareCreate,
+    CoursewareRedraftDiff,
     CoursewareResp,
     CoursewareSection,
     CoursewareSectionsUpdate,
     CoursewareUpdate,
+    SectionDiffItem,
 )
 
 # 起草时喂给模型的资料片段条数与单条截断长度（prompt 预算，不是检索参数）。
@@ -123,6 +127,11 @@ def _section_to_dict(s: CoursewareSection) -> dict:
         "kind": s.kind,
         "title": s.title,
         "script": s.script,
+        # T02：话术多段化——整列覆盖写时把段列表一并落库（不丢字段）。
+        "script_segments": [
+            {"text": seg.text, "emphasis": seg.emphasis}
+            for seg in (s.script_segments or [])
+        ],
         "payload": s.payload or {},
     }
 
@@ -258,7 +267,7 @@ def _sections_from_draft(data: object) -> list[CoursewareSection]:
                 id=raw.id or uuid.uuid4().hex[:8],
                 kind=raw.kind,
                 title=(raw.title or "")[:128],
-                script=(raw.script or "")[:500],
+                script=(raw.script or "")[:2000],
                 payload=raw.payload if isinstance(raw.payload, dict) else {},
             )
         )
@@ -269,6 +278,104 @@ def _sections_from_draft(data: object) -> list[CoursewareSection]:
             f"（只能是 {' / '.join(SECTION_KINDS)}）",
         )
     return sections
+
+
+def _section_match_key(s: "CoursewareSection") -> tuple[str, str]:
+    """匹配键 = (kind, title)：同名同类型的环节视为「同一环节」去对照。"""
+    return (s.kind, s.title)
+
+
+def _segment_signature(s: "CoursewareSection") -> str:
+    """话术段的可比较指纹（文本 + 重点），忽略顺序差异之外的内容。"""
+    return json.dumps(
+        [(seg.text, seg.emphasis) for seg in (s.script_segments or [])],
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+
+
+def _same_section_content(a: "CoursewareSection", b: "CoursewareSection") -> bool:
+    """两段字面上的内容是否一致（标题 / 话术 / 多段话术 / payload 都相同才算 unchanged）。"""
+    return (
+        a.title == b.title
+        and a.script == b.script
+        and _segment_signature(a) == _segment_signature(b)
+        and a.payload == b.payload
+    )
+
+
+def compute_section_diff(
+    current: list["CoursewareSection"],
+    drafted: list["CoursewareSection"],
+) -> list[SectionDiffItem]:
+    """对照当前稿与新草稿，产出逐段 diff（T07）。
+
+    匹配以 (kind, title) 为键、按出现顺序消费（允许同名多段）：
+
+    - 草稿有、当前有同键 → ``modified``（内容不同）/ ``unchanged``（内容相同）；
+    - 草稿有、当前没有 → ``added``；
+    - 当前有、草稿没有 → ``removed``（附在 diff 末尾，UI 默认保留）。
+
+    顺序：先按草稿顺序铺 ``added`` / ``modified`` / ``unchanged``，再把余下未匹配的
+    当前稿以 ``removed`` 收尾——合并时直接按 diff 顺序拼接被选段即可。
+    """
+    avail: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    for s in current:
+        avail[_section_match_key(s)].append({"sec": s, "used": False})
+
+    items: list[SectionDiffItem] = []
+    for d in drafted:
+        bucket = avail[_section_match_key(d)]
+        match = next((x for x in bucket if not x["used"]), None)
+        if match is None:
+            items.append(SectionDiffItem(status="added", drafted=d))
+            continue
+        match["used"] = True
+        cur = match["sec"]
+        status = "unchanged" if _same_section_content(cur, d) else "modified"
+        items.append(SectionDiffItem(status=status, current=cur, drafted=d))
+
+    for s in current:
+        for x in avail[_section_match_key(s)]:
+            if not x["used"]:
+                items.append(SectionDiffItem(status="removed", current=x["sec"]))
+    return items
+
+
+def redraft_diff(
+    *,
+    session: Session,
+    teacher_id: uuid.UUID,
+    courseware_id: uuid.UUID,
+) -> CoursewareRedraftDiff:
+    """重起草：对**同一份**课件返回新草稿相对当前稿的逐段 diff（ADR-0067 第二轮 T07）。
+
+    不新建课件副本：教师逐段选完后，把合并结果经 ``replace_sections`` 写回当前
+    ``courseware_id``。沿用课件行快照的 kp 元信息（kp_name / subject / grade /
+    semester），不回查知识点表（§3.2 展示不 join）。
+
+    起草失败（未配模型 / 厂商拒绝 / 解析不出）一律透传，不落空课件。
+    """
+    row = repo.get_owned_courseware(
+        session, teacher_id=teacher_id, courseware_id=courseware_id
+    )
+    current = _read_sections(row)
+    drafted = draft_sections(
+        session=session,
+        teacher_id=teacher_id,
+        kp_name=row.kp_name,
+        subject=row.subject,
+        grade=row.grade,
+        semester=row.semester,
+        snippets=_recall_snippets(
+            session,
+            teacher_id=teacher_id,
+            kp_name=row.kp_name,
+            subject=row.subject,
+            grade=row.grade,
+        ),
+    )
+    return CoursewareRedraftDiff(diff=compute_section_diff(current, drafted))
 
 
 # ── 响应装配 ────────────────────────────────────────────────────────────

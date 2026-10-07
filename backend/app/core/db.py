@@ -170,6 +170,9 @@ def run_migrations() -> None:
                 # 偏序迁移：表还没建（首次启动由 init_db 建表并带新列），跳过即可。
                 pass
 
+        # —— coursewareasset CC0 预置包字段（T08 / ADR-0067 §3.5·§5）——
+        _add_coursewareasset_cc0_columns(conn, is_sqlite)
+
         # —— 列表游标分页的排序索引（ADR-0053）——
         # 三个长列表都按 (owner, 时间戳倒序) 取页，缺复合索引时深翻会全表排序。
         # CREATE INDEX IF NOT EXISTS 在 SQLite / Postgres 下都幂等，旧库启动期自动补齐。
@@ -210,6 +213,35 @@ def run_migrations() -> None:
                     text(
                         "ALTER TABLE knowledgepoint ADD COLUMN IF NOT EXISTS "
                         "semester VARCHAR(8) NOT NULL DEFAULT ''"
+                    )
+                )
+        except OperationalError:
+            # 偏序迁移：表还没建（首次启动由 init_db 建表并带新列），跳过即可。
+            pass
+
+        # —— 课件素材知识点关联（T04 素材库检索）——
+        # 素材可被某知识点筛选（素材库「按知识点过滤」）；为空 = 通用素材。
+        # 跨教师访问该知识点经 service 的 require_owned 返回 403。
+        # 仅补列（不加索引 / FK）：索引对老库是性能细节，FK 在 SQLite ALTER 下无法补。
+        try:
+            if is_sqlite:
+                cols = [
+                    r[1]
+                    for r in conn.execute(
+                        text("PRAGMA table_info(coursewareasset)")
+                    ).fetchall()
+                ]
+                if "knowledge_point_id" not in cols:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE coursewareasset ADD COLUMN knowledge_point_id VARCHAR(36)"
+                        )
+                    )
+            else:
+                conn.execute(
+                    text(
+                        "ALTER TABLE coursewareasset ADD COLUMN IF NOT EXISTS "
+                        "knowledge_point_id UUID"
                     )
                 )
         except OperationalError:
@@ -659,3 +691,41 @@ def init_db() -> None:
 
     SQLModel.metadata.create_all(engine)
     run_migrations()
+
+
+def _add_coursewareasset_cc0_columns(conn, is_sqlite: bool) -> None:
+    """coursewareasset 加 CC0 预置包字段（T08 / ADR-0067 §3.5·§5）。
+
+    source: user_uploaded / platform_cc0；source_url / license 仅 CC0 有值。
+    历史上传行在加列时回填默认 'user_uploaded'（SQLite 的 DEFAULT 作用于存量行）。
+    抽成连接级函数，便于迁移回归测试在临时库上复现「老库形状」后直接调用。
+    """
+    try:
+        cols_spec = (
+            ("source", "VARCHAR(32) DEFAULT 'user_uploaded'"),
+            ("source_url", "VARCHAR(1024)"),
+            ("license", "VARCHAR(64)"),
+        )
+        if is_sqlite:
+            ca_cols = [
+                r[1]
+                for r in conn.execute(
+                    text("PRAGMA table_info(coursewareasset)")
+                ).fetchall()
+            ]
+            for col, ddl in cols_spec:
+                if col not in ca_cols:
+                    conn.execute(
+                        text(f"ALTER TABLE coursewareasset ADD COLUMN {col} {ddl}")
+                    )
+        else:
+            for col, ddl in cols_spec:
+                conn.execute(
+                    text(
+                        f"ALTER TABLE coursewareasset "
+                        f"ADD COLUMN IF NOT EXISTS {col} {ddl}"
+                    )
+                )
+    except OperationalError:
+        # 偏序迁移：coursewareasset 表还没建（首次启动由 init_db 建表并带新列）。
+        pass

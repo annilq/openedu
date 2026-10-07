@@ -20,6 +20,17 @@ from uuid import UUID
 from sqlmodel import Field, SQLModel
 
 
+class CoursewareScriptSegment(SQLModel):
+    """话术里的一段（ADR-0067 第二轮 T02）：可带轻量重点标注。
+
+    - ``text`` 是这段提问卡文案；
+    - ``emphasis`` 只取 ``none`` / ``bold`` / ``highlight``（轻量富文本，不引入新引擎）。
+    """
+
+    text: str = Field(default="", max_length=2000)
+    emphasis: str = Field(default="none", max_length=16)
+
+
 class CoursewareSection(SQLModel):
     """一个讲解环节。前端提交与后端下发**同构**（改序 = 整体覆盖写）。"""
 
@@ -27,8 +38,12 @@ class CoursewareSection(SQLModel):
     id: str = Field(default="", max_length=40)
     kind: str = Field(max_length=32)
     title: str = Field(default="", max_length=128)
-    # 教师话术 / 提问卡文案（决策 15）
-    script: str = Field(default="", max_length=500)
+    # 教师话术 / 提问卡文案（决策 15）。首轮单串legacy仍保留：T02 之后新数据走
+    # ``script_segments``，旧单串课件靠它向下兼容（见 domain 的 displaySegments 回退）。
+    # ⚠️ max_length 放宽到 2000：多段话术压平进 script 后可能超过原 500。
+    script: str = Field(default="", max_length=2000)
+    # 话术多段化（T02）：有序段列表，每段可带重点。空列表 = 退化为读 script。
+    script_segments: list[CoursewareScriptSegment] = Field(default_factory=list)
     # 按 kind 释义（见模块 docstring）
     payload: dict = Field(default_factory=dict)
 
@@ -76,3 +91,23 @@ class CoursewareSectionsUpdate(SQLModel):
     """整体覆盖写环节序列（增 / 删 / 改序都在前端完成，后端只存结果）。"""
 
     sections: list[CoursewareSection] = []
+
+
+class SectionDiffItem(SQLModel):
+    """重起草时，新草稿相对当前稿的一处逐段差异。
+
+    - ``status``: ``added`` / ``removed`` / ``modified`` / ``unchanged``；
+    - ``current``: 当前稿里的那段（``removed`` / ``modified`` / ``unchanged`` 有值）；
+    - ``drafted``: 草稿里的那段（``added`` / ``modified`` / ``unchanged`` 有值）。
+    """
+
+    status: str = "unchanged"
+    current: CoursewareSection | None = None
+    drafted: CoursewareSection | None = None
+
+
+class CoursewareRedraftDiff(SQLModel):
+    """重起草的逐段 diff（对照当前课件环节）。前端据此渲染预览，教师逐段选择后
+    把合并结果经 ``PUT /sections`` 写回**同一份**课件（不新建副本）。"""
+
+    diff: list[SectionDiffItem] = []

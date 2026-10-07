@@ -297,6 +297,42 @@ def test_replace_sections_overwrites_and_rejects_unknown_kind(client, teacher, d
     assert after["section_count"] == 1
 
 
+def test_replace_sections_roundtrips_script_segments(client, teacher, drafted):
+    """PUT /sections 透传话术多段 + 重点（T02），GET 原样回；旧单串 script 仍兼容。"""
+    cw = _create(client, teacher["token"], teacher["kp"]).json()
+    url = f"/api/v1/courseware/{cw['id']}/sections"
+    payload = {
+        "sections": [
+            {
+                "id": "a",
+                "kind": "media_gallery",
+                "title": "观察",
+                "script": "这些图形有什么共同点？",
+                "script_segments": [
+                    {"text": "开场：看图", "emphasis": "bold"},
+                    {"text": "追问：共同点？", "emphasis": "highlight"},
+                    {"text": "收尾：小结", "emphasis": "none"},
+                ],
+                "payload": {"items": []},
+            }
+        ]
+    }
+    r = client.put(url, headers=auth_headers(teacher["token"]), json=payload)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    seg = body["sections"][0]["script_segments"]
+    assert [s["text"] for s in seg] == ["开场：看图", "追问：共同点？", "收尾：小结"]
+    assert [s["emphasis"] for s in seg] == ["bold", "highlight", "none"]
+    # 旧的单串 script 仍原样下发（向后兼容首轮单串课件）。
+    assert body["sections"][0]["script"] == "这些图形有什么共同点？"
+
+    # 重读仍保持段列表。
+    got = client.get(
+        f"/api/v1/courseware/{cw['id']}", headers=auth_headers(teacher["token"])
+    ).json()
+    assert got["sections"][0]["script_segments"] == seg
+
+
 def test_clearing_sections_writes_sql_null(client, teacher, drafted):
     """清空环节写的是**真 SQL NULL**，不是文本 ``'null'``（§3.2 none_as_null）。"""
     cw = _create(client, teacher["token"], teacher["kp"]).json()
@@ -418,3 +454,121 @@ def test_draft_failure_is_not_reported_as_missing_model(client, teacher, monkeyp
     assert body["code"] == ErrCode.LLM_REQUEST_FAILED.value
     assert "超时" in body["message"]
     assert "未配置模型" not in body["message"]
+
+
+def _current_draft_shape():
+    """与 ``_draft()`` 完全一致的当前稿（用于「全 unchanged」对照）。"""
+    return [
+        {
+            "kind": "media_gallery",
+            "title": "生活中的对称",
+            "script": "这些图形有什么共同点？",
+            "payload": {"items": [], "prompt": "先找出共同点"},
+        },
+        {
+            "kind": "interactive_scene",
+            "title": "判断是否轴对称",
+            "script": "沿这条线对折，两边能重合吗？",
+            "payload": {"kind": "reflection", "title": "轴对称"},
+        },
+        {
+            "kind": "practice",
+            "title": "课堂练习",
+            "script": "下面哪些图形是轴对称图形？",
+            "payload": {"qtype": "choice", "count": 3},
+        },
+    ]
+
+
+def test_redraft_diff_is_per_segment(client, teacher, drafted):
+    """``POST /redraft`` 返回逐段 diff：当前稿改过一段→modified，草稿多出的→added，
+    当前稿独有的→removed；且**不新建课件副本**（列表数不变）。"""
+    r = _create(client, teacher["token"], teacher["kp"])
+    assert r.status_code == 200, r.text
+    cw_id = r.json()["id"]
+
+    # 当前稿：把 A 的提问改了（modified），并加了一段草稿里没有的旧环节（removed）。
+    current = [
+        {
+            "kind": "media_gallery",
+            "title": "生活中的对称",
+            "script": "改过的提问",  # 与草稿不同 → modified
+            "payload": {},
+        },
+        {
+            "kind": "practice",
+            "title": "旧环节",  # 草稿里没有 → removed
+            "script": "旧",
+            "payload": {"qtype": "choice"},
+        },
+    ]
+    r = client.put(
+        f"/api/v1/courseware/{cw_id}/sections",
+        headers=auth_headers(teacher["token"]),
+        json={"sections": current},
+    )
+    assert r.status_code == 200, r.text
+
+    # 重起草：draft_sections 仍返回确定性三环节 [A, B, C]。
+    r = client.post(
+        f"/api/v1/courseware/{cw_id}/redraft",
+        headers=auth_headers(teacher["token"]),
+    )
+    assert r.status_code == 200, r.text
+    diff = r.json()["diff"]
+
+    # 期望顺序：按草稿序铺 A(modified) / B(added) / C(added)，末尾收 旧环节(removed)。
+    assert [d["status"] for d in diff] == ["modified", "added", "added", "removed"]
+    assert diff[0]["current"]["title"] == "生活中的对称"
+    assert diff[0]["drafted"]["title"] == "生活中的对称"
+    assert diff[1]["status"] == "added" and diff[1]["drafted"]["title"] == "判断是否轴对称"
+    assert diff[2]["status"] == "added" and diff[2]["drafted"]["title"] == "课堂练习"
+    assert diff[3]["status"] == "removed" and diff[3]["current"]["title"] == "旧环节"
+
+    # 不新建副本：列表仍是 1 份。
+    r = client.get(
+        "/api/v1/courseware",
+        headers=auth_headers(teacher["token"]),
+        params={"knowledge_point_id": str(teacher["kp"])},
+    )
+    assert r.status_code == 200
+    assert len(r.json()) == 1
+
+
+def test_redraft_diff_unchanged_when_current_matches_draft(client, teacher, drafted):
+    """当前稿与草稿逐字一致 → 全部 unchanged（教师无需逐段翻）。"""
+    r = _create(client, teacher["token"], teacher["kp"])
+    cw_id = r.json()["id"]
+
+    r = client.put(
+        f"/api/v1/courseware/{cw_id}/sections",
+        headers=auth_headers(teacher["token"]),
+        json={"sections": _current_draft_shape()},
+    )
+    assert r.status_code == 200, r.text
+
+    r = client.post(
+        f"/api/v1/courseware/{cw_id}/redraft",
+        headers=auth_headers(teacher["token"]),
+    )
+    assert r.status_code == 200, r.text
+    diff = r.json()["diff"]
+    assert [d["status"] for d in diff] == ["unchanged", "unchanged", "unchanged"]
+    assert all(d["current"] is not None and d["drafted"] is not None for d in diff)
+
+
+def test_redraft_diff_respects_ownership(client, teacher, drafted):
+    """别人的课件读不到：重起草越权返回 404（归属只经 core.guard）。"""
+    r = _create(client, teacher["token"], teacher["kp"])
+    cw_id = r.json()["id"]
+
+    # 另一个教师
+    username = f"other_{uuid.uuid4().hex[:8]}"
+    register_teacher(client, username=username)
+    other_token = login(client, username, "pw123456").json()["access_token"]
+
+    r = client.post(
+        f"/api/v1/courseware/{cw_id}/redraft",
+        headers=auth_headers(other_token),
+    )
+    assert r.status_code == 404, r.text

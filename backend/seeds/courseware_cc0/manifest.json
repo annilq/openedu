@@ -1,0 +1,20 @@
+[
+  {
+    "filename": "butterfly.png",
+    "name": "蝴蝶标本（CC0）",
+    "source_url": "https://commons.wikimedia.org/wiki/Category:Lepidoptera_in_art",
+    "license": "CC0 1.0"
+  },
+  {
+    "filename": "building.png",
+    "name": "建筑立面（CC0）",
+    "source_url": "https://commons.wikimedia.org/wiki/Category:Buildings",
+    "license": "CC0 1.0"
+  },
+  {
+    "filename": "flower.png",
+    "name": "花卉特写（CC0）",
+    "source_url": "https://commons.wikimedia.org/wiki/Category:Flowers",
+    "license": "CC0 1.0"
+  }
+]

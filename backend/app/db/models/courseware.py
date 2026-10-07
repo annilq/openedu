@@ -56,6 +56,21 @@ COURSEWARE_ASSET_MIMES: tuple[str, ...] = (
     "image/gif",
 )
 
+# ── 素材来源（T08 / ADR-0067 §3.5·§5）──────────────────────────────────────
+# user_uploaded = 教师自己上传；platform_cc0 = 平台预置的 CC0 公共素材，随仓库
+# 离线分发（seed 入库），对所有教师可见、不可删除。
+COURSEWARE_ASSET_SOURCE_USER_UPLOADED = "user_uploaded"
+COURSEWARE_ASSET_SOURCE_PLATFORM_CC0 = "platform_cc0"
+COURSEWARE_ASSET_SOURCES: tuple[str, ...] = (
+    COURSEWARE_ASSET_SOURCE_USER_UPLOADED,
+    COURSEWARE_ASSET_SOURCE_PLATFORM_CC0,
+)
+
+# 平台预置 CC0 素材的归属教师（系统哨兵 id）。CC0 素材不绑定任何真实教师，
+# 用固定哨兵 id 占位；SQLite 不强制外键，运行期靠 source == platform_cc0 做
+# 可见性与删除保护，不依赖外键约束。
+COURSEWARE_CC0_OWNER_ID = uuid.UUID("00000000-0000-0000-0000-0000000000cc")
+
 
 class Courseware(SQLModel, table=True):
     """一份课件 = 一个知识点上的一串讲解环节（ADR-0067 §3.2）。
@@ -110,10 +125,15 @@ class CoursewareAsset(SQLModel, table=True):
     环节显示「素材已移除」占位——「删不掉」比「出现空洞」更让人恼火。
     """
 
-    __table_args__ = (Index("ix_coursewareasset_teacher", "teacher_id"),)
+    __table_args__ = (
+        Index("ix_coursewareasset_teacher", "teacher_id"),
+        Index("ix_coursewareasset_kp", "knowledge_point_id"),
+    )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     teacher_id: uuid.UUID = Field(foreign_key="user.id")
+    # 可选的知识点关联：素材库可按知识点检索（T04）。为空 = 通用素材（不绑特定知识点）。
+    knowledge_point_id: uuid.UUID | None = Field(default=None, foreign_key="knowledgepoint.id")
     name: str = Field(default="", max_length=255)  # 展示名（原始文件名）
     storage_key: str = Field(default="", max_length=512)  # 落盘相对路径
     mime: str = Field(default="", max_length=64)
@@ -121,6 +141,14 @@ class CoursewareAsset(SQLModel, table=True):
     # 宽高用于演示页排版（未知则为 None，布局按可用宽度自适应）
     width: int | None = None
     height: int | None = None
+    # 来源标记（T08 / ADR-0067 §3.5·§5）：user_uploaded=教师自传，platform_cc0=平台
+    # 预置公共素材。默认 user_uploaded（含历史上传行，迁移会回填该默认值）。
+    source: str = Field(
+        default=COURSEWARE_ASSET_SOURCE_USER_UPLOADED, max_length=32
+    )
+    # CC0 公共素材的来源 URL 与许可类型；非 CC0（教师自传）恒为 None。
+    source_url: str | None = Field(default=None, max_length=1024)
+    license: str | None = Field(default=None, max_length=64)
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore

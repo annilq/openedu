@@ -15,7 +15,7 @@ import pytest
 from sqlmodel import Session, delete, select
 
 from app.core.db import engine
-from app.db.models import Courseware, CoursewareAsset, User
+from app.db.models import Courseware, CoursewareAsset, KnowledgePoint, User
 from tests.utils.user import auth_headers, login, register_teacher
 
 # 1×1 透明 PNG：既是合法图片（可供宽高探测），又小到不会被上限拦下
@@ -222,3 +222,92 @@ def test_file_endpoint_404_when_asset_missing(client, teacher_a, upload_root):
     )
     assert r.status_code == 404
     assert r.json()["code"] == "CW_91003"
+
+
+# ── T04 素材库检索（按知识点 / 文件名过滤 + 跨教师 403）────────────────────────
+
+
+def _make_kp(session: Session, teacher_id, name: str) -> KnowledgePoint:
+    kp = KnowledgePoint(
+        teacher_id=teacher_id, subject="数学", grade=3, semester="上学期", name=name
+    )
+    session.add(kp)
+    session.commit()
+    session.refresh(kp)
+    return kp
+
+
+def _insert_asset(session: Session, teacher_id, name: str, kp_id=None) -> CoursewareAsset:
+    asset = CoursewareAsset(
+        teacher_id=teacher_id,
+        name=name,
+        storage_key=f"{teacher_id}/{name}",
+        mime="image/png",
+        size_bytes=1,
+        knowledge_point_id=kp_id,
+    )
+    session.add(asset)
+    session.commit()
+    session.refresh(asset)
+    return asset
+
+
+def _search(client, token, *, kp=None, filename=None) -> "object":
+    params: dict = {}
+    if kp is not None:
+        params["knowledge_point"] = str(kp)
+    if filename is not None:
+        params["filename"] = filename
+    return client.get(
+        "/api/v1/courseware/assets", headers=auth_headers(token), params=params
+    )
+
+
+def test_search_returns_teacher_scoped_assets(client, teacher_a, teacher_b, upload_root):
+    """素材库只返回本人素材，跨教师不泄漏。"""
+    with Session(engine) as session:
+        _insert_asset(session, _user_id(session, "cw_asset_a"), "蝴蝶.png")
+        _insert_asset(session, _user_id(session, "cw_asset_b"), "剪纸.png")
+    r = _search(client, teacher_a)
+    assert r.status_code == 200
+    assert [a["name"] for a in r.json()] == ["蝴蝶.png"]
+
+
+def test_search_filters_by_knowledge_point(client, teacher_a, upload_root):
+    """按知识点过滤只回该知识点素材；响应带回 knowledge_point_id；不传则全量。"""
+    with Session(engine) as session:
+        kp = _make_kp(session, _user_id(session, "cw_asset_a"), name="轴对称")
+        kp_id = kp.id
+        _insert_asset(
+            session, _user_id(session, "cw_asset_a"), "蝴蝶.png", kp_id=kp_id
+        )
+        _insert_asset(session, _user_id(session, "cw_asset_a"), "通用图.png")
+    r = _search(client, teacher_a, kp=kp_id)
+    assert r.status_code == 200
+    body = r.json()
+    assert [a["name"] for a in body] == ["蝴蝶.png"]
+    assert body[0]["knowledge_point_id"] == str(kp_id)
+
+    # 不传过滤 → 本人全部（含未绑知识点的通用素材）
+    r = _search(client, teacher_a)
+    assert {a["name"] for a in r.json()} == {"蝴蝶.png", "通用图.png"}
+
+
+def test_search_filters_by_filename(client, teacher_a, upload_root):
+    """文件名子串过滤（大小写不敏感，SQLite LIKE 对 ASCII 不敏感）。"""
+    with Session(engine) as session:
+        _insert_asset(session, _user_id(session, "cw_asset_a"), "蝴蝶.png")
+        _insert_asset(session, _user_id(session, "cw_asset_a"), "剪纸.png")
+    r = _search(client, teacher_a, filename="蝶")
+    assert r.status_code == 200
+    assert [a["name"] for a in r.json()] == ["蝴蝶.png"]
+
+
+def test_search_cross_teacher_kp_is_403(client, teacher_a, teacher_b, upload_root):
+    """拿别人的知识点来过滤 → 403（越权，不降级成 404 伪装不存在）。"""
+    with Session(engine) as session:
+        kp = _make_kp(session, _user_id(session, "cw_asset_b"), name="他人知识点")
+        kp_id = kp.id
+    r = _search(client, teacher_a, kp=kp_id)
+    assert r.status_code == 403
+    assert r.json()["code"] == "SYS_10002"

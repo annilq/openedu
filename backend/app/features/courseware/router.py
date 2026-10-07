@@ -17,6 +17,7 @@ from app.core.deps import CurrentTeacher, SessionDep
 from app.features.courseware import service
 from app.features.courseware.schemas import (
     CoursewareCreate,
+    CoursewareRedraftDiff,
     CoursewareResp,
     CoursewareSectionsUpdate,
     CoursewareUpdate,
@@ -111,6 +112,20 @@ def replace_sections(
     """
     return service.replace_sections(
         session, teacher_id=user.id, courseware_id=courseware_id, req=req
+    )
+
+
+@router.post("/{courseware_id}/redraft", response_model=CoursewareRedraftDiff)
+def redraft_diff(
+    session: SessionDep, user: CurrentTeacher, courseware_id: UUID
+) -> CoursewareRedraftDiff:
+    """重起草：返回新草稿相对当前稿的**逐段 diff**（不落库、不新建副本）。
+
+    教师逐段选完后，把合并结果经 ``PUT /sections`` 写回同一份课件。起草失败透传
+    （未配模型 / 厂商拒绝 / 解析不出），不落空课件。
+    """
+    return service.redraft_diff(
+        session=session, teacher_id=user.id, courseware_id=courseware_id
     )
 
 

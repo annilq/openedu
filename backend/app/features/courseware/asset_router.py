@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, File, UploadFile
+from fastapi import APIRouter, File, Query, UploadFile
 from fastapi.responses import FileResponse
 
 from app.core.deps import CurrentTeacher, SessionDep
@@ -41,9 +41,23 @@ async def upload_asset(
 
 
 @router.get("/assets", response_model=list[CoursewareAssetResp])
-def list_assets(session: SessionDep, user: CurrentTeacher) -> list[CoursewareAssetResp]:
-    """本人素材列表（按上传时间正序）。"""
-    return asset_service.list_assets(session, teacher_id=user.id).items
+def list_assets(
+    session: SessionDep,
+    user: CurrentTeacher,
+    knowledge_point: UUID | None = Query(default=None, description="按知识点过滤"),
+    filename: str | None = Query(default=None, description="按文件名子串过滤"),
+) -> list[CoursewareAssetResp]:
+    """本人素材库检索（T04）：跨课件列出全部本人素材，可按知识点 / 文件名过滤。
+
+    不传参数 = 返回本人全部素材。``knowledge_point`` 传了但不属于本人 → 403。
+    归属只在 WHERE 的 ``teacher_id`` 与 KP 校验里处理，不在此内联比较。
+    """
+    return asset_service.search_assets(
+        session,
+        teacher_id=user.id,
+        knowledge_point_id=knowledge_point,
+        filename=filename,
+    ).items
 
 
 @router.delete("/assets/{asset_id}")
