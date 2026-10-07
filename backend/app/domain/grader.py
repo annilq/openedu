@@ -3,6 +3,7 @@ import re
 from pydantic import BaseModel
 
 from app.core.async_bridge import run_async
+from app.domain.numeric import numeric_equal
 from app.domain.provider import EducationLLMProvider
 
 
@@ -53,9 +54,25 @@ class Grader:
                 question.answer
             )
         else:
-            correct = self._normalize(student_answer) == self._normalize(question.answer)
+            correct = self._grade_objective(question, student_answer)
         return {
             "correct": correct,
             "score": 1.0 if correct else 0.0,
             "explanation": question.explanation or "",
         }
+
+    @staticmethod
+    def _grade_objective(question, student_answer) -> bool:
+        """非 open / 非 multi 的客观题判定。
+
+        数学填空/计算题走数值等价（ADR-0071）：双侧解析成功且量纲兼容、容差内
+        相等即正确；**任一端解析失败**（非数值文本）回退现有归一化严格相等——
+        安全绳保证「不会比现在更差」（解析歧义收敛到旧行为）。
+        """
+        if getattr(question, "subject", None) == "数学" and question.qtype in (
+            "fill",
+            "calc",
+        ):
+            if numeric_equal(question.answer, student_answer):
+                return True
+        return Grader._normalize(student_answer) == Grader._normalize(question.answer)
