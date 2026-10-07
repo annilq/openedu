@@ -12,6 +12,10 @@
   - ``media_gallery``: ``{items: [{asset_id, caption}], }``
   - ``interactive_scene``: **直接嵌一份 ADR-0061 的 SceneSpec**（原样透传）
   - ``practice``: ``{qtype, count}``
+- ``materials`` / ``scene`` 是与 kind **解耦**的顶层可选字段（环节内容块统一化）：
+  任何 kind 的环节都能挂素材（``[{asset_id, caption}]``）与关联知识点场景
+  （ADR-0061 SceneSpec）。旧 AI 起草数据仍走 ``payload`` 内嵌（items / 整份
+  SceneSpec），由前端回退读取；新数据优先走顶层字段。
 """
 
 from datetime import datetime
@@ -46,6 +50,12 @@ class CoursewareSection(SQLModel):
     script_segments: list[CoursewareScriptSegment] = Field(default_factory=list)
     # 按 kind 释义（见模块 docstring）
     payload: dict = Field(default_factory=dict)
+    # 素材（环节内容块统一化）：任何 kind 都能挂，与 payload['items'] 并存过渡。
+    # 新数据走这里；旧 AI 起草数据（payload['items']）由前端回退读取。
+    materials: list[dict] = Field(default_factory=list)
+    # 关联的知识点交互场景（ADR-0061 SceneSpec），任何 kind 都能挂，与 payload
+    # 内嵌 SceneSpec（interactive_scene 旧结构）并存过渡。
+    scene: dict | None = Field(default=None)
 
 
 class CoursewareResp(SQLModel):

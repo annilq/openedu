@@ -10,22 +10,27 @@ import '../../../../shared/widgets/app_inputs.dart';
 import '../../../../shared/widgets/app_loading.dart';
 import '../../../../shared/widgets/app_toast.dart';
 import '../../domain/models/courseware_section.dart';
-import '../../domain/models/courseware_section_kind.dart';
 import '../../providers/courseware_provider.dart';
 import 'courseware_asset_picker_sheet.dart';
 
-/// 编辑单个讲解环节（ADR-0067 §3.3）：标题 + 教师话术（提问卡，可多段 + 重点）+ 按 kind 的专属内容。
+/// 编辑单个讲解环节（ADR-0067 §3.3，内容块统一化）：
+///
+/// **每个环节都是同一张 CMS 式表单**，与 [CoursewareSectionModel.kind] 无关——
+/// 标题 + 教师话术（提问卡，可多段 + 重点）+ **关联素材** + **关联知识点场景**。
+/// 任何 kind 的环节都能挂素材与场景；旧 AI 起草数据（[payload] 内嵌 items / 整份
+/// SceneSpec）在打开编辑时归一化到顶层 [CoursewareSectionModel.materials] /
+/// [CoursewareSectionModel.scene]（见 [resolvedMaterials] / [resolvedScene]），保存时
+/// 不再写 legacy [payload]，让统一表单只操作顶层字段。
 ///
 /// - 话术（T02）：从单文本框升级为有序段列表，每段可切重点（普通 / 加粗 / 高亮）；
 ///   旧单串话术打开时自动包成一段，升级后整体覆盖写 `script_segments`，旧 `script` 同步压平。
-/// - `mediaGallery`：素材项（id 引用 + 说明）的增删；
-/// - `practice`：题型（qtype）调整；
-/// - `interactiveScene`：场景由 AI 起草决定，此处只调标题 / 话术，重做场景走「AI 重新起草」。
+/// - 关联素材：复用素材库 picker，结果写进顶层 `materials`（id 引用 + 说明）。
+/// - 关联知识点场景：按知识点拉取其已配置的讲解模板（ADR-0061 SceneSpec）供复用，
+///   选中即快照式复制进本环节顶层 `scene`（不随知识点后续改动自动更新）。
 ///
 /// 返回更新后的 [CoursewareSectionModel]；取消则回 null，调用方不落库。
 ///
-/// [knowledgePointId] / [subject] / [grade] / [semester] 用于 `interactiveScene`
-/// 环节「关联知识点场景」——按知识点拉取其已配置的讲解模板供复用（方案 A）。
+/// [knowledgePointId] / [subject] / [grade] / [semester] 用于「关联知识点场景」。
 /// 课件孤儿（[knowledgePointId] 为 null）时该能力自动不可用。
 Future<CoursewareSectionModel?> showCoursewareSectionEditDialog(
   BuildContext context,
@@ -70,7 +75,6 @@ class _SectionEditDialog extends ConsumerStatefulWidget {
 
 class _SectionEditDialogState extends ConsumerState<_SectionEditDialog> {
   late final TextEditingController _titleCtl;
-  late final TextEditingController _qtypeCtl;
   late List<TextEditingController> _segCtls;
   late List<CoursewareScriptEmphasis> _segEmphasis;
   late CoursewareSectionModel _draft;
@@ -83,9 +87,6 @@ class _SectionEditDialogState extends ConsumerState<_SectionEditDialog> {
   void initState() {
     super.initState();
     _titleCtl = TextEditingController(text: widget.section.title);
-    _qtypeCtl = TextEditingController(
-      text: (widget.section.payload['qtype'] as String?) ?? '',
-    );
 
     // 旧单串话术 → 包成一段；否则沿用既有段列表；两者皆空给一段空的便于直接输入。
     final seed = widget.section.scriptSegments.isNotEmpty
@@ -98,10 +99,16 @@ class _SectionEditDialogState extends ConsumerState<_SectionEditDialog> {
 
     _draft = widget.section;
 
-    // interactiveScene 环节：进入即按知识点拉取其已配置的讲解模板（方案 A）。
+    // 内容块统一化：旧 AI 起草数据（payload 内嵌 items / 整份 SceneSpec）打开即归一化
+    // 到顶层 materials / scene，让统一表单只操作顶层字段、保存时不再写 legacy payload。
+    _draft = _draft.copyWith(
+      materials: _draft.resolvedMaterials,
+      scene: _draft.resolvedScene,
+    );
+
+    // 关联知识点场景：进入即按知识点拉取其已配置的讲解模板（统一表单，任意 kind 都可用）。
     // 知识点没配 → 拉到空列表 → UI 提示去知识点页配置；孤儿课件则根本不拉。
-    if (widget.section.kind == CoursewareSectionKind.interactiveScene &&
-        widget.knowledgePointId != null) {
+    if (widget.knowledgePointId != null) {
       _loadKnowledgePointScenes();
     }
   }
@@ -131,52 +138,65 @@ class _SectionEditDialogState extends ConsumerState<_SectionEditDialog> {
     }
   }
 
-  /// 选中一份知识点模板 → 原样写进本节 payload（演示页直接渲染，见
-  /// [SectionInteractiveScene]）。这是「快照式」关联：复制进来，不随知识点后续改动自动更新。
+  /// 选中一份知识点模板 → 快照式复制进本环节顶层 [CoursewareSectionModel.scene]
+  /// （演示页直接渲染，见 [SectionInteractiveScene]）。这是「快照式」关联：复制进来，
+  /// 不随知识点后续改动自动更新。
   void _associateScene(Map<String, dynamic> spec) => setState(
         () => _draft = _draft.copyWith(
-          payload: Map<String, dynamic>.from(spec),
+          scene: Map<String, dynamic>.from(spec),
         ),
       );
 
-  /// 清除关联：payload 置空，演示页回落到「还没有配置交互演示」提示。
+  /// 清除关联：scene 置空，演示页回落到「只有话术」提示。
   void _clearAssociation() =>
-      setState(() => _draft = _draft.copyWith(payload: const {}));
+      setState(() => _draft = _draft.copyWith(scene: null));
 
   @override
   void dispose() {
     _titleCtl.dispose();
-    _qtypeCtl.dispose();
     for (final c in _segCtls) {
       c.dispose();
     }
     super.dispose();
   }
 
-  List<Map<String, dynamic>> get _items {
-    final raw = _draft.payload['items'];
-    if (raw is! List) return const <Map<String, dynamic>>[];
-    return <Map<String, dynamic>>[
+  /// 把素材库 picker 回执的 `{items:[{asset_id,caption}]}` 解析成顶层素材列表。
+  List<CoursewareMaterialItem> _materialsFromPicker(Map<String, dynamic> updated) {
+    final raw = updated['items'];
+    if (raw is! List) return const <CoursewareMaterialItem>[];
+    return <CoursewareMaterialItem>[
       for (final e in raw)
-        if (e is Map) Map<String, dynamic>.from(e),
+        if (e is Map)
+          CoursewareMaterialItem(
+            assetId: (e['asset_id'] as String?) ?? '',
+            caption: (e['caption'] as String?) ?? '',
+          ),
     ];
   }
 
+  /// 关联素材：复用素材库 picker；把它当前的顶层素材映射回 picker 用的 items 结构，
+  /// 让 picker 能显示既有选择，回执再归一化回顶层 [CoursewareSectionModel.materials]。
   Future<void> _addAsset() async {
+    final current = {
+      'items': [
+        for (final m in _draft.materials)
+          {'asset_id': m.assetId, 'caption': m.caption},
+      ],
+    };
     final updated = await showCoursewareAssetPicker(
       context,
       ref,
-      current: _draft.payload,
+      current: current,
     );
     if (updated == null) return;
-    setState(() => _draft = _draft.copyWith(payload: updated));
+    setState(
+      () => _draft = _draft.copyWith(materials: _materialsFromPicker(updated)),
+    );
   }
 
-  void _removeItem(int index) {
-    final items = [..._items]..removeAt(index);
-    setState(
-      () => _draft = _draft.copyWith(payload: {..._draft.payload, 'items': items}),
-    );
+  void _removeMaterial(int index) {
+    final mats = [..._draft.materials]..removeAt(index);
+    setState(() => _draft = _draft.copyWith(materials: mats));
   }
 
   void _addSegment() => setState(() {
@@ -205,13 +225,6 @@ class _SectionEditDialogState extends ConsumerState<_SectionEditDialog> {
       };
 
   void _save() {
-    final payload = switch (_draft.kind) {
-      CoursewareSectionKind.practice => {
-          ..._draft.payload,
-          'qtype': _qtypeCtl.text.trim(),
-        },
-      _ => _draft.payload,
-    };
     final segs = <CoursewareScriptSegment>[];
     for (var i = 0; i < _segCtls.length; i++) {
       final t = _segCtls[i].text.trim();
@@ -223,7 +236,8 @@ class _SectionEditDialogState extends ConsumerState<_SectionEditDialog> {
       // 旧单串 script 同步压平成多段文本，保证任何仍读 script 的消费者不丢内容。
       script: segs.map((s) => s.text).join('\n'),
       scriptSegments: segs,
-      payload: payload,
+      // 内容块统一化：legacy payload 不再承担内容存储，统一落顶层 materials / scene。
+      payload: const {},
     );
     Navigator.pop(context, updated);
   }
@@ -255,25 +269,17 @@ class _SectionEditDialogState extends ConsumerState<_SectionEditDialog> {
                       for (var i = 0; i < _segCtls.length; i++)
                         _segmentRow(i, app, text),
                       AppTextAction(label: '添加一段', onPressed: _addSegment),
-                      const SizedBox(height: AppSpacing.md),
-                      if (_draft.kind == CoursewareSectionKind.mediaGallery) ...[
-                        Text('素材', style: text.labelMedium),
-                        const SizedBox(height: AppSpacing.sm),
-                        ..._items.asMap().entries.map(
-                              (e) => _itemRow(e.key, e.value, app, text),
-                            ),
-                        AppTextAction(label: '添加素材', onPressed: _addAsset),
-                      ] else if (_draft.kind == CoursewareSectionKind.practice) ...[
-                        AppTextField(label: '题型（qtype）', controller: _qtypeCtl),
-                      ] else if (_draft.kind ==
-                          CoursewareSectionKind.interactiveScene) ...[
-                        _interactiveSceneBlock(app, text),
-                      ] else if (_draft.isUnknownKind) ...[
-                        Text(
-                          '未知环节类型，无法编辑内容。',
-                          style: text.bodySmall?.copyWith(color: app.error),
-                        ),
-                      ],
+                      const SizedBox(height: AppSpacing.lg),
+                      // 关联素材（统一表单，任意 kind 都能挂）。
+                      Text('关联素材', style: text.labelMedium),
+                      const SizedBox(height: AppSpacing.sm),
+                      ..._draft.materials.asMap().entries.map(
+                            (e) => _materialRow(e.key, e.value, app, text),
+                          ),
+                      AppTextAction(label: '添加素材', onPressed: _addAsset),
+                      const SizedBox(height: AppSpacing.lg),
+                      // 关联知识点场景（统一表单，任意 kind 都能挂）。
+                      _sceneAssociationBlock(app, text),
                     ],
                   ),
                 ),
@@ -327,13 +333,13 @@ class _SectionEditDialogState extends ConsumerState<_SectionEditDialog> {
     );
   }
 
-  Widget _itemRow(
+  Widget _materialRow(
     int index,
-    Map<String, dynamic> item,
+    CoursewareMaterialItem item,
     AppColors app,
     AppText text,
   ) {
-    final caption = item['caption'] as String? ?? '';
+    final caption = item.caption;
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.sm),
       child: Row(
@@ -347,18 +353,19 @@ class _SectionEditDialogState extends ConsumerState<_SectionEditDialog> {
           ),
           AppTextAction(
             label: '移除',
-            onPressed: () => _removeItem(index),
+            onPressed: () => _removeMaterial(index),
           ),
         ],
       ),
     );
   }
 
-  /// `interactiveScene` 环节：「关联知识点场景」（方案 A）。
+  /// 「关联知识点场景」（统一表单，任意 kind 都能挂）。
   ///
-  /// 列出该知识点在「讲解」里已配置的交互演示模板，点一份即复制进本节 payload；
-  /// 知识点没配 → 提示去知识点页配置；孤儿课件 → 直接不可用。
-  Widget _interactiveSceneBlock(AppColors app, AppText text) {
+  /// 列出该知识点在「讲解」里已配置的交互演示模板（ADR-0061 SceneSpec），点一份即
+  /// 快照式复制进本节顶层 [CoursewareSectionModel.scene]；知识点没配 → 提示去知识点页
+  /// 配置；孤儿课件 → 直接不可用。
+  Widget _sceneAssociationBlock(AppColors app, AppText text) {
     String titleOf(Map<String, dynamic> spec) =>
         (spec['title'] as String?)?.isNotEmpty == true
             ? spec['title'] as String
@@ -445,13 +452,13 @@ class _SectionEditDialogState extends ConsumerState<_SectionEditDialog> {
                   ),
                 ),
               ),
-            if (_draft.payload.isNotEmpty) ...[
+            if (_draft.scene != null) ...[
               const SizedBox(height: AppSpacing.xs),
               Row(
                 children: [
                   Expanded(
                     child: Text(
-                      '本环节已填入交互演示内容。',
+                      '本环节已关联交互演示。',
                       style: text.bodySmall
                           ?.copyWith(color: app.onSurfaceVariant),
                     ),

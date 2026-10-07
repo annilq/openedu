@@ -84,6 +84,9 @@ class _DraftSection(SQLModel):
     title: str = ""
     script: str = ""
     payload: dict = Field(default_factory=dict)
+    # 内容块统一化：起草产物也可选填顶层素材 / 场景（旧起草只走 payload 内嵌）。
+    materials: list[dict] = Field(default_factory=list)
+    scene: dict | None = Field(default=None)
 
 
 class _CoursewareDraft(SQLModel):
@@ -133,6 +136,10 @@ def _section_to_dict(s: CoursewareSection) -> dict:
             for seg in (s.script_segments or [])
         ],
         "payload": s.payload or {},
+        # 内容块统一化：素材 / 场景与 kind 解耦的顶层字段（旧数据这两键缺失，落库
+        # 为缺省值，前端回退 payload 内嵌；新数据优先走顶层字段）。
+        "materials": s.materials or [],
+        "scene": s.scene,
     }
 
 
@@ -269,6 +276,9 @@ def _sections_from_draft(data: object) -> list[CoursewareSection]:
                 title=(raw.title or "")[:128],
                 script=(raw.script or "")[:2000],
                 payload=raw.payload if isinstance(raw.payload, dict) else {},
+                # 内容块统一化：透传顶层素材 / 场景（LLM 当前不生成，留作前向兼容）。
+                materials=raw.materials if isinstance(raw.materials, list) else [],
+                scene=raw.scene if isinstance(raw.scene, dict) else None,
             )
         )
     if not sections:
@@ -301,6 +311,8 @@ def _same_section_content(a: "CoursewareSection", b: "CoursewareSection") -> boo
         and a.script == b.script
         and _segment_signature(a) == _segment_signature(b)
         and a.payload == b.payload
+        and a.materials == b.materials
+        and a.scene == b.scene
     )
 
 

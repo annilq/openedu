@@ -43,7 +43,13 @@ CoursewareSectionModel _gallerySection(
       kind: CoursewareSectionKind.mediaGallery,
       title: title,
       script: '这些图形有什么共同点？',
-      payload: {'items': items},
+      materials: [
+        for (final m in items)
+          CoursewareMaterialItem(
+            assetId: m['asset_id'] as String,
+            caption: m['caption'] as String,
+          ),
+      ],
     );
 
 CoursewareSectionModel _sceneSection() => CoursewareSectionModel(
@@ -51,7 +57,7 @@ CoursewareSectionModel _sceneSection() => CoursewareSectionModel(
       kind: CoursewareSectionKind.interactiveScene,
       title: '判断轴对称',
       script: '拖对称轴，看两侧能不能完全重合',
-      payload: {
+      scene: {
         'kind': 'reflection',
         'points': [
           [0.30, 0.70],
@@ -280,8 +286,8 @@ void main() {
     );
 
     // 空态必须回答「为什么空」+「下一步做什么」（ADR-0051）。
-    expect(find.text('这一环节还没有素材'), findsOneWidget);
-    expect(find.text('在课件编辑页上传这一环节要用的图片'), findsOneWidget);
+    expect(find.text('这一环节只有话术'), findsOneWidget);
+    expect(find.text('在课件编辑页打开这个环节'), findsOneWidget);
     // ⚠️ 关键断言：没有示意图。§3.5 明确禁止降级到顶点图库示意图形——
     // 偷偷降级就是把「没有素材」伪装成「有内容」。
     expect(find.byType(Image), findsNothing);
@@ -301,20 +307,19 @@ void main() {
 
     // §4.2（决策 10 允许删素材）：引用留下、素材没了 → 占位，且与空态文案不同。
     expect(find.text('素材已移除'), findsOneWidget);
-    expect(find.text('这一环节还没有素材'), findsNothing);
+    expect(find.text('这一环节只有话术'), findsNothing);
     expect(find.byType(Image), findsNothing);
   });
 
-  testWidgets('interactive_scene → payload 原样喂 SceneInterpreter',
-      (tester) async {
+  testWidgets('interactive_scene → scene 原样喂 SceneInterpreter', (tester) async {
     final section = _sceneSection();
     await _pumpPresent(tester, courseware: _courseware([section]));
 
-    // 切片 6「零渲染器改动」的执行点：本页不做任何字段翻译，spec 就是 payload 本身。
+    // 切片 6「零渲染器改动」的执行点：本页不做任何字段翻译，spec 就是顶层 scene 本身。
     final interpreter =
         tester.widget<SceneInterpreter>(find.byType(SceneInterpreter));
     expect(interpreter.kind, 'reflection');
-    expect(interpreter.spec, same(section.payload));
+    expect(interpreter.spec, same(section.scene));
     expect(tester.takeException(), isNull);
   });
 

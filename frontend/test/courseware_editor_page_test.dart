@@ -376,11 +376,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(repo.updateSectionsCalls, 1);
-      final items = (repo.lastUpdated!.first.payload['items'] as List)
-          .map((e) => Map<String, dynamic>.from(e as Map))
-          .toList();
-      expect(items.length, 2);
-      expect(items.any((e) => e['asset_id'] == 'b1'), isTrue);
+      final mats = repo.lastUpdated!.first.materials;
+      expect(mats.length, 2);
+      expect(mats.any((m) => m.assetId == 'b1'), isTrue);
       expect(tester.takeException(), isNull);
     });
 
@@ -407,11 +405,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(repo.updateSectionsCalls, 1);
-      final items = (repo.lastUpdated!.first.payload['items'] as List)
-          .map((e) => Map<String, dynamic>.from(e as Map))
-          .toList();
-      expect(items.length, 1);
-      expect(items.first['asset_id'], 'a1');
+      final mats = repo.lastUpdated!.first.materials;
+      expect(mats.length, 1);
+      expect(mats.first.assetId, 'a1');
       expect(tester.takeException(), isNull);
     });
   });
@@ -462,12 +458,10 @@ void main() {
       await tester.tap(find.text('保存'));
       await tester.pumpAndSettle();
 
-      final items = (repo.lastUpdated!.first.payload['items'] as List)
-          .map((e) => Map<String, dynamic>.from(e as Map))
-          .toList();
-      expect(items.length, 1);
-      expect(items.first['asset_id'], 'b1');
-      expect(items.first['caption'], '建筑立面');
+      final mats = repo.lastUpdated!.first.materials;
+      expect(mats.length, 1);
+      expect(mats.first.assetId, 'b1');
+      expect(mats.first.caption, '建筑立面');
       expect(tester.takeException(), isNull);
     });
 
@@ -764,15 +758,15 @@ void main() {
       await tester.tap(find.text('选用'));
       await tester.pumpAndSettle();
       // 选用后本环节显示「已填入交互演示内容」+ 清除关联。
-      expect(find.text('本环节已填入交互演示内容。'), findsOneWidget);
+      expect(find.text('本环节已关联交互演示。'), findsOneWidget);
 
       await tester.tap(find.text('保存'));
       await tester.pumpAndSettle();
 
       expect(repo.updateSectionsCalls, 1);
-      final payload = repo.lastUpdated!.first.payload;
-      expect(payload['kind'], 'reflection');
-      expect(payload['title'], '图形的运动（轴对称）');
+      final savedScene = repo.lastUpdated!.first.scene;
+      expect(savedScene?['kind'], 'reflection');
+      expect(savedScene?['title'], '图形的运动（轴对称）');
       expect(tester.takeException(), isNull);
     });
 
@@ -799,17 +793,59 @@ void main() {
       repo.kpScenes = [reflectionSpec];
       await openSceneDialog(tester, repo);
 
-      expect(find.text('本环节已填入交互演示内容。'), findsOneWidget);
+      expect(find.text('本环节已关联交互演示。'), findsOneWidget);
       await tester.tap(find.text('清除关联'));
       await tester.pumpAndSettle();
-      expect(find.text('本环节已填入交互演示内容。'), findsNothing);
+      expect(find.text('本环节已关联交互演示。'), findsNothing);
 
       await tester.tap(find.text('保存'));
       await tester.pumpAndSettle();
 
       expect(repo.updateSectionsCalls, 1);
+      expect(repo.lastUpdated!.first.scene, isNull);
       expect(repo.lastUpdated!.first.payload, isEmpty);
       expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('内容块统一化：resolvedMaterials / resolvedScene', () {
+    test('优先顶层字段、回退 payload、其它 kind 不误当场景', () {
+      // 旧 mediaGallery：payload.items → resolvedMaterials 回退。
+      final legacyGallery = CoursewareSectionModel(
+        id: 'g',
+        kind: CoursewareSectionKind.mediaGallery,
+        payload: {
+          'items': [
+            {'asset_id': 'a1', 'caption': 'x'}
+          ]
+        },
+      );
+      expect(legacyGallery.resolvedMaterials.first.assetId, 'a1');
+
+      // 顶层 materials 优先于 payload.items（归一化后旧数据落到顶层）。
+      final mixed = legacyGallery.copyWith(
+        materials: const [CoursewareMaterialItem(assetId: 'top', caption: 'y')],
+      );
+      expect(mixed.resolvedMaterials.first.assetId, 'top');
+
+      // 旧 interactiveScene：payload 整份即 SceneSpec → resolvedScene 回退。
+      final legacyScene = CoursewareSectionModel(
+        id: 's',
+        kind: CoursewareSectionKind.interactiveScene,
+        payload: {'kind': 'reflection'},
+      );
+      expect(legacyScene.resolvedScene?['kind'], 'reflection');
+
+      // 顶层 scene 优先；practice 的 payload 不被误当作场景。
+      final mixedScene = legacyScene.copyWith(scene: const {'kind': 'bar'});
+      expect(mixedScene.resolvedScene?['kind'], 'bar');
+      final practice = CoursewareSectionModel(
+        id: 'p',
+        kind: CoursewareSectionKind.practice,
+        payload: {'qtype': 'choice'},
+      );
+      expect(practice.resolvedScene, isNull);
+      expect(practice.resolvedMaterials, isEmpty);
     });
   });
 }

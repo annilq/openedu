@@ -11,7 +11,6 @@ import '../../../../shared/widgets/app_loading.dart';
 import '../../../../shared/widgets/app_pushed_page.dart';
 import '../../domain/models/courseware.dart';
 import '../../domain/models/courseware_section.dart';
-import '../../domain/models/courseware_section_kind.dart';
 import '../../providers/courseware_provider.dart';
 import '../widgets/courseware_present_step_bar.dart';
 import '../widgets/courseware_script_view.dart';
@@ -392,22 +391,46 @@ class _PresentStage extends StatelessWidget {
     );
   }
 
+  /// 主区内容：**按填了什么渲染**，与 [CoursewareSectionModel.kind] 无关（内容块统一化）。
+  ///
+  /// - 有素材 → 图廊；有关联场景 → 交互演示；两者皆无 → 空态（只有话术）。
+  /// - 未知 kind 且没有任何内容才给「暂不支持」降级提示，而不是白屏——课堂上白屏等于
+  ///   「课件坏了」。
   Widget _buildBody(BuildContext context) {
-    return switch (section.kind) {
-      CoursewareSectionKind.mediaGallery =>
-        SectionMediaGallery(section: section),
-      CoursewareSectionKind.interactiveScene =>
-        SectionInteractiveScene(section: section),
-      // practice 由 D 线交付（切片 7）；null = 后端先登记了前端还没枚举的新类型。
-      // 两者都给降级提示而不是白屏——课堂上白屏等于「课件坏了」。
-      CoursewareSectionKind.practice || null => AppEmptyState(
-          icon: LucideIcons.circleAlert,
-          title: section.isUnknownKind ? '暂不支持的环节类型' : '课堂练习还没接入',
-          message: section.isUnknownKind
-              ? '这份课件里有本版本还不认识的环节类型，这一段先用文字讲。'
-              : '课堂练习走助手「课件练习」上下文，还没接进演示页，这一段先用文字讲。',
-        ),
-    };
+    final materials = section.resolvedMaterials;
+    final scene = section.resolvedScene;
+    final hasMaterials = materials.isNotEmpty;
+    final hasScene = scene != null;
+    if (section.isUnknownKind && !hasMaterials && !hasScene) {
+      return const AppEmptyState(
+        icon: LucideIcons.circleAlert,
+        title: '暂不支持的环节类型',
+        message: '这份课件里有本版本还不认识的环节类型，这一段先用文字讲。',
+      );
+    }
+    if (!hasMaterials && !hasScene) {
+      return const AppEmptyState(
+        icon: LucideIcons.textSelect,
+        title: '这一环节只有话术',
+        message: '这一环节还没有关联素材或交互演示，只有教师话术。'
+            '回到课件编辑页给它加上素材或场景。',
+        steps: [
+          '在课件编辑页打开这个环节',
+          '点「添加素材」放进图片',
+          '或点「关联知识点场景」选一份交互演示',
+        ],
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (hasMaterials) ...[
+          SectionMediaGallery(materials: materials),
+          if (hasScene) const SizedBox(height: AppSpacing.lg),
+        ],
+        if (hasScene) SectionInteractiveScene(spec: scene),
+      ],
+    );
   }
 }
 

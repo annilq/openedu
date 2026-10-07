@@ -10,39 +10,41 @@ import '../../domain/models/courseware_asset.dart';
 import '../../domain/models/courseware_section.dart';
 import '../../providers/courseware_provider.dart';
 
-/// `media_gallery` 环节（ADR-0067 §6 切片 5）：生活素材 / 欣赏的图廊。
+/// 素材图廊（ADR-0067 §6 切片 5）：生活素材 / 欣赏的图廊。
 ///
-/// payload 形如 `{items: [{asset_id, caption}]}`，素材本体在 [coursewareAssetsProvider]
-/// 里——环节只存 **id 引用**，不存图。因此这里必须分三种情况，它们的语义完全不同：
+/// 素材本体在 [coursewareAssetsProvider] 里——环节只存 **id 引用**（`[CoursewareMaterialItem]`），
+/// 不存图。因此这里必须分三种情况，它们的语义完全不同：
 ///
 /// | 情况 | 显示 | 依据 |
 /// |---|---|---|
-/// | 环节里没有 item | 空态 + 上传引导 | §3.5：**不降级为示意图** |
-/// | item 的 `asset_id` 在素材库里找不到 | 「素材已移除」占位 | §4.2（决策 10 允许删素材） |
+/// | 没有素材 | 空态 + 上传引导 | §3.5：**不降级为示意图** |
+/// | `asset_id` 在素材库里找不到 | 「素材已移除」占位 | §4.2（决策 10 允许删素材） |
 /// | 命中 | 图 + caption | — |
 ///
 /// ⚠️ 前两种不能合并：空态是「还没到那一步」，素材已移除是「曾经有、现在没了」。
 /// 合并成一个「暂无图片」会让刚删过素材的教师以为自己没传过（ADR-0066 不伪造纪律）。
+///
+/// 与 [CoursewareSectionModel.kind] 解耦：演示页统一把顶层 `materials` 传进来，任何
+/// 环节都能展示素材。
 class SectionMediaGallery extends ConsumerWidget {
   const SectionMediaGallery({
     super.key,
-    required this.section,
+    required this.materials,
   });
 
-  final CoursewareSectionModel section;
+  final List<CoursewareMaterialItem> materials;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final items = _itemsOf(section.payload);
-    if (items.isEmpty) {
+    if (materials.isEmpty) {
       return const AppEmptyState(
         icon: LucideIcons.imagePlus,
         title: '这一环节还没有素材',
-        message: '这一环节是素材展示，但还没有放进任何图片。'
+        message: '这一环节还没有放进任何图片。'
             '上传图片后，它们会按你排的顺序投给学生看。',
         steps: [
-          '在课件编辑页上传这一环节要用的图片',
-          '给每张图配一句「要看什么」',
+          '在课件编辑页打开这个环节',
+          '点「添加素材」放进图片',
           '回到演示页，图片会按这里的顺序出现',
         ],
       );
@@ -55,13 +57,13 @@ class SectionMediaGallery extends ConsumerWidget {
         message: '素材列表加载失败：$error',
         onRetry: () => ref.invalidate(coursewareAssetsProvider),
       ),
-      data: (list) => _buildGrid(context, items, list),
+      data: (list) => _buildGrid(context, materials, list),
     );
   }
 
   Widget _buildGrid(
     BuildContext context,
-    List<_GalleryItem> items,
+    List<CoursewareMaterialItem> items,
     List<CoursewareAssetModel> assets,
   ) {
     return LayoutBuilder(
@@ -95,7 +97,7 @@ class SectionMediaGallery extends ConsumerWidget {
 
   Widget _buildTile(
     BuildContext context,
-    _GalleryItem item,
+    CoursewareMaterialItem item,
     List<CoursewareAssetModel> assets,
   ) {
     final index = assets.indexWhere((a) => a.id == item.assetId);
@@ -105,29 +107,6 @@ class SectionMediaGallery extends ConsumerWidget {
     }
     return _GalleryTile(asset: assets[index], caption: item.caption);
   }
-}
-
-/// payload 里的一个引用（asset_id + 说明）。
-///
-/// 不是 widget，只是解析产物——避免把 Map 取值散进 build 里。
-class _GalleryItem {
-  const _GalleryItem({required this.assetId, required this.caption});
-
-  final String assetId;
-  final String caption;
-}
-
-List<_GalleryItem> _itemsOf(Map<String, dynamic> payload) {
-  final raw = payload['items'];
-  if (raw is! List) return const <_GalleryItem>[];
-  return <_GalleryItem>[
-    for (final e in raw)
-      if (e is Map)
-        _GalleryItem(
-          assetId: e['asset_id'] as String? ?? '',
-          caption: e['caption'] as String? ?? '',
-        ),
-  ];
 }
 
 /// 正常态：一张图 + 它的说明。
