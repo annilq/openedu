@@ -37,6 +37,17 @@ class UsersPublic(SQLModel):
     count: int
 
 
+class DeletedStudentResp(SQLModel):
+    """删除学生账号的回执（ADR-0068）：回传各表清理行数，让教师确认没有误删。"""
+
+    deleted: bool = True
+    student_id: UUID
+    answer_records: int = 0
+    checkins: int = 0
+    wrong_questions: int = 0
+    task_assignments: int = 0
+
+
 class Token(SQLModel):
     access_token: str
     token_type: str = "bearer"

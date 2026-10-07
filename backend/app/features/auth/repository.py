@@ -2,10 +2,16 @@
 
 import uuid
 
-from sqlmodel import Session
+from sqlmodel import Session, delete, func, select
 
 from app.core.security import get_password_hash, verify_password
-from app.db.models import User
+from app.db.models import (
+    AnswerRecord,
+    Checkin,
+    TaskAssignment,
+    User,
+    WrongQuestion,
+)
 from app.features.auth.schemas import UserCreate
 
 
@@ -88,3 +94,40 @@ def update_user(
     session.commit()
     session.refresh(user)
     return user
+
+
+def delete_student(*, session: Session, student: User) -> dict[str, int]:
+    """硬删学生账号并级联清理其作答/打卡/错题/派发关系（单事务，ADR-0068）。
+
+    先数后删，回传各表清理行数让教师确认没有误删（验收要求）。所有删除在同一
+    ``commit`` 内完成，任一步失败整体回滚（原子级联）。
+
+    ⚠️ 范围：仅清理与「学生作答/打卡/错题/派发」直接相关的四张表 + 账号本身。
+    ``TutorLog`` / ``Conversation`` 等伴学日志不在此级联（属日志且非 spec 要求），
+    避免误删教师侧数据；其 ``student_id`` 为可空引用，留痕不影响其他功能。
+    """
+
+    def _count(model: type) -> int:
+        return (
+            session.scalar(
+                select(func.count())
+                .select_from(model)
+                .where(model.student_id == student.id)
+            )
+            or 0
+        )
+
+    counts = {
+        "answer_records": _count(AnswerRecord),
+        "checkins": _count(Checkin),
+        "wrong_questions": _count(WrongQuestion),
+        "task_assignments": _count(TaskAssignment),
+    }
+    # 子表先删，账号最后删；单事务提交保证原子。
+    session.exec(delete(AnswerRecord).where(AnswerRecord.student_id == student.id))
+    session.exec(delete(Checkin).where(Checkin.student_id == student.id))
+    session.exec(delete(WrongQuestion).where(WrongQuestion.student_id == student.id))
+    session.exec(delete(TaskAssignment).where(TaskAssignment.student_id == student.id))
+    session.delete(student)
+    session.commit()
+    return counts
