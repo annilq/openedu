@@ -186,3 +186,46 @@ class KnowledgePointConfirm(SQLModel):
     grade: int = Field(ge=1, le=9)
     # 学期范围维度（ADR-0055 §4 补）：'' = 整学年/不限；'上学期' / '下学期'。
     semester: str = Field(default="", max_length=8)
+
+
+class SceneLibraryKpRef(SQLModel):
+    """场景库里的「关联知识点」条目（ADR-0073 浏览页语义边界）。
+
+    它回答的是「这个内置场景被哪些知识点引用了」，浏览页据此列出「内置实例」。
+    带 ``subject/grade/semester`` 是因为知识点是**跨学期同名的**（唯一约束含
+    学期）——只给 name 会让教师看到三个「轴对称」却分不清是谁。
+    """
+
+    id: UUID
+    name: str
+    subject: str
+    grade: int
+    semester: str
+    # 该知识点自己的完整场景（`KnowledgePoint.scenes`）原样透传：浏览页详情要显示
+    # 「这个实例配的是哪个图形」——只给名字的话教师看到三个「轴对称」，还得逐
+    # 个点进去才知道各配了什么。None = 该知识点还没配。
+    scenes: list[dict] | None = None
+
+
+class SceneLibraryItem(SQLModel):
+    """一个内置场景（注册表条目）+ 它的关联知识点。
+
+    ``defaults`` 是**完整的 SceneSpec 中性种子**，不是扁平的参数列表：编辑器选中
+    某个 kind 后直接拿它预填表单并即时预览，前端就不必再手拼一份结构（那正是
+    原先 ``_buildSpec`` 与后端互为镜像的重复来源）。
+    """
+
+    kind: str
+    title: str = ""
+    # 完整 SceneSpec（含 inputs / controls / narrative / outputs），中性种子。
+    defaults: dict = Field(default_factory=dict)
+    associated_knowledge_points: list[SceneLibraryKpRef] = Field(default_factory=list)
+    # 「内置实例数量」= 关联知识点数（浏览页共识）：统计的是**内置参考**，
+    # 不含已生成的题目/课件快照。
+    instance_count: int = 0
+
+
+class SceneLibraryResp(SQLModel):
+    """场景库清单。空 scenes 列表 = 注册表为空（属部署异常，正常至少有 reflection）。"""
+
+    scenes: list[SceneLibraryItem] = Field(default_factory=list)

@@ -26,6 +26,33 @@ from app.features.materials.scene_extract import (
     extract_scene_inputs,
 )
 from app.features.materials.scene_figures import figure_by_key
+from app.features.materials.scene_templates import (
+    apply_overrides,
+    instantiate_builtin,
+)
+
+
+def resolve_kp_scene(kp: KnowledgePoint | None) -> list[dict] | None:
+    """知识点场景的**唯一读取入口**（ADR-0073 v3）：薄读取器，返回 ``kp.scenes``。
+
+    薄到近乎多余，但必须存在：此前 ``kp.scenes`` 的直读散落多处，每处各自判空、
+    各自认定什么叫「配了场景」——这正是 ADR-0061 §U.4「同一个知识点换个地方就没
+    图」的根因。统一走这里之后，「有没有配场景」才有唯一答案。
+
+    刻意**不做**「注册表 base + per-kp override 合并」：v3 模型里 ``scenes`` 已经
+    是完整自包含的真相；再叠一层合并只会造出第二个事实源，并把「改注册表影响
+    已存数据」重新变成可能（那正是 ADR-0061 §U 快照铁律要排除的东西）。
+
+    返回值是行上的**引用**而非深拷贝：本函数只用于「有没有」的判定与读取，
+    需要落库 / 改写的调用方走 :func:`fuse_scene_spec`（它负责 deepcopy）。
+    """
+    if kp is None:
+        return None
+    scenes = kp.scenes
+    if not isinstance(scenes, list) or not scenes:
+        # none_as_null=True 已让「清空」落为 SQL NULL；这里再挡一次非 list 的脏数据。
+        return None
+    return scenes
 
 
 def fuse_scene_spec(
@@ -50,34 +77,9 @@ def fuse_scene_spec(
     if not isinstance(template, dict):
         return None
     spec: dict[str, Any] = copy.deepcopy(template)
-    inputs = spec.get("inputs")
-    if isinstance(inputs, list) and overrides:
-        merged: list[Any] = [
-            {
-                **inp,
-                "value": (
-                    overrides.get(inp["key"], inp.get("value"))
-                    if isinstance(inp, dict) and "key" in inp
-                    else inp.get("value") if isinstance(inp, dict) else inp
-                ),
-            }
-            if isinstance(inp, dict)
-            else inp
-            for inp in inputs
-        ]
-        # 模板里没有、但 override 提供了的 key → 补进去（否则被静默忽略）。
-        # 标注 generated=True 便于区分「教师配的」与「按本题算出来的」，
-        # 将来若做「模板编辑器只展示教师配的项」之类的功能时不必再猜。
-        present = {
-            inp.get("key")
-            for inp in inputs
-            if isinstance(inp, dict) and inp.get("key") is not None
-        }
-        for key, value in overrides.items():
-            if key not in present:
-                merged.append({"key": key, "value": value, "generated": True})
-        spec["inputs"] = merged
-    return spec
+    # 合并语义下沉到 scene_templates.apply_overrides：注册表实例化与模板融合是
+    # 同一套「按 key 覆盖 + 补新项」逻辑，两份实现迟早漂移。
+    return apply_overrides(spec, overrides)
 
 
 def default_scene_from_figure(figure_key: str | None) -> dict | None:
@@ -98,55 +100,32 @@ def default_scene_from_figure(figure_key: str | None) -> dict | None:
     shape = figure_by_key(figure_key)
     if shape is None:
         return None
-    return {
-        "kind": "reflection",
-        "title": f"{shape.label}·轴对称",
-        "inputs": [
-            {
-                "key": "axisAngle",
-                "label": "对称轴角度",
-                "value": shape.default_axis_angle,
-                "min": 0,
-                "max": 180,
-                "step": 1,
-                "unit": "度",
-            },
-            {
-                "key": "axisX",
-                "label": "对称轴水平",
-                "value": 0.5,
-                "min": 0.3,
-                "max": 0.7,
-                "step": 0.01,
-                "unit": "比例",
-            },
-            {
-                "key": "axisY",
-                "label": "对称轴垂直",
-                "value": 0.5,
-                "min": 0.3,
-                "max": 0.7,
-                "step": 0.01,
-                "unit": "比例",
-            },
-            {"key": "figure", "label": "图形", "value": shape.key},
-            {
-                "key": "points",
-                "label": "顶点",
-                "value": [[x, y] for x, y in shape.vertices],
-            },
-        ],
-        "controls": {"play": True, "pause": True, "scrub": True, "speed": True},
-        # 引导**动手试**而不报答案：说出「有几条」就等于把答案念出来了。
-        "narrative": (
-            f"这是{shape.label}。点播放看沿对称轴对折后两侧能否完全重合；"
-            "也可以自己旋转、平移对称轴，找出所有能重合的角度。"
-        ),
-        "outputs": {"isAxisymmetric": shape.axis_count > 0},
-        "editable": True,
-        # 来源标记：教师配了模板后会被模板覆盖，便于排查「这图是谁给的」。
-        "derivedFrom": "figure_library",
-    }
+    # 结构（inputs 骨架 / controls / editable）一律向注册表取——这样「默认位置
+    # 0.5」「axisAngle 的取值范围与单位」只有一处定义。此前这里是手写整份 dict，
+    # 与前端 ReflectionSceneData、编辑器 _buildSpec 三份互为镜像，改一处漏两处。
+    spec = instantiate_builtin(
+        "reflection",
+        overrides={
+            "axisAngle": shape.default_axis_angle,
+            "figure": shape.key,
+            "points": [[x, y] for x, y in shape.vertices],
+        },
+    )
+    if spec is None:
+        # 注册表里没有 reflection 属部署异常；此时宁可降级纯文本，也不按旧的
+        # 手写副本就地重造一份——那样等于把刚收拢的默认值重新抄回去。
+        return None
+    # 这三项只有知道具体图形才写得出，由实例化方补齐（注册表刻意保持中性：
+    # 见 scene_templates 模块 docstring 边界 3 / 4）。
+    spec["title"] = f"{shape.label}·轴对称"
+    spec["narrative"] = (
+        f"这是{shape.label}。点播放看沿对称轴对折后两侧能否完全重合；"
+        "也可以自己旋转、平移对称轴，找出所有能重合的角度。"
+    )
+    spec["outputs"] = {"isAxisymmetric": shape.axis_count > 0}
+    # 来源标记：教师配了模板后会被模板覆盖，便于排查「这图是谁给的」。
+    spec["derivedFrom"] = "figure_library"
+    return spec
 
 
 def scene_spec_for_read(

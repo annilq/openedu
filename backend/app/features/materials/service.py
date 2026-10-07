@@ -14,7 +14,7 @@ import uuid
 from collections.abc import Sequence
 from pathlib import Path
 
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from agent_core.ports import StructuredDone
 from app.core.ai_plumbing import build_ai_provider
@@ -32,6 +32,10 @@ from app.domain.subjects import SUBJECTS
 from app.features.materials import indexing
 from app.features.materials import repository as repo
 from app.features.materials.parser import ParseError, extract_text
+from app.features.materials.scene_templates import (
+    SCENE_LIBRARY,
+    list_builtin_scenes,
+)
 from app.features.materials.schemas import (
     ExtractResult,
     FolderCreate,
@@ -43,6 +47,9 @@ from app.features.materials.schemas import (
     KnowledgePointScopeResp,
     MaterialMeta,
     MaterialResp,
+    SceneLibraryItem,
+    SceneLibraryKpRef,
+    SceneLibraryResp,
     UploadResult,
 )
 
@@ -666,6 +673,55 @@ def list_knowledge_point_scopes(
         for (subject, grade, semester), count in sorted(counts.items())
     ]
     return KnowledgePointScopeListResp(scopes=scopes, unscoped_count=unscoped)
+
+
+def list_scene_library(
+    session: Session, *, teacher_id: uuid.UUID
+) -> SceneLibraryResp:
+    """场景库清单（ADR-0073）：内置注册表 + 本教师关联知识点的聚合。
+
+    **实例口径只认后端内置参考**——统计「哪些知识点的 ``scenes`` 引用了某个
+    kind」，**不跨查** ``Question.scene_spec`` / ``Courseware.sections`` 的生成
+    快照。那些快照属于具体的题目 / 课件，只在它们自己的页面里渲染；搬进清单
+    会把场景库变成快照垃圾场，而且计数随着每次出题一直涨，教师根本对不上。
+    """
+    # kind → 关联知识点。按 kp.id 去重：一个知识点的 scenes 里可能有多个同 kind
+    # 的场景，但它作为「一个知识点」只该被计一次。
+    grouped: dict[str, dict[uuid.UUID, SceneLibraryKpRef]] = {
+        kind: {} for kind in SCENE_LIBRARY
+    }
+    rows = session.exec(
+        select(KnowledgePoint).where(KnowledgePoint.teacher_id == teacher_id)
+    ).all()
+    for kp in rows:
+        for scene in kp.scenes or []:
+            kind = scene.get("kind") if isinstance(scene, dict) else None
+            if kind in grouped:
+                grouped[kind][kp.id] = SceneLibraryKpRef(
+                    id=kp.id,
+                    name=kp.name,
+                    subject=kp.subject,
+                    grade=kp.grade,
+                    semester=kp.semester,
+                    scenes=kp.scenes,
+                )
+    items: list[SceneLibraryItem] = []
+    for scene in list_builtin_scenes():
+        kind = str(scene.get("kind") or "")
+        refs = sorted(
+            grouped.get(kind, {}).values(),
+            key=lambda ref: (ref.subject, ref.grade, ref.semester, ref.name),
+        )
+        items.append(
+            SceneLibraryItem(
+                kind=kind,
+                title=str(scene.get("title") or ""),
+                defaults=scene,
+                associated_knowledge_points=refs,
+                instance_count=len(refs),
+            )
+        )
+    return SceneLibraryResp(scenes=items)
 
 
 def update_knowledge_point_scenes(

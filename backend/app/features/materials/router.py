@@ -26,6 +26,7 @@ from app.features.materials.schemas import (
     MaterialDelete,
     MaterialMove,
     MaterialResp,
+    SceneLibraryResp,
     UploadResult,
 )
 
@@ -95,6 +96,24 @@ def list_materials(
 ) -> list[MaterialResp]:
     """资料列表；``folder_id`` 缺省 = 全部（含未归目录的根级资料）。"""
     return service.list_materials(session, teacher_id=user.id, folder_id=folder_id)
+
+
+@router.get("/scene-library", response_model=SceneLibraryResp)
+def list_scene_library(session: SessionDep, user: CurrentTeacher) -> SceneLibraryResp:
+    """内置交互讲解场景库（ADR-0073）：注册表条目 + 本教师的关联知识点聚合。
+
+    前端用它做两件事：① 编辑器下拉枚举可选 ``kind``，并拿 ``defaults`` 直接
+    预填表单与预览——前端就不必再手工拼一份 SceneSpec（那正是原先 ``_buildSpec``
+    与后端互为镜像的重复来源）；② 场景库浏览页列出场景名、所属知识点与内置
+    实例数。
+
+    注意注册顺序：本路由必须在 ``GET /{material_id}`` 之前，否则路径里的
+    ``scene-library`` 会被当成资料 id 吃掉。
+
+    实例的口径是**内置参考**（引用了该 kind 的知识点），不含已生成的题目 /
+    课件快照——那些归它们自己的页面渲染。
+    """
+    return service.list_scene_library(session, teacher_id=user.id)
 
 
 @router.get("/knowledge-points", response_model=KnowledgePointListResp)
