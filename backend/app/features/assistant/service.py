@@ -12,11 +12,13 @@ ADR-0048 起还持有**会话历史的读编排**（列表 / 回放）：端点�
 """
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator
 from dataclasses import asdict
 from typing import Any
 from uuid import UUID, uuid4
 
+from agent_core.errors import ProviderRequestError
 from agent_core.ports import RuntimeDeps, TextDelta
 from agent_core.protocol import (
     EVENT_ASSISTANT_MESSAGE,
@@ -28,6 +30,7 @@ from agent_core.protocol import (
     assistant_message,
     data_event,
     done,
+    error,
     run_started,
 )
 from agent_core.runtime import AgentRuntime, RouteDecision
@@ -64,6 +67,8 @@ from app.features.assistant.schemas import (
     SuggestedAction,
 )
 from app.features.tutor.repository import create_tutor_log
+
+log = logging.getLogger(__name__)
 
 # 自动摘要（P2）：compaction 命中预算要丢轮次时，把最旧轮次压成一句摘要注入，
 # 而非直接丢弃，保留长对话的上下文连续性。
@@ -250,12 +255,36 @@ async def _quiz_generate_stream(
         yield assistant_message("缺少知识点上下文，无法出题。请在课件页进入助手后再试～")
         yield done(session_id=str(conv_id))
         return
+
+    # 未配置可用模型：干净提示，不放出去撞 401（ADR-0039：唯一配置源是「模型管理」）。
+    if not provider.configured:
+        yield run_started()
+        yield assistant_message(
+            "尚未配置可用的模型。请先在「模型管理」中添加模型并设为默认～"
+        )
+        yield done(session_id=str(conv_id))
+        return
+
     subject, grade, semester, name = kp
-    q = await generate_question(
-        provider,
-        subject=subject, grade=grade, knowledge_point=name,
-        qtype="choice", difficulty="easy", semester=semester, judge=True,
-    )
+    try:
+        q = await generate_question(
+            provider,
+            subject=subject, grade=grade, knowledge_point=name,
+            qtype="choice", difficulty="easy", semester=semester, judge=True,
+        )
+    except ProviderRequestError as exc:
+        # 鉴权/限流/网络等厂商拒绝：转成 SSE 错误帧，携带策展提示（ADR-0038），
+        # 绝不能让异常穿透生成器导致流被截断 + 服务端刷 traceback。
+        yield run_started()
+        yield error(exc.user_hint, code="PROVIDER_ERROR")
+        yield done(session_id=str(conv_id))
+        return
+    except Exception as exc:  # noqa: BLE001 — 兜底：任何出题期异常都转错误帧，不崩流
+        log.warning("quiz generate failed: %s", exc)
+        yield run_started()
+        yield error("模型服务暂时不可用，请稍后再试或检查模型配置～", code="PROVIDER_ERROR")
+        yield done(session_id=str(conv_id))
+        return
     if q is None:
         yield run_started()
         yield assistant_message("暂时没法生成题目，请稍后再试或换个方式～")

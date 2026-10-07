@@ -55,6 +55,18 @@ def _supports_reasoning(model_name: str) -> bool:
     return any(hint in n for hint in _REASONING_HINTS)
 
 
+def _key_usable(provider: str, api_key: str | None) -> bool:
+    """密钥是否足以驱动该提供方。
+
+    ``ollama`` 本地运行无需密钥；其余远程提供方（``openai_compat`` 等）必须有非空密钥。
+    空密钥的 ``ModelConfig`` 当作「未配置」回落，而不是带着 ``None`` key 出去撞 401
+    （ADR-0039：唯一配置源是「模型管理」，无离线 mock 兜底）。
+    """
+    if provider == "ollama":
+        return True
+    return bool(api_key and api_key.strip())
+
+
 def _as_uuid(value: object) -> uuid.UUID | None:
     """仅当 model_ref 是合法 UUID 时才查 ModelConfig 表。
 
@@ -116,6 +128,9 @@ def resolve_engine(
             mc = session.get(ModelConfig, mc_id)
             if mc is not None and str(mc.teacher_id) == str(teacher_id):
                 api_key = decrypt(mc.api_key_enc) if mc.api_key_enc else None
+                # 空密钥的远程提供方视为「未配置」：回落「未配置模型」，不放出去撞 401。
+                if not _key_usable(mc.provider, api_key):
+                    return None
                 return build_engine(mc.provider, mc.base_url, api_key, mc.model_name)
 
     # 2) 未指定模型 → 回落本教师在「模型管理」中设为默认的 ModelConfig
@@ -123,6 +138,9 @@ def resolve_engine(
         mc = _default_model_config(session, teacher_id)
         if mc is not None:
             api_key = decrypt(mc.api_key_enc) if mc.api_key_enc else None
+            # 空密钥的远程提供方视为「未配置」：回落「未配置模型」，不放出去撞 401。
+            if not _key_usable(mc.provider, api_key):
+                return None
             return build_engine(mc.provider, mc.base_url, api_key, mc.model_name)
 
     # 3) 无可用模型（未配置）→ None
