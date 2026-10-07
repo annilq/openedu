@@ -96,6 +96,13 @@ class StudentManagementPage extends TeacherPage {
   const StudentManagementPage();
 }
 
+/// 学情统计页（作用域三态 + 四维聚合，ticket 12）。
+///
+/// 侧栏「统计」项进入本页，消费 `/analytics/*` 三个聚合端点。
+class AnalyticsPage extends TeacherPage {
+  const AnalyticsPage();
+}
+
 /// 学生详情页（带学生 ID，不依赖全局选中态）。
 ///
 /// 取代「先选中学生 → 右侧各视图按全局 `selectedStudentProvider` 取数」的写法：
