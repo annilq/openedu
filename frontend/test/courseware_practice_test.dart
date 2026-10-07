@@ -139,10 +139,73 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(repository.requests, hasLength(2));
-    expect(repository.requests.last.message, contains('第 1 级提示'));
+    // T05：默认「方向」级透传，提示词带级别且约束「不给关键条件 / 不直接说答案」。
+    expect(repository.requests.last.message, contains('方向'));
     expect(repository.requests.last.message, contains('不要直接说答案'));
+    expect(repository.requests.last.courseware?.extra, {'hint_level': 'direction'});
     expect(repository.requests.last.courseware?.sectionId, 'practice-1');
     expect(find.textContaining('先观察图形'), findsOneWidget);
+    // 反馈卡：级别 + 不建任务 / 不记录作答说明。
+    expect(find.textContaining('已给【方向】级提示'), findsOneWidget);
+    expect(find.textContaining('不建任务'), findsOneWidget);
+  });
+
+  testWidgets('提示级别选择器可切换，选「下一步」后请求体带对应级别',
+      (tester) async {
+    final repository = _RecordingAssistant();
+    await _pumpPractice(tester, repository);
+
+    await tester.tap(find.text('出题'));
+    await tester.pumpAndSettle();
+
+    // 切换到「下一步」级（默认方向）。
+    await tester.tap(find.text('下一步'));
+    await tester.pumpAndSettle();
+    expect(find.text('提示级别'), findsOneWidget);
+
+    await tester.tap(find.text('错'));
+    await tester.pumpAndSettle();
+
+    expect(repository.requests, hasLength(2));
+    expect(repository.requests.last.courseware?.extra, {'hint_level': 'next_step'});
+    expect(repository.requests.last.message, contains('下一步'));
+    expect(repository.requests.last.message, contains('下一步该做什么操作'));
+    expect(find.textContaining('已给【下一步】级提示'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('提示级别「条件」级请求体携带对应约束', (tester) async {
+    final repository = _RecordingAssistant();
+    await _pumpPractice(tester, repository);
+
+    await tester.tap(find.text('出题'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('条件'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('错'));
+    await tester.pumpAndSettle();
+
+    expect(repository.requests, hasLength(2));
+    expect(repository.requests.last.courseware?.extra, {'hint_level': 'condition'});
+    expect(repository.requests.last.message, contains('关键条件'));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('练习始终不落任务 / 作答（仅走课堂助手通道）', (tester) async {
+    final repository = _RecordingAssistant();
+    await _pumpPractice(tester, repository);
+
+    await tester.tap(find.text('出题'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('错'));
+    await tester.pumpAndSettle();
+
+    // 全程只产生助手聊天请求，无任何任务 / 作答落库调用。
+    expect(repository.requests.length, 2);
+    expect(repository.requests.every((r) => r.courseware != null), isTrue);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('请求失败显示明确兜底文案', (tester) async {

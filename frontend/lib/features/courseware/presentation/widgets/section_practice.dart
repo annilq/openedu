@@ -36,8 +36,19 @@ class _SectionPracticeState extends ConsumerState<SectionPractice> {
   bool _started = false;
   bool _hasQuestion = false;
   bool _correct = false;
-  int _hintLevel = 0;
+  // T05：提示级别（方向 / 条件 / 下一步，默认方向）。初始值读自环节 payload，可选持久化。
+  String _hintLevel = 'direction';
+  bool _hintRequested = false;
   String? _fallback;
+
+  @override
+  void initState() {
+    super.initState();
+    final stored = widget.section.payload['hint_level'];
+    if (stored is String && _hintLabels.containsKey(stored)) {
+      _hintLevel = stored;
+    }
+  }
 
   AssistantCoursewareContext get _context => AssistantCoursewareContext(
     coursewareId: widget.courseware.id,
@@ -48,13 +59,38 @@ class _SectionPracticeState extends ConsumerState<SectionPractice> {
     semester: widget.courseware.semester,
   );
 
+  // T05：透传 extra（含提示级别），后端 tutor 据此驱动分级提示。
+  AssistantCoursewareContext get _contextWithExtra =>
+      _context.copyWith(extra: {'hint_level': _hintLevel});
+
+  static const Map<String, String> _hintLabels = {
+    'direction': '方向',
+    'condition': '条件',
+    'next_step': '下一步',
+  };
+
+  String _hintLabel(String level) => _hintLabels[level] ?? '方向';
+
+  /// 各级别给提示的约束（方向级不给关键条件；下一步级不给最终答案）。
+  String _hintInstruction(String level) {
+    switch (level) {
+      case 'condition':
+        return '提示关键条件（如对称轴定义、需要判断的特征），但不要把完整解题步骤和最终答案说出口。';
+      case 'next_step':
+        return '指出下一步该做什么操作，但不替学生推导到最终答案。';
+      case 'direction':
+      default:
+        return '只提示观察方向（如看哪里、沿什么对折），不要给关键条件，更不要直接说答案。';
+    }
+  }
+
   Future<void> _requestQuestion() async {
     final qtype = '${widget.section.payload['qtype'] ?? '题目'}';
     setState(() {
       _started = true;
       _hasQuestion = false;
       _correct = false;
-      _hintLevel = 0;
+      _hintRequested = false;
       _fallback = null;
     });
     final notifier = ref.read(assistantNotifierProvider.notifier);
@@ -74,16 +110,16 @@ class _SectionPracticeState extends ConsumerState<SectionPractice> {
   }
 
   Future<void> _requestHint() async {
-    final level = (_hintLevel + 1).clamp(1, 3);
+    final level = _hintLevel;
     setState(() {
-      _hintLevel = level;
+      _hintRequested = true;
       _fallback = null;
     });
     await ref
         .read(assistantNotifierProvider.notifier)
         .send(
-          '学生刚才口头回答错了，请给第 $level 级提示帮助他继续思考，不要直接说答案。',
-          courseware: _context,
+          '学生刚才口头回答错了。请给【${_hintLabel(level)}】级提示：${_hintInstruction(level)}',
+          courseware: _contextWithExtra,
         );
     if (!mounted) return;
     final next = ref.read(assistantNotifierProvider);
@@ -130,7 +166,7 @@ class _SectionPracticeState extends ConsumerState<SectionPractice> {
           (context, constraints) => Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _QuestionPrompt(script: widget.section.script),
+              _QuestionPrompt(segments: widget.section.displaySegments),
               const SizedBox(height: AppSpacing.lg),
               if (!_started)
                 Align(
@@ -149,6 +185,24 @@ class _SectionPracticeState extends ConsumerState<SectionPractice> {
                   _PracticeNotice(message: _fallback!, error: true),
                 ],
                 const SizedBox(height: AppSpacing.lg),
+                if (_hasQuestion && !_correct) ...[
+                  Text(
+                    '提示级别',
+                    style: AppTheme.textOf(context)
+                        .labelSmall
+                        ?.copyWith(color: AppTheme.colorsOf(context).onSurfaceVariant),
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  _hintLevelSelector(context, streaming),
+                  const SizedBox(height: AppSpacing.md),
+                ],
+                if (_hintRequested) ...[
+                  _PracticeNotice(
+                    message:
+                        '已给【${_hintLabel(_hintLevel)}】级提示（本练习不建任务、不记录作答）',
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                ],
                 _actions(streaming),
               ],
             ],
@@ -168,8 +222,27 @@ class _SectionPracticeState extends ConsumerState<SectionPractice> {
     return SizedBox(height: AppLayout.contentNarrow, child: list);
   }
 
-  Widget _actions(bool streaming) {
-    if (_correct) {
+  Widget _hintLevelSelector(BuildContext context, bool streaming) {
+    final app = AppTheme.colorsOf(context);
+    return Wrap(
+      spacing: AppSpacing.sm,
+      runSpacing: AppSpacing.sm,
+      children: _hintLabels.keys.map((level) {
+        final selected = _hintLevel == level;
+        return _PracticeAction(
+          label: _hintLabel(level),
+          icon: selected ? LucideIcons.check : LucideIcons.chevronRight,
+          fill: selected ? app.cta : app.surfaceRaised,
+          foreground: selected ? app.onCta : app.onSurfaceVariant,
+          onPressed: streaming
+              ? null
+              : () => setState(() => _hintLevel = level),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _actions(bool streaming) {    if (_correct) {
       return Wrap(
         spacing: AppSpacing.md,
         runSpacing: AppSpacing.sm,
@@ -208,7 +281,7 @@ class _SectionPracticeState extends ConsumerState<SectionPractice> {
         ),
         _PracticeAction(
           key: const ValueKey('courseware-practice-wrong'),
-          label: _hintLevel == 0 ? '错' : '再提示一级',
+          label: '错',
           icon: LucideIcons.x,
           fill: AppTheme.colorsOf(context).semanticError,
           foreground: AppTheme.colorsOf(context).semanticErrorFg,
@@ -220,9 +293,9 @@ class _SectionPracticeState extends ConsumerState<SectionPractice> {
 }
 
 class _QuestionPrompt extends StatelessWidget {
-  const _QuestionPrompt({required this.script});
+  const _QuestionPrompt({required this.segments});
 
-  final String script;
+  final List<CoursewareScriptSegment> segments;
 
   @override
   Widget build(BuildContext context) {
@@ -239,10 +312,25 @@ class _QuestionPrompt extends StatelessWidget {
             style: text.labelSmall?.copyWith(color: app.semanticInfoFg),
           ),
           const SizedBox(height: AppSpacing.xs),
-          Text(
-            script.isEmpty ? '请根据下面的练习向学生提问。' : script,
-            style: text.titleLarge?.copyWith(color: app.semanticInfoFg),
-          ),
+          if (segments.isEmpty)
+            Text(
+              '请根据下面的练习向学生提问。',
+              style: text.titleLarge?.copyWith(color: app.semanticInfoFg),
+            )
+          else
+            for (final seg in segments)
+              Padding(
+                padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                child: Text(
+                  seg.text,
+                  style: text.titleLarge?.copyWith(
+                    color: app.semanticInfoFg,
+                    fontWeight: seg.emphasis == CoursewareScriptEmphasis.bold
+                        ? FontWeight.bold
+                        : null,
+                  ),
+                ),
+              ),
         ],
       ),
     );
