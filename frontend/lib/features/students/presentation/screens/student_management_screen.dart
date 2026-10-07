@@ -36,7 +36,11 @@ import '../../providers/student_management_provider.dart';
 class StudentManagementScreen extends ConsumerStatefulWidget {
   final void Function(String studentId) onOpenStudent;
 
-  const StudentManagementScreen({super.key, required this.onOpenStudent});
+  /// 顶部「添加学生」入口（原侧栏选择器菜单移除后，新增学生改由这里发起）。
+  final VoidCallback? onAddStudent;
+
+  const StudentManagementScreen(
+      {super.key, required this.onOpenStudent, this.onAddStudent});
 
   @override
   ConsumerState<StudentManagementScreen> createState() =>
@@ -233,6 +237,7 @@ class _StudentManagementScreenState
               visibleCount: _filteredStudents(students).length,
               onToggleSelecting: _toggleSelecting,
               onSelectAll: () => _selectAll(students),
+              onAddStudent: widget.onAddStudent,
             ),
             Padding(
               padding: const EdgeInsets.symmetric(
@@ -298,6 +303,7 @@ class _PageHeader extends StatelessWidget {
   final int visibleCount;
   final VoidCallback onToggleSelecting;
   final VoidCallback onSelectAll;
+  final VoidCallback? onAddStudent;
 
   const _PageHeader({
     required this.state,
@@ -306,6 +312,7 @@ class _PageHeader extends StatelessWidget {
     required this.visibleCount,
     required this.onToggleSelecting,
     required this.onSelectAll,
+    this.onAddStudent,
   });
 
   @override
@@ -329,6 +336,12 @@ class _PageHeader extends StatelessWidget {
               foreground: scheme.onSurfaceVariant,
             ),
           const Spacer(),
+          if (onAddStudent != null)
+            AppIconAction(
+              icon: LucideIcons.userPlus,
+              semanticLabel: '添加学生',
+              onPressed: onAddStudent,
+            ),
           if (selecting) ...[
             AppBadge(
               label: '已选 $selectedCount',
@@ -581,11 +594,11 @@ class _Body extends StatelessWidget {
     }
     final loaded = state as StudentManagementLoaded;
     if (loaded.students.isEmpty) {
-      return Center(
+          return Center(
         child: AppEmptyState(
           icon: LucideIcons.users,
           title: '还没有学生',
-          message: '从侧栏「添加学生」或批量导入花名册，学生会出现在这里。',
+          message: '点击右上角「添加学生」或批量导入花名册，学生会出现在这里。',
         ),
       );
     }

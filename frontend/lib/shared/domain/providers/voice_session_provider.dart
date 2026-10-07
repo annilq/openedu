@@ -166,6 +166,11 @@ class VoiceSession extends StateNotifier<VoiceSessionState> {
   Future<void> cancel() async {
     if (!state.listening) return;
     _cancelled = true;
+    // 订阅**就地断开**，不等 [_port.cancel()] 回来：平台的 cancel 是异步的，在它
+    // 返回之前仍可能补一帧 final 结果写进草稿——而调用方（比如点发送）正是靠
+    // 「不会再有后续写入」来保证输入框内容稳定的。
+    _sub?.cancel();
+    _sub = null;
     await _port.cancel();
     _finish(null);
   }
