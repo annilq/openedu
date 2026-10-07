@@ -13,10 +13,13 @@ from openpyxl import Workbook, load_workbook
 from sqlmodel import Session
 
 from app.core.config import settings
-from app.db.models import User
+from app.core.errors import ErrCode
+from app.core.guard import require_owned, require_owned_student
+from app.db.models import Class, User
 from app.features.auth.repository import create_user, get_user_by_username
 from app.features.auth.schemas import UserCreate
 from app.features.students.schemas import (
+    StudentBatchReassignReq,
     StudentImportResult,
     StudentImportRowError,
 )
@@ -174,3 +177,45 @@ def export_students_xlsx(*, session: Session, teacher_id: UUID) -> bytes:
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
+
+
+def batch_reassign_class(
+    *,
+    session: Session,
+    teacher_id: UUID,
+    req: StudentBatchReassignReq,
+) -> int:
+    """批量把学生移入某班级或移出班级（ticket 03），返回实际改动行数。
+
+    - ``req.class_id`` 为 ``None`` → 移出班级（归入未分班）；否则移入该班级。
+    - 班级须属于当前教师（``require_owned``），否则整体失败。
+    - 每个学生须属于当前教师（``require_owned_student``），否则整体失败。
+    - 单事务：所有校验与更新在内存累积，**最后一次 ``commit``**；任一步抛错（越权/
+      非法班级）即整体回滚，不残留部分结果。
+    - 已经在该班/未分班的学生不重复计数（幂等）。
+    """
+    if req.class_id is not None:
+        require_owned(
+            session=session,
+            owner_id=teacher_id,
+            model=Class,
+            obj_id=req.class_id,
+            code=ErrCode.FORBIDDEN,
+            message="班级不存在或不属于你的账号",
+        )
+
+    updated = 0
+    for sid in req.student_ids:
+        stu = require_owned_student(
+            session=session,
+            owner_id=teacher_id,
+            student_id=sid,
+            code=ErrCode.FORBIDDEN,
+            message="有学生不属于你的账号",
+        )
+        if stu.class_id != req.class_id:
+            stu.class_id = req.class_id
+            session.add(stu)
+            updated += 1
+    session.commit()
+    return updated

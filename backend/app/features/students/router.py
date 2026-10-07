@@ -21,8 +21,13 @@ from app.features.auth.schemas import (
     UsersPublic,
     UserUpdate,
 )
-from app.features.students.schemas import StudentImportResult
+from app.features.students.schemas import (
+    StudentBatchReassignReq,
+    StudentBatchReassignResp,
+    StudentImportResult,
+)
 from app.features.students.service import (
+    batch_reassign_class,
     export_students_xlsx,
     import_students_from_xlsx,
 )
@@ -155,6 +160,24 @@ def get_students_wrong_question_counts(
         .group_by(WrongQuestion.student_id)
     ).all()
     return {str(sid): cnt for sid, cnt in rows}
+
+
+@router.post("/batch-reassign", response_model=StudentBatchReassignResp)
+def batch_reassign_students(
+    *,
+    session: SessionDep,
+    teacher: CurrentTeacher,
+    req: StudentBatchReassignReq,
+) -> StudentBatchReassignResp:
+    """批量移入/移出班级（ticket 03）。
+
+    ``class_id=None`` 表示移出班级（归入未分班）；否则移入该班级。整批单事务：
+    任一学生或班级越权即整体失败回滚。返回实际改动的行数（已在目标班的跳过不计）。
+    """
+    updated = batch_reassign_class(
+        session=session, teacher_id=teacher.id, req=req
+    )
+    return StudentBatchReassignResp(updated=updated, class_id=req.class_id)
 
 
 @router.delete("/{student_id}", response_model=DeletedStudentResp)

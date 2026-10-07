@@ -1,5 +1,7 @@
 """Students feature request/response schemas (import/export, ADR-0068)."""
 
+from uuid import UUID
+
 from sqlmodel import SQLModel
 
 
@@ -19,3 +21,21 @@ class StudentImportResult(SQLModel):
     created: int = 0
     skipped: int = 0
     errors: list[StudentImportRowError] = []
+
+
+class StudentBatchReassignReq(SQLModel):
+    """批量移入/移出班级（ticket 03）。
+
+    ``class_id`` 为 ``None`` 表示把学生移出班级（归入未分班）；否则移入该班级。
+    整批在同一个事务内完成：任一学生/班级不属于当前教师即整体失败、全部回滚。
+    """
+
+    class_id: UUID | None = None
+    student_ids: list[UUID]
+
+
+class StudentBatchReassignResp(SQLModel):
+    """批量重分班回执：实际改动的行数（已在该班/未分班的跳过不计）。"""
+
+    updated: int
+    class_id: UUID | None = None
