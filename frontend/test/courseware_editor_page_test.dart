@@ -1,0 +1,656 @@
+// 课件编辑器页（ADR-0067 第二轮 T01：拖拽重排 + 多选批量删）。
+//
+// ⚠️ 刻意不套 Material（同 courseware_present_page_test）：App 根 ShadApp + CupertinoApp，
+// 整树无 Material 祖先。测试照 assistant_sources_bar_test 的写法挂 CupertinoApp。
+import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:flutter_localizations/flutter_localizations.dart' as loc;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+
+import 'package:kids_learn/features/courseware/domain/models/courseware.dart';
+import 'package:kids_learn/features/courseware/domain/models/courseware_asset.dart';
+import 'package:kids_learn/features/courseware/domain/models/courseware_redraft_diff.dart';
+import 'package:kids_learn/features/courseware/domain/models/courseware_section.dart';
+import 'package:kids_learn/features/courseware/domain/models/courseware_section_kind.dart';
+import 'package:kids_learn/features/courseware/domain/repositories/courseware_repository.dart';
+import 'package:kids_learn/features/courseware/presentation/pages/courseware_editor_page.dart';
+import 'package:kids_learn/features/courseware/presentation/widgets/editor_section_list.dart'
+    show reorderCoursewareSections;
+import 'package:kids_learn/features/courseware/providers/courseware_provider.dart';
+import 'package:kids_learn/shared/theme/app_theme.dart';
+
+CoursewareSectionModel _sec(String id, String title) => CoursewareSectionModel(
+      id: id,
+      kind: CoursewareSectionKind.mediaGallery,
+      title: title,
+      script: '话术：$title',
+      payload: const {},
+    );
+
+CoursewareModel _editorCourseware(List<CoursewareSectionModel> sections) =>
+    CoursewareModel(
+      id: 'cw1',
+      subject: '数学',
+      grade: 3,
+      semester: '下册',
+      kpName: '图形的运动（轴对称）',
+      title: '轴对称的第一课',
+      status: 'ready',
+      sections: sections,
+    );
+
+/// 内存假仓库：只实现编辑器用到的 [listCourseware] / [updateSections] / [getRedraftDiff]，
+/// 其余给计数占位，便于断言「重起草不新建/删除副本」。
+class _FakeRepo extends CoursewareRepository {
+  _FakeRepo(this._courseware);
+  final CoursewareModel _courseware;
+  List<CoursewareSectionModel>? lastUpdated;
+  int updateSectionsCalls = 0;
+  int createCoursewareCalls = 0;
+  int deleteCoursewareCalls = 0;
+  int redraftDiffCalls = 0;
+  CoursewareRedraftDiffModel? redraftDiff;
+
+  @override
+  Future<List<CoursewareModel>> listCourseware({
+    String? knowledgePointId,
+    String? subject,
+    int? grade,
+    String? semester,
+  }) async =>
+      [_courseware];
+
+  @override
+  Future<CoursewareModel> updateSections(
+    String coursewareId,
+    List<CoursewareSectionModel> sections,
+  ) async {
+    updateSectionsCalls++;
+    lastUpdated = sections;
+    return CoursewareModel(
+      id: _courseware.id,
+      subject: _courseware.subject,
+      grade: _courseware.grade,
+      semester: _courseware.semester,
+      kpName: _courseware.kpName,
+      title: _courseware.title,
+      status: _courseware.status,
+      sections: sections,
+    );
+  }
+
+  @override
+  Future<CoursewareModel> createCourseware(
+          {required String knowledgePointId, String? title}) async {
+    createCoursewareCalls++;
+    return _courseware;
+  }
+
+  @override
+  Future<CoursewareModel?> getRecentCourseware() async => null;
+  @override
+  Future<CoursewareModel> getCourseware(String id) async => _courseware;
+  @override
+  Future<CoursewareModel> updateCourseware(String coursewareId,
+          {String? title, String? status}) async =>
+      _courseware;
+  @override
+  Future<void> deleteCourseware(String coursewareId) async {
+    deleteCoursewareCalls++;
+  }
+
+  @override
+  Future<CoursewareRedraftDiffModel> getRedraftDiff(String coursewareId) async {
+    redraftDiffCalls++;
+    return redraftDiff ?? CoursewareRedraftDiffModel(diff: const []);
+  }
+
+  @override
+  Future<List<CoursewareAssetModel>> getAssets({
+    String? knowledgePointId,
+    String? filename,
+  }) async =>
+      <CoursewareAssetModel>[];
+  @override
+  Future<CoursewareAssetModel> uploadAsset(
+          {required String filename, required List<int> bytes}) async =>
+      throw UnimplementedError();
+  @override
+  Future<void> deleteAsset(String assetId) async {}
+}
+
+Future<void> _pumpEditor(
+  WidgetTester tester, {
+  required _FakeRepo repo,
+  List<CoursewareAssetModel> assets = const <CoursewareAssetModel>[],
+  Size size = const Size(1366, 768),
+}) async {
+  await tester.binding.setSurfaceSize(size);
+  addTearDown(() => tester.binding.setSurfaceSize(null));
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        coursewareRepositoryProvider.overrideWithValue(repo),
+        // 素材库检索（picker 用 T04）：测试里不直连 repository，直接喂假素材。
+        // 覆盖 coursewareAssetLibraryProvider（picker 实际 watch 的），并按查询串过滤，
+        // 使文件名检索框在测试里真实生效。
+        coursewareAssetLibraryProvider.overrideWith((ref, q) {
+          if (q.filename == null || q.filename!.isEmpty) return assets;
+          return assets
+              .where((a) => a.name.contains(q.filename!))
+              .toList();
+        }),
+      ],
+      child: ShadApp.custom(
+        theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
+        appBuilder: (context) => CupertinoApp(
+          // 与正式 app（main/app.dart）一致：CupertinoApp 带 MaterialLocalizations
+          // 委托，否则 material 的 showDialog（编辑对话框）会抛「No MaterialLocalizations」。
+          locale: const Locale('zh', 'CN'),
+          localizationsDelegates: [
+            loc.GlobalMaterialLocalizations.delegate,
+            ...GlobalCupertinoLocalizations.delegates,
+          ],
+          home: ShadToaster(
+            child: Directionality(
+              textDirection: TextDirection.ltr,
+              child: CoursewareEditorPage(
+                knowledgePointId: 'kp1',
+                kpName: '图形的运动（轴对称）',
+                subject: '数学',
+                grade: 3,
+                semester: '下册',
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+}
+
+void main() {
+  group('编辑器环节重排 / 批量删（T01）', () {
+    test('重排纯函数：插到目标之前、末尾、各种 from/to', () {
+      final a = _sec('a', 'A');
+      final b = _sec('b', 'B');
+      final c = _sec('c', 'C');
+      final list = [a, b, c];
+      // 语义：把 from 移到 to「之前」。from<to 时 insertAt=to-1。
+      expect(reorderCoursewareSections(list, 0, 2).map((s) => s.id).toList(),
+          ['b', 'a', 'c']);
+      expect(reorderCoursewareSections(list, 0, 1).map((s) => s.id).toList(),
+          ['a', 'b', 'c']);
+      expect(reorderCoursewareSections(list, 2, 0).map((s) => s.id).toList(),
+          ['c', 'a', 'b']);
+      expect(reorderCoursewareSections(list, 0, 3).map((s) => s.id).toList(),
+          ['b', 'c', 'a']);
+      expect(reorderCoursewareSections(list, 1, 3).map((s) => s.id).toList(),
+          ['a', 'c', 'b']);
+    });
+
+    testWidgets('渲染 3 个环节且计数正确', (tester) async {
+      final repo = _FakeRepo(_editorCourseware(
+          [_sec('a', '环节一'), _sec('b', '环节二'), _sec('c', '环节三')]));
+      await _pumpEditor(tester, repo: repo);
+      final e = tester.takeException();
+      if (e != null) {
+        debugDumpApp();
+        debugPrint('=== OVERFLOW: $e');
+      }
+      expect(find.text('3 个讲解环节'), findsOneWidget);
+      expect(find.text('环节一'), findsOneWidget);
+      expect(find.text('环节三'), findsOneWidget);
+      expect(e, isNull);
+    });
+
+    testWidgets('多选批量删：选中两项后删除，落库且计数更新', (tester) async {
+      final repo = _FakeRepo(_editorCourseware(
+          [_sec('a', '环节一'), _sec('b', '环节二'), _sec('c', '环节三')]));
+      await _pumpEditor(tester, repo: repo);
+
+      await tester.tap(find.text('选择'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('环节一'));
+      await tester.tap(find.text('环节二'));
+      await tester.pumpAndSettle();
+      expect(find.text('删除选中(2)'), findsOneWidget);
+
+      await tester.tap(find.text('删除选中(2)'));
+      await tester.pumpAndSettle();
+
+      expect(repo.updateSectionsCalls, 1);
+      expect(repo.lastUpdated?.map((s) => s.id).toList(), ['c']);
+      expect(find.text('1 个讲解环节'), findsOneWidget);
+      expect(find.text('环节三'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('拖拽手柄触发重排并持久化（顺序改变）', (tester) async {
+      final repo = _FakeRepo(_editorCourseware(
+          [_sec('a', '环节一'), _sec('b', '环节二'), _sec('c', '环节三')]));
+      await _pumpEditor(tester, repo: repo);
+
+      final handle = find.byKey(const Key('drag-0'));
+      expect(handle, findsOneWidget);
+      // 向下拖到第三张卡片的落点附近。
+      await tester.drag(handle, const Offset(0, 260));
+      await tester.pumpAndSettle();
+
+      // 拖拽应触发一次 updateSections，且顺序相对原序发生变化（验证重排→落库链路）。
+      expect(repo.updateSectionsCalls, 1);
+      final ordered = repo.lastUpdated!.map((s) => s.id).toList();
+      expect(ordered.length, 3);
+      expect(ordered, isNot(['a', 'b', 'c']));
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('话术多段化 + 重点（T02）', () {
+    test('模型：script_segments 解析 + displaySegments 回退 + 序列化往返', () {
+      // 旧单串话术 → 退化成一段（向后兼容，不空屏）。
+      final legacy = _sec('a', '环节一');
+      expect(legacy.displaySegments.map((s) => s.text).toList(), ['话术：环节一']);
+
+      final seg = CoursewareSectionModel(
+        id: 'a',
+        title: '环节一',
+        scriptSegments: [
+          CoursewareScriptSegment(
+              text: '开场', emphasis: CoursewareScriptEmphasis.bold),
+          CoursewareScriptSegment(
+              text: '追问', emphasis: CoursewareScriptEmphasis.highlight),
+        ],
+      );
+      expect(seg.displaySegments.length, 2);
+      expect(seg.displaySegments[0].emphasis, CoursewareScriptEmphasis.bold);
+      // 有段列表时优先用它，忽略旧 script。
+      expect(seg.displaySegments.map((s) => s.text).toList(),
+          ['开场', '追问']);
+
+      // 空课件：无段、无 script → 空。
+      expect(const CoursewareSectionModel(id: 'x').displaySegments, isEmpty);
+
+      // 序列化往返不丢重点。
+      final back = CoursewareSectionModel.fromJson(seg.toJson());
+      expect(back.scriptSegments[1].emphasis, CoursewareScriptEmphasis.highlight);
+      expect(CoursewareScriptEmphasis.tryParse('bogus'),
+          CoursewareScriptEmphasis.none);
+    });
+
+    testWidgets('编辑器对话框：增段 + 切重点 + 保存落库', (tester) async {
+      final repo = _FakeRepo(_editorCourseware([_sec('a', '环节一')]));
+      await _pumpEditor(tester, repo: repo);
+
+      // 点环节卡片打开编辑对话框（legacy script 自动包成第 1 段）。
+      await tester.tap(find.text('环节一'));
+      await tester.pumpAndSettle();
+      expect(find.text('编辑环节'), findsOneWidget);
+
+      // 第 1 段重点：普通 → 加粗。
+      await tester.tap(find.text('普通'));
+      await tester.pumpAndSettle();
+      expect(find.text('加粗'), findsWidgets);
+
+      // 添加第二段并输入文本。
+      await tester.tap(find.text('添加一段'));
+      await tester.pumpAndSettle();
+      final seg2 = find.byType(EditableText).at(2); // 0=标题 1=第1段 2=第2段
+      await tester.enterText(seg2, '第二段话术');
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+
+      expect(repo.updateSectionsCalls, 1);
+      final saved = repo.lastUpdated!.first;
+      expect(saved.scriptSegments.length, 2);
+      expect(saved.scriptSegments[0].emphasis, CoursewareScriptEmphasis.bold);
+      expect(saved.scriptSegments[1].text, '第二段话术');
+      // 旧 script 同步压平，保证仍读 script 的消费者不丢。
+      expect(saved.script, contains('第二段话术'));
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('媒体画廊内联增删素材项（T03）', () {
+    CoursewareSectionModel _gallery(String id, String title,
+            List<Map<String, String>> items) =>
+        _sec(id, title).copyWith(
+          payload: {'items': items},
+        );
+
+    const _assetA = CoursewareAssetModel(
+      id: 'a1',
+      name: '蝴蝶标本',
+      mime: 'image/png',
+      url: '/x/a1',
+    );
+    const _assetB = CoursewareAssetModel(
+      id: 'b1',
+      name: '建筑立面',
+      mime: 'image/png',
+      url: '/x/b1',
+    );
+
+    testWidgets('内联添加素材项：开 picker 选图 → 持久化且项数 +1',
+        (tester) async {
+      final repo = _FakeRepo(_editorCourseware([
+        _gallery('a', '环节一', const [
+          {'asset_id': 'a1', 'caption': '蝴蝶标本'},
+        ]),
+      ]));
+      await _pumpEditor(tester, repo: repo, assets: [_assetA, _assetB]);
+
+      await tester.tap(find.text('环节一'));
+      await tester.pumpAndSettle();
+      // 编辑对话框已带既有 1 个素材项（caption 直接可见）。
+      expect(find.text('蝴蝶标本'), findsWidgets);
+
+      // 添加素材 → 素材库 picker 弹出 → 选第二个素材。
+      await tester.tap(find.text('添加素材'));
+      await tester.pumpAndSettle();
+      expect(find.text('选择素材'), findsOneWidget);
+      await tester.tap(find.text('建筑立面'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+
+      expect(repo.updateSectionsCalls, 1);
+      final items = (repo.lastUpdated!.first.payload['items'] as List)
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+      expect(items.length, 2);
+      expect(items.any((e) => e['asset_id'] == 'b1'), isTrue);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('内联删除素材项：移除一项 → 持久化且项数 -1、不再出现',
+        (tester) async {
+      final repo = _FakeRepo(_editorCourseware([
+        _gallery('a', '环节一', const [
+          {'asset_id': 'a1', 'caption': '蝴蝶标本'},
+          {'asset_id': 'b1', 'caption': '建筑立面'},
+        ]),
+      ]));
+      await _pumpEditor(tester, repo: repo);
+
+      await tester.tap(find.text('环节一'));
+      await tester.pumpAndSettle();
+      expect(find.text('蝴蝶标本'), findsWidgets);
+      expect(find.text('建筑立面'), findsWidgets);
+
+      // 删除最后一项（item 行的「移除」按钮：段移除在前、素材移除在后，末位是第 2 项）。
+      await tester.tap(find.text('移除').last);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+
+      expect(repo.updateSectionsCalls, 1);
+      final items = (repo.lastUpdated!.first.payload['items'] as List)
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+      expect(items.length, 1);
+      expect(items.first['asset_id'], 'a1');
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('素材库检索端点接入 picker（T04）', () {
+    CoursewareSectionModel _gallery(String id, String title,
+            List<Map<String, String>> items) =>
+        _sec(id, title).copyWith(
+          payload: {'items': items},
+        );
+
+    const _assetA = CoursewareAssetModel(
+      id: 'a1',
+      name: '蝴蝶标本',
+      mime: 'image/png',
+      url: '/x/a1',
+    );
+    const _assetB = CoursewareAssetModel(
+      id: 'b1',
+      name: '建筑立面',
+      mime: 'image/png',
+      url: '/x/b1',
+    );
+
+    Future<void> _openPickerWithGallery(WidgetTester tester, _FakeRepo repo) async {
+      await _pumpEditor(tester, repo: repo, assets: [_assetA, _assetB]);
+      await tester.tap(find.text('环节一'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('添加素材'));
+      await tester.pumpAndSettle();
+      expect(find.text('选择素材'), findsOneWidget);
+    }
+
+    testWidgets('picker 并列展示素材库且选择回执形状不变（asset_id）',
+        (tester) async {
+      final repo = _FakeRepo(_editorCourseware([
+        _gallery('a', '环节一', const []),
+      ]));
+      await _openPickerWithGallery(tester, repo);
+
+      // 「我的素材库」并列展示两个素材。
+      expect(find.text('蝴蝶标本'), findsWidgets);
+      expect(find.text('建筑立面'), findsWidgets);
+
+      // 选择第二个 → 回执仍是 {asset_id, caption}，保存后落到 items。
+      await tester.tap(find.text('建筑立面'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+
+      final items = (repo.lastUpdated!.first.payload['items'] as List)
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+      expect(items.length, 1);
+      expect(items.first['asset_id'], 'b1');
+      expect(items.first['caption'], '建筑立面');
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('文件名检索框过滤素材库', (tester) async {
+      final repo = _FakeRepo(_editorCourseware([
+        _gallery('a', '环节一', const []),
+      ]));
+      await _openPickerWithGallery(tester, repo);
+
+      // 输入「建筑」→ 只剩建筑立面，蝴蝶标本被过滤掉。
+      await tester.enterText(
+        find.descendant(
+          of: find.byKey(const Key('asset-search')),
+          matching: find.byType(EditableText),
+        ),
+        '建筑',
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('建筑立面'), findsWidgets);
+      expect(find.text('蝴蝶标本'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('AI 重起草逐段 diff 预览 + 逐段接受（T07）', () {
+    CoursewareSectionModel _secX(String id, String title, String script) =>
+        _sec(id, title).copyWith(script: script);
+
+    final secA = _secX('a', '环节一', '旧话术');
+    final secA2 = _secX('a', '环节一', '新话术');
+    final secB = _sec('b', '环节二');
+    final secC = _sec('c', '环节三');
+    final secD = _sec('d', '环节四(新)');
+
+    CoursewareRedraftDiffModel _diff() => CoursewareRedraftDiffModel(diff: [
+          CoursewareSectionDiffModel(
+            status: CoursewareSectionDiffStatus.modified,
+            current: secA,
+            drafted: secA2,
+          ),
+          CoursewareSectionDiffModel(
+            status: CoursewareSectionDiffStatus.added,
+            drafted: secD,
+          ),
+          CoursewareSectionDiffModel(
+            status: CoursewareSectionDiffStatus.unchanged,
+            current: secB,
+          ),
+          CoursewareSectionDiffModel(
+            status: CoursewareSectionDiffStatus.removed,
+            current: secC,
+          ),
+        ]);
+
+    test('mergeRedraftChoices：默认全 true → 用新版/采用/删待删/未变留旧', () {
+      final merged = mergeRedraftChoices(_diff(), List.filled(4, true));
+      expect(merged.map((s) => s.id).toList(), ['a', 'd', 'b']);
+      expect(merged[0].script, '新话术'); // modified 取 drafted
+      expect(merged.length, 3); // removed 被删
+    });
+
+    test('mergeRedraftChoices：modified 留旧版 + removed 保留 → 旧序列 + 保留项', () {
+      // 索引 0=modified 选 false，1=added true，2=unchanged，3=removed 选 false。
+      final choices = [false, true, true, false];
+      final merged = mergeRedraftChoices(_diff(), choices);
+      expect(merged.map((s) => s.id).toList(), ['a', 'd', 'b', 'c']);
+      expect(merged[0].script, '旧话术'); // modified 留旧
+      expect(merged.last.id, 'c'); // removed 被保留
+    });
+
+    test('fromJson 往返：四种状态与嵌套环节都在', () {
+      final json = {
+        'diff': [
+          {
+            'status': 'modified',
+            'current': secA.toJson(),
+            'drafted': secA2.toJson(),
+          },
+          {'status': 'added', 'drafted': secD.toJson()},
+          {'status': 'unchanged', 'current': secB.toJson()},
+          {'status': 'removed', 'current': secC.toJson()},
+        ],
+      };
+      final m = CoursewareRedraftDiffModel.fromJson(json);
+      expect(m.diff.length, 4);
+      expect(m.diff[0].status, CoursewareSectionDiffStatus.modified);
+      expect(m.diff[1].drafted?.id, 'd');
+      expect(m.diff[3].current?.id, 'c');
+    });
+
+    testWidgets(
+        '编辑器：点「AI 重新起草」弹 diff 预览，逐段展示；应用后写回同一课件、不建副本',
+        (tester) async {
+      final repo = _FakeRepo(_editorCourseware([secA, secB, secC]));
+      repo.redraftDiff = _diff();
+      await _pumpEditor(tester, repo: repo);
+
+      // 弹窗前不应调用任何重起草 / 建删接口。
+      expect(repo.redraftDiffCalls, 0);
+      expect(repo.createCoursewareCalls, 0);
+
+      // 打开重起草预览（走 getRedraftDiff 而非先建后删）。
+      await tester.tap(find.text('AI 重新起草'));
+      await tester.pumpAndSettle();
+      expect(repo.redraftDiffCalls, 1);
+      expect(find.text('重起草预览'), findsOneWidget);
+      // 四个状态徽标 + 四个标题都出现。
+      expect(find.text('修改'), findsOneWidget);
+      expect(find.text('新增'), findsOneWidget);
+      expect(find.text('未变'), findsOneWidget);
+      expect(find.text('待删除'), findsOneWidget);
+      expect(find.text('环节四(新)'), findsOneWidget);
+
+      // 应用所选（默认全采用草稿视角）。
+      await tester.tap(find.text('应用所选'));
+      await tester.pumpAndSettle();
+
+      // 写回同一课件：一次 updateSections，合并结果正确。
+      expect(repo.updateSectionsCalls, 1);
+      expect(repo.lastUpdated?.map((s) => s.id).toList(), ['a', 'd', 'b']);
+      expect(repo.lastUpdated?.first.script, '新话术');
+      // 关键：没有新建 / 删除课件副本。
+      expect(repo.createCoursewareCalls, 0);
+      expect(repo.deleteCoursewareCalls, 0);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('编辑器：diff 预览可取消，原课件不动、不落库', (tester) async {
+      final repo = _FakeRepo(_editorCourseware([secA, secB, secC]));
+      repo.redraftDiff = _diff();
+      await _pumpEditor(tester, repo: repo);
+
+      await tester.tap(find.text('AI 重新起草'));
+      await tester.pumpAndSettle();
+      expect(find.text('重起草预览'), findsOneWidget);
+
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+
+      expect(repo.updateSectionsCalls, 0);
+      expect(repo.createCoursewareCalls, 0);
+      expect(repo.deleteCoursewareCalls, 0);
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('平台 CC0 预置包入库 + 角标（T08）', () {
+    CoursewareSectionModel _gallery(String id, String title) =>
+        _sec(id, title).copyWith(payload: const {'items': <Map<String, String>>[]});
+
+    const _cc0 = CoursewareAssetModel(
+      id: 'cc0-1',
+      name: '蝴蝶标本（CC0）',
+      mime: 'image/png',
+      url: 'https://example.com/cc0-butterfly.png',
+      source: 'platform_cc0',
+      sourceUrl: 'https://example.com/cc0',
+      license: 'CC0 1.0',
+    );
+    const _own = CoursewareAssetModel(
+      id: 'own-1',
+      name: '我的素材',
+      mime: 'image/png',
+      url: '/x/own-1',
+      source: 'user_uploaded',
+      sourceUrl: '',
+      license: '',
+    );
+
+    testWidgets('素材库 picker：CC0 与自有素材并列，CC0 带角标 + 来源/许可详情',
+        (tester) async {
+      final repo = _FakeRepo(_editorCourseware([_gallery('a', '环节一')]));
+      await _pumpEditor(tester, repo: repo, assets: [_cc0, _own]);
+
+      // 打开环节编辑对话框 → 添加素材 → 弹出素材库 picker。
+      await tester.tap(find.text('环节一'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('添加素材'));
+      await tester.pumpAndSettle();
+      expect(find.text('选择素材'), findsOneWidget);
+
+      // 自有素材无 CC0 角标；CC0 素材带角标。
+      expect(find.text('我的素材'), findsWidgets);
+      expect(find.text('CC0'), findsWidgets);
+      // CC0 详情可读：许可 + 来源 URL。
+      expect(find.text('许可：CC0 1.0　来源：https://example.com/cc0'),
+          findsOneWidget);
+      // 非 CC0 不显示来源/许可详情。
+      expect(find.text('许可：　来源：'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    test('模型：isPlatformCc0 按 source 判定', () {
+      expect(_cc0.isPlatformCc0, isTrue);
+      expect(_own.isPlatformCc0, isFalse);
+      expect(
+        const CoursewareAssetModel(id: 'x', name: 'n').isPlatformCc0,
+        isFalse,
+      );
+    });
+  });
+}

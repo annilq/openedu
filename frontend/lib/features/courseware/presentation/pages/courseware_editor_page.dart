@@ -7,7 +7,6 @@ import 'package:flutter/material.dart' show MaterialPageRoute;
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_actions.dart';
 import '../../../../shared/widgets/app_buttons.dart';
-import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/app_empty_state.dart';
 import '../../../../shared/widgets/app_error.dart';
 import '../../../../shared/widgets/app_loading.dart';
@@ -15,8 +14,9 @@ import '../../../../shared/widgets/app_pushed_page.dart';
 import '../../../../shared/widgets/app_toast.dart';
 import '../../domain/models/courseware.dart';
 import '../../domain/models/courseware_section.dart';
-import '../../domain/models/courseware_section_kind.dart';
 import '../../providers/courseware_provider.dart';
+import '../widgets/editor_section_list.dart';
+import '../widgets/courseware_redraft_dialog.dart';
 import 'courseware_present_page.dart';
 import 'courseware_section_edit_dialog.dart';
 
@@ -84,20 +84,21 @@ class _CoursewareEditorPageState extends ConsumerState<CoursewareEditorPage> {
     }
   }
 
-  /// 重新起草：先建新课件，成功后再删旧档（先建后删——建失败旧档仍在，不会丢）。
+  /// 重新起草（T07）：取新草稿相对当前稿的逐段 diff，教师逐段选择「用新版 / 留旧版」
+  /// 后，把合并结果经 [updateSections] 写回**同一课件**——不新建副本（不再先建后删）。
   Future<void> _redraft() async {
     if (_busy || _courseware == null) return;
     setState(() => _busy = true);
     try {
       final repo = ref.read(coursewareRepositoryProvider);
-      final created =
-          await repo.createCourseware(knowledgePointId: widget.knowledgePointId);
-      if (_courseware != null && _courseware!.id.isNotEmpty) {
-        await repo.deleteCourseware(_courseware!.id);
-      }
+      final diff = await repo.getRedraftDiff(_courseware!.id);
       if (!mounted) return;
-      setState(() => _courseware = created);
-      AppToast.show(context, '已按该知识点重新起草讲解安排');
+      final merged = await showCoursewareRedraftDialog(context, diff);
+      if (merged == null) return; // 用户取消，原课件不动
+      final saved = await repo.updateSections(_courseware!.id, merged);
+      if (!mounted) return;
+      setState(() => _courseware = saved);
+      AppToast.show(context, '已按所选写回本课件');
     } catch (e) {
       if (!mounted) return;
       AppToast.show(context, '重新起草失败：$e');
@@ -130,32 +131,57 @@ class _CoursewareEditorPageState extends ConsumerState<CoursewareEditorPage> {
     }
   }
 
+  /// 重排：整体覆盖写环节序列（ADR-0067 §3.2，`updateSections` 整列覆盖）。
+  Future<void> _persistReorder(List<CoursewareSectionModel> next) async {
+    if (_courseware == null) return;
+    setState(() => _busy = true);
+    try {
+      final repo = ref.read(coursewareRepositoryProvider);
+      final saved = await repo.updateSections(_courseware!.id, next);
+      if (!mounted) return;
+      setState(() => _courseware = saved);
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.show(context, '重排失败：$e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// 批量删：从当前序列剔除被选中 id 后整体覆盖写。
+  Future<void> _persistDelete(List<String> ids) async {
+    if (_courseware == null) return;
+    final next =
+        _courseware!.sections.where((s) => !ids.contains(s.id)).toList();
+    await _persistReorder(next);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final app = AppTheme.colorsOf(context);
     final text = AppTheme.textOf(context);
-    final cw = _courseware;
-    final canTeach = cw != null && !cw.isEmpty && !_busy;
     return AppPushedPage(
       title: widget.kpName,
-      trailing: canTeach
-          ? AppPrimaryButton(
-              label: '开始讲课',
-              fullWidth: false,
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) =>
-                      CoursewarePresentPage(coursewareId: cw.id),
-                ),
-              ),
-            )
-          : null,
-      child: _buildBody(app, text),
+      child: _buildBody(text),
     );
   }
 
-  Widget _buildBody(AppColors app, AppText text) {
+  /// 进入演示态（push 全屏页，自带全屏框 + 退出入口，见 [CoursewarePresentPage]）。
+  ///
+  /// ⚠️ 不走 [AppPushedPage.trailing]：顶栏右侧只有 40 宽槽位、只允许单个图标行动，
+  /// 「开始讲课」是带文字的主按钮，放进 40 宽槽会撑爆（实测 45px 右溢出）。它归到
+  /// 备课行的主操作位，与「AI 重新起草」并列。
+  void _openPresent() {
+    final cw = _courseware;
+    if (cw == null) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CoursewarePresentPage(coursewareId: cw.id),
+      ),
+    );
+  }
+
+  Widget _buildBody(AppText text) {
     if (_loading) {
       return const Center(child: AppLoading());
     }
@@ -172,6 +198,7 @@ class _CoursewareEditorPageState extends ConsumerState<CoursewareEditorPage> {
         ),
       );
     }
+    final canTeach = !cw.isEmpty && !_busy;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -179,15 +206,16 @@ class _CoursewareEditorPageState extends ConsumerState<CoursewareEditorPage> {
           padding: const EdgeInsets.all(AppSpacing.md),
           child: Row(
             children: [
-              Expanded(
-                child: Text(
-                  '${cw.sections.length} 个讲解环节',
-                  style: text.bodyMedium,
-                ),
-              ),
+              Expanded(child: Text('备课', style: text.bodyMedium)),
               AppTextAction(
-                label: _busy ? '起草中…' : 'AI 重新起草',
+                label: _busy ? '处理中…' : 'AI 重新起草',
                 onPressed: _busy ? null : _redraft,
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              AppPrimaryButton(
+                label: '开始讲课',
+                fullWidth: false,
+                onPressed: canTeach ? _openPresent : null,
               ),
             ],
           ),
@@ -202,66 +230,14 @@ class _CoursewareEditorPageState extends ConsumerState<CoursewareEditorPage> {
           )
         else
           Expanded(
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.md,
-                vertical: AppSpacing.sm,
-              ),
-              itemCount: cw.sections.length,
-              separatorBuilder: (_, __) => const SizedBox(height: AppSpacing.sm),
-              itemBuilder: (_, i) => _sectionCard(cw.sections[i], app, text),
+            child: CoursewareEditorSectionList(
+              sections: cw.sections,
+              onReorder: _persistReorder,
+              onDeleteSelected: _persistDelete,
+              onEdit: _editSection,
             ),
           ),
       ],
-    );
-  }
-
-  Widget _sectionCard(CoursewareSectionModel s, AppColors app, AppText text) {
-    final kindLabel = s.isUnknownKind
-        ? '未知环节'
-        : kCoursewareSectionKindLabels[s.kind] ?? s.kind!.value;
-    final icon = switch (s.kind) {
-      CoursewareSectionKind.mediaGallery => LucideIcons.images,
-      CoursewareSectionKind.interactiveScene => LucideIcons.shapes,
-      CoursewareSectionKind.practice => LucideIcons.penLine,
-      _ => LucideIcons.circleHelp,
-    };
-    return AppCard(
-      onTap: () => _editSection(s),
-      child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        child: Row(
-          children: [
-            Icon(icon, size: AppSpacing.xl, color: app.primary),
-            const SizedBox(width: AppSpacing.md),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    s.title.isEmpty ? kindLabel : s.title,
-                    style: text.titleMedium,
-                  ),
-                  if (s.script.isNotEmpty) ...[
-                    const SizedBox(height: AppSpacing.xs),
-                    Text(
-                      s.script,
-                      style: text.bodySmall?.copyWith(color: app.secondary),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            Text(
-              kindLabel,
-              style: text.labelSmall?.copyWith(color: app.secondary),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
