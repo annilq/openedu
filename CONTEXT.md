@@ -82,6 +82,28 @@ _Avoid_: 资料（Material 是要切分向量化的教材）、资源（前端 R
 课件练习环节中的作答活动：教师在大屏上出题、学生口头作答、**教师代录对 / 错**，答错时由 AI 给分级提示（不直接给答案）。经助手「课件练习」上下文走 `POST /assistant/chat`，**不建任务、不落作答记录、不进错题本与掌握度**——与打印导出「纸质作答不回流」同款取舍，是设计不是缺陷。
 _Avoid_: 随堂作业（那是派发的任务）、答题（答题会产生错题）、课堂（那是场景不是活动）
 
+### 交互讲解场景（ADR-0061 / 0073）
+
+**场景库 / 注册表 (Scene Library / Registry)**
+内置的、代码侧、按 `kind` 索引的**权威默认场景定义**集合（`scene_templates.py`，无 DB 表），开发者随发版维护。`reflection` 是首个种子条目。任何新 `kind` 须先入注册表并前后端双登记。**注册表仅是作者辅助库**：服务于编辑器下拉枚举 + 预填完整场景、以及浏览页列内置场景与关联知识点；**绝不参与渲染与生成**（渲染/生成只读 `scenes`）。它与「题面命中图库图形时合成的兜底场景」是两层：兜底保底（stem 驱动、产出完整 SceneSpec），注册表供作者预填。
+_Avoid_: 教师自建模板库（本工程模板属内置，非用户运行时编辑）、素材库（那是课件图片）、把注册表当渲染/生成的数据源（live 绑定，否决）
+
+**kind 标识（存于 `scenes[].kind`，无独立列）**
+`KnowledgePoint` **无 `scene_name` / `template_kind` 列**——场景类型标识直接来自 `scenes[].kind`（SceneSpec 自带字段）。编辑器下拉只列注册表内置 `kind`，教师无法造非内置 kind（kind 由开发者定，与今日 `_buildSpec` 永远写 `reflection` 一致）。
+_Avoid_: 独立关联列（冗余，kind 已在 scenes 内）、foreign key（scenes 是 JSON，无 FK）
+
+**`scenes` 是唯一事实源 (Single Source of Truth)**
+`KnowledgePoint.scenes: list[dict] | None` 永远存**完整、自包含、已解析**的 SceneSpec 数组（含 `kind`/`title`/`inputs[]`/`controls`/`narrative`/`outputs`）。渲染、题目生成（`Question.scene_spec = deepcopy(scenes[0])`）、课件生成**只读 `scenes`，永不回查注册表**。`scenes` 恒为完整副本，不再有「空关联键→整份逃生口」双重语义。override 由编辑器保存时并入完整 `scenes`。
+_Avoid_: 只存 kind 引用（live 绑定，否决）、课件环节 payload（那是生成后内嵌的独立拷贝）
+
+**场景解析 (resolve_kp_scene)**
+薄读取器：收口「知识点 → 默认交互场景」的读取入口（取代散落的 `kp.scenes` 直读），返回 `kp.scenes` 并校验为完整 SceneSpec。**不再做 registry base + override 合并**（scenes 本身即完整真相）。题目与课件生成**共用**此读取器，故两处语义一致（修 ADR-0061 §U.4「换个地方就没图」根因）。
+_Avoid_: 在生成期合并注册表（违背 scenes 为唯一事实源）
+
+**生成时取值快照（铁律，且因不引用注册表而更强）**
+题目/课件只**深拷贝 `scenes`**，绝不持有对注册表或 `kind` 的 live 引用：改 `BUILTIN_SCENES` 定义**不可能**影响已落库实例（ADR-0061 §U / ADR-0073 拍板①）。`kind` 仅作分类/分派标识，不作数据来源。
+_Avoid_: 模板修改实时回灌历史实例（会静默重写已印发内容，明确否决）
+
 ### 打印导出
 
 **打印导出 (Print Export)**
