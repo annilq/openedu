@@ -32,16 +32,6 @@ class TaskListPage extends TeacherPage {
   const TaskListPage();
 }
 
-/// 错题本。
-class WrongQuestionsPage extends TeacherPage {
-  const WrongQuestionsPage();
-}
-
-/// AI 答疑记录。
-class TutorLogsPage extends TeacherPage {
-  const TutorLogsPage();
-}
-
 /// 添加学生（StudentFormScreen 创建态）。
 class AddStudentPage extends TeacherPage {
   const AddStudentPage();
@@ -109,13 +99,19 @@ class AnalyticsPage extends TeacherPage {
 /// 这里把 studentId 作为入参直传，页签切换也只是本页的局部状态，不会污染其他页面的
 /// 上下文（ADR-0059 核心教训——避免「看着 A 却按 B 出题」这类漏清 bug）。
 ///
-/// 与 14 协同：本页先就位，14 再把侧栏全局入口移除并指向它。
+/// 与 14 协同：侧栏旧入口（顶部学生选择器菜单）已移除（ADR-0070），进入学生改由
+/// 学生管理页点学生触发，并把 studentId 作为入参直传（不再写入任何全局选中态）。
 class StudentDetailPage extends TeacherPage {
   final String studentId;
   final StudentDetailTab initialTab;
 
   const StudentDetailPage(this.studentId,
       {this.initialTab = StudentDetailTab.overview});
+}
+
+/// 课件中心（侧栏「课件」一级入口，方案A）。列出本教师全部课件，直达编辑 / 讲课。
+class CoursewarePage extends TeacherPage {
+  const CoursewarePage();
 }
 
 /// 侧栏高亮用的「基础页」：审核页沿用它进来的那一页的高亮。

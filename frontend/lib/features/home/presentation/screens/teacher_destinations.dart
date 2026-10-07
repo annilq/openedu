@@ -63,16 +63,6 @@ class NavigationDestinations {
           active: active is AnalyticsPage,
           onTap: () => go(const AnalyticsPage())),
       AdaptiveNavDestination(
-          icon: LucideIcons.bookOpen,
-          label: '错题本',
-          active: active is WrongQuestionsPage,
-          onTap: () => go(const WrongQuestionsPage())),
-      AdaptiveNavDestination(
-          icon: LucideIcons.sparkles,
-          label: 'AI 答疑记录',
-          active: active is TutorLogsPage,
-          onTap: () => go(const TutorLogsPage())),
-      AdaptiveNavDestination(
           icon: LucideIcons.library,
           label: '题库',
           active: active is QuestionBankPage,
@@ -87,6 +77,11 @@ class NavigationDestinations {
           label: '模型管理',
           active: active is ModelsPage,
           onTap: () => go(const ModelsPage())),
+      AdaptiveNavDestination(
+          icon: LucideIcons.bookOpen,
+          label: '课件',
+          active: active is CoursewarePage,
+          onTap: () => go(const CoursewarePage())),
     ];
   }
 
