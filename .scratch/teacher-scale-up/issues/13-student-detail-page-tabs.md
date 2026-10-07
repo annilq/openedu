@@ -21,3 +21,5 @@
 新增 `student_detail_screen_test` 1 passed（非 Material 树构建 + 页签局部切换）。
 
 **决策锚点：** ADR-0070「导航状态」；学生详情页页签是局部状态，新增「学生详情（带学生 ID）」页面状态到教师端唯一 sealed 导航。与 14 协同：详情页先就位，14 再把全局入口移除并指向它。
+
+**Verification (2026-10-07):** 对照 `student_detail_screen.dart` 与 `teacher_destinations.dart:55-64` 复核：`StudentDetailPage(studentId, initialTab)` 收 studentId、局部 `_tab` 切换三页签；侧栏「学生」入口已加。`Status: done` 与代码一致，无需改动。
