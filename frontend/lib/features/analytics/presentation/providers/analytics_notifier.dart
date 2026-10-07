@@ -1,9 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/domain/models/models.dart';
-import '../../../classes/domain/models/class_model.dart';
-import '../../../classes/domain/repositories/classes_repository.dart';
-import '../../../students/domain/repositories/students_repository.dart';
+import 'package:kids_learn/shared/domain/repositories/classes_repository.dart';
+import 'package:kids_learn/shared/domain/repositories/students_repository.dart';
 import '../../domain/models/analytics_models.dart';
 import '../../domain/repositories/analytics_repository.dart';
 

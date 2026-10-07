@@ -7,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-import 'package:kids_learn/features/students/domain/repositories/students_repository.dart';
+import 'package:kids_learn/shared/domain/repositories/students_repository.dart';
 import 'package:kids_learn/features/students/presentation/providers/students_notifier.dart';
 import 'package:kids_learn/features/students/presentation/screens/student_form_screen.dart';
 import 'package:kids_learn/shared/data/remote/network_service.dart';

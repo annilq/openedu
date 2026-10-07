@@ -1,5 +1,4 @@
 import '../../../shared/domain/models/models.dart';
-import 'assistant_courseware_context.dart';
 
 /// 悬浮助手对话请求体（ADR-0024）：只需自由文本 + 角色（由后端 JWT 解析）。
 /// 学科 / 意图由后端 AgentRuntime 自动识别，前端无需预填。

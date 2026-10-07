@@ -17,9 +17,9 @@ import '../widgets/courseware_present_step_bar.dart';
 import '../widgets/courseware_script_view.dart';
 import '../widgets/section_interactive_scene.dart';
 import '../widgets/section_media_gallery.dart';
-import '../../../assistant/domain/assistant_courseware_context.dart';
-import '../../../assistant/presentation/screens/assistant_chat_page.dart';
-import '../../../assistant/presentation/widgets/floating_assistant.dart';
+import 'package:kids_learn/shared/domain/models/assistant_courseware_context.dart';
+import 'package:kids_learn/features/assistant/presentation/screens/assistant_chat_page.dart';
+import 'package:kids_learn/features/assistant/presentation/widgets/floating_assistant.dart';
 import 'package:cupertino_ui/cupertino_ui.dart';
 
 /// 讲课演示页（ADR-0067 §6 切片 4b）。

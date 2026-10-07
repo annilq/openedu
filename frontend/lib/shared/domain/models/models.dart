@@ -9,10 +9,13 @@
 // 本文件一旦又开始装实现，902 行的历史就会重演。
 
 export 'answer.dart';
+export 'assistant_courseware_context.dart';
+export 'class_model.dart';
 export 'date_parse.dart';
 export 'mastery.dart';
 export 'paging.dart';
 export 'question.dart';
+export 'student_import_result.dart';
 export 'task.dart';
 export 'user.dart';
 export 'wrong_question.dart';

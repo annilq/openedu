@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-import 'package:kids_learn/features/assistant/domain/assistant_courseware_context.dart';
+import 'package:kids_learn/shared/domain/models/assistant_courseware_context.dart';
 import 'package:kids_learn/features/assistant/domain/assistant_event.dart';
 import 'package:kids_learn/features/assistant/domain/assistant_requests.dart';
 import 'package:kids_learn/features/assistant/domain/repositories/assistant_repository.dart';

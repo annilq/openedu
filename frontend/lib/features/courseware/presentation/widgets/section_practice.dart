@@ -3,7 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-import 'package:kids_learn/features/assistant/domain/assistant_courseware_context.dart';
+import 'package:kids_learn/shared/domain/models/assistant_courseware_context.dart';
 import 'package:kids_learn/features/assistant/presentation/provider/assistant_notifier.dart';
 import 'package:kids_learn/features/assistant/presentation/widgets/assistant_message_list.dart';
 

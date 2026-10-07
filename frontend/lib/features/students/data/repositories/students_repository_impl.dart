@@ -1,7 +1,6 @@
 import '../../../../shared/domain/models/models.dart';
 import '../../data/datasource/students_remote_data_source.dart';
-import '../../domain/models/student_import_result.dart';
-import '../../domain/repositories/students_repository.dart';
+import 'package:kids_learn/shared/domain/repositories/students_repository.dart';
 
 class StudentsRepositoryImpl implements StudentsRepository {
   final StudentsRemoteDataSource _dataSource;

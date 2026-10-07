@@ -13,7 +13,7 @@ import '../../domain/models/courseware.dart';
 import '../../providers/courseware_provider.dart';
 import '../pages/courseware_editor_page.dart';
 import '../pages/courseware_present_page.dart';
-import '../../../../features/home/presentation/widgets/teacher/courseware_recent_bar.dart';
+import 'package:kids_learn/features/home/presentation/widgets/teacher/courseware_recent_bar.dart';
 
 /// 课件中心（方案A：侧栏「课件」一级入口，ADR-0070 之外的新增规划）。
 ///

@@ -3,7 +3,8 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_actions.dart';
-import '../../domain/models/student_import_result.dart';
+import '../../../../shared/widgets/app_focusable_action.dart';
+import 'package:kids_learn/shared/domain/models/student_import_result.dart';
 
 /// 导入结果浮层（ticket 06）：非 Material（保持无 Material 祖先），分区展示
 /// 创建 / 跳过 / 逐行错误原因。覆于全屏，点遮罩或关闭按钮消失。
@@ -25,8 +26,9 @@ class StudentImportSheet extends StatelessWidget {
     return Stack(
       children: [
         Positioned.fill(
-          child: GestureDetector(
+          child: AppFocusableAction(
             onTap: onDismiss,
+            semanticLabel: '关闭',
             child: Container(color: scheme.scrim),
           ),
         ),

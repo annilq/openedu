@@ -9,10 +9,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-import 'package:kids_learn/features/classes/domain/models/class_model.dart';
-import 'package:kids_learn/features/classes/domain/repositories/classes_repository.dart';
+import 'package:kids_learn/shared/domain/repositories/classes_repository.dart';
 import 'package:kids_learn/features/classes/providers/classes_provider.dart';
-import 'package:kids_learn/features/students/domain/repositories/students_repository.dart';
+import 'package:kids_learn/shared/domain/repositories/students_repository.dart';
 import 'package:kids_learn/features/students/presentation/screens/student_management_screen.dart';
 import 'package:kids_learn/features/students/providers/students_provider.dart';
 import 'package:kids_learn/shared/data/local/storage_service.dart';

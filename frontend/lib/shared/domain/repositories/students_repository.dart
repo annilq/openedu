@@ -1,5 +1,4 @@
-import '../../../../shared/domain/models/models.dart';
-import '../models/student_import_result.dart';
+import 'package:kids_learn/shared/domain/models/models.dart';
 
 abstract class StudentsRepository {
   Future<UserModel> createChild({

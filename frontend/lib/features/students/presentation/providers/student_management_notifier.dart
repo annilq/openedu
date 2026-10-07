@@ -1,10 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/domain/models/models.dart';
-import '../../../classes/domain/models/class_model.dart';
-import '../../domain/models/student_import_result.dart';
-import '../../../classes/domain/repositories/classes_repository.dart';
-import '../../domain/repositories/students_repository.dart';
+import 'package:kids_learn/shared/domain/repositories/classes_repository.dart';
+import 'package:kids_learn/shared/domain/repositories/students_repository.dart';
 
 /// 学生管理页状态（ADR-0068 §2.3 / ticket 02）。
 ///

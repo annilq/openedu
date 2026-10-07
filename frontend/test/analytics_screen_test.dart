@@ -12,14 +12,13 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:kids_learn/features/analytics/domain/models/analytics_models.dart';
 import 'package:kids_learn/features/analytics/domain/repositories/analytics_repository.dart';
-import 'package:kids_learn/features/analytics/presentation/providers/analytics_notifier_provider.dart';
 import 'package:kids_learn/features/analytics/providers/analytics_provider.dart';
 import 'package:kids_learn/features/analytics/presentation/screens/analytics_screen.dart';
-import 'package:kids_learn/features/classes/domain/models/class_model.dart';
-import 'package:kids_learn/features/classes/domain/repositories/classes_repository.dart';
+import 'package:kids_learn/shared/domain/models/class_model.dart';
+import 'package:kids_learn/shared/domain/repositories/classes_repository.dart';
 import 'package:kids_learn/features/classes/providers/classes_provider.dart';
-import 'package:kids_learn/features/students/domain/models/student_import_result.dart';
-import 'package:kids_learn/features/students/domain/repositories/students_repository.dart';
+import 'package:kids_learn/shared/domain/models/student_import_result.dart';
+import 'package:kids_learn/shared/domain/repositories/students_repository.dart';
 import 'package:kids_learn/features/students/providers/students_provider.dart';
 import 'package:kids_learn/shared/domain/models/user.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
@@ -174,7 +173,7 @@ Future<void> _pumpScreen(WidgetTester tester) async {
   // 默认测试视口只有 ~600px 高，会截断 AnalyticsScreen 内置的惰性 ListView，
   // 导致第三张卡片（掌握度）来不及构建。拉高到足以容纳三张卡片的高度。
   await tester.binding.setSurfaceSize(const Size(1200, 3000));
-  tester.binding.window.devicePixelRatioTestValue = 1.0;
+  tester.view.devicePixelRatio = 1.0;
   await tester.pumpWidget(
     ProviderScope(
       overrides: [

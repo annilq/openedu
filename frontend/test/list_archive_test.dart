@@ -12,7 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-import 'package:kids_learn/features/students/domain/repositories/students_repository.dart';
+import 'package:kids_learn/shared/domain/repositories/students_repository.dart';
 import 'package:kids_learn/features/students/presentation/providers/students_notifier.dart';
 import 'package:kids_learn/features/students/providers/students_provider.dart'
     show studentsNotifierProvider;

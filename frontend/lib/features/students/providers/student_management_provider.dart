@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../classes/providers/classes_provider.dart';
+import 'package:kids_learn/features/classes/providers/classes_provider.dart';
 import '../presentation/providers/student_management_notifier.dart';
 import './students_provider.dart';
 

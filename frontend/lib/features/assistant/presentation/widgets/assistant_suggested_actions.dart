@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_focusable_action.dart';
-import '../../domain/assistant_courseware_context.dart';
+import 'package:kids_learn/shared/domain/models/assistant_courseware_context.dart';
 import '../../domain/assistant_suggested_action.dart';
 import '../../providers/assistant_provider.dart';
 

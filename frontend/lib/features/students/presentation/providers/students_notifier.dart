@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/domain/models/models.dart';
-import '../../domain/repositories/students_repository.dart';
+import 'package:kids_learn/shared/domain/repositories/students_repository.dart';
 
 sealed class ChildrenState {
   const ChildrenState();

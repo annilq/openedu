@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../shared/domain/providers/core_providers.dart';
 import '../data/datasource/students_remote_data_source.dart';
 import '../data/repositories/students_repository_impl.dart';
-import '../domain/repositories/students_repository.dart';
+import 'package:kids_learn/shared/domain/repositories/students_repository.dart';
 import '../presentation/providers/students_notifier.dart';
 
 /// 学生管理 feature 的**组合根**（composition root）。选址理由见

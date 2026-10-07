@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../shared/domain/providers/core_providers.dart';
 import '../data/datasource/classes_remote_data_source.dart';
 import '../data/repositories/classes_repository_impl.dart';
-import '../domain/repositories/classes_repository.dart';
+import 'package:kids_learn/shared/domain/repositories/classes_repository.dart';
 
 /// 班级 feature 的组合根（与 `students_provider.dart` 同款结构，ADR-0058）。
 ///

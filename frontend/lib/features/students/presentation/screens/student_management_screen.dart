@@ -18,11 +18,10 @@ import '../../../../shared/widgets/app_error.dart';
 import '../../../../shared/widgets/app_inputs.dart';
 import '../../../../shared/widgets/app_loading.dart';
 import '../../../../shared/widgets/app_section_title.dart';
+import '../../../../shared/widgets/app_focusable_action.dart';
 import '../../../../shared/widgets/app_toast.dart';
-import '../../../classes/domain/models/class_model.dart';
 import '../providers/student_management_notifier.dart';
 import '../../providers/student_management_provider.dart';
-import '../../domain/models/student_import_result.dart';
 import '../widgets/student_import_sheet.dart';
 
 /// 学生管理页（ADR-0068 §2.3 / ticket 02 + 03）。
@@ -525,8 +524,9 @@ class _ClassPicker extends StatelessWidget {
     return Stack(
       children: [
         Positioned.fill(
-          child: GestureDetector(
+          child: AppFocusableAction(
             onTap: onDismiss,
+            semanticLabel: '关闭',
             child: Container(color: scheme.scrim),
           ),
         ),

@@ -9,7 +9,7 @@ import '../../../../shared/widgets/app_dialog.dart';
 import '../../../../shared/widgets/app_toast.dart';
 import '../../../../shared/widgets/app_top_bar.dart';
 import '../../domain/assistant_card.dart';
-import '../../domain/assistant_courseware_context.dart';
+import 'package:kids_learn/shared/domain/models/assistant_courseware_context.dart';
 import '../../domain/conversation.dart';
 import '../../providers/assistant_provider.dart';
 import '../widgets/assistant_suggested_actions.dart';

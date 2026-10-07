@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../classes/providers/classes_provider.dart';
-import '../../../students/providers/students_provider.dart';
+import 'package:kids_learn/features/classes/providers/classes_provider.dart';
+import 'package:kids_learn/features/students/providers/students_provider.dart';
 import '../../providers/analytics_provider.dart';
 import 'analytics_notifier.dart';
 
