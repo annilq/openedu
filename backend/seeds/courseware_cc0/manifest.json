@@ -16,5 +16,40 @@
     "name": "花卉特写（CC0）",
     "source_url": "https://commons.wikimedia.org/wiki/Category:Flowers",
     "license": "CC0 1.0"
+  },
+  {
+    "filename": "cw_square.png",
+    "name": "轴对称教学图-cw_square",
+    "id": "35ae2b47-a589-4ad6-a487-e9f69bd7fc0e",
+    "source_url": "本仓库内置教学示意图（PIL 生成，CC0 1.0）",
+    "license": "CC0 1.0"
+  },
+  {
+    "filename": "cw_circle.png",
+    "name": "轴对称教学图-cw_circle",
+    "id": "88264724-3c29-4d19-889e-09fe1d013aee",
+    "source_url": "本仓库内置教学示意图（PIL 生成，CC0 1.0）",
+    "license": "CC0 1.0"
+  },
+  {
+    "filename": "cw_triangle.png",
+    "name": "轴对称教学图-cw_triangle",
+    "id": "b5bf4a89-f335-4218-9293-7b7462e660f4",
+    "source_url": "本仓库内置教学示意图（PIL 生成，CC0 1.0）",
+    "license": "CC0 1.0"
+  },
+  {
+    "filename": "cw_points.png",
+    "name": "轴对称教学图-cw_points",
+    "id": "b0a6b808-aed1-47a0-af46-75098de3e66f",
+    "source_url": "本仓库内置教学示意图（PIL 生成，CC0 1.0）",
+    "license": "CC0 1.0"
+  },
+  {
+    "filename": "cw_two.png",
+    "name": "轴对称教学图-cw_two",
+    "id": "eb36348b-9b2c-4b4e-b3e5-32a3f86c21b7",
+    "source_url": "本仓库内置教学示意图（PIL 生成，CC0 1.0）",
+    "license": "CC0 1.0"
   }
 ]

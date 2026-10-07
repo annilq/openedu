@@ -13,7 +13,10 @@
 - **幂等**：同名 CC0 素材已存在则跳过，连跑多次不重复入库、不破坏引用它的课件。
 
 每个 manifest 条目：``filename``（同目录图片）、``name``（展示名）、``source_url``
-（来源 URL，教师可溯源核授权）、``license``（许可类型，如 ``CC0 1.0``）。
+（来源 URL，教师可溯源核授权）、``license``（许可类型，如 ``CC0 1.0``）。可选字段
+``id``：显式指定资产 UUID，**用于需要稳定引用关系的场景**（如某课件 sections 按
+``asset_id`` 引用该素材）。给定 ``id`` 时入库使用该值，保证重跑 seed 复现同一资产
+行、不破坏既有引用；省略则 ``uuid4()`` 自动生成（向后兼容）。
 """
 from __future__ import annotations
 
@@ -78,8 +81,9 @@ def seed_courseware_cc0(session: Session, *, seed_dir: Path | None = None) -> in
             filename=entry["filename"],
             data=data,
         )
+        asset_id = entry.get("id")
         asset = CoursewareAsset(
-            id=uuid.uuid4(),
+            id=uuid.UUID(asset_id) if asset_id else uuid.uuid4(),
             teacher_id=COURSEWARE_CC0_OWNER_ID,
             name=name,
             storage_key=storage_key,

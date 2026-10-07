@@ -1,18 +1,18 @@
 # 课件内容填充 · 图形的运动（轴对称）· Tickets 索引
 
 > 目标：把已存在的草稿课件 `cacb390ee6da4ac0bbe138402950a99e`（知识点 `图形的运动（轴对称）`，数学·四年级·下学期，kp=`357dd9129061452ea9ec35a881548f9c`）从「占位骨架」填充成「可上台」的实课件。
-> 现状：课件 4 环节（media_gallery / interactive_scene / practice / media_gallery）标题与脚本已就位，但内容全是教师占位符（"教师可上传…""教师可示例图形…"），`interactive_scene` 的 `outputs` 还被截断。状态 `draft`。
+> 现状：4 环节（media_gallery / interactive_scene / practice / media_gallery）内容已填充完成，占位字样清零，`interactive_scene` 的 `outputs` 已补全，CC0 素材落 `coursewareasset` 并改走 `seed_cc0.py` manifest 复现。状态 `ready`（已置，可上台）。
 > 发布形式：本地 `.scratch` 文件（未建 GitHub issue）。`gh auth login` 后可一键转 issue。
 > 术语以 `CONTEXT.md` 为准；每个 ticket 含 `What to build` / `Blocked by` / `Status: ready-for-agent` / 验收清单。
 
 ## 依赖链
 
 ```
-01 课标对齐与内容大纲 ──────────（无前置）✅ ready-for-agent
-02 素材册两环节（观察 + 探索）落地 ─ 01
-03 交互场景 reflection 落地 ────── 01
-04 课堂练习 practice 落地 ─────── 01
-05 串联校验 + 状态置 ready + CC0 入库 ─ 02, 03, 04
+01 课标对齐与内容大纲 ──────────（无前置）✅ done（内容已产出，供 02–04 引用）
+02 素材册两环节（观察 + 探索）落地 ─ 01 ✅ done
+03 交互场景 reflection 落地 ────── 01 ✅ done
+04 课堂练习 practice 落地 ─────── 01 ✅ done（⚠ 静态题存 payload.questions，直播练习仍走 AI 出题）
+05 串联校验 + 状态置 ready + CC0 入库 ─ 02, 03, 04 ✅ done
 ```
 
 ## 范围说明

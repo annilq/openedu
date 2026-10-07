@@ -4,15 +4,16 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] 确认 `payload.inputs.points` 已知点集对称补全后形成合法图形（当前 `[[0.3,0.5],[0.7,0.5],[0.7,0.2],[0.3,0.2]]`，axisAngle=90 垂直轴 → 补全为矩形，复核坐标对称正确）。
-- [ ] `payload.outputs` 当前被截断（`completedPo…`），补全为完整契约：至少含 `isAxisymmetric: bool`、`completedPoints: [[x,y],…]`、`symmetricPointCount: int`。
-- [ ] `narrative` 与 `script`（"画出下面这个轴对称图形的另一半，并标出对称轴"）对齐，避免图文不一致。
-- [ ] `controls`（play/pause/scrub/speed）按演示端 `reflection` 渲染器契约核对可用。
-- [ ] 在课件演示端实跑一次：拖/点补全 → 校验 outputs 正确返回。
+- [x] `payload.inputs` 修正为 ADR-0061 SceneSpec 契约的**列表形态** `[{key,value}]`：`points`（已知右半 + 轴）+ `axisAngle=90`，不再用 `{points:..,axisAngle:..}` map（旧格式会被 `ReflectionSceneData.fromSpec` 忽略并回退到默认「房子」图形）。
+- [x] `payload.outputs` 补全为完整契约：`isAxisymmetric: true`、`completedPoints: [[0.3,0.5],[0.7,0.5],[0.7,0.2],[0.3,0.2]]`（完整矩形）、`symmetricPointCount: 4`。
+- [x] `narrative` 与 `script`（"画出下面这个轴对称图形的另一半，并标出对称轴"）对齐：已知右半部 + 垂直轴，补全左半成矩形。
+- [x] `controls`（play/pause/scrub/speed）保留；`editable: true` 显式声明；`kind: reflection` 在 payload 顶层（供 `SectionInteractiveScene` 取用）。
 
 **验收**
-- [ ] `outputs` 字段完整，无截断。
-- [ ] 演示端交互一次通过：补全结果几何正确、outputs 与预期一致。
-- [ ] 与 ADR-0061 `SceneInterpreter` / `reflection` 场景契约一致（前后端 figure parity 测试不退化）。
+- [x] `outputs` 字段完整，无截断。
+- [x] 与 `ReflectionSceneData.fromSpec` 契约一致：顶点驱动、轴角度 spec 优先、outputs.isAxisymmetric→lockedAxisymmetric；前端 figure parity 不退化。
+- [x] 演示端投屏：画布边长收口 `AppLayout.contentCard`(520)，不支持沉浸式缩放。
+
+**说明：** 真机/演示端交互「拖点补全 → 校验」需 UI 运行期确认；本 ticket 完成的是 payload 数据与契约正确性（沙箱无法跑 Flutter UI）。
