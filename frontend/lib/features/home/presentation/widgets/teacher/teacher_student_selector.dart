@@ -28,10 +28,14 @@ class TeacherStudentSelector extends ConsumerStatefulWidget {
   final VoidCallback? onNavigateToAddStudent;
   final void Function(UserModel child)? onNavigateToEditStudent;
 
+  /// 行内「查看详情」：直达该学生详情页（错题本页签）。
+  final void Function(String studentId)? onNavigateToDetail;
+
   const TeacherStudentSelector({
     super.key,
     this.onNavigateToAddStudent,
     this.onNavigateToEditStudent,
+    this.onNavigateToDetail,
   });
 
   @override
@@ -259,6 +263,12 @@ class _TeacherStudentSelectorState extends ConsumerState<TeacherStudentSelector>
                               _popoverCtrl.hide();
                               widget.onNavigateToEditStudent!(c);
                             },
+                      onDetail: widget.onNavigateToDetail == null
+                          ? null
+                          : () {
+                              _popoverCtrl.hide();
+                              widget.onNavigateToDetail!(c.id);
+                            },
                       scheme: scheme,
                     ),
                 ],
@@ -304,6 +314,7 @@ class _ChildOption extends StatelessWidget {
   final bool active;
   final VoidCallback onTap;
   final VoidCallback? onEdit;
+  final VoidCallback? onDetail;
   final AppColors scheme;
 
   const _ChildOption({
@@ -312,6 +323,7 @@ class _ChildOption extends StatelessWidget {
     required this.active,
     required this.onTap,
     this.onEdit,
+    this.onDetail,
     required this.scheme,
   });
 
@@ -360,6 +372,8 @@ class _ChildOption extends StatelessWidget {
                   ],
                 ),
               ),
+              if (onDetail != null)
+                _ChildDetailAction(onTap: onDetail!),
               if (onEdit != null) _ChildEditAction(onTap: onEdit!),
               if (active)
                 Padding(
@@ -397,6 +411,32 @@ class _ChildEditAction extends StatelessWidget {
         width: side,
         height: side,
         child: Icon(LucideIcons.pencil,
+            size: 14, color: scheme.onSurfaceVariant),
+      ),
+    );
+  }
+}
+
+/// 行内「查看详情」小按钮：直达该学生详情页（错题本页签）。
+///
+/// 与 [ _ChildEditAction] 同一套命中区与焦点约定，仅图标与读屏名不同。
+class _ChildDetailAction extends StatelessWidget {
+  final VoidCallback onTap;
+  const _ChildDetailAction({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = AppTheme.colorsOf(context);
+    final side = AppControl.heightSmOf(context);
+    return AppFocusableAction(
+      onTap: onTap,
+      semanticLabel: '查看学生详情',
+      borderRadius: BorderRadius.circular(AppRadius.chip),
+      hoverHighlight: true,
+      child: SizedBox(
+        width: side,
+        height: side,
+        child: Icon(LucideIcons.eye,
             size: 14, color: scheme.onSurfaceVariant),
       ),
     );

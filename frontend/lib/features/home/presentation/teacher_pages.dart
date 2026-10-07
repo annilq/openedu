@@ -85,6 +85,24 @@ class ProfilePage extends TeacherPage {
   const ProfilePage();
 }
 
+/// 学生详情页页签（局部状态，不提升为全局）。
+enum StudentDetailTab { overview, wrongQuestions, tutorLogs }
+
+/// 学生详情页（带学生 ID，不依赖全局选中态）。
+///
+/// 取代「先选中学生 → 右侧各视图按全局 `selectedStudentProvider` 取数」的写法：
+/// 这里把 studentId 作为入参直传，页签切换也只是本页的局部状态，不会污染其他页面的
+/// 上下文（ADR-0059 核心教训——避免「看着 A 却按 B 出题」这类漏清 bug）。
+///
+/// 与 14 协同：本页先就位，14 再把侧栏全局入口移除并指向它。
+class StudentDetailPage extends TeacherPage {
+  final String studentId;
+  final StudentDetailTab initialTab;
+
+  const StudentDetailPage(this.studentId,
+      {this.initialTab = StudentDetailTab.overview});
+}
+
 /// 侧栏高亮用的「基础页」：审核页沿用它进来的那一页的高亮。
 ///
 /// 审核不是一个侧栏入口（否则「任务」会在用户从概览进来时错位高亮），而是某一页

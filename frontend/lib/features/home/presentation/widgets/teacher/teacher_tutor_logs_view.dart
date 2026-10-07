@@ -18,11 +18,15 @@ import '../../../../../shared/widgets/app_tags.dart';
 
 /// AI 答疑记录右栏（F-305）：教师查看选中学生的 AI 问答日志。
 class TeacherTutorLogsView extends ConsumerWidget {
-  const TeacherTutorLogsView({super.key});
+  /// 指定学生时按该学生取数（学生详情页用）；为空则退回全局 `selectedStudentProvider`
+  /// （侧栏 AI 答疑入口用）。
+  final String? studentId;
+
+  const TeacherTutorLogsView({super.key, this.studentId});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final selected = ref.watch(selectedStudentProvider);
+    final selected = studentId ?? ref.watch(selectedStudentProvider)?.id;
     if (selected == null) return _emptyState(context);
 
     final state = ref.watch(tutorLogsNotifierProvider);

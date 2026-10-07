@@ -22,6 +22,7 @@ import '../providers/home_notifier.dart';
 import '../providers/teacher_tasks_notifier.dart';
 import '../providers/selected_student_provider.dart';
 import '../teacher_pages.dart';
+import '../screens/student_detail_screen.dart';
 import '../screens/teacher_task_review_screen.dart';
 import 'teacher_destinations.dart';
 import '../widgets/student_home.dart';
@@ -224,6 +225,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           },
         ),
       ProfilePage() => ProfileScreen(user: widget.user, onLogout: widget.onLogout),
+      StudentDetailPage(studentId: final id, initialTab: final tab) =>
+        StudentDetailScreen(
+          studentId: id,
+          initialTab: tab,
+          onBack: () => _go(const OverviewPage()),
+        ),
     };
   }
 
@@ -416,6 +423,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         sidebarTop: TeacherStudentSelector(
           onNavigateToAddStudent: _onNavigateToAddStudent,
           onNavigateToEditStudent: _onNavigateToEditStudent,
+          onNavigateToDetail: (id) => _go(
+            StudentDetailPage(id, initialTab: StudentDetailTab.wrongQuestions),
+          ),
         ),
         sidebarBottom: AdaptiveUserBlock(
           user: widget.user,
