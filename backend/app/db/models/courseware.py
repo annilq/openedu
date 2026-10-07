@@ -18,7 +18,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, Column, DateTime, Index
+from sqlalchemy import JSON, DateTime, Index
 from sqlmodel import Field, SQLModel
 
 from app.db.models.base import get_datetime_utc

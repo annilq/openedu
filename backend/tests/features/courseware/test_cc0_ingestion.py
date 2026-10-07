@@ -91,8 +91,9 @@ def test_seed_creates_platform_cc0_with_source_and_license(tmp_path):
         assert row.source_url == "https://example.com/测试CC0"
         assert row.license == "CC0 1.0"
         # 物理文件离线落盘（不联网）。
-        from app.core.config import settings
         from pathlib import Path
+
+        from app.core.config import settings
 
         assert (Path(settings.MATERIAL_UPLOAD_ROOT) / row.storage_key).is_file()
 
