@@ -71,12 +71,12 @@ class TestOptionRenderingSitesStripPrefix:
             "学生端练习",
         "frontend/lib/features/assistant/presentation/widgets/assistant_question_card.dart":
             "助手题卡",
-        "frontend/lib/features/home/presentation/widgets/parent/parent_question_card.dart":
+        "frontend/lib/features/home/presentation/widgets/teacher/teacher_question_card.dart":
             "教师端题卡",
-        "frontend/lib/features/home/presentation/widgets/parent/parent_task_preview_section.dart":
+        "frontend/lib/features/home/presentation/widgets/teacher/teacher_task_preview_section.dart":
             "任务预览",
         # ADR-0061 §S 题库详情（我最初漏了这处 → 详情里出现「A. A. 房子」）
-        "frontend/lib/features/home/presentation/widgets/parent/bank_question_detail.dart":
+        "frontend/lib/features/home/presentation/widgets/teacher/bank_question_detail.dart":
             "题库详情弹窗",
         # 助手**纯文本**题卡：没有 AppOptionTile 可用，自己画标号 —— 同样必须剥前缀
         "frontend/lib/features/assistant/domain/card_payload.dart":

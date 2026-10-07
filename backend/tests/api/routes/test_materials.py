@@ -593,8 +593,12 @@ def uploaded_mat_id(client, ptoken, upload_root):
 
 
 class TestVectorization:
-    def test_vectorize_requires_config(self, client, ptoken, uploaded_mat_id):
-        # EMBEDDING_PROVIDER 默认 none：显式 500 + LLM_UNAVAILABLE，不假装成功
+    def test_vectorize_requires_config(self, client, ptoken, uploaded_mat_id, monkeypatch):
+        # 显式置 none：本地 .env 可能把 EMBEDDING_PROVIDER 设成 ollama（走 failed 分支），
+        # 这里要钉住的是「完全未配置 → 500 + LLM_UNAVAILABLE」这条路径，不受 .env 影响。
+        monkeypatch.setattr(
+            "app.features.materials.indexing.settings.EMBEDDING_PROVIDER", "none"
+        )
         r = client.post(
             f"/api/v1/materials/{uploaded_mat_id}/vectorize",
             headers=auth_headers(ptoken),
@@ -675,9 +679,14 @@ class TestVectorization:
 
 
 class TestVectorRetrieval:
-    def test_hybrid_retrieval_and_filter(self, client, ptoken, upload_root, db, monkeypatch):
-        """向量化后经 build_retriever('vector') 检索：dense+词法融合，快照带资料名。"""
-        folder = _create_folder(client, ptoken, name="数学三上", subject="数学", grade=3)
+    def test_hybrid_retrieval_and_filter(self, client, solo, upload_root, db, monkeypatch):
+        """向量化后经 build_retriever('vector') 检索：dense+词法融合，快照带资料名。
+
+        用独立账号（solo）而非共享 ptoken：避免全量里其它用例给 mat_teacher 向量化出的
+        「数学/3 年级」片段混进候选集，把「鸡兔」挤下首命中（历史上全量红、单跑绿的成因）。
+        """
+        token, teacher_id = solo
+        folder = _create_folder(client, token, name="数学三上", subject="数学", grade=3)
 
         async def kw_embed(texts):
             # 关键词向量：含「鸡兔」→ [1,0,0,0]，否则 [0,1,0,0]
@@ -692,10 +701,10 @@ class TestVectorRetrieval:
             ("鸡兔同笼.txt", "鸡兔同笼问题：设鸡有 x 只，兔有 y 只，则 x+y=头数，2x+4y=脚数。"),
             ("运算律.txt", "乘法分配律：a×(b+c)=a×b+a×c，这是简便运算的重要依据。"),
         ):
-            r = _upload(client, ptoken, filename=name, content=content.encode(), folder_id=folder["id"])
+            r = _upload(client, token, filename=name, content=content.encode(), folder_id=folder["id"])
             mat_ids.append(r.json()["material"]["id"])
         for mid in mat_ids:
-            r = client.post(f"/api/v1/materials/{mid}/vectorize", headers=auth_headers(ptoken))
+            r = client.post(f"/api/v1/materials/{mid}/vectorize", headers=auth_headers(token))
             assert r.json()["index_state"] == "ready", r.text
 
         # 切到 vector 检索：查询向量指向「鸡兔」簇
@@ -706,13 +715,9 @@ class TestVectorRetrieval:
 
         monkeypatch.setattr("app.features.materials.retrieval.embed_texts", q_embed)
 
-        from sqlmodel import select
-
-        from app.db.models import User
         from app.domain.retriever import build_retriever
 
-        teacher = db.exec(select(User).where(User.username == "mat_teacher")).one()
-        retriever = build_retriever(session=db, teacher_id=teacher.id)
+        retriever = build_retriever(session=db, teacher_id=teacher_id)
         chunks = retriever.retrieve(subject="数学", grade=3, knowledge_point="鸡兔同笼", query="鸡兔同笼")
         assert chunks, "向量+词法双路不应为空"
         assert all(c.source == "vector" for c in chunks)
@@ -720,21 +725,47 @@ class TestVectorRetrieval:
         assert chunks[0].source_name == "鸡兔同笼.txt"
         assert "鸡兔同笼" in chunks[0].content
 
-    def test_version_mismatch_excluded(self, client, ptoken, upload_root, db, monkeypatch):
-        """版本戳双保险：embed_model 与当前配置不符的 chunk 不参与检索（stale 语义）。"""
-        from sqlmodel import select
+    def test_version_mismatch_excluded(self, client, solo, upload_root, db, monkeypatch):
+        """版本戳双保险：embed_model 与当前配置不符的 chunk 不参与检索（stale 语义）。
 
-        from app.db.models import MaterialChunk, User
+        独立账号 + 自管向量化：全量里其它用例给共享账号留下的 4 维假向量片段，
+        会与本例用「真实 embed_texts」查出的高维向量维度不一致（zip strict 崩），
+        故这里也用同一套假向量，维度自洽；同时避免混入别家的资料片段。
+        """
+        from app.db.models import MaterialChunk
         from app.features.materials import repository as repo
         from app.features.materials.retrieval import VectorKnowledgeRetriever
 
-        teacher = db.exec(select(User).where(User.username == "mat_teacher")).one()
-        mats = repo.list_materials(db, teacher_id=teacher.id, folder_id=None)
+        token, teacher_id = solo
+        folder = _create_folder(client, token, name="数学三上", subject="数学", grade=3)
+        r = _upload(
+            client,
+            token,
+            filename="乘法.txt",
+            content=("两位数乘法。先算个位，再算十位，满十进一。" * 30).encode(),
+            folder_id=folder["id"],
+        )
+        old_id = r.json()["material"]["id"]
+
+        # 假向量：始终可用、维度与查询端一致（4 维）
+        async def fake_embed(texts):
+            return [[1.0, 0.0, 0.0, 0.0] for _ in texts]
+
+        monkeypatch.setattr(
+            "app.features.materials.indexing.settings.EMBEDDING_PROVIDER", "ollama"
+        )
+        monkeypatch.setattr("app.features.materials.indexing.embed_texts", fake_embed)
+        r = client.post(
+            f"/api/v1/materials/{old_id}/vectorize", headers=auth_headers(token)
+        )
+        assert r.json()["index_state"] == "ready", r.text
+
+        mats = repo.list_materials(db, teacher_id=teacher_id, folder_id=None)
         assert mats, "前置：已有已上传资料"
         old = mats[0]
         db.add(
             MaterialChunk(
-                teacher_id=teacher.id,
+                teacher_id=teacher_id,
                 material_id=old.id,
                 seq=0,
                 content="旧模型的孤儿片段不该被召回",
@@ -745,7 +776,9 @@ class TestVectorRetrieval:
             )
         )
         db.commit()
-        retriever = VectorKnowledgeRetriever(db, teacher.id)
+        # 查询端也走同一假向量，避免维度不一致触发 _cosine(zip strict) 崩溃
+        monkeypatch.setattr("app.features.materials.retrieval.embed_texts", fake_embed)
+        retriever = VectorKnowledgeRetriever(db, teacher_id)
         chunks = retriever.retrieve(
             subject=old.subject or "数学",
             grade=old.grade or 3,
