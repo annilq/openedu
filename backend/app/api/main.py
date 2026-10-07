@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.features.ai.router import router as ai_router
+from app.features.analytics.router import router as analytics_router
 from app.features.assistant.router import router as assistant_router
 from app.features.auth.router import router as auth_router
 from app.features.classes.router import router as classes_router
@@ -35,5 +36,6 @@ api_router.include_router(questions_router)
 api_router.include_router(export_router)
 api_router.include_router(model_management_router)
 api_router.include_router(ai_router)
+api_router.include_router(analytics_router)
 api_router.include_router(assistant_router)
 api_router.include_router(health_router)
