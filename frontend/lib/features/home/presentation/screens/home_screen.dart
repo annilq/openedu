@@ -9,6 +9,7 @@ import '../../../../shared/widgets/adaptive_shell.dart';
 import '../../../../shared/widgets/app_toast.dart';
 import '../../../students/providers/students_provider.dart';
 import '../../../students/presentation/screens/student_form_screen.dart';
+import '../../../students/presentation/screens/student_management_screen.dart';
 import '../../../assistant/presentation/screens/assistant_chat_page.dart';
 import '../../../export/domain/export_repository.dart';
 import '../../../export/presentation/export_preview_page.dart';
@@ -209,6 +210,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ),
       MaterialLibraryPage() => const MaterialLibraryView(),
       ModelsPage() => const TeacherModelManagementScreen(),
+      StudentManagementPage() => StudentManagementScreen(
+          onOpenStudent: (id) => _go(
+                StudentDetailPage(id, initialTab: StudentDetailTab.wrongQuestions),
+              )),
       TaskListPage() => TeacherTasksView(
           onNavigateToReview: _navigateToReview,
           onNavigateToCreate: () => _go(const CreateTaskPage()),

@@ -49,6 +49,15 @@ class _UnusedChildrenRepo implements StudentsRepository {
     InterestsModel? interests,
   }) async =>
       throw UnimplementedError();
+  @override
+  Future<List<UserModel>> getStudents({
+    String? classId,
+    String? keyword,
+  }) async =>
+      throw UnimplementedError();
+  @override
+  Future<Map<String, int>> getWrongQuestionCounts() async =>
+      throw UnimplementedError();
 }
 
 /// 直接种一个已加载状态，避开网络层。

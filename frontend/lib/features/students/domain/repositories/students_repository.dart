@@ -15,4 +15,13 @@ abstract class StudentsRepository {
     InterestsModel? interests,
   });
   Future<List<UserModel>> getChildren();
+
+  /// 学生管理页取数：叠加班级筛选与姓名/学号搜索（见 datasource 注释）。
+  Future<List<UserModel>> getStudents({
+    String? classId,
+    String? keyword,
+  });
+
+  /// 各学生活跃错题数（{student_id: count}）。
+  Future<Map<String, int>> getWrongQuestionCounts();
 }

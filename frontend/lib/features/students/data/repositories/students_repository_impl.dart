@@ -47,4 +47,23 @@ class StudentsRepositoryImpl implements StudentsRepository {
         .map((e) => UserModel.fromJson(e as Map<String, dynamic>))
         .toList();
   }
+
+  @override
+  Future<List<UserModel>> getStudents({
+    String? classId,
+    String? keyword,
+  }) async {
+    final list = await _dataSource.getStudents(
+      classId: classId,
+      keyword: keyword,
+    );
+    return list
+        .map((e) => UserModel.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  @override
+  Future<Map<String, int>> getWrongQuestionCounts() async {
+    return await _dataSource.getWrongQuestionCounts();
+  }
 }

@@ -53,6 +53,11 @@ class NavigationDestinations {
           // ADR-0057 P1：出题进行中在侧栏也亮一个进度徽标，点它即回生成页。
           trailing: genTrailing(gen)),
       AdaptiveNavDestination(
+          icon: LucideIcons.users,
+          label: '学生',
+          active: active is StudentManagementPage,
+          onTap: () => go(const StudentManagementPage())),
+      AdaptiveNavDestination(
           icon: LucideIcons.bookOpen,
           label: '错题本',
           active: active is WrongQuestionsPage,

@@ -39,6 +39,10 @@ class UserModel {
   final bool isActive;
   final InterestsModel? interests; // 兴趣画像（WF-1/WF-2）
 
+  /// 所属班级 ID（ADR-0068）：后端 `UserPublic.class_id` 增量字段，未分班为 null。
+  /// 学生管理页按它分组，班级实体本身由 classes feature 取数。
+  final String? classId;
+
   UserModel({
     required this.id,
     required this.username,
@@ -47,6 +51,7 @@ class UserModel {
     this.grade,
     this.isActive = true,
     this.interests,
+    this.classId,
   });
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
@@ -61,18 +66,20 @@ class UserModel {
           ? null
           : InterestsModel.fromJson(
               json['interests'] as Map<String, dynamic>),
+      classId: json['class_id'] as String?,
     );
   }
 
   Map<String, dynamic> toJson() => {
-    'id': id,
-    'username': username,
-    'display_name': displayName,
-    'role': role,
-    'grade': grade,
-    'is_active': isActive,
-    'interests': interests?.toJson(),
-  };
+        'id': id,
+        'username': username,
+        'display_name': displayName,
+        'role': role,
+        'grade': grade,
+        'is_active': isActive,
+        'interests': interests?.toJson(),
+        'class_id': classId,
+      };
 
   bool get isTeacher => role == 'teacher';
 }

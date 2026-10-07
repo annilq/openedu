@@ -88,6 +88,14 @@ class ProfilePage extends TeacherPage {
 /// 学生详情页页签（局部状态，不提升为全局）。
 enum StudentDetailTab { overview, wrongQuestions, tutorLogs }
 
+/// 学生管理页（按班级分组 + 筛选 + 活跃错题数，ADR-0068 §2.3 / ticket 02）。
+///
+/// 与 [StudentDetailPage] 并列：前者是「全班总览」，后者是「单个学生深耕」。
+/// 侧栏「学生」项进入本页（ticket 16 将其与「统计」一同收进八项侧栏）。
+class StudentManagementPage extends TeacherPage {
+  const StudentManagementPage();
+}
+
 /// 学生详情页（带学生 ID，不依赖全局选中态）。
 ///
 /// 取代「先选中学生 → 右侧各视图按全局 `selectedStudentProvider` 取数」的写法：
