@@ -48,3 +48,5 @@ C 系列 · 导航与统计（ADR-0070）
 
 ## Backlog（延后待办，不在本轮 16 票内）
 - **17 文件规模棘轮补登债务（跨 epic）**：4 个此前提交漏登 >400 基线的文件——`analytics_screen` 488 / `courseware_present_page` 429 / `section_practice` 429 / `teacher_task_form_view` 425——已于 `ce4d1de` 临时补登保测试绿，但仍锁在高位违背棘轮「只许下调」方向。须各自 owner 认领：拆小到 ≤400 或正式确认基线。详见 `issues/17-file-size-ratchet-debt.md`。
+- **18 多对象派发（班级/学生多选）**：ticket 14 降级项——布置任务当前仅单学生显式选择器（`_StudentAssignRow`），缺班级/学生多选批量派发能力。Blocked by 08。详见 `issues/18-multi-object-dispatch.md`。
+- **19 派发对象兴趣无交集自动关闭**：ticket 14 降级项——布置任务当前无兴趣交集逻辑，无法在派发对象无共同兴趣时自动关闭兴趣模式并说明原因。Blocked by 08。详见 `issues/19-interest-empty-intersection.md`。
