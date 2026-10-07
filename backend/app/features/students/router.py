@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, HTTPException, Response, UploadFile, status
 
 from app.core.config import settings
 from app.core.deps import CurrentTeacher, SessionDep
@@ -21,7 +21,10 @@ from app.features.auth.schemas import (
     UserUpdate,
 )
 from app.features.students.schemas import StudentImportResult
-from app.features.students.service import import_students_from_xlsx
+from app.features.students.service import (
+    export_students_xlsx,
+    import_students_from_xlsx,
+)
 
 router = APIRouter(prefix="/students", tags=["students"])
 
@@ -105,6 +108,21 @@ def update_student(
 def get_students(*, session: SessionDep, teacher: CurrentTeacher) -> UsersPublic:
     students = list_students(session=session, teacher_id=teacher.id)
     return UsersPublic(data=students, count=len(students))
+
+
+@router.get("/export")
+def export_students(*, session: SessionDep, teacher: CurrentTeacher) -> Response:
+    """导出账号表 xlsx（班级 / 姓名 / 学号 / 初始密码），供教师打印或分发给学生和家长。
+
+    未分班学生班级列标记「未分班」；初始密码与导入时设定的配置值一致（ADR-0068 §2.2）。
+    与导入共用 openpyxl，无第二套依赖。
+    """
+    data = export_students_xlsx(session=session, teacher_id=teacher.id)
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=students.xlsx"},
+    )
 
 
 @router.delete("/{student_id}", response_model=DeletedStudentResp)

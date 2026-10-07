@@ -9,7 +9,7 @@ from __future__ import annotations
 import io
 from uuid import UUID
 
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
 from sqlmodel import Session
 
 from app.core.config import settings
@@ -140,3 +140,37 @@ def import_students_from_xlsx(
         result.created += 1
         seen.add(username)
     return result
+
+
+def export_students_xlsx(*, session: Session, teacher_id: UUID) -> bytes:
+    """导出账号表（ADR-0068 §2.2 配套交付物）：班级 / 姓名 / 学号 / 初始密码。
+
+    未分班学生班级字段标记「未分班」；初始密码与导入配置常量一致，供教师分发。
+    与导入共用 openpyxl（同一 xlsx 库，无第二套依赖）。
+    """
+    from app.features.auth.repository import list_students
+    from app.features.classes.service import list_classes
+
+    students = list_students(session=session, teacher_id=teacher_id)
+    class_map = {
+        c.id: c.name
+        for c in list_classes(session=session, teacher_id=teacher_id)
+    }
+
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["班级", "姓名", "学号", "初始密码"])
+    for stu in students:
+        class_name = class_map.get(stu.class_id, "未分班")
+        ws.append(
+            [
+                class_name,
+                stu.display_name,
+                stu.username,
+                settings.STUDENT_DEFAULT_PASSWORD,
+            ]
+        )
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
