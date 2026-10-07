@@ -120,6 +120,105 @@ class KnowledgePointScopeList {
       );
 }
 
+/// 场景库里的「关联知识点」（ADR-0073 浏览页语义边界）。
+///
+/// 它回答「这个内置场景被哪些知识点引用了」。必带 subject/grade/semester 是因为
+/// 知识点**跨学期同名**（唯一约束含学期）——只给 name 会让教师看到三个「轴对称」
+/// 却分不清分别属于哪个学期。
+class SceneLibraryKpRef {
+  final String id;
+  final String name;
+  final String subject;
+  final int grade;
+  final String semester;
+
+  /// 该知识点自己的完整场景（`KnowledgePoint.scenes`）原样透传。
+  ///
+  /// 详情要显示「这个实例实际配了什么」——只给名字的话，教师看到三个同名的
+  /// 「轴对称」还得逐个点开才知道各自配了哪个图形。
+  final List<Map<String, dynamic>>? scenes;
+
+  const SceneLibraryKpRef({
+    required this.id,
+    required this.name,
+    required this.subject,
+    required this.grade,
+    required this.semester,
+    this.scenes,
+  });
+
+  factory SceneLibraryKpRef.fromJson(Map<String, dynamic> json) =>
+      SceneLibraryKpRef(
+        id: json['id'] as String? ?? '',
+        name: json['name'] as String? ?? '',
+        subject: json['subject'] as String? ?? '',
+        grade: json['grade'] as int? ?? 0,
+        semester: json['semester'] as String? ?? '',
+        scenes: (json['scenes'] as List?)
+            ?.map((e) => Map<String, dynamic>.from(e as Map))
+            .toList(),
+      );
+}
+
+/// 场景库里的一个**内置场景**（ADR-0073）。
+///
+/// [defaults] 是完整的 SceneSpec 中性种子，不是扁平参数列表：编辑器选中某个 kind
+/// 后直接拿它预填表单与预览，前端就不必再手工拼一份结构——那正是原先 `_buildSpec`
+/// 与后端 `default_scene_from_figure` 互为镜像的重复来源。
+class SceneLibraryEntry {
+  /// 场景标识（稳定 slug，只弃用不重命名）；同时是前端渲染器的分发键。
+  final String kind;
+  final String title;
+
+  /// 该 kind 的默认 SceneSpec（含 inputs / controls / narrative / outputs）。
+  /// 「中性」= **不预填 figure/points**：图形由本次编辑选定，预填会让每个新建
+  /// 场景都长成一个房子（ADR-0073 决策 6）。
+  final Map<String, dynamic> defaults;
+
+  /// 引用了该 kind 的知识点（浏览页所谓的「内置实例」）。
+  final List<SceneLibraryKpRef> associatedKnowledgePoints;
+
+  /// 「内置实例数量」= 关联知识点数。统计的是**内置参考**，不含已生成的题目 /
+  /// 课件快照（那些只在它们自己的页面里渲染）。
+  final int instanceCount;
+
+  const SceneLibraryEntry({
+    required this.kind,
+    required this.title,
+    required this.defaults,
+    this.associatedKnowledgePoints = const [],
+    this.instanceCount = 0,
+  });
+
+  factory SceneLibraryEntry.fromJson(Map<String, dynamic> json) =>
+      SceneLibraryEntry(
+        kind: json['kind'] as String? ?? '',
+        title: json['title'] as String? ?? '',
+        defaults:
+            Map<String, dynamic>.from(json['defaults'] as Map? ?? const {}),
+        associatedKnowledgePoints:
+            (json['associated_knowledge_points'] as List? ?? const [])
+                .map((e) => SceneLibraryKpRef.fromJson(
+                    Map<String, dynamic>.from(e as Map)))
+                .toList(),
+        instanceCount: json['instance_count'] as int? ?? 0,
+      );
+}
+
+/// 场景库清单：内置场景 + 各自关联知识点。
+class SceneLibrary {
+  final List<SceneLibraryEntry> scenes;
+
+  const SceneLibrary({this.scenes = const []});
+
+  factory SceneLibrary.fromJson(Map<String, dynamic> json) => SceneLibrary(
+        scenes: (json['scenes'] as List? ?? const [])
+            .map((e) => SceneLibraryEntry.fromJson(
+                Map<String, dynamic>.from(e as Map)))
+            .toList(),
+      );
+}
+
 abstract class MaterialRepository {
   /// 教师实际上传过教材的知识点范围（ADR-0065）：下拉据此构造，不做全量 9×3 枚举。
   Future<KnowledgePointScopeList> getKnowledgePointScopes();
@@ -151,4 +250,10 @@ abstract class MaterialRepository {
   /// 删除只影响目录本身：知识点到题目是快照式引用（题中存的是名字串），所以已出的
   /// 题与掌握度统计不会被破坏——只是这个范围的下拉里不再有它。
   Future<int> deleteKnowledgePoints(List<String> ids);
+
+  /// 内置交互讲解场景库（ADR-0073）：注册表条目 + 本教师的关联知识点聚合。
+  ///
+  /// 场景是**代码内置**（无 DB 表），所以这份清单回答的是「后端目前登记了哪些
+  /// kind」；每条自带完整的 `defaults`，可直接喂给渲染器预览，前端不必再拼一份。
+  Future<SceneLibrary> fetchSceneLibrary();
 }

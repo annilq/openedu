@@ -114,6 +114,25 @@ class CoursewarePage extends TeacherPage {
   const CoursewarePage();
 }
 
+/// 场景库（内置交互讲解场景总览，ADR-0073）。
+///
+/// 列出后端登记的全部内置场景：场景名、引用它的知识点、以及内置实例数量。
+/// 这里的「实例」**只认后端内置参考**——题目 / 课件生成出来的 `scene_spec`
+/// 快照不进这张清单（ADR-0073 浏览页语义边界）。
+class SceneLibraryPage extends TeacherPage {
+  const SceneLibraryPage();
+}
+
+/// 单个内置场景的详情：列出引用它的全部知识点实例。
+///
+/// [kind] 直传而非塞进全局选中态——同 [StudentDetailPage] 的做法（ADR-0059），
+/// 避免「看着 A 场景却按 B 场景展示」这种漏清 bug。
+class SceneLibraryDetailPage extends TeacherPage {
+  final String kind;
+
+  const SceneLibraryDetailPage(this.kind);
+}
+
 /// 侧栏高亮用的「基础页」：审核页沿用它进来的那一页的高亮。
 ///
 /// 审核不是一个侧栏入口（否则「任务」会在用户从概览进来时错位高亮），而是某一页

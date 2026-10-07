@@ -62,4 +62,10 @@ class MaterialRepositoryImpl implements MaterialRepository {
     final map = decodeMap(data);
     return map['deleted_count'] as int? ?? 0;
   }
+
+  @override
+  Future<SceneLibrary> fetchSceneLibrary() async {
+    final data = await _network.get('/materials/scene-library');
+    return SceneLibrary.fromJson(decodeMap(data));
+  }
 }

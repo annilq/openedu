@@ -11,7 +11,11 @@ import '../../../../../shared/widgets/app_toast.dart';
 import '../../../../../shared/widgets/scene_interpreter/reflection_scene_data.dart';
 import '../../../../../shared/widgets/scene_interpreter/reflection_figure_gallery.dart';
 import '../../../../../shared/widgets/scene_interpreter/reflection_scene_dialog.dart';
+import '../../../domain/repositories/material_repository.dart'
+    show SceneLibraryEntry;
 import '../../../providers/knowledge_manage_provider.dart';
+import 'scene_developer_guide.dart';
+import 'scene_library_picker.dart';
 
 /// 知识点交互讲解编辑器（ADR-0061）：家长为一个已落库知识点编写默认交互讲解模板。
 ///
@@ -21,7 +25,7 @@ import '../../../providers/knowledge_manage_provider.dart';
 ///
 /// **未配置（[initialScenes] 为空）时本弹窗不渲染 reflection 编辑表单**：交互讲解
 /// 模板是开发者实现的场景组件、不是家长在前端手配的，所以改弹开发者指引——以现有
-/// `reflection` 组件为范本新建一个 kind（见 [_developerGuide]），而非误导家长去把
+/// `reflection` 组件为范本新建一个 kind（见 [SceneDeveloperGuide]），而非误导家长去把
 /// 一个「平移」知识点配成轴对称模板。
 ///
 /// **学期维度是「显示」而非「选择」**（ADR-0061 §J）：模板挂在**某个具体知识点**上，
@@ -67,6 +71,12 @@ class _KnowledgePointSceneEditorState
   late double _axisY;
   bool _saving = false;
 
+  /// 从内置场景库选中的场景（未配置知识点时的模板起点）。null = 还没选。
+  ///
+  /// 必须留住它：「未配置」的判定要跟着翻转，选了场景就该立刻给出对应的编辑
+  /// 表单——否则点完「选这个」界面纹丝不动，会被当成按钮坏了。
+  SceneLibraryEntry? _pickedScene;
+
   @override
   void initState() {
     super.initState();
@@ -89,6 +99,20 @@ class _KnowledgePointSceneEditorState
     _axisY = data.axisY;
   }
 
+  /// 选一个内置场景作模板起点：**用它的中性种子预填默认轴参数**。
+  ///
+  /// 此前这批默认值（位置 0.5、取值范围、单位）在前端 `ReflectionSceneData` 里
+  /// 也镜像了一份；现在只认后端注册表这一个来源，前端不再自己造一套。
+  void _pickScene(SceneLibraryEntry entry) {
+    final data = ReflectionSceneData.fromSpec(entry.defaults);
+    setState(() {
+      _pickedScene = entry;
+      _axisAngle = data.axisAngle;
+      _axisX = data.axisX;
+      _axisY = data.axisY;
+    });
+  }
+
   @override
   void dispose() {
     super.dispose();
@@ -105,8 +129,10 @@ class _KnowledgePointSceneEditorState
   /// - **本面板预览**传 `false` —— 面板上方已经有 3 个同样的轴滑块了，预览再
   ///   画一遍是纯重复，还会把弹窗撑爆（实测 536 宽弹窗溢出 306px）。
   Map<String, dynamic> _buildSpec({required bool editable}) => {
-        'kind': 'reflection',
-        'title': '图形的运动（轴对称）',
+        // kind / title 取自选中的内置场景，而非写死：它们本来就该与注册表一致，
+        // 写死会让「后端新增场景」在前端扑空。回落值保住老路径（已配 scenes）不变。
+        'kind': _pickedScene?.kind ?? 'reflection',
+        'title': _pickedScene?.title ?? '图形的运动（轴对称）',
         'inputs': [
           {
             'key': 'axisAngle',
@@ -172,11 +198,13 @@ class _KnowledgePointSceneEditorState
     final text = AppTheme.textOf(context);
     final app = AppTheme.colorsOf(context);
     // 未配置（initialScenes 为空）时，本弹窗不渲染 reflection 编辑表单——交互讲解
-    // 模板是开发者实现的组件、不是家长在前端手配的，所以弹开发者指引（[_developerGuide]），
+    // 模板是开发者实现的组件、不是家长在前端手配的，所以弹开发者指引（[SceneDeveloperGuide]），
     // 告诉开发者怎样以 reflection 组件为范本新建本知识点所需 kind，而非误导家长把
     // 「平移」类知识点配成轴对称模板。
-    final unconfigured =
-        widget.initialScenes == null || widget.initialScenes!.isEmpty;
+    final hasScenes =
+        widget.initialScenes != null && widget.initialScenes!.isNotEmpty;
+    // 未配置**且**还没从内置场景库选定起点 → 不渲染参数表单（这条纪律不变）。
+    final unconfigured = !hasScenes && _pickedScene == null;
     // 弹窗高度受屏高限制，而内容（标题 + 作用域条 + 图形选择 + 3 个轴滑块 +
     // 预览画布 + 说明 + 保存）最坏情况会超出——套一层滚动兜底，任何屏高/字号
     // 组合下都不会再出现 RenderFlex 溢出。
@@ -194,7 +222,9 @@ class _KnowledgePointSceneEditorState
                   // 未配置时标题不再硬编码「轴对称」——否则「平移」类知识点点开
                   // 也显示成轴对称编辑器，造成「这是别的点」的错觉。
                   Text(
-                    unconfigured ? '交互讲解模板（未配置）' : '交互讲解（轴对称）',
+                    unconfigured
+                        ? '交互讲解模板（未配置）'
+                        : '交互讲解（${_pickedScene?.title ?? '轴对称'}）',
                     style: text.titleMedium,
                   ),
                   const SizedBox(height: 2),
@@ -218,11 +248,16 @@ class _KnowledgePointSceneEditorState
         const SizedBox(height: AppSpacing.sm),
         _scopeBanner(context),
         const SizedBox(height: AppSpacing.md),
-        if (unconfigured)
+        if (unconfigured) ...[
+          // 内置场景由后端下发（ADR-0073）：选一个即拿它登记的默认参数作模板
+          // 起点，不必手填结构。清单拉不到时该部件自行隐身，不打扰编辑。
+          SceneLibraryPicker(onPick: _pickScene),
+          const SizedBox(height: AppSpacing.md),
           // 未配置 = 没有可渲染模板。交互讲解模板是开发者实现的组件，不是家长
           // 在前端手配的，所以这里给开发者看「怎样以 reflection 为范本新建 kind」
           // 的指引，而非渲染一份误导性的轴对称编辑表单。
-          _developerGuide(context)
+          const SceneDeveloperGuide(),
+        ]
         else ...[
           // 图形选择改为画廊（ADR-0061 §V，与题目选项同套组件）：11 个平面图形铺成
           // 网格，点一个即设为模板图形并弹真正的对折演示，下方滑块再微调它的默认
@@ -325,62 +360,4 @@ class _KnowledgePointSceneEditorState
     );
   }
 
-  /// 未配置讲解模板时的**开发者指引**（非家长配置向导）。
-  ///
-  /// 交互讲解模板是开发者实现的场景组件，不是家长在前端手配的——本弹窗只会编辑
-  /// 已存在的 `reflection`（轴对称）类模板，无法凭空造出「平移」等新类型。所以点
-  /// 一个还没有模板的知识点（如「图形的运动·平移」）时，不渲染 reflection 表单，
-  /// 而是给开发者看：怎样以现有 reflection 组件为范本新建一个 kind 并接入系统。
-  ///
-  /// 卡片里点名的文件均为真实路径（前后端 kind 双登记约束见 ADR-0061 §O）。
-  Widget _developerGuide(BuildContext context) {
-    final text = AppTheme.textOf(context);
-    final app = AppTheme.colorsOf(context);
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.sm),
-      decoration: BoxDecoration(
-        color: app.secondary.withValues(alpha: 0.08),
-        border: Border.all(color: app.secondary, width: 1.5),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.build, size: 16, color: app.secondary),
-              const SizedBox(width: AppSpacing.xs),
-              Text('尚未配置交互讲解模板（开发者任务）', style: text.labelMedium),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          Text(
-            '该知识点还没有可渲染的交互讲解模板。交互讲解模板是开发者实现的场景组件，'
-            '不是家长在前端手动配置的——本弹窗只能编辑已存在的 reflection（轴对称）类'
-            '模板，无法凭空造出「平移」等新类型。\n\n'
-            '要为本知识点新增交互讲解，开发者以现有 reflection 组件为范本新建一个 kind：\n\n'
-            '① 登记新 kind（前后端双登记）：前端 '
-            'lib/shared/widgets/scene_interpreter/scene_interpreter.dart 的 SceneKind '
-            '枚举加一项（如 translation）、build() 的 switch 增加对应 case 返回新渲染器、'
-            'SceneKindX.fromName 增加映射；后端 scene_fusion.py / scene_extract.py 保持 '
-            'kind 词汇表一致。\n\n'
-            '② 实现渲染器（参照 reflection_scene.dart + reflection_scene_data.dart）：'
-            '前者是「渲染/交互」层（画布 + 拖拽 + 播放），后者是「数据与几何」层（解析 '
-            'SceneSpec、顶点、判定逻辑）。平移组件复用「给一组顶点画多边形」的骨架，把'
-            '「对折」换成「沿向量平移 + 逐顶点运动」。几何顶点加到 '
-            'lib/shared/domain/figures.dart 的 kFigureShapes，并同步到后端 '
-            'backend/app/features/materials/scene_figures.py（几何漂移会让判定出错）。\n\n'
-            '③ 产出 SceneSpec 并接入知识点：字段见 ADR-0061 / _buildSpec —— kind、title、'
-            'inputs（可调参数，如平移向量 x/y）、controls、narrative、outputs（判定输出）、'
-            'editable（保存时必传 true，让儿童能亲手拖）。多选项用 optionGroup 派生多份'
-            '实例。模板写入 KnowledgePoint.scenes（List[SceneSpec]），经 '
-            'PATCH /api/v1/materials/knowledge-points/{kp_id}/scenes'
-            '（update_knowledge_point_scenes）落库，scene_fusion.py 按题目学期解析。\n\n'
-            '完成后本弹窗会按该知识点的真实 kind 渲染专属交互讲解，不再回退到轴对称模板。',
-            style: text.bodySmall?.copyWith(color: app.onSurfaceVariant),
-          ),
-        ],
-      ),
-    );
-  }
 }

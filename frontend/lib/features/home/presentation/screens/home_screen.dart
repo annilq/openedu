@@ -23,6 +23,8 @@ import '../../../model_management/presentation/screens/teacher_model_management_
 import '../providers/home_notifier.dart';
 import '../providers/teacher_tasks_notifier.dart';
 import '../teacher_pages.dart';
+import '../widgets/teacher/scene_library_detail_view.dart';
+import '../widgets/teacher/scene_library_view.dart';
 import '../screens/student_detail_screen.dart';
 import '../screens/teacher_task_review_screen.dart';
 import 'teacher_destinations.dart';
@@ -194,6 +196,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ),
       MaterialLibraryPage() => const MaterialLibraryView(),
       CoursewarePage() => const CoursewareCenterScreen(),
+      SceneLibraryPage() => TeacherSceneLibraryView(
+          onOpenScene: (kind) => _go(SceneLibraryDetailPage(kind)),
+        ),
+      SceneLibraryDetailPage(kind: final kind) => TeacherSceneLibraryDetailView(
+          kind: kind,
+          onBack: () => _go(const SceneLibraryPage()),
+        ),
       ModelsPage() => const TeacherModelManagementScreen(),
       StudentManagementPage() => StudentManagementScreen(
           onOpenStudent: (id) {

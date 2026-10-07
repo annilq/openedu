@@ -82,6 +82,13 @@ class NavigationDestinations {
           label: '课件',
           active: active is CoursewarePage,
           onTap: () => go(const CoursewarePage())),
+      AdaptiveNavDestination(
+          icon: LucideIcons.component,
+          label: '场景库',
+          // 详情页高亮列表页：详情是列表的下钻，不是一个独立入口，否则点了某个
+          // 场景后侧栏会「谁都不亮」，教师以为自己离开了导航。
+          active: active is SceneLibraryPage || active is SceneLibraryDetailPage,
+          onTap: () => go(const SceneLibraryPage())),
     ];
   }
 
