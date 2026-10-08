@@ -52,6 +52,9 @@ class SceneInterpreter extends StatelessWidget {
     if (group is Map && group['items'] is List && (group['items'] as List).isNotEmpty) {
       return SceneOptionGroup(
         spec: spec,
+        // 就地读取显式开关（ADR-0076 §2.2）：不给解释器加构造参数——它被多处调用，
+        // 加参会波及全部消费方。
+        curated: group['curated'] == true,
         items: (group['items'] as List)
             .whereType<Map>()
             .map((e) => SceneOptionItem.fromJson(Map<String, dynamic>.from(e)))
@@ -111,20 +114,31 @@ class SceneOptionItem {
 /// 现在：图形库全部平面图形铺成网格（本题选项带 A/B/C/D 角标、排在最前），点一个
 /// 弹 [ReflectionSceneDialog]——里面是同一个 [ReflectionSceneWidget]，交互一件不少。
 /// 「先挑图形、再认真折」两步分开，正是对折这道题的操作顺序。
+///
+/// [curated] 为真（课件编排，ADR-0076 §2.2）时改为**只渲染条目指定的那几张、并按
+/// 条目顺序**——教师挑哪几个、按什么排，本身就是教学意图。
 class SceneOptionGroup extends StatelessWidget {
   /// 原始 spec（提供轴默认值、controls、narrative 等共享项）。
   final Map<String, dynamic> spec;
   final List<SceneOptionItem> items;
 
+  /// 是否按 [items] 裁剪并保序（教师编排）。缺省 false = 整库铺开。
+  ///
+  /// **必须是显式开关**：题库 / 错题路径的 items 恰好也非空（它们就是选项），靠
+  /// 「有没有条目」区分两种语境会静默剥夺学生探索其余图形的能力。
+  final bool curated;
+
   const SceneOptionGroup({
     super.key,
     required this.spec,
     required this.items,
+    this.curated = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    if (items.isEmpty) {
+    final matched = _matchFigures();
+    if (items.isEmpty || (curated && matched.isEmpty)) {
       return const AppEmptyState(
         icon: Icons.help_outline,
         title: '暂无可演示的选项',
@@ -132,20 +146,27 @@ class SceneOptionGroup extends StatelessWidget {
       );
     }
     final base = ReflectionSceneData.fromSpec(spec);
-    final matched = _matchFigures();
-    final labels = <String, String>{
-      for (final e in matched.entries) e.key: e.value.label,
+    final pointsOf = <String, List<Offset>>{
+      for (final m in matched) m.figure.key: m.points,
     };
+    // curated 语境没有 A/B/C，故不传角标（否则每张卡挂一个空角标）。
+    final labels = curated
+        ? const <String, String>{}
+        : <String, String>{for (final m in matched) m.figure.key: m.label};
     return ReflectionFigureGallery(
-      // 整库铺开（儿童可自由探索任意图形），本题选项靠角标认出来。
-      figures: kFigureShapes,
+      // 整库铺开（儿童可自由探索任意图形），本题选项靠角标认出来；curated 时换成
+      // 条目解析出的子集，交给画廊时置上保序——顺序就是编排意图。
+      figures: curated
+          ? matched.map((m) => m.figure).toList(growable: false)
+          : kFigureShapes,
       optionLabels: labels,
+      preserveOrder: curated,
       hint: '点一个图形打开对折演示：拖对称轴、点播放，看到 180° 时两侧能否完全重合。',
       onOpen: (figure) => ReflectionSceneDialog.show(
         context,
         data: base.copyWith(
           // 顶点优先用后端下发的（ADR-0061 §O：顶点是权威）；图形库只是兜底。
-          points: matched[figure.key]?.points ??
+          points: pointsOf[figure.key] ??
               figure.vertices.map((v) => Offset(v.x, v.y)).toList(growable: false),
           figureLabel: figure.label,
           // 轴初始值用**该图形自己的**默认轴，不用模板的（否则箭头停在竖轴、
@@ -157,19 +178,21 @@ class SceneOptionGroup extends StatelessWidget {
     );
   }
 
-  /// 选项 → 图形库映射（key → 标号 + 顶点）。
+  /// 条目 → 图形库的命中结果，**按 items 数组顺序**（重排会抹掉编排意图）。
   ///
   /// 先按图形名配（ caption 就是图形中文名），配不上再逐点比对顶点——两者都来自
-  /// 同一份镜像数据，正常必然命中；配不上说明后端下发了库外图形，那就当普通库内
-  /// 图形打开（画廊本来就是整库，不会因此少一个可探索的图形）。
-  Map<String, ({String label, List<Offset> points})> _matchFigures() {
-    final out = <String, ({String label, List<Offset> points})>{};
+  /// 同一份镜像数据，正常必然命中；配不上说明后端下发了库外图形：整库语境下当普通
+  /// 库内图形打开（画廊本来就是整库，不会因此少一个可探索的图形），curated 语境下
+  /// 跳过、不留空卡。
+  List<_MatchedFigure> _matchFigures() {
+    final out = <_MatchedFigure>[];
+    final seen = <String>{};
     for (final item in items) {
       final points = item.points;
       if (points == null || points.length < 3) continue;
       final figure = _matchFigure(item, points);
-      if (figure == null) continue;
-      out.putIfAbsent(figure.key, () => (label: item.label, points: points));
+      if (figure == null || !seen.add(figure.key)) continue;
+      out.add(_MatchedFigure(figure: figure, label: item.label, points: points));
     }
     return out;
   }
@@ -195,4 +218,20 @@ class SceneOptionGroup extends StatelessWidget {
     }
     return null;
   }
+}
+
+/// 一个条目命中的库内图形：图形本身 + 选项标号 + 条目自带的顶点。
+///
+/// 用记录类型而非 Map：Map 会丢掉条目的数组顺序，而 curated 语境下**顺序就是编排
+/// 意图**（ADR-0076 §2.2）。
+class _MatchedFigure {
+  final FigureShape figure;
+  final String label;
+  final List<Offset> points;
+
+  const _MatchedFigure({
+    required this.figure,
+    required this.label,
+    required this.points,
+  });
 }
