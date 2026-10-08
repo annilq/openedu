@@ -730,6 +730,9 @@ void main() {
       'editable': true,
     };
 
+    // 选择器占位文案（未关联时显示）。
+    final pickerTrigger = '未关联（点此选择）';
+
     Future<void> openSceneDialog(WidgetTester tester, _FakeRepo repo) async {
       await _pumpEditor(tester, repo: repo);
       await tester.tap(find.text('动手画对称图形'));
@@ -737,40 +740,42 @@ void main() {
       expect(find.text('编辑环节'), findsOneWidget);
     }
 
-    testWidgets('交互讲解环节：对话框出现「关联知识点场景」并列出已配置模板',
+    testWidgets('交互讲解环节：对话框出现「关联知识点场景」并提供模板选择器',
         (tester) async {
       final repo = _FakeRepo(_editorCourseware([scene('a')]));
       repo.kpScenes = [reflectionSpec];
       await openSceneDialog(tester, repo);
 
       expect(find.text('关联知识点场景'), findsOneWidget);
-      // 模板按 title 列出，并有「选用」入口。
-      expect(find.text('图形的运动（轴对称）'), findsWidgets);
-      expect(find.text('选用'), findsWidgets);
+      // 知识点已配置模板 → 出现下拉选择器（占位文案），而非「去知识点页配置」提示。
+      expect(find.text('选择讲解模板'), findsOneWidget);
+      expect(find.text(pickerTrigger), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('选用模板 → 写入 payload 并随保存持久化', (tester) async {
+    testWidgets('未配置场景：保存后 scene 为 null 且 legacy payload 清空', (tester) async {
+      // 对应「按配置显示」核心契约：教师没在编辑器里关联场景时，演示页不应渲染任何
+      // 交互演示。下拉选择由 SectionSceneAssociationBlock.onSelectedIndex → _onSceneSelected
+      // （一行 copyWith(scene:)）负责；这里验证「保持未配置」的落库结果。
       final repo = _FakeRepo(_editorCourseware([scene('a')]));
       repo.kpScenes = [reflectionSpec];
       await openSceneDialog(tester, repo);
 
-      await tester.tap(find.text('选用'));
-      await tester.pumpAndSettle();
-      // 选用后本环节显示「已填入交互演示内容」+ 清除关联。
-      expect(find.text('本环节已关联交互演示。'), findsOneWidget);
+      // 选择器存在但未选中（占位文案），确认处于「未关联」态。
+      expect(find.text(pickerTrigger), findsWidgets);
+      expect(find.text('本环节已关联上方选中的交互演示。'), findsNothing);
 
       await tester.tap(find.text('保存'));
       await tester.pumpAndSettle();
 
       expect(repo.updateSectionsCalls, 1);
-      final savedScene = repo.lastUpdated!.first.scene;
-      expect(savedScene?['kind'], 'reflection');
-      expect(savedScene?['title'], '图形的运动（轴对称）');
+      // 未配置 → 顶层 scene 为 null，legacy payload 清空。
+      expect(repo.lastUpdated!.first.scene, isNull);
+      expect(repo.lastUpdated!.first.payload, isEmpty);
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('知识点未配置模板 → 提示去知识点页配置且无「选用」入口',
+    testWidgets('知识点未配置模板 → 提示去知识点页配置且无选择器',
         (tester) async {
       final repo = _FakeRepo(_editorCourseware([scene('a')]));
       repo.kpScenes = const []; // 未配置
@@ -782,21 +787,25 @@ void main() {
             '（如轴对称选图形 + 调对称轴），这里才能选到它。'),
         findsOneWidget,
       );
-      expect(find.text('选用'), findsNothing);
+      expect(find.text('选择讲解模板'), findsNothing);
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('已关联后可「清除关联」，保存后 payload 为空', (tester) async {
-      // 节本来就带一份关联（payload 非空）。
-      final sec = scene('a').copyWith(payload: reflectionSpec);
+    testWidgets('已关联（顶层 scene）后可「清除关联」，保存后 scene 为空',
+        (tester) async {
+      // 节本来就带一份顶层关联场景（教师此前在编辑器里选过并保存）。
+      final sec = scene('a').copyWith(
+        scene: Map<String, dynamic>.from(reflectionSpec),
+      );
       final repo = _FakeRepo(_editorCourseware([sec]));
       repo.kpScenes = [reflectionSpec];
       await openSceneDialog(tester, repo);
 
-      expect(find.text('本环节已关联交互演示。'), findsOneWidget);
+      // 进入即显示已关联（模板列表里能匹配到选中项）。
+      expect(find.text('本环节已关联上方选中的交互演示。'), findsOneWidget);
       await tester.tap(find.text('清除关联'));
       await tester.pumpAndSettle();
-      expect(find.text('本环节已关联交互演示。'), findsNothing);
+      expect(find.text('本环节已关联上方选中的交互演示。'), findsNothing);
 
       await tester.tap(find.text('保存'));
       await tester.pumpAndSettle();
@@ -809,8 +818,8 @@ void main() {
   });
 
   group('内容块统一化：resolvedMaterials / resolvedScene', () {
-    test('优先顶层字段、回退 payload、其它 kind 不误当场景', () {
-      // 旧 mediaGallery：payload.items → resolvedMaterials 回退。
+    test('resolvedScene 只认顶层 scene，payload 内嵌不再被当场景', () {
+      // 旧 mediaGallery：payload.items → resolvedMaterials 回退（素材回退保留）。
       final legacyGallery = CoursewareSectionModel(
         id: 'g',
         kind: CoursewareSectionKind.mediaGallery,
@@ -828,17 +837,20 @@ void main() {
       );
       expect(mixed.resolvedMaterials.first.assetId, 'top');
 
-      // 旧 interactiveScene：payload 整份即 SceneSpec → resolvedScene 回退。
+      // interactiveScene 仅在顶层 scene 显式配置时才渲染；payload 里的 SceneSpec
+      // 不再被当作场景（演示严格「按配置显示」，杜绝「没配却显示」）。
       final legacyScene = CoursewareSectionModel(
         id: 's',
         kind: CoursewareSectionKind.interactiveScene,
         payload: {'kind': 'reflection'},
       );
-      expect(legacyScene.resolvedScene?['kind'], 'reflection');
+      expect(legacyScene.resolvedScene, isNull);
 
-      // 顶层 scene 优先；practice 的 payload 不被误当作场景。
-      final mixedScene = legacyScene.copyWith(scene: const {'kind': 'bar'});
-      expect(mixedScene.resolvedScene?['kind'], 'bar');
+      // 教师在编辑器关联过的顶层 scene 优先渲染。
+      final configured = legacyScene.copyWith(scene: const {'kind': 'bar'});
+      expect(configured.resolvedScene?['kind'], 'bar');
+
+      // 其它 kind 的 payload 更不应被误当作场景。
       final practice = CoursewareSectionModel(
         id: 'p',
         kind: CoursewareSectionKind.practice,

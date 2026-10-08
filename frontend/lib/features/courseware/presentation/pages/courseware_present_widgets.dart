@@ -5,6 +5,7 @@ import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_buttons.dart';
 import '../../../../shared/widgets/app_empty_state.dart';
 import '../../domain/models/courseware_section.dart';
+import '../../domain/models/courseware_section_kind.dart';
 import '../widgets/courseware_script_view.dart';
 import '../widgets/section_interactive_scene.dart';
 import '../widgets/section_media_gallery.dart';
@@ -100,6 +101,15 @@ class PresentStage extends StatelessWidget {
       );
     }
     if (!hasMaterials && !hasScene) {
+      // 交互探究环节却没配场景：给更贴切的指引，而不是笼统的「只有话术」。
+      if (section.kind == CoursewareSectionKind.interactiveScene) {
+        return const AppEmptyState(
+          icon: LucideIcons.shapes,
+          title: '这一环节还没有配置交互演示',
+          message: '这一环节是交互演示，但还没有填入演示内容。回到课件编辑页打开'
+              '场景编辑器，调好图形与对称轴后这里就会显示。',
+        );
+      }
       return const AppEmptyState(
         icon: LucideIcons.textSelect,
         title: '这一环节只有话术',

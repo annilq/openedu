@@ -593,20 +593,23 @@ def _set_kp_scenes(kp_id: uuid.UUID, scenes: list[dict] | None) -> None:
         s.commit()
 
 
-def test_create_attaches_kp_scene_to_interactive_section(client, teacher, drafted):
-    """知识点配了场景 → 起草出的交互环节带上它（课件也走统一解析入口）。
+def test_create_does_not_attach_kp_scene_to_interactive_section(client, teacher, drafted):
+    """知识点配了场景，但 AI 起草环节没显式带场景 → 不自动补（演示按配置显示）。
 
-    ADR-0061 §U.4「换个地方就没图」在课件侧的同一个根因：此前只有出题侧解析
-    知识点场景，课件全靠 AI 起草时顺便写——AI 没写就是没图。
+    演示页只渲染课件里**显式保存**的 ``scene``；建课件时不再把知识点默认场景
+    塞进每个交互环节，避免「我没配场景却显示了」的错觉。
     """
     _set_kp_scenes(teacher["kp"], [_REFLECTION_SCENE])
     body = _create(client, teacher["token"], teacher["kp"]).json()
     scene_section = next(s for s in body["sections"] if s["kind"] == "interactive_scene")
-    assert scene_section["scene"] == _REFLECTION_SCENE
+    assert scene_section["scene"] is None
 
 
 def test_attach_leaves_other_kinds_alone(client, teacher, drafted):
-    """只补交互环节：素材画廊 / 练习挂一份轴对称场景是噪音。"""
+    """非交互环节（素材画廊 / 练习）不带场景；场景只可能由 AI 在交互环节显式给。
+
+    建课件不再自动补场景，所以除起草环节自身携带外，其余环节 ``scene`` 一定为 None。
+    """
     _set_kp_scenes(teacher["kp"], [_REFLECTION_SCENE])
     body = _create(client, teacher["token"], teacher["kp"]).json()
     others = [s for s in body["sections"] if s["kind"] != "interactive_scene"]
@@ -622,10 +625,10 @@ def test_no_kp_scene_means_no_scene_not_a_fabricated_one(client, teacher, drafte
 
 
 def test_drafted_payload_scene_is_not_overridden(client, teacher, drafted, monkeypatch):
-    """AI 已经在 payload 里给了完整 SceneSpec → 不覆盖。
+    """AI 起草未在顶层给 ``scene`` 时，保持 ``None``，绝不臆造或回退补一份。
 
-    AI 按题面定制的场景比知识点默认场景**更具体**，换成默认等于把「这道题讲
-    什么」退回到「这个知识点一般讲什么」。
+    演示页只渲染显式保存的 ``scene``；起草环节若 AI 没给场景，落库即 ``None``，
+    教师需在编辑器里显式关联后才会在演示中出现。
     """
     _set_kp_scenes(teacher["kp"], [_REFLECTION_SCENE])
     monkeypatch.setattr(
@@ -646,25 +649,11 @@ def test_drafted_payload_scene_is_not_overridden(client, teacher, drafted, monke
     assert body["sections"][0]["payload"]["title"] == "本题的图"
 
 
-def test_attached_scene_is_a_snapshot(client, teacher, drafted):
-    """落库即快照：之后改知识点场景，**已生成的课件不变**。"""
-    _set_kp_scenes(teacher["kp"], [_REFLECTION_SCENE])
-    cw_id = _create(client, teacher["token"], teacher["kp"]).json()["id"]
-
-    _set_kp_scenes(teacher["kp"], [{**_REFLECTION_SCENE, "title": "改过的标题"}])
-
-    body = client.get(
-        f"/api/v1/courseware/{cw_id}", headers=auth_headers(teacher["token"])
-    ).json()
-    scene_section = next(s for s in body["sections"] if s["kind"] == "interactive_scene")
-    assert scene_section["scene"]["title"] == "轴对称"
-
-
 def test_teacher_can_clear_scene_without_it_being_refilled(client, teacher, drafted):
-    """教师清除场景后保存，不会被「自动填充」填回来。
+    """教师显式发送 ``scene=None`` 保存 → 落库为 None，不被任何逻辑回填。
 
-    这正是填充只做在**新建（AI 起草）**、不做在保存路径的原因：补在保存路径上，
-    「清除」按钮会永远失效（与 `copyWith` 用 ``??`` 导致 null 不生效同款 bug）。
+    课件从不在保存路径注入场景：教师「清除场景」按钮（发 ``null``）会真正生效，
+    演示页随后回落到「未配置交互演示」空态。
     """
     _set_kp_scenes(teacher["kp"], [_REFLECTION_SCENE])
     cw = _create(client, teacher["token"], teacher["kp"]).json()

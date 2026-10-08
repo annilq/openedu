@@ -201,15 +201,12 @@ class CoursewareSectionModel {
   List<CoursewareMaterialItem> get resolvedMaterials =>
       materials.isNotEmpty ? materials : _payloadMaterials;
 
-  /// 关联场景：优先顶层 [scene]，否则旧 interactiveScene 数据整份 payload 即
-  /// SceneSpec（向后兼容）；其余情况无场景返回 null。
-  Map<String, dynamic>? get resolvedScene {
-    if (scene != null) return scene;
-    if (kind == CoursewareSectionKind.interactiveScene && payload.isNotEmpty) {
-      return payload;
-    }
-    return null;
-  }
+  /// 关联场景：只取顶层 [scene]（教师在编辑器场景面板里**显式配置**的那一份）。
+  ///
+  /// 演示页严格「按配置显示」——只有教师真正关联过的场景才渲染；AI 起草或旧数据
+  /// 内嵌在 [payload] 里的 SceneSpec 不再被当作场景渲染（那会让「我没配却显示了」）。
+  /// 旧 payload-only 课件若想保留场景，需在编辑器里重新关联一次（落到顶层 [scene]）。
+  Map<String, dynamic>? get resolvedScene => scene;
 
   /// 未知 kind（后端新增了类型而前端还没登记）：渲染时给降级提示而不是白屏。
   bool get isUnknownKind => kind == null;
