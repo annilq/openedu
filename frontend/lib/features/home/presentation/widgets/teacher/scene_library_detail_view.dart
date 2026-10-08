@@ -182,11 +182,22 @@ class _InstanceCard extends StatelessWidget {
     this.onUnlink,
   });
 
-  /// 该实例实际配的图形名；没配或识别不出返回 null（不臆造一个名字）。
-  String? _figureLabel() {
+  /// 优先取「kind == 本页 kind」的场景——即把该 KP 关联到本页的那条。
+  /// 找不到（理论上不该发生，关联就是靠这条 kind 把 KP 拉进列表）才退回首个，
+  /// 避免同一 KP 配了多种场景时，卡片预览/图形标签显示成别的 kind，造成
+  /// 「场景页里看到另一个场景」的错觉（ADR-0074 关联列表）。
+  Map<String, dynamic>? _sceneForKind() {
     final scenes = kp.scenes;
     if (scenes == null || scenes.isEmpty) return null;
-    final scene = scenes.first;
+    return scenes.firstWhere(
+      (s) => (s['kind'] as String? ?? '') == fallbackKind,
+      orElse: () => scenes.first,
+    );
+  }
+
+  /// 该实例实际配的图形名；没配或识别不出返回 null（不臆造一个名字）。
+  String? _figureLabel(Map<String, dynamic>? scene) {
+    if (scene == null) return null;
     final inputs = scene['inputs'];
     if (inputs is! List) return null;
     for (final e in inputs) {
@@ -203,8 +214,8 @@ class _InstanceCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final text = AppTheme.textOf(context);
     final app = AppTheme.colorsOf(context);
-    final label = _figureLabel();
-    final scene = kp.scenes?.firstOrNull;
+    final scene = _sceneForKind();
+    final label = _figureLabel(scene);
     final card = Container(
       margin: const EdgeInsets.only(bottom: AppSpacing.sm),
       decoration: BoxDecoration(
