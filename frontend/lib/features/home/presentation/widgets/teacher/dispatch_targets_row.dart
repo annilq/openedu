@@ -7,7 +7,7 @@ import '../../../../../shared/widgets/app_focusable_action.dart';
 import '../../../../../shared/domain/models/class_model.dart';
 import '../../../../../shared/domain/models/user.dart';
 
-/// 布置任务的「派发目标」多选行：展示已选班级 / 学生 chip（可移除）+ 添加入口。
+/// 发布任务的「派发目标」多选行：展示已选班级 / 学生 chip（可移除）+ 添加入口。
 ///
 /// 取代原先的单学生选择器（ticket 18）：一次布置可勾选整班与一批学生批量派发。
 class DispatchTargetsRow extends StatelessWidget {

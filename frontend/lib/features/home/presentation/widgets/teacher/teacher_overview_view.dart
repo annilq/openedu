@@ -40,7 +40,7 @@ import 'workbench_glance.dart';
 class TeacherOverviewView extends ConsumerWidget {
   final void Function(TaskModel) onNavigateToReview;
 
-  /// 空态出口：跳到「布置任务」页。
+  /// 空态出口：跳到「任务」页发布任务。
   final VoidCallback? onNavigateToCreate;
 
   /// 工作台待办卡片点击：按 Tab 深链到任务列表（0=草稿 / 1=进行中 / 2=已完成）。
@@ -125,8 +125,8 @@ class TeacherOverviewView extends ConsumerWidget {
           child: AppEmptyState.inline(
             icon: LucideIcons.listTodo,
             title: '还没有任务记录',
-            message: '布置任务后，最近 4 条会显示在这里。',
-            actionLabel: onNavigateToCreate == null ? null : '去布置任务',
+            message: '发布任务后，最近 4 条会显示在这里。',
+            actionLabel: onNavigateToCreate == null ? null : '去发布任务',
             actionIcon: LucideIcons.plus,
             onAction: onNavigateToCreate,
           ),

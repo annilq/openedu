@@ -435,7 +435,7 @@ class _TeacherQuestionBankViewState
       }
     });
 
-    // 与概览 / 布置任务 / 错题本等教师页完全一致的页面骨架：
+    // 与概览 / 发布任务 / 错题本等教师页完全一致的页面骨架：
     // 整页 SingleChildScrollView + 居中约束 maxWidth 1080 + SectionTitle + 内容置于 AppCard。
     return SingleChildScrollView(
       controller: _scroll,
@@ -663,7 +663,7 @@ class _TeacherQuestionBankViewState
           ? AppEmptyState(
               icon: LucideIcons.library,
               title: '题库还是空的',
-              message: '去「布置任务」生成题目并加入题库，这里就会积累你的专属题集',
+              message: '去「任务」页生成题目并加入题库，这里就会积累你的专属题集',
               actionLabel: '刷新',
               onAction: _reload,
             )

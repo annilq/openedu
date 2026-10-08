@@ -1,7 +1,7 @@
 /// 资料库只读仓库接口（出题表单的知识点选择器数据源）。
 ///
 /// **为什么接口在 domain、实现在 data**（ADR 分层 R4：`presentation/` 不得 import
-/// `*/data/`）：布置任务表单要用 `KnowledgePointOption` 里的 `semester` 给知识点
+/// `*/data/`）：发布任务表单要用 `KnowledgePointOption` 里的 `semester` 给知识点
 /// 加学期后缀标注，presentation 直接 import `data/repositories/material_repository_impl.dart`
 /// 就是倒挂依赖。选项模型与接口属「业务契约」放domain，实现在 data。
 ///

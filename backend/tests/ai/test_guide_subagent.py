@@ -15,7 +15,7 @@
 
 - 写意图归 ``guide``（含真机原句），而**查询意图仍归 ``query``**——这是本 subagent
   最容易搞坏的地方：把词表放宽一点，它就开始抢查询；
-- 学生端看不到 ``guide``（没有布置任务的入口，也不能因此暴露写能力的暗示）；
+- 学生端看不到 ``guide``（没有发布任务的入口，也不能因此暴露写能力的暗示）；
 - ``priority`` 必须始终压过 ``query``（结构不变量，防止将来被调低而静默退化）；
 - 卡片载荷的形状与 target 值域：target 是**受控枚举**，不在值域内即视为契约破损。
 """
@@ -111,7 +111,7 @@ def test_question_intent_still_goes_to_question():
 
 
 def test_student_never_sees_guide():
-    """学生端没有布置任务入口，也不该被引导到一个它进不去的页面。"""
+    """学生端没有发布任务入口，也不该被引导到一个它进不去的页面。"""
     assert "guide" not in AgentRuntime.discover().visible_businesses("student")
     assert _route("帮我创建一个任务", "student") != "guide"
 
@@ -141,4 +141,4 @@ def test_text_says_why_not_just_no():
     events = _run_guide()
     finish = [ev for ev in events if ev.eventType == EVENT_ASSISTANT_MESSAGE]
     assert finish, "缺收尾 ASSISTANT_MESSAGE"
-    assert "布置任务" in finish[0].text
+    assert "发布任务" in finish[0].text

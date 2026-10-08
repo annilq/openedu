@@ -183,7 +183,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return switch (page) {
       OverviewPage() => TeacherOverviewView(
           onNavigateToReview: _navigateToReview,
-          // 空态出口：概览与任务页的「去布置任务」都落到同一个目的地。
+          // 空态出口：概览与任务页的「去发布任务」都落到同一个目的地。
           onNavigateToCreate: () => _go(const CreateTaskPage()),
           // 待办卡片深链：按 Tab 进任务列表（0=草稿箱 / 1=进行中 / 2=已完成）。
           onNavigateToList: (tab) => _go(TaskListPage(initialTab: tab)),

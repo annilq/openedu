@@ -18,10 +18,10 @@ import 'package:kids_learn/shared/presentation/shell_navigation.dart';
 Map<String, dynamic> _guideData() => {
       'type': 'guide',
       'result': {
-        'title': '布置任务',
-        'text': '到「布置任务」页选好题目，确认后发布给学生。',
+        'title': '发布任务',
+        'text': '到「任务」页，点右上角「发布任务」，选好题目确认后发布给学生。',
         'actions': [
-          {'label': '去布置任务', 'target': 'teacher_create_task'},
+          {'label': '去发布任务', 'target': 'teacher_create_task'},
           {'label': '先看看题库', 'target': 'teacher_question_bank'},
         ],
       },
@@ -33,7 +33,7 @@ void main() {
       final card = AssistantCard.fromData(_guideData())!;
       expect(card.kind, AssistantCardKind.guide);
       expect(card.actions.length, 2);
-      expect(card.actions.first.label, '去布置任务');
+      expect(card.actions.first.label, '去发布任务');
       expect(card.actions.first.target, 'teacher_create_task');
     });
 
@@ -41,22 +41,22 @@ void main() {
       final card = AssistantCard.fromData({
         'type': 'guide',
         'result': {
-          'title': '布置任务',
+          'title': '发布任务',
           'actions': [
             {'label': '好的', 'target': ''},
             {'target': 'teacher_create_task'},
-            {'label': '去布置任务', 'target': 'teacher_create_task'},
+            {'label': '去发布任务', 'target': 'teacher_create_task'},
           ],
         },
       })!;
       expect(card.actions.length, 1);
-      expect(card.actions.single.label, '去布置任务');
+      expect(card.actions.single.label, '去发布任务');
     });
 
     test('actions 非列表（类型歪）不炸，视为没有动作', () {
       final card = AssistantCard.fromData({
         'type': 'guide',
-        'result': {'title': '布置任务', 'actions': 'oops'},
+        'result': {'title': '发布任务', 'actions': 'oops'},
       })!;
       expect(card.actions, isEmpty);
       // 但说明文字还在——降级不丢内容。
@@ -104,10 +104,10 @@ void main() {
       )));
       await tester.pumpAndSettle();
 
-      expect(find.text('去布置任务'), findsOneWidget);
+      expect(find.text('去发布任务'), findsOneWidget);
       expect(find.text('先看看题库'), findsOneWidget);
 
-      await tester.tap(find.text('去布置任务'));
+      await tester.tap(find.text('去发布任务'));
       await tester.pumpAndSettle();
 
       // 回调只交回动作本身：**怎么退、退到哪是宿主的事**
@@ -123,8 +123,8 @@ void main() {
       await tester.pumpAndSettle();
 
       // 说明还在，出口不画。
-      expect(find.text('到「布置任务」页选好题目，确认后发布给学生。'), findsOneWidget);
-      expect(find.text('去布置任务'), findsNothing);
+      expect(find.text('到「任务」页，点右上角「发布任务」，选好题目确认后发布给学生。'), findsOneWidget);
+      expect(find.text('去发布任务'), findsNothing);
     });
 
     testWidgets('出口按钮键盘可达（Tab 到它 + Enter 激活）', (tester) async {
