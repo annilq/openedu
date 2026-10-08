@@ -46,6 +46,11 @@ class KnowledgePointSceneEditor extends ConsumerStatefulWidget {
 
   final List<Map<String, dynamic>>? initialScenes;
 
+  /// 关闭/保存后的出口：经 [HomeScreen] 的单一 `_go(back)` 回落，而非裸
+  /// `Navigator.pop`（弹窗态下 pop 只是关弹窗，页面态下 pop 会弹根栈 → 白屏，
+  /// ADR-0059）。null = 仍当弹窗用（知识点行旧路径），回落 `Navigator.pop` 关弹窗。
+  final VoidCallback? onBack;
+
   const KnowledgePointSceneEditor({
     super.key,
     required this.kpId,
@@ -54,6 +59,7 @@ class KnowledgePointSceneEditor extends ConsumerStatefulWidget {
     required this.grade,
     required this.semester,
     this.initialScenes,
+    this.onBack,
   });
 
   @override
@@ -116,6 +122,15 @@ class _KnowledgePointSceneEditorState
   @override
   void dispose() {
     super.dispose();
+  }
+
+  /// 关闭出口：页面态走 [onBack]（回落 `back` 页），弹窗态回落 `Navigator.pop`。
+  void _close() {
+    if (widget.onBack != null) {
+      widget.onBack!();
+      return;
+    }
+    if (mounted) Navigator.of(context).pop();
   }
 
   /// 由当前编辑态构造 ADR-0061 SceneSpec（kind=reflection）。
@@ -184,7 +199,7 @@ class _KnowledgePointSceneEditorState
       await ref
           .read(knowledgeManageProvider.notifier)
           .saveScenes(widget.kpId, [_buildSpec(editable: true)]);
-      if (mounted) Navigator.of(context).pop();
+      if (mounted) _close();
     } catch (e) {
       if (mounted) {
         setState(() => _saving = false);
@@ -241,7 +256,7 @@ class _KnowledgePointSceneEditorState
               icon: Icons.close,
               iconSize: 18,
               semanticLabel: '关闭',
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: _close,
             ),
           ],
         ),

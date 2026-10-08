@@ -9,7 +9,7 @@
 | ID | 标题 | Blocked by | Status |
 |----|------|-----------|--------|
 | 01 | 后端 `scene_template_config` 表 + 默认图形读写 + 库聚合 prune 标记 | — | done |
-| 02 | 导航：场景库内钻取收敛为单一 sealed 状态 | — | ready-for-agent |
+| 02 | 导航：场景库内钻取收敛为单一 sealed 状态 | — | done |
 | 03 | 前端库详情：演示图形画廊 + 默认标记 + 「新增场景」提醒 | 01 | ready-for-agent |
 | 04 | 前端库详情：关联知识点(1:N) + 标题编辑 + 解除关联 | 01, 02 | ready-for-agent |
 | 05 | 前端 KP 行移除「讲解」按钮 | 04 | ready-for-agent |

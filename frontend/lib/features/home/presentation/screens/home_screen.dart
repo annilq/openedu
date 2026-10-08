@@ -25,6 +25,7 @@ import '../providers/teacher_tasks_notifier.dart';
 import '../teacher_pages.dart';
 import '../widgets/teacher/scene_library_detail_view.dart';
 import '../widgets/teacher/scene_library_view.dart';
+import '../widgets/teacher/knowledge_point_scene_editor.dart';
 import '../screens/student_detail_screen.dart';
 import '../screens/teacher_task_review_screen.dart';
 import 'teacher_destinations.dart';
@@ -210,6 +211,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       SceneLibraryDetailPage(kind: final kind) => TeacherSceneLibraryDetailView(
           kind: kind,
           onBack: () => _go(const SceneLibraryPage()),
+        ),
+      SceneLibraryEditorPage(
+        kpId: final kpId,
+        kpName: final kpName,
+        subject: final subject,
+        grade: final grade,
+        semester: final semester,
+        initialScenes: final initialScenes,
+        back: final back,
+      ) =>
+        // 内容兜底走 Align(topCenter)+ConstrainedBox，不可 Center（ADR-003 内容兜底纪律）；
+        // 编辑器原本为 560 宽弹窗设计，作为页仍夹到 560 以保持既定排版。关闭走
+        // `onBack`（统一回 [back]），不裸 Navigator.pop 弹根栈。
+        Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              child: KnowledgePointSceneEditor(
+                kpId: kpId,
+                kpName: kpName,
+                subject: subject,
+                grade: grade,
+                semester: semester,
+                initialScenes: initialScenes,
+                onBack: () => _go(back),
+              ),
+            ),
+          ),
         ),
       ModelsPage() => const TeacherModelManagementScreen(),
       StudentManagementPage() => StudentManagementScreen(

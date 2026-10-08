@@ -147,6 +147,35 @@ class SceneLibraryDetailPage extends TeacherPage {
   const SceneLibraryDetailPage(this.kind);
 }
 
+/// 场景编辑器页（ADR-0074 T02）：在场景库详情里点某个关联知识点，经单一 sealed
+/// 状态打开，而非 `showDialog` / `Navigator.push` 直接开编辑器（ADR-0059 单一导航状态）。
+///
+/// 取代知识点行的 `showDialog(KnowledgePointSceneEditor)`：那写法把「当前该看哪个
+/// 页面」偷偷变成并列状态，漏清就弹根栈（白屏）。这里编辑器只是 `TeacherPage` 的
+/// 一个分支，关闭统一走 [KnowledgePointSceneEditor.onBack]，不裸 `Navigator.pop`。
+///
+/// [back] 记录从哪儿进来——场景库详情点进来回落 [SceneLibraryDetailPage]，知识点
+/// 管理行点进来回落资料库页；由调用方在 `_go` 时填好，编辑器自己不猜来源。
+class SceneLibraryEditorPage extends TeacherPage {
+  final String kpId;
+  final String kpName;
+  final String subject;
+  final int grade;
+  final String semester;
+  final List<Map<String, dynamic>>? initialScenes;
+  final TeacherPage back;
+
+  const SceneLibraryEditorPage({
+    required this.kpId,
+    required this.kpName,
+    required this.subject,
+    required this.grade,
+    required this.semester,
+    this.initialScenes,
+    required this.back,
+  });
+}
+
 /// 侧栏高亮用的「基础页」：审核页沿用它进来的那一页的高亮。
 ///
 /// 审核不是一个侧栏入口（否则「任务」会在用户从概览进来时错位高亮），而是某一页

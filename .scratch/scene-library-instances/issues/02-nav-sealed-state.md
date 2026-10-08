@@ -1,7 +1,19 @@
 # T02 — 导航：场景库内钻取收敛为单一 sealed 状态
 
 **Blocked by:** 无
-**Status:** ready-for-agent
+**Status:** done
+
+## 完成记录（2026-10-08）
+
+- `teacher_pages.dart` 新增 `SceneLibraryEditorPage(kpId, kpName, subject, grade, semester,
+  initialScenes, back)`——编辑器收编为 `TeacherPage` 一个分支，经 `HomeScreen` 单一 `_go`
+  switch 打开，不再由知识点行 `showDialog` 直接开。
+- `home_screen.dart` 新增 switch 分支，编辑器作为页渲染（Align(topCenter)+ConstrainedBox
+  maxWidth 560），`onBack: () => _go(back)` 回落，不裸 `Navigator.pop`。
+- `KnowledgePointSceneEditor` 新增可选 `onBack`：页面态走 `onBack`、弹窗态回落 `Navigator.pop`
+  （旧知识点行路径仍可工作，T05 移除按钮时一并清掉）。
+- 测试：`teacher_nav_single_source_test.dart` 增 2 例（home_screen 单一 switch 处理编辑器页
+  + `highlightFor` 对新页面态无并列高亮）。`flutter analyze` 0 issue，9 例全绿。
 
 ## What to build
 

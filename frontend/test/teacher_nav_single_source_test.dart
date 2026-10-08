@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:kids_learn/features/home/presentation/screens/home_screen.dart';
+import 'package:kids_learn/features/home/presentation/teacher_pages.dart';
 import 'package:kids_learn/shared/data/local/storage_service.dart';
 import 'package:kids_learn/shared/domain/models/models.dart';
 import 'package:kids_learn/shared/domain/providers/core_providers.dart';
@@ -236,6 +237,38 @@ void main() {
       expect(_activeLabels(tester), isEmpty,
           reason: '详情页是 drill-down，不应高亮任何顶级侧栏项（单一导航状态语义）');
       expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('T02：场景编辑器收编为 sealed 导航状态（ADR-0074）', () {
+    // ⚠️ 编辑器原来由知识点行 `showDialog(KnowledgePointSceneEditor)` 直接开——把
+    // 「当前该看哪个页面」偷变成并列状态，漏清就弹根栈（白屏）。现在它是
+    // `SceneLibraryEditorPage` 这一个分支，必须经 HomeScreen 的单一 `_go` switch 打开。
+    test('home_screen 经单一 switch 处理 SceneLibraryEditorPage（不散落 showDialog/push）',
+        () {
+      final src = File(_homeFile).readAsStringSync();
+      final inCode = src
+          .split('\n')
+          .where((l) =>
+              l.contains('SceneLibraryEditorPage(') &&
+              !l.trimLeft().startsWith('//'))
+          .toList();
+      expect(inCode, isNotEmpty,
+          reason: 'SceneLibraryEditorPage 必须经 HomeScreen 的 `_go` switch 打开，'
+              '不能由知识点行 showDialog / Navigator.push 直接开编辑器（ADR-0059）');
+    });
+
+    test('highlightFor 对新页面态无并列高亮处理（单一导航状态）', () {
+      final page = SceneLibraryEditorPage(
+        kpId: 'k1',
+        kpName: '轴对称',
+        subject: '数学',
+        grade: 4,
+        semester: '上学期',
+        back: const SceneLibraryPage(),
+      );
+      expect(highlightFor(page), same(page),
+          reason: '新页面态不应引入并列高亮逻辑，否则又回到 ADR-0059 前的漏清坑');
     });
   });
 }
