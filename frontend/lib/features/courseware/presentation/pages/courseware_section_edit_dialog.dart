@@ -92,7 +92,7 @@ class _SectionEditDialogState extends ConsumerState<_SectionEditDialog> {
         ? widget.section.scriptSegments
         : (widget.section.script.isNotEmpty
             ? [CoursewareScriptSegment(text: widget.section.script)]
-            : const [CoursewareScriptSegment()]);
+            : const <CoursewareScriptSegment>[]);
     _segCtls = [for (final s in seed) TextEditingController(text: s.text)];
     _segEmphasis = [for (final s in seed) s.emphasis];
 
@@ -247,7 +247,10 @@ class _SectionEditDialogState extends ConsumerState<_SectionEditDialog> {
     final text = AppTheme.textOf(context);
     return Dialog(
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 560, maxHeight: 640),
+        constraints: BoxConstraints(
+          maxWidth: 720,
+          maxHeight: (MediaQuery.of(context).size.height - 96).clamp(560, 820),
+        ),
         child: Padding(
           padding: const EdgeInsets.all(AppSpacing.md),
           child: Column(
@@ -270,12 +273,21 @@ class _SectionEditDialogState extends ConsumerState<_SectionEditDialog> {
                       AppTextAction(label: '添加一段', onPressed: _addSegment),
                       const SizedBox(height: AppSpacing.lg),
                       // 关联素材（统一表单，任意 kind 都能挂）。
-                      Text('关联素材', style: text.labelMedium),
+                      Row(
+                        children: [
+                          Text('关联素材', style: text.labelMedium),
+                          const Spacer(),
+                          AppPrimaryButton(
+                            label: '添加素材',
+                            fullWidth: false,
+                            onPressed: _addAsset,
+                          ),
+                        ],
+                      ),
                       const SizedBox(height: AppSpacing.sm),
                       ..._draft.materials.asMap().entries.map(
                             (e) => _materialRow(e.key, e.value, app, text),
                           ),
-                      AppTextAction(label: '添加素材', onPressed: _addAsset),
                       const SizedBox(height: AppSpacing.lg),
                       // 关联知识点场景（统一表单，任意 kind 都能挂）。
                       SectionSceneAssociationBlock(
@@ -334,8 +346,7 @@ class _SectionEditDialogState extends ConsumerState<_SectionEditDialog> {
           ),
           AppTextAction(
             label: '移除',
-            onPressed:
-                _segCtls.length > 1 ? () => _removeSegment(index) : null,
+            onPressed: () => _removeSegment(index),
           ),
         ],
       ),
