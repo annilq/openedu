@@ -182,12 +182,19 @@ class SceneLibraryEntry {
   /// 课件快照（那些只在它们自己的页面里渲染）。
   final int instanceCount;
 
+  /// 该 kind 在场景库里配置的**默认演示图形**（ADR-0074 T03）。
+  ///
+  /// 教师在此设的默认只作 seed：新关联的知识点按它初始化讲解图形，已关联的
+  /// 知识点不受影响（永不回写 `kp.scenes`）。null = 未配置，回落空占位。
+  final String? defaultFigureKey;
+
   const SceneLibraryEntry({
     required this.kind,
     required this.title,
     required this.defaults,
     this.associatedKnowledgePoints = const [],
     this.instanceCount = 0,
+    this.defaultFigureKey,
   });
 
   factory SceneLibraryEntry.fromJson(Map<String, dynamic> json) =>
@@ -202,6 +209,7 @@ class SceneLibraryEntry {
                     Map<String, dynamic>.from(e as Map)))
                 .toList(),
         instanceCount: json['instance_count'] as int? ?? 0,
+        defaultFigureKey: json['default_figure_key'] as String?,
       );
 }
 
@@ -256,4 +264,13 @@ abstract class MaterialRepository {
   /// 场景是**代码内置**（无 DB 表），所以这份清单回答的是「后端目前登记了哪些
   /// kind」；每条自带完整的 `defaults`，可直接喂给渲染器预览，前端不必再拼一份。
   Future<SceneLibrary> fetchSceneLibrary();
+
+  /// 设置某场景 kind 的默认演示图形（ADR-0074 T03）。
+  ///
+  /// [figureKey] 为 null = 清除默认，回落空占位。注意：这只改「库默认」这一处
+  /// 种子配置，绝不回写已关联的 `KnowledgePoint.scenes`（ADR-0073 快照不可变）。
+  Future<void> saveSceneDefaultFigure({
+    required String kind,
+    String? figureKey,
+  });
 }

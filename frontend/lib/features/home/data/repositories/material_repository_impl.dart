@@ -68,4 +68,15 @@ class MaterialRepositoryImpl implements MaterialRepository {
     final data = await _network.get('/materials/scene-library');
     return SceneLibrary.fromJson(decodeMap(data));
   }
+
+  @override
+  Future<void> saveSceneDefaultFigure({
+    required String kind,
+    String? figureKey,
+  }) async {
+    await _network.put(
+      '/materials/scene-library/$kind/default-figure',
+      body: {'default_figure_key': figureKey},
+    );
+  }
 }

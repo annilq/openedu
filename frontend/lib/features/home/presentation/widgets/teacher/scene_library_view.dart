@@ -12,6 +12,8 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../../shared/theme/app_theme.dart';
+import '../../../../../shared/widgets/app_actions.dart';
+import '../../../../../shared/widgets/app_dialog.dart';
 import '../../../../../shared/widgets/app_focusable_action.dart';
 import '../../../domain/repositories/material_repository.dart';
 import '../../../providers/knowledge_manage_provider.dart';
@@ -39,7 +41,19 @@ class TeacherSceneLibraryView extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('场景库', style: text.titleLarge),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text('场景库', style: text.titleLarge),
+                  ),
+                  // 「新增场景」只弹开发者提醒：场景（kind）是服务端硬编码资产，前端
+                  // 不直接新增（ADR-0074 T03）——避免误导教师以为能自由建场景类型。
+                  AppTextAction(
+                    label: '新增场景',
+                    onPressed: () => _showNewSceneHint(context),
+                  ),
+                ],
+              ),
               const SizedBox(height: AppSpacing.xs),
               Text(
                 '内置交互讲解场景由开发者随发版登记，这里列出每个场景被哪些知识点'
@@ -82,6 +96,21 @@ class TeacherSceneLibraryView extends ConsumerWidget {
           ),
         ),
       ],
+    );
+  }
+
+  /// 「新增场景」提醒：场景（kind）由开发者在后端注册表登记、随渲染器发版，前端
+  /// 不提供新建入口（ADR-0074 T03）。这里只提示去后端配置，不调任何写端点、不产生 kind。
+  void _showNewSceneHint(BuildContext context) {
+    AppDialog.alert(
+      context,
+      title: const Text('场景由开发者登记'),
+      content: const Text(
+        '内置交互讲解场景随版本发布、在后端注册表登记，前端不直接新增。'
+        '如需新场景，请在后端注册表配置该 kind 与图形，并随渲染器发版，'
+        '它会出现在这里。',
+      ),
+      confirmLabel: '知道了',
     );
   }
 }

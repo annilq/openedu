@@ -1,7 +1,16 @@
 # T03 — 前端库详情：演示图形画廊 + 默认标记 + 「新增场景」提醒
 
 **Blocked by:** 01
-**Status:** ready-for-agent
+**Status:** done
+
+## 完成记录（2026-10-08）
+
+- 前端模型 `SceneLibraryEntry` 增 `defaultFigureKey`（解析 `default_figure_key`，缺省 null 回落）。
+- repository 抽象 + 实现 `saveSceneDefaultFigure(kind, figureKey?)` → `PUT /materials/scene-library/{kind}/default-figure`。
+- `scene_library_view` 顶部「新增场景」按钮：仅 `AppDialog.alert` 开发者提醒，无写调用、不产生 kind（落实 ADR-0074 v4 场景服务端硬编码）。
+- `scene_library_detail_view` 新增 `_DefaultFigureSection`：复用 `ReflectionFigureGallery`（`selectedKey=defaultFigureKey`），
+  点图形调 `saveSceneDefaultFigure` 后 `ref.invalidate(sceneLibraryProvider)` 刷新；「清除默认」置 null。只 seed 新关联，不回写已落库。
+- 测试：新增 `scene_library_entry_parse_test.dart`（2 例：解析/缺省回落）。`flutter analyze` 0 issue。
 
 ## What to build
 
