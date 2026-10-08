@@ -1,20 +1,20 @@
 import 'package:flutter/widgets.dart';
-import 'package:flutter/material.dart' show Dialog, showDialog;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/widgets/app_actions.dart';
 import '../../../../../shared/widgets/app_checkbox.dart';
-import '../../../../../shared/widgets/app_dialog.dart';
 import '../../../../../shared/widgets/app_tags.dart';
 import '../../../providers/knowledge_manage_provider.dart';
-import 'knowledge_point_scene_editor.dart';
 
-/// 知识点目录里的一行：勾选 + 名称 + 状态 + 「讲解」/「课件」两个行内入口。
+/// 知识点目录里的一行：勾选 + 名称 + 状态 + 「课件」行内入口。
 ///
 /// 从 [MaterialKnowledgeManageView] 拆出来是为守 ADR-0058 的 400 行上限——主视图把每行
 /// 渲染内联会把文件推过线。行内的「课件」入口把整行对应的知识点抛给父级，由父级负责
 /// push 课件编辑器（导航归一处，避免散落多处写 push）。
+///
+/// 讲解入口已不再出现在本行：经 ADR-0074 v4，知识点与场景的关联、标题编辑都收拢到
+/// 场景库详情页（关联知识点 → 点开即编辑），本行只保留「课件」这一导航动作。
 class KnowledgePointRow extends ConsumerWidget {
   const KnowledgePointRow({
     super.key,
@@ -77,58 +77,16 @@ class KnowledgePointRow extends ConsumerWidget {
               ),
             ),
           if (kp.id != null) ...[
-            AppTextAction(
-              label: '讲解',
-              onPressed: () => _openSceneEditor(context, kp),
-            ),
             const SizedBox(width: AppSpacing.sm),
-            // 「课件」入口：与「讲解」并排，打开同一知识点的课件编辑器 / 演示。
+            // 「课件」入口：打开同一知识点的课件编辑器 / 演示；导航归一处，由父级
+            // push 课件编辑器（避免散落多处写 push，ADR-0059）。讲解入口已迁到场景库
+            // 详情页（ADR-0074 v4：关联知识点后点开即可编辑，本行不再重复提供）。
             AppTextAction(
               label: '课件',
               onPressed: () => onOpenCourseware(kp),
             ),
           ],
         ],
-      ),
-    );
-  }
-
-  /// 打开交互讲解编辑器（ADR-0061）：为已落库知识点编写默认交互讲解模板。
-  ///
-  /// 传**知识点自身的**学期（`kp.semester`）而非当前范围筛选值：范围可能是「整学年」
-  /// 并集（同一屏混着上/下学期的点），弹窗要显示这份模板实际作用的那个学期。
-  void _openSceneEditor(BuildContext context, dynamic kp) async {
-    // 该知识点未配置交互讲解时先提示去配置，避免编辑器一律回退到同一默认模板，
-    // 造成「每个点讲解都一样」的错觉。
-    final hasScenes = kp.scenes != null && kp.scenes!.isNotEmpty;
-    if (!hasScenes) {
-      final configure = await AppDialog.confirm(
-        context,
-        title: const Text('尚未配置讲解资源'),
-        content: const Text('该知识点还没有交互讲解模板，是否现在去配置？'),
-        cancelLabel: '稍后',
-        confirmLabel: '去配置',
-      );
-      if (configure != true) return;
-    }
-    if (!context.mounted) return;
-    showDialog(
-      context: context,
-      builder: (_) => Dialog(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 560),
-          child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            child: KnowledgePointSceneEditor(
-              kpId: kp.id!,
-              kpName: kp.name,
-              subject: km.subject,
-              grade: km.grade,
-              semester: kp.semester,
-              initialScenes: kp.scenes,
-            ),
-          ),
-        ),
       ),
     );
   }
