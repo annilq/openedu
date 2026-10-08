@@ -5,10 +5,8 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../../shared/domain/models/models.dart';
 import '../../../../../shared/theme/app_theme.dart';
-import '../../../../../shared/widgets/app_buttons.dart';
 import '../../../../../shared/widgets/app_card.dart';
 import '../../../../../shared/widgets/app_inputs.dart';
-import '../../../../../shared/widgets/app_loading.dart';
 import '../../../../../shared/widgets/app_scroll_page.dart';
 import '../../../../../shared/widgets/app_section_title.dart';
 import '../../../../../shared/widgets/app_toast.dart';
@@ -26,6 +24,7 @@ import 'teacher_task_preview_section.dart';
 import 'teacher_task_spec_row.dart';
 import 'directory_notice_bar.dart';
 import 'task_spec_row_data.dart';
+import 'teacher_task_form_actions.dart';
 import '../../../providers/home_provider.dart';
 
 /// 布置练习任务右栏：多学科行表单 + 一键均分 + 生成（ADR-0004）。
@@ -271,7 +270,13 @@ class _TeacherTaskFormViewState extends ConsumerState<TeacherTaskFormView> {
               const SizedBox(height: AppSpacing.xl),
               // 流式生成 / 落库期间：隐藏按钮；首张题卡到达前显示加载动画，
               // 之后仅展示题卡（题卡逐张浮现），不重复显示 spinner。
-              _buildActionArea(genState),
+              buildTaskFormActions(
+                genState: genState,
+                onConfirm: _confirm,
+                onRegenerate: _generate,
+                onDiscard: _discard,
+                onGenerate: _generate,
+              ),
               const SizedBox(height: AppSpacing.lg),
               if (genState is TaskGenPreview || genState is TaskGenReady)
                 TaskPreviewSection(state: genState),
@@ -362,33 +367,8 @@ class _TeacherTaskFormViewState extends ConsumerState<TeacherTaskFormView> {
     );
   }
 
-  /// 审阅闸门（ADR-0056）：生成结束**不自动落库、不自动跳转**，停在生成页等教师拍板。
-  ///
-  /// 三个出口各有明确语义：确认 = 落库为 draft 并进草稿页；重新生成 = 丢弃内存里的题卡重跑
-  /// （数据库里还没有任何行，不会产生第二份草稿）；放弃 = 回空闲态（同样无需删除调用）。
-  ///
-  /// 并排按钮一律走 `Wrap`：窄栏（<700）下 `Row` + 固定宽会压缩 [ShadButton]
-  /// 的内容盒导致 overflow（描边画在盒外，可见高 = 声明高 + 2×描边宽）。
-  Widget _buildReviewGate() {
-    return Wrap(
-      spacing: AppSpacing.md,
-      runSpacing: AppSpacing.sm,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        AppPrimaryButton(label: '确认并进入草稿', onPressed: _confirm),
-        ShadButton.outline(
-          onPressed: _generate,
-          leading: const Icon(LucideIcons.rotateCw, size: 16),
-          child: const Text('重新生成'),
-        ),
-        ShadButton.outline(
-          onPressed: _discard,
-          leading: const Icon(LucideIcons.x, size: 16),
-          child: const Text('放弃'),
-        ),
-      ],
-    );
-  }
+  /// 审阅闸门 / 动作区已抽到 `teacher_task_form_actions.dart`（ADR-0058 P4）：
+  /// 生成结束停在生成页等教师拍板，确认/重新生成/放弃三出口语义见该文件。
 
   /// 确认：把内存里的题卡落库为 draft 任务，成功后由 [ref.listen] 跳草稿页。
   void _confirm() {
@@ -400,30 +380,5 @@ class _TeacherTaskFormViewState extends ConsumerState<TeacherTaskFormView> {
     ref.read(taskGenNotifierProvider.notifier).discard();
   }
 
-  Widget _buildActionArea(TaskGenState genState) {
-    // 生成结束、等待确认：优先于忙碌判定——此时不该隐藏按钮，反而必须给出口。
-    if (genState is TaskGenReady) return _buildReviewGate();
-    final busy =
-        genState is TaskGenLoading ||
-        (genState is TaskGenPreview && genState.streaming);
-    final showSpinner =
-        busy &&
-        (genState is TaskGenPreview
-            ? (genState.questions.isEmpty && genState.liveIndex < 0)
-            : true);
-    if (showSpinner) {
-      final stage = genState is TaskGenPreview ? genState.stage : '';
-      return AppLoading(message: stage.isEmpty ? '正在准备出题…' : stage);
-    }
-    if (busy) {
-      // 题卡已在渲染：仅占位隐藏按钮，不显示 spinner。
-      return const SizedBox.shrink();
-    }
-    return Row(
-      children: [
-        Expanded(child: AppPrimaryButton(label: '生成任务', onPressed: _generate)),
-      ],
-    );
-  }
 }
 

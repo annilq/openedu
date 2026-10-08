@@ -8,10 +8,9 @@ import 'package:kids_learn/features/assistant/presentation/provider/assistant_no
 import 'package:kids_learn/features/assistant/presentation/widgets/assistant_message_list.dart';
 
 import '../../../../shared/theme/app_theme.dart';
-import '../../../../shared/widgets/app_card.dart';
-import '../../../../shared/widgets/app_focusable_action.dart';
 import '../../domain/models/courseware.dart';
 import '../../domain/models/courseware_section.dart';
+import 'section_practice_parts.dart';
 
 /// `practice` 课堂练习环节（ADR-0067 §3.6）。
 ///
@@ -166,12 +165,12 @@ class _SectionPracticeState extends ConsumerState<SectionPractice> {
           (context, constraints) => Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _QuestionPrompt(segments: widget.section.displaySegments),
+              PracticeQuestionPrompt(segments: widget.section.displaySegments),
               const SizedBox(height: AppSpacing.lg),
               if (!_started)
                 Align(
                   alignment: Alignment.centerLeft,
-                  child: _PracticeAction(
+                  child: PracticeAction(
                     key: const ValueKey('courseware-practice-generate'),
                     label: '出题',
                     icon: LucideIcons.sparkles,
@@ -182,7 +181,7 @@ class _SectionPracticeState extends ConsumerState<SectionPractice> {
                 _messageArea(constraints, messages),
                 if (_fallback != null) ...[
                   const SizedBox(height: AppSpacing.md),
-                  _PracticeNotice(message: _fallback!, error: true),
+                  PracticeNotice(message: _fallback!, error: true),
                 ],
                 const SizedBox(height: AppSpacing.lg),
                 if (_hasQuestion && !_correct) ...[
@@ -197,7 +196,7 @@ class _SectionPracticeState extends ConsumerState<SectionPractice> {
                   const SizedBox(height: AppSpacing.md),
                 ],
                 if (_hintRequested) ...[
-                  _PracticeNotice(
+                  PracticeNotice(
                     message:
                         '已给【${_hintLabel(_hintLevel)}】级提示（本练习不建任务、不记录作答）',
                   ),
@@ -229,7 +228,7 @@ class _SectionPracticeState extends ConsumerState<SectionPractice> {
       runSpacing: AppSpacing.sm,
       children: _hintLabels.keys.map((level) {
         final selected = _hintLevel == level;
-        return _PracticeAction(
+        return PracticeAction(
           label: _hintLabel(level),
           icon: selected ? LucideIcons.check : LucideIcons.chevronRight,
           fill: selected ? app.cta : app.surfaceRaised,
@@ -248,8 +247,8 @@ class _SectionPracticeState extends ConsumerState<SectionPractice> {
         runSpacing: AppSpacing.sm,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          const _PracticeNotice(message: '回答正确，可以继续下一题。'),
-          _PracticeAction(
+          const PracticeNotice(message: '回答正确，可以继续下一题。'),
+          PracticeAction(
             label: '再出一题',
             icon: LucideIcons.refreshCw,
             onPressed: streaming ? null : _requestQuestion,
@@ -260,7 +259,7 @@ class _SectionPracticeState extends ConsumerState<SectionPractice> {
     if (!_hasQuestion) {
       return Align(
         alignment: Alignment.centerLeft,
-        child: _PracticeAction(
+        child: PracticeAction(
           label: '重新出题',
           icon: LucideIcons.refreshCw,
           onPressed: streaming ? null : _requestQuestion,
@@ -271,7 +270,7 @@ class _SectionPracticeState extends ConsumerState<SectionPractice> {
       spacing: AppSpacing.md,
       runSpacing: AppSpacing.sm,
       children: [
-        _PracticeAction(
+        PracticeAction(
           key: const ValueKey('courseware-practice-correct'),
           label: '对',
           icon: LucideIcons.check,
@@ -279,7 +278,7 @@ class _SectionPracticeState extends ConsumerState<SectionPractice> {
           foreground: AppTheme.colorsOf(context).semanticPositiveFg,
           onPressed: streaming ? null : _markCorrect,
         ),
-        _PracticeAction(
+        PracticeAction(
           key: const ValueKey('courseware-practice-wrong'),
           label: '错',
           icon: LucideIcons.x,
@@ -292,138 +291,3 @@ class _SectionPracticeState extends ConsumerState<SectionPractice> {
   }
 }
 
-class _QuestionPrompt extends StatelessWidget {
-  const _QuestionPrompt({required this.segments});
-
-  final List<CoursewareScriptSegment> segments;
-
-  @override
-  Widget build(BuildContext context) {
-    final app = AppTheme.colorsOf(context);
-    final text = AppTheme.textOf(context);
-    return AppCard(
-      margin: EdgeInsets.zero,
-      color: app.semanticInfo,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '课堂提问',
-            style: text.labelSmall?.copyWith(color: app.semanticInfoFg),
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          if (segments.isEmpty)
-            Text(
-              '请根据下面的练习向学生提问。',
-              style: text.titleLarge?.copyWith(color: app.semanticInfoFg),
-            )
-          else
-            for (final seg in segments)
-              Padding(
-                padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-                child: Text(
-                  seg.text,
-                  style: text.titleLarge?.copyWith(
-                    color: app.semanticInfoFg,
-                    fontWeight: seg.emphasis == CoursewareScriptEmphasis.bold
-                        ? FontWeight.bold
-                        : null,
-                  ),
-                ),
-              ),
-        ],
-      ),
-    );
-  }
-}
-
-class _PracticeAction extends StatelessWidget {
-  const _PracticeAction({
-    super.key,
-    required this.label,
-    required this.icon,
-    required this.onPressed,
-    this.fill,
-    this.foreground,
-  });
-
-  final String label;
-  final IconData icon;
-  final VoidCallback? onPressed;
-  final Color? fill;
-  final Color? foreground;
-
-  @override
-  Widget build(BuildContext context) {
-    final app = AppTheme.colorsOf(context);
-    final text = AppTheme.textOf(context);
-    final background = fill ?? app.cta;
-    final color = foreground ?? app.onCta;
-    return AppFocusableAction(
-      onTap: onPressed,
-      enabled: onPressed != null,
-      semanticLabel: label,
-      hoverHighlight: true,
-      borderRadius: BorderRadius.circular(AppRadius.button),
-      child: Opacity(
-        opacity: onPressed == null ? 0.5 : 1,
-        child: Container(
-          constraints: BoxConstraints(
-            minWidth: AppLayout.tapTarget * 2,
-            minHeight: AppControl.heightLgOf(context),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-          decoration: BoxDecoration(
-            color: background,
-            borderRadius: BorderRadius.circular(AppRadius.button),
-            border: Border.all(
-              color: app.outline,
-              width: AppElevation.borderWidth,
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: AppSpacing.xl, color: color),
-              const SizedBox(width: AppSpacing.sm),
-              Text(label, style: text.labelLarge?.copyWith(color: color)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _PracticeNotice extends StatelessWidget {
-  const _PracticeNotice({required this.message, this.error = false});
-
-  final String message;
-  final bool error;
-
-  @override
-  Widget build(BuildContext context) {
-    final app = AppTheme.colorsOf(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.md,
-        vertical: AppSpacing.sm,
-      ),
-      decoration: BoxDecoration(
-        color: error ? app.semanticError : app.semanticPositive,
-        borderRadius: BorderRadius.circular(AppRadius.card),
-        border: Border.all(
-          color: app.outline,
-          width: AppElevation.borderWidthHairline,
-        ),
-      ),
-      child: Text(
-        message,
-        style: AppTheme.textOf(context).bodyMedium?.copyWith(
-          color: error ? app.semanticErrorFg : app.semanticPositiveFg,
-        ),
-      ),
-    );
-  }
-}

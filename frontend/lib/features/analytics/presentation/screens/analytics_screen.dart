@@ -23,6 +23,10 @@ import '../providers/analytics_notifier_provider.dart';
 /// - 孤儿错题（原题被硬删）以「未知」分组显式标注数量，不混入任何有效分组；
 /// - 空学期由后端收敛为「整学年」，界面原样展示；
 /// - 「年级」维度明确标注为**题目的年级**（非学生所在年级），与其余维度清晰区分。
+///
+/// 文件规模（ADR-0058）：本页是学情看板，作用域三态 × 四维切换 + 三份聚合并行渲染，
+/// 属合理大件，已正式登记基线 488（ticket 17 决策 B：保留、不拆小）。后续不得在
+/// 未拆分的前提下净增长——若要加维度/卡片，应把对应区块抽到子文件再调低基线。
 class AnalyticsScreen extends ConsumerStatefulWidget {
   const AnalyticsScreen({super.key});
 

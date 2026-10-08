@@ -108,7 +108,15 @@ void main() {
 /// _onAssignBulk 批量派发分支）；两处增长均为功能必需，已在提交正文说明理由）。
 /// 2026-10-08 票据 20（概览→教师工作台）：teacher_tasks_view 649→656（新增 initialTab
 /// 深链参数，承接概览待办卡片跳对应 Tab），功能必需、已在提交正文说明理由）。
-/// **只许下调。**
+/// 2026-10-08 票据 17（文件规模棘轮补登债务）：分文件定 A/B——
+///   · analytics_screen 488 → **B 确认保留**：学情看板属合理大件，正式登记基线并补 why（见该文件头注释）；
+///     本次补 why 注释 +4 行，基线同步 488→492（B 不拆小，仅登记真实行数）；
+///   · section_practice 429 → **A 拆小**：抽出 PracticeQuestionPrompt/PracticeAction/PracticeNotice 三子件到
+///     section_practice_parts.dart，主文件 293 行已回到 400 内，**整条移出 _baseline**；
+///   · teacher_task_form_view 429 → **A 拆小**：抽出审阅闸门/动作区到 teacher_task_form_actions.dart，
+///     主文件 384 行已回到 400 内，**整条移出 _baseline**。
+///   两处 A 拆小均为 ADR-0058 P4「区块/子件独立成文件」，净减为真实职责分离，不是硬压行数。
+/// **只许下调（除 B 类已登记的合理大件外）。**
 ///
 /// 拆分批次见 `docs/refactor/2026-09-21-flutter-ui-decomposition.md`（P0–P4）。
 const Map<String, int> _baseline = <String, int>{
@@ -122,9 +130,7 @@ const Map<String, int> _baseline = <String, int>{
   'features/home/presentation/widgets/teacher/teacher_question_card.dart': 511,
   'features/home/presentation/widgets/teacher/teacher_wrong_questions_view.dart': 442,
   'features/home/presentation/widgets/student_home.dart': 428,
-  'features/analytics/presentation/screens/analytics_screen.dart': 488,
-  'features/courseware/presentation/widgets/section_practice.dart': 429,
-  'features/home/presentation/widgets/teacher/teacher_task_form_view.dart': 429,
+  'features/analytics/presentation/screens/analytics_screen.dart': 492,
   'features/home/presentation/screens/teacher_task_review_screen.dart': 424,
   'features/students/presentation/screens/student_management_screen.dart': 777,
 };
