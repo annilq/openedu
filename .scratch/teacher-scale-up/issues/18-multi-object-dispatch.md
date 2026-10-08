@@ -17,7 +17,7 @@
 
 - [x] 选定实现路径：B（就地多选 chip 行，调 08 bulk_assign）
 - [x] 布置任务表单支持班级/学生多选并正确写入派发关系（调 08 `bulk_assign_task`）
-- [ ] 配套测试：多选派发后各对象均可作答、非对象 403（沿用 09 断言缝）——**未完成**：本轮只跑通全仓 399 项测试（全绿）与 `flutter analyze`（0 issue），未新增专属派发集成测试；该断言需后端 harness，留待单独 ticket/提交。
+- [x] 配套测试：多选派发后各对象均可作答、非对象 403（沿用 09 断言缝）——`tests/features/tasks/test_assignment_guard.py` 增 `test_bulk_dispatch_class_and_students_all_answerable`（整班+额外学生批量派发后各对象均可作答、非对象 403 且未落作答记录）与 `test_bulk_dispatch_empty_targets_returns_422`；全仓后端 776 项、前端 399 项测试全绿。
 
 **决策锚点:** ADR-0070 脱离全局学生态的派发语义；ticket 14 降级项，不在本轮 16 票内。
 
