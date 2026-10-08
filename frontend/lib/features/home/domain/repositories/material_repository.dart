@@ -138,6 +138,11 @@ class SceneLibraryKpRef {
   /// 「轴对称」还得逐个点开才知道各自配了哪个图形。
   final List<Map<String, dynamic>>? scenes;
 
+  /// prune 悬空标记（ADR-0074 v4 §4）：关联由 `kp.scenes` 的 kind **隐式表达**
+  /// （无关联表），KP 被清理后其 scenes 整行消失、库聚合自然不再列出它——故在当前
+  /// 隐式模型下该字段**恒为 false**，仅作预留给前端消费。为未来可能的显式关联表预留。
+  final bool kpMissing;
+
   const SceneLibraryKpRef({
     required this.id,
     required this.name,
@@ -145,6 +150,7 @@ class SceneLibraryKpRef {
     required this.grade,
     required this.semester,
     this.scenes,
+    this.kpMissing = false,
   });
 
   factory SceneLibraryKpRef.fromJson(Map<String, dynamic> json) =>
@@ -157,6 +163,7 @@ class SceneLibraryKpRef {
         scenes: (json['scenes'] as List?)
             ?.map((e) => Map<String, dynamic>.from(e as Map))
             .toList(),
+        kpMissing: json['kp_missing'] as bool? ?? false,
       );
 }
 

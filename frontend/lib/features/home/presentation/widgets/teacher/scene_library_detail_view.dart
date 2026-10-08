@@ -17,20 +17,27 @@ import '../../../../../shared/domain/figures.dart';
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/widgets/app_actions.dart';
 import '../../../../../shared/widgets/app_toast.dart';
+import '../../../../../shared/widgets/app_focusable_action.dart';
 import '../../../../../shared/widgets/scene_interpreter/reflection_figure_gallery.dart';
 import '../../../../../shared/widgets/scene_interpreter/scene_interpreter.dart';
 import '../../../providers/home_provider.dart';
 import '../../../domain/repositories/material_repository.dart';
 import '../../../providers/knowledge_manage_provider.dart';
+import 'scene_library_associate_dialog.dart';
 
 class TeacherSceneLibraryDetailView extends ConsumerWidget {
   final String kind;
   final VoidCallback onBack;
 
+  /// 点某个关联知识点时打开编辑器（走 sealed 导航，T02）：home_screen 在此把
+  /// 该知识点翻成 `SceneLibraryEditorPage`，关闭统一回本详情页。
+  final void Function(SceneLibraryKpRef kp) onOpenKp;
+
   const TeacherSceneLibraryDetailView({
     super.key,
     required this.kind,
     required this.onBack,
+    required this.onOpenKp,
   });
 
   @override
@@ -90,14 +97,32 @@ class TeacherSceneLibraryDetailView extends ConsumerWidget {
                     defaultFigureKey: entry.defaultFigureKey,
                   ),
                   const SizedBox(height: AppSpacing.md),
+                  // 关联知识点区（ADR-0074 T04）：列已关联 KP，并提供关联入口。
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text('关联的知识点', style: text.titleSmall),
+                      ),
+                      AppTextAction(
+                        label: '关联知识点',
+                        onPressed: () => _showAssociate(ref, context, entry),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
                   if (entry.associatedKnowledgePoints.isEmpty)
                     _DetailEmpty(
                       message: '还没有知识点引用 ${entry.title}',
-                      hint: '在下方「关联知识点」里把某个知识点关联进来，它会出现在这里。',
+                      hint: '点上方「关联知识点」把它关联进来，它会出现在这里。',
                     )
                   else
                     for (final kp in entry.associatedKnowledgePoints)
-                      _InstanceCard(kp: kp, fallbackKind: kind),
+                      _InstanceCard(
+                        kp: kp,
+                        fallbackKind: kind,
+                        onOpen: () => onOpenKp(kp),
+                        onUnlink: () => _unlink(ref, context, kp),
+                      ),
                 ],
               );
             },
@@ -106,13 +131,55 @@ class TeacherSceneLibraryDetailView extends ConsumerWidget {
       ],
     );
   }
+
+  /// 解除关联（ADR-0074 T04 §4）：从 KP 的 `scenes` 移除本 kind 条目，经现有
+  /// `PATCH …/scenes` 保存；场景本身不被级联删除（ADR-0073 快照不变）。
+  Future<void> _unlink(WidgetRef ref, BuildContext context, SceneLibraryKpRef kp) async {
+    final kept = (kp.scenes ?? [])
+        .where((s) => (s['kind'] as String? ?? '') != kind)
+        .toList();
+    try {
+      await ref.read(materialRepositoryProvider).updateKnowledgePointScenes(
+        kpId: kp.id,
+        scenes: kept,
+      );
+      ref.invalidate(sceneLibraryProvider);
+      if (!context.mounted) return;
+      AppToast.show(context, '已解除关联');
+    } catch (e) {
+      if (!context.mounted) return;
+      AppToast.show(context, '解除失败：$e');
+    }
+  }
+
+  /// 打开「关联知识点」选择器（ADR-0074 T04 §3）：从教师已有、且未关联本 kind 的
+  /// 知识点里挑一个，写一份 seed 场景进其 `scenes`。
+  void _showAssociate(WidgetRef ref, BuildContext context, SceneLibraryEntry entry) {
+    showAssociateKpDialog(
+      context,
+      entry: entry,
+      associatedIds:
+          entry.associatedKnowledgePoints.map((e) => e.id).toSet(),
+      onAssociated: () {
+        ref.invalidate(sceneLibraryProvider);
+        AppToast.show(context, '已关联知识点');
+      },
+    );
+  }
 }
 
 class _InstanceCard extends StatelessWidget {
   final SceneLibraryKpRef kp;
   final String fallbackKind;
+  final VoidCallback onOpen;
+  final VoidCallback? onUnlink;
 
-  const _InstanceCard({required this.kp, required this.fallbackKind});
+  const _InstanceCard({
+    required this.kp,
+    required this.fallbackKind,
+    required this.onOpen,
+    this.onUnlink,
+  });
 
   /// 该实例实际配的图形名；没配或识别不出返回 null（不臆造一个名字）。
   String? _figureLabel() {
@@ -137,7 +204,7 @@ class _InstanceCard extends StatelessWidget {
     final app = AppTheme.colorsOf(context);
     final label = _figureLabel();
     final scene = kp.scenes?.firstOrNull;
-    return Container(
+    final card = Container(
       margin: const EdgeInsets.only(bottom: AppSpacing.sm),
       decoration: BoxDecoration(
         color: app.surface,
@@ -153,29 +220,79 @@ class _InstanceCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(kp.name, style: text.titleSmall),
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              '${kp.grade}年级${kp.subject} · ${kp.semester}',
-              style: text.bodySmall?.copyWith(color: app.onSurfaceVariant),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(kp.name, style: text.titleSmall),
+                      const SizedBox(height: AppSpacing.xs),
+                      Text(
+                        '${kp.grade}年级${kp.subject} · ${kp.semester}',
+                        style: text.bodySmall
+                            ?.copyWith(color: app.onSurfaceVariant),
+                      ),
+                      if (kp.kpMissing)
+                        Padding(
+                          padding: const EdgeInsets.only(top: AppSpacing.xs),
+                          child: Text(
+                            '关联的知识点已不存在',
+                            style: text.bodySmall
+                                ?.copyWith(color: app.error),
+                          ),
+                        ),
+                      if (label != null) ...[
+                        const SizedBox(height: AppSpacing.xs),
+                        Text('图形：$label', style: text.bodySmall),
+                      ],
+                    ],
+                  ),
+                ),
+                // 解除关联（ADR-0074 T04）：从 KP 的 scenes 移除该 kind 条目；
+                // prune 悬空项也保留此入口以便清理聚余。
+                if (onUnlink != null)
+                  AppTextAction(
+                    label: '解除关联',
+                    color: app.error,
+                    semanticLabel: '解除关联',
+                    onPressed: onUnlink,
+                  ),
+              ],
             ),
-            if (label != null) ...[
-              const SizedBox(height: AppSpacing.xs),
-              Text('图形：$label', style: text.bodySmall),
-            ],
             if (scene != null) ...[
               const SizedBox(height: AppSpacing.sm),
+              // 预览缩略图：只画画布本身，摘掉交互外壳（播放条/编辑滑块/讲解词）。
+              // ReflectionSceneWidget 以约束 maxWidth 作正方形边长（画布 140×140），
+              // 但其下方还有状态条 + 播放条 + 3 个轴滑块 + 讲解词，整块约需 437px；
+              // 若把预览钉死 140 高，会触发 RenderFlex 溢出约 297px（ADR-0074 T04
+              // 渲染修复）。这里只限宽（140），让预览按自然高度（画布 + 状态条）
+              // 排布——既不溢出，也保留「该知识点配了什么图形」的预览。
               SizedBox(
-                height: 140,
+                width: 140,
                 child: SceneInterpreter(
                   kind: (scene['kind'] as String?) ?? fallbackKind,
-                  spec: scene,
+                  // 保留 figure/points/axis（学生真实配置），只摘掉交互外壳。
+                  spec: <String, dynamic>{
+                    ...scene,
+                    'editable': false,
+                    'controls': const <String, dynamic>{},
+                    'narrative': null,
+                  },
                 ),
               ),
             ],
           ],
         ),
       ),
+    );
+    // 整卡可点：打开该知识点的讲解编辑器（走 sealed 导航）。内层「解除关联」
+    // 自身也是可聚焦动作，点击它只会触发自身、不会冒泡到整卡（ADR-0046）。
+    return AppFocusableAction(
+      onTap: onOpen,
+      semanticLabel: '编辑 ${kp.name} 的讲解',
+      child: card,
     );
   }
 }

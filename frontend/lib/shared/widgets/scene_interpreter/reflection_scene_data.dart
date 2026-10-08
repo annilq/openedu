@@ -163,5 +163,65 @@ class ReflectionSceneData {
   }
 }
 
+/// 构造一个轴对称（reflection）场景的 SceneSpec（ADR-0061 §O）。
+///
+/// 抽成顶层函数：知识点编辑器保存、场景库「关联知识点」seed 注入、未来批量生成
+/// 都从这一处取结构，避免 `_buildSpec` 与 seed 两处镜像（顶点/轴参数漂移会让
+/// 「库里看着正常、题里却不同」）。
+Map<String, dynamic> buildReflectionSceneSpec({
+  required String kind,
+  required String title,
+  required double axisAngle,
+  required double axisX,
+  required double axisY,
+  required String figureKey,
+  required List<List<double>> points,
+  bool editable = true,
+}) =>
+    <String, dynamic>{
+      'kind': kind,
+      'title': title,
+      'inputs': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'key': 'axisAngle',
+          'label': '对称轴角度',
+          'value': axisAngle,
+          'min': 0,
+          'max': 180,
+          'step': 1,
+          'unit': '度',
+        },
+        <String, dynamic>{
+          'key': 'axisX',
+          'label': '对称轴水平',
+          'value': axisX,
+          'min': 0.3,
+          'max': 0.7,
+          'step': 0.01,
+          'unit': '比例',
+        },
+        <String, dynamic>{
+          'key': 'axisY',
+          'label': '对称轴垂直',
+          'value': axisY,
+          'min': 0.3,
+          'max': 0.7,
+          'step': 0.01,
+          'unit': '比例',
+        },
+        <String, dynamic>{'key': 'figure', 'label': '图形', 'value': figureKey},
+        <String, dynamic>{'key': 'points', 'label': '顶点', 'value': points},
+      ],
+      'controls': <String, dynamic>{
+        'play': true,
+        'pause': true,
+        'scrub': true,
+        'speed': true,
+      },
+      'narrative': '这是一个轴对称图形，中间虚线是它的对称轴。点击播放对折，两侧完全重合就是轴对称图形；旋转或平移对称轴偏离真正对称线则不会重合。',
+      'outputs': <String, dynamic>{'isAxisymmetric': true},
+      'editable': editable,
+    };
+
 // 本文件是「数据与几何」层；渲染/交互/绘制在 `reflection_scene.dart`。
 // 拆分的理由：ADR-0058 的 400 行棘轮——把数据模型与渲染器放一个文件会顶破基线。
