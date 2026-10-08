@@ -385,7 +385,11 @@ ADR-0061 决策 7 的后端 DATA 帧 + 前端渲染分派已打通（任务 ②�
 用户澄清了第3 步的真实需求：**不是**让程序判定「哪几个选项轴对称」并报答案（我原先设想的集合语义新 kind），而是「每个选项都能单独演示、用户自己拖轴验证」。核查发现该能力**早已内建**（`_isAxisymmetric` 吃任意多边形 + 3 个轴slider + 实时「✓ 是轴对称 / ✗ 不是」判定），缺的只有「**图形切换**」与「**选项各自的几何**」。
 
 - **纯顶点驱动，不内置图形概念**（用户决策）：渲染器不再认识「房子/风筝」。图形顶点下沉为**数据**：
-  - `frontend/lib/shared/domain/figures.dart` + `backend/app/features/materials/scene_figures.py` —— 同一份几何的两个副本（运行时后端读不到前端源码）。`ReflectionFigure` 枚举删除，退化为教师面板的「预设选择器」。
+  - `backend/app/features/materials/scene_figures.py` —— **唯一手写事实源**；`frontend/lib/shared/domain/figures.dart` 由它**构建期生成**（`frontend/scripts/gen_figures.py`，ADR-0073 遗留 4 已实施）。
+    > 本节原文写的是「同一份几何的两个副本」——那是 2026-10 的状态。手写两份的唯一
+    > 后果是静默漂移，而漂移会改判定，所以已改为「后端单一手写源 + 生成前端常量」
+    > （未走运行时拉取：整库画廊必须离线可用）。改顶点只改后端，然后重跑生成脚本。
+    > `ReflectionFigure` 枚举删除，退化为教师面板的「预设选择器」。
   - `ReflectionSceneData` 核心变成 `points`，`fromSpec` 优先级：`inputs[].points`（后端下发）→ `figure` 预设 key（兼容旧 spec）→ 房子兜底。**永不出现空场景**。
   - ⚠️ **副本漂移会改判定**（学生拖轴永远对不上）→ `test_scene_figures.py` 做**跨语言逐字比对**（正则解析 Dart 源与 Python 侧对齐），并钉住「`para` 必须保持错切（上边中点 0.50 / 下边 0.62）——它就是那道『不是轴对称』的干扰项，被修正成矩形题目就废了」。
 - **选项组 `optionGroup`**：`extract_option_group(options)` 逐项识别图形 → 附**该图形自己的顶点 + 默认轴角度**；`build_scene_spec_for_question` 把它挂在 spec **顶层**（不放`inputs`——那会被当单图输入解析）。实测同一模板 + 4 选项 → A房子(5顶点,90°) / B风筝(4,90°) / C箭头(7,**0°**) / D平行四边形(4,90°)。

@@ -139,6 +139,27 @@ docker compose up --build       # 启动 PostgreSQL + backend，后端暴露 800
 | 静态分析（零 issue 门禁） | `flutter analyze` |
 | 测试 | `flutter test` |
 | 设计系统自检 | 运行 `lib/dev/theme_preview.dart` 页面核对令牌一致性 |
+| 重新生成图形几何 | `python3 frontend/scripts/gen_figures.py`（改了 `backend/.../scene_figures.py` 顶点后必跑） |
+
+### 跨语言生成物（目录 `frontend/scripts/`）
+
+有一类文件**前端要用、但事实源在后端**：顶点几何、场景定义这类数据，若前后端各
+手写一份，漂移只是时间问题（而且漂移会让「是否轴对称」判定变错，学生拖轴永远对
+不上）。对策是**后端单一手写源 + 构建期生成前端常量**，而不是运行时拉取——整库
+画廊必须离线可用（tablet-first / 离线教室）。
+
+| 脚本 | 生成什么 | 源 | 什么时候必须跑 |
+|------|----------|-----|----------------|
+| `gen_figures.py` | `frontend/lib/shared/domain/figures.dart` | `backend/app/features/materials/scene_figures.py` 的 `FIGURES` | **改了任何顶点 / 轴角度 / 名称之后** |
+
+```bash
+python3 frontend/scripts/gen_figures.py           # 生成（幂等，重复跑无 diff）
+python3 frontend/scripts/gen_figures.py --check    # 只校验是否过期，过期退出码 1
+```
+
+忘了跑不会有任何报错提示——前端照旧渲染旧几何，直到某道题判定出错才被发现。所以
+`--check` 已接进后端测试（`test_scene_figures.py::test_frontend_figures_are_not_stale`），
+过期即红灯。
 
 ### 平台目录补丁（目录 `frontend/scripts/`）
 
