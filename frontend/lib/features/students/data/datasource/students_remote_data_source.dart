@@ -11,7 +11,6 @@ class StudentsRemoteDataSource {
     required String password,
     required String displayName,
     int? grade,
-    Map<String, dynamic>? interests,
   }) async {
     final body = <String, dynamic>{
       'username': username,
@@ -19,8 +18,6 @@ class StudentsRemoteDataSource {
       'display_name': displayName,
     };
     if (grade != null) body['grade'] = grade;
-    // 兴趣画像：全空则不下传（后端 interests 默认 None）。
-    if (interests != null) body['interests'] = interests;
     return await _network.post('/students', body: body);
   }
 
@@ -28,12 +25,10 @@ class StudentsRemoteDataSource {
     required String studentId,
     String? displayName,
     int? grade,
-    Map<String, dynamic>? interests,
   }) async {
     final body = <String, dynamic>{};
     if (displayName != null) body['display_name'] = displayName;
     if (grade != null) body['grade'] = grade;
-    if (interests != null) body['interests'] = interests;
     return await _network.put('/students/$studentId', body: body);
   }
 

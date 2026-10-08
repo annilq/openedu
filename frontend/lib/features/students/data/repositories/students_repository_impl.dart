@@ -12,14 +12,12 @@ class StudentsRepositoryImpl implements StudentsRepository {
     required String password,
     required String displayName,
     int? grade,
-    InterestsModel? interests,
   }) async {
     final data = await _dataSource.createChild(
       username: username,
       password: password,
       displayName: displayName,
       grade: grade,
-      interests: interests?.isEmpty ?? true ? null : interests!.toJson(),
     );
     return UserModel.fromJson(data);
   }
@@ -29,13 +27,11 @@ class StudentsRepositoryImpl implements StudentsRepository {
     required String studentId,
     String? displayName,
     int? grade,
-    InterestsModel? interests,
   }) async {
     final data = await _dataSource.updateChild(
       studentId: studentId,
       displayName: displayName,
       grade: grade,
-      interests: interests?.isEmpty ?? true ? null : interests!.toJson(),
     );
     return UserModel.fromJson(data);
   }

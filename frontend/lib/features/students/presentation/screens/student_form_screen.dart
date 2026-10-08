@@ -8,7 +8,6 @@ import '../../../../shared/widgets/app_motion.dart';
 import '../../../../shared/widgets/app_top_bar.dart';
 import '../../providers/students_provider.dart';
 import '../providers/students_notifier.dart';
-import '../widgets/interest_picker.dart';
 import '../../../../shared/widgets/app_buttons.dart';
 import '../../../../shared/widgets/app_card.dart';
 
@@ -17,9 +16,9 @@ enum ChildFormMode { create, edit }
 
 /// 教师端：创建 / 编辑学生资料页（F-102 + WF-5）。
 ///
-/// - create：昵称/账号/密码/年级/兴趣，提交走 createChild。
-/// - edit：回填昵称/年级/兴趣；账号与密码锁定不可编辑（避免改登录凭证），
-///   提交走 updateChild（仅 display_name/grade/interests）。
+/// - create：昵称/账号/密码/年级，提交走 createChild。
+/// - edit：回填昵称/年级；账号与密码锁定不可编辑（避免改登录凭证），
+///   提交走 updateChild（仅 display_name/grade）。
 /// 保存成功后调用 [onSaved]（由调用方负责刷新列表与关闭页面）。
 class StudentFormScreen extends ConsumerStatefulWidget {
   final ChildFormMode mode;
@@ -47,7 +46,6 @@ class _StudentFormScreenState extends ConsumerState<StudentFormScreen> {
   final _usernameCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   int _grade = 2;
-  InterestsModel? _interests;
   bool _submitting = false;
   String? _error;
 
@@ -61,7 +59,6 @@ class _StudentFormScreenState extends ConsumerState<StudentFormScreen> {
       _nameCtrl.text = c.displayName;
       _usernameCtrl.text = c.username;
       _grade = c.grade ?? 2;
-      _interests = c.interests;
     }
   }
 
@@ -78,7 +75,7 @@ class _StudentFormScreenState extends ConsumerState<StudentFormScreen> {
     final name = _nameCtrl.text.trim();
 
     if (_isEdit) {
-      // 编辑：仅昵称/年级/兴趣可改，账号密码锁定。
+      // 编辑：仅昵称/年级可改，账号密码锁定。
       if (name.isEmpty) {
         setState(() => _error = '昵称不能为空');
         return;
@@ -108,7 +105,6 @@ class _StudentFormScreenState extends ConsumerState<StudentFormScreen> {
         studentId: widget.child!.id,
         displayName: name,
         grade: _grade,
-        interests: _interests,
       );
     } else {
       saved = await notifier.createChild(
@@ -116,7 +112,6 @@ class _StudentFormScreenState extends ConsumerState<StudentFormScreen> {
         password: _passwordCtrl.text,
         displayName: name,
         grade: _grade,
-        interests: _interests,
       );
     }
 
@@ -188,16 +183,6 @@ class _StudentFormScreenState extends ConsumerState<StudentFormScreen> {
                           value: _grade,
                           onChanged: (v) => setState(() => _grade = v),
                         ),
-                        const SizedBox(height: AppSpacing.md),
-                        // 2px 墨黑硬分隔线（ADR-0044：borderWidth 即分隔线宽）。
-                        Container(
-                            height: AppElevation.borderWidth, color: AppBrutal.ink),
-                        const SizedBox(height: AppSpacing.md),
-                        InterestPicker(
-                          initial: _interests,
-                          onChanged: (v) => setState(() => _interests = v),
-                        ),
-                        const SizedBox(height: AppSpacing.md),
                         if (_error != null) ...[
                           Text(_error!, style: TextStyle(color: app.error)),
                           const SizedBox(height: AppSpacing.md),

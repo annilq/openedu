@@ -19,7 +19,6 @@ import 'class_picker.dart';
 import 'dispatch_targets_row.dart';
 import '../../../domain/repositories/material_repository.dart'
     show KnowledgePointOption;
-import 'teacher_task_interest_section.dart';
 import 'teacher_task_preview_section.dart';
 import 'teacher_task_spec_row.dart';
 import 'directory_notice_bar.dart';
@@ -36,7 +35,7 @@ import '../../../providers/home_provider.dart';
 /// 刷新与进草稿页全部由 `HomeScreen` 负责——本页只在「布置任务」这一个侧栏索引挂载，
 /// 教师一切走就被卸载，挂在这里的收尾逻辑会连人一起消失（成功不提示、失败静默）。
 ///
-/// 三个区块各自成文件（规格行 / 兴趣 / 预览）：本文件只留**表单状态与出口**
+/// 三个区块各自成文件（规格行 / 预览）：本文件只留**表单状态与出口**
 /// （行数据、总题数、模型、生成·确认·放弃）。区块挪走后本文件才装得下 ADR-0058
 /// 的 400 行——挪之前是 810 行，其中 250 行是三个区块的排版。行的数据与视图分别
 /// 在 `task_spec_row_data.dart` / `teacher_task_spec_row.dart`。
@@ -54,10 +53,6 @@ class _TeacherTaskFormViewState extends ConsumerState<TeacherTaskFormView> {
   List<UserModel> _selectedStudents = [];
   final _totalCtrl = TextEditingController(text: '4');
   final _titleCtrl = TextEditingController(text: '今日练习');
-
-  // 兴趣题模式（WF-4）：开=聚焦所选兴趣主题；关=后端自动轻融入学生画像。
-  bool _useInterestMode = false;
-  final Set<String> _focusThemes = {};
 
   // 多模型（票据 08）：出题时自选模型；null = 后端自动（默认/全局）。
   String? _modelId;
@@ -172,12 +167,6 @@ class _TeacherTaskFormViewState extends ConsumerState<TeacherTaskFormView> {
   List<TaskSpecModel> _currentSpecs(int grade) =>
       _rows.map((r) => r.toSpec(grade)).toList();
 
-  /// 兴趣题模式（WF-4）：开启且至少选一个主题才下传聚焦主题；否则 null = 后端自动轻融入。
-  List<String>? _currentFocus() =>
-      _useInterestMode && _focusThemes.isNotEmpty
-          ? _focusThemes.toList()
-          : null;
-
   void _generate() {
     if (_selectedClasses.isEmpty && _selectedStudents.isEmpty) {
       AppToast.show(context, '请先选择要布置的班级或学生');
@@ -201,7 +190,6 @@ class _TeacherTaskFormViewState extends ConsumerState<TeacherTaskFormView> {
           studentIds: _selectedStudents.map((s) => s.id).toList(),
           title: _titleCtrl.text,
           specs: specs,
-          focusInterest: _currentFocus(),
           model: _modelId,
           weakExampleIds: _weakExampleIds,
         );
@@ -265,8 +253,6 @@ class _TeacherTaskFormViewState extends ConsumerState<TeacherTaskFormView> {
                 onChanged: (v) => setState(() => _modelId = v),
                 showDefaultOption: false,
               ),
-              const SizedBox(height: AppSpacing.xl),
-              _buildInterestSection(),
               const SizedBox(height: AppSpacing.xl),
               // 流式生成 / 落库期间：隐藏按钮；首张题卡到达前显示加载动画，
               // 之后仅展示题卡（题卡逐张浮现），不重复显示 spinner。
@@ -344,27 +330,6 @@ class _TeacherTaskFormViewState extends ConsumerState<TeacherTaskFormView> {
     );
     final notice = async.valueOrNull?.notice ?? '';
     return notice.isEmpty ? null : notice;
-  }
-
-  Widget _buildInterestSection() {
-    return TaskInterestSection(
-      enabled: _useInterestMode,
-      onEnabledChanged:
-          (v) => setState(() {
-            _useInterestMode = v;
-            if (!v) _focusThemes.clear();
-          }),
-      selectedThemes: _focusThemes,
-      onToggleTheme:
-          (t) => setState(() {
-            if (_focusThemes.contains(t)) {
-              _focusThemes.remove(t);
-            } else {
-              _focusThemes.add(t);
-            }
-          }),
-      student: _selectedStudents.firstOrNull,
-    );
   }
 
   /// 审阅闸门 / 动作区已抽到 `teacher_task_form_actions.dart`（ADR-0058 P4）：

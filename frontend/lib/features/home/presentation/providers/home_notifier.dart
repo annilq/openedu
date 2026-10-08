@@ -179,7 +179,6 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
     List<String> classIds = const [],
     List<String> studentIds = const [],
     required List<TaskSpecModel> specs,
-    List<String>? focusInterest,
     String? model,
     List<String>? weakExampleIds,
   }) async {
@@ -198,7 +197,6 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
         TaskGenerateReq(
           specs: specs,
           model: model,
-          focusInterest: focusInterest,
           studentId: studentId,
           weakExampleIds: weakExampleIds,
         ),
@@ -240,7 +238,6 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
           studentId: studentId,
           title: title,
           specs: specs,
-          focusInterest: focusInterest,
           model: model,
           weakExampleIds: _weakExampleIds,
         ),
@@ -335,7 +332,6 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
     String? studentId,
     required String title,
     required List<TaskSpecModel> specs,
-    List<String>? focusInterest,
     String? model,
     List<String>? weakExampleIds,
   }) {
@@ -344,8 +340,6 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
       'title': title,
       'specs': specs.map((s) => s.toJson()).toList(),
     };
-    // 兴趣题模式（WF-4）：显式聚焦主题放请求顶层；缺省=后端自动轻融入画像。
-    if (focusInterest != null) body['focus_interest'] = focusInterest;
     // 多模型（票据 08）：教师可选模型；null = 后端自动（默认/全局）。
     if (model != null) body['model'] = model;
     // 反馈边（ADR-0060 D4）：代表错题 id，服务端据此做同类题仿写。

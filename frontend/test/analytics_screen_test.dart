@@ -134,7 +134,6 @@ class _FakeStudentsRepository implements StudentsRepository {
     required String password,
     required String displayName,
     int? grade,
-    InterestsModel? interests,
   }) async =>
       throw UnimplementedError();
 
@@ -143,7 +142,6 @@ class _FakeStudentsRepository implements StudentsRepository {
     required String studentId,
     String? displayName,
     int? grade,
-    InterestsModel? interests,
   }) async =>
       throw UnimplementedError();
 

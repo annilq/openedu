@@ -67,9 +67,6 @@ class TaskModel {
   /// 创建时间（ISO8601 字符串，列表排序/展示用）。
   final String? createdAt;
 
-  /// 兴趣题模式聚焦主题（WF-4），整卷共享，用于审阅打标与整卷重生成复现。
-  final List<String>? focusInterest;
-
   /// 列表摘要的题目数（ADR-0053）。
   ///
   /// 只有列表接口（`GET /tasks`）给——它不再内嵌题目，卡片上的「N 题」改用这个字段。
@@ -100,7 +97,6 @@ class TaskModel {
     this.specs = const [],
     this.studentId,
     this.createdAt,
-    this.focusInterest,
     this.questionCount,
     this.subjects = const [],
   });
@@ -113,7 +109,6 @@ class TaskModel {
     List<TaskSpecModel>? specs,
     String? studentId,
     String? createdAt,
-    List<String>? focusInterest,
     int? questionCount,
     List<String>? subjects,
   }) {
@@ -125,7 +120,6 @@ class TaskModel {
       specs: specs ?? this.specs,
       studentId: studentId ?? this.studentId,
       createdAt: createdAt ?? this.createdAt,
-      focusInterest: focusInterest ?? this.focusInterest,
       questionCount: questionCount ?? this.questionCount,
       subjects: subjects ?? this.subjects,
     );
@@ -142,9 +136,6 @@ class TaskModel {
       studentId: json['student_id'] as String?,
       createdAt: json['created_at'] as String?,
       specs: specList,
-      focusInterest: (json['focus_interest'] as List?)
-          ?.map((e) => e.toString())
-          .toList(),
       questions: (json['questions'] as List? ?? [])
           .map((e) => QuestionModel.fromJson(e as Map<String, dynamic>))
           .toList(),

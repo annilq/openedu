@@ -6,13 +6,11 @@ abstract class StudentsRepository {
     required String password,
     required String displayName,
     int? grade,
-    InterestsModel? interests,
   });
   Future<UserModel> updateChild({
     required String studentId,
     String? displayName,
     int? grade,
-    InterestsModel? interests,
   });
   Future<List<UserModel>> getChildren();
 
