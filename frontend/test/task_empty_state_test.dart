@@ -12,7 +12,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:kids_learn/shared/domain/repositories/students_repository.dart';
 import 'package:kids_learn/features/students/presentation/providers/students_notifier.dart';
 import 'package:kids_learn/features/students/providers/students_provider.dart'
-    show studentsNotifierProvider;
+    show studentsNotifierProvider, studentsRepositoryProvider;
 import 'package:kids_learn/features/home/domain/repositories/tasks_repository.dart';
 import 'package:kids_learn/features/home/presentation/widgets/teacher/teacher_overview_view.dart';
 import 'package:kids_learn/features/home/presentation/widgets/teacher/teacher_tasks_view.dart';
@@ -24,6 +24,10 @@ import 'package:kids_learn/shared/widgets/app_card.dart';
 import 'package:kids_learn/features/analytics/domain/models/analytics_models.dart';
 import 'package:kids_learn/features/analytics/domain/repositories/analytics_repository.dart';
 import 'package:kids_learn/features/analytics/providers/analytics_provider.dart';
+import 'package:kids_learn/features/classes/providers/classes_provider.dart'
+    show classesRepositoryProvider;
+import 'package:kids_learn/shared/domain/repositories/classes_repository.dart';
+import 'dart:typed_data';
 
 /// 只为构造 notifier 存在；本测试不经它取数（状态由仓库桩直接返回）。
 class _UnusedChildrenRepo implements StudentsRepository {
@@ -155,6 +159,72 @@ class _FakeAnalyticsRepository implements AnalyticsRepository {
     String? classId,
   }) async =>
       _fakeMastery;
+}
+
+class _StubClassesRepository implements ClassesRepository {
+  @override
+  Future<List<ClassModel>> getClasses() async => const <ClassModel>[];
+}
+
+class _StubStudentsRepository implements StudentsRepository {
+  @override
+  Future<UserModel> createChild({
+    required String username,
+    required String password,
+    required String displayName,
+    int? grade,
+  }) async =>
+      UserModel(
+        id: 's',
+        username: username,
+        displayName: displayName,
+        role: 'child',
+        grade: grade,
+      );
+
+  @override
+  Future<UserModel> updateChild({
+    required String studentId,
+    String? displayName,
+    int? grade,
+  }) async =>
+      UserModel(
+        id: studentId,
+        username: studentId,
+        displayName: displayName ?? '',
+        role: 'child',
+        grade: grade,
+      );
+
+  @override
+  Future<List<UserModel>> getChildren() async => const <UserModel>[];
+
+  @override
+  Future<List<UserModel>> getStudents({
+    String? classId,
+    String? keyword,
+  }) async =>
+      const <UserModel>[];
+
+  @override
+  Future<Map<String, int>> getWrongQuestionCounts() async =>
+      const <String, int>{};
+
+  @override
+  Future<void> batchReassign({
+    required String? classId,
+    required List<String> studentIds,
+  }) async {}
+
+  @override
+  Future<StudentImportResultModel> importStudents({
+    required List<int> bytes,
+    required String filename,
+  }) async =>
+      const StudentImportResultModel(created: 0, skipped: 0, errors: []);
+
+  @override
+  Future<Uint8List> downloadImportTemplate() async => Uint8List(0);
 }
 
 void main() {
@@ -291,6 +361,10 @@ void main() {
               .overrideWith((ref) => _SeededChildrenNotifier(const <UserModel>[])),
           analyticsRepositoryProvider
               .overrideWithValue(_FakeAnalyticsRepository()),
+          classesRepositoryProvider
+              .overrideWith((ref) => _StubClassesRepository()),
+          studentsRepositoryProvider
+              .overrideWith((ref) => _StubStudentsRepository()),
         ],
         child: ShadApp.custom(
           theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
@@ -303,11 +377,10 @@ void main() {
         ),
       ),
     );
-    // 不能用 pumpAndSettle：概览页的骨架屏是无限循环动画，settle 永远等不到静默。
-    // 三帧足够：首帧 → postFrame 触发 load → 异步返回 → Loaded 重绘。
-    await tester.pump();
-    await tester.pump();
-    await tester.pump();
+    // 概览页现在含速览层 + 分析层：二者加载态各自展示骨架/加载圈（flutter_animate
+    // 的重复动画），但 notifier 用桩仓即时出数，加载态是「瞬态」——出数即卸载，
+    // 与 workbench_analysis_test 同款结构，故用 pumpAndSettle 等其落定即可。
+    await tester.pumpAndSettle();
 
     expect(find.text('还没有任务记录'), findsOneWidget);
     expect(find.text('布置任务后，最近 4 条会显示在这里。'), findsOneWidget);

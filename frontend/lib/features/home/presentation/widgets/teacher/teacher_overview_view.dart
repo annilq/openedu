@@ -8,27 +8,35 @@ import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/utils/load_once.dart';
 import '../../../../../shared/widgets/app_scroll_page.dart';
 import '../../../../../shared/widgets/app_empty_state.dart';
-import '../../../../../shared/widgets/app_error.dart';
 import '../../../../../shared/widgets/app_loading.dart';
 import '../../../../../shared/widgets/app_motion.dart';
 import '../../../../../shared/widgets/app_card.dart';
 import '../../../../../shared/widgets/app_section_title.dart';
 import '../../../../../shared/widgets/app_tags.dart';
-import '../../../../../shared/widgets/app_actions.dart';
-import '../../../../../shared/presentation/shell_navigation.dart';
+import '../../../../analytics/presentation/providers/analytics_notifier_provider.dart';
 import '../../../../students/presentation/providers/students_notifier.dart';
 import '../../../../students/providers/students_provider.dart';
 import '../../providers/teacher_tasks_notifier.dart';
-import '../../providers/task_form_prefill.dart';
-import '../../providers/teacher_overview_provider.dart';
 import '../../providers/teacher_todo_provider.dart';
 import 'teacher_todo_section.dart';
+import 'workbench_analysis.dart';
+import 'workbench_glance.dart';
 
-/// 教师概览（整体视角）：班级掌握度概览 + 薄弱知识点 + 最近任务。
+/// 教师工作台（ADR-0075 §2.2，合并原「概览」与「统计」）。
 ///
-/// 不再绑定单个学生（原先依赖全局 [selectedStudentProvider]），改为读取教师整体聚合
-/// [teacherOverviewProvider]。与「学情统计」分工：本页是进入即看的速览，
-/// 统计页是带作用域 / 维度下钻的深入分析，二者不重叠。
+/// 三段式组合，单一 landing 入口：
+///  1. **任务区**（非统计，原样保留）：学生总数徽标 + 待办 + 最近任务（top 4）。
+///  2. **速览层** [WorkbenchGlance]：作用域固定 `all` 的三块总览图表
+///     （掌握度环形 / 薄弱知识点 / 正确率 / 错题分布），替代原概览的纯文字指标行。
+///  3. **分析层** [WorkbenchAnalysis]：迁移自统计页 body，作用域 all/class + 维度四选
+///     下钻的三聚合图表。
+///
+/// 数据层去重：删除原 [teacherOverviewProvider]，速览层改走
+/// [analyticsSummaryProvider]（只读 `scope=all`），与分析层 [analyticsNotifierProvider]
+/// 隔离，避免重复消费同一仓库。
+///
+/// [onDrill] 由薄弱知识点 / 掌握度条点击触发：目前接线为把分析层切到知识点维度
+/// （默认即知识点，确保分析层已在该维度展示该知识点的掌握度）。
 class TeacherOverviewView extends ConsumerWidget {
   final void Function(TaskModel) onNavigateToReview;
 
@@ -47,13 +55,6 @@ class TeacherOverviewView extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final overview = ref.watch(teacherOverviewProvider);
-    ref.loadWhenIdle(
-      teacherOverviewProvider,
-      (s) => s is TeacherOverviewInitial,
-      () => ref.read(teacherOverviewProvider.notifier).load(),
-    );
-
     final studentsState = ref.watch(studentsNotifierProvider);
     final studentCount =
         studentsState is StudentsLoaded ? studentsState.students.length : 0;
@@ -74,19 +75,27 @@ class TeacherOverviewView extends ConsumerWidget {
       () => ref.read(teacherTodoProvider.notifier).load(),
     );
 
+    // 钻取：薄弱知识点 / 掌握度条点击 → 分析层切到知识点维度（预选该知识点）。
+    void onDrill(String knowledgePoint) {
+      ref.read(analyticsNotifierProvider.notifier).setDimension('knowledge_point');
+    }
+
     return AppScrollPage(
       children: [
         _Header(studentCount: studentCount),
         if (onNavigateToList != null) ...[
           const SectionTitle('待办'),
-          TeacherTodoSection(state: todoState, onOpenList: onNavigateToList!, ref: ref),
+          TeacherTodoSection(
+              state: todoState, onOpenList: onNavigateToList!, ref: ref),
         ],
-        const SectionTitle('掌握度概览'),
-        _MasterySummary(overview: overview, ref: ref),
-        const SectionTitle('薄弱知识点'),
-        _WeakPoints(overview: overview, ref: ref),
         const SectionTitle('最近任务'),
         _buildRecentTasks(context, ref, tasksState, studentsState),
+        const SizedBox(height: AppSpacing.lg),
+        const SectionTitle('学情速览'),
+        WorkbenchGlance(onDrill: onDrill),
+        const SizedBox(height: AppSpacing.lg),
+        const SectionTitle('学情分析'),
+        WorkbenchAnalysis(onDrill: onDrill),
       ],
     );
   }
@@ -148,7 +157,7 @@ class TeacherOverviewView extends ConsumerWidget {
   }
 }
 
-/// 概览页头：标题 + 学生总数徽标（教师整体视角）。
+/// 工作台页头：标题 + 学生总数徽标（教师整体视角）。
 class _Header extends StatelessWidget {
   final int studentCount;
   const _Header({required this.studentCount});
@@ -160,170 +169,11 @@ class _Header extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: AppSpacing.sm),
       child: Row(
         children: [
-          Text('班级概览', style: text.titleLarge),
+          Text('工作台', style: text.titleLarge),
           const SizedBox(width: AppSpacing.sm),
           AppBadge.infoChip('$studentCount 名学生'),
         ],
       ),
-    );
-  }
-}
-
-/// 掌握度概览：已掌握知识点占比 + 活跃错题数（教师整体）。
-class _MasterySummary extends StatelessWidget {
-  final TeacherOverviewState overview;
-  final WidgetRef ref;
-  const _MasterySummary({required this.overview, required this.ref});
-
-  @override
-  Widget build(BuildContext context) {
-    if (overview is TeacherOverviewLoading ||
-        overview is TeacherOverviewInitial) {
-      return const AppLoading.skeletonInline(skeletonLines: 2);
-    }
-    if (overview is TeacherOverviewError) {
-      return AppError(
-        message: (overview as TeacherOverviewError).message,
-        onRetry: () => ref.read(teacherOverviewProvider.notifier).load(),
-      );
-    }
-    final loaded = overview as TeacherOverviewLoaded;
-    return AppCard(
-      padding: const EdgeInsets.all(AppSpacing.md),
-      child: Column(
-        children: [
-          _StatRow(
-            icon: LucideIcons.lightbulb,
-            label: '已掌握知识点',
-            value: '${loaded.masteredCount} / ${loaded.totalKnowledgePoints}',
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          _StatRow(
-            icon: LucideIcons.alertTriangle,
-            label: '活跃错题',
-            value: '${loaded.activeWrong}',
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StatRow extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-  const _StatRow(
-      {required this.icon, required this.label, required this.value});
-
-  @override
-  Widget build(BuildContext context) {
-    final text = AppTheme.textOf(context);
-    final scheme = AppTheme.colorsOf(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-      child: Row(
-        children: [
-          Icon(icon, size: 16, color: scheme.onSurfaceVariant),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Text(
-              label,
-              style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
-            ),
-          ),
-          Text(
-            value,
-            style: text.titleMedium?.copyWith(
-              color: scheme.onSurface,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// 薄弱知识点：按活跃错题数降序，给出可一键「就这个出题」的速览（教师整体）。
-class _WeakPoints extends StatelessWidget {
-  final TeacherOverviewState overview;
-  final WidgetRef ref;
-  const _WeakPoints({required this.overview, required this.ref});
-
-  @override
-  Widget build(BuildContext context) {
-    final app = AppTheme.colorsOf(context);
-    if (overview is TeacherOverviewLoading ||
-        overview is TeacherOverviewInitial) {
-      return const AppLoading.skeletonInline(skeletonLines: 3);
-    }
-    if (overview is TeacherOverviewError) {
-      return AppError(
-        message: (overview as TeacherOverviewError).message,
-        onRetry: () => ref.read(teacherOverviewProvider.notifier).load(),
-      );
-    }
-    final loaded = overview as TeacherOverviewLoaded;
-    if (loaded.weakItems.isEmpty) {
-      return AppCard(
-        child: AppEmptyState.inline(
-          icon: LucideIcons.checkCircle2,
-          title: '暂无薄弱知识点',
-          message: '目前没有活跃错题，继续保持～',
-        ),
-      );
-    }
-    final items = loaded.weakItems.take(6).toList();
-    return Column(
-      children: [
-        for (final item in items)
-          AppCard.listRow(
-            margin: const EdgeInsets.only(bottom: AppSpacing.sm),
-            padding: const EdgeInsets.all(AppSpacing.md),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    AppTags.subject(
-                      SubjectAccent.fromName(item.subject),
-                      label: item.subject,
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    Expanded(
-                      child: Text(
-                        item.knowledgePoint,
-                        style: AppTheme.textOf(context).bodyMedium,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  '正确率 ${(item.accuracy * 100).round()}% · ${item.activeWrong} 题待复习',
-                  style: AppTheme.textOf(context)
-                      .bodySmall
-                      ?.copyWith(color: app.onSurfaceVariant),
-                ),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: AppTextAction(
-                    label: '就这个出题',
-                    semanticLabel: '就${item.knowledgePoint}出题',
-                    onPressed: () {
-                      ref.read(taskFormPrefillProvider.notifier).state =
-                          TaskFormPrefill(knowledgePoint: item.knowledgePoint);
-                      ref
-                          .read(shellNavigationProvider.notifier)
-                          .request(ShellDestination.teacherCreateTask);
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-      ],
     );
   }
 }
