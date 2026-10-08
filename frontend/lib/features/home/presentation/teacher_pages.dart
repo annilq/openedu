@@ -67,7 +67,16 @@ class TaskReviewPage extends TeacherPage {
   /// （从概览点进来回概览，从任务列表点进来回列表）。
   final TeacherPage back;
 
-  const TaskReviewPage(this.task, {required this.back});
+  /// 表单布置时带过来的派发目标（ticket 18）：班级 / 学生多选；空 = 回落单学生派发。
+  final List<String> classIds;
+  final List<String> studentIds;
+
+  const TaskReviewPage(
+    this.task, {
+    required this.back,
+    this.classIds = const [],
+    this.studentIds = const [],
+  });
 }
 
 /// 个人信息（「我的」）。

@@ -233,6 +233,21 @@ class ReviewNotifier extends StateNotifier<ReviewState> {
     return updated;
   }
 
+  /// 批量派发（ticket 18）：班级列表 + 学生列表并集去重、原子写入。
+  Future<TaskModel> assignBulk({
+    required String taskId,
+    required List<String> classIds,
+    required List<String> studentIds,
+  }) async {
+    final updated = await _review.assignBulk(
+      taskId: taskId,
+      classIds: classIds,
+      studentIds: studentIds,
+    );
+    state = ReviewLoaded(updated);
+    return updated;
+  }
+
   /// 作废草稿（R-Q5=b，级联删 Question）。
   Future<void> discard(String taskId) => _review.discard(taskId);
 

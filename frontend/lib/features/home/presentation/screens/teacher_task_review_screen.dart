@@ -28,6 +28,11 @@ class TeacherTaskReviewScreen extends ConsumerStatefulWidget {
   /// 派发时若创建时已经选好学生则直接绑定，否则弹窗选择。
   final String? defaultChildId;
 
+  /// 表单布置时带过来的派发目标（ticket 18）：班级 / 学生多选。
+  /// 非空时优先走批量派发；为空则回落到单学生派发。
+  final List<String> classIds;
+  final List<String> studentIds;
+
   /// 返回 Home（Overview）或派发给学生后跳 PracticeScreen 预览。
   final VoidCallback onBackToHome;
   final void Function(TaskModel task)? onNavigateToPractice;
@@ -36,6 +41,8 @@ class TeacherTaskReviewScreen extends ConsumerStatefulWidget {
     super.key,
     required this.task,
     this.defaultChildId,
+    this.classIds = const [],
+    this.studentIds = const [],
     required this.onBackToHome,
     this.onNavigateToPractice,
   });
@@ -310,11 +317,38 @@ class _TeacherTaskReviewScreenState
           .confirm(task.id);
       if (!mounted) return;
       AppToast.show(context, '已锁定成卷');
-      // 若教师预选了学生（创建时就选好），自动下一步派发
-      final studentId = widget.defaultChildId ?? confirmed.studentId;
-      if (studentId != null) {
-        await _onAssign(confirmed, studentId);
+      // 多选派发（ticket 18）：若表单带过来了班级/学生集合，整批批量派发；
+      // 否则回落到原先的单学生派发（创建时预选 / legacy 单列）。
+      final hasBulk =
+          widget.classIds.isNotEmpty || widget.studentIds.isNotEmpty;
+      if (hasBulk) {
+        await _onAssignBulk(confirmed);
+      } else {
+        final studentId = widget.defaultChildId ?? confirmed.studentId;
+        if (studentId != null) {
+          await _onAssign(confirmed, studentId);
+        }
       }
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.error(context, e);
+    }
+  }
+
+  /// 批量派发（ticket 18）：整班 + 多学生去重、原子写入（后端 bulk_assign_task）。
+  Future<void> _onAssignBulk(TaskModel task) async {
+    try {
+      await ref
+          .read(teacherTaskReviewProvider(widget.task.id).notifier)
+          .assignBulk(
+            taskId: task.id,
+            classIds: widget.classIds,
+            studentIds: widget.studentIds,
+          );
+      if (!mounted) return;
+      // 方案 A：派发后回到教师工作台，不自动跳进学生做题页（避免误代答/代打卡）。
+      AppToast.show(context, '已派发，学生登录后即可在「今日任务」里练习');
+      widget.onBackToHome();
     } catch (e) {
       if (!mounted) return;
       AppToast.error(context, e);

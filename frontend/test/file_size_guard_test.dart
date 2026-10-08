@@ -101,7 +101,11 @@ void main() {
 /// 补登 3 个此前提交（analytics/courseware 等）已落地但未登记的 >400 文件：analytics_screen 488、
 /// section_practice 429、teacher_task_form_view 425；
 /// 2026-10-08 拆分 courseware_present_page 474→320、courseware_section_edit_dialog 470→373，
-/// 两条均移出 _baseline）。
+/// 两条均移出 _baseline；
+/// 2026-10-08 票据 18（多对象派发）落代码：teacher_task_form_view 425→429（新增班级/学生
+/// 多选状态、getter 与 pick 方法，已把 chip 行抽到 dispatch_targets_row.dart 仍净增 4 行）、
+/// 补登此前漏登的 teacher_task_review_screen 390→424（新增 classIds/studentIds 携带与
+/// _onAssignBulk 批量派发分支）；两处增长均为功能必需，已在提交正文说明理由）。
 /// **只许下调。**
 ///
 /// 拆分批次见 `docs/refactor/2026-09-21-flutter-ui-decomposition.md`（P0–P4）。
@@ -118,7 +122,8 @@ const Map<String, int> _baseline = <String, int>{
   'features/home/presentation/widgets/student_home.dart': 428,
   'features/analytics/presentation/screens/analytics_screen.dart': 488,
   'features/courseware/presentation/widgets/section_practice.dart': 429,
-  'features/home/presentation/widgets/teacher/teacher_task_form_view.dart': 425,
+  'features/home/presentation/widgets/teacher/teacher_task_form_view.dart': 429,
+  'features/home/presentation/screens/teacher_task_review_screen.dart': 424,
   'features/students/presentation/screens/student_management_screen.dart': 777,
 };
 

@@ -38,6 +38,13 @@ abstract class TaskReviewRepository {
   /// 派发给指定学生。
   Future<TaskModel> assign({required String taskId, required String studentId});
 
+  /// 批量派发（ticket 18）：班级列表 + 学生列表并集去重、原子写入。
+  Future<TaskModel> assignBulk({
+    required String taskId,
+    required List<String> classIds,
+    required List<String> studentIds,
+  });
+
   /// 作废草稿（R-Q5=b，级联删 Question）。
   Future<void> discard(String taskId);
 }

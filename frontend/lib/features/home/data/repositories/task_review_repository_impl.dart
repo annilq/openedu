@@ -72,5 +72,21 @@ class TaskReviewRepositoryImpl implements TaskReviewRepository {
   }
 
   @override
+  Future<TaskModel> assignBulk({
+    required String taskId,
+    required List<String> classIds,
+    required List<String> studentIds,
+  }) async {
+    final data = await _network.post(
+      '/tasks/$taskId/assign-bulk',
+      body: {
+        'class_ids': classIds,
+        'student_ids': studentIds,
+      },
+    );
+    return TaskModel.fromJson(decodeMap(data));
+  }
+
+  @override
   Future<void> discard(String taskId) => _network.delete('/tasks/$taskId');
 }

@@ -99,7 +99,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   /// R3：生成草稿后进审核页。[back] 记下从哪儿进来，退出时回来源页而非一律回概览。
   void _navigateToReview(TaskModel draft) {
-    _go(TaskReviewPage(draft, back: highlightFor(_teacherPage)));
+    final gen = ref.read(taskGenNotifierProvider.notifier);
+    _go(TaskReviewPage(
+      draft,
+      classIds: gen.pendingClassIds,
+      studentIds: gen.pendingStudentIds,
+      back: highlightFor(_teacherPage),
+    ));
   }
 
   void _backToHomeFromReview() {

@@ -93,12 +93,16 @@ class _Pending {
   final List<QuestionPreview> questions;
   final int expected;
   final List<String> failures;
+  final List<String> classIds;
+  final List<String> studentIds;
 
   const _Pending({
     required this.body,
     required this.questions,
     required this.expected,
     required this.failures,
+    required this.classIds,
+    required this.studentIds,
   });
 }
 
@@ -148,6 +152,10 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
   /// 确认后清空。**纯内存，不落库**——这是「放弃无需删除」的前提。
   _Pending? _pending;
 
+  /// 本次生成关联的派发目标（班级 / 学生），供生成结束后导航到审核页时透传。
+  List<String> get pendingClassIds => _pending?.classIds ?? const [];
+  List<String> get pendingStudentIds => _pending?.studentIds ?? const [];
+
   /// 出题过程中累计的折叠态（逐帧 apply 的纯模块）；[stop] 需要在循环外快照当前进度，
   /// 故提升为实例字段而非局部变量。
   QuestionGenFold _fold = const QuestionGenFold();
@@ -166,8 +174,10 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
   /// 把结构化 specs 经 `/tasks/generate` 直传后端（ADR-0034 P1）：服务端据此构造
   /// 出题 prompt 并走 question subagent 流式返回题卡，不再拼自然语言走 /assistant/chat。
   Future<void> generate({
-    required String studentId,
+    String? studentId,
     required String title,
+    List<String> classIds = const [],
+    List<String> studentIds = const [],
     required List<TaskSpecModel> specs,
     List<String>? focusInterest,
     String? model,
@@ -237,6 +247,8 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
         questions: _fold.questions,
         expected: _expected,
         failures: _fold.failures,
+        classIds: classIds,
+        studentIds: studentIds,
       );
       state = TaskGenReady(
         _fold.questions,
@@ -320,7 +332,7 @@ class TaskGenNotifier extends StateNotifier<TaskGenState> {
   }
 
   Map<String, dynamic> _buildBody({
-    required String studentId,
+    String? studentId,
     required String title,
     required List<TaskSpecModel> specs,
     List<String>? focusInterest,
