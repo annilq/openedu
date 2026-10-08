@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
+import 'package:shadcn_ui/shadcn_ui.dart' show LucideIcons;
 
 import '../../domain/figures.dart';
 import '../../theme/app_theme.dart';
@@ -47,6 +48,18 @@ class ReflectionFigureGallery extends StatelessWidget {
   /// 网格上方的一句话说明（讲清「下一步做什么」，空态语言纪律 ADR-0051）。
   final String? hint;
 
+  /// 是否**按 [figures] 的传入顺序**渲染（跳过「选项置顶」排序）。
+  ///
+  /// [_ordered] 会把命中的选项顶到最前、其余按库序跟——教师编排好的图形顺序会因此
+  /// 被悄悄重排，而课件语境下**顺序就是教学意图**（ADR-0076 §2.2 的 curated）。
+  /// 默认 false：题库 / 错题 / 自由探索路径的观感一字不变。
+  final bool preserveOrder;
+
+  /// 是否在只读卡右上角画 play 角标。默认 true（全站统一）。
+  ///
+  /// 个别纯预览语境（如已经身处演示弹窗内）可以关掉。
+  final bool showPlayBadge;
+
   /// 卡片目标宽度——只用来算列数，实际宽度按可用宽度均分。
   ///
   /// 124 是「缩略图顶点还数得清」的下限再留一点余量：低于它，等边三角形与等腰
@@ -63,6 +76,8 @@ class ReflectionFigureGallery extends StatelessWidget {
     required this.onOpen,
     this.hint,
     this.selectedKey,
+    this.preserveOrder = false,
+    this.showPlayBadge = true,
   });
 
   @override
@@ -107,8 +122,11 @@ class ReflectionFigureGallery extends StatelessWidget {
   }
 
   /// 本题选项排前面（库序保持稳定，别让学生每次看到的顺序都不一样）。
+  ///
+  /// [preserveOrder] 为真时整段跳过：调用方给的顺序本身就是意图（教师编排），
+  /// 重排等于把意图抹掉。
   List<FigureShape> _ordered() {
-    if (optionLabels.isEmpty) return figures;
+    if (preserveOrder || optionLabels.isEmpty) return figures;
     final inOption = <FigureShape>[];
     final rest = <FigureShape>[];
     for (final f in figures) {
@@ -126,9 +144,11 @@ class ReflectionFigureGallery extends StatelessWidget {
       onTap: () => onOpen(figure),
       // 画廊卡片是纯图标/短标签的密集块，不给悬停反馈桌面端等于没有反馈。
       hoverHighlight: true,
+      // 「播放」而非「打开」：卡右上角那个 play 角标说的就是这件事，读屏 / 键盘
+      // 路径因此拿到与视觉一致的语义（ADR-0076 §2.4）。
       semanticLabel: selected
           ? '当前讲解图形：${figure.label}（点开重新演示）'
-          : '打开${figure.label}的对折演示',
+          : '播放${figure.label}的对折演示',
       borderRadius: BorderRadius.circular(AppRadius.card),
       child: Container(
         width: width,
@@ -187,6 +207,8 @@ class ReflectionFigureGallery extends StatelessWidget {
                       ),
                     ),
                   ),
+                // play 角标：**右上角**（与左上角的「默认讲解」错开，两者可共存）。
+                if (showPlayBadge) _playBadge(),
               ],
             ),
             Container(
@@ -220,6 +242,30 @@ class ReflectionFigureGallery extends StatelessWidget {
       ),
     );
   }
+
+  /// play 角标：**可见性提示**，不是命中区（ADR-0076 §2.4）。
+  ///
+  /// 整卡仍由 [AppFocusableAction] 承担点击——只留这个小图标当命中区会显著削弱
+  /// 触屏可用性；而且不额外套手势识别器：可点区全站只有 [AppFocusableAction]
+  /// 一种语言（ADR-0046）。深块配白字（.impeccable.md §Design Principles 3）。
+  Widget _playBadge() => Positioned(
+        top: 4,
+        right: 4,
+        child: Container(
+          width: 18,
+          height: 18,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: AppBrutal.blue,
+            borderRadius: BorderRadius.circular(AppRadius.chip),
+            border: Border.all(
+              color: AppBrutal.ink,
+              width: AppElevation.borderWidthHairline,
+            ),
+          ),
+          child: const Icon(LucideIcons.play, size: 11, color: AppBrutal.onDark),
+        ),
+      );
 
   /// 选项标号角标：深块配白字（.impeccable.md §Design Principles 3）。
   Widget _optionBadge(BuildContext context, String label) {
