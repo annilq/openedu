@@ -162,8 +162,8 @@ class TeacherSceneLibraryDetailView extends ConsumerWidget {
       associatedIds:
           entry.associatedKnowledgePoints.map((e) => e.id).toSet(),
       onAssociated: () {
+        // 关联 / 解绑写回后刷新库清单（对话框自身按动作给出 toast 提示）。
         ref.invalidate(sceneLibraryProvider);
-        AppToast.show(context, '已关联知识点');
       },
     );
   }

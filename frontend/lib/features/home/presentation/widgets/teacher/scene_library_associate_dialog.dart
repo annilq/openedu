@@ -1,12 +1,15 @@
 /// 场景库「关联知识点」选择器（ADR-0074 T04 §3）。
 ///
-/// 从教师**已有且未关联本 kind** 的知识点里挑一个，写一份 seed 场景经现有
-/// `PATCH …/scenes` 进该 KP。seed 图形取自库默认（`default_figure_key`，空则
-/// 回落空占位），轴参数取注册表中性种子——与知识点编辑器保存走同一份结构
-/// （[buildReflectionSceneSpec]），不在此另造一份。
+/// 弹出后**展示该范围内的全部知识点**，已关联本 kind 的项以「已关联」勾选态标出，
+/// 用户点按即可切换：未关联的 → 写一份 seed 场景经 `PATCH …/scenes` 关联进来；
+/// 已关联的 → 从 `kp.scenes` 移除本 kind 条目解除绑定。一处完成关联 / 解绑，
+/// 不必退回列表再走另一条路径。
 ///
-/// 前端按范围过滤未关联项（零后端改动）：先选 (学科, 年级, 学期) 范围，再列出该
-/// 范围内未被本 kind 关联的知识点。
+/// seed 图形取自库默认（`default_figure_key`，空则回落空占位），轴参数取注册表
+/// 中性种子——与知识点编辑器保存走同一份结构（[buildReflectionSceneSpec]），不在此
+/// 另造一份。切换为即时写回 + 本地勾选态翻转，对话框保持打开以支持连续多选。
+/// 前端按范围列全部项（零后端改动）：先选 (学科, 年级, 学期) 范围，再列出该范围
+/// 下所有知识点。
 library;
 
 import 'package:flutter/widgets.dart';
@@ -16,14 +19,16 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../../shared/domain/figures.dart';
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/widgets/app_focusable_action.dart';
+import '../../../../../shared/widgets/app_toast.dart';
 import '../../../../../shared/widgets/scene_interpreter/reflection_scene_data.dart';
 import '../../../domain/repositories/material_repository.dart';
 import '../../../providers/home_provider.dart';
 
 /// 打开关联选择器。
 ///
-/// [associatedIds] 是当前已关联本 kind 的知识点 id 集合，用于过滤掉不可再选的项。
-/// [onAssociated] 在 seed 写入成功后回调（调用方负责刷新场景库清单 + 提示）。
+/// [associatedIds] 是当前已关联本 kind 的知识点 id 集合，用于初始化勾选态
+/// （已关联的项在列表里标「已关联」、可直接点按解除）。所有项都会展示，不再过滤。
+/// [onAssociated] 在每次关联 / 解绑写回成功后回调（调用方负责刷新场景库清单）。
 void showAssociateKpDialog(
   BuildContext context, {
   required SceneLibraryEntry entry,
@@ -64,9 +69,14 @@ class _AssociateKpDialogState extends ConsumerState<_AssociateKpDialog> {
   bool _busy = false;
   String? _error;
 
+  /// 本地勾选态：已关联本 kind 的知识点 id 集合。初始化自 [widget.associatedIds]，
+  /// 每次切换（关联 / 解绑）即时翻转，保证对话框内勾选与后端写回一致。
+  final Set<String> _selected = {};
+
   @override
   void initState() {
     super.initState();
+    _selected.addAll(widget.associatedIds.where((e) => e.isNotEmpty));
     _loadScopes();
   }
 
@@ -111,12 +121,10 @@ class _AssociateKpDialogState extends ConsumerState<_AssociateKpDialog> {
         semester: scope.semester,
       );
       if (!mounted) return;
-      // 过滤掉已关联本 kind 的知识点：不能重复关联。
-      final items = dir.items
-          .where((e) => e.id != null && !widget.associatedIds.contains(e.id))
-          .toList();
+      // 展示该范围下全部知识点：已关联的靠 _selected 标「已关联」勾选态，
+      // 不在此过滤（用户点按即可切换解绑，见 _toggle）。
       setState(() {
-        _items = items;
+        _items = dir.items;
         _loading = false;
       });
     } catch (e) {
@@ -128,6 +136,17 @@ class _AssociateKpDialogState extends ConsumerState<_AssociateKpDialog> {
     }
   }
 
+  /// 点按某项：已勾选 → 解绑；未勾选 → 关联。对话框保持打开以连续多选。
+  Future<void> _toggle(KnowledgePointOption kp) async {
+    if (_busy || kp.id == null) return;
+    if (_selected.contains(kp.id)) {
+      await _unlink(kp);
+    } else {
+      await _associate(kp);
+    }
+  }
+
+  /// 关联：写一份本 kind 的 seed 进 `kp.scenes`（保留其它 kind 的场景，ADR-0073 快照不变）。
   Future<void> _associate(KnowledgePointOption kp) async {
     if (_busy || kp.id == null) return;
     setState(() => _busy = true);
@@ -155,13 +174,45 @@ class _AssociateKpDialogState extends ConsumerState<_AssociateKpDialog> {
         scenes: newScenes,
       );
       if (!mounted) return;
+      setState(() {
+        _selected.add(kp.id!);
+        _busy = false;
+      });
       widget.onAssociated();
-      Navigator.of(context).pop();
+      AppToast.show(context, '已关联 ${kp.name}');
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _busy = false;
         _error = '关联失败：$e';
+      });
+    }
+  }
+
+  /// 解绑：从 `kp.scenes` 移除本 kind 的条目（保留其它 kind），经 `PATCH …/scenes` 写回。
+  Future<void> _unlink(KnowledgePointOption kp) async {
+    if (_busy || kp.id == null) return;
+    setState(() => _busy = true);
+    try {
+      final kept = (kp.scenes ?? [])
+          .where((s) => (s['kind'] as String? ?? '') != widget.entry.kind)
+          .toList();
+      await ref.read(materialRepositoryProvider).updateKnowledgePointScenes(
+        kpId: kp.id!,
+        scenes: kept,
+      );
+      if (!mounted) return;
+      setState(() {
+        _selected.remove(kp.id);
+        _busy = false;
+      });
+      widget.onAssociated();
+      AppToast.show(context, '已解除 ${kp.name}');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _error = '解除失败：$e';
       });
     }
   }
@@ -175,7 +226,7 @@ class _AssociateKpDialogState extends ConsumerState<_AssociateKpDialog> {
     final body = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text('先选范围，再挑一个知识点关联进来。', style: text.bodySmall),
+        Text('勾选要关联的知识点；已关联的可点按解除。', style: text.bodySmall),
         const SizedBox(height: AppSpacing.sm),
         if (_scopes.isEmpty && !_loading)
           Text('还没有可关联的知识点（先去资料库上传教材并提取知识点）。',
@@ -217,31 +268,14 @@ class _AssociateKpDialogState extends ConsumerState<_AssociateKpDialog> {
               ),
             )
           else if (_items.isEmpty)
-            Text('该范围下已无可关联的知识点。',
+            Text('该范围下没有知识点。',
                 style: text.bodySmall?.copyWith(color: app.onSurfaceVariant))
           else
             Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 for (final kp in _items)
-                  AppFocusableAction(
-                    onTap: () => _associate(kp),
-                    semanticLabel: '关联 ${kp.name}',
-                    hoverHighlight: true,
-                    child: Container(
-                      margin:
-                          const EdgeInsets.only(bottom: AppSpacing.xs),
-                      padding: const EdgeInsets.all(AppSpacing.sm),
-                      decoration: BoxDecoration(
-                        border: Border.all(
-                          color: app.outline,
-                          width: AppElevation.borderWidthSm,
-                        ),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(kp.name, style: text.bodyMedium),
-                    ),
-                  ),
+                  _kpTile(kp, text, app),
               ],
             ),
         ],
@@ -266,6 +300,48 @@ class _AssociateKpDialogState extends ConsumerState<_AssociateKpDialog> {
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxHeight: 460),
         child: SingleChildScrollView(child: body),
+      ),
+    );
+  }
+
+  /// 单条知识点：整行可点按切换关联。已关联 → 勾选方块填色 + 「已关联」标签 + 强调边框；
+  /// 未关联 → 描边方块 + 普通边框。
+  Widget _kpTile(KnowledgePointOption kp, AppText text, AppColors app) {
+    final selected = kp.id != null && _selected.contains(kp.id);
+    return AppFocusableAction(
+      onTap: () => _toggle(kp),
+      semanticLabel: selected ? '解除关联 ${kp.name}' : '关联 ${kp.name}',
+      hoverHighlight: true,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: AppSpacing.xs),
+        padding: const EdgeInsets.all(AppSpacing.sm),
+        decoration: BoxDecoration(
+          border: Border.all(
+            color: selected ? app.accent : app.outline,
+            width: 1.5,
+          ),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 20,
+              height: 20,
+              decoration: BoxDecoration(
+                color: selected ? app.accent : app.surfaceRaised,
+                border: Border.all(color: app.outline, width: 1.5),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: selected
+                  ? Icon(LucideIcons.check, size: 14, color: app.onPrimary)
+                  : null,
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(child: Text(kp.name, style: text.bodyMedium)),
+            if (selected)
+              Text('已关联', style: text.labelSmall?.copyWith(color: app.accent)),
+          ],
+        ),
       ),
     );
   }
