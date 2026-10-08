@@ -98,8 +98,10 @@ void main() {
 /// 现存超限文件的基线（2026-09-21 实测；2026-10-04 补登 reflection_scene.dart；
 /// 2026-10-05 拆出 BankQuestionRow 后下调 teacher_question_bank_view 838→759；
 /// 2026-10-07 删除已不存在的 teacher_student_selector 登记、student_management_screen 771→775；
-/// 补登 4 个此前提交（analytics/courseware 等）已落地但未登记的 >400 文件：analytics_screen 488、
-/// courseware_present_page 429、section_practice 429、teacher_task_form_view 425）。
+/// 补登 3 个此前提交（analytics/courseware 等）已落地但未登记的 >400 文件：analytics_screen 488、
+/// section_practice 429、teacher_task_form_view 425；
+/// 2026-10-08 拆分 courseware_present_page 474→320、courseware_section_edit_dialog 470→373，
+/// 两条均移出 _baseline）。
 /// **只许下调。**
 ///
 /// 拆分批次见 `docs/refactor/2026-09-21-flutter-ui-decomposition.md`（P0–P4）。
@@ -115,8 +117,6 @@ const Map<String, int> _baseline = <String, int>{
   'features/home/presentation/widgets/teacher/teacher_wrong_questions_view.dart': 442,
   'features/home/presentation/widgets/student_home.dart': 428,
   'features/analytics/presentation/screens/analytics_screen.dart': 488,
-  'features/courseware/presentation/pages/courseware_present_page.dart': 474,
-  'features/courseware/presentation/pages/courseware_section_edit_dialog.dart': 470,
   'features/courseware/presentation/widgets/section_practice.dart': 429,
   'features/home/presentation/widgets/teacher/teacher_task_form_view.dart': 425,
   'features/students/presentation/screens/student_management_screen.dart': 777,
