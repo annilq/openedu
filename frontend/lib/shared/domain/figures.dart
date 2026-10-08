@@ -1,16 +1,17 @@
-// §轴对称教学图形顶点库（ADR-0061 §O）—— **几何数据的单一事实源**。
+// §轴对称教学图形顶点库（ADR-0061 §O / ADR-0073 遗留 4）。
 //
-// 为什么独立成文件：图形顶点是**教学素材**（人工设计，刻意让 para 不对称、
-// 让 arrow 走水平轴），不是算法产物。此前它们硬编码在 `reflection_scene.dart` 的
-// 枚举里，导致两个问题：
+// ⚠️ **本文件由 `frontend/scripts/gen_figures.py` 生成，请勿手改。**
+// 唯一手写事实源是 `backend/app/features/materials/scene_figures.py`；
+// 改顶点请改那里，然后重跑生成脚本（`--check` 会阻止你忘掉这一步）。
+//
+// 为什么顶点是**教学素材**而非算法产物：它们人工设计（para 刻意错切成不对称、
+// arrow 走水平轴），此前硬编码在 `reflection_scene.dart` 的枚举里带来两个问题：
 //   1. 渲染器（`ReflectionSceneWidget`）被迫「认识」房子/风筝这类概念——
 //      而它本该只负责「给一组顶点，把多边形画出来并判定能否对折重合」；
-//   2. 后端无法把「识别出的图形」变成可渲染的数据（它拿不到 Dart 里的顶点），
-//      于是选项组（每个选项一个图形）无从生成。
+//      2. 后端无法把「识别出的图形」变成可渲染的数据（它拿不到 Dart 里的顶点），
+//         于是选项组（每个选项一个图形）无从生成。
 //
-// 纯数据、无逻辑、无 import。坐标归一化到 0..1、y 向下（与画布一致）。
-// 后端镜像同一份数据见 `backend/app/features/materials/scene_figures.py`——
-// **改任何一处顶点都必须同步另一处**（几何漂移会让「是否轴对称」的判定变错）。
+// 纯数据（+ 一个 key 反查），无 import。坐标归一化到 0..1、y 向下（与画布一致）。
 library;
 
 /// 一个轴对称教学图形：归一化顶点 + 默认对称轴角度 + 全部对称轴角度。
@@ -83,6 +84,7 @@ const List<FigureShape> kFigureShapes = <FigureShape>[
     axisAngles: <double>[90],
   ),
   // 箭头：横向（**故意水平对称**）→ 默认轴 0°。
+  // 唯一那条轴是水平线（竖直方向上下不对称）。
   FigureShape(
     key: 'arrow',
     label: '箭头',
@@ -96,12 +98,11 @@ const List<FigureShape> kFigureShapes = <FigureShape>[
       (x: 0.20, y: 0.58),
     ],
     defaultAxisAngle: 0,
-    // 横向箭头：唯一那条轴是水平线（竖直方向上下不对称）。
     axisAngles: <double>[0],
   ),
   // 平行四边形：**刻意画成不对称**（错切：上边中点 0.50 / 下边 0.62），
   // 用来演示「不是轴对称图形」。若被「修正」成矩形，这道题就失去判断意义
-  // ——所以它的顶点不可动，且 axisAngles 为空（真的没有对称轴）。
+  // ——所以它的顶点不可动，且对称轴列表为空（真的没有对称轴）。
   FigureShape(
     key: 'para',
     label: '平行四边形',
@@ -117,8 +118,8 @@ const List<FigureShape> kFigureShapes = <FigureShape>[
   // 正方形：**程序生成**（ADR-0061 §Q 决策 A：轴对齐、零微扰）。
   // 为什么它可以程序生成而 para 不行：正方形的几何定义**唯一且无歧义**，
   // 任何实现都必然得到一个 4 条对称轴的图形；而 para 的「不对称」是
-  // **教学设计的意图**，算法只会把它"修好"。
-  // 4 条轴：竖(90) / 横(0) / 两条对角(45,135)——「有几条对称轴」的答案就是 4。
+  // **教学设计的意图**，算法只会把它修好。
+  // 4 条轴：竖(90)/横(0)/两条对角(45,135)——「有几条」的答案就是 4。
   FigureShape(
     key: 'square',
     label: '正方形',
@@ -132,6 +133,7 @@ const List<FigureShape> kFigureShapes = <FigureShape>[
     axisAngles: <double>[90, 0, 45, 135],
   ),
   // 等腰三角形：apex 朝上、底边水平 → 仅一条竖直对称轴（1 条轴）。
+  // 顶点刻意落在 x=0.5 中线上，左右底点对称，确保真的只有 1 条轴。
   FigureShape(
     key: 'iso_triangle',
     label: '等腰三角形',
@@ -143,7 +145,8 @@ const List<FigureShape> kFigureShapes = <FigureShape>[
     defaultAxisAngle: 90,
     axisAngles: <double>[90],
   ),
-  // 等边三角形：apex 朝上、底边水平；3 条对称轴（竖直 + 两条 ±60° 的腰中线）。
+  // 等边三角形：apex 朝上、底边水平；
+  // 3 条对称轴（竖直 + 两条 ±60° 的腰中线）。
   FigureShape(
     key: 'eq_triangle',
     label: '等边三角形',
@@ -168,7 +171,8 @@ const List<FigureShape> kFigureShapes = <FigureShape>[
     defaultAxisAngle: 90,
     axisAngles: <double>[90, 0],
   ),
-  // 等腰梯形：上下边都居中于 x=0.5 → 仅一条竖直对称轴（1 条轴）。
+  // 等腰梯形：上下边都居中于 x=0.5
+  // → 仅一条竖直对称轴（1 条轴）。
   FigureShape(
     key: 'iso_trapezoid',
     label: '等腰梯形',
@@ -209,7 +213,11 @@ const List<FigureShape> kFigureShapes = <FigureShape>[
   ),
 ];
 
-/// 按 key 取图形；未命中回落房子（与旧 `fromName` 行为一致，避免空场景）。
+/// 按 key 取图形；未命中回落**第一个图形**（渲染层的「永不空」安全网）。
+///
+/// ⚠️ 这个兜底是**前端独有**的渲染关切，不要搬到后端去：后端 `figure_by_key`
+/// 未命中返回 `None`（调用方据此降级为「不给图」），因为后端没有画布要填——
+/// 若两边都兜底成 house，题面没点名图形时会凭空多出一栋房子，那是编造。
 FigureShape figureByKey(String? key) => kFigureShapes.firstWhere(
       (f) => f.key == key,
       orElse: () => kFigureShapes.first,
