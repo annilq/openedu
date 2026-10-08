@@ -47,7 +47,7 @@ C 系列 · 导航与统计（ADR-0070）
 3. 全部打 `ready-for-agent` 标签
 
 ## Backlog（延后待办，不在本轮 16 票内）
-- **17 文件规模棘轮补登债务（跨 epic）**：3 个此前提交漏登 >400 基线的文件（剩 `analytics_screen` 488 / `section_practice` 429 / `teacher_task_form_view` 425）——已于 `ce4d1de` 临时补登保测试绿，但仍锁在高位违背棘轮「只许下调」方向。**2026-10-08 拍板分文件定 A/B：analytics_screen（488）→ B 确认保留并补 why；section_practice（429）/ teacher_task_form_view（425）→ A 拆小 ≤400 下调基线。转 `ready-for-agent`**。`courseware_present_page` 已于 2026-10-08 拆分 320 并移出基线（不计入）。详见 `issues/17-file-size-ratchet-debt.md`。
+- **17 文件规模棘轮补登债务（跨 epic）**：**✅ done（2026-10-08）**。三文件分 A/B 处理——`analytics_screen`（492，B 保留并补 why）、`section_practice`（293，A 拆到 `section_practice_parts.dart`）、`teacher_task_form_view`（384，A 拆到 `teacher_task_form_actions.dart`）均落到 ≤400/登记；后两者已移出 `_baseline`，净减 2 条债务。`flutter test` 399 全绿、`flutter analyze` 0 issue。详见 `issues/17-file-size-ratchet-debt.md`。
 - **18 多对象派发（班级/学生多选）**：ticket 14 降级项——布置任务当前仅单学生显式选择器（`_StudentAssignRow`），缺班级/学生多选批量派发能力。**08 后端已 done（`bulk_assign_task` 收班级/学生列表），仅前端选择器缺口**。**2026-10-08 拍板：选 B（就地扩`_StudentAssignRow`为多选 chip 行，调 08），转 `ready-for-agent`**。详见 `issues/18-multi-object-dispatch.md`。
 - **19 派发对象兴趣无交集自动关闭**：~~ticket 14 降级项~~ **2026-10-08 废弃（wontfix）**：按决策去掉兴趣爱好相关功能，本票不再实现。`Blocked by 08` 解除（08 仍 done）。详见 `issues/19-interest-empty-intersection.md`。
 - **20 概览改教师工作台（待办聚合）**：INDEX C6 延后项——概览已为教师整体视角（ticket 14），但「待派发/待审核/谁没交 + 全班速览」的工作台形态未做。**11/12 均已 done，无实现阻塞**。**2026-10-08 拍板：选 A（顶部三待办卡片，复用 12 范式），转 `ready-for-agent`**。详见 `issues/20-overview-to-teacher-workbench.md`。

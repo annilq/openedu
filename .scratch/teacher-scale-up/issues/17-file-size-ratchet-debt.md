@@ -4,7 +4,7 @@
 
 **Blocked by:** 无（独立技术债，跨 epic）
 
-**Status:** ready-for-agent
+**Status:** done
 
 **范围（2026-10-07 实施 ticket 06 时发现，临时补登于 commit `ce4d1de`）：**
 - `features/analytics/presentation/screens/analytics_screen.dart` — 488 行（analytics ticket 12，commit `409b9c9`）
@@ -20,9 +20,11 @@
 - `section_practice.dart`（429）→ **A 拆小**：抽非核心 widget/长逻辑到子文件，主文件 ≤400，同步下调基线。
 - `teacher_task_form_view.dart`（425）→ **A 拆小**：抽长表单/聚合到子文件 ≤400，下调基线。
 
-- [ ] `analytics_screen.dart`：登记基线 488 并补 why 注释（B）
-- [ ] `section_practice.dart`：拆小 ≤400，下调基线（A）
-- [ ] `teacher_task_form_view.dart`：拆小 ≤400，下调基线（A）
-- [ ] `flutter test test/file_size_guard_test.dart` 仍全绿
+- [x] `analytics_screen.dart`：**B 确认保留**——补 why 注释（+4 行），基线同步 488→492 登记真实行数（2026-10-08）
+- [x] `section_practice.dart`：**A 拆小**——抽出 `PracticeQuestionPrompt`/`PracticeAction`/`PracticeNotice` 到 `section_practice_parts.dart`，主文件 429→293 回到 400 内，**整条移出 `_baseline`**（2026-10-08）
+- [x] `teacher_task_form_view.dart`：**A 拆小**——抽出审阅闸门/动作区到 `teacher_task_form_actions.dart`，主文件 429→384 回到 400 内，**整条移出 `_baseline`**（2026-10-08）
+- [x] `flutter test test/file_size_guard_test.dart` 仍全绿（3/3），`flutter analyze` 0 issue，`flutter test` 399 全绿
+
+**实施后 `_baseline` 净减 2 条**（section_practice、teacher_task_form_view 退出债务登记）；analytics_screen 作为 B 类合理大件继续保留。两处 A 均为 ADR-0058 P4「子件独立成文件」的真实职责分离。
 
 **决策锚点:** ADR-0058 规模棘轮；技术债 backlog，不在本轮 16 票内。
