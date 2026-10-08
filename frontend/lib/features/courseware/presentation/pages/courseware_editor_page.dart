@@ -2,7 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-import 'package:flutter/material.dart' show MaterialPageRoute;
+import 'package:flutter/cupertino.dart' show CupertinoPageRoute;
 
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_actions.dart';
@@ -183,6 +183,7 @@ class _CoursewareEditorPageState extends ConsumerState<CoursewareEditorPage> {
   Widget build(BuildContext context) {
     final text = AppTheme.textOf(context);
     return AppPushedPage(
+      background: AppTheme.colorsOf(context).surface,
       title: widget.kpName,
       child: _buildBody(text),
     );
@@ -198,7 +199,7 @@ class _CoursewareEditorPageState extends ConsumerState<CoursewareEditorPage> {
     if (cw == null) return;
     Navigator.push(
       context,
-      MaterialPageRoute(
+      CupertinoPageRoute<void>(
         builder: (_) => CoursewarePresentPage(coursewareId: cw.id),
       ),
     );

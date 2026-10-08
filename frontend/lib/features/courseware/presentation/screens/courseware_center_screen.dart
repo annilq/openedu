@@ -2,7 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-import 'package:flutter/material.dart' show MaterialPageRoute;
+import 'package:flutter/cupertino.dart' show CupertinoPageRoute;
 
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_empty_state.dart';
@@ -136,7 +136,7 @@ class _CoursewareCard extends StatelessWidget {
   void _edit(BuildContext context, CoursewareModel cw) {
     Navigator.push(
       context,
-      MaterialPageRoute(
+      CupertinoPageRoute<void>(
         builder: (_) => CoursewareEditorPage(
           knowledgePointId: cw.knowledgePointId!,
           kpName: cw.kpName,
@@ -151,7 +151,7 @@ class _CoursewareCard extends StatelessWidget {
   void _present(BuildContext context, CoursewareModel cw) {
     Navigator.push(
       context,
-      MaterialPageRoute(
+      CupertinoPageRoute<void>(
         builder: (_) => CoursewarePresentPage(coursewareId: cw.id),
       ),
     );
