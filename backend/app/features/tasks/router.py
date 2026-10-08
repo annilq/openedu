@@ -70,7 +70,6 @@ def create_from_generated(
         student_id=payload.student_id,
         questions=payload.questions,
         specs=[s.model_dump() for s in payload.specs],
-        focus_interest=payload.focus_interest,
         model=payload.model,
     )
 

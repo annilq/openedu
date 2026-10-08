@@ -85,7 +85,6 @@ def batch_generate_task(
     student_id: uuid.UUID | None,
     specs_dicts: list[dict],
     task_questions: list[TaskQuestion],
-    focus_interest: list[str] | None = None,
     model: str | None = None,
 ) -> Task:
     """批量建草稿 Task + 挂草稿项（R-Q1=c：不预写 Question，只写 TaskQuestion）。
@@ -93,7 +92,6 @@ def batch_generate_task(
     - `specs_dicts`：原始生成规格的 list[dict]，持久化到 Task.specs 以便整卷重生成。
     - `task_questions`：路由层已用出题引擎生成的草稿项（未写 Question）。
       路由层不 commit 直接传进来，避免和 Task 事务拆分。
-    - `focus_interest`：兴趣题模式聚焦主题（WF-4），整卷共享，随草稿持久化。
     - `model`：出题所用模型引用（内置 id / ModelConfig id），随草稿持久化以便重生成沿用。
     """
     task = Task(
@@ -102,7 +100,6 @@ def batch_generate_task(
         teacher_id=teacher_id,
         student_id=student_id,
         specs=specs_dicts or None,
-        focus_interest=focus_interest,
         model=model,
     )
     session.add(task)

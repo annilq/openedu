@@ -17,7 +17,6 @@ def run_migrations() -> None:
     """无 Alembic：启动期轻量迁移。
 
     - question 表补 teacher_id 列（owner 隔离，题库复用闭环）。
-    - user 表补 interests 列（兴趣画像，WF-1/WF-2）；task 表补 focus_interest 列（兴趣题模式，WF-4）。
     - 回填：通过 task_question -> task 找到原题归属家长；孤儿行保持 NULL
       （作用域查询会排除，dev 期可 rm app.db 重置）。
     """
@@ -103,30 +102,6 @@ def run_migrations() -> None:
             )
         except OperationalError:
             pass  # 偏序迁移：task_question 不存在，回填降级
-
-        # —— user.interests（JSON）——（WF-2）
-        if is_sqlite:
-            user_cols = [
-                r[1] for r in conn.execute(text('PRAGMA table_info("user")')).fetchall()
-            ]
-            if "interests" not in user_cols:
-                conn.execute(text('ALTER TABLE "user" ADD COLUMN interests TEXT'))
-        else:
-            conn.execute(
-                text('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS interests JSON')
-            )
-
-        # —— task.focus_interest（JSON）——（WF-4）
-        if is_sqlite:
-            task_cols = [
-                r[1] for r in conn.execute(text("PRAGMA table_info(task)")).fetchall()
-            ]
-            if "focus_interest" not in task_cols:
-                conn.execute(text("ALTER TABLE task ADD COLUMN focus_interest TEXT"))
-        else:
-            conn.execute(
-                text("ALTER TABLE task ADD COLUMN IF NOT EXISTS focus_interest JSON")
-            )
 
         # —— task.model（出题所选模型引用，ADR-0015/票据 08）——
         if is_sqlite:
@@ -510,10 +485,8 @@ def _nullify_text_json_nulls(conn) -> None:
         ("question", "options"),
         ("question", "source_refs"),
         ("taskquestion", "options"),
-        ("task", "focus_interest"),
         ("task", "specs"),
         ("material", "knowledge_points"),
-        ("user", "interests"),
         ("conversation", "payload"),
         ("conversation", "usage"),
     ):

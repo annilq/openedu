@@ -467,22 +467,6 @@ def owned_student_progress(*, session: Session, teacher: User, student_id: UUID)
 # ───────────────────────── 写路径：内部构件 ─────────────────────────
 
 
-def _extract_interests_pool(student: User | None) -> list[str] | None:
-    """从学生画像抽取轻融入兴趣池（WF-3）：受控分类叶子 + 自由文本。
-
-    返回扁平字符串列表（如 ["恐龙", "太空", "养蚕"]），空则 None。
-    注：自由文本（free_text）经生成 _SYSTEM 年龄/内容约束兜底；显式安全闸门见 WF-6。
-    """
-    if student is None or not student.interests:
-        return None
-    cat = student.interests.get("categories") or []
-    pool = [c for c in cat if isinstance(c, str)]
-    free = student.interests.get("free_text")
-    if isinstance(free, str) and free.strip():
-        pool.append(free.strip())
-    return pool or None
-
-
 async def _gen_question_stream(
     engine,
     *,
@@ -492,8 +476,6 @@ async def _gen_question_stream(
     qtype: str,
     difficulty: str,
     semester: str = "",
-    interests: list[str] | None = None,
-    focus_interest: str | None = None,
 ) -> AsyncIterator[QuestionStreamEvent]:
     """出题单题的**流式**形态：直接透传管线的语义事件（ADR-0023 收敛 / ADR-0032）。
 
@@ -518,8 +500,6 @@ async def _gen_question_stream(
         qtype=qtype,
         difficulty=difficulty,
         semester=semester,
-        interests=interests,
-        focus_interest=focus_interest,
     )
     async for ev in stream_question(
         provider, system_prompt=system_prompt, user_prompt=user_prompt, spec=spec
@@ -536,8 +516,6 @@ def _gen_question(
     qtype: str,
     difficulty: str,
     semester: str = "",
-    interests: list[str] | None = None,
-    focus_interest: str | None = None,
 ) -> GeneratedQuestion:
     """出题单题（同步落库路径）：drain ``_gen_question_stream`` 取最终题卡。
 
@@ -554,8 +532,6 @@ def _gen_question(
             qtype=qtype,
             difficulty=difficulty,
             semester=semester,
-            interests=interests,
-            focus_interest=focus_interest,
         ):
             if isinstance(ev, QuestionCard):
                 return ev.question
@@ -613,8 +589,6 @@ async def _stream_question_frames(
     knowledge_point: str,
     qtype: str,
     difficulty: str,
-    interests: list[str] | None = None,
-    focus_interest: str | None = None,
     sink: list[dict],
 ) -> AsyncIterator[str]:
     """单题出题的 SSE 帧流：**透传模型实时文本**，题卡收进 [sink] 不外发。
@@ -639,8 +613,6 @@ async def _stream_question_frames(
                 knowledge_point=knowledge_point,
                 qtype=qtype,
                 difficulty=difficulty,
-                interests=interests,
-                focus_interest=focus_interest,
             )
         ):
             if frame.eventType == EVENT_THINKING:
@@ -667,17 +639,6 @@ async def _stream_question_frames(
             "无可用 LLM 引擎或题目生成不安全，无法重生成（请在「模型管理」中添加模型并设为默认）",
             code=getattr(ErrCode.LLM_UNAVAILABLE, "value", str(ErrCode.LLM_UNAVAILABLE)),
         ).to_sse()
-
-
-def _round_robin_focus(focus_interests: list[str] | None, i: int) -> str | None:
-    """兴趣题模式：第 i 题轮询取一个聚焦主题；空列表返回 None。
-
-    单题重生成（regenerate_all）与整卷生成（_generate_task_questions_for_specs）
-    共用同一份轮询分配（单一事实源），避免 `i % len` 在多处重复且漂移。
-    """
-    if not focus_interests:
-        return None
-    return focus_interests[i % len(focus_interests)]
 
 
 def _expand_spec_items(specs: list[dict]) -> list[dict]:
@@ -714,8 +675,6 @@ def _gen_tq_for_spec_item(
     item: dict,
     idx: int,
     *,
-    interests: list[str] | None,
-    focus_interests: list[str] | None,
     engine=None,
     scene_ctx: tuple[Session, Any] | None = None,
 ) -> TaskQuestion:
@@ -726,7 +685,6 @@ def _gen_tq_for_spec_item(
     于是草稿预览就能内联渲染交互讲解，且模板后续改动不影响已生成的题。
     为 None（无 DB 上下文的纯出题路径 / 测试）时跳过，行为与旧版一致。
     """
-    focus = _round_robin_focus(focus_interests, idx)
     g = _gen_question(
         engine,
         subject=item["subject"],
@@ -735,8 +693,6 @@ def _gen_tq_for_spec_item(
         qtype=item["qtype"],
         difficulty=item["difficulty"],
         semester=item.get("semester", ""),
-        interests=interests if focus is None else None,
-        focus_interest=focus,
     )
     scene_spec = None
     if scene_ctx is not None:
@@ -778,8 +734,6 @@ def _gen_tq_for_spec_item(
 def _generate_task_questions_for_specs(
     specs: list[dict],
     *,
-    interests: list[str] | None = None,
-    focus_interests: list[str] | None = None,
     engine=None,
     scene_ctx: tuple[Session, Any] | None = None,
 ) -> list[TaskQuestion]:
@@ -788,18 +742,11 @@ def _generate_task_questions_for_specs(
     engine 为 resolve_engine 解析结果（None = 无真实引擎，出题核心将失败并抛 LLM_UNAVAILABLE）。
 
     ``scene_ctx`` 透传给 :func:`_gen_tq_for_spec_item` 落场景快照（ADR-0061 §M）。
-
-    兴趣注入（WF-3/WF-4）：
-    - `interests`：轻融入兴趣池（学生画像 categories），整卷统一下传。
-    - `focus_interests`：兴趣题模式聚焦主题（list）；非空时按题轮询均分（第 i 题取
-      focus_interests[i % n]），且此时不再轻融入兴趣池（避免双模式叠加）。
     """
     return [
         _gen_tq_for_spec_item(
             item,
             idx,
-            interests=interests,
-            focus_interests=focus_interests,
             engine=engine,
             scene_ctx=scene_ctx,
         )
@@ -871,7 +818,6 @@ def create_from_generated(
     student_id: UUID | None,
     questions: list[dict],
     specs: list[dict],
-    focus_interest: list[str] | None,
     model: str | None,
 ) -> TaskResp:
     """流式题卡落库：把逐题返回的题卡一次性建为 draft 任务。
@@ -962,7 +908,6 @@ def create_from_generated(
         student_id=student_id,
         specs_dicts=specs,
         task_questions=draft_questions,
-        focus_interest=focus_interest,
         model=model,
     )
     return task_to_resp(
@@ -1046,39 +991,20 @@ def _swap_question(
 
 def _regenerate_one_inputs(
     *, session: Session, teacher: User, task_id: UUID, tq_id: UUID
-) -> tuple[TaskQuestion, object, list[str] | None, str | None]:
-    """单题重生成的公共前置：鉴权 + 引擎 + 兴趣设定（同步版与流式版共用）。
-
-    返回 ``(tq, engine, interests_pool, focus)``。``interests_pool`` 与 ``focus``
-    二选一下传：显式聚焦主题时不轻融入画像，避免两种兴趣模式叠加。
-    """
+) -> tuple[TaskQuestion, object]:
+    """单题重生成的公共前置：鉴权 + 引擎（同步版与流式版共用）。"""
     task = _owned_task(session=session, teacher=teacher, task_id=task_id)
     _require_draft(task)
     tq = _draft_item(session=session, task=task, tq_id=tq_id)
     # 沿用本任务所选模型（无则出题核心失败并抛 LLM_UNAVAILABLE）；与整卷重生成保持一致。
     engine = resolve_engine(task.model, teacher_id=teacher.id, session=session)
-    # 单题重生成复现兴趣设定：沿用整卷聚焦主题的轮询分配（按当前题序），否则轻融入画像。
-    interests_pool = _extract_interests_pool(
-        session.get(User, task.student_id) if task.student_id else None
-    )
-    focus: str | None = None
-    focus_interests = task.focus_interest
-    if focus_interests:
-        tqs = get_task_questions(session=session, task_id=task.id)
-        try:
-            qi = next(k for k, t in enumerate(tqs) if t.id == tq.id)
-        except StopIteration:
-            qi = 0
-        focus = _round_robin_focus(focus_interests, qi)
-    return tq, engine, interests_pool, focus
+    return tq, engine
 
 
 def _gen_for_swap(
     tq: TaskQuestion,
     engine,
     *,
-    interests_pool: list[str] | None,
-    focus: str | None,
     scene_ctx: tuple[Session, Any] | None = None,
 ) -> Question:
     """按原题的 subject/grade/knowledge_point/qtype/difficulty 拉一道新题。
@@ -1094,8 +1020,6 @@ def _gen_for_swap(
         qtype=tq.qtype,
         difficulty=tq.difficulty or "medium",
         semester=tq.semester,
-        interests=interests_pool if focus is None else None,
-        focus_interest=focus,
     )
     scene_spec = None
     if scene_ctx is not None:
@@ -1122,14 +1046,12 @@ def regenerate_one(
     *, session: Session, teacher: User, task_id: UUID, tq_id: UUID
 ) -> QuestionResp:
     """单题重生成：沿用原题的 subject/grade/knowledge_point/qtype/difficulty 拉新。"""
-    tq, engine, interests_pool, focus = _regenerate_one_inputs(
+    tq, engine = _regenerate_one_inputs(
         session=session, teacher=teacher, task_id=task_id, tq_id=tq_id
     )
     new_q = _gen_for_swap(
         tq,
         engine,
-        interests_pool=interests_pool,
-        focus=focus,
         scene_ctx=(session, teacher.id),
     )
     return _swap_question(session=session, tq_id=tq_id, gen_question=new_q)
@@ -1155,7 +1077,7 @@ async def regenerate_one_stream(
     抛异常只会给客户端留一个 200 + 空正文，比一句人话错误更难排查。
     """
     try:
-        tq, engine, interests_pool, focus = _regenerate_one_inputs(
+        tq, engine = _regenerate_one_inputs(
             session=session, teacher=teacher, task_id=task_id, tq_id=tq_id
         )
     except AppErrorException as e:
@@ -1173,8 +1095,6 @@ async def regenerate_one_stream(
         knowledge_point=tq.knowledge_point,
         qtype=tq.qtype,
         difficulty=tq.difficulty or "medium",
-        interests=interests_pool if focus is None else None,
-        focus_interest=focus,
         sink=sink,
     ):
         yield frame
@@ -1204,10 +1124,10 @@ async def regenerate_one_stream(
 
 def _regenerate_all_inputs(
     *, session: Session, teacher: User, task_id: UUID
-) -> tuple[Task, list[dict], list[str] | None, object]:
-    """整卷重生成的公共前置：鉴权 + 规格校验 + 兴趣设定 + 引擎（同步版与流式版共用）。
+) -> tuple[Task, list[dict], object]:
+    """整卷重生成的公共前置：鉴权 + 规格校验 + 引擎（同步版与流式版共用）。
 
-    返回 ``(task, spec_items, interests_pool, engine)``。``spec_items`` 已按 count
+    返回 ``(task, spec_items, engine)``。``spec_items`` 已按 count
     摊平成「一题一项」，流式版本据此逐题推进度。
     """
     task = _owned_task(session=session, teacher=teacher, task_id=task_id)
@@ -1217,12 +1137,9 @@ def _regenerate_all_inputs(
         raise AppErrorException(
             ErrCode.TASK_EMPTY_SPECS, "当前草稿无生成规格，无法整卷重生成，请返回出题页重新创建"
         )
-    # 整卷重生成复现兴趣设定（WF-3/WF-4）：沿用原学生画像轻融入 + 原聚焦主题。
-    student = session.get(User, task.student_id) if task.student_id else None
-    interests_pool = _extract_interests_pool(student)
     # 沿用本任务所选模型（无则出题核心失败并抛 LLM_UNAVAILABLE）。
     engine = resolve_engine(task.model, teacher_id=teacher.id, session=session)
-    return task, _expand_spec_items(specs), interests_pool, engine
+    return task, _expand_spec_items(specs), engine
 
 
 def _commit_regenerated(
@@ -1247,15 +1164,13 @@ def regenerate_all(*, session: Session, teacher: User, task_id: UUID) -> TaskRes
     若 Task.specs 为空（非本版流程创建的草稿），抛 VALIDATION 错误，要求教师
     返回出题页重新生成。
     """
-    task, spec_items, interests_pool, engine = _regenerate_all_inputs(
+    task, spec_items, engine = _regenerate_all_inputs(
         session=session, teacher=teacher, task_id=task_id
     )
     new_tqs = [
         _gen_tq_for_spec_item(
             item,
             idx,
-            interests=interests_pool,
-            focus_interests=task.focus_interest,
             engine=engine,
             scene_ctx=(session, teacher.id),
         )
@@ -1665,7 +1580,6 @@ async def generate_task_stream(
             "teacher_id": teacher_id,
             "student_id": student_id,
             "grade": 0,
-            "focus_interest": req.focus_interest,
             "session_id": None,
             "weak_examples": weak_examples,
             "specs": [s.model_dump() for s in req.specs],

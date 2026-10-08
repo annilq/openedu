@@ -50,31 +50,16 @@ def _build_question_clause(
     qtype: str,
     difficulty: str,
     semester: str,
-    interests: list[str] | None,
-    focus_interest: str | None,
     multi: bool = False,
     judge: bool = False,
 ) -> str:
     """出题语境内核（情境/难度/兴趣包装）：流式与落库共用，保证口径一致
     （ADR-0021：RAG / 学科 Persona 在调用方注入）。"""
     sem_hint = f"{semester}" if semester else "整学年"
-    if focus_interest:
-        clause = (
-            f"请围绕主题“{focus_interest}”为{grade}年级《{subject}》（{sem_hint}）的"
-            f"“{knowledge_point}”出一道{qtype}题，难度{difficulty}。题目情境应以"
-            f"“{focus_interest}”为载体讲清知识点，必须紧扣教材，不引入与学习无关或不当内容。"
-        )
-    elif interests:
-        clause = (
-            f"请为{grade}年级《{subject}》（{sem_hint}）的“{knowledge_point}”出一道{qtype}题，"
-            f"难度{difficulty}。可结合学生兴趣（{', '.join(interests)}）作情境包装，"
-            f"但必须紧扣知识点，不得偏离教材。"
-        )
-    else:
-        clause = (
-            f"请为{grade}年级《{subject}》（{sem_hint}）的“{knowledge_point}”出一道{qtype}题，"
-            f"难度{difficulty}。"
-        )
+    clause = (
+        f"请为{grade}年级《{subject}》（{sem_hint}）的“{knowledge_point}”出一道{qtype}题，"
+        f"难度{difficulty}。"
+    )
     # 多选题提示（ADR-0004 D5）：正确答案可能不止一个，answer 用「｜」连接所有
     # 正确选项的**完整文本**（与 options 中某一行完全一致），例如「苹果｜香蕉」。
     if multi:
@@ -111,8 +96,6 @@ def _build_question_prompt(
     qtype: str,
     difficulty: str,
     semester: str = "",
-    interests: list[str] | None = None,
-    focus_interest: str | None = None,
     rag_context: str | None = None,
     persona_hint: str | None = None,
     history: list[dict] | None = None,
@@ -124,8 +107,7 @@ def _build_question_prompt(
     clause = _build_question_clause(
         subject=subject, grade=grade, knowledge_point=knowledge_point,
         qtype=qtype, difficulty=difficulty, semester=semester,
-        interests=interests, focus_interest=focus_interest, multi=multi,
-        judge=judge,
+        multi=multi, judge=judge,
     )
     if persona_hint:
         clause += f"\n\n{persona_hint}"
@@ -175,8 +157,6 @@ def build_question_prompts(
     qtype: str,
     difficulty: str,
     semester: str = "",
-    interests: list[str] | None = None,
-    focus_interest: str | None = None,
     rag_context: str | None = None,
     persona_hint: str | None = None,
     history: list[dict] | None = None,
@@ -197,8 +177,7 @@ def build_question_prompts(
     """
     user_prompt = _build_question_prompt(
         subject=subject, grade=grade, knowledge_point=knowledge_point, qtype=qtype,
-        difficulty=difficulty, semester=semester, interests=interests,
-        focus_interest=focus_interest, rag_context=rag_context,
+        difficulty=difficulty, semester=semester, rag_context=rag_context,
         persona_hint=persona_hint, history=history, weak_examples=weak_examples,
         multi=multi, judge=judge,
     )
@@ -278,8 +257,6 @@ async def generate_question(
     qtype: str,
     difficulty: str,
     semester: str = "",
-    interests: list[str] | None = None,
-    focus_interest: str | None = None,
     rag_context: str | None = None,
     persona_hint: str | None = None,
     history: list[dict] | None = None,
@@ -293,8 +270,7 @@ async def generate_question(
     """
     system_prompt, user_prompt, spec = build_question_prompts(
         subject=subject, grade=grade, knowledge_point=knowledge_point, qtype=qtype,
-        difficulty=difficulty, semester=semester, interests=interests,
-        focus_interest=focus_interest, rag_context=rag_context,
+        difficulty=difficulty, semester=semester, rag_context=rag_context,
         persona_hint=persona_hint, history=history, multi=multi, judge=judge,
     )
     async for ev in stream_question(

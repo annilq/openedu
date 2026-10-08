@@ -574,7 +574,6 @@ async def chat(
                 if req.courseware is not None and req.courseware.grade is not None
                 else ((caller.user.grade if role == "student" else 0) or 0)
             ),
-            "focus_interest": req.focus_interest,
             "courseware": courseware,
             # ADR-0072：显式下钻知识点 id，便于 SubAgent 精确聚焦（与 courseware 并存）。
             "knowledge_point_id": (

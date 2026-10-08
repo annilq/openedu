@@ -10,8 +10,6 @@ from app.db.models.base import get_datetime_utc
 class TaskBase(SQLModel):
     title: str = Field(max_length=255)
     status: str = Field(max_length=16, default="draft")  # draft|ready|assigned|done
-    # 兴趣题模式：本卷聚焦的兴趣主题（WF-4），整卷共享、用于审阅打标与整卷重生成复现。
-    focus_interest: list[str] | None = Field(default=None, sa_type=JSON(none_as_null=True))
 
 
 class Task(TaskBase, table=True):

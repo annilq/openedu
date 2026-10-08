@@ -90,9 +90,8 @@ def update_user(
     user: User,
     display_name: str | None = None,
     grade: int | None = None,
-    interests: dict | None = None,
 ) -> User:
-    """编辑学生资料（WF-5）：仅局部更新昵称/年级/兴趣；账号密码等字段不在此处变动。
+    """编辑学生资料（WF-5）：仅局部更新昵称/年级；账号密码等字段不在此处变动。
 
     所有字段可选，仅传入非 None 的字段生效。
     """
@@ -100,8 +99,6 @@ def update_user(
         user.display_name = display_name
     if grade is not None:
         user.grade = grade
-    if interests is not None:
-        user.interests = interests
     session.add(user)
     session.commit()
     session.refresh(user)

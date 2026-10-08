@@ -7,10 +7,7 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
-
 from agent_core.ports import LLMProvider, StructuredDone
-from app.ai.subagents.question.parsers import QuestionSchema
 from app.ai.subagents.question.pipeline import generate_question
 from app.domain.provider import GeneratedQuestion
 from app.domain.safety import SafetyVerdict
@@ -74,30 +71,3 @@ def test_generate_question_unsafe_returns_none(monkeypatch):
         subject="数学", grade=2, knowledge_point="加法", qtype="calc", difficulty="easy",
     )
     assert g is None
-
-
-def test_generate_question_passes_prompt_and_schema():
-    """provider 确实被以出题 schema 与含兴趣的 prompt 调用（确保不是空跑）。"""
-    captured: dict = {}
-    _run(
-        _FakeProvider(dict(_Q_DICT), captured=captured),
-        subject="语文", grade=3, knowledge_point="字词", qtype="fill", difficulty="medium",
-        interests=["恐龙"],
-    )
-    assert captured["schema"] is QuestionSchema
-    assert "恐龙" in captured["prompt"]
-    assert "语文" in captured["prompt"]
-
-
-@pytest.mark.parametrize("focus_interest,expect_focus", [("太空", True), (None, False)])
-def test_generate_question_focus_clause(focus_interest, expect_focus):
-    captured: dict = {}
-    _run(
-        _FakeProvider(dict(_Q_DICT), captured=captured),
-        subject="科学", grade=4, knowledge_point="行星", qtype="open", difficulty="hard",
-        focus_interest=focus_interest,
-    )
-    if expect_focus:
-        assert "太空" in captured["prompt"]
-    else:
-        assert "太空" not in captured["prompt"]

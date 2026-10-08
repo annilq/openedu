@@ -325,9 +325,6 @@ class QuestionSubAgent(BaseSubAgent):
         )
         yield tc.call
 
-        # WF-4 兴趣题模式：focus_interest 是主题列表，按题序轮转分配（与旧 flow 行为一致）。
-        focuses = ctx.extra.get("focus_interest") or []
-        n_focus = len(focuses)
         # 反馈边（ADR-0060 D4）：掌握度看板下发的代表错题样例，注入每题 prompt 做同类题仿写。
         weak_examples = ctx.extra.get("weak_examples")
 
@@ -339,12 +336,11 @@ class QuestionSubAgent(BaseSubAgent):
         # 资料溯源（ADR-0055 §13）：逐题快照 + 去重后的「参考了 N 份资料」计数。
         referenced: set[str] = set()
         for idx, item in enumerate(items):
-            focus = focuses[idx % n_focus] if n_focus else None
             rag_context, persona_hint, item_refs = build_question_context(
                 subject=item["subject"],
                 grade=item["grade"],
                 knowledge_point=item["knowledge_point"],
-                query=focus or item["knowledge_point"],
+                query=item["knowledge_point"],
                 retriever=self.retriever,
             )
             referenced.update(ref["material"] for ref in item_refs)
@@ -356,7 +352,6 @@ class QuestionSubAgent(BaseSubAgent):
                 qtype=item["qtype"],
                 difficulty=item["difficulty"],
                 semester=item.get("semester", ""),
-                focus_interest=focus,
                 rag_context=rag_context,
                 persona_hint=persona_hint,
                 history=ctx.history,

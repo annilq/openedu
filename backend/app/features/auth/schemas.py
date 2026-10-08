@@ -2,7 +2,6 @@
 
 from uuid import UUID
 
-from sqlalchemy import JSON
 from sqlmodel import Field, SQLModel
 
 from app.db.models import UserBase
@@ -13,14 +12,13 @@ class UserCreate(UserBase):
 
 
 class UserUpdate(SQLModel):
-    """教师编辑学生资料（WF-5）：仅昵称/年级/兴趣可改，账号密码锁定不编辑。
+    """教师编辑学生资料（WF-5）：仅昵称/年级可改，账号密码锁定不编辑。
 
     所有字段可选；仅传非空字段进行局部更新。
     """
 
     display_name: str | None = Field(default=None, max_length=64)
     grade: int | None = Field(default=None)
-    interests: dict | None = Field(default=None, sa_type=JSON)
 
 
 class LoginRequest(SQLModel):

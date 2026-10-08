@@ -19,8 +19,8 @@ from sqlmodel import Field, SQLModel
 class CoursewareContext(SQLModel):
     """课堂课件练习上下文（ADR-0067 §3.6）。
 
-    与 ``focus_interest`` 同样只经 ``SubAgentContext.extra`` 透传，不对应任务、
-    作答或掌握度实体；字段可空以兼容孤儿课件与尚未补齐的旧草稿。
+    只经 ``SubAgentContext.extra`` 透传，不对应任务、作答或掌握度实体；字段可空以
+    兼容孤儿课件与尚未补齐的旧草稿。
     """
 
     courseware_id: UUID | None = None
@@ -54,17 +54,12 @@ class SuggestedAction(SQLModel):
 
 
 class AssistantChatReq(SQLModel):
-    """悬浮助手对话请求体。
-
-    WF-4 兴趣题模式：``focus_interest`` 为显式聚焦主题（如「恐龙」「太空」），
-    经 ctx.extra 透传给出题 SubAgent，注入出题 prompt 让情境围绕该主题展开。
-    """
+    """悬浮助手对话请求体。"""
 
     message: str = Field(min_length=1, max_length=2000)
     session_id: str | None = None
     model: str | None = None
     history: list[dict] | None = None
-    focus_interest: list[str] | None = None
     # ADR-0072：出题-判断-引导闭环的触发标记。为真时后端绕开常规 LLM 路由，
     # 直接复用 question 管线出一道判断题并写入 pending_quiz，等待用户自然语言 yes/no 判定。
     quiz: bool = Field(default=False)

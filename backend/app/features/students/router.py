@@ -83,7 +83,7 @@ def update_student(
     student_id: UUID,
     payload: UserUpdate,
 ) -> UserPublic:
-    """编辑学生资料（WF-5）：仅昵称/年级/兴趣可改，账号密码锁定不编辑。
+    """编辑学生资料（WF-5）：仅昵称/年级可改，账号密码锁定不编辑。
 
     仅传入非 None 的字段生效；目标学生须属于当前教师。
     """
@@ -105,7 +105,6 @@ def update_student(
         user=student,
         display_name=payload.display_name,
         grade=payload.grade,
-        interests=payload.interests,
     )
     return updated
 

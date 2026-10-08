@@ -64,7 +64,6 @@ class TaskGenerateReq(SQLModel):
     specs: list[TaskSpec]
     model: str | None = None
     student_id: uuid.UUID | None = None
-    focus_interest: list[str] | None = None
     # 反馈边（ADR-0060 D4）：随掌握度看板下发的代表错题 Question.id，服务端按
     # teacher_id + origin="ai" 解析为题干样例，注入出题 prompt 做同类题仿写。
     weak_example_ids: list[uuid.UUID] | None = None
@@ -81,8 +80,6 @@ class TaskFromGenerated(SQLModel):
     title: str = Field(max_length=255)
     student_id: uuid.UUID | None = None  # 可空，支持"先成卷晚点派"
     specs: list[TaskSpec]  # 原始规格，持久化到 Task.specs 以便整卷重生成
-    # 兴趣题模式（WF-4）：显式聚焦的兴趣主题列表；与生成时保持一致。
-    focus_interest: list[str] | None = None
     # 可选模型引用：内置 id / ModelConfig id；落库以便重生成沿用。
     model: str | None = None
     # 已流式生成、待落库的题卡（QuestionPreview.toJson 形态）。
