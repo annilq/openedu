@@ -1,188 +1,144 @@
-# ADR-0074：交互讲解配置入口从知识点管理迁移到场景库
+# ADR-0074：场景库成为「讲解配置」唯一管理面（场景为中心，场景服务端硬编码）
 
-状态：草案（基于 ADR-0073 收敛后的 UX 整合；待评审与实施排期）
+状态：草案（v4——场景为中心 + 场景服务端硬编码；前端「新增场景」仅提醒开发者，不自由创建）
 
-修订：第 2 版——新增 §7「kind 级默认图形管理」，修正原 §3/§4「注册表不动、库不预填图形」的表述：
-kind 级默认图形需可写持久化（新增 `scene_template_config`），但注册表作为结构种子源的身份不变，
-`kp.scenes` 仍唯一事实源（默认图形只经 seed 注入 KP 实例，不构成 live binding）。
+修订轨迹：
+- v1：KP 为中心（库做配置入口）。
+- v2：加 §7 kind 级默认图形（消除场景/图形割裂）。
+- v3（已废弃）：试图把场景升级为教师可自由建的 SceneInstance 一等实体——被本方向推翻。
+- v4（本版）：**场景（kind）是服务端硬编码资产**，前端不自由创建；「新增场景」按钮只提醒开发者
+  在后端配置。教师侧不产生新实体，只在场景库里配置已有 kind 的「演示图形 + 关联知识点 + 标题」。
 
 ## 背景
 
-知识点管理行内有一个「讲解」按钮（`knowledge_point_row.dart`），点开 `KnowledgePointSceneEditor`
-为某个已落库知识点编写默认交互讲解模板（写入 `KnowledgePoint.scenes`）。同时，场景库
-（`scene_library_view` / `scene_library_detail_view`，ADR-0073）已经以只读方式列出每个内置场景
-被哪些知识点引用、以及它们的图形与预览。
+知识点由资料库解析（重解析身份稳定、`upsert_pending_knowledge_point` 按
+`(teacher_id, subject, grade, name, semester)` 查重保留 id；但 KP 不再被引用时 `_prune_knowledge_points`
+会级联清理 → 关联可能悬空）。而场景库 `SCENE_LIBRARY` 注册表 + `scene_figures.py` **硬编码、一般不变**
+（kind 与图形均开发者维护，ADR-0073「新增可渲染 kind 仍开发者工作流 + 前端渲染器发版」）。
 
-两处指向**同一个概念**——知识点的交互讲解实例——却分散在两个入口：
+用户据此重新定义关系：**场景稳定、知识点易变** → 关联应以「配置已有场景 → 关联知识点」为正向，
+而非「从易变 KP 反向建场景」。并明确：场景只在服务端新增，前端点击「新增场景」时提醒开发者配置。
 
-1. **知识点管理行**：负责「写」（`scenes` 的编写/覆盖）。
-2. **场景库详情页**：只负责「看」（聚合 `kp.scenes` 反查出的关联知识点，只读预览）。
-
-由此带来两个问题：
-
-- 教师要在两个地方理解「场景」这件事，概念被拆散；场景库本应是一站式管理面，却只能看不能改。
-- 场景库详情页已天然按 kind 把「所有关联知识点的实例」收拢在一处，是比知识点行更合理的
-  配置落脚点——但当前它缺写能力，导致「配置」只能绕回知识点行。
-- **场景与图形割裂**（用户补充）：讲解弹窗的图形画廊（`ReflectionFigureGallery`，11 图形）只活在 KP
-  编辑器里，场景库看不到也管不了图形——「场景类型」在库、「图形选择」在 KP 弹窗，两件事被拆到两处。
-
-用户诉求（经 grill 钉死）：把「讲解」配置从知识点管理挪到场景库，在场景库里统一配置实例（含图形与默认图形），
-知识点管理行去掉「讲解」按钮。
+原痛点（仍成立）：知识点管理行「讲解」按钮（`knowledge_point_row.dart`）与场景库指向同一概念却分散；
+讲解弹窗的图形画廊（`ReflectionFigureGallery`）只活在 KP 编辑器，库管不了图形 → 割裂。
 
 ## 决策
 
-### 1. 场景库详情页升级为「可写配置入口」
+### 1. 场景（kind）是服务端硬编码资产，前端不自由创建
 
-`scene_library_detail_view` 从只读列表升级为配置面，具备两种能力：
+- kind 与图形由开发者在 `scene_templates.py`（`SCENE_LIBRARY`）+ `scene_figures.py` 维护；
+  教师端只**消费**已登记项（选图形 + 设标题），不自由创建场景类型、不自由绘制图形。
+- 前端场景库顶部的「新增场景」按钮**不调用任何写端点**，点击即弹出提醒（toast/引导文案）：
+  「新场景类型请在后端 `SCENE_LIBRARY` 注册表配置并随前端渲染器发版，请联系开发者」。
+  即：**前端只做开发者提醒，不做创建**。
+- 新增可渲染 kind 属开发者工作流（ADR-0073 决策 7），不在本 ADR 教师 ticket 内。
 
-- **编辑已关联实例**：点任一 `_InstanceCard` 打开 `KnowledgePointSceneEditor`（复用，传入该
-  KP 的 `id/name/subject/grade/semester/scenes`），改完经现有 `saveScenes` 写回。
-- **新增「关联知识点」**：把尚未关联某 kind 的知识点加进该场景——选一个未关联的 KP，写入一份
-  seed 场景（`kind` + 注册表中性轴参数 + §7 的库默认图形），使其进入库清单。
+### 2. 场景库详情页成为讲解配置的唯一管理面
 
-### 2. 知识点管理行去掉「讲解」按钮
+对每个服务端已存在的 kind，教师在其详情页配置三件事：
 
-`knowledge_point_row.dart` 删除「讲解」`AppTextAction` 及其打开编辑器的整条链路（含「尚未配置
-讲解资源」确认框、`kp.semester` 传参等）。保留「课件」入口。「未配置弹开发者指引」的空态逻辑
-迁移到场景库详情页：当某 kind 的 `associated_knowledge_points` 为空时，显示「在场景库给某知识点
-关联此场景」（文案更新：原「去知识点管理」改为「在场景库关联」）。
+- **① 演示图形（默认图形）**：在该 kind 暴露的图形集中选一个标为 `default_figure_key`
+  （复用 v2 §7 机制）。图形顶点仍来自 `scene_figures.py`，库只存 key，不复制几何。
+- **② 关联知识点（1:N）**：把一个或多个 KP 关联到该场景——写一份 seed 场景（kind + §7 默认图形 +
+  注册表中性轴参数）进该 KP 的 `kp.scenes`（经现有 `PATCH …/scenes`）。关联由 `kp.scenes` 里的
+  `kind` 隐式表达（ADR-0073 的 `GET /materials/scene-library` 正是扫 `kp.scenes` 反查关联），
+  **无需新增关联表**。
+- **③ 标题按知识点编辑**：每个关联 KP 的场景条目标题可在库内经编辑器覆盖（写入该 KP 的 `kp.scenes`
+  场景条目 `title`），即「场景 title 根据对应知识点编辑」。
 
 ### 3. 事实源不变（不碰 ADR-0073 红线）
 
-- 写入仍落 `KnowledgePoint.scenes`；渲染、出题、课件生成只读 `scenes`，**永不回查注册表**。
-- 后端 `scene_templates.py` 注册表仍只作**结构种子源**（inputs 骨架）——所谓「库变可写」是
-  **前端多了一个写 `kp.scenes` 的入口** + §7 新增的 kind 级默认图形配置，不是注册表变成事实源。
-  （注：原稿此处写「注册表本身不动」，第 2 版修正为「注册表作为结构种子源的身份不变」，
-  因 §7 需新增持久化的 `scene_template_config`；详见 §7。）
+- 渲染 / 出题 / 课件只读 `KnowledgePoint.scenes`（per-KP 快照拷贝），**永不回查** 库配置 / 注册表 /
+  `scene_figures`。
+- 关联 KP 时把场景当前 `{kind, figure_key, params, title}` **seed 拷贝**进 `kp.scenes`。
+- 改库默认图形 / 标题**只影响之后新关联的 KP**；已关联 KP 的 `kp.scenes` 不自动回写（保快照不可变）。
+  可选「同步到已关联」显式按钮（老师主动触发，非自动、非 live binding）——列为遗留，不在首版。
 
-### 4. 图形 `figure/points` 按知识点各自选，库默认仅作 seed
+### 4. 关联稳定性与 prune 处理
 
-库详情页的编辑器内仍用 `ReflectionFigureGallery` 逐个 KP 选/改图形（grill 已确认：保留 KP 可覆盖）。
-注册表中性种子仍 `figure=''`（ADR-0073 决策⑥）；**关联写 seed 时**，`figure/points` 改从 §7 的
-`scene_template_config.default_figure_key` 注入（不再是空占位）。库不预填图形到注册表、不统一图形——
-避免「平移类点也显示房子」的误导。
+- KP id 重解析稳定（upsert by name），关联在重解析下存活。
+- KP 被 prune（无资料引用）时：库侧该关联**显示为悬空项**（「关联的知识点已不存在」），教师可手动解除；
+  **不级联删场景**（场景是教师的稳定资产）。库聚合在反查 `kp.scenes` 时若 KP 已不存在则标悬空。
 
-### 5. 学期沿用各知识点自身学期，匹配规则不变
+### 5. KP 行移除「讲解」按钮
 
-每个实例卡携带的 `semester` 即该 KP 的学期；改 scene 不移动知识点，匹配规则「先同学期→回落整学年」
-不变（ADR-0061 §J）。
+`knowledge_point_row.dart` 删「讲解」`AppTextAction` + 确认框 + `kp.semester` 传参整条链路；保留「课件」。
+必须在库具备「演示图形配置 + 关联知识点」能力后撤（否则新 KP 进不了库）。
 
-### 6. 不新增「库级默认实例」实体
+### 6. 标题语义
 
-注册表 seed（轴 90°/位 0.5）即是共享默认；per-KP 通过「选图形 + 调轴」做 override。用户原话
-「在场景库设置默认」在此模型下由 §7 的 `default_figure_key`（种子）满足，而非新增「库级默认实例」
-这一会诱发 live binding 的概念。
-
-### 7. kind 级「默认图形」管理（消除场景 / 图形割裂）
-
-背景：讲解弹窗的图形画廊（`ReflectionFigureGallery`，11 图形）只活在 KP 编辑器里，场景库看不到也管不了
-图形——用户感知为「场景与图形管理割裂」。本扩展把图形选择上提到场景库：库在 kind 层级展示该场景的图形集
-并标记一个默认图形，使场景库成为「场景 = kind + 图形集 + 默认图形」的唯一管理面。
-
-决策（经 grill 钉死）：
-
-- **库详情页 kind 层级展示图形画廊 + 默认图形**：教师在此把某个图形标为 `default_figure_key`。
-- **默认图形 = 种子，非事实源**：KP 关联该 kind 时，seed 场景的 `figure/points` 从该默认图形注入
-  （复用 `knowledge_point_scene_editor._pickScene` 的同款注入逻辑）。库改默认**只影响新关联 / 显式
-  「重置为库默认」**，绝不回写已落库的 `kp.scenes` 与 `Question.scene_spec` → ADR-0073 快照铁律守住。
-- **保留 KP 可覆盖**（grill 确认）：关联后的 KP 在库内编辑实例时仍可改成自己的图形（如 house→butterfly）。
-  库默认只是起点，不是强制唯一。
-- **仅设默认图形、不裁剪可用集**（grill 确认）：库不维护 per-kind allow-list，11 图形全开放；管理深度到此为止。
-- **图形几何不搬进库**：仍由共享图形库 `scene_figures.py`（`kFigureShapes`）提供顶点；库只存 `default_figure_key`
-  （引用 key），不复制顶点。ADR-0073 边界③（注册表不预填 figure）维持——注册表中性种子仍 `figure=''`，
-  默认图形来自下方新增的持久化配置，而非注册表本身。
-
-对原 §3 / §4 的修正：kind 级默认图形需要**可写、持久化**，而当前 `SCENE_LIBRARY` 是 `scene_templates.py`
-里的代码常量（只读、非持久化）。故新增轻量持久化配置 `scene_template_config(kind PK → default_figure_key)`，
-由库 UI 读写；注册表本身仍只作**结构种子源**（inputs 骨架），不承载默认图形。这是对 0074 原 §3
-「注册表不动」的修正——本扩展确实引入一处小的数据模型新增（kind 级配置），但注册表作为结构种子源的身份不变，
-且 `kp.scenes` 仍是唯一事实源（默认图形只经 seed 注入 KP 实例，不构成 live binding）。
+- 场景有基础展示名（kind 名，如「轴对称」）；每个关联 KP 的场景条目标题可覆盖（编辑自对应 KP 名）。
+- 渲染 / 出题用的是 `kp.scenes` 里的标题（覆盖值或回落 kind 名），不在运行时回查库配置。
 
 ## 与 ADR-0073 的关系
 
-- **扩展**其 UX 边界：场景库从「只读浏览/聚合」变为「可写配置入口」，并新增 kind 级默认图形管理。
-- **不改**其红线：`scenes` 唯一事实源；渲染/出题/课件永不回查注册表；实例存完整副本（快照不可变）。
-- **显式排除**「库做事实源 / live binding」解读——那会让已出题目随库默认改写，破坏快照不可变，
-  ADR-0073 Out-of-Scope 已明确拒绝。本 ADR 只动前端入口位置、库详情页能力，以及 §7 一处小的
-  kind 级配置（默认图形经 seed 注入，不回写已落库）。
-- **新增**一处小的数据模型：`scene_template_config`（kind 级默认图形，可写持久化），修正本 ADR 原 §3
-  「注册表不动」的表述；注册表仍只作结构种子源，红线（scenes 唯一事实源 / 快照不可变）不受此影响。
+- **扩展**其 UX 边界：场景库从「只读浏览/聚合」变为「讲解配置唯一管理面」，并管理 kind 级默认图形。
+- **不改**其红线：`scenes` 唯一事实源；实例存完整副本（快照不可变）；渲染/出题/课件永不回查。
+- **显式排除**：① 库做事实源 / live binding（ADR-0073 Out-of-Scope 已拒）；② 教师前端自由创建场景
+  / 图形（v3 已废弃方向）；③ 注册表运行时编辑 / 版本化。
+
+## 数据模型新增（仅一处）
+
+`scene_template_config(kind PK → default_figure_key, nullable)`：kind 级演示图形，可写持久化。
+- 注册表 `SCENE_LIBRARY` 仍只作结构种子源（inputs 骨架），不承载默认图形。
+- `default_figure_key` 为空 → 关联写 seed 时回落注册表 `figure=''` 空占位（与现状一致）。
+- 其余关联 / 场景条目均存于 `kp.scenes`，无新增关联表。
 
 ## 实施要点
 
 ### 前端
 
-- `scene_library_detail_view.dart`：每个 `_InstanceCard` 可点进 `KnowledgePointSceneEditor`（复用，
-  传 `id/name/subject/grade/semester/scenes`）；新增「关联知识点」入口（选未关联 KP → 写 seed 场景）。
-  **kind 层级新增图形画廊 + 默认图形标记**（§7）：读取 `SceneLibraryItem.default_figure_key`，提供「设为默认」。
-- `knowledge_point_row.dart`：删「讲解」按钮 + 确认框 + `kp.semester` 传参；保留「课件」。
-- `knowledge_point_scene_editor.dart`：无需大改，仅调用方从 KP 行变为库详情页；空态开发者指引保留在
-  编辑器内（未配置时仍弹 `SceneDeveloperGuide`）；关联写 seed 的图形成因从 §7 默认图形取（见 §4）。
-- 库详情空态文案更新（指向「在场景库关联」，而非「去知识点管理」）。
+- `scene_library_view`：顶部「新增场景」按钮 → 点击弹开发者提醒（toast/引导文案），无写调用。
+- `scene_library_detail_view`：每个 kind 详情展示 ① 图形画廊 + 「设为默认」（读/写 `default_figure_key`）；
+  ② 关联知识点列表（1:N，扫 `kp.scenes` 反查，含 prune 悬空标记）；③ 点关联项打开 `KnowledgePointSceneEditor`
+  （复用，传 `id/name/subject/grade/semester/scenes`）改图形/标题经现有 `PATCH …/scenes`；④ 新增「关联知识点」
+  入口（前端过滤未关联该 kind 的 KP → 写 seed）。
+- `knowledge_point_row.dart`：删「讲解」链路，保留「课件」；库详情空态文案指向「在场景库关联」。
 
 ### 后端
 
-- 编辑 / 新增实例均复用现有 `PATCH /materials/knowledge-points/{kpId}/scenes`
-  （`update_knowledge_point_scenes`）。
-- **新增 `scene_template_config` 表与读写端点**（§7）：`kind` 主键 + `default_figure_key`；
-  `GET /materials/scene-library` 的 `SceneLibraryItem` 附带 `default_figure_key`；
-  新增 `PUT /materials/scene-library/{kind}/default-figure` 写默认图形（kind 稳定契约、只弃用不重命名）。
-  注册表 `SCENE_LIBRARY` 不动，仍作结构种子源。「关联知识点」写 seed 时由 `default_figure_key` 注入图形。
-- 「关联知识点」picker 的数据源：复用现有知识点列表（教师域），**前端过滤掉已关联该 kind 的项**；
-  无需新增端点（或可选新增「未关联 KP」端点，见已知遗留 1）。
-- 数据已就位：`GET /materials/scene-library` 的 `SceneLibraryKpRef` 已带 `scenes` + 学科/年级/学期，
-  库详情预览与编辑器预填零新增后端字段（测试 `test_scene_templates.py:182` 已断言 `scenes` 透传）。
+- 新增 `scene_template_config` 表（幂等 DDL，`run_migrations`）；`GET /materials/scene-library` 的
+  `SceneLibraryItem` 附带 `default_figure_key`；新增 `PUT /materials/scene-library/{kind}/default-figure`
+  写默认图形（kind 稳定契约）。
+- 关联 / 编辑复用现有 `PATCH /materials/knowledge-points/{kpId}/scenes`，零新增实例端点。
+- `GET /materials/scene-library` 反查 `kp.scenes` 时补充 prune 悬空标记（KP 已不存在）。
 
 ### 导航
 
-- 库内「列表 → 详情 → 编辑/关联」钻取须走单一 `sealed` 状态（ADR-0059 导航状态约束），不复用
-  知识点行的 `showDialog` 散落写法。
+- 库内「列表 → 详情 → 编辑/关联」钻取走单一 `sealed` 状态（ADR-0059），不复用 KP 行 `showDialog` 散落写法。
 
 ## 迁移与兼容性
 
-- **存量 `kp.scenes` 不动**：那 1 个 reflection KP 现有数据原样有效，进库后照常显示。
-- **未配置 KP**：经库「关联知识点」写 seed 进库，seed 图形取自 `scene_template_config.default_figure_key`
-  （空则回落注册表 `figure=''` 空占位，与现状一致），无需数据迁移。
-- **空态语义不变**：`scenes` 为空仍弹开发者指引（位置迁到库详情/编辑器内）。
-- **新增 `scene_template_config` 表**（`kind` 主键 + `default_figure_key`，可为空 → 回落注册表空占位，
-  行为同现状）；幂等 DDL（`run_migrations`，无 Alembic）。存量无数据，首启动无回填。
+- 存量 `kp.scenes` 不动；那 1 个 reflection KP 现有数据原样有效。
+- 新增 `scene_template_config` 表首启动无回填；`default_figure_key` 空则回落现状。
+- 快照不可变测试 / ADR-0073 回归不动；`kind` 稳定契约不动。
 
 ## Consequences
 
-- **前端新增/改动**：`scene_library_detail_view` 增编辑 + 关联能力 + kind 级图形画廊/默认图形；
-  `knowledge_point_row` 删讲解入口；库详情空态文案更新。
-- **后端**：新增 `scene_template_config` 表 + 默认图形读写端点（§7）；编辑/新增实例复用现有 PATCH；
-  「关联知识点」picker 可纯前端过滤。
-- **约束/兼容性**：ADR-0073 红线不动；快照不可变测试不动；`kind` 稳定契约不动；注册表仍只作结构种子源。
-- **不在本 ADR 内**：新增 kind（仍开发者工作流，ADR-0073 决策 7）；注册表运行时编辑/版本化
-  （ADR-0073 Out-of-Scope）；per-kind 图形 allow-list 裁剪（§7 已明确不做）。
+- 前端：场景库详情可写化（图形画廊 + 默认 + 关联 + 标题）；KP 行删讲解；新增「提醒开发者」按钮。
+- 后端：新增 `scene_template_config` 表 + 默认图形端点 + 库聚合补 prune 标记。
+- 约束：ADR-0073 红线不动；场景服务端硬编码、前端不自由创建。
 
 ## 验证判据
 
-- 去掉 KP「讲解」后：库详情页能为每个关联 KP 打开编辑器并保存（断言 `kp.scenes` 更新、渲染路径不变）；
-  「关联知识点」能把一个未关联 KP 写 seed 进库并出现在列表。
-- 库 kind 详情设 `default_figure_key` 后：新关联 KP 的 seed 场景 `figure/points` 取自该默认图形；
-  改库默认后，**已落库**的 `kp.scenes` / `Question.scene_spec` 不受影响（快照不可变回归仍绿）。
-- 关联后的 KP 在库内编辑实例可覆盖为其他图形（house→butterfly），保存后仅该 KP 改变，不影响库默认与其他 KP。
-- `flutter analyze lib` 零 issue；场景库相关用例与全量 311 例不回归。
-- 现有场景库聚合测试（`test_scene_templates.py`）不受影响；ADR-0073 快照不可变回归仍绿。
+- 前端点「新增场景」→ 弹开发者提醒、无写调用、不产生 kind。
+- 库设 `default_figure_key` 后新关联 KP 的 seed `figure/points` 取自该默认；改默认后已落库 `kp.scenes` /
+  `Question.scene_spec` 不受影响（快照不可变回归绿）。
+- 「关联知识点」能把未关联 KP 写 seed 进库并出现在列表；prune 的 KP 在库侧标悬空、可解除。
+- 去掉 KP「讲解」后库能完整替代（配置 + 关联 + 标题编辑）。
+- `flutter analyze` 0 issue；场景库相关用例 + 全量不回归；ADR-0073 快照不可变回归绿。
 
 ## 已知遗留
 
-1. **「关联知识点」picker 端点取舍**：纯前端过滤现有 KP 列表（零后端改动）vs 新增「未关联 KP」端点。
-   倾向纯前端过滤——教师 KP 量级小，往返成本高且无收益。
-2. **多 kind 导航状态**：未来多 kind 时，库内「列表→详情→编辑/关联」钻取须收敛到同一 `sealed`
-   状态（ADR-0059），避免并列状态漏清。
-3. **「关联知识点」写 seed 后是否立即打开编辑器**：UX 待定——写入 seed 后直接弹编辑器让教师选图形，
-   还是先回库列表、由教师点实例卡再编辑。
-4. **kind 级默认图形端点形态**：`PUT /materials/scene-library/{kind}/default-figure` 直接写 vs 并入
-   现有配置端点；以及「重置为库默认」的 UX——库内编辑实例时是否提供「恢复库默认」一键。
-5. **默认图形与注册表中性种子的回落**：关联写 seed 时 `figure/points` 取自 `scene_template_config`，
-   若 `default_figure_key` 为空则回落注册表 `figure=''` 空占位（与现状一致），需在前端与 `saveScenes` 两侧对齐。
+1. **「同步到已关联」显式按钮**：改库默认/标题是否提供一键推到已关联 KP（非自动、非 live binding）——首版不做。
+2. **per-kind 图形 allow-list**：是否限制某 kind 仅暴露部分图形（v2 已定「不裁剪可用集」），维持不裁剪。
+3. **「关联知识点」写 seed 后是否立即开编辑器**：写入后直接弹编辑器 vs 先回列表——UX 待定。
+4. **库聚合 prune 标记形态**：反查 `kp.scenes` 时 KP 已不存在的判定与展示文案。
 
 ## Out of Scope
 
-- 库做事实源 / live binding（ADR-0073 已拒，会破坏快照不可变）。
+- 库做事实源 / live binding（ADR-0073 已拒）。
+- 教师前端自由创建场景 / 图形（本方向明确服务端硬编码）。
 - 注册表运行时编辑 / 版本化（ADR-0073 Out-of-Scope）。
-- 新增可渲染 kind（仍开发者工作流 + 前端渲染器发版）。
-- per-kind 图形 allow-list 裁剪（§7 已明确仅设默认图形、不裁剪可用集）。
+- 新增可渲染 kind（开发者工作流 + 前端渲染器发版）。
+- per-kind 图形 allow-list 裁剪。
