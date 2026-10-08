@@ -26,6 +26,7 @@ from app.db.models.material import (
     INDEX_STATE_READY,
     INDEX_STATE_STALE,
     KP_SOURCE_SKELETON,
+    SceneTemplateConfig,
 )
 from app.domain.safety import check_input
 from app.domain.subjects import SUBJECTS
@@ -707,7 +708,11 @@ def list_scene_library(
                     grade=kp.grade,
                     semester=kp.semester,
                     scenes=kp.scenes,
+                    kp_missing=False,
                 )
+    # kind 级默认图形（ADR-0074 v4）：读 ``scene_template_config``，按 kind 透传。
+    # 关联由 kp.scenes 的 kind 隐式表达（无关联表），这里只取默认值，不影响聚合口径。
+    defaults = get_scene_default_figures(session)
     items: list[SceneLibraryItem] = []
     for scene in list_builtin_scenes():
         kind = str(scene.get("kind") or "")
@@ -722,9 +727,46 @@ def list_scene_library(
                 defaults=scene,
                 associated_knowledge_points=refs,
                 instance_count=len(refs),
+                default_figure_key=defaults.get(kind),
             )
         )
     return SceneLibraryResp(scenes=items)
+
+
+def get_scene_default_figures(session: Session) -> dict[str, str | None]:
+    """读全部 kind 级默认演示图形（ADR-0074 v4）。返回 ``{kind: default_figure_key}``。"""
+    rows = session.exec(select(SceneTemplateConfig)).all()
+    return {
+        r.kind: r.default_figure_key
+        for r in rows
+        if isinstance(r, SceneTemplateConfig)
+    }
+
+
+def set_scene_default_figure(
+    session: Session, *, kind: str, default_figure_key: str | None
+) -> None:
+    """写某 kind 的默认演示图形（ADR-0074 v4）。kind 必须存在于注册表。
+
+    空 key（``None`` / ``''``）视为清除默认 → 关联 seed 回落注册表 ``figure=''`` 空占位。
+    默认图形只经 seed 注入新关联 KP，绝不回写已落库 ``kp.scenes`` / ``Question.scene_spec``
+    （ADR-0073 快照不可变）。
+    """
+    if kind not in SCENE_LIBRARY:
+        raise ValueError(f"unknown scene kind: {kind}")
+    cfg = session.get(SceneTemplateConfig, kind)
+    if default_figure_key in (None, ""):
+        # 清除默认：删行即回落注册表空占位。
+        if cfg is not None:
+            session.delete(cfg)
+            session.commit()
+        return
+    if cfg is None:
+        cfg = SceneTemplateConfig(kind=kind)
+        session.add(cfg)
+    cfg.default_figure_key = default_figure_key
+    session.add(cfg)
+    session.commit()
 
 
 def list_figure_library() -> FigureLibraryResp:

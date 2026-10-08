@@ -8,10 +8,11 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, File, Form, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from app.core.deps import CurrentTeacher, SessionDep
 from app.features.materials import indexing, service
+from app.features.materials.scene_templates import SCENE_LIBRARY
 from app.features.materials.schemas import (
     ExtractResult,
     FigureLibraryResp,
@@ -27,6 +28,8 @@ from app.features.materials.schemas import (
     MaterialDelete,
     MaterialMove,
     MaterialResp,
+    SceneDefaultFigureReq,
+    SceneLibraryItem,
     SceneLibraryResp,
     UploadResult,
 )
@@ -115,6 +118,38 @@ def list_scene_library(session: SessionDep, user: CurrentTeacher) -> SceneLibrar
     课件快照——那些归它们自己的页面渲染。
     """
     return service.list_scene_library(session, teacher_id=user.id)
+
+
+@router.put(
+    "/scene-library/{kind}/default-figure",
+    response_model=SceneLibraryItem,
+)
+def set_scene_default_figure(
+    kind: str,
+    payload: SceneDefaultFigureReq,
+    session: SessionDep,
+    user: CurrentTeacher,
+) -> SceneLibraryItem:
+    """写某场景 kind 的默认演示图形（ADR-0074 v4）。
+
+    kind 不存在注册表 → 422。空 ``default_figure_key`` 清除默认（回落注册表 ``figure=''``
+    空占位）。默认图形只经 seed 注入新关联 KP，绝不回写已落库 ``kp.scenes`` /
+    ``Question.scene_spec``（ADR-0073 快照不可变）。
+
+    返回更新后的该 kind 场景库条目（含 ``default_figure_key``）。
+    """
+    if kind not in SCENE_LIBRARY:
+        raise HTTPException(status_code=422, detail=f"unknown scene kind: {kind}")
+    try:
+        service.set_scene_default_figure(
+            session, kind=kind, default_figure_key=payload.default_figure_key
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    library = service.list_scene_library(session, teacher_id=user.id)
+    item = next((s for s in library.scenes if s.kind == kind), None)
+    assert item is not None  # kind 已校验在注册表内，必然存在
+    return item
 
 
 @router.get("/scene-library/figures", response_model=FigureLibraryResp)

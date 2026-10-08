@@ -28,6 +28,7 @@ from app.db.models.material import (
     Material,
     MaterialChunk,
     MaterialFolder,
+    SceneTemplateConfig,
 )
 from app.db.models.model_config import ModelConfig
 from app.db.models.progress import AnswerRecord, Checkin, WrongQuestion
@@ -57,6 +58,7 @@ __all__ = [
     "MaterialChunk",
     "MaterialFolder",
     "KnowledgePoint",
+    "SceneTemplateConfig",
     "Courseware",
     "CoursewareAsset",
     "COURSEWARE_STATUSES",

@@ -467,6 +467,19 @@ def run_migrations() -> None:
                 )
             )
 
+        # —— 场景 kind 级默认图形（ADR-0074 v4）——
+        # 新表走 CREATE TABLE IF NOT EXISTS：既有库启动期自动补齐；新库由 create_all
+        # 已建好，no-op。kind = 注册表 key，不做外键（注册表非 DB 实体）。
+        # 单一语句双方言兼容：SQLite 接受 TIMESTAMP WITH TIME ZONE 作类型名、VARCHAR 通用。
+        conn.execute(
+            text(
+                "CREATE TABLE IF NOT EXISTS scene_template_config ("
+                " kind VARCHAR(64) PRIMARY KEY,"
+                " default_figure_key VARCHAR(64)"
+                ")"
+            )
+        )
+
 
 def _nullify_text_json_nulls(conn) -> None:
     """把 JSON 列里「文本 ``'null'``」改回真正的 SQL NULL（ADR-0061 §T）。

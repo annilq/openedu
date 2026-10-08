@@ -205,6 +205,11 @@ class SceneLibraryKpRef(SQLModel):
     # 「这个实例配的是哪个图形」——只给名字的话教师看到三个「轴对称」，还得逐
     # 个点进去才知道各配了什么。None = 该知识点还没配。
     scenes: list[dict] | None = None
+    # prune 悬空标记（ADR-0074 v4 §4）：关联由 ``kp.scenes`` 的 kind **隐式表达**
+    # （无关联表），KP 被 ``_prune_knowledge_points`` 清理后其 scenes 整行消失，
+    # 库聚合自然不再列出它——故在当前隐式模型下该字段**恒为 False**，仅作为预留
+    # 字段给前端消费、并为未来可能的显式关联表预留接口。
+    kp_missing: bool = False
 
 
 class SceneLibraryItem(SQLModel):
@@ -223,6 +228,19 @@ class SceneLibraryItem(SQLModel):
     # 「内置实例数量」= 关联知识点数（浏览页共识）：统计的是**内置参考**，
     # 不含已生成的题目/课件快照。
     instance_count: int = 0
+    # kind 级默认演示图形（ADR-0074 v4）：库详情页「设为默认图形」写 ``scene_template_config``，
+    # 关联知识点 seed 时读取它；空（None）→ 关联 seed 回落注册表 ``figure=''`` 空占位。
+    default_figure_key: str | None = None
+
+
+class SceneDefaultFigureReq(SQLModel):
+    """写某场景 kind 的默认演示图形（ADR-0074 v4 §1）。
+
+    ``default_figure_key`` 为 ``None`` / 空串 → 清除默认（关联 seed 回落空占位）。
+    kind 本身由路径参数传入，必须在注册表 ``SCENE_LIBRARY`` 内（否则端点返 422）。
+    """
+
+    default_figure_key: str | None = None
 
 
 class SceneLibraryResp(SQLModel):

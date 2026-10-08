@@ -184,3 +184,20 @@ class KnowledgePoint(SQLModel, table=True):
     # 是文本 ``null``——`IS NOT NULL` 为真、内容却是空的，任何「非空计数」都会失真
     # （ADR-0061 §M 实测踩过）。加上它，Python None 才真正落库为 SQL NULL。
     scenes: list[dict] | None = Field(default=None, sa_type=JSON(none_as_null=True))
+
+
+class SceneTemplateConfig(SQLModel, table=True):
+    """场景 kind 级默认演示图形（ADR-0074 v4）。
+
+    kind = ``SCENE_LIBRARY`` 注册表 key（如 ``reflection``），稳定契约、只弃用不重命名；
+    不做外键（注册表非 DB 实体，避免耦合）。``default_figure_key`` 空 → 关联写 seed 时
+    回落注册表 ``figure=''`` 空占位（与现状一致）。
+
+    注册表 ``SCENE_LIBRARY`` 仍只作结构种子源（ADR-0073 边界），本表才是可写持久化的
+    默认图形——场景库详情页「设为默认图形」即写这里，关联知识点 seed 时读取它。
+    """
+
+    __tablename__ = "scene_template_config"
+
+    kind: str = Field(max_length=64, primary_key=True)
+    default_figure_key: str | None = Field(default=None, max_length=64)
