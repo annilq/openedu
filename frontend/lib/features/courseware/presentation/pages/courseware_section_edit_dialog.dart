@@ -11,6 +11,7 @@ import '../../domain/models/courseware_section.dart';
 import '../../providers/courseware_provider.dart';
 import 'courseware_asset_picker_sheet.dart';
 import 'section_scene_association_block.dart';
+import 'section_scene_figures_picker.dart';
 
 /// 编辑单个讲解环节（ADR-0067 §3.3，内容块统一化）：
 ///
@@ -137,14 +138,26 @@ class _SectionEditDialogState extends ConsumerState<_SectionEditDialog> {
     }
   }
 
-  /// 选中一份知识点模板 → 快照式复制进本环节顶层 [CoursewareSectionModel.scene]
-  /// （演示页直接渲染，见 [SectionInteractiveScene]）。这是「快照式」关联：复制进来，
-  /// 不随知识点后续改动自动更新。
+  /// 本环节的场景草稿（写入侧统一入口）：复制一份进 [CoursewareSectionModel.scene]
+  /// （演示页直接渲染，见 [SectionInteractiveScene]）。
+  ///
+  /// 这是「快照式」关联——复制进来，不随知识点后续改动自动更新；反过来，本环节
+  /// 的改写（如 [SectionSceneFiguresPicker] 勾图形）也只落在这份副本上，绝不回写
+  /// 知识点上的场景（ADR-0073）。
   void _associateScene(Map<String, dynamic> spec) => setState(
         () => _draft = _draft.copyWith(
           scene: Map<String, dynamic>.from(spec),
         ),
       );
+
+  /// 图形选择器的场景：仅**轴对称**场景。
+  ///
+  /// 其它 kind 没有平面图形语义（ADR-0076 §2.1），摆一个图形选择器是误导。
+  Map<String, dynamic>? get _figurePickerScene {
+    final scene = _draft.scene;
+    if (scene == null || scene['kind'] != 'reflection') return null;
+    return scene;
+  }
 
   /// 清除关联：scene 置空，演示页回落到「只有话术」提示。
   void _clearAssociation() =>
@@ -289,6 +302,16 @@ class _SectionEditDialogState extends ConsumerState<_SectionEditDialog> {
                         onAssociate: _associateScene,
                         onClear: _clearAssociation,
                       ),
+                      // 演示哪几个图形、按什么顺序（ADR-0076）：仅轴对称场景，
+                      // 结果写回本环节场景的副本（不碰知识点上的那份）。
+                      if (_figurePickerScene case final scene?)
+                        ...[
+                          const SizedBox(height: AppSpacing.lg),
+                          SectionSceneFiguresPicker(
+                            scene: scene,
+                            onChanged: _associateScene,
+                          ),
+                        ],
                     ],
                   ),
                 ),
