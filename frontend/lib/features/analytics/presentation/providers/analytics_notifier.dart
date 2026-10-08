@@ -8,9 +8,11 @@ import '../../domain/repositories/analytics_repository.dart';
 
 /// 学情统计页状态（ticket 12）。
 ///
-/// 一次加载聚合：班级列表 + 学生列表（供作用域选择器），以及三份统计结果
-/// （错题分布 / 正确率 / 掌握度）。三份统计在作用域/维度/选中项变化时并行重取，
-/// 大班下也不重复打全量作答扫描（后端单条 GROUP BY，ADR-0070）。
+/// 一次加载聚合：班级列表 + 学生列表（学生列表仅用于页头「X 名学生」总量徽标），
+/// 以及三份统计结果（错题分布 / 正确率 / 掌握度）。三份统计在作用域/维度/选中项
+/// 变化时并行重取，大班下也不重复打全量作答扫描（后端单条 GROUP BY，ADR-0070）。
+///
+/// 作用域仅 two 态：all（全体学生）/ class（单个班级）。单学生统计已移除。
 sealed class AnalyticsState {
   const AnalyticsState();
 }
@@ -24,10 +26,9 @@ class AnalyticsLoading extends AnalyticsState {
 }
 
 class AnalyticsLoaded extends AnalyticsState {
-  final String scope; // all | class | student
+  final String scope; // all | class
   final String dimension; // subject | grade | semester | knowledge_point
   final String? classId;
-  final String? studentId;
 
   final List<ClassModel> classes;
   final List<UserModel> students;
@@ -40,7 +41,6 @@ class AnalyticsLoaded extends AnalyticsState {
     required this.scope,
     required this.dimension,
     this.classId,
-    this.studentId,
     required this.classes,
     required this.students,
     required this.wrong,
@@ -66,7 +66,6 @@ class AnalyticsNotifier extends StateNotifier<AnalyticsState> {
   String _scope = 'all';
   String _dimension = 'knowledge_point';
   String? _classId;
-  String? _studentId;
 
   AnalyticsNotifier(this._analytics, this._classes, this._students)
       : super(const AnalyticsInitial());
@@ -93,19 +92,16 @@ class AnalyticsNotifier extends StateNotifier<AnalyticsState> {
       final results = await Future.wait([
         _analytics.getWrongDistribution(
           scope: _scope,
-          studentId: _studentId,
           classId: _classId,
           dimension: _dimension,
         ),
         _analytics.getAccuracy(
           scope: _scope,
-          studentId: _studentId,
           classId: _classId,
           dimension: _dimension,
         ),
         _analytics.getMastery(
           scope: _scope,
-          studentId: _studentId,
           classId: _classId,
         ),
       ]);
@@ -113,7 +109,6 @@ class AnalyticsNotifier extends StateNotifier<AnalyticsState> {
         scope: _scope,
         dimension: _dimension,
         classId: _classId,
-        studentId: _studentId,
         classes: _classesCache,
         students: _studentsCache,
         wrong: results[0] as WrongDistributionResp,
@@ -128,9 +123,8 @@ class AnalyticsNotifier extends StateNotifier<AnalyticsState> {
   void setScope(String scope) {
     if (scope == _scope) return;
     _scope = scope;
-    // 切作用域时清空此前选中的班级/学生，避免把上一份作用域的 id 带进新查询。
+    // 切作用域时清空此前选中的班级，避免把上一份作用域的 id 带进新查询。
     _classId = null;
-    _studentId = null;
     _fetch();
   }
 
@@ -143,12 +137,6 @@ class AnalyticsNotifier extends StateNotifier<AnalyticsState> {
   void setClass(String? classId) {
     if (classId == _classId) return;
     _classId = classId;
-    _fetch();
-  }
-
-  void setStudent(String? studentId) {
-    if (studentId == _studentId) return;
-    _studentId = studentId;
     _fetch();
   }
 }

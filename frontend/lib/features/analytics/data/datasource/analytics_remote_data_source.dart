@@ -12,13 +12,12 @@ class AnalyticsRemoteDataSource {
   /// 错题分布：`GET /analytics/wrong-distribution`。
   Future<WrongDistributionResp> getWrongDistribution({
     required String scope,
-    String? studentId,
     String? classId,
     required String dimension,
   }) async {
     final data = await _network.get(
       '/analytics/wrong-distribution',
-      query: _query(scope, studentId, classId, {'dimension': dimension}),
+      query: _query(scope, classId, {'dimension': dimension}),
     );
     return WrongDistributionResp.fromJson(data as Map<String, dynamic>);
   }
@@ -26,13 +25,12 @@ class AnalyticsRemoteDataSource {
   /// 正确率：`GET /analytics/accuracy`（source 默认 all，界面不拆练习/复习来源切换）。
   Future<AccuracyResp> getAccuracy({
     required String scope,
-    String? studentId,
     String? classId,
     required String dimension,
   }) async {
     final data = await _network.get(
       '/analytics/accuracy',
-      query: _query(scope, studentId, classId,
+      query: _query(scope, classId,
           {'dimension': dimension, 'source': 'all'}),
     );
     return AccuracyResp.fromJson(data as Map<String, dynamic>);
@@ -41,26 +39,23 @@ class AnalyticsRemoteDataSource {
   /// 掌握度：`GET /analytics/mastery`（按知识点跨作用域批量聚合）。
   Future<MasteryResp> getMastery({
     required String scope,
-    String? studentId,
     String? classId,
   }) async {
     final data = await _network.get(
       '/analytics/mastery',
-      query: _query(scope, studentId, classId, {}),
+      query: _query(scope, classId, {}),
     );
     return MasteryResp.fromJson(data as Map<String, dynamic>);
   }
 
-  /// 拼查询参数：作用域三态 + 条件性学生/班级 id + 其余维度参数。
+  /// 拼查询参数：条件性班级 id + 其余维度参数。
   Map<String, dynamic> _query(
     String scope,
-    String? studentId,
     String? classId,
     Map<String, dynamic> extra,
   ) =>
       {
         'scope': scope,
-        if (studentId != null) 'student_id': studentId,
         if (classId != null) 'class_id': classId,
         ...extra,
       };

@@ -18,13 +18,13 @@ import '../providers/analytics_notifier_provider.dart';
 
 /// 学情统计页（ticket 12，消费 ticket 11 的三个聚合端点）。
 ///
-/// 作用域三态（全体学生 / 单个班级 / 单个学生）+ 四维（学科 / 年级 / 学期 / 知识点）
+/// 作用域两态（全体学生 / 单个班级）+ 四维（学科 / 年级 / 学期 / 知识点）
 /// 切换即并行重取三份聚合；边界口径严格对照 ADR-0070：
 /// - 孤儿错题（原题被硬删）以「未知」分组显式标注数量，不混入任何有效分组；
 /// - 空学期由后端收敛为「整学年」，界面原样展示；
 /// - 「年级」维度明确标注为**题目的年级**（非学生所在年级），与其余维度清晰区分。
 ///
-/// 文件规模（ADR-0058）：本页是学情看板，作用域三态 × 四维切换 + 三份聚合并行渲染，
+/// 文件规模（ADR-0058）：本页是学情看板，作用域两态 × 四维切换 + 三份聚合并行渲染，
 /// 属合理大件，已正式登记基线 488（ticket 17 决策 B：保留、不拆小）。后续不得在
 /// 未拆分的前提下净增长——若要加维度/卡片，应把对应区块抽到子文件再调低基线。
 class AnalyticsScreen extends ConsumerStatefulWidget {
@@ -142,7 +142,6 @@ class _LoadedBody extends StatelessWidget {
           onScope: notifier.setScope,
           onDimension: notifier.setDimension,
           onClass: notifier.setClass,
-          onStudent: notifier.setStudent,
         ),
         const SizedBox(height: AppSpacing.md),
         _WrongDistributionCard(resp: state.wrong),
@@ -155,26 +154,23 @@ class _LoadedBody extends StatelessWidget {
   }
 }
 
-/// 控制条：作用域三态 + 条件选择器 + 四维切换。
+/// 控制条：作用域两态（全体学生 / 单个班级）+ 条件选择器 + 四维切换。
 class _Controls extends StatelessWidget {
   final AnalyticsLoaded state;
   final void Function(String) onScope;
   final void Function(String) onDimension;
   final void Function(String?) onClass;
-  final void Function(String?) onStudent;
 
   const _Controls({
     required this.state,
     required this.onScope,
     required this.onDimension,
     required this.onClass,
-    required this.onStudent,
   });
 
   static const _scopes = [
     ('all', '全体学生'),
     ('class', '单个班级'),
-    ('student', '单个学生'),
   ];
   static const _dims = [
     ('subject', '学科'),
@@ -205,17 +201,6 @@ class _Controls extends StatelessWidget {
               value: state.classId,
               placeholder: '选择班级',
               onChanged: (v) => onClass(v),
-            ),
-          ] else if (state.scope == 'student') ...[
-            const SizedBox(height: AppSpacing.sm),
-            AppPickerField<String>(
-              label: '选择学生',
-              values: state.students.map((s) => s.id).toList(),
-              labels:
-                  state.students.map((s) => '${s.displayName}（${s.username}）').toList(),
-              value: state.studentId,
-              placeholder: '选择学生',
-              onChanged: (v) => onStudent(v),
             ),
           ],
           const SizedBox(height: AppSpacing.md),

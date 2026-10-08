@@ -10,13 +10,11 @@ class AnalyticsRepositoryImpl implements AnalyticsRepository {
   @override
   Future<WrongDistributionResp> getWrongDistribution({
     required String scope,
-    String? studentId,
     String? classId,
     required String dimension,
   }) =>
       _dataSource.getWrongDistribution(
         scope: scope,
-        studentId: studentId,
         classId: classId,
         dimension: dimension,
       );
@@ -24,13 +22,11 @@ class AnalyticsRepositoryImpl implements AnalyticsRepository {
   @override
   Future<AccuracyResp> getAccuracy({
     required String scope,
-    String? studentId,
     String? classId,
     required String dimension,
   }) =>
       _dataSource.getAccuracy(
         scope: scope,
-        studentId: studentId,
         classId: classId,
         dimension: dimension,
       );
@@ -38,12 +34,10 @@ class AnalyticsRepositoryImpl implements AnalyticsRepository {
   @override
   Future<MasteryResp> getMastery({
     required String scope,
-    String? studentId,
     String? classId,
   }) =>
       _dataSource.getMastery(
         scope: scope,
-        studentId: studentId,
         classId: classId,
       );
 }
