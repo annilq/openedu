@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart' show Icons;
+import 'package:shadcn_ui/shadcn_ui.dart' show LucideIcons;
 import 'package:flutter/widgets.dart';
 
 import '../../domain/figures.dart';
@@ -67,7 +67,7 @@ class SceneInterpreter extends StatelessWidget {
         return ReflectionSceneWidget(data: ReflectionSceneData.fromSpec(spec));
       case SceneKind.unknown:
         return const AppEmptyState(
-          icon: Icons.help_outline,
+          icon: LucideIcons.circleHelp,
           title: '暂不支持的交互讲解',
           message: '当前版本未实现该类型的交互演示，可先用文字讲解。',
         );
@@ -140,7 +140,7 @@ class SceneOptionGroup extends StatelessWidget {
     final matched = _matchFigures();
     if (items.isEmpty || (curated && matched.isEmpty)) {
       return const AppEmptyState(
-        icon: Icons.help_outline,
+        icon: LucideIcons.circleHelp,
         title: '暂无可演示的选项',
         message: '这道题没有可图形化的选项，请先用文字讲解。',
       );
