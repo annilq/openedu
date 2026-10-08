@@ -4,7 +4,7 @@
 
 **Blocked by:** 08: 作业派发对象关系与批量派发（派发选择器语义，提供班级/学生树与批量选中能力）
 
-**Status:** ready-for-agent
+**Status:** done
 
 **现状（2026-10-07 实施 ticket 14 时降级，commit `595fe46`）：**
 - ticket 14 spec 要求「布置任务表单内可显式选派发对象（班级多选 / 学生多选）」。

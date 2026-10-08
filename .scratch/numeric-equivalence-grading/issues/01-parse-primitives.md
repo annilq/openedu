@@ -12,7 +12,7 @@
 
 **Status:** done
 
-- [ ] `parse_numeric("12厘米")` 返回基准单位下的数值与量纲，可被 `numeric_equal` 与 `12` 判等。
+- [x] `parse_numeric("12厘米")` 返回基准单位下的数值与量纲，可被 `numeric_equal` 与 `12` 判等。
 - [ ] `parse_numeric("1/2")` / `("2/4")` / `("0.5")` 解析为同一数值（Fraction 约分）。
 - [ ] `parse_numeric("3又1/2")` 与 `("3.5")` 等价。
 - [ ] `parse_numeric("1/3")` 与 `("0.333")` 在容差内等价。
