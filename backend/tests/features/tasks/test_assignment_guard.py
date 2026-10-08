@@ -18,11 +18,11 @@ from sqlmodel import Session, select
 
 from app.core.config import settings
 from app.core.security import create_access_token, get_password_hash
+from app.db.models.class_entity import Class
 from app.db.models.progress import AnswerRecord, Checkin
 from app.db.models.question import Question
 from app.db.models.task import Task, TaskQuestion
 from app.db.models.task_assignment import TaskAssignment
-from app.db.models.class_entity import Class
 from app.db.models.user import User
 from app.features.tasks import service as tasks_service
 from tests.utils.fake_provider import FakeLLMProvider
@@ -340,3 +340,58 @@ def test_bulk_dispatch_empty_targets_returns_422(client, db, stub_grader):
         json={"class_ids": [], "student_ids": []},
     )
     assert r.status_code == 422, r.text
+
+
+def test_teacher_todo_summary_counts(client, db):
+    """教师工作台待办聚合（ticket 20）：待审核 / 待派发 / 谁没交 三项计数正确。"""
+    teacher_id, tok = _make_teacher(client, "t20_teacher")
+
+    # 待审核：2 道草稿任务（生成后待教师确认）。
+    db.add(Task(teacher_id=teacher_id, title="草稿1", status="draft", student_id=None))
+    db.add(Task(teacher_id=teacher_id, title="草稿2", status="draft", student_id=None))
+    # 待派发：1 道 ready 任务（已确认、尚未派发）。
+    _make_ready_task(db, teacher_id)
+    # 谁没交：1 道已派发任务，派给 3 名学生，均未提交作答。
+    s1, _ = _make_student(db, "t20_s1", teacher_id=teacher_id)
+    s2, _ = _make_student(db, "t20_s2", teacher_id=teacher_id)
+    s3, _ = _make_student(db, "t20_s3", teacher_id=teacher_id)
+    _make_task(db, teacher_id, assigned=[s1, s2, s3])
+    db.commit()
+
+    r = client.get(
+        "/api/v1/tasks/teacher-todo-summary", headers=auth_headers(tok)
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["pending_review"] == 2
+    assert data["pending_dispatch"] == 1
+    assert data["not_submitted"] == 3
+
+
+def test_teacher_todo_summary_scoped_to_teacher(client, db):
+    """聚合只数当前教师的数据；学生身份访问被拒（403）。"""
+    t1, tok1 = _make_teacher(client, "t20_t1")
+    _make_ready_task(db, t1)
+    t2, tok2 = _make_teacher(client, "t20_t2")
+    _make_ready_task(db, t2)
+
+    # t1 看到自己的 1 道待派发；t2 也只看到自己的 1 道，互不串。
+    r1 = client.get(
+        "/api/v1/tasks/teacher-todo-summary", headers=auth_headers(tok1)
+    )
+    assert r1.status_code == 200, r1.text
+    assert r1.json()["pending_dispatch"] == 1
+
+    r2 = client.get(
+        "/api/v1/tasks/teacher-todo-summary", headers=auth_headers(tok2)
+    )
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["pending_dispatch"] == 1
+
+    # 学生 token（无 teacher 身份）→ 403。
+    student_id, student_tok = _make_student(db, "t20_student")
+    rs = client.get(
+        "/api/v1/tasks/teacher-todo-summary", headers=auth_headers(student_tok)
+    )
+    assert rs.status_code == 403, rs.text
+

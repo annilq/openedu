@@ -501,6 +501,23 @@ def count_tasks_by_teacher_grouped(
     return {status: n for status, n in rows}
 
 
+def count_incomplete_assignments_by_teacher(
+    *, session: Session, teacher_id: uuid.UUID
+) -> int:
+    """教师名下任务中，尚未提交作答的派发对象数（ADR-0069/0070，ticket 20）。
+
+    派发事实源是 ``taskassignment`` 表；``completed_at`` 为空 = 该学生未完成。
+    必须按 ``Task.teacher_id`` 收敛到当前教师，否则会数到别的教师的派发。
+    """
+    stmt = (
+        select(TaskAssignment)
+        .join(Task, TaskAssignment.task_id == Task.id)
+        .where(Task.teacher_id == teacher_id)
+        .where(TaskAssignment.completed_at.is_(None))
+    )
+    return count_of(session=session, stmt=stmt)
+
+
 def task_question_breakdown(
     *, session: Session, task_ids: list[uuid.UUID]
 ) -> dict[uuid.UUID, list[tuple[str, int]]]:

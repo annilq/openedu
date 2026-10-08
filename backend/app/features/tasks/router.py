@@ -34,6 +34,7 @@ from app.features.tasks.schemas import (
     TaskMetaEdit,
     TaskQuestionEdit,
     TaskResp,
+    TeacherTodoSummary,
     WrongQuestionListResp,
     WrongQuestionResp,
 )
@@ -114,6 +115,20 @@ def list_teacher_tasks(
         status=status_filter,
         cursor=cursor,
         page_size=page_size,
+    )
+
+
+@router.get("/teacher-todo-summary", response_model=TeacherTodoSummary)
+def teacher_todo_summary(
+    *, session: SessionDep, teacher: CurrentTeacher
+) -> TeacherTodoSummary:
+    """教师工作台待办聚合（ticket 20）：待审核 / 待派发 / 谁没交。
+
+    置于静态路径之前：``/teacher-todo-summary`` 是字面量路径，必须排在 ``/{task_id}``
+    这类动态路径前，避免被 UUID 校验 422 拦截。
+    """
+    return tasks_service.teacher_todo_summary(
+        session=session, teacher_id=teacher.id
     )
 
 

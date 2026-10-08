@@ -162,6 +162,21 @@ class TaskListResp(SQLModel):
     counts: TaskCounts = TaskCounts()
 
 
+class TeacherTodoSummary(SQLModel):
+    """教师工作台待办聚合（ticket 20）：待审核 / 待派发 / 谁没交。
+
+    - pending_review：草稿态任务数（生成后待教师确认）。
+    - pending_dispatch：就绪态任务数（已确认、尚未派发给学生/班级）。
+    - not_submitted：未完成派发对象数（已派发但学生尚未提交作答的派发行）。
+
+    三个数均由服务端聚合，避免客户端只统计已加载分页（徽标漏数，ADR-0053 同款陷阱）。
+    """
+
+    pending_review: int = 0
+    pending_dispatch: int = 0
+    not_submitted: int = 0
+
+
 class TaskFromBankCreate(SQLModel):
     """选项 A：从题库新建任务。"""
 

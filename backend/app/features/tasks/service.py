@@ -71,6 +71,7 @@ from app.features.tasks.repository import (
     confirm_task,
     count_assignments,
     count_completed_assignments,
+    count_incomplete_assignments_by_teacher,
     count_tasks_by_teacher,
     count_tasks_by_teacher_grouped,
     count_wrong_questions,
@@ -109,6 +110,7 @@ from app.features.tasks.schemas import (
     TaskListResp,
     TaskResp,
     TaskSummaryResp,
+    TeacherTodoSummary,
     WrongQuestionListResp,
     WrongQuestionResp,
 )
@@ -287,6 +289,26 @@ def list_teacher_tasks_page(
             assigned=grouped.get("assigned", 0),
             done=grouped.get("done", 0),
         ),
+    )
+
+
+def teacher_todo_summary(
+    *, session: Session, teacher_id: UUID
+) -> TeacherTodoSummary:
+    """教师工作台待办聚合（ticket 20）：待审核 / 待派发 / 谁没交。
+
+    前两项复用 :func:`count_tasks_by_teacher_grouped` 的分组计数
+    （draft=待教师确认；ready=已确认未派发）；第三项统计教师名下任务中
+    尚未提交作答的派发对象数（``completed_at`` 为空），按 ``Task.teacher_id`` 收敛。
+    """
+    grouped = count_tasks_by_teacher_grouped(session=session, teacher_id=teacher_id)
+    not_submitted = count_incomplete_assignments_by_teacher(
+        session=session, teacher_id=teacher_id
+    )
+    return TeacherTodoSummary(
+        pending_review=grouped.get("draft", 0),
+        pending_dispatch=grouped.get("ready", 0),
+        not_submitted=not_submitted,
     )
 
 
