@@ -98,7 +98,7 @@ void main() {
 /// 现存超限文件的基线（2026-09-21 实测；2026-10-04 补登 reflection_scene.dart；
 /// 2026-10-05 拆出 BankQuestionRow 后下调 teacher_question_bank_view 838→759；
 /// 2026-10-07 删除已不存在的 teacher_student_selector 登记、student_management_screen 771→775；
-/// 补登 3 个此前提交（analytics/courseware 等）已落地但未登记的 >400 文件：analytics_screen 488、
+/// 补登 2 个此前提交（courseware 等）已落地但未登记的 >400 文件：
 /// section_practice 429、teacher_task_form_view 425；
 /// 2026-10-08 拆分 courseware_present_page 474→320、courseware_section_edit_dialog 470→373，
 /// 两条均移出 _baseline；
@@ -109,8 +109,6 @@ void main() {
 /// 2026-10-08 票据 20（概览→教师工作台）：teacher_tasks_view 649→656（新增 initialTab
 /// 深链参数，承接概览待办卡片跳对应 Tab），功能必需、已在提交正文说明理由）。
 /// 2026-10-08 票据 17（文件规模棘轮补登债务）：分文件定 A/B——
-///   · analytics_screen 488 → **B 确认保留**：学情看板属合理大件，正式登记基线并补 why（见该文件头注释）；
-///     本次补 why 注释 +4 行，基线同步 488→492（B 不拆小，仅登记真实行数）；
 ///   · section_practice 429 → **A 拆小**：抽出 PracticeQuestionPrompt/PracticeAction/PracticeNotice 三子件到
 ///     section_practice_parts.dart，主文件 293 行已回到 400 内，**整条移出 _baseline**；
 ///   · teacher_task_form_view 429 → **A 拆小**：抽出审阅闸门/动作区到 teacher_task_form_actions.dart，
@@ -130,7 +128,6 @@ const Map<String, int> _baseline = <String, int>{
   'features/home/presentation/widgets/teacher/teacher_question_card.dart': 511,
   'features/home/presentation/widgets/teacher/teacher_wrong_questions_view.dart': 442,
   'features/home/presentation/widgets/student_home.dart': 428,
-  'features/analytics/presentation/screens/analytics_screen.dart': 492,
   'features/home/presentation/screens/teacher_task_review_screen.dart': 424,
   'features/students/presentation/screens/student_management_screen.dart': 777,
 };

@@ -58,11 +58,6 @@ class NavigationDestinations {
           active: active is StudentManagementPage,
           onTap: () => go(const StudentManagementPage())),
       AdaptiveNavDestination(
-          icon: LucideIcons.barChart3,
-          label: '统计',
-          active: active is AnalyticsPage,
-          onTap: () => go(const AnalyticsPage())),
-      AdaptiveNavDestination(
           icon: LucideIcons.library,
           label: '题库',
           active: active is QuestionBankPage,
