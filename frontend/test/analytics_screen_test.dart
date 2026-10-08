@@ -4,7 +4,7 @@
 //
 // `flutter analyze` 完全照不出来，只有这种「在不装 Material 的树里真的构建一次」
 // 的测试能拦住它。同时覆盖 ticket 12 的关键口径：孤儿错题标注「未知」、年级维度
-// 提示「题目年级」、作用域三态切换受控。
+// 提示「题目年级」、作用域两态（全体学生 / 单个班级）切换受控。
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -22,6 +22,8 @@ import 'package:kids_learn/shared/domain/repositories/students_repository.dart';
 import 'package:kids_learn/features/students/providers/students_provider.dart';
 import 'package:kids_learn/shared/domain/models/user.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
+
+import 'dart:typed_data';
 
 // 固定的三份聚合：错题带 2 条孤儿，正确率/掌握度无孤儿，便于断言「未知」只出现一次。
 const _wrong = WrongDistributionResp(
@@ -76,7 +78,6 @@ class _FakeAnalyticsRepository implements AnalyticsRepository {
   @override
   Future<WrongDistributionResp> getWrongDistribution({
     required String scope,
-    String? studentId,
     String? classId,
     required String dimension,
   }) async =>
@@ -85,7 +86,6 @@ class _FakeAnalyticsRepository implements AnalyticsRepository {
   @override
   Future<AccuracyResp> getAccuracy({
     required String scope,
-    String? studentId,
     String? classId,
     required String dimension,
   }) async =>
@@ -94,7 +94,6 @@ class _FakeAnalyticsRepository implements AnalyticsRepository {
   @override
   Future<MasteryResp> getMastery({
     required String scope,
-    String? studentId,
     String? classId,
   }) async =>
       _mastery;
@@ -165,6 +164,10 @@ class _FakeStudentsRepository implements StudentsRepository {
     required String filename,
   }) async =>
       StudentImportResultModel(created: 0, skipped: 0, errors: const []);
+
+  @override
+  Future<Uint8List> downloadImportTemplate() async =>
+      throw UnimplementedError();
 }
 
 Future<void> _pumpScreen(WidgetTester tester) async {

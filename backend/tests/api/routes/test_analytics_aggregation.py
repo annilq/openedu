@@ -1,6 +1,6 @@
 """学情统计聚合端点（teacher-scale-up ticket 11，ADR-0070）。
 
-覆盖 ADR-0070 钉死的四项口径 + 三态作用域 + 越权隔离 + 大班可接受：
+覆盖 ADR-0070 钉死的四项口径 + 两态作用域（class / all）+ 越权隔离 + 大班可接受：
 - 四维分组（subject/grade/semester/knowledge_point）各自求和等于总数（防 JOIN 丢/重计数）
 - 年级取**题目的年级**（不取学生年级）
 - 空学期收敛为「整学年」
@@ -104,13 +104,12 @@ def test_wrong_distribution_by_knowledge_point_and_active_split(
     _seed_wrong(db, student_id=sid, question_id=q_grad.id, graduated=True)
 
     r = client.get(
-        "/api/v1/analytics/wrong-distribution?scope=student"
-        f"&student_id={sid}&dimension=knowledge_point",
+        "/api/v1/analytics/wrong-distribution?scope=all",
         headers=auth_headers(t),
     )
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["scope"] == "student"
+    assert body["scope"] == "all"
     gm = _group_map(body)
     # 活跃：分数加法 1 条；已毕业：分数减法 1 条。
     assert gm["分数加法"]["active"] == 1 and gm["分数加法"]["graduated"] == 0
@@ -135,8 +134,7 @@ def test_grade_dimension_takes_question_grade_not_student_grade(
     _seed_wrong(db, student_id=sid, question_id=q.id, graduated=False)
 
     r = client.get(
-        "/api/v1/analytics/wrong-distribution?scope=student"
-        f"&student_id={sid}&dimension=grade",
+        "/api/v1/analytics/wrong-distribution?scope=all&dimension=grade",
         headers=auth_headers(t),
     )
     assert r.status_code == 200, r.text
@@ -159,8 +157,7 @@ def test_empty_semester_collapses_to_full_year(client: TestClient, db: Session):
     _seed_wrong(db, student_id=sid, question_id=q2.id, graduated=False)
 
     r = client.get(
-        "/api/v1/analytics/wrong-distribution?scope=student"
-        f"&student_id={sid}&dimension=semester",
+        "/api/v1/analytics/wrong-distribution?scope=all&dimension=semester",
         headers=auth_headers(t),
     )
     assert r.status_code == 200, r.text
@@ -180,8 +177,7 @@ def test_orphan_wrong_question_counted_separately(client: TestClient, db: Sessio
     db.commit()
 
     r = client.get(
-        "/api/v1/analytics/wrong-distribution?scope=student"
-        f"&student_id={sid}&dimension=knowledge_point",
+        "/api/v1/analytics/wrong-distribution?scope=all",
         headers=auth_headers(t),
     )
     assert r.status_code == 200, r.text
@@ -207,8 +203,7 @@ def test_accuracy_splits_practice_and_review(client: TestClient, db: Session):
     _seed_answer(db, student_id=sid, question_id=q.id, correct=False, source="review")
 
     r = client.get(
-        "/api/v1/analytics/accuracy?scope=student"
-        f"&student_id={sid}&dimension=knowledge_point&source=all",
+        "/api/v1/analytics/accuracy?scope=all&dimension=knowledge_point&source=all",
         headers=auth_headers(t),
     )
     assert r.status_code == 200, r.text
