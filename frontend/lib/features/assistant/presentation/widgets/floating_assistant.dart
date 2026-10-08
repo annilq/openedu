@@ -5,11 +5,15 @@ import '../../../../shared/theme/app_theme.dart';
 import '../screens/assistant_chat_page.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/app_focusable_action.dart';
+import 'draggable_assistant_fab.dart';
 
 /// 教师端 AI 助手宿主（ADR-0036 单入口 / ADR-0047 整页形态）。
 ///
 /// 把 [child]（HomeScreen）铺底、右下角叠一个常驻**浮动按钮**；点击后 push 整页
 /// [AssistantChatPage]——助手是**单独页面**，不再是与宿主布局无关的浮层。
+///
+/// 浮球可被**拖动**到任意位置（[DraggableAssistantFab]），避免压住正文；位置按场景
+/// 持久化。
 ///
 /// **为什么从浮层改成整页**：浮层尺寸（380×540）与导航壳（侧栏 + `contentWide`
 /// 内容列）没有任何关系，桌面 / 平板下它压在内容上，既不齐侧栏也不齐内容列，看起来
@@ -39,9 +43,8 @@ class FloatingAssistant extends StatelessWidget {
     return Stack(
       children: [
         child,
-        Positioned(
-          right: AppSpacing.lg,
-          bottom: AppSpacing.lg,
+        DraggableAssistantFab(
+          storageKey: 'assistant_fab_home',
           child: AssistantLauncher(onTap: () => _open(context)),
         ),
       ],

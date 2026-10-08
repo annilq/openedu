@@ -15,6 +15,7 @@ import 'courseware_present_widgets.dart';
 import 'package:kids_learn/shared/domain/models/assistant_courseware_context.dart';
 import 'package:kids_learn/features/assistant/presentation/screens/assistant_chat_page.dart';
 import 'package:kids_learn/features/assistant/presentation/widgets/floating_assistant.dart';
+import 'package:kids_learn/features/assistant/presentation/widgets/draggable_assistant_fab.dart';
 import 'package:cupertino_ui/cupertino_ui.dart';
 
 /// 讲课演示页（ADR-0067 §6 切片 4b）。
@@ -198,9 +199,8 @@ class _CoursewarePresentPageState
                           ),
                         ),
                       ),
-                      Positioned(
-                        right: AppSpacing.lg,
-                        bottom: AppSpacing.lg,
+                      DraggableAssistantFab(
+                        storageKey: 'assistant_fab_courseware',
                         child: AssistantLauncher(
                           onTap: () => _openAssistant(context, courseware),
                         ),
