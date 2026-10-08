@@ -229,3 +229,27 @@ class SceneLibraryResp(SQLModel):
     """场景库清单。空 scenes 列表 = 注册表为空（属部署异常，正常至少有 reflection）。"""
 
     scenes: list[SceneLibraryItem] = Field(default_factory=list)
+
+
+class FigureLibraryItem(SQLModel):
+    """一个轴对称教学图形的下发形态（ADR-0073 遗留 4）。
+
+    字段刻意沿用 ``FigureShape.to_dict()`` 的既有键名（``points`` 是 ``[[x, y]]``
+    扁平数组而不是对象数组）——前端按 ``List<Offset>`` 消费，改名要连带改渲染层，
+    而这份数据唯一的价值就是**零转换地被吃下去**。
+    """
+
+    key: str
+    label: str
+    points: list[list[float]] = Field(default_factory=list)
+    defaultAxisAngle: float = 0
+    #: **全部**对称轴角度；空 = 真无对称轴（平行四边形）。如实下发，不补 1。
+    axisAngles: list[float] = Field(default_factory=list)
+    #: 对称轴条数 = len(axisAngles)；「正方形有几条对称轴」的答案就是它。
+    axisCount: int = 0
+
+
+class FigureLibraryResp(SQLModel):
+    """图形几何库（后端为单一事实源）。空列表属部署异常。"""
+
+    figures: list[FigureLibraryItem] = Field(default_factory=list)

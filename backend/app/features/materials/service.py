@@ -32,12 +32,15 @@ from app.domain.subjects import SUBJECTS
 from app.features.materials import indexing
 from app.features.materials import repository as repo
 from app.features.materials.parser import ParseError, extract_text
+from app.features.materials.scene_figures import FIGURES
 from app.features.materials.scene_templates import (
     SCENE_LIBRARY,
     list_builtin_scenes,
 )
 from app.features.materials.schemas import (
     ExtractResult,
+    FigureLibraryItem,
+    FigureLibraryResp,
     FolderCreate,
     FolderResp,
     FolderUpdate,
@@ -722,6 +725,24 @@ def list_scene_library(
             )
         )
     return SceneLibraryResp(scenes=items)
+
+
+def list_figure_library() -> FigureLibraryResp:
+    """图形几何库（ADR-0073 遗留 4）：后端是顶点**唯一手写事实源**。
+
+    前端 `figures.dart` 已改为由本库生成（`frontend/scripts/gen_figures.py`），
+    不再是第二份手写副本——顶点漂移会让「是否轴对称」的判定变错（学生拖轴永远
+    对不上），而手工同步两处正是漂移的唯一来源。
+
+    端点与生成脚本**读同一份 ``FIGURES``**，所以「API 下发的几何」与「前端随包
+    内置的几何」不可能不一致；需要刷新时重跑脚本即可，不必改两份。
+
+    ⚠️ 这里**不做 house 兜底**：未命中 key 应由调用方降级（返回无图），而不是
+    拿房子顶上——那是渲染层的「永不空」安全网，不是数据层的默认值。
+    """
+    return FigureLibraryResp(
+        figures=[FigureLibraryItem(**shape.to_dict()) for shape in FIGURES]
+    )
 
 
 def update_knowledge_point_scenes(

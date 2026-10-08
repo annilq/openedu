@@ -1,16 +1,22 @@
-"""图形顶点库前后端**同步守卫**（ADR-0061 §O）。
+"""图形顶点库前后端**同步守卫**（ADR-0061 §O / ADR-0073 遗留 4）。
 
-`scene_figures.py` 与 `frontend/lib/shared/domain/figures.dart` 是同一份几何数据的
-两个副本。漂移的后果不是「显示难看」，而是**「是否轴对称」的判定变错**——学生拖轴
-永远对不上，题目失去教学意义。
+后端 `scene_figures.py` 是顶点**唯一手写事实源**，前端 `figures.dart` 由
+`frontend/scripts/gen_figures.py` **生成**（构建期，不是运行时拉取）。漂移的后果
+不是「显示难看」，而是**「是否轴对称」的判定变错**——学生拖轴永远对不上。
 
-所以本文件在测试期做**跨语言逐字比对**：解析 Dart 源里的顶点，与Python 侧比对，
-不一致立刻红。代价是依赖前端源文件路径（CI 里前后端同仓才可用）；找不到文件时
-``skip`` 而不是误报通过——但会打印提醒，别让它长期skip。
+所以本文件守两件事：
+1. **跨语言逐字比对**：解析生成出来的 Dart 源，与 Python 侧比对，不一致立刻红
+   （机制无关——就算哪天换了生成方式，只要产物对得上就通过）；
+2. **生成物没过期**：直接跑 `gen_figures.py --check`，忘了重跑脚本就红。
+
+代价是依赖前端源文件路径（CI 里前后端同仓才可用）；找不到文件时 ``skip`` 而不是
+误报通过——但会打印提醒，别让它长期skip。
 """
 from __future__ import annotations
 
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -202,3 +208,57 @@ class TestSquareIsProceduralAndCorrect:
         d = self._square().to_dict()
         assert d["axisAngles"] == [90, 0, 45, 135]
         assert d["axisCount"] == 4
+
+    def test_every_figure_carries_a_note(self):
+        """每个图形都必须带 note——「为什么 para 必须歪着」这类教学意图不能失传。
+
+        note 随生成脚本一起下发到前端，改顶点的人多半是在前端看到图形才动手的；
+        没有 note 的话，「顺手把它修好看」的悲剧就有真实发生路径。
+        """
+        for shape in FIGURES:
+            assert shape.note.strip(), f"{shape.key} 缺 note（教学意图说明）"
+
+    def test_note_is_not_part_of_wire_format(self):
+        """note 是给维护者看的，**不进** ``to_dict()``——渲染器不该收到它。
+
+        一旦进 wire，前端 optionGroup 每个选项都会多扛一段中文，白白增大载荷，
+        而且没人消费。
+        """
+        assert "note" not in self._square().to_dict()
+
+    def test_figure_library_service_matches_source(self):
+        """``GET /materials/scene-library/figures`` 的数据源就是 FIGURES 本身。
+
+        端点与生成脚本读同一份数据，所以「API 下发的几何」与「前端随包内置的
+        几何」不可能不一致——这条测试钉住端点没做二次加工（比如手抖补个兜底）。
+        """
+        from app.features.materials.service import list_figure_library
+
+        resp = list_figure_library()
+        assert [f.key for f in resp.figures] == [f.key for f in FIGURES]
+        for item, shape in zip(resp.figures, FIGURES):
+            assert item.points == [[x, y] for x, y in shape.vertices]
+            # axisCount 必须**如实**等于轴列表长度，不补 1（补了就是教错）
+            assert item.axisCount == len(item.axisAngles)
+            assert item.axisCount == shape.axis_count
+
+
+def test_frontend_figures_are_not_stale():
+    """前端 `figures.dart` 必须是最新生成结果——**忘了跑脚本就红**。
+
+    顶点改了却没重新生成，是这套「单一手写源 + 生成」方案唯一的失效模式：
+    后端和前端会静默漂移，而渲染看起来"还能用"，直到某道题判定出错。所以把
+    `--check` 接进测试，让失效变成 CI 可见的红灯。
+    """
+    script = _FRONTEND.parents[4] / "frontend" / "scripts" / "gen_figures.py"
+    if not script.exists():
+        pytest.skip(f"找不到生成脚本：{script}")
+    proc = subprocess.run(
+        [sys.executable, str(script), "--check"],
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0, (
+        "前端 figures.dart 与后端图形库不一致（后端顶点改过但没重新生成）。\n"
+        f"stdout: {proc.stdout}\nstderr: {proc.stderr}"
+    )

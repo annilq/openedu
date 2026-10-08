@@ -14,6 +14,7 @@ from app.core.deps import CurrentTeacher, SessionDep
 from app.features.materials import indexing, service
 from app.features.materials.schemas import (
     ExtractResult,
+    FigureLibraryResp,
     FolderCreate,
     FolderResp,
     FolderUpdate,
@@ -114,6 +115,19 @@ def list_scene_library(session: SessionDep, user: CurrentTeacher) -> SceneLibrar
     课件快照——那些归它们自己的页面渲染。
     """
     return service.list_scene_library(session, teacher_id=user.id)
+
+
+@router.get("/scene-library/figures", response_model=FigureLibraryResp)
+def list_figure_library(user: CurrentTeacher) -> FigureLibraryResp:
+    """图形几何库（ADR-0073 遗留 4）：后端是顶点**唯一事实源**，这里原样下发。
+
+    前端随包内置的 `figures.dart` 由同一份数据**生成**（`frontend/scripts/
+    gen_figures.py`），不再手写第二份。此端点供其它客户端 / 未来运行时刷新使用
+    ——即便没有它，渲染也不依赖网络（tablet-first、离线教室）。
+
+    不需要 session：几何是**代码内置常量**，不读库、不按教师隔离。
+    """
+    return service.list_figure_library()
 
 
 @router.get("/knowledge-points", response_model=KnowledgePointListResp)

@@ -1,12 +1,16 @@
-"""轴对称教学图形顶点库（ADR-0061 §O）—— **几何数据的单一事实源（后端侧）**。
+"""轴对称教学图形顶点库（ADR-0061 §O / ADR-0073 遗留 4）—— 几何数据的**唯一手写事实源**。
 
-与前端 `frontend/lib/shared/domain/figures.dart` 是**同一份数据的两个副本**。
-为什么两侧各存一份、而不是让后端去读 Dart 文件：
-- 运行时后端不能读前端源码目录（部署形态不同）；
-- 顶点是**教学素材**（人工设计：para 刻意不对称、arrow 走水平轴），不是算法产物。
+前端 `frontend/lib/shared/domain/figures.dart` **不再是第二份手写副本**，而是由
+`frontend/scripts/gen_figures.py` 从本文件**生成**的产物（构建期生成，不是运行时
+拉取）。为什么是"生成"而不是"运行时拉取"：整库画廊必须离线可用（tablet-first /
+离线教室），改成运行时拉取会让「第一次打开是空的」变成常态。
 
-⚠️ **改任何一处顶点都必须同步另一处**——几何漂移会直接让「是否轴对称」的判定
-变错（学生拖轴永远对不上）。两侧的key 与默认轴角度必须逐字一致。
+为什么不让后端去读 Dart 文件：运行时后端不能读前端源码目录（部署形态不同），
+而且顶点是**教学素材**（人工设计：para 刻意不对称、arrow 走水平轴），不是算法
+产物——它必须落在某一处被人工维护，那就落在唯一一处。
+
+⚠️ **改顶点只改这里**，然后重跑生成脚本（忘了跑会被 `--check` 拦住，CI 可见）。
+几何漂移会直接让「是否轴对称」的判定变错（学生拖轴永远对不上）。
 
 坐标归一化到 0..1、y 向下（与前端画布一致）。
 """
@@ -28,6 +32,12 @@ class FigureShape(NamedTuple):
     #: **全部**对称轴的角度（度）。「有几条对称轴」这类题要数它（ADR-0061 §Q）。
     #: 只有一条轴的图形就只放一个；顺序即讲解时的推荐演示顺序。
     axis_angles: list[float] = field(default_factory=list)
+    #: 讲解这个图形**为什么长这样**的一句话（教学意图，非渲染数据）。
+    #: 典型如「para 刻意错切成不对称——修好看就废了这道题」。此前这类说明只写在
+    #: 前端注释里，改顶点的人看不到，于是「顺手修好看」的悲剧有真实发生路径。
+    #: 现在它与顶点同属唯一手写源，并随生成脚本一起下发到前端，不会被漏掉。
+    #: 刻意**不进** ``to_dict()``：它是给维护者看的，不是给渲染器消费的。
+    note: str = ""
 
     @property
     def axis_count(self) -> int:
@@ -79,6 +89,7 @@ FIGURES: tuple[FigureShape, ...] = (
     FigureShape(
         key="house",
         label="房子",
+        note="房子：五边形（底 + 两腰 + 屋顶），竖直对称。",
         vertices=[
             (0.30, 0.70),
             (0.70, 0.70),
@@ -92,6 +103,7 @@ FIGURES: tuple[FigureShape, ...] = (
     FigureShape(
         key="kite",
         label="风筝",
+        note="风筝：菱形，竖直对称。",
         vertices=[
             (0.50, 0.20),
             (0.72, 0.50),
@@ -104,6 +116,10 @@ FIGURES: tuple[FigureShape, ...] = (
     FigureShape(
         key="arrow",
         label="箭头",
+        note=(
+            "箭头：横向（**故意水平对称**）→ 默认轴 0°。\n"
+            "唯一那条轴是水平线（竖直方向上下不对称）。"
+        ),
         vertices=[
             (0.20, 0.42),
             (0.62, 0.42),
@@ -123,6 +139,11 @@ FIGURES: tuple[FigureShape, ...] = (
     FigureShape(
         key="para",
         label="平行四边形",
+        note=(
+            "平行四边形：**刻意画成不对称**（错切：上边中点 0.50 / 下边 0.62），\n"
+            "用来演示「不是轴对称图形」。若被「修正」成矩形，这道题就失去判断意义\n"
+            "——所以它的顶点不可动，且对称轴列表为空（真的没有对称轴）。"
+        ),
         vertices=[
             (0.30, 0.40),
             (0.70, 0.40),
@@ -140,6 +161,13 @@ FIGURES: tuple[FigureShape, ...] = (
     FigureShape(
         key="square",
         label="正方形",
+        note=(
+            "正方形：**程序生成**（ADR-0061 §Q 决策 A：轴对齐、零微扰）。\n"
+            "为什么它可以程序生成而 para 不行：正方形的几何定义**唯一且无歧义**，\n"
+            "任何实现都必然得到一个 4 条对称轴的图形；而 para 的「不对称」是\n"
+            "**教学设计的意图**，算法只会把它修好。\n"
+            "4 条轴：竖(90)/横(0)/两条对角(45,135)——「有几条」的答案就是 4。"
+        ),
         vertices=_square_vertices(),
         default_axis_angle=90,
         axis_angles=[90, 0, 45, 135],
@@ -149,6 +177,10 @@ FIGURES: tuple[FigureShape, ...] = (
     FigureShape(
         key="iso_triangle",
         label="等腰三角形",
+        note=(
+            "等腰三角形：apex 朝上、底边水平 → 仅一条竖直对称轴（1 条轴）。\n"
+            "顶点刻意落在 x=0.5 中线上，左右底点对称，确保真的只有 1 条轴。"
+        ),
         vertices=[
             (0.50, 0.22),
             (0.26, 0.78),
@@ -162,6 +194,10 @@ FIGURES: tuple[FigureShape, ...] = (
     FigureShape(
         key="eq_triangle",
         label="等边三角形",
+        note=(
+            "等边三角形：apex 朝上、底边水平；\n"
+            "3 条对称轴（竖直 + 两条 ±60° 的腰中线）。"
+        ),
         vertices=[
             (0.50, 0.347),
             (0.25, 0.78),
@@ -174,6 +210,7 @@ FIGURES: tuple[FigureShape, ...] = (
     FigureShape(
         key="rectangle",
         label="矩形",
+        note="矩形（长方形）：水平 + 竖直两条对称轴 → 2 条轴。",
         vertices=[
             (0.22, 0.35),
             (0.78, 0.35),
@@ -187,6 +224,10 @@ FIGURES: tuple[FigureShape, ...] = (
     FigureShape(
         key="iso_trapezoid",
         label="等腰梯形",
+        note=(
+            "等腰梯形：上下边都居中于 x=0.5\n"
+            "→ 仅一条竖直对称轴（1 条轴）。"
+        ),
         vertices=[
             (0.38, 0.40),
             (0.62, 0.40),
@@ -201,6 +242,7 @@ FIGURES: tuple[FigureShape, ...] = (
     FigureShape(
         key="trapezoid_gen",
         label="任意梯形",
+        note="任意梯形（非等腰）：上下边中点错开 → 真无对称轴（0 条轴），作干扰项。",
         vertices=[
             (0.30, 0.40),
             (0.62, 0.40),
@@ -214,6 +256,7 @@ FIGURES: tuple[FigureShape, ...] = (
     FigureShape(
         key="quad_gen",
         label="一般四边形",
+        note="一般四边形：刻意不规则，真无对称轴（0 条轴），作干扰项。",
         vertices=[
             (0.25, 0.30),
             (0.80, 0.40),
