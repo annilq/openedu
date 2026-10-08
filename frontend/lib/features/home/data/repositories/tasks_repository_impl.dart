@@ -45,4 +45,10 @@ class TasksRepositoryImpl implements TasksRepository {
     final data = await _network.post('/tasks/from-generated', body: body);
     return TaskModel.fromJson(decodeMap(data));
   }
+
+  @override
+  Future<TeacherTodoSummary> teacherTodoSummary() async {
+    final data = await _network.get('/tasks/teacher-todo-summary');
+    return TeacherTodoSummary.fromJson(decodeMap(data));
+  }
 }

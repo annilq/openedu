@@ -87,6 +87,9 @@ class _FakeTasks extends TasksRepository {
   @override
   Future<TaskModel> persistGenerated(Map<String, dynamic> body) =>
       throw UnimplementedError();
+  @override
+  Future<TeacherTodoSummary> teacherTodoSummary() =>
+      throw UnimplementedError();
 }
 
 void main() {

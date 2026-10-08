@@ -28,8 +28,13 @@ class CreateTaskPage extends TeacherPage {
 }
 
 /// 任务列表。
+///
+/// [initialTab] 支持深链：待办卡片点「待审核 / 待派发」进 Tab 0（草稿箱），
+/// 点「谁没交」进 Tab 1（进行中）。默认 0。
 class TaskListPage extends TeacherPage {
-  const TaskListPage();
+  final int initialTab;
+
+  const TaskListPage({this.initialTab = 0});
 }
 
 /// 添加学生（StudentFormScreen 创建态）。

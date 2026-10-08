@@ -183,6 +183,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           onNavigateToReview: _navigateToReview,
           // 空态出口：概览与任务页的「去布置任务」都落到同一个目的地。
           onNavigateToCreate: () => _go(const CreateTaskPage()),
+          // 待办卡片深链：按 Tab 进任务列表（0=草稿箱 / 1=进行中 / 2=已完成）。
+          onNavigateToList: (tab) => _go(TaskListPage(initialTab: tab)),
         ),
       // ADR-0057：生成页不再接跳转回调——收尾（含进草稿页）由本页的监听统一负责。
       CreateTaskPage() => const TeacherTaskFormView(),
@@ -217,9 +219,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           },
           onAddStudent: _onNavigateToAddStudent),
       AnalyticsPage() => const AnalyticsScreen(),
-      TaskListPage() => TeacherTasksView(
+      TaskListPage(initialTab: final tab) => TeacherTasksView(
           onNavigateToReview: _navigateToReview,
           onNavigateToCreate: () => _go(const CreateTaskPage()),
+          initialTab: tab,
         ),
       TaskReviewPage(task: final task) => TeacherTaskReviewScreen(
           task: task,

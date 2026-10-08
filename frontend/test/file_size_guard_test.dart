@@ -106,6 +106,8 @@ void main() {
 /// 多选状态、getter 与 pick 方法，已把 chip 行抽到 dispatch_targets_row.dart 仍净增 4 行）、
 /// 补登此前漏登的 teacher_task_review_screen 390→424（新增 classIds/studentIds 携带与
 /// _onAssignBulk 批量派发分支）；两处增长均为功能必需，已在提交正文说明理由）。
+/// 2026-10-08 票据 20（概览→教师工作台）：teacher_tasks_view 649→656（新增 initialTab
+/// 深链参数，承接概览待办卡片跳对应 Tab），功能必需、已在提交正文说明理由）。
 /// **只许下调。**
 ///
 /// 拆分批次见 `docs/refactor/2026-09-21-flutter-ui-decomposition.md`（P0–P4）。
@@ -113,7 +115,7 @@ const Map<String, int> _baseline = <String, int>{
   'shared/theme/app_theme.dart': 1695,
   'shared/widgets/adaptive_shell.dart': 490,
   'features/home/presentation/widgets/teacher/teacher_question_bank_view.dart': 759,
-  'features/home/presentation/widgets/teacher/teacher_tasks_view.dart': 649,
+  'features/home/presentation/widgets/teacher/teacher_tasks_view.dart': 656,
   'features/home/presentation/screens/home_screen.dart': 586,
   'features/assistant/presentation/screens/assistant_chat_page.dart': 570,
   'shared/widgets/scene_interpreter/reflection_scene.dart': 567,

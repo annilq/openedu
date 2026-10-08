@@ -21,6 +21,8 @@ import '../../../../students/providers/students_provider.dart';
 import '../../providers/teacher_tasks_notifier.dart';
 import '../../providers/task_form_prefill.dart';
 import '../../providers/teacher_overview_provider.dart';
+import '../../providers/teacher_todo_provider.dart';
+import 'teacher_todo_section.dart';
 
 /// 教师概览（整体视角）：班级掌握度概览 + 薄弱知识点 + 最近任务。
 ///
@@ -33,10 +35,14 @@ class TeacherOverviewView extends ConsumerWidget {
   /// 空态出口：跳到「布置任务」页。
   final VoidCallback? onNavigateToCreate;
 
+  /// 工作台待办卡片点击：按 Tab 深链到任务列表（0=草稿 / 1=进行中 / 2=已完成）。
+  final void Function(int tab)? onNavigateToList;
+
   const TeacherOverviewView({
     super.key,
     required this.onNavigateToReview,
     this.onNavigateToCreate,
+    this.onNavigateToList,
   });
 
   @override
@@ -61,9 +67,20 @@ class TeacherOverviewView extends ConsumerWidget {
           .load(kAllTaskStatuses),
     );
 
+    final todoState = ref.watch(teacherTodoProvider);
+    ref.loadWhenIdle(
+      teacherTodoProvider,
+      (s) => s is TeacherTodoInitial,
+      () => ref.read(teacherTodoProvider.notifier).load(),
+    );
+
     return AppScrollPage(
       children: [
         _Header(studentCount: studentCount),
+        if (onNavigateToList != null) ...[
+          const SectionTitle('待办'),
+          TeacherTodoSection(state: todoState, onOpenList: onNavigateToList!, ref: ref),
+        ],
         const SectionTitle('掌握度概览'),
         _MasterySummary(overview: overview, ref: ref),
         const SectionTitle('薄弱知识点'),

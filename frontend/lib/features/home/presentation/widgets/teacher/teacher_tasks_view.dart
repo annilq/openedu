@@ -31,10 +31,15 @@ class TeacherTasksView extends ConsumerStatefulWidget {
   /// 用户知道没有任务，但不知道下一步该点哪。
   final VoidCallback? onNavigateToCreate;
 
+  /// 深链入口（ticket 20）：待办卡片点进来直接落对应 Tab。
+  /// 0=草稿箱(待审核/待派发)  1=进行中(谁没交)  2=已完成。
+  final int initialTab;
+
   const TeacherTasksView({
     super.key,
     required this.onNavigateToReview,
     this.onNavigateToCreate,
+    this.initialTab = 0,
   });
 
   @override
@@ -62,6 +67,9 @@ class _TeacherTasksViewState extends ConsumerState<TeacherTasksView> {
   @override
   void initState() {
     super.initState();
+    // 深链：待办卡片进来直接落对应 Tab（0=草稿箱 / 1=进行中 / 2=已完成），
+    // 否则会先闪一下 Tab 0 再跳，体验割裂。
+    _tab = widget.initialTab;
     _unbindScroll = bindPagingOnScroll(
       _scroll,
       () => ref.read(teacherTasksNotifierProvider.notifier).loadMore(),

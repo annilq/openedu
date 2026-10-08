@@ -182,6 +182,27 @@ class TaskCounts {
       );
 }
 
+/// 教师工作台待办聚合（ticket 20）：待审核 / 待派发 / 谁没交。
+///
+/// 由服务端聚合返回（[GET /tasks/teacher-todo-summary]），避免客户端只统计已加载分页。
+class TeacherTodoSummary {
+  final int pendingReview;
+  final int pendingDispatch;
+  final int notSubmitted;
+
+  const TeacherTodoSummary({
+    this.pendingReview = 0,
+    this.pendingDispatch = 0,
+    this.notSubmitted = 0,
+  });
+
+  factory TeacherTodoSummary.fromJson(Map<String, dynamic> json) => TeacherTodoSummary(
+        pendingReview: json['pending_review'] as int? ?? 0,
+        pendingDispatch: json['pending_dispatch'] as int? ?? 0,
+        notSubmitted: json['not_submitted'] as int? ?? 0,
+      );
+}
+
 /// 任务列表响应（ADR-0053）：游标信封 + 三个 Tab 的状态计数。
 ///
 /// 做成 [CursorPage] 的子类而不是并列类型：分页 notifier 只认 [CursorPage]，

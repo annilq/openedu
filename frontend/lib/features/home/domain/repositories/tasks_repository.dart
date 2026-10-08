@@ -26,4 +26,8 @@ abstract class TasksRepository {
 
   /// 把已生成的题卡落库为草稿任务（POST /tasks/from-generated）。
   Future<TaskModel> persistGenerated(Map<String, dynamic> body);
+
+  /// 教师工作台待办聚合（GET /tasks/teacher-todo-summary，ticket 20）：
+  /// 待审核 / 待派发 / 谁没交 三项计数。
+  Future<TeacherTodoSummary> teacherTodoSummary();
 }
