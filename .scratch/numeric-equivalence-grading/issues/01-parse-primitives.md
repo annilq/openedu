@@ -10,7 +10,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] `parse_numeric("12厘米")` 返回基准单位下的数值与量纲，可被 `numeric_equal` 与 `12` 判等。
 - [ ] `parse_numeric("1/2")` / `("2/4")` / `("0.5")` 解析为同一数值（Fraction 约分）。
@@ -19,4 +19,6 @@
 - [ ] `parse_numeric("5个")` 与 `("5")` 数值等价（无单位数值一致）。
 - [ ] `parse_numeric("x=5")` / `("π")` / `("√2")` 返回 `None`（非数值，触发回退）。
 - [ ] `numeric_equal` 对量纲不兼容（如 `5cm` vs `5kg`）返回 `False`。
-- [ ] 单测覆盖上述等价 / 判错 / 非数值回退三类，运行全绿。
+- [x] 单测覆盖上述等价 / 判错 / 非数值回退三类，运行全绿。
+
+**Done note (2026-10-07):** 已随 commit `39273ea` 提交——`backend/app/domain/numeric.py`（`parse_numeric`/`numeric_equal`）+ `backend/tests/domain/test_numeric.py`（17 passed，覆盖单位换算 / 分数约分 / 带分数 / 量纲不兼容 / 非数值回退）。纯函数层已就绪，零回归。

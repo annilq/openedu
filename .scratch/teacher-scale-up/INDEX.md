@@ -47,7 +47,7 @@ C 系列 · 导航与统计（ADR-0070）
 3. 全部打 `ready-for-agent` 标签
 
 ## Backlog（延后待办，不在本轮 16 票内）
-- **17 文件规模棘轮补登债务（跨 epic）**：4 个此前提交漏登 >400 基线的文件——`analytics_screen` 488 / `courseware_present_page` 429 / `section_practice` 429 / `teacher_task_form_view` 425——已于 `ce4d1de` 临时补登保测试绿，但仍锁在高位违背棘轮「只许下调」方向。须各自 owner 认领：拆小到 ≤400 或正式确认基线。详见 `issues/17-file-size-ratchet-debt.md`。
-- **18 多对象派发（班级/学生多选）**：ticket 14 降级项——布置任务当前仅单学生显式选择器（`_StudentAssignRow`），缺班级/学生多选批量派发能力。Blocked by 08。详见 `issues/18-multi-object-dispatch.md`。
-- **19 派发对象兴趣无交集自动关闭**：ticket 14 降级项——布置任务当前无兴趣交集逻辑，无法在派发对象无共同兴趣时自动关闭兴趣模式并说明原因。Blocked by 08。详见 `issues/19-interest-empty-intersection.md`。
-- **20 概览改教师工作台（待办聚合）**：INDEX C6 延后项——概览已为教师整体视角（ticket 14），但「待派发/待审核/谁没交 + 全班速览」的工作台形态未做。Blocked by 11/12。详见 `issues/20-overview-to-teacher-workbench.md`。
+- **17 文件规模棘轮补登债务（跨 epic）**：3 个此前提交漏登 >400 基线的文件（剩 `analytics_screen` 488 / `section_practice` 429 / `teacher_task_form_view` 425）——已于 `ce4d1de` 临时补登保测试绿，但仍锁在高位违背棘轮「只许下调」方向。**2026-10-08 拍板分文件定 A/B：analytics_screen（488）→ B 确认保留并补 why；section_practice（429）/ teacher_task_form_view（425）→ A 拆小 ≤400 下调基线。转 `ready-for-agent`**。`courseware_present_page` 已于 2026-10-08 拆分 320 并移出基线（不计入）。详见 `issues/17-file-size-ratchet-debt.md`。
+- **18 多对象派发（班级/学生多选）**：ticket 14 降级项——布置任务当前仅单学生显式选择器（`_StudentAssignRow`），缺班级/学生多选批量派发能力。**08 后端已 done（`bulk_assign_task` 收班级/学生列表），仅前端选择器缺口**。**2026-10-08 拍板：选 B（就地扩`_StudentAssignRow`为多选 chip 行，调 08），转 `ready-for-agent`**。详见 `issues/18-multi-object-dispatch.md`。
+- **19 派发对象兴趣无交集自动关闭**：~~ticket 14 降级项~~ **2026-10-08 废弃（wontfix）**：按决策去掉兴趣爱好相关功能，本票不再实现。`Blocked by 08` 解除（08 仍 done）。详见 `issues/19-interest-empty-intersection.md`。
+- **20 概览改教师工作台（待办聚合）**：INDEX C6 延后项——概览已为教师整体视角（ticket 14），但「待派发/待审核/谁没交 + 全班速览」的工作台形态未做。**11/12 均已 done，无实现阻塞**。**2026-10-08 拍板：选 A（顶部三待办卡片，复用 12 范式），转 `ready-for-agent`**。详见 `issues/20-overview-to-teacher-workbench.md`。

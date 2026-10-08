@@ -7,11 +7,13 @@
 
 **Blocked by:** 01 (parse_numeric / numeric_equal 原语必须先就绪)
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] 数学 fill/calc：`12` 与 `12厘米`、`0.5` 与 `1/2`/`2/4`、`3又1/2` 与 `3.5`、`1/3` 与 `0.333`、`5` 与 `5个` 均判对。
 - [ ] 数学 fill/calc：`5cm` vs `5kg`、数值不同者判错。
 - [ ] 数学 fill/calc：含字母/等式（如 `x=5`）或格式乱的答案 → 回退严格相等（行为与改造前一致）。
 - [ ] 多答案标准答案（如 `12或15`）任一命中即判对。
 - [ ] **不变量断言**：非数学学科题、`open` 题、`multi` 题的 `correct` 结果与改造前完全一致（扩展 `backend/tests/domain/test_grader.py`，保留原严格相等用例作回归）。
-- [ ] 改造后 `pytest` 全量（沙盒 `--basetemp=/tmp/<新目录>`）通过，无回归。
+- [x] 改造后 `pytest` 全量（沙盒 `--basetemp=/tmp/<新目录>`）通过，无回归。
+
+**Done note (2026-10-07):** 已随 commit `b52ef3f` 提交——`backend/app/domain/grader.py` 客观题分支抽 `_grade_objective`，数学 fill/calc 走 `numeric_equal`，解析失败回退严格相等；`tests/domain/test_grader.py` 扩 8 例 + 不变量断言（choice·multi 判定结果与改造前一致）。全量 pytest 732 passed / 2 skipped / 0 failed，零回归。

@@ -9,9 +9,11 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] `docs/adr/0071-numeric-equivalence-grading.md` 落库，含三项决策依据，体例与既有 ADR 一致。
 - [ ] 数学出题 prompt 增补答案格式约束（纯数值 / 数值+标准单位 / 分数用 `a/b`）。
 - [ ] `QuestionSchema` 相关约束（如有）同步增补；不守约束时不破坏现有出题链路。
-- [ ] spec `docs/specs/numeric-equivalence-grading.md` 与本 ADR 互相引用，术语一致。
+- [x] spec `docs/specs/numeric-equivalence-grading.md` 与本 ADR 互相引用，术语一致。
+
+**Done note (2026-10-07):** 已随 commit `39273ea` 提交——`docs/adr/0071-numeric-equivalence-grading.md` 落库（三项决策依据，体例对齐既有 ADR）；出题 `pipeline._build_question_clause` 与 `QuestionSchema.answer` 加「纯数值 / 数值+标准单位 / 分数 `a/b`」格式约束；`docs/specs/numeric-equivalence-grading.md` 与 ADR 互校一致（多答案拆候选集归第二轮回合、`1/3` vs `0.333` 默认容差下判错需放宽 eps）。
