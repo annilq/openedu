@@ -27,7 +27,7 @@ async def upload_asset(
 ) -> CoursewareAssetResp:
     """上传一张课件素材（图片）。
 
-    非图片 422（``CW_91005``）、超上限 413（``CW_91004``）。素材不切分、不向量化——
+    非图片 422（``CW_91005``）。素材不切分、不向量化——
     它是要原样投出去的图，与资料（Material）两条路（§3.5）。
     """
     data = await file.read()

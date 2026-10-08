@@ -16,8 +16,8 @@ abstract class CoursewareRepository {
     String? filename,
   });
 
-  /// 上传一张图片素材（multipart）。后端按 COURSEWARE_ASSET_MAX_BYTES 与
-  /// COURSEWARE_ASSET_MIMES 校验，超限 / 非图片抛错由调用方转提示。
+  /// 上传一张图片素材（multipart）。后端按 COURSEWARE_ASSET_MIMES 校验，非图片抛错由
+  /// 调用方转提示；不再限制单文件大小。
   Future<CoursewareAssetModel> uploadAsset({
     required String filename,
     required List<int> bytes,

@@ -36,6 +36,7 @@ import '../widgets/teacher/teacher_question_bank_view.dart';
 import '../widgets/teacher/teacher_tasks_view.dart';
 import '../widgets/teacher/material_library_view.dart';
 import '../../../../features/courseware/presentation/screens/courseware_center_screen.dart';
+import '../../../../features/courseware/presentation/screens/asset_library_screen.dart';
 import 'student_mastery_screen.dart';
 import '../../../../shared/widgets/app_actions.dart';
 
@@ -259,6 +260,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         ),
       ModelsPage() => const TeacherModelManagementScreen(),
+      AssetLibraryPage() => const AssetLibraryScreen(),
       StudentManagementPage() => StudentManagementScreen(
           onOpenStudent: (id) {
             _go(StudentDetailPage(id,

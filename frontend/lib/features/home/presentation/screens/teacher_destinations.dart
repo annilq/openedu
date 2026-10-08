@@ -84,6 +84,11 @@ class NavigationDestinations {
           // 场景后侧栏会「谁都不亮」，教师以为自己离开了导航。
           active: active is SceneLibraryPage || active is SceneLibraryDetailPage,
           onTap: () => go(const SceneLibraryPage())),
+      AdaptiveNavDestination(
+          icon: LucideIcons.images,
+          label: '素材库',
+          active: active is AssetLibraryPage,
+          onTap: () => go(const AssetLibraryPage())),
     ];
   }
 

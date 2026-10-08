@@ -9,8 +9,7 @@
   AST 扫描）。不存在与越权抛同一个 404「素材不存在或无权限」。
 - **删除无条件允许**（决策 10 / §4.2）：不查引用计数、不级联课件。删行 +
   best-effort 删物理文件，引用它的环节由展示侧显示「素材已移除」占位。
-- **只收图片**：MIME 限 ``COURSEWARE_ASSET_MIMES``、字节数限
-  ``COURSEWARE_ASSET_MAX_BYTES``，越限分别 422 / 413。
+- **只收图片**：MIME 限 ``COURSEWARE_ASSET_MIMES``，非图片 422。
 """
 
 from __future__ import annotations
@@ -25,10 +24,7 @@ from app.core.config import settings
 from app.core.errors import AppErrorException, ErrCode
 from app.core.guard import require_owned
 from app.db.models import CoursewareAsset, KnowledgePoint
-from app.db.models.courseware import (
-    COURSEWARE_ASSET_MIMES,
-    COURSEWARE_ASSET_SOURCE_PLATFORM_CC0,
-)
+from app.db.models.courseware import COURSEWARE_ASSET_MIMES
 from app.features.courseware.asset_schemas import (
     CoursewareAssetListResp,
     CoursewareAssetResp,
@@ -47,9 +43,6 @@ def asset_resp(asset: CoursewareAsset) -> CoursewareAssetResp:
         created_at=asset.created_at,
         knowledge_point_id=asset.knowledge_point_id,
         url=f"{settings.API_V1_STR}/courseware/assets/{asset.id}/file",
-        source=asset.source or "",
-        source_url=asset.source_url or "",
-        license=asset.license or "",
     )
 
 
@@ -63,27 +56,6 @@ def _owned(
         obj_id=asset_id,
         code=ErrCode.COURSEWARE_ASSET_NOT_FOUND,
         message="素材不存在或无权限",
-    )
-
-
-def _owned_or_cc0(
-    session: Session, *, teacher_id: uuid.UUID, asset_id: uuid.UUID
-) -> CoursewareAsset:
-    """取素材：本人所有 **或** 平台 CC0 公共素材（任意教师可读原图）。
-
-    CC0 素材归系统哨兵教师所有，但属于「平台公共素材」，任何已登录教师都应能在
-    课件里引用并取到原图——否则引用了 CC0 的环节会整片「素材已移除」。删除保护
-    另有 ``delete_asset`` 的 CC0 拦截，这里只放开**读**。
-    """
-    asset = session.get(CoursewareAsset, asset_id)
-    if asset is None:
-        raise AppErrorException(
-            ErrCode.COURSEWARE_ASSET_NOT_FOUND, "素材不存在或无权限"
-        )
-    if asset.teacher_id == teacher_id or asset.source == COURSEWARE_ASSET_SOURCE_PLATFORM_CC0:
-        return asset
-    raise AppErrorException(
-        ErrCode.COURSEWARE_ASSET_NOT_FOUND, "素材不存在或无权限"
     )
 
 
@@ -122,12 +94,7 @@ def upload_asset(
     mime: str,
     data: bytes,
 ) -> CoursewareAssetResp:
-    """上传一张课件素材（图片）。超限 413、非图片 422。"""
-    if len(data) > settings.COURSEWARE_ASSET_MAX_BYTES:
-        raise AppErrorException(
-            ErrCode.COURSEWARE_ASSET_TOO_LARGE,
-            f"素材超过大小上限（{settings.COURSEWARE_ASSET_MAX_BYTES // (1024 * 1024)}MB）",
-        )
+    """上传一张课件素材（图片）。非图片 422。"""
     if mime not in COURSEWARE_ASSET_MIMES:
         raise AppErrorException(
             ErrCode.COURSEWARE_ASSET_BAD_MIME,
@@ -174,18 +141,15 @@ def search_assets(
             code=ErrCode.FORBIDDEN,
             message="知识点不存在或无权限",
         )
-    # 本人全部素材 ∪ 平台 CC0 公共素材（对所有教师可见，与本人素材并列展示）。
-    # 知识点过滤只作用于「本人素材」一侧——CC0 是通用公共素材，不受知识点约束。
-    own = CoursewareAsset.teacher_id == teacher_id
-    cc0 = CoursewareAsset.source == COURSEWARE_ASSET_SOURCE_PLATFORM_CC0
+    # 本人全部素材（ADR-0077：素材库 = 纯教师上传，只列本人上传）。
     stmt = (
         select(CoursewareAsset)
-        .where(own | cc0)
+        .where(CoursewareAsset.teacher_id == teacher_id)
         .order_by(CoursewareAsset.created_at)
     )
     if knowledge_point_id is not None:
         stmt = stmt.where(
-            (CoursewareAsset.knowledge_point_id == knowledge_point_id) | cc0
+            CoursewareAsset.knowledge_point_id == knowledge_point_id
         )
     if filename:
         stmt = stmt.where(CoursewareAsset.name.ilike(f"%{filename}%"))
@@ -203,21 +167,15 @@ def delete_asset(
     「出现空洞」更让人恼火（§4.2）。物理文件 best-effort 删除：文件不在不报错，
     DB 行已删，残留文件不影响正确性。
 
-    **平台 CC0 公共素材禁止删除**：它不是任何教师的私有财产，删了会影响所有人
-    引用它的课件。拦截返回 403（而非伪装 404），让调用方明确「这不是你的素材」。
-    该检查放在归属校验之前——CC0 归系统哨兵教师，走 ``_owned`` 会先 404，必须
-    先按 ``source`` 识别并拦下。
+    仅做归属校验：素材只归本人所有（ADR-0077 起素材库 = 纯教师上传，无平台公共
+    素材），越权即 404 同一语义。
     """
     asset = session.get(CoursewareAsset, asset_id)
     if asset is None:
         raise AppErrorException(
             ErrCode.COURSEWARE_ASSET_NOT_FOUND, "素材不存在或无权限"
         )
-    if asset.source == COURSEWARE_ASSET_SOURCE_PLATFORM_CC0:
-        raise AppErrorException(
-            ErrCode.FORBIDDEN, "平台 CC0 公共素材不可删除"
-        )
-    # 普通素材才做归属校验（CC0 已在上一步拦下，不会走到这里）。
+    # 归属校验：素材只归本人所有（ADR-0077 起素材库 = 纯教师上传）。
     require_owned(
         session=session,
         owner_id=teacher_id,
@@ -241,10 +199,10 @@ def asset_file(
 ) -> tuple[Path, str]:
     """取原图的 (落盘路径, MIME)；越权 / 不存在 / 文件已丢失一律 404 同一语义。
 
-    读侧放开平台 CC0：任意教师都可在自己的课件里引用并取到 CC0 原图（写侧删
-    除仍由 ``delete_asset`` 拦截）。
+    读侧只认归属：本人上传的素材才能取到原图，越权 / 不存在 / 文件已丢失一律 404
+    同一语义（ADR-0077 起素材库 = 纯教师上传，无平台公共素材）。
     """
-    asset = _owned_or_cc0(session, teacher_id=teacher_id, asset_id=asset_id)
+    asset = _owned(session, teacher_id=teacher_id, asset_id=asset_id)
     path = Path(settings.MATERIAL_UPLOAD_ROOT) / asset.storage_key
     if not path.is_file():
         # 文件被外部清理过（删除是 best-effort，DB 行可能先于文件消失）：

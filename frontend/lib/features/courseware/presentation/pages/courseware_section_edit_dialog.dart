@@ -1,15 +1,23 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart' show Dialog, showDialog;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_actions.dart';
 import '../../../../shared/widgets/app_buttons.dart';
+import '../../../../shared/widgets/app_focusable_action.dart';
 import '../../../../shared/widgets/app_inputs.dart';
 import '../../../../shared/widgets/app_toast.dart';
+import '../../../../shared/widgets/app_loading.dart';
+import '../../../../shared/widgets/app_image_viewer.dart';
+import '../../../../shared/widgets/auth_image.dart';
+import '../../domain/models/courseware_asset.dart';
 import '../../domain/models/courseware_section.dart';
 import '../../providers/courseware_provider.dart';
-import 'courseware_asset_picker_sheet.dart';
+import 'asset_library_picker.dart';
 import 'section_scene_association_block.dart';
 
 /// 编辑单个讲解环节（ADR-0067 §3.3，内容块统一化）：
@@ -82,6 +90,10 @@ class _SectionEditDialogState extends ConsumerState<_SectionEditDialog> {
   List<Map<String, dynamic>>? _kpScenes;
   bool _scenesLoading = false;
 
+  /// 当前选中的模板在 [_kpScenes] 中的下标；null = 未关联 / 已清除 / 源模板已失效。
+  /// 场景模板是裸 dict、无稳定 id，下标是单次弹窗内唯一可靠标识。
+  int? _selectedSceneIndex;
+
   @override
   void initState() {
     super.initState();
@@ -126,6 +138,12 @@ class _SectionEditDialogState extends ConsumerState<_SectionEditDialog> {
       setState(() {
         _kpScenes = scenes;
         _scenesLoading = false;
+        // 重开已有课件：把顶层已关联的 scene 与拉到的模板做内容深比较，回填下标；
+        // 找不到（知识点模板已改）则下标置 null，由 block 的 hasScene 提示源已失效。
+        if (_draft.scene != null && scenes != null) {
+          final idx = scenes.indexWhere((s) => _sceneEquals(s, _draft.scene!));
+          _selectedSceneIndex = idx >= 0 ? idx : null;
+        }
       });
     } catch (e) {
       if (!mounted) return;
@@ -137,18 +155,28 @@ class _SectionEditDialogState extends ConsumerState<_SectionEditDialog> {
     }
   }
 
-  /// 选中一份知识点模板 → 快照式复制进本环节顶层 [CoursewareSectionModel.scene]
+  /// 模板 dict 是裸 dict、无 id，用 JSON 字符串做内容深比较（dict 来自 JSON 解码，
+  /// 键顺序稳定）。
+  static bool _sceneEquals(Map<String, dynamic> a, Map<String, dynamic> b) =>
+      jsonEncode(a) == jsonEncode(b);
+
+  /// 在下拉里选中一份知识点模板 → 快照式复制进本环节顶层 [CoursewareSectionModel.scene]
   /// （演示页直接渲染，见 [SectionInteractiveScene]）。这是「快照式」关联：复制进来，
   /// 不随知识点后续改动自动更新。
-  void _associateScene(Map<String, dynamic> spec) => setState(
-        () => _draft = _draft.copyWith(
-          scene: Map<String, dynamic>.from(spec),
-        ),
-      );
+  void _onSceneSelected(int index) => setState(() {
+        _selectedSceneIndex = index;
+        _draft = _draft.copyWith(
+          scene: _kpScenes == null
+              ? null
+              : Map<String, dynamic>.from(_kpScenes![index]),
+        );
+      });
 
   /// 清除关联：scene 置空，演示页回落到「只有话术」提示。
-  void _clearAssociation() =>
-      setState(() => _draft = _draft.copyWith(scene: null));
+  void _clearAssociation() => setState(() {
+        _selectedSceneIndex = null;
+        _draft = _draft.copyWith(scene: null);
+      });
 
   @override
   void dispose() {
@@ -159,42 +187,32 @@ class _SectionEditDialogState extends ConsumerState<_SectionEditDialog> {
     super.dispose();
   }
 
-  /// 把素材库 picker 回执的 `{items:[{asset_id,caption}]}` 解析成顶层素材列表。
-  List<CoursewareMaterialItem> _materialsFromPicker(Map<String, dynamic> updated) {
-    final raw = updated['items'];
-    if (raw is! List) return const <CoursewareMaterialItem>[];
-    return <CoursewareMaterialItem>[
-      for (final e in raw)
-        if (e is Map)
-          CoursewareMaterialItem(
-            assetId: (e['asset_id'] as String?) ?? '',
-            caption: (e['caption'] as String?) ?? '',
-          ),
-    ];
-  }
-
-  /// 关联素材：复用素材库 picker；把它当前的顶层素材映射回 picker 用的 items 结构，
-  /// 让 picker 能显示既有选择，回执再归一化回顶层 [CoursewareSectionModel.materials]。
+  /// 关联素材：复用多选素材库 picker（ADR-0076）。当前已挂在环节里的素材 id 作为
+  /// 「已选」传给 picker；回执是选中的 asset id 列表。落库时：保留既有素材的 caption、
+  /// 按 picker 顺序重排、剔除未选中的、新选中的给空 caption。
   Future<void> _addAsset() async {
-    final current = {
-      'items': [
-        for (final m in _draft.materials)
-          {'asset_id': m.assetId, 'caption': m.caption},
-      ],
-    };
-    final updated = await showCoursewareAssetPicker(
+    final selectedIds = await showAssetLibraryPicker(
       context,
       ref,
-      current: current,
+      initialSelected: _draft.materials.map((m) => m.assetId).toList(),
     );
-    if (updated == null) return;
-    setState(
-      () => _draft = _draft.copyWith(materials: _materialsFromPicker(updated)),
-    );
+    if (selectedIds == null) return;
+    final captionById = {
+      for (final m in _draft.materials) m.assetId: m.caption,
+    };
+    final mats = <CoursewareMaterialItem>[
+      for (final id in selectedIds)
+        CoursewareMaterialItem(
+          assetId: id,
+          caption: captionById[id] ?? '',
+        ),
+    ];
+    setState(() => _draft = _draft.copyWith(materials: mats));
   }
 
-  void _removeMaterial(int index) {
-    final mats = [..._draft.materials]..removeAt(index);
+  void _removeMaterial(String assetId) {
+    final mats =
+        _draft.materials.where((m) => m.assetId != assetId).toList();
     setState(() => _draft = _draft.copyWith(materials: mats));
   }
 
@@ -285,20 +303,19 @@ class _SectionEditDialogState extends ConsumerState<_SectionEditDialog> {
                         ],
                       ),
                       const SizedBox(height: AppSpacing.sm),
-                      ..._draft.materials.asMap().entries.map(
-                            (e) => _materialRow(e.key, e.value, app, text),
-                          ),
+                      _materialGrid(app, text),
                       const SizedBox(height: AppSpacing.lg),
                       // 关联知识点场景（统一表单，任意 kind 都能挂）。
                       SectionSceneAssociationBlock(
                         knowledgePointId: widget.knowledgePointId,
                         loading: _scenesLoading,
                         scenes: _kpScenes,
+                        selectedIndex: _selectedSceneIndex,
                         hasScene: _draft.scene != null,
                         onRetry: () {
                           _loadKnowledgePointScenes();
                         },
-                        onAssociate: _associateScene,
+                        onSelectedIndex: _onSceneSelected,
                         onClear: _clearAssociation,
                       ),
                     ],
@@ -353,30 +370,141 @@ class _SectionEditDialogState extends ConsumerState<_SectionEditDialog> {
     );
   }
 
-  Widget _materialRow(
-    int index,
-    CoursewareMaterialItem item,
-    AppColors app,
-    AppText text,
-  ) {
-    final caption = item.caption;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-      child: Row(
+  /// 关联素材网格（ADR-0076）：每张素材一个缩略图，点缩略图放大看原图，右上角删除。
+  /// 与 [SectionMediaGallery] 共用 `coursewareAssetsProvider` 解析 id→图；素材被删
+  /// 后引用仍在的显示「素材已移除」占位。
+  Widget _materialGrid(AppColors app, AppText text) {
+    if (_draft.materials.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+        child: Text('还没有关联素材，点上方「添加素材」从素材库挑图。',
+            style: text.bodySmall?.copyWith(color: app.onSurfaceVariant)),
+      );
+    }
+    final assets = ref.watch(coursewareAssetsProvider);
+    return assets.when(
+      loading: () => const Center(child: AppLoading.skeletonInline()),
+      error: (e, _) => Padding(
+        padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+        child: Text('素材列表加载失败：$e',
+            style: text.bodySmall?.copyWith(color: app.error)),
+      ),
+      data: (list) => GridView.count(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        crossAxisCount: 3,
+        mainAxisSpacing: AppSpacing.sm,
+        crossAxisSpacing: AppSpacing.sm,
+        childAspectRatio: 4 / 3,
         children: [
-          Expanded(
-            child: Text(
-              caption.isEmpty ? '（未命名素材）' : caption,
-              style: text.bodyMedium,
-              overflow: TextOverflow.ellipsis,
+          for (final m in _draft.materials)
+            _MaterialTile(
+              item: m,
+              asset: list.where((a) => a.id == m.assetId).firstOrNull,
+              onOpen: () {
+                final a = list.where((x) => x.id == m.assetId).firstOrNull;
+                if (a != null) showImageViewer(context, url: a.url, name: a.name);
+              },
+              onRemove: () => _removeMaterial(m.assetId),
             ),
-          ),
-          AppTextAction(
-            label: '移除',
-            onPressed: () => _removeMaterial(index),
-          ),
         ],
       ),
+    );
+  }
+}
+
+/// 环节素材缩略图（ADR-0076）：点图放大看原图，右上角删除；找不到对应素材时显示
+/// 「素材已移除」占位（不级联删除，引用保留）。
+class _MaterialTile extends StatelessWidget {
+  const _MaterialTile({
+    required this.item,
+    required this.asset,
+    required this.onOpen,
+    required this.onRemove,
+  });
+
+  final CoursewareMaterialItem item;
+  final CoursewareAssetModel? asset;
+  final VoidCallback onOpen;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final app = AppTheme.colorsOf(context);
+    final text = AppTheme.textOf(context);
+    final caption = item.caption;
+    return Stack(
+      children: [
+        AppFocusableAction(
+          semanticLabel:
+              asset != null ? '放大查看 ${asset!.name}' : '素材已移除',
+          hoverHighlight: true,
+          onTap: asset != null ? onOpen : null,
+          child: Container(
+            decoration: BoxDecoration(
+              color: app.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(AppRadius.card),
+              border: Border.all(
+                color: app.outline,
+                width: AppElevation.borderWidth,
+              ),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(AppRadius.card),
+              child: asset != null
+                  ? AuthImage(url: asset!.url, fit: BoxFit.cover)
+                  : const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(AppSpacing.sm),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(LucideIcons.trash2, size: 20),
+                            SizedBox(height: AppSpacing.xs),
+                            Text('素材已移除', textAlign: TextAlign.center),
+                          ],
+                        ),
+                      ),
+                    ),
+            ),
+          ),
+        ),
+        if (caption.isNotEmpty)
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.xs,
+                vertical: 2,
+              ),
+              decoration: BoxDecoration(
+                color: const Color(0xE6000000),
+                borderRadius: BorderRadius.vertical(
+                  bottom: Radius.circular(AppRadius.card),
+                ),
+              ),
+              child: Text(
+                caption,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: text.labelSmall
+                    ?.copyWith(color: const Color(0xFFFFFFFF)),
+              ),
+            ),
+          ),
+        Positioned(
+          top: 2,
+          right: 2,
+          child: AppIconAction(
+            icon: LucideIcons.trash2,
+            iconSize: 15,
+            semanticLabel: '移除该素材',
+            onPressed: onRemove,
+          ),
+        ),
+      ],
     );
   }
 }

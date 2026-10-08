@@ -18,6 +18,8 @@ import 'package:kids_learn/features/courseware/presentation/pages/courseware_edi
 import 'package:kids_learn/features/courseware/presentation/widgets/editor_section_list.dart'
     show reorderCoursewareSections;
 import 'package:kids_learn/features/courseware/providers/courseware_provider.dart';
+import 'package:kids_learn/shared/data/local/storage_service.dart';
+import 'package:kids_learn/shared/domain/providers/core_providers.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
 
 CoursewareSectionModel _sec(String id, String title) => CoursewareSectionModel(
@@ -39,6 +41,14 @@ CoursewareModel _editorCourseware(List<CoursewareSectionModel> sections) =>
       status: 'ready',
       sections: sections,
     );
+
+/// 测试用假 StorageService：不读写 SharedPreferences，[getToken] 直接返回 null。
+/// 素材图片走 [AuthImage] 取 token 注入鉴权头；测试无后端，返回 null 即不带头，
+/// 不影响 widget 构建（失败由 errorBuilder 兜底，且不触发真实网络）。
+class _FakeStorage extends StorageService {
+  @override
+  String? getToken() => null;
+}
 
 /// 内存假仓库：只实现编辑器用到的 [listCourseware] / [updateSections] / [getRedraftDiff]，
 /// 其余给计数占位，便于断言「重起草不新建/删除副本」。
@@ -148,6 +158,8 @@ Future<void> _pumpEditor(
     ProviderScope(
       overrides: [
         coursewareRepositoryProvider.overrideWithValue(repo),
+        // 素材图片走 AuthImage 取 token；测试无后端，用假 StorageService 让构建不崩。
+        storageServiceProvider.overrideWithValue(_FakeStorage()),
         // 素材库检索（picker 用 T04）：测试里不直连 repository，直接喂假素材。
         // 覆盖 coursewareAssetLibraryProvider（picker 实际 watch 的），并按查询串过滤，
         // 使文件名检索框在测试里真实生效。
@@ -369,7 +381,13 @@ void main() {
       await tester.tap(find.text('添加素材'));
       await tester.pumpAndSettle();
       expect(find.text('选择素材'), findsOneWidget);
-      await tester.tap(find.text('建筑立面'));
+      // 新 picker 以缩略图网格展示素材：用语义标签定位「建筑立面」缩略图并点选。
+      await tester.tap(find.bySemanticsLabel('选择素材 建筑立面'));
+      await tester.pumpAndSettle();
+      // 确认（picker 内多选确认）→ 关闭 picker，回到编辑对话框。
+      // 注：编辑对话框原本已带 1 个素材项（a1 蝴蝶标本），picker 以
+      // initialSelected 预选它，点选 建筑立面（b1）后共 2 项，故按钮为「确认（2）」。
+      await tester.tap(find.text('确认（2）'));
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('保存'));
@@ -397,8 +415,9 @@ void main() {
       expect(find.text('蝴蝶标本'), findsWidgets);
       expect(find.text('建筑立面'), findsWidgets);
 
-      // 删除最后一项（item 行的「移除」按钮：段移除在前、素材移除在后，末位是第 2 项）。
-      await tester.tap(find.text('移除').last);
+      // 删除最后一项：素材缩略图右上角的删除按钮（语义标签「移除该素材」，
+      // 末位即第 2 项；素材名仍作为 caption 叠加显示）。
+      await tester.tap(find.bySemanticsLabel('移除该素材').last);
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('保存'));
@@ -448,20 +467,24 @@ void main() {
       ]));
       await openPickerWithGallery(tester, repo);
 
-      // 「我的素材库」并列展示两个素材。
-      expect(find.text('蝴蝶标本'), findsWidgets);
-      expect(find.text('建筑立面'), findsWidgets);
+      // 「我的素材库」以缩略图网格并列展示两个素材（用语义标签定位缩略图）。
+      expect(find.bySemanticsLabel('选择素材 蝴蝶标本'), findsWidgets);
+      expect(find.bySemanticsLabel('选择素材 建筑立面'), findsWidgets);
 
-      // 选择第二个 → 回执仍是 {asset_id, caption}，保存后落到 items。
-      await tester.tap(find.text('建筑立面'));
+      // 选择第二个 → 回执是选中的 asset id 列表，保存后落到 materials。
+      await tester.tap(find.bySemanticsLabel('选择素材 建筑立面'));
       await tester.pumpAndSettle();
+      await tester.tap(find.text('确认（1）'));
+      await tester.pumpAndSettle();
+
       await tester.tap(find.text('保存'));
       await tester.pumpAndSettle();
 
       final mats = repo.lastUpdated!.first.materials;
       expect(mats.length, 1);
       expect(mats.first.assetId, 'b1');
-      expect(mats.first.caption, '建筑立面');
+      // 新 picker 只回传 id，新建项 caption 留空（不再从素材名派生）。
+      expect(mats.first.caption, isEmpty);
       expect(tester.takeException(), isNull);
     });
 
@@ -471,17 +494,17 @@ void main() {
       ]));
       await openPickerWithGallery(tester, repo);
 
-      // 输入「建筑」→ 只剩建筑立面，蝴蝶标本被过滤掉。
+      // 输入「建筑」→ 只剩建筑立面，蝴蝶标本被过滤掉（新 picker 检索框 key 同步）。
       await tester.enterText(
         find.descendant(
-          of: find.byKey(const Key('asset-search')),
+          of: find.byKey(const Key('asset-picker-search')),
           matching: find.byType(EditableText),
         ),
         '建筑',
       );
       await tester.pumpAndSettle();
-      expect(find.text('建筑立面'), findsWidgets);
-      expect(find.text('蝴蝶标本'), findsNothing);
+      expect(find.bySemanticsLabel('选择素材 建筑立面'), findsWidgets);
+      expect(find.bySemanticsLabel('选择素材 蝴蝶标本'), findsNothing);
       expect(tester.takeException(), isNull);
     });
   });
@@ -605,62 +628,6 @@ void main() {
       expect(repo.createCoursewareCalls, 0);
       expect(repo.deleteCoursewareCalls, 0);
       expect(tester.takeException(), isNull);
-    });
-  });
-
-  group('平台 CC0 预置包入库 + 角标（T08）', () {
-    CoursewareSectionModel gallery(String id, String title) =>
-        _sec(id, title).copyWith(payload: const {'items': <Map<String, String>>[]});
-
-    const cc0 = CoursewareAssetModel(
-      id: 'cc0-1',
-      name: '蝴蝶标本（CC0）',
-      mime: 'image/png',
-      url: 'https://example.com/cc0-butterfly.png',
-      source: 'platform_cc0',
-      sourceUrl: 'https://example.com/cc0',
-      license: 'CC0 1.0',
-    );
-    const own = CoursewareAssetModel(
-      id: 'own-1',
-      name: '我的素材',
-      mime: 'image/png',
-      url: '/x/own-1',
-      source: 'user_uploaded',
-      sourceUrl: '',
-      license: '',
-    );
-
-    testWidgets('素材库 picker：CC0 与自有素材并列，CC0 带角标 + 来源/许可详情',
-        (tester) async {
-      final repo = _FakeRepo(_editorCourseware([gallery('a', '环节一')]));
-      await _pumpEditor(tester, repo: repo, assets: [cc0, own]);
-
-      // 打开环节编辑对话框 → 添加素材 → 弹出素材库 picker。
-      await tester.tap(find.text('环节一'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('添加素材'));
-      await tester.pumpAndSettle();
-      expect(find.text('选择素材'), findsOneWidget);
-
-      // 自有素材无 CC0 角标；CC0 素材带角标。
-      expect(find.text('我的素材'), findsWidgets);
-      expect(find.text('CC0'), findsWidgets);
-      // CC0 详情可读：许可 + 来源 URL。
-      expect(find.text('许可：CC0 1.0　来源：https://example.com/cc0'),
-          findsOneWidget);
-      // 非 CC0 不显示来源/许可详情。
-      expect(find.text('许可：　来源：'), findsNothing);
-      expect(tester.takeException(), isNull);
-    });
-
-    test('模型：isPlatformCc0 按 source 判定', () {
-      expect(cc0.isPlatformCc0, isTrue);
-      expect(own.isPlatformCc0, isFalse);
-      expect(
-        const CoursewareAssetModel(id: 'x', name: 'n').isPlatformCc0,
-        isFalse,
-      );
     });
   });
 

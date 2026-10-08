@@ -169,6 +169,13 @@ class SceneLibraryEditorPage extends TeacherPage {
   });
 }
 
+/// 素材库（ADR-0076）：教师自传图片的集中管理入口。多选上传 / grid 陈列 /
+/// 点缩略图放大 / 逐张删除；课件环节「添加素材」复用的 [showAssetLibraryPicker]
+/// 与这里共用同一份素材库数据。
+class AssetLibraryPage extends TeacherPage {
+  const AssetLibraryPage();
+}
+
 /// 侧栏高亮用的「基础页」：审核页沿用它进来的那一页的高亮。
 ///
 /// 审核不是一个侧栏入口（否则「任务」会在用户从概览进来时错位高亮），而是某一页

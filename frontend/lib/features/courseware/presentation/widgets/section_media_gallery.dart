@@ -6,6 +6,7 @@ import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_empty_state.dart';
 import '../../../../shared/widgets/app_error.dart';
 import '../../../../shared/widgets/app_loading.dart';
+import '../../../../shared/widgets/auth_image.dart';
 import '../../domain/models/courseware_asset.dart';
 import '../../domain/models/courseware_section.dart';
 import '../../providers/courseware_provider.dart';
@@ -137,9 +138,9 @@ class _GalleryTile extends StatelessWidget {
           child: AspectRatio(
             aspectRatio: 4 / 3,
             // 工程内没有图片缓存库（pubspec 无 cached_network_image），
-            // 直接用 Image.network；加载失败必须给降级，不能留一块白底。
-            child: Image.network(
-              asset.url,
+            // 走 AuthImage：拼绝对地址 + 注入 Bearer，加载失败必须给降级。
+            child: AuthImage(
+              url: asset.url,
               fit: BoxFit.contain,
               errorBuilder: (_, __, ___) => const _BrokenImageTile(),
             ),
