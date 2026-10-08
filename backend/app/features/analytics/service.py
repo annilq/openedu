@@ -16,7 +16,7 @@ from uuid import UUID
 from sqlalchemy import case, func, select
 
 from app.core.errors import AppErrorException, ErrCode
-from app.core.guard import require_owned, require_owned_student
+from app.core.guard import require_owned
 from app.db.models import AnswerRecord, Class, Question, WrongQuestion
 from app.domain.mastery import compute_mastery_score, mastery_level
 from app.features.analytics.schemas import (
@@ -30,7 +30,7 @@ from app.features.analytics.schemas import (
 )
 from app.features.auth.repository import list_students
 
-_SCOPES = ("student", "class", "all")
+_SCOPES = ("class", "all")
 _DIMENSIONS = ("subject", "grade", "semester", "knowledge_point")
 _SOURCES = ("practice", "review", "all")
 
@@ -40,28 +40,16 @@ def _resolve_student_ids(
     session,
     teacher_id: UUID,
     scope: str,
-    student_id: UUID | None,
     class_id: UUID | None,
 ) -> list[UUID]:
-    """把三态作用域解析为归属当前教师的学生 id 列表。
+    """把作用域（class / all）解析为归属当前教师的学生 id 列表。
 
-    越权（学生/班级不属于当前教师）即抛 403；参数与作用域不匹配抛 422。
+    越权（班级不属于当前教师）即抛 403；参数与作用域不匹配抛 422。
     """
     if scope not in _SCOPES:
         raise AppErrorException(
-            ErrCode.VALIDATION, "scope 必须是 student / class / all 之一"
+            ErrCode.VALIDATION, "scope 必须是 class / all 之一"
         )
-    if scope == "student":
-        if student_id is None:
-            raise AppErrorException(ErrCode.VALIDATION, "scope=student 需要 student_id")
-        require_owned_student(
-            session=session,
-            owner_id=teacher_id,
-            student_id=student_id,
-            code=ErrCode.FORBIDDEN,
-            message="该学生不属于你的账号",
-        )
-        return [student_id]
     if scope == "class":
         if class_id is None:
             raise AppErrorException(ErrCode.VALIDATION, "scope=class 需要 class_id")
