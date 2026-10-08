@@ -1,12 +1,10 @@
 import 'package:cupertino_ui/cupertino_ui.dart';
-import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:kids_learn/features/analytics/domain/models/analytics_models.dart';
 import 'package:kids_learn/features/analytics/domain/repositories/analytics_repository.dart';
-import 'package:kids_learn/features/analytics/presentation/providers/analytics_summary_provider.dart';
 import 'package:kids_learn/features/analytics/providers/analytics_provider.dart';
 import 'package:kids_learn/features/home/presentation/widgets/teacher/workbench_glance.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
@@ -14,7 +12,7 @@ import 'package:kids_learn/shared/widgets/analytics_charts.dart';
 
 /// 速览层测试（ticket 03，ADR-0075 §2.2）。
 ///
-/// 关注点：非 Material 根树构建、四块图表渲染、孤儿「未知」警示条显式出现、
+/// 关注点：非 Material 根树构建、四块图表渲染；孤儿「未知」警示条已收敛到分析层错题分布卡（见 workbench_analysis_test）。
 /// 薄弱知识点点击触发钻取回调。
 class FakeAnalyticsRepository implements AnalyticsRepository {
   @override
@@ -129,7 +127,7 @@ Widget _wrap(Widget child) => ShadApp.custom(
     );
 
 void main() {
-  testWidgets('速览层非 Material 树构建、四块图表渲染、孤儿未知警示条出现',
+  testWidgets('速览层非 Material 树构建、四块图表渲染',
       (tester) async {
     await tester.pumpWidget(
       ProviderScope(
@@ -147,8 +145,6 @@ void main() {
     expect(find.byType(AppDonutChart), findsOneWidget);
     expect(find.byType(AppGroupedBarChart), findsOneWidget);
     expect(find.byType(AppStackedBarChart), findsOneWidget);
-    expect(find.text('未知（原题已删除）3 道：孤儿错题，无法归入任何分组。'),
-        findsOneWidget);
   });
 
   testWidgets('薄弱知识点点击触发钻取回调（不混入有效分组）', (tester) async {

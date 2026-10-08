@@ -1,7 +1,6 @@
 import 'dart:typed_data';
 
 import 'package:cupertino_ui/cupertino_ui.dart';
-import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -20,12 +19,15 @@ import 'package:kids_learn/shared/domain/repositories/students_repository.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
 import 'package:kids_learn/shared/widgets/analytics_charts.dart';
 
-/// 分析层测试（ticket 04，ADR-0075 §2.2）。
+/// 分析层测试（ADR-0075 §2.2 / 工作台优化）。
 ///
-/// 关注点：非 Material 根树构建、三块图表渲染（堆叠 / 分组 / 横向）、孤儿「未知」
-/// 警示条显式出现、作用域 / 维度切换不抛错（含切到「年级」时的口径标注与切到
-/// 「单个班级」时显式班级选择器）。[AnalyticsNotifier] 同时消费 analytics / classes /
-/// students 三仓，测试须三仓同覆。
+/// 关注点：非 Material 根树构建、两块图表渲染（堆叠错题分布 / 横向掌握度）、孤儿
+/// 「未知」警示条显式出现一次、作用域 / 维度切换不抛错（含切到「年级」时的口径标注
+/// 与切到「单个班级」时显式班级选择器）。[AnalyticsNotifier] 同时消费 analytics /
+/// classes / students 三仓，测试须三仓同覆。
+///
+/// 注：正确率（分组条）已在速览层展示、分析层刻意去重，故此处不再断言
+/// [AppGroupedBarChart]。
 class FakeAnalyticsRepository implements AnalyticsRepository {
   @override
   Future<WrongDistributionResp> getWrongDistribution({
@@ -215,8 +217,10 @@ void main() {
         reason: '非 Material 树中不得抛「No Material widget found」');
 
     expect(find.byType(AppStackedBarChart), findsOneWidget);
-    expect(find.byType(AppGroupedBarChart), findsOneWidget);
     expect(find.byType(AppBarChart), findsOneWidget);
+    // 正确率分组条已去重到速览层，分析层不再渲染（见文件头注释）。
+    expect(find.byType(AppGroupedBarChart), findsNothing);
+    // 孤儿提示仅在错题分布卡出现一次（非每卡重复、且降级为琥珀提示）。
     expect(find.text('未知（原题已删除）3 道：孤儿错题，无法归入任何分组。'),
         findsOneWidget);
   });

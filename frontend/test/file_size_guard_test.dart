@@ -10,7 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 1. **未登记的新文件不得超过 400 行**——这是 ADR-0058 的主要执行力：它拦不住
 ///    历史债务，但能拦住**下一个** `teacher_question_bank_view.dart`（现已拆出
 ///    `BankQuestionRow`，基线随之下调到 759）。
-/// 2. **已登记的超限文件不得继续增长**（棘轮）——现存 **17** 个超限文件登记在
+/// 2. **已登记的超限文件不得继续增长**（棘轮）——现存 **16** 个超限文件登记在
 ///    [_baseline] 里（另 `dev/theme_preview.dart` 1189 行走豁免），基线**只许下调不许上调**：
 ///    拆小了把基线跟着调小，长回去就失败。
 ///    它不强迫任何人现在就去拆分，但保证这些文件不会继续变长。
@@ -119,6 +119,11 @@ void main() {
 ///   拆分出的三个子文件正式登记基线：workbench_analysis 417、workbench_glance 451、
 ///   analytics_charts 511（图表适配器层：同组图表 widget 视为一类职责，符合 ADR-0058 §2 例外）。
 ///   主壳 teacher_overview_view 拆分后 242 行已回到 400 内，无需登记。
+/// 2026-10-08 工作台优化（宽屏 grid + 去重）：workbench_analysis 417→374 回到 400 内、
+///   **整条移出 _baseline**（去重删除冗余正确率卡 + 图表改用栅格包裹，净减为真实收敛）；
+///   workbench_glance 451→450（栅格包裹微调）；analytics_charts 511→587（图表适配器增加
+///   maxCategories 截断 + 密集标签旋转，修复知识点维度下 x 轴标签互相遮挡——真实缺陷修复，
+///   属 B 类合理大件，基线随真实行数上调）；新增 responsive_grid.dart 69 行（≤400 不登记）。
 /// **只许下调（除 B 类已登记的合理大件外）。**
 ///
 /// 拆分批次见 `docs/refactor/2026-09-21-flutter-ui-decomposition.md`（P0–P4）。
@@ -133,9 +138,8 @@ const Map<String, int> _baseline = <String, int>{
   'features/home/presentation/widgets/teacher/teacher_question_card.dart': 511,
   'features/home/presentation/widgets/teacher/teacher_wrong_questions_view.dart': 442,
   'features/home/presentation/widgets/student_home.dart': 428,
-  'features/home/presentation/widgets/teacher/workbench_analysis.dart': 417,
-  'features/home/presentation/widgets/teacher/workbench_glance.dart': 451,
-  'shared/widgets/analytics_charts.dart': 511,
+  'features/home/presentation/widgets/teacher/workbench_glance.dart': 406,
+  'shared/widgets/analytics_charts.dart': 592,
   'features/home/presentation/screens/teacher_task_review_screen.dart': 424,
   'features/students/presentation/screens/student_management_screen.dart': 777,
 };

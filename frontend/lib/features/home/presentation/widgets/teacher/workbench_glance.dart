@@ -18,6 +18,7 @@ import '../../../../../shared/widgets/app_focusable_action.dart';
 import '../../../../../shared/widgets/app_loading.dart';
 import '../../../../../shared/widgets/app_section_title.dart';
 import '../../../../../shared/widgets/app_tags.dart' hide AppBadge;
+import '../../../../../shared/widgets/responsive_grid.dart';
 import '../../providers/task_form_prefill.dart';
 
 /// 工作台速览层（ADR-0075 §2.2 / ticket 03）。
@@ -57,19 +58,16 @@ class WorkbenchGlance extends ConsumerWidget {
       );
     }
     final loaded = state as AnalyticsSummaryLoaded;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return AppResponsiveGrid(
+      colsWide: 2,
       children: [
         _MasteryDonutCard(mastery: loaded.mastery, wrong: loaded.wrong),
-        const SizedBox(height: AppSpacing.md),
         _WeakPointsChartCard(
           mastery: loaded.mastery,
           onDrill: onDrill,
           ref: ref,
         ),
-        const SizedBox(height: AppSpacing.md),
         _AccuracyChartCard(resp: loaded.accuracy),
-        const SizedBox(height: AppSpacing.md),
         _WrongDistributionChartCard(resp: loaded.wrong),
       ],
     );
@@ -338,7 +336,6 @@ class _AccuracyChartCard extends StatelessWidget {
               ],
               unit: '%',
             ),
-            if (resp.orphanCount > 0) _OrphanWarnRow(count: resp.orphanCount),
           ],
         ],
       ),
@@ -401,50 +398,8 @@ class _WrongDistributionChartCard extends StatelessWidget {
                   ),
               ],
             ),
-            if (resp.orphanCount > 0) _OrphanWarnRow(count: resp.orphanCount),
           ],
         ],
-      ),
-    );
-  }
-}
-
-/// 孤儿「未知」错题：警示色条，显式保留、不混入有效分组（ADR-0064 / ADR-0070 §2.4.3）。
-class _OrphanWarnRow extends StatelessWidget {
-  final int count;
-  const _OrphanWarnRow({required this.count});
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = AppTheme.colorsOf(context);
-    return Padding(
-      padding: const EdgeInsets.only(top: AppSpacing.sm),
-      child: Container(
-        padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.md, vertical: AppSpacing.sm),
-        decoration: BoxDecoration(
-          color: scheme.semanticError,
-          border: Border.all(
-            color: scheme.outline,
-            width: AppElevation.borderWidthSm,
-          ),
-          borderRadius: BorderRadius.circular(AppRadius.xs),
-        ),
-        child: Row(
-          children: [
-            Icon(LucideIcons.alertTriangle,
-                size: 16, color: scheme.semanticErrorFg),
-            const SizedBox(width: AppSpacing.sm),
-            Expanded(
-              child: Text(
-                '未知（原题已删除）$count 道：孤儿错题，无法归入任何分组。',
-                style: AppTheme.textOf(context)
-                    .labelSmall
-                    ?.copyWith(color: scheme.semanticErrorFg),
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

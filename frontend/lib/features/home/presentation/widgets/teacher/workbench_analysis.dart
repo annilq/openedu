@@ -17,14 +17,16 @@ import '../../../../../shared/widgets/app_error.dart';
 import '../../../../../shared/widgets/app_inputs.dart';
 import '../../../../../shared/widgets/app_loading.dart';
 import '../../../../../shared/widgets/app_section_title.dart';
+import '../../../../../shared/widgets/responsive_grid.dart';
 
-/// 工作台分析层（ADR-0075 §2.2 / ticket 04）。
+/// 工作台分析层（ADR-0075 §2.2 / ticket 04，工作台优化）。
 ///
 /// 由 [analyticsScreen] 迁移而来：保留作用域（all / class）+ 维度四选（学科 / 年级 /
-/// 学期 / 知识点）下钻，三份聚合（`错题分布` / `正确率` / `掌握度`）全部改为经图表适配器
-/// 渲染——堆叠条 / 分组条 / 横向条——替换原纯文字 `_MetricRow`。口径严格对照 ADR-0070：
-/// 孤儿「未知」错题组以警示色条显式保留、不混入有效分组；年级维度标注「题目年级」；
-/// 空学期由后端收敛为「整学年」，界面原样展示。
+/// 学期 / 知识点）下钻。正确率（分组条）已在速览层展示、此处刻意去重，故本层只渲染
+/// 两份聚合（`错题分布` 堆叠条 / `掌握度` 横向条），均以图表适配器渲染、替换原纯文字
+/// `_MetricRow`，并在宽屏并排（[AppResponsiveGrid]）。口径严格对照 ADR-0070：孤儿「未知」
+/// 错题组以温和的琥珀提示条显式保留、不混入有效分组；年级维度标注「题目年级」；空学期
+/// 由后端收敛为「整学年」，界面原样展示。
 ///
 /// [onDrill] 为掌握度横向条点击钻取回调（参数即知识点名），由组合页（ticket 05）接线。
 class WorkbenchAnalysis extends ConsumerWidget {
@@ -69,13 +71,15 @@ class WorkbenchAnalysis extends ConsumerWidget {
           onClass: ref.read(analyticsNotifierProvider.notifier).setClass,
         ),
         const SizedBox(height: AppSpacing.md),
-        _WrongDistributionChartCard(resp: loaded.wrong),
-        const SizedBox(height: AppSpacing.md),
-        _AccuracyChartCard(resp: loaded.accuracy),
-        const SizedBox(height: AppSpacing.md),
-        _MasteryChartCard(
-          resp: loaded.mastery,
-          onDrill: onDrill,
+        AppResponsiveGrid(
+          colsWide: 2,
+          children: [
+            _WrongDistributionChartCard(resp: loaded.wrong),
+            _MasteryChartCard(
+              resp: loaded.mastery,
+              onDrill: onDrill,
+            ),
+          ],
         ),
       ],
     );
@@ -259,68 +263,6 @@ class _WrongDistributionChartCard extends StatelessWidget {
   }
 }
 
-/// 正确率：分组条（练习 / 复习 / 总体）+ 孤儿警示。
-class _AccuracyChartCard extends StatelessWidget {
-  final AccuracyResp resp;
-  const _AccuracyChartCard({required this.resp});
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = AppTheme.colorsOf(context);
-    return AppCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          SectionTitle(
-            '正确率',
-            trailing: AppBadge(
-              label: '练习+复习',
-              background: scheme.surfaceSunken,
-              foreground: scheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          if (resp.groups.isEmpty && resp.orphanCount == 0)
-            const AppEmptyState.inline(
-              icon: LucideIcons.target,
-              title: '本范围暂无作答记录',
-              message: '派发并作答任务后，这里会汇总正确率。',
-            )
-          else ...[
-            AppGroupedBarChart(
-              data: [
-                for (final g in resp.groups)
-                  GroupedBarDatum(
-                    label: g.group,
-                    series: [
-                      BarSeries(
-                        name: '练习',
-                        value: g.practice.accuracy * 100,
-                        color: scheme.accent,
-                      ),
-                      BarSeries(
-                        name: '复习',
-                        value: g.review.accuracy * 100,
-                        color: scheme.semanticWarning,
-                      ),
-                      BarSeries(
-                        name: '总体',
-                        value: g.overall.accuracy * 100,
-                        color: scheme.semanticPositive,
-                      ),
-                    ],
-                  ),
-                ],
-              unit: '%',
-            ),
-            if (resp.orphanCount > 0) _OrphanWarnRow(count: resp.orphanCount),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
 /// 掌握度：横向条（按活跃错题降序、accuracy 分级配色）+ level 徽章 + 孤儿警示。
 class _MasteryChartCard extends StatelessWidget {
   final MasteryResp resp;
@@ -330,8 +272,12 @@ class _MasteryChartCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = AppTheme.colorsOf(context);
-    final items = [...resp.items]
+    final sorted = [...resp.items]
       ..sort((a, b) => b.activeWrong.compareTo(a.activeWrong));
+    // 横向条列表不设上限会随知识点数线性拉长页面；与速览 top6 同一纪律，
+    // 默认展示活跃错题最多的 12 项，余下以静默脚注提示（不截断数据，仅收口高度）。
+    final items = sorted.take(12).toList();
+    final overflow = sorted.length - items.length;
     return AppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -367,7 +313,16 @@ class _MasteryChartCard extends StatelessWidget {
                   ? null
                   : (i) => onDrill!(items[i].knowledgePoint),
             ),
-            if (resp.orphanCount > 0) _OrphanWarnRow(count: resp.orphanCount),
+            if (overflow > 0)
+              Padding(
+                padding: const EdgeInsets.only(top: AppSpacing.xs),
+                child: Text(
+                  '仅展示活跃错题最多的 $items.length 项；其余 $overflow 个知识点可在维度切换后查看。',
+                  style: AppTheme.textOf(context)
+                      .labelSmall
+                      ?.copyWith(color: scheme.onSurfaceVariant),
+                ),
+              ),
           ],
         ],
       ),
@@ -375,7 +330,9 @@ class _MasteryChartCard extends StatelessWidget {
   }
 }
 
-/// 孤儿「未知」错题：警示色条，显式保留、不混入有效分组（ADR-0064 / ADR-0070 §2.4.3）。
+/// 孤儿「未知」错题：数据健康提示（琥珀色，非报错红），显式保留、不混入有效分组
+/// （ADR-0064 / ADR-0070 §2.4.3）。降级为温和提示，避免与真正错误混淆；仅错题分布
+/// 卡展示一次，不在多个卡片内重复出现。
 class _OrphanWarnRow extends StatelessWidget {
   final int count;
   const _OrphanWarnRow({required this.count});
@@ -387,9 +344,9 @@ class _OrphanWarnRow extends StatelessWidget {
       padding: const EdgeInsets.only(top: AppSpacing.sm),
       child: Container(
         padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+            horizontal: AppSpacing.md, vertical: AppSpacing.xs),
         decoration: BoxDecoration(
-          color: scheme.semanticError,
+          color: scheme.semanticWarning,
           border: Border.all(
             color: scheme.outline,
             width: AppElevation.borderWidthSm,
@@ -398,15 +355,15 @@ class _OrphanWarnRow extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Icon(LucideIcons.alertTriangle,
-                size: 16, color: scheme.semanticErrorFg),
+            Icon(LucideIcons.info,
+                size: 14, color: scheme.onSurface),
             const SizedBox(width: AppSpacing.sm),
             Expanded(
               child: Text(
                 '未知（原题已删除）$count 道：孤儿错题，无法归入任何分组。',
                 style: AppTheme.textOf(context)
                     .labelSmall
-                    ?.copyWith(color: scheme.semanticErrorFg),
+                    ?.copyWith(color: scheme.onSurface),
               ),
             ),
           ],

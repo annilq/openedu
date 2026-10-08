@@ -300,39 +300,45 @@ class _BarRow extends StatelessWidget {
 }
 
 /// 分组条形图（正确率：练习 / 复习 / 总体）。fl_chart 纵向渲染 + 内置 tooltip。
+///
+/// [maxCategories] 超过则按总量取前 N-1 类目、余下并入「其他」桶，避免知识点维度下
+/// 类目过多导致 x 轴标签互相遮挡（ADR-0075 工作台优化）；类目偏多时底部标签自动旋转。
 class AppGroupedBarChart extends StatelessWidget {
   final List<GroupedBarDatum> data;
   final String? unit;
   final double height;
+  final int maxCategories;
 
   const AppGroupedBarChart({
     super.key,
     required this.data,
     this.unit,
     this.height = 200,
+    this.maxCategories = 8,
   });
 
   @override
   Widget build(BuildContext context) {
     final scheme = AppTheme.colorsOf(context);
     final text = AppTheme.textOf(context);
+    final capped = _capGrouped(data, maxCategories, scheme);
+    final many = capped.length > 6;
     return SizedBox(
       height: height,
       child: BarChart(
         BarChartData(
           alignment: BarChartAlignment.spaceAround,
           barGroups: [
-            for (int i = 0; i < data.length; i++)
+            for (int i = 0; i < capped.length; i++)
               BarChartGroupData(
                 x: i,
                 barRods: [
-                  for (final s in data[i].series)
+                  for (final s in capped[i].series)
                     BarChartRodData(
                       toY: s.value,
                       width: 14,
                       color: s.color,
-                      borderRadius:
-                          BorderRadius.circular(AppRadius.xs),
+                      borderRadius: BorderRadius.circular(AppRadius.xs),
                       borderSide: BorderSide(
                         color: scheme.outline,
                         width: AppElevation.borderWidthSm,
@@ -360,16 +366,17 @@ class AppGroupedBarChart extends StatelessWidget {
                 showTitles: true,
                 getTitlesWidget: (v, m) {
                   final idx = v.toInt();
-                  if (idx < 0 || idx >= data.length) {
+                  if (idx < 0 || idx >= capped.length) {
                     return const SizedBox.shrink();
                   }
-                  return Text(
-                    data[idx].label,
+                  final label = Text(
+                    capped[idx].label,
                     style: text.labelSmall
                         ?.copyWith(color: scheme.onSurfaceVariant),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   );
+                  return many ? Transform.rotate(angle: -0.5, child: label) : label;
                 },
               ),
             ),
@@ -388,45 +395,82 @@ class AppGroupedBarChart extends StatelessWidget {
   }
 }
 
+/// 分组条按系列总量降序截断，余下并入中性灰「其他」桶。
+List<GroupedBarDatum> _capGrouped(
+  List<GroupedBarDatum> data,
+  int max,
+  AppColors scheme,
+) {
+  if (data.length <= max) return data;
+  final sorted = [...data]
+    ..sort((a, b) => _groupTotal(b).compareTo(_groupTotal(a)));
+  final top = sorted.take(max - 1).toList();
+  double other = 0;
+  for (final g in sorted.skip(max - 1)) {
+    for (final s in g.series) {
+      other += s.value;
+    }
+  }
+  return [
+    ...top,
+    GroupedBarDatum(
+      label: '其他',
+      series: [
+        BarSeries(name: '其他', value: other, color: scheme.onSurfaceVariant),
+      ],
+    ),
+  ];
+}
+
+double _groupTotal(GroupedBarDatum g) =>
+    g.series.fold(0.0, (s, e) => s + e.value);
+
 /// 竖向堆叠条形图（错题分布：活跃 / 已毕业）。
+///
+/// [maxCategories] 超过则按总量取前 N-1 类目、余下活跃/已毕业分别求和并入「其他」桶，
+/// 避免知识点维度下类目过多导致 x 轴标签互相遮挡（ADR-0075 工作台优化）；类目偏多时
+/// 底部标签自动旋转。
 class AppStackedBarChart extends StatelessWidget {
   final List<StackedBarDatum> data;
   final double height;
+  final int maxCategories;
 
   const AppStackedBarChart({
     super.key,
     required this.data,
     this.height = 200,
+    this.maxCategories = 8,
   });
 
   @override
   Widget build(BuildContext context) {
     final scheme = AppTheme.colorsOf(context);
     final text = AppTheme.textOf(context);
+    final capped = _capStacked(data, maxCategories, scheme);
+    final many = capped.length > 6;
     return SizedBox(
       height: height,
       child: BarChart(
         BarChartData(
           alignment: BarChartAlignment.spaceAround,
           barGroups: [
-            for (int i = 0; i < data.length; i++)
+            for (int i = 0; i < capped.length; i++)
               BarChartGroupData(
                 x: i,
                 barRods: [
                   BarChartRodData(
-                    toY: data[i].segments.fold<double>(
+                    toY: capped[i].segments.fold<double>(
                       0,
                       (s, e) => s + e.value,
                     ),
                     width: 16,
-                    borderRadius:
-                        BorderRadius.circular(AppRadius.xs),
+                    borderRadius: BorderRadius.circular(AppRadius.xs),
                     borderSide: BorderSide(
                       color: scheme.outline,
                       width: AppElevation.borderWidthSm,
                     ),
                     rodStackItems: _stackItems(
-                      data[i].segments,
+                      capped[i].segments,
                       scheme,
                     ),
                   ),
@@ -443,16 +487,17 @@ class AppStackedBarChart extends StatelessWidget {
                 showTitles: true,
                 getTitlesWidget: (v, m) {
                   final idx = v.toInt();
-                  if (idx < 0 || idx >= data.length) {
+                  if (idx < 0 || idx >= capped.length) {
                     return const SizedBox.shrink();
                   }
-                  return Text(
-                    data[idx].label,
+                  final label = Text(
+                    capped[idx].label,
                     style: text.labelSmall
                         ?.copyWith(color: scheme.onSurfaceVariant),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   );
+                  return many ? Transform.rotate(angle: -0.5, child: label) : label;
                 },
               ),
             ),
@@ -470,6 +515,42 @@ class AppStackedBarChart extends StatelessWidget {
     );
   }
 }
+
+/// 堆叠条按总量降序截断，余下活跃/已毕业分别求和并入「其他」桶。
+List<StackedBarDatum> _capStacked(
+  List<StackedBarDatum> data,
+  int max,
+  AppColors scheme,
+) {
+  if (data.length <= max) return data;
+  final sorted = [...data]
+    ..sort((a, b) => _stackTotal(b).compareTo(_stackTotal(a)));
+  final top = sorted.take(max - 1).toList();
+  double active = 0, graduated = 0;
+  for (final g in sorted.skip(max - 1)) {
+    for (final s in g.segments) {
+      if (s.name == '活跃') {
+        active += s.value;
+      } else {
+        graduated += s.value;
+      }
+    }
+  }
+  return [
+    ...top,
+    StackedBarDatum(
+      label: '其他',
+      segments: [
+        StackedSegment(name: '活跃', value: active, color: scheme.semanticError),
+        StackedSegment(
+            name: '已毕业', value: graduated, color: scheme.semanticPositive),
+      ],
+    ),
+  ];
+}
+
+double _stackTotal(StackedBarDatum g) =>
+    g.segments.fold(0.0, (s, e) => s + e.value);
 
 List<BarChartRodStackItem> _stackItems(
   List<StackedSegment> segments,
