@@ -27,7 +27,7 @@ import '../../../../../shared/widgets/app_tags.dart';
 class TeacherTasksView extends ConsumerStatefulWidget {
   final void Function(TaskModel task) onNavigateToReview;
 
-  /// 空态主行动：跳到「布置任务」页。空态若不给出口就是一个死胡同——
+  /// 空态主行动：跳到「发布任务」页（生成页）。空态若不给出口就是一个死胡同——
   /// 用户知道没有任务，但不知道下一步该点哪。
   final VoidCallback? onNavigateToCreate;
 
@@ -179,7 +179,23 @@ class _TeacherTasksViewState extends ConsumerState<TeacherTasksView> {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(
-              AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, AppSpacing.md),
+              AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, AppSpacing.xs),
+          child: Row(
+            children: [
+              Text('任务', style: AppTheme.textOf(context).titleLarge),
+              const Spacer(),
+              // 发布任务入口收进任务页（不再单列侧栏一级菜单）：直达生成页。
+              ShadButton(
+                onPressed: widget.onNavigateToCreate,
+                leading: const Icon(LucideIcons.plus, size: 16),
+                child: const Text('发布任务'),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+              AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.md),
           child: _TabBar(
             tab: _tab,
             counts: tabCounts,
@@ -311,8 +327,8 @@ class _TeacherTasksViewState extends ConsumerState<TeacherTasksView> {
           title: allEmpty ? '还没有布置过任务' : '草稿箱是空的',
           message: allEmpty
               ? '按学科与知识点让 AI 出一套题，复核后派给学生，做完自动进复习队列。'
-              : '任务都已经派发或完成了。想再布置一套，回到「布置任务」。',
-          actionLabel: '去布置任务',
+              : '任务都已经派发或完成了。想再布置一套，点右上角「发布任务」。',
+          actionLabel: '去发布任务',
           actionIcon: LucideIcons.plus,
           onAction: goCreate,
           steps: allEmpty
@@ -328,12 +344,12 @@ class _TeacherTasksViewState extends ConsumerState<TeacherTasksView> {
           icon: LucideIcons.hourglass,
           title: '没有进行中的任务',
           message: allEmpty
-              ? '还没有布置过任务。先去布置一套，派发给学生后就会进入「进行中」。'
+              ? '还没有布置过任务。先去发布一套，派发给学生后就会进入「进行中」。'
               : draftCount > 0
                   ? '草稿箱里还有 $draftCount 个任务没派发，派发后就会出现在这里。'
                   : '任务都已完成。学生做完后会自动归档到「已完成」。',
           actionLabel:
-              allEmpty ? '去布置任务' : (draftCount > 0 ? '去派发草稿' : '查看已完成'),
+              allEmpty ? '去发布任务' : (draftCount > 0 ? '去派发草稿' : '查看已完成'),
           actionIcon: allEmpty ? LucideIcons.plus : null,
           onAction: allEmpty
               ? goCreate
@@ -344,12 +360,12 @@ class _TeacherTasksViewState extends ConsumerState<TeacherTasksView> {
           icon: LucideIcons.checkCircle2,
           title: '还没有完成的任务',
           message: allEmpty
-              ? '还没有布置过任务。布置并派发后，学生做完会归档到这里。'
+              ? '还没有布置过任务。发布并派发后，学生做完会归档到这里。'
               : assignedCount > 0
                   ? '有 $assignedCount 个任务正在进行中，学生做完后会归档到这里。'
                   : '草稿箱里还有 $draftCount 个任务等待派发。',
           actionLabel:
-              allEmpty ? '去布置任务' : (assignedCount > 0 ? '查看进行中' : '去派发草稿'),
+              allEmpty ? '去发布任务' : (assignedCount > 0 ? '查看进行中' : '去派发草稿'),
           actionIcon: allEmpty ? LucideIcons.plus : null,
           onAction: allEmpty
               ? goCreate

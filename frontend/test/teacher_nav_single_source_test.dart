@@ -7,7 +7,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:kids_learn/features/home/presentation/screens/home_screen.dart';
+import 'package:kids_learn/features/home/presentation/screens/teacher_destinations.dart';
 import 'package:kids_learn/features/home/presentation/teacher_pages.dart';
+import 'package:kids_learn/features/home/presentation/providers/home_notifier.dart';
 import 'package:kids_learn/shared/data/local/storage_service.dart';
 import 'package:kids_learn/shared/domain/models/models.dart';
 import 'package:kids_learn/shared/domain/providers/core_providers.dart';
@@ -269,6 +271,47 @@ void main() {
       );
       expect(highlightFor(page), same(page),
           reason: '新页面态不应引入并列高亮逻辑，否则又回到 ADR-0059 前的漏清坑');
+    });
+  });
+
+  group('T: 侧栏收敛「发布任务」到「任务」（方案 A）', () {
+    // ⚠️ 本次合并的核心：原来的「布置任务」是一级侧栏入口，与「任务」并列，既多占
+    // 一项、又让「发布任务」这个动作散落在两个入口。现在它收进「任务」页（页头
+    // 「发布任务」按钮 + 空态 CTA），侧栏只剩「任务」。
+    test('侧栏目的地：已无「布置任务」，且「任务」覆盖生成页高亮', () {
+      final dests = NavigationDestinations(
+        go: (_) {},
+        goChildTab: (_) {},
+        goProfile: () {},
+        genTrailing: (_) => null,
+      ).teacher(const CreateTaskPage(), const TaskGenIdle());
+      final labels = dests.map((d) => d.label).toList();
+      expect(labels, isNot(contains('布置任务')),
+          reason: '「布置任务」已收进「任务」页，不应再作为独立侧栏入口');
+      expect(labels, contains('任务'));
+      final task = dests.firstWhere((d) => d.label == '任务');
+      expect(task.active, isTrue,
+          reason: '在生成页（CreateTaskPage）时「任务」应高亮，生成进度徽标也挂这一项');
+    });
+
+    testWidgets('教师端：侧栏不再有「布置任务」，点「任务」高亮唯一', (tester) async {
+      await _pumpTeacherHome(tester);
+      expect(_activeLabels(tester), ['概览']);
+
+      expect(
+        tester
+            .widgetList<AppSidebarItem>(find.byType(AppSidebarItem))
+            .any((item) => item.label == '布置任务'),
+        isFalse,
+        reason: '「发布任务」已收进「任务」页，侧栏不应再有「布置任务」项',
+      );
+
+      await tester.tap(find.text('任务'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(_activeLabels(tester), ['任务'],
+          reason: '同一时刻侧栏只能有一个高亮项（单一导航状态）');
+      expect(tester.takeException(), isNull);
     });
   });
 }

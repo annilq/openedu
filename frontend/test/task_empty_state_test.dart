@@ -274,7 +274,7 @@ void main() {
       expect(find.text(step), findsOneWidget);
     }
 
-    await tester.tap(find.text('去布置任务'));
+    await tester.tap(find.text('去发布任务'));
     await tester.pumpAndSettle();
     expect(createTaps, 1, reason: '空态必须给出出口，否则用户不知道下一步点哪');
   });
@@ -383,12 +383,12 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('还没有任务记录'), findsOneWidget);
-    expect(find.text('布置任务后，最近 4 条会显示在这里。'), findsOneWidget);
+    expect(find.text('发布任务后，最近 4 条会显示在这里。'), findsOneWidget);
     // 有边界：空态落在卡片里，与「加载失败」可区分（灰字做不到）。
     expect(find.ancestor(of: find.text('还没有任务记录'), matching: find.byType(AppCard)),
         findsOneWidget);
 
-    await tester.tap(find.text('去布置任务'));
+    await tester.tap(find.text('去发布任务'));
     await tester.pump();
     expect(createTaps, 1);
   });

@@ -22,7 +22,7 @@ class OverviewPage extends TeacherPage {
   const OverviewPage();
 }
 
-/// 布置任务（生成页）。
+/// 发布任务（生成页，从「任务」页进入）。
 class CreateTaskPage extends TeacherPage {
   const CreateTaskPage();
 }
@@ -180,5 +180,11 @@ class AssetLibraryPage extends TeacherPage {
 ///
 /// 审核不是一个侧栏入口（否则「任务」会在用户从概览进来时错位高亮），而是某一页
 /// 的延续，所以高亮取 [back]。
-TeacherPage highlightFor(TeacherPage page) =>
-    page is TaskReviewPage ? page.back : page;
+TeacherPage highlightFor(TeacherPage page) {
+  // 「发布任务」已收进「任务」页（方案 A）：生成页是任务页的一个动作态，不是独立侧栏
+  // 入口。故它自身、以及由它派生的审核页，都归入「任务」高亮；审核返回也落回任务列表，
+  // 而不是回到一个已不存在的「布置任务」概念页。
+  if (page is TaskReviewPage) return page.back;
+  if (page is CreateTaskPage) return const TaskListPage();
+  return page;
+}
