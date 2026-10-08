@@ -17,6 +17,12 @@ backend/app.db
 backend/test_app.db
 # 资料库上传落盘目录（家长私有 PDF / docx，不进版本库）
 backend/data/
+# 本地数据库备份（迁移/修复前的快照，非版本控制对象）
+backend/app.db.bak-*
+app.db.bak-*
+
+# ── 本地素材（大二进制，教材原始 PDF 等，不进版本库）──
+resources/
 
 # ── Flutter / 前端 ──
 frontend/.dart_tool/
