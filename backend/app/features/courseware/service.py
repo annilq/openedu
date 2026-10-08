@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import uuid
 import warnings
@@ -49,6 +50,7 @@ from app.features.courseware.schemas import (
     CoursewareUpdate,
     SectionDiffItem,
 )
+from app.features.materials.scene_fusion import resolve_kp_scene
 
 # 起草时喂给模型的资料片段条数与单条截断长度（prompt 预算，不是检索参数）。
 _SNIPPET_TOP_K = 5
@@ -486,6 +488,54 @@ def get_courseware(
     return _resp(session, teacher_id=teacher_id, courseware=row)
 
 
+def _payload_has_scene(payload: dict) -> bool:
+    """AI 起草的旧结构把整份 SceneSpec 内嵌在 ``payload`` 里（ADR-0067 首轮）。
+
+    有它就不必再补顶层 ``scene``——AI 按题面定制的场景比知识点默认场景**更具体**，
+    覆盖掉等于把「这道题讲什么」换回「这个知识点一般讲什么」。
+    """
+    if not isinstance(payload, dict):
+        return False
+    return isinstance(payload.get("kind"), str) and isinstance(
+        payload.get("inputs"), list
+    )
+
+
+def _attach_kp_scene(
+    sections: list[CoursewareSection], *, kp: KnowledgePoint
+) -> list[CoursewareSection]:
+    """给**缺场景**的交互环节补上知识点场景（ADR-0073：课件也走统一解析入口）。
+
+    此前只有出题侧走 ``resolve_kp_scene``，课件环节的场景全靠 AI 起草时顺便写进
+    ``payload``——AI 没写就是没图。这正是 ADR-0061 §U.4「换个地方就没图」在课件
+    侧的同一个根因：解析入口分裂，一处有一处没有。
+
+    三条边界，缺一条就会变成新的坑：
+    - **只在新建（AI 起草）时补，不在教师改的时候补**。补在保存路径上，教师
+      「清除场景」就会被立刻填回来（与 `CoursewareSectionModel.copyWith` 那个
+      null 哨兵 bug 同款）。落库后它是快照，教师后续怎么改都不受影响。
+    - **只补 ``interactive_scene``**。素材画廊 / 练习环节挂一份轴对称场景是噪音。
+    - **AI 已经给了就不覆盖**（见 :func:`_payload_has_scene`）。
+
+    落库的是**深拷贝**：环节各自持有一份，改知识点场景不会回溯改已生成的课件。
+    """
+    scenes = resolve_kp_scene(kp)
+    if not scenes or not isinstance(scenes[0], dict):
+        return sections
+    scene = copy.deepcopy(scenes[0])
+    out: list[CoursewareSection] = []
+    for section in sections:
+        if (
+            section.kind == "interactive_scene"
+            and section.scene is None
+            and not _payload_has_scene(section.payload)
+        ):
+            out.append(section.model_copy(update={"scene": copy.deepcopy(scene)}))
+        else:
+            out.append(section)
+    return out
+
+
 def create_courseware(
     session: Session, *, teacher_id: uuid.UUID, req: CoursewareCreate
 ) -> CoursewareResp:
@@ -527,7 +577,7 @@ def create_courseware(
         knowledge_point_id=kp.id,
         kp_name=kp.name,
         title=req.title or kp.name,
-        sections=_store_sections(sections),
+        sections=_store_sections(_attach_kp_scene(sections, kp=kp)),
     )
     row = repo.add_courseware(session, courseware=courseware)
     return _resp(session, teacher_id=teacher_id, courseware=row)

@@ -572,3 +572,124 @@ def test_redraft_diff_respects_ownership(client, teacher, drafted):
         headers=auth_headers(other_token),
     )
     assert r.status_code == 404, r.text
+
+
+# ── 环节场景：统一解析入口（ADR-0073） ─────────────────────────────────
+
+
+_REFLECTION_SCENE = {
+    "kind": "reflection",
+    "title": "轴对称",
+    "inputs": [{"key": "figure", "value": "square"}],
+    "editable": True,
+}
+
+
+def _set_kp_scenes(kp_id: uuid.UUID, scenes: list[dict] | None) -> None:
+    with DBSession(engine) as s:
+        kp = s.get(KnowledgePoint, kp_id)
+        kp.scenes = scenes
+        s.add(kp)
+        s.commit()
+
+
+def test_create_attaches_kp_scene_to_interactive_section(client, teacher, drafted):
+    """知识点配了场景 → 起草出的交互环节带上它（课件也走统一解析入口）。
+
+    ADR-0061 §U.4「换个地方就没图」在课件侧的同一个根因：此前只有出题侧解析
+    知识点场景，课件全靠 AI 起草时顺便写——AI 没写就是没图。
+    """
+    _set_kp_scenes(teacher["kp"], [_REFLECTION_SCENE])
+    body = _create(client, teacher["token"], teacher["kp"]).json()
+    scene_section = next(s for s in body["sections"] if s["kind"] == "interactive_scene")
+    assert scene_section["scene"] == _REFLECTION_SCENE
+
+
+def test_attach_leaves_other_kinds_alone(client, teacher, drafted):
+    """只补交互环节：素材画廊 / 练习挂一份轴对称场景是噪音。"""
+    _set_kp_scenes(teacher["kp"], [_REFLECTION_SCENE])
+    body = _create(client, teacher["token"], teacher["kp"]).json()
+    others = [s for s in body["sections"] if s["kind"] != "interactive_scene"]
+    assert others, "起草应含非交互环节"
+    assert all(s["scene"] is None for s in others)
+
+
+def test_no_kp_scene_means_no_scene_not_a_fabricated_one(client, teacher, drafted):
+    """知识点没配场景 → 环节就是没有场景，**不臆造**一份。"""
+    body = _create(client, teacher["token"], teacher["kp"]).json()
+    scene_section = next(s for s in body["sections"] if s["kind"] == "interactive_scene")
+    assert scene_section["scene"] is None
+
+
+def test_drafted_payload_scene_is_not_overridden(client, teacher, drafted, monkeypatch):
+    """AI 已经在 payload 里给了完整 SceneSpec → 不覆盖。
+
+    AI 按题面定制的场景比知识点默认场景**更具体**，换成默认等于把「这道题讲
+    什么」退回到「这个知识点一般讲什么」。
+    """
+    _set_kp_scenes(teacher["kp"], [_REFLECTION_SCENE])
+    monkeypatch.setattr(
+        service,
+        "draft_sections",
+        lambda **_k: [
+            service.CoursewareSection(
+                kind="interactive_scene",
+                title="判定",
+                script="对折看看",
+                # 完整 SceneSpec（含 inputs）→ 视为 AI 已给场景
+                payload={"kind": "reflection", "inputs": [], "title": "本题的图"},
+            )
+        ],
+    )
+    body = _create(client, teacher["token"], teacher["kp"]).json()
+    assert body["sections"][0]["scene"] is None
+    assert body["sections"][0]["payload"]["title"] == "本题的图"
+
+
+def test_attached_scene_is_a_snapshot(client, teacher, drafted):
+    """落库即快照：之后改知识点场景，**已生成的课件不变**。"""
+    _set_kp_scenes(teacher["kp"], [_REFLECTION_SCENE])
+    cw_id = _create(client, teacher["token"], teacher["kp"]).json()["id"]
+
+    _set_kp_scenes(teacher["kp"], [{**_REFLECTION_SCENE, "title": "改过的标题"}])
+
+    body = client.get(
+        f"/api/v1/courseware/{cw_id}", headers=auth_headers(teacher["token"])
+    ).json()
+    scene_section = next(s for s in body["sections"] if s["kind"] == "interactive_scene")
+    assert scene_section["scene"]["title"] == "轴对称"
+
+
+def test_teacher_can_clear_scene_without_it_being_refilled(client, teacher, drafted):
+    """教师清除场景后保存，不会被「自动填充」填回来。
+
+    这正是填充只做在**新建（AI 起草）**、不做在保存路径的原因：补在保存路径上，
+    「清除」按钮会永远失效（与 `copyWith` 用 ``??`` 导致 null 不生效同款 bug）。
+    """
+    _set_kp_scenes(teacher["kp"], [_REFLECTION_SCENE])
+    cw = _create(client, teacher["token"], teacher["kp"]).json()
+    url = f"/api/v1/courseware/{cw['id']}/sections"
+
+    r = client.put(
+        url,
+        headers=auth_headers(teacher["token"]),
+        json={
+            "sections": [
+                {
+                    "id": "only",
+                    "kind": "interactive_scene",
+                    "title": "判定",
+                    "script": "拖动对称轴试试",
+                    "payload": {"kind": "reflection"},
+                    "scene": None,
+                }
+            ]
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["sections"][0]["scene"] is None
+
+    body = client.get(
+        f"/api/v1/courseware/{cw['id']}", headers=auth_headers(teacher["token"])
+    ).json()
+    assert body["sections"][0]["scene"] is None
