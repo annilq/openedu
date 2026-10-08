@@ -91,3 +91,41 @@ def test_wrong_question_counts_excludes_other_teacher(client: TestClient, db: Se
     ra = client.get("/api/v1/students/wrong-question-counts", headers=auth_headers(ta))
     assert ra.status_code == 200
     assert ra.json() == {str(sa): 3}
+
+
+def test_wrong_question_counts_excludes_orphan(client: TestClient, db: Session):
+    """源题目被硬删后留下的孤儿错题，不应计入列表徽标（与详情页 JOIN 口径一致）。
+
+    复现真实 bug：列表显示 7、详情只显示 4，差额 3 条是 question 已删除的孤儿错题。
+    """
+    token, tid = _teacher(client, "wq_orphan_t")
+    s = _make_student(client, token, "wq_orphan_kid")
+    sid = UUID(s)
+
+    qs = []
+    for _ in range(3):
+        q = Question(
+            teacher_id=UUID(tid),
+            subject="数学",
+            grade=2,
+            knowledge_point="加法",
+            qtype="calc",
+            stem="1+1=?",
+        )
+        db.add(q)
+        qs.append(q)
+    db.commit()
+    for q in qs:
+        db.refresh(q)
+    for q in qs:
+        db.add(WrongQuestion(student_id=sid, question_id=q.id))
+    db.commit()
+
+    # 硬删其中 1 道源题，遗留 1 条孤儿错题（FK 无级联清理）
+    db.delete(qs[0])
+    db.commit()
+
+    r = client.get("/api/v1/students/wrong-question-counts", headers=auth_headers(token))
+    assert r.status_code == 200, r.text
+    # 孤儿不计，只数剩下 2 条源题仍在的活跃错题
+    assert r.json() == {str(sid): 2}

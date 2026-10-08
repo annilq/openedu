@@ -6,7 +6,7 @@ from app.core.config import settings
 from app.core.deps import CurrentTeacher, SessionDep
 from app.core.errors import ErrCode
 from app.core.guard import require_owned_student
-from app.db.models import User, WrongQuestion
+from app.db.models import Question, User, WrongQuestion
 from app.features.auth.repository import (
     create_user,
     delete_student,
@@ -147,14 +147,18 @@ def get_students_wrong_question_counts(
 ) -> dict[str, int]:
     """各学生的活跃（未毕业）错题数，供学生管理页每行展示（ADR-0068 §2.3 / ticket 02）。
 
-    按当前教师的归属范围聚合：JOIN ``user`` 取 ``teacher_id``，只数 ``graduated_at``
-    为空的活跃错题。返回 ``{student_id: count}``，无错题的学生不出现在结果里。
+    按当前教师的归属范围聚合：JOIN ``user`` 取 ``teacher_id``，再 JOIN ``question``
+    只数 ``graduated_at`` 为空 **且源题目仍存在** 的活跃错题——与「错题本」详情页
+    （``GET /students/{id}/wrong-questions?scope=active`` 的 ``WrongQuestion JOIN
+    Question``）口径一致，避免列表徽标出现「数得到、点进去却看不到」的孤儿错题。
+    返回 ``{student_id: count}``，无错题的学生不出现在结果里。
     """
     from sqlmodel import func, select
 
     rows = session.exec(
         select(WrongQuestion.student_id, func.count())
         .join(User, WrongQuestion.student_id == User.id)
+        .join(Question, WrongQuestion.question_id == Question.id)
         .where(User.teacher_id == teacher.id, WrongQuestion.graduated_at.is_(None))
         .group_by(WrongQuestion.student_id)
     ).all()

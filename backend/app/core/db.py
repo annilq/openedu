@@ -237,6 +237,14 @@ def run_migrations() -> None:
         # —— 清理 JSON 列里的文本 'null'（ADR-0061 §T）——
         _nullify_text_json_nulls(conn)
 
+        # —— 清理孤儿错题（学生管理列表 vs 详情计数不一致根因，2026-10-08）——
+        # wrongquestion.question_id 的 FK 无 ON DELETE CASCADE，且 SQLite 默认不强制外键；
+        # 源 question 被硬删（删任务 / 再生成 / 批量删题）后 wrongquestion 行被遗留成
+        # dangling。列表统计(改后)与详情页均 INNER JOIN question，孤儿既数不到也点不开，
+        # 故此处幂等删除：question_id 为 NULL 或指向不存在的 question 的行一律清掉。
+        # 表未建（偏序迁移）时跳过。
+        _purge_orphan_wrong_questions(conn)
+
         # —— 知识点唯一约束补 semester（ADR-0061 §R）——
         # ⚠️ 上一段只补了**列**，但 SQLite **无法 ALTER 已存在表上的 UNIQUE 约束**
         # （没有 `ALTER TABLE ... ADD CONSTRAINT`）。于是所有在加学期维度**之前**
@@ -479,6 +487,35 @@ def run_migrations() -> None:
                 ")"
             )
         )
+
+
+def _purge_orphan_wrong_questions(conn) -> None:
+    """删除指向不存在 / 为 NULL 的源题目的孤儿错题（2026-10-08）。
+
+    **为什么会有**：``wrongquestion.question_id`` 的外键无 ``ON DELETE CASCADE``，
+    且 SQLite 默认不强制外键。源 ``question`` 被硬删（删任务 / 题目再生成 / 批量删题）
+    后，``wrongquestion`` 行被遗留成 dangling。这种行既进不了列表统计（改后的
+    ``wrong-question-counts`` 与详情页都 INNER JOIN question），也无法在详情页点开，
+    只会造成「数得到点不到」的困惑。
+
+    **清理语义**：删除所有 ``question_id IS NULL`` 或 ``question_id`` 不在 ``question``
+    表的行。这与列表/详情两侧的 INNER JOIN 口径完全一致——被删的正好是永远无法展示的行。
+
+    **幂等 + 方言无关**：纯 DELETE + 子查询，重跑为 no-op；NULL 与 NOT IN 写法在
+    SQLite / Postgres 都正确（``question.id`` 是主键永不为 NULL，NOT IN 不会整体失配）。
+    表未建（偏序迁移）时 ``OperationalError`` 跳过。
+    """
+    try:
+        conn.execute(
+            text(
+                "DELETE FROM wrongquestion "
+                "WHERE question_id IS NULL "
+                "OR question_id NOT IN (SELECT id FROM question)"
+            )
+        )
+    except OperationalError:
+        # 偏序迁移：wrongquestion / question 表还没建，跳过即可。
+        pass
 
 
 def _nullify_text_json_nulls(conn) -> None:
