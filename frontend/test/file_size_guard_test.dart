@@ -10,7 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 1. **未登记的新文件不得超过 400 行**——这是 ADR-0058 的主要执行力：它拦不住
 ///    历史债务，但能拦住**下一个** `teacher_question_bank_view.dart`（现已拆出
 ///    `BankQuestionRow`，基线随之下调到 759）。
-/// 2. **已登记的超限文件不得继续增长**（棘轮）——现存 **15** 个超限文件登记在
+/// 2. **已登记的超限文件不得继续增长**（棘轮）——现存 **17** 个超限文件登记在
 ///    [_baseline] 里（另 `dev/theme_preview.dart` 1189 行走豁免），基线**只许下调不许上调**：
 ///    拆小了把基线跟着调小，长回去就失败。
 ///    它不强迫任何人现在就去拆分，但保证这些文件不会继续变长。
@@ -114,6 +114,11 @@ void main() {
 ///   · teacher_task_form_view 429 → **A 拆小**：抽出审阅闸门/动作区到 teacher_task_form_actions.dart，
 ///     主文件 384 行已回到 400 内，**整条移出 _baseline**。
 ///   两处 A 拆小均为 ADR-0058 P4「区块/子件独立成文件」，净减为真实职责分离，不是硬压行数。
+/// 2026-10-08 票据 06/07（ADR-0075 概览×统计合并）：删除 analytics_screen 488/492（能力已并入
+///   WorkbenchAnalysis，等价测试见 workbench_analysis_test），并从 _baseline 移除其登记；
+///   拆分出的三个子文件正式登记基线：workbench_analysis 417、workbench_glance 451、
+///   analytics_charts 511（图表适配器层：同组图表 widget 视为一类职责，符合 ADR-0058 §2 例外）。
+///   主壳 teacher_overview_view 拆分后 242 行已回到 400 内，无需登记。
 /// **只许下调（除 B 类已登记的合理大件外）。**
 ///
 /// 拆分批次见 `docs/refactor/2026-09-21-flutter-ui-decomposition.md`（P0–P4）。
@@ -128,6 +133,9 @@ const Map<String, int> _baseline = <String, int>{
   'features/home/presentation/widgets/teacher/teacher_question_card.dart': 511,
   'features/home/presentation/widgets/teacher/teacher_wrong_questions_view.dart': 442,
   'features/home/presentation/widgets/student_home.dart': 428,
+  'features/home/presentation/widgets/teacher/workbench_analysis.dart': 417,
+  'features/home/presentation/widgets/teacher/workbench_glance.dart': 451,
+  'shared/widgets/analytics_charts.dart': 511,
   'features/home/presentation/screens/teacher_task_review_screen.dart': 424,
   'features/students/presentation/screens/student_management_screen.dart': 777,
 };
