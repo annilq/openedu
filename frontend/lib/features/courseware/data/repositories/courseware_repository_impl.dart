@@ -162,32 +162,28 @@ class CoursewareRepositoryImpl implements CoursewareRepository {
     required int grade,
     String semester = '',
   }) async {
-    // 复用资料库目录端点：每个知识点条目已带 scenes（后端 KnowledgePointResp.scenes）。
-    // 后端返回 KnowledgePointListResp（{items:[...]}，非裸 List）——必须拆 items，否则
-    // `data as List?` 对 Map 抛 CastError，被调用方 catch 成「读取知识点场景失败」。
-    final data = await _network.get(
-      '/materials/knowledge-points',
-      query: {
-        'subject': subject,
-        'grade': grade,
-        if (semester.isNotEmpty) 'semester': semester,
-      },
-    );
+    // 改用 /all 端点：返回教师名下**全部**知识点（每项已带 scenes），不按范围过滤。
+    // 旧实现用 /knowledge-points + subject/grade/semester 过滤后再按 id 找，一旦课件
+    // 的 scope 与知识点真实范围轻微不一致，目标知识点会被过滤掉 → 返回 null → UI 误报
+    // 「读取知识点场景失败」。改用 /all 后 id 必然命中（只要属于该教师）。
+    // [subject]/[grade]/[semester] 保留为接口上下文、不再参与过滤。
+    final data = await _network.get('/materials/knowledge-points/all');
     final raw = data as Map<String, dynamic>?;
     final items = (raw?['items'] as List? ?? const []);
     for (final e in items) {
       final m = Map<String, dynamic>.from(e as Map);
       if (m['id'] == kpId) {
         final scenes = m['scenes'];
-        if (scenes is List) {
-          return [
-            for (final s in scenes)
-              Map<String, dynamic>.from(s as Map),
-          ];
-        }
-        return null;
+        // 知识点存在但 scenes 不是列表（如 null）＝没有可复用模板，归为「空」而非「失败」。
+        if (scenes is! List) return const [];
+        return [
+          for (final s in scenes)
+            Map<String, dynamic>.from(s as Map),
+        ];
       }
     }
-    return null;
+    // 目标 id 不在教师名下（如已删除 / 越权）＝无可关联模板，归为「空」而非「失败」，
+    // 让 UI 走「该知识点还没有配置交互讲解模板」引导，而不是「读取失败 + 重试」。
+    return const [];
   }
 }

@@ -168,6 +168,7 @@ class _CoursewareEditorPageState extends ConsumerState<CoursewareEditorPage> {
       ref,
       section,
       knowledgePointId: widget.knowledgePointId,
+      kpName: widget.kpName,
       subject: widget.subject,
       grade: widget.grade,
       semester: widget.semester,
@@ -185,6 +186,41 @@ class _CoursewareEditorPageState extends ConsumerState<CoursewareEditorPage> {
     } catch (e) {
       if (!mounted) return;
       AppToast.show(context, '保存环节失败：$e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// 手动添加环节（T04 入口补强）：空课件态也能发起，不再只能靠 AI 补充讲解。
+  ///
+  /// 与 [CoursewareEditorSectionList._addSection] 同一份逻辑：打开与编辑同构的空白
+  /// 表单，保存后把新环节追加到列表末尾，经 [updateSections] 整体覆盖写落库。空态 CTA
+  /// 与列表头「添加环节」复用此处，单一事实源。
+  Future<void> _addSection() async {
+    final cw = _courseware;
+    if (cw == null || _busy) return;
+    final created = await showCoursewareSectionEditDialog(
+      context,
+      ref,
+      CoursewareSectionModel(),
+      knowledgePointId: widget.knowledgePointId,
+      kpName: widget.kpName,
+      subject: widget.subject,
+      grade: widget.grade,
+      semester: widget.semester,
+    );
+    if (created == null || _courseware == null) return;
+    setState(() => _busy = true);
+    try {
+      final repo = ref.read(coursewareRepositoryProvider);
+      final next = [..._courseware!.sections, created];
+      final saved = await repo.updateSections(_courseware!.id, next);
+      if (!mounted) return;
+      setState(() => _courseware = saved);
+      AppToast.show(context, '已添加环节');
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.show(context, '添加环节失败：$e');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -371,7 +407,9 @@ class _CoursewareEditorPageState extends ConsumerState<CoursewareEditorPage> {
             child: AppEmptyState(
               icon: LucideIcons.sparkles,
               title: '还没有讲解安排',
-              message: '点「AI 补充讲解」按这个知识点生成一份环节草案。',
+              message: '可以「添加环节」手动设计讲解，或点「AI 补充讲解」按知识点生成环节草案。',
+              actionLabel: '添加环节',
+              onAction: _addSection,
             ),
           )
         else
@@ -382,6 +420,7 @@ class _CoursewareEditorPageState extends ConsumerState<CoursewareEditorPage> {
               onDeleteSelected: _persistDelete,
               onEdit: _editSection,
               knowledgePointId: widget.knowledgePointId,
+              kpName: widget.kpName,
               subject: widget.subject,
               grade: widget.grade,
               semester: widget.semester,

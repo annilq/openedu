@@ -763,6 +763,8 @@ void main() {
             '（如轴对称选图形 + 调对称轴），这里才能选到它。'),
         findsOneWidget,
       );
+      // 空态提供直达配置入口，省去「退出课件 → 找知识点 → 配模板」的来回。
+      expect(find.text('去知识点配置'), findsOneWidget);
       expect(find.text('选择讲解模板'), findsNothing);
       expect(tester.takeException(), isNull);
     });
@@ -881,6 +883,38 @@ void main() {
       expect(repo.updateSectionsCalls, 0);
       expect(find.text('环节一'), findsOneWidget);
       expect(find.text('手动加的环节'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('空课件：空态提供「添加环节」入口，手动追加并落库（不再只能靠 AI）',
+        (tester) async {
+      // 空课件态：此前空态只提示「AI 补充讲解」，无手工添加入口（死胡同）。
+      final repo = _FakeRepo(_editorCourseware(const []));
+      await _pumpEditor(tester, repo: repo);
+
+      expect(find.text('还没有讲解安排'), findsOneWidget);
+      // 空态 CTA 是主按钮（ShadButton），与列表头的 AppTextAction 区分。
+      final addBtn = find.widgetWithText(ShadButton, '添加环节');
+      expect(addBtn, findsOneWidget);
+
+      // 点「添加环节」→ 弹出空白表单（与编辑同构）。
+      await tester.tap(addBtn);
+      await tester.pumpAndSettle();
+      expect(find.text('保存'), findsOneWidget);
+
+      // 填标题后保存。
+      await tester.enterText(find.byType(EditableText).at(0), '手动首环节');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+
+      // 一次整体覆盖写，空课件追加了一个环节。
+      expect(repo.updateSectionsCalls, 1);
+      expect(repo.lastUpdated!.map((s) => s.title).toList(), ['手动首环节']);
+      // 列表同步出现，空态消失（计入「1 个讲解环节」）。
+      expect(find.text('手动首环节'), findsOneWidget);
+      expect(find.text('1 个讲解环节'), findsOneWidget);
+      expect(find.text('还没有讲解安排'), findsNothing);
       expect(tester.takeException(), isNull);
     });
   });

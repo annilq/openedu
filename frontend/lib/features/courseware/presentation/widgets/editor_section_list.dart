@@ -25,6 +25,7 @@ class CoursewareEditorSectionList extends ConsumerStatefulWidget {
     required this.onDeleteSelected,
     required this.onEdit,
     this.knowledgePointId,
+    required this.kpName,
     required this.subject,
     required this.grade,
     required this.semester,
@@ -37,6 +38,7 @@ class CoursewareEditorSectionList extends ConsumerStatefulWidget {
 
   /// 课件所属知识点 id（空白环节也能「关联知识点场景」）。null = 孤儿课件，禁用该能力。
   final String? knowledgePointId;
+  final String kpName;
   final String subject;
   final int grade;
   final String semester;
@@ -84,6 +86,7 @@ class _CoursewareEditorSectionListState
       ref,
       CoursewareSectionModel(), // 空白环节：无 kind、title/话术/素材/场景皆空
       knowledgePointId: widget.knowledgePointId,
+      kpName: widget.kpName,
       subject: widget.subject,
       grade: widget.grade,
       semester: widget.semester,

@@ -2,8 +2,11 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart' show Dialog, showDialog;
 import 'package:flutter/widgets.dart';
+import 'package:flutter/cupertino.dart' show CupertinoPageRoute;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+
+import 'package:kids_learn/features/home/presentation/widgets/teacher/knowledge_point_scene_editor.dart';
 
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_actions.dart';
@@ -39,13 +42,15 @@ import 'section_scene_figures_picker.dart';
 ///
 /// 返回更新后的 [CoursewareSectionModel]；取消则回 null，调用方不落库。
 ///
-/// [knowledgePointId] / [subject] / [grade] / [semester] 用于「关联知识点场景」。
-/// 课件孤儿（[knowledgePointId] 为 null）时该能力自动不可用。
+/// [knowledgePointId] / [kpName] / [subject] / [grade] / [semester] 用于「关联知识点场景」
+/// （[kpName] 在「去知识点配置」跳转时作为编辑器标题）。课件孤儿（[knowledgePointId]
+/// 为 null）时该能力自动不可用。
 Future<CoursewareSectionModel?> showCoursewareSectionEditDialog(
   BuildContext context,
   WidgetRef ref,
   CoursewareSectionModel section, {
   String? knowledgePointId,
+  required String kpName,
   required String subject,
   required int grade,
   String semester = '',
@@ -55,6 +60,7 @@ Future<CoursewareSectionModel?> showCoursewareSectionEditDialog(
       builder: (_) => _SectionEditDialog(
         section: section,
         knowledgePointId: knowledgePointId,
+        kpName: kpName,
         subject: subject,
         grade: grade,
         semester: semester,
@@ -65,6 +71,7 @@ class _SectionEditDialog extends ConsumerStatefulWidget {
   const _SectionEditDialog({
     required this.section,
     this.knowledgePointId,
+    required this.kpName,
     required this.subject,
     required this.grade,
     this.semester = '',
@@ -74,6 +81,9 @@ class _SectionEditDialog extends ConsumerStatefulWidget {
 
   /// 课件所属知识点 id（顶层关联）。null = 孤儿课件，无法关联场景。
   final String? knowledgePointId;
+
+  /// 知识点名称：跳转其「讲解」编辑器时用作标题（见 [_configureKnowledgePoint]）。
+  final String kpName;
   final String subject;
   final int grade;
   final String semester;
@@ -200,6 +210,30 @@ class _SectionEditDialogState extends ConsumerState<_SectionEditDialog> {
         _selectedSceneIndex = null;
         _draft = _draft.copyWith(scene: null);
       });
+
+  /// 「去知识点配置」：关闭本环节编辑弹窗（返回 null，调用方不落库），直接跳到该知识点
+  /// 的交互讲解模板编辑器（home 模块的 [KnowledgePointSceneEditor]，未配置态会从内置场景库
+  /// 引导选一个起点）。配好保存后回落到课件编辑器，重新打开环节即可在下拉里选到刚配的模板，
+  /// 从而省去「退出课件 → 找知识点 → 配模板 → 回来」的来回。
+  void _configureKnowledgePoint() {
+    final kpId = widget.knowledgePointId;
+    if (kpId == null) return;
+    final nav = Navigator.of(context);
+    nav.pop(); // 关闭环节编辑弹窗
+    nav.push(
+      CupertinoPageRoute<void>(
+        builder: (_) => KnowledgePointSceneEditor(
+          kpId: kpId,
+          kpName: widget.kpName,
+          subject: widget.subject,
+          grade: widget.grade,
+          semester: widget.semester,
+          initialScenes: null,
+          onBack: () => nav.pop(),
+        ),
+      ),
+    );
+  }
 
   @override
   void dispose() {
@@ -343,6 +377,7 @@ class _SectionEditDialogState extends ConsumerState<_SectionEditDialog> {
                         },
                         onSelectedIndex: _onSceneSelected,
                         onClear: _clearAssociation,
+                        onConfigure: _configureKnowledgePoint,
                       ),
                       // 演示哪几个图形、按什么顺序（ADR-0076）：仅轴对称场景，
                       // 结果写回本环节场景的副本（不碰知识点上的那份）。

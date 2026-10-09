@@ -1,19 +1,19 @@
 import 'package:flutter/widgets.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_actions.dart';
-import '../../../../shared/widgets/app_card.dart';
+import '../../../../shared/widgets/app_inputs.dart';
 import '../../../../shared/widgets/app_loading.dart';
 
 /// 「关联知识点场景」（统一表单，任意 kind 都能挂）。
 ///
-/// 列出该知识点在「讲解」里已配置的交互演示模板（ADR-0061 SceneSpec），用下拉
-/// 选择器选一份即快照式复制进本节顶层 [CoursewareSectionModel.scene]；知识点没配 →
-/// 提示去知识点页配置；孤儿课件 → 直接不可用。
+/// 以一个 select（[AppPickerField]，基于 ShadSelect）列出该知识点在「讲解」里已配置的
+/// 模板，选一份即快照式复制进本节顶层 [CoursewareSectionModel.scene]；知识点没配 →
+/// 提示去知识点页配置（[onConfigure] 直达配置入口）；孤儿课件 → 直接不可用。
 ///
-/// 从 [showCoursewareSectionEditDialog] 的编辑态中提取为独立无状态组件：所需数据
-/// 全部由参数传入，不再直接读编辑页 state（ADR-0058 §4：一个文件只暴露一个公开物）。
+/// 选单的「当前值」用**列表下标**表达（[selectedIndex]）：场景模板是裸 dict、无稳定 id，
+/// 单次弹窗内列表只拉取一次（重试会整体重拉），下标足以标识；重开已有课件时按内容深比较
+/// 回填下标，找不到匹配（模板已改）则下标置 null、由 [hasScene] 提示已关联但源已失效。
 class SectionSceneAssociationBlock extends StatelessWidget {
   const SectionSceneAssociationBlock({
     super.key,
@@ -22,9 +22,10 @@ class SectionSceneAssociationBlock extends StatelessWidget {
     required this.scenes,
     required this.selectedIndex,
     required this.hasScene,
-    required this.onRetry,
     required this.onSelectedIndex,
     required this.onClear,
+    required this.onRetry,
+    required this.onConfigure,
   });
 
   final String? knowledgePointId;
@@ -32,16 +33,24 @@ class SectionSceneAssociationBlock extends StatelessWidget {
   final List<Map<String, dynamic>>? scenes;
   final int? selectedIndex;
   final bool hasScene;
-  final VoidCallback onRetry;
   final void Function(int) onSelectedIndex;
   final VoidCallback onClear;
+  final VoidCallback onRetry;
 
-  String _titleOf(Map<String, dynamic> spec) =>
-      (spec['title'] as String?)?.isNotEmpty == true
-          ? spec['title'] as String
-          : ((spec['kind'] as String?)?.isNotEmpty == true
-              ? spec['kind'] as String
-              : '未命名模板');
+  /// 知识点未配模板时，直达该知识点的「讲解」配置入口（见 [_SectionEditDialog]）。
+  final VoidCallback onConfigure;
+
+  /// 下拉项标签：标题优先，附 kind 便于区分同名单场景；两者皆空回退「未命名模板」。
+  static String _labelOf(Map<String, dynamic> spec) {
+    final title = (spec['title'] as String?)?.trim();
+    final kind = (spec['kind'] as String?)?.trim();
+    if (title != null && title.isNotEmpty && kind != null && kind.isNotEmpty) {
+      return '$title（$kind）';
+    }
+    if (title != null && title.isNotEmpty) return title;
+    if (kind != null && kind.isNotEmpty) return kind;
+    return '未命名模板';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -84,21 +93,34 @@ class SectionSceneAssociationBlock extends StatelessWidget {
               border: Border.all(color: app.secondary, width: 1.5),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Text(
-              '该知识点还没有配置交互讲解模板。请先到知识点页的「讲解」入口配置一份'
-              '（如轴对称选图形 + 调对称轴），这里才能选到它。',
-              style: text.bodySmall?.copyWith(color: app.onSurfaceVariant),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '该知识点还没有配置交互讲解模板。请先到知识点页的「讲解」入口配置一份'
+                  '（如轴对称选图形 + 调对称轴），这里才能选到它。',
+                  style: text.bodySmall?.copyWith(color: app.onSurfaceVariant),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                AppTextAction(
+                  label: '去知识点配置',
+                  onPressed: onConfigure,
+                ),
+              ],
             ),
           )
         else
           ...[
-            Text('选择讲解模板', style: text.labelSmall),
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              selectedIndex == null
-                  ? '未关联（点此选择）'
-                  : _titleOf(scenes![selectedIndex!]),
-              style: text.bodyMedium?.copyWith(color: app.onSurfaceVariant),
+            // 用 ValueKey(selectedIndex) 强制 remount：AppPickerField 基于 ShadSelect 的
+            // initialValue（非受控），外部清选时若不重建，下拉显示不会回落到占位文案。
+            AppPickerField<int>(
+              key: Key('scene-sel-${selectedIndex ?? 'none'}'),
+              label: '选择讲解模板',
+              values: [for (var i = 0; i < scenes!.length; i++) i],
+              labels: [for (final s in scenes!) _labelOf(s)],
+              value: selectedIndex,
+              placeholder: '未关联（点此选择）',
+              onChanged: onSelectedIndex,
             ),
             if (hasScene) ...[
               const SizedBox(height: AppSpacing.xs),
@@ -106,7 +128,10 @@ class SectionSceneAssociationBlock extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      '本环节已关联上方选中的交互演示。',
+                      selectedIndex != null
+                          ? '本环节已关联上方选中的交互演示。'
+                          : '本环节已关联交互演示（但当前模板列表里找不到匹配项，'
+                            '可能知识点模板已改动）。',
                       style: text.bodySmall?.copyWith(color: app.onSurfaceVariant),
                     ),
                   ),
@@ -114,40 +139,6 @@ class SectionSceneAssociationBlock extends StatelessWidget {
                 ],
               ),
             ],
-            const SizedBox(height: AppSpacing.sm),
-            for (var i = 0; i < scenes!.length; i++)
-              Padding(
-                padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                child: AppCard(
-                  onTap: () => onSelectedIndex(i),
-                  child: Padding(
-                    padding: const EdgeInsets.all(AppSpacing.sm),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(_titleOf(scenes![i]), style: text.titleSmall),
-                              const SizedBox(height: AppSpacing.xs),
-                              Text(
-                                '类型：${scenes![i]['kind'] ?? '未知'}',
-                                style: text.bodySmall
-                                    ?.copyWith(color: app.onSurfaceVariant),
-                              ),
-                            ],
-                          ),
-                        ),
-                        if (selectedIndex == i)
-                          Padding(
-                            padding: const EdgeInsets.only(right: AppSpacing.sm),
-                            child: Icon(LucideIcons.check, size: 18, color: app.primary),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
           ],
       ],
     );
