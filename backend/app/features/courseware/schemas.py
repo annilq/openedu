@@ -40,7 +40,10 @@ class CoursewareSection(SQLModel):
 
     # 空则由后端生成（新建时前端不必预先发号）；同份课件内唯一。
     id: str = Field(default="", max_length=40)
-    kind: str = Field(max_length=32)
+    # courseware-round-3 T03（去 kind·expand）：环节不再按 kind 类型化，改为「内容块
+    # 统一渲染」——kind 退化为**可选只读**的旧数据兼容字段。新数据可不带 kind；空 /
+    # 未知 kind 都不再 422（删 kind 字段与枚举归 T07 contract）。
+    kind: str | None = Field(default=None, max_length=32)
     title: str = Field(default="", max_length=128)
     # 教师话术 / 提问卡文案（决策 15）。首轮单串legacy仍保留：T02 之后新数据走
     # ``script_segments``，旧单串课件靠它向下兼容（见 domain 的 displaySegments 回退）。
@@ -56,6 +59,10 @@ class CoursewareSection(SQLModel):
     # 关联的知识点交互场景（ADR-0061 SceneSpec），任何 kind 都能挂，与 payload
     # 内嵌 SceneSpec（interactive_scene 旧结构）并存过渡。
     scene: dict | None = Field(default=None)
+    # courseware-round-3 T06（去 kind·expand 后的练习内容块）：课堂练习配置
+    # {qtype, count, hints}。与 materials / scene 并列的第四可选内容块，任何环节
+    # 都能挂；旧 AI 起草数据走 payload['qtype'] 由前端回退读取。
+    practice: dict | None = Field(default=None)
 
 
 class CoursewareResp(SQLModel):

@@ -58,15 +58,18 @@ _PROMPT_TEXT_LIMIT = 2000
 
 _DRAFT_SYSTEM = (
     "你是 K12 教研助手，为教师备一份「按知识点讲解」的课件。\n"
-    "产出 3-4 个**有序**环节，每个环节形如 "
-    '{"id": "", "kind": ..., "title": "...", "script": "...", "payload": {...}}。\n'
-    "kind 只能是这三个之一，**不接受其它字符串**：\n"
-    '- "media_gallery"：出示 / 欣赏素材（生活中的实例、建筑与艺术）。'
-    'payload = {"items": [], "prompt": "给学生的观察提示"}；素材由教师随后上传，items 先留空数组。\n'
-    '- "interactive_scene"：交互探究 / 判定环节。**交互演示（图形、对称轴等）由教师在'
-    '课件编辑器的场景编辑器里显式配置**，起草时不要在 payload 里生成 SceneSpec；'
-    'payload 留空 `{}`（kind 已在顶层给出）。\n'
-    '- "practice"：课堂练习。payload = {"qtype": "choice", "count": 3, "hints": ["..."]}。\n'
+    "产出 3-4 个**有序**环节，每个环节是统一的内容块容器，形如 "
+    '{"id": "", "title": "...", "script": "...", "payload": {...}, '
+    '"materials": [...], "scene": ..., "practice": {...}}。\n'
+    "**不再有 kind 字段**——每个环节渲染 / 演示都「按填了什么」，不要输出 kind。\n"
+    "各内容块（可同时有、可都空）：\n"
+    '- "materials"：素材。**只能引用下面「可用素材」清单里给出的真实 asset_id**'
+    "（教师已上传的图），不要编造 id；每个元素 {asset_id, caption}。没有合适素材就给空数组。\n"
+    '- "scene"：交互演示（图形、对称轴等）。**只能引用下面「可用场景模板」里给出的真实'
+    "模板**（教师已在知识点里配置好的交互讲解），把整份模板原样放进来；不要凭空造 SceneSpec。"
+    "没有就给 null。\n"
+    '- "practice"：课堂练习（可选）。形如 {"qtype": "choice", "count": 3, '
+    '"hints": "给学生的提示"}；qtype 取 choice / fill / calc / open 之一。\n'
     "script 是**投给学生看的提问卡话术**（一句可直接念出来的提问，如"
     "「这些图形有什么共同点？」），不要写成流程说明或教师备注。\n"
     "title 是环节标题，12 字以内。id 留空字符串，由后端生成。\n"
@@ -75,16 +78,20 @@ _DRAFT_SYSTEM = (
 
 
 class _DraftSection(SQLModel):
-    """模型产出的单个环节（输出契约，字段宽松——校验与收敛在 service 层）。"""
+    """模型产出的单个环节（输出契约，字段宽松——校验与收敛在 service 层）。
+
+    courseware-round-3 T03（去 kind·expand）：环节不再带 kind，统一为内容块容器；
+    materials / scene / practice 都是可选顶层字段（T05 起允许引用真实素材 / 场景 id）。
+    """
 
     id: str = ""
-    kind: str = ""
     title: str = ""
     script: str = ""
     payload: dict = Field(default_factory=dict)
-    # 内容块统一化：起草产物也可选填顶层素材 / 场景（旧起草只走 payload 内嵌）。
+    # 内容块统一化：起草产物也可选填顶层素材 / 场景 / 练习（旧起草只走 payload 内嵌）。
     materials: list[dict] = Field(default_factory=list)
     scene: dict | None = Field(default=None)
+    practice: dict | None = Field(default=None)
 
 
 class _CoursewareDraft(SQLModel):
@@ -97,16 +104,17 @@ class _CoursewareDraft(SQLModel):
 
 
 def validate_section_kinds(sections: list[CoursewareSection]) -> None:
-    """环节 kind 必须在注册表内（ADR-0067 §3.3：不接受自由字符串）。
+    """环节 kind 校验（courseware-round-3 T03·去 kind·expand 后**不再拦截**）。
 
-    前端提交与 AI 起草**共用这一道校验**——起草产物若藏着一个未登记的 kind，
-    落库后演示页分派不到渲染器，教师只看到「点了没反应」。
+    旧设计里 kind 是必填注册表字段，未知 / 空 kind 直接 422（ADR-0067 §3.3）。去
+    kind 后环节是统一的「内容块容器」，kind 退化为可选只读的旧数据兼容字段——空 /
+    未知 kind 一律放行，仅在遇到旧数据里的未知 kind 时打 warning 便于排查，绝不 422
+    （删 kind 字段与枚举归 T07 contract）。渲染 / 编辑都「按填了什么」，不依赖 kind。
     """
     for s in sections:
-        if s.kind not in SECTION_KINDS:
-            raise AppErrorException(
-                ErrCode.COURSEWARE_BAD_KIND,
-                f"未知的环节类型：{s.kind or '<空>'}（只能是 {' / '.join(SECTION_KINDS)}）",
+        if s.kind and s.kind not in SECTION_KINDS:
+            warnings.warn(
+                f"课件环节含未登记 kind（兼容只读，不拦截）：{s.kind}", stacklevel=2
             )
 
 
@@ -138,6 +146,9 @@ def _section_to_dict(s: CoursewareSection) -> dict:
         # 为缺省值，前端回退 payload 内嵌；新数据优先走顶层字段）。
         "materials": s.materials or [],
         "scene": s.scene,
+        # courseware-round-3 T06：练习是第四可选内容块（与 materials / scene 并列），
+        # 顶层字段，旧数据走 payload['qtype'] 由前端回退读取。
+        "practice": s.practice,
     }
 
 
@@ -265,32 +276,38 @@ def _sections_from_draft(data: object) -> list[CoursewareSection]:
 
     sections: list[CoursewareSection] = []
     for raw in draft.sections:
-        if raw.kind not in SECTION_KINDS:
-            continue
+        # courseware-round-3 T03（去 kind·expand）：环节不再按 kind 过滤 / 丢弃——
+        # 只要是模型给出的环节都接受（空课件不伪造的判定改由「完全没有环节」兜底）。
         sections.append(
             CoursewareSection(
                 id=raw.id or uuid.uuid4().hex[:8],
-                kind=raw.kind,
+                kind=raw.kind if isinstance(raw.kind, str) and raw.kind else None,
                 title=(raw.title or "")[:128],
                 script=(raw.script or "")[:2000],
                 payload=raw.payload if isinstance(raw.payload, dict) else {},
-                # 内容块统一化：透传顶层素材 / 场景（LLM 当前不生成，留作前向兼容）。
+                # 内容块统一化：透传顶层素材 / 场景 / 练习（LLM 可引用真实 asset_id /
+                # 场景模板，T05 起生效）。
                 materials=raw.materials if isinstance(raw.materials, list) else [],
                 scene=raw.scene if isinstance(raw.scene, dict) else None,
+                practice=raw.practice if isinstance(raw.practice, dict) else None,
             )
         )
     if not sections:
         raise AppErrorException(
             ErrCode.LLM_REQUEST_FAILED,
-            "AI 起草课件失败：模型给出的环节类型都不在注册表内"
-            f"（只能是 {' / '.join(SECTION_KINDS)}）",
+            "AI 起草课件失败：模型没有返回任何环节",
         )
     return sections
 
 
-def _section_match_key(s: "CoursewareSection") -> tuple[str, str]:
-    """匹配键 = (kind, title)：同名同类型的环节视为「同一环节」去对照。"""
-    return (s.kind, s.title)
+def _section_match_key(s: "CoursewareSection") -> tuple[str, ...]:
+    """匹配键 = (title,)。
+
+    courseware-round-3 T03（去 kind·expand）：环节不再按 kind 区分——同名环节即视为
+    「同一环节」去对照，避免去 kind 后所有环节都判成新增。同名多段仍按出现顺序消费
+    （compute_section_diff 内用 used 标记逐个消费）。
+    """
+    return (s.title,)
 
 
 def _segment_signature(s: "CoursewareSection") -> str:
@@ -303,7 +320,11 @@ def _segment_signature(s: "CoursewareSection") -> str:
 
 
 def _same_section_content(a: "CoursewareSection", b: "CoursewareSection") -> bool:
-    """两段字面上的内容是否一致（标题 / 话术 / 多段话术 / payload 都相同才算 unchanged）。"""
+    """两段字面上的内容是否一致（标题 / 话术 / 多段话术 / payload 都相同才算 unchanged）。
+
+    courseware-round-3 T06：练习内容块（practice）也纳入比较，避免「只改了练习配置」
+    被误判为 unchanged。
+    """
     return (
         a.title == b.title
         and a.script == b.script
@@ -311,6 +332,7 @@ def _same_section_content(a: "CoursewareSection", b: "CoursewareSection") -> boo
         and a.payload == b.payload
         and a.materials == b.materials
         and a.scene == b.scene
+        and a.practice == b.practice
     )
 
 

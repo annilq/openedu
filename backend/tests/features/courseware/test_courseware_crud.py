@@ -62,27 +62,36 @@ def _delete_kp(kp_id: uuid.UUID) -> None:
 
 
 def _draft() -> list[service.CoursewareSection]:
-    """起草替身：确定性三环节，覆盖三种 kind。"""
+    """起草替身：确定性三环节（去 kind·expand 后不再带 kind，统一内容块容器）。
+
+    交互演示环节用 payload 里的 SceneSpec kind（ADR-0061 渲染器名 reflection）标识，
+    与已删除的环节 kind 字段是两件事——场景测试据此定位「交互演示」段。
+    """
     return [
         service.CoursewareSection(
-            kind="media_gallery",
             title="生活中的对称",
             script="这些图形有什么共同点？",
             payload={"items": [], "prompt": "先找出共同点"},
         ),
         service.CoursewareSection(
-            kind="interactive_scene",
             title="判断是否轴对称",
             script="沿这条线对折，两边能重合吗？",
             payload={"kind": "reflection", "title": "轴对称"},
         ),
         service.CoursewareSection(
-            kind="practice",
             title="课堂练习",
             script="下面哪些图形是轴对称图形？",
             payload={"qtype": "choice", "count": 3},
         ),
     ]
+
+
+def _interactive(body: dict) -> dict:
+    """定位「交互演示」环节：去 kind 后靠 payload 里的 SceneSpec kind 兜底识别。"""
+    return next(
+        s for s in body["sections"]
+        if (s.get("payload") or {}).get("kind") == "reflection"
+    )
 
 
 @pytest.fixture()
@@ -143,11 +152,8 @@ def test_create_snapshots_knowledge_point_scope(client, teacher, drafted):
     assert body["knowledge_point_id"] == str(teacher["kp"])
     assert body["kp_missing"] is False
     assert body["section_count"] == 3
-    assert [s["kind"] for s in body["sections"]] == [
-        "media_gallery",
-        "interactive_scene",
-        "practice",
-    ]
+    # 去 kind·expand：起草产物不再带 kind（统一内容块），下发为 None。
+    assert all(s["kind"] is None for s in body["sections"])
     # script 是投给学生看的提问卡（决策 15），必须原样下发
     assert body["sections"][0]["script"] == "这些图形有什么共同点？"
     # 起草拿到了知识点元信息（名称 / 学科 / 年级 / 学期）
@@ -244,7 +250,7 @@ def test_list_filters_by_scope_and_hides_other_teachers(client, teacher, drafted
 
 
 def test_replace_sections_overwrites_and_rejects_unknown_kind(client, teacher, drafted):
-    """``PUT /sections`` 整体覆盖写；未知 kind 422（§3.3 不接受自由字符串）。"""
+    """``PUT /sections`` 整体覆盖写；去 kind 后未知 kind 不再 422（kind 退化为可选只读）。"""
     cw = _create(client, teacher["token"], teacher["kp"]).json()
     url = f"/api/v1/courseware/{cw['id']}/sections"
 
@@ -283,18 +289,19 @@ def test_replace_sections_overwrites_and_rejects_unknown_kind(client, teacher, d
     assert r.json()["section_count"] == 1
     assert r.json()["sections"][0]["id"] == "b"
 
-    # 未知 kind：422，且**原内容不动**
+    # 去 kind·expand：未知 kind 不再 422（kind 退化为可选只读兼容字段），PUT 成功且
+    # 原内容不动（kind 存为给定值，演示页按内容渲染不依赖它）。
     bad = client.put(
         url,
         headers=auth_headers(teacher["token"]),
         json={"sections": [{"kind": "video_clip", "title": "视频"}]},
     )
-    assert bad.status_code == 422, bad.text
-    assert bad.json()["code"] == ErrCode.COURSEWARE_BAD_KIND.value
+    assert bad.status_code == 200, bad.text
     after = client.get(
         f"/api/v1/courseware/{cw['id']}", headers=auth_headers(teacher["token"])
     ).json()
     assert after["section_count"] == 1
+    assert after["sections"][0]["kind"] == "video_clip"
 
 
 def test_replace_sections_roundtrips_script_segments(client, teacher, drafted):
@@ -601,7 +608,7 @@ def test_create_does_not_attach_kp_scene_to_interactive_section(client, teacher,
     """
     _set_kp_scenes(teacher["kp"], [_REFLECTION_SCENE])
     body = _create(client, teacher["token"], teacher["kp"]).json()
-    scene_section = next(s for s in body["sections"] if s["kind"] == "interactive_scene")
+    scene_section = _interactive(body)
     assert scene_section["scene"] is None
 
 
@@ -612,7 +619,8 @@ def test_attach_leaves_other_kinds_alone(client, teacher, drafted):
     """
     _set_kp_scenes(teacher["kp"], [_REFLECTION_SCENE])
     body = _create(client, teacher["token"], teacher["kp"]).json()
-    others = [s for s in body["sections"] if s["kind"] != "interactive_scene"]
+    interactive = _interactive(body)
+    others = [s for s in body["sections"] if s is not interactive]
     assert others, "起草应含非交互环节"
     assert all(s["scene"] is None for s in others)
 
@@ -620,7 +628,7 @@ def test_attach_leaves_other_kinds_alone(client, teacher, drafted):
 def test_no_kp_scene_means_no_scene_not_a_fabricated_one(client, teacher, drafted):
     """知识点没配场景 → 环节就是没有场景，**不臆造**一份。"""
     body = _create(client, teacher["token"], teacher["kp"]).json()
-    scene_section = next(s for s in body["sections"] if s["kind"] == "interactive_scene")
+    scene_section = _interactive(body)
     assert scene_section["scene"] is None
 
 
@@ -645,8 +653,9 @@ def test_drafted_payload_scene_is_not_overridden(client, teacher, drafted, monke
         ],
     )
     body = _create(client, teacher["token"], teacher["kp"]).json()
-    assert body["sections"][0]["scene"] is None
-    assert body["sections"][0]["payload"]["title"] == "本题的图"
+    scene_section = _interactive(body)
+    assert scene_section["scene"] is None
+    assert scene_section["payload"]["title"] == "本题的图"
 
 
 def test_teacher_can_clear_scene_without_it_being_refilled(client, teacher, drafted):
