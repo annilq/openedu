@@ -1,8 +1,10 @@
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../exceptions/app_exception.dart';
 import '../theme/app_theme.dart';
+import 'app_toast.dart';
 
 /// 通用错误占位组件：友好的图标 + 居中排版 + 重试按钮。
 ///
@@ -81,6 +83,16 @@ class AppError extends StatelessWidget {
                     color: app.onSurfaceVariant,
                     height: 1.5,
                   ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            ShadButton.outline(
+              size: ShadButtonSize.sm,
+              onPressed: () async {
+                await Clipboard.setData(ClipboardData(text: _titledMessage()));
+                if (context.mounted) AppToast.show(context, '已复制错误信息');
+              },
+              leading: const Icon(LucideIcons.copy, size: 16),
+              child: const Text('复制错误信息'),
             ),
             if (onRetry != null) ...[
               const SizedBox(height: AppSpacing.xl),

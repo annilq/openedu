@@ -27,10 +27,31 @@ class CoursewarePracticeBlock {
         ? rawCount
         : int.tryParse(rawCount?.toString() ?? '') ?? 3;
     return CoursewarePracticeBlock(
-      qtype: json['qtype'] as String? ?? 'choice',
+      qtype: _coerceString(json['qtype'], 'choice'),
       count: count,
-      hints: json['hints'] as String? ?? '',
+      hints: _coerceHints(json['hints']),
     );
+  }
+
+  /// 把任意来源值收敛成非空字符串：旧 AI 起草数据把 [hints] 存成字符串数组，
+  /// 新数据（[toJson]）是单串；两者都要能解析，否则 `as String?` 在 List 上抛
+  /// 「type List is not subtype of string」，单条脏数据会拖垮整份课件列表解析。
+  static String _coerceHints(dynamic raw) {
+    if (raw is String) return raw;
+    if (raw is List) {
+      return raw
+          .where((e) => e != null)
+          .map((e) => e.toString())
+          .join('\n');
+    }
+    return '';
+  }
+
+  /// [qtype] 同理收敛：容错非字符串来源，缺省回落 choice。
+  static String _coerceString(dynamic raw, String fallback) {
+    if (raw is String) return raw;
+    if (raw != null) return raw.toString();
+    return fallback;
   }
 
   Map<String, dynamic> toJson() => {
