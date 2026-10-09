@@ -13,12 +13,12 @@
 
 **Blocked by:** None.
 
-**Status:** todo
+**Status:** done
 
 **验收清单**
-- [ ] 课件中心页有「新增课件」主按钮，点击弹出选知识点 + 标题 + 教学目标表单
-- [ ] 表单必选知识点，确认后建出零环节课件并进入编辑器（不自动跑 AI）
-- [ ] 知识点选择器可检索本人已转正知识点；未选知识点确认按钮禁用
-- [ ] 知识点行的「课件」入口仍可用（次级快捷）
-- [ ] `create_courseware(draft=False)` 后端不调 AI、不抛 LLM 错误、落库零环节
-- [ ] `flutter analyze lib/features/courseware` 0 issue；相关 widget 测试全绿
+- [x] 课件中心页有「新增课件」主按钮，点击弹出选知识点 + 标题 + 教学目标表单
+- [x] 表单必选知识点，确认后建出零环节课件并进入编辑器（不自动跑 AI）
+- [x] 知识点选择器可检索本人已转正知识点；未选知识点确认按钮禁用
+- [x] 知识点行的「课件」入口仍可用（次级快捷）
+- [x] `create_courseware(draft=False)` 后端不调 AI、不抛 LLM 错误、落库零环节
+- [x] `flutter analyze lib/features/courseware` 0 issue；相关 widget 测试全绿
