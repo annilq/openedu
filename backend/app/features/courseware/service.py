@@ -82,9 +82,14 @@ class _DraftSection(SQLModel):
 
     courseware-round-3 T03（去 kind·expand）：环节不再带 kind，统一为内容块容器；
     materials / scene / practice 都是可选顶层字段（T05 起允许引用真实素材 / 场景 id）。
+
+    ``kind`` 保留为可选只读兼容字段：旧草稿仍可能带 kind，解析后透传到落库环节
+    （渲染按内容、不依赖它）；新起草 prompt 已声明不再输出 kind，但模型偶发带出
+    也不该抛 AttributeError。
     """
 
     id: str = ""
+    kind: str | None = None
     title: str = ""
     script: str = ""
     payload: dict = Field(default_factory=dict)
@@ -196,6 +201,56 @@ def _retriever(session: Session, teacher_id: uuid.UUID):
     return VectorKnowledgeRetriever(session, teacher_id)
 
 
+def _candidate_assets(
+    session: Session, *, teacher_id: uuid.UUID, knowledge_point_id: uuid.UUID | None
+) -> list[dict]:
+    """该知识点下教师已上传的素材候选 (id, name)，喂给 LLM 作为真实 asset_id 来源。
+
+    候选只是起草的**可选依据**：查不到 / 知识点不可见一律降级为空列表，不阻塞起草
+    （与 ``_recall_snippets`` 同纪律——把检索失败抛成 500 会让「没传素材」和「服务
+    坏了」混为一谈，正是 ADR-0038 要分开的）。
+    """
+    if knowledge_point_id is None:
+        return []
+    try:
+        from app.features.courseware import asset_service
+
+        resp = asset_service.search_assets(
+            session, teacher_id=teacher_id, knowledge_point_id=knowledge_point_id
+        )
+    except Exception as e:  # noqa: BLE001 — 候选缺失只降级
+        warnings.warn(f"课件起草跳过素材候选：{e}", stacklevel=2)
+        return []
+    return [{"id": a.id, "name": a.name} for a in resp.items]
+
+
+def _candidate_scenes(
+    session: Session, *, teacher_id: uuid.UUID, knowledge_point_id: uuid.UUID | None
+) -> list[dict]:
+    """该知识点已配置的交互讲解模板（kp.scenes，ADR-0073 单一事实源），喂给 LLM 作为
+    真实 scene 模板来源。
+
+    每个元素是 kp.scenes 里的一份场景 dict（含 kind）；候选缺失只降级为空列表。
+    """
+    if knowledge_point_id is None:
+        return []
+    try:
+        kp = require_owned(
+            session=session,
+            owner_id=teacher_id,
+            model=KnowledgePoint,
+            obj_id=knowledge_point_id,
+            code=ErrCode.FORBIDDEN,
+            message="知识点不存在或无权限",
+        )
+    except Exception:  # noqa: BLE001 — 候选缺失只降级
+        return []
+    scenes = getattr(kp, "scenes", None)
+    if not isinstance(scenes, list):
+        return []
+    return [s for s in scenes if isinstance(s, dict)]
+
+
 def draft_sections(
     *,
     session: Session,
@@ -205,6 +260,8 @@ def draft_sections(
     grade: int | None = None,
     semester: str | None = None,
     snippets: list[str] | None = None,
+    knowledge_point_id: uuid.UUID | None = None,
+    objective: str | None = None,
 ) -> list[CoursewareSection]:
     """为一个知识点起草环节序列（ADR-0067 §3.4：AI 起草 + 教师调）。
 
@@ -214,8 +271,13 @@ def draft_sections(
 
     单独成函数、只吃普通参数：测试 monkeypatch 它就完全不打模型。
 
-    ⚠️ 起草结果里**没有**任何合法 kind 的环节时抛错，不返回空列表——空课件是
-    「把没有内容伪装成有内容」。
+    courseware-round-3 T05（AI 补充讲解·三项数据回填）：起草前先查该知识点的真实
+    素材候选（asset_id）与已配置场景模板（kp.scenes），连同教师填的 ``objective``
+    一起喂给 LLM；产出只许引用这些真实 id（编造的在服务端直接剥掉，见
+    ``_sections_from_draft``），实现「引用真实素材 / 场景」而非留空 / 编造。
+
+    ⚠️ 起草结果里没有任何环节时抛错，不返回空列表——空课件是「把没有内容伪装成
+    有内容」（ADR-0066）。
     """
     provider = build_ai_provider(teacher_id=teacher_id, session=session)
     if not getattr(provider, "configured", True):
@@ -224,15 +286,46 @@ def draft_sections(
             "未配置模型，无法起草课件（请在「模型管理」中添加模型并设为默认）",
         )
 
+    asset_candidates = _candidate_assets(
+        session, teacher_id=teacher_id, knowledge_point_id=knowledge_point_id
+    )
+    scene_candidates = _candidate_scenes(
+        session, teacher_id=teacher_id, knowledge_point_id=knowledge_point_id
+    )
+
     prompt = (
         f"知识点：{kp_name}\n"
         f"学科：{subject or '未指定'}\n"
         f"年级：{grade or '未指定'}\n"
         f"学期：{semester or '未指定'}\n"
     )
+    if objective:
+        prompt += (
+            "教学目标（备课依据，起草的讲解与练习应围绕它展开）："
+            f"{objective}\n"
+        )
     if snippets:
         prompt += "该知识点下的教材片段（唯一的内容依据，不要超出它的范围编造）：\n"
         prompt += "\n".join(f"- {s}" for s in snippets)
+    if asset_candidates or scene_candidates:
+        prompt += (
+            "\n教师已配置、你**只能引用**的真实依据（不要编造 id，没有合适的就给"
+            "空数组 / null）：\n"
+        )
+        if asset_candidates:
+            prompt += "可用素材（asset_id）：\n"
+            prompt += "\n".join(
+                f"- {a['id']}（{a['name']}）" for a in asset_candidates
+            )
+            prompt += "\n"
+        if scene_candidates:
+            prompt += (
+                "可用场景模板（把整份模板原样放入 scene，kind 取自下面的 kind）：\n"
+            )
+            prompt += "\n".join(
+                f"- {s.get('kind')}（{s.get('title', '')}）" for s in scene_candidates
+            )
+            prompt += "\n"
     prompt = prompt[:_PROMPT_TEXT_LIMIT]
 
     try:
@@ -246,7 +339,11 @@ def draft_sections(
             ErrCode.LLM_REQUEST_FAILED, f"AI 起草课件失败：{e}"
         ) from e
 
-    return _sections_from_draft(data)
+    return _sections_from_draft(
+        data,
+        allowed_asset_ids={str(a["id"]) for a in asset_candidates},
+        allowed_scene_kinds={s.get("kind") for s in scene_candidates},
+    )
 
 
 async def _collect_draft(provider, prompt: str):
@@ -257,11 +354,18 @@ async def _collect_draft(provider, prompt: str):
     return None
 
 
-def _sections_from_draft(data: object) -> list[CoursewareSection]:
+def _sections_from_draft(
+    data: object,
+    *,
+    allowed_asset_ids: set[str] | None = None,
+    allowed_scene_kinds: set[str | None] | None = None,
+) -> list[CoursewareSection]:
     """模型载荷 → 环节序列；不可用则抛 ``LLM_REQUEST_FAILED``（带实际原因）。
 
-    未知 kind **直接丢弃**（§3.3：不接受自由字符串）——但全丢完等于没有内容，
-    那就如实报错，不落空课件。
+    courseware-round-3 T05（三项数据回填）：模型引用的素材 / 场景必须落在教师真实
+    配置的候选集里——**不在候选集的一律剥掉**（不信任模型输出，杜绝编造 asset_id
+    / 凭空造 SceneSpec）。候选集为空时，任何 materials / scene 引用都被清掉（模型
+    只能给空数组 / null）。
     """
     if not data:
         raise AppErrorException(
@@ -278,6 +382,25 @@ def _sections_from_draft(data: object) -> list[CoursewareSection]:
     for raw in draft.sections:
         # courseware-round-3 T03（去 kind·expand）：环节不再按 kind 过滤 / 丢弃——
         # 只要是模型给出的环节都接受（空课件不伪造的判定改由「完全没有环节」兜底）。
+        # T05：素材 / 场景引用只保留真实候选，编造的剥掉（id 统一按 str 比较，
+        # 兼容模型把 UUID 输出成字符串）。
+        materials = [
+            m
+            for m in (raw.materials if isinstance(raw.materials, list) else [])
+            if isinstance(m, dict)
+            and (allowed_asset_ids is None or str(m.get("asset_id")) in allowed_asset_ids)
+        ]
+        scene = (
+            raw.scene
+            if (
+                isinstance(raw.scene, dict)
+                and (
+                    allowed_scene_kinds is None
+                    or raw.scene.get("kind") in allowed_scene_kinds
+                )
+            )
+            else None
+        )
         sections.append(
             CoursewareSection(
                 id=raw.id or uuid.uuid4().hex[:8],
@@ -285,10 +408,10 @@ def _sections_from_draft(data: object) -> list[CoursewareSection]:
                 title=(raw.title or "")[:128],
                 script=(raw.script or "")[:2000],
                 payload=raw.payload if isinstance(raw.payload, dict) else {},
-                # 内容块统一化：透传顶层素材 / 场景 / 练习（LLM 可引用真实 asset_id /
-                # 场景模板，T05 起生效）。
-                materials=raw.materials if isinstance(raw.materials, list) else [],
-                scene=raw.scene if isinstance(raw.scene, dict) else None,
+                # 内容块统一化：透传顶层素材 / 场景 / 练习（LLM 引用真实 asset_id /
+                # 场景模板，T05 起在服务端收敛为真实候选）。
+                materials=materials,
+                scene=scene,
                 practice=raw.practice if isinstance(raw.practice, dict) else None,
             )
         )
@@ -399,6 +522,8 @@ def redraft_diff(
         subject=row.subject,
         grade=row.grade,
         semester=row.semester,
+        knowledge_point_id=row.knowledge_point_id,
+        objective=row.objective,
         snippets=_recall_snippets(
             session,
             teacher_id=teacher_id,
@@ -552,6 +677,8 @@ def create_courseware(
         subject=kp.subject,
         grade=kp.grade,
         semester=kp.semester,
+        knowledge_point_id=kp.id,
+        objective=req.objective,
         snippets=_recall_snippets(
             session,
             teacher_id=teacher_id,

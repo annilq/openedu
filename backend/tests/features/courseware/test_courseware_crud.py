@@ -23,7 +23,7 @@ from sqlmodel import select
 
 from app.core.db import engine
 from app.core.errors import AppErrorException, ErrCode
-from app.db.models import Courseware, KnowledgePoint, User
+from app.db.models import Courseware, CoursewareAsset, KnowledgePoint, User
 from app.features.courseware import service
 from tests.utils.user import auth_headers, login, register_teacher
 
@@ -691,3 +691,164 @@ def test_teacher_can_clear_scene_without_it_being_refilled(client, teacher, draf
         f"/api/v1/courseware/{cw['id']}", headers=auth_headers(teacher["token"])
     ).json()
     assert body["sections"][0]["scene"] is None
+
+
+# ── T05：AI 补充讲解·三项数据回填（素材 / 场景 / 教学目标真实入 prompt） ──
+
+
+def _seed_asset(teacher_id: uuid.UUID, kp_id: uuid.UUID) -> uuid.UUID:
+    """塞一张绑定到该知识点的真实素材，供起草候选查询（search_assets 按 kp 过滤）。"""
+    with DBSession(engine) as s:
+        asset = CoursewareAsset(
+            teacher_id=teacher_id,
+            knowledge_point_id=kp_id,
+            name="轴对称示例图.png",
+            storage_key=f"{teacher_id}/seed.png",
+            mime="image/png",
+            size_bytes=1234,
+        )
+        s.add(asset)
+        s.commit()
+        s.refresh(asset)
+        return asset.id
+
+
+def test_ai_supplement_references_real_assets_and_scenes_not_fabricated(
+    client, teacher, monkeypatch
+):
+    """T05 三项数据回填：起草前查到的真实素材 / 场景进 prompt，产出只许引用真实 id。
+
+    不打真实模型（monkeypatch ``_collect_draft`` 抓 prompt + 回一份引用了真实 /
+    编造 id 的草稿）；真实 ``draft_sections`` 仍跑——验 prompt 注入（objective +
+    真实 asset_id + 场景 kind）与「编造 id 服务端剥掉」不信任模型输出的纪律。
+    """
+    asset_id = _seed_asset(teacher["id"], teacher["kp"])
+    _set_kp_scenes(teacher["kp"], [_REFLECTION_SCENE])
+
+    captured: dict[str, object] = {}
+
+    async def _fake_collect(provider, prompt):  # noqa: ANN001 — 仅测试桩
+        captured["prompt"] = prompt
+        # 一份混了「真实引用」与「编造引用」的草稿：服务端应当只放行真实的。
+        return {
+            "sections": [
+                {
+                    "id": "",
+                    "title": "生活中的对称",
+                    "script": "这些图形有什么共同点？",
+                    "payload": {},
+                    "materials": [
+                        {"asset_id": str(asset_id), "caption": "对称图形"},
+                        {"asset_id": "fabricated-id-123", "caption": "编造的"},
+                    ],
+                    "scene": {
+                        "kind": "reflection",
+                        "title": "轴对称",
+                        "inputs": [],
+                    },
+                },
+                {
+                    "id": "",
+                    "title": "判断是否轴对称",
+                    "script": "对折重合吗？",
+                    "payload": {},
+                    "scene": {"kind": "made_up_kind", "title": "假的"},  # 编造 → 剥掉
+                },
+                {
+                    "id": "",
+                    "title": "课堂练习",
+                    "script": "练一练",
+                    "payload": {},
+                    "practice": {"qtype": "choice", "count": 3, "hints": ""},
+                },
+            ]
+        }
+
+    monkeypatch.setattr(service, "_collect_draft", _fake_collect)
+    # 绕过「未配模型」闸门：本用例不关心引擎，只关心回填与收敛。
+    monkeypatch.setattr(service, "build_ai_provider", lambda **_k: None)
+
+    objective = "能识别轴对称图形并画出对称轴"
+    r = client.post(
+        "/api/v1/courseware",
+        headers=auth_headers(teacher["token"]),
+        json={"knowledge_point_id": str(teacher["kp"]), "objective": objective},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+
+    # prompt 注入了三项真实依据：教学目标 + 真实素材 id + 已配置场景 kind。
+    prompt = captured["prompt"]
+    assert objective in prompt
+    assert str(asset_id) in prompt
+    assert "reflection" in prompt
+    assert "可用素材（asset_id）" in prompt
+
+    by_title = {s["title"]: s for s in body["sections"]}
+    # 真实素材引用保留，编造的 asset_id 被剥掉（只留 1 个真实素材）。
+    mats = by_title["生活中的对称"]["materials"]
+    assert len(mats) == 1
+    assert mats[0]["asset_id"] == str(asset_id)
+    # 真实场景模板保留。
+    assert by_title["生活中的对称"]["scene"]["kind"] == "reflection"
+    # 编造的场景 kind 被剥成 None。
+    assert by_title["判断是否轴对称"]["scene"] is None
+    # 练习内容块照常透传。
+    assert by_title["课堂练习"]["practice"]["qtype"] == "choice"
+    # 教学目标也落进了课件行（供后续 redraft 透传）。
+    with DBSession(engine) as s:
+        row = s.get(Courseware, uuid.UUID(body["id"]))
+        assert row.objective == objective
+
+
+def test_redraft_passes_objective_and_uses_real_candidates(client, teacher, monkeypatch):
+    """T05：``redraft_diff`` 把课件行的 objective 与知识点真实候选透传给起草。
+
+    空课件 redraft 即「AI 补充讲解」：diff 应全为 added，且 prompt 含 objective。
+    """
+    asset_id = _seed_asset(teacher["id"], teacher["kp"])
+    _set_kp_scenes(teacher["kp"], [_REFLECTION_SCENE])
+
+    # 先建一份零环节空壳（draft=False，不触发 AI）。
+    shell = client.post(
+        "/api/v1/courseware",
+        headers=auth_headers(teacher["token"]),
+        json={
+            "knowledge_point_id": str(teacher["kp"]),
+            "draft": False,
+            "objective": "能画出对称轴",
+        },
+    )
+    assert shell.status_code == 200, shell.text
+    cw_id = shell.json()["id"]
+
+    captured: dict[str, object] = {}
+
+    async def _fake_collect(provider, prompt):  # noqa: ANN001 — 仅测试桩
+        captured["prompt"] = prompt
+        return {
+            "sections": [
+                {
+                    "id": "",
+                    "title": "补充讲解",
+                    "script": "看这张图",
+                    "payload": {},
+                    "materials": [{"asset_id": str(asset_id), "caption": "图"}],
+                }
+            ]
+        }
+
+    monkeypatch.setattr(service, "_collect_draft", _fake_collect)
+    monkeypatch.setattr(service, "build_ai_provider", lambda **_k: None)
+
+    r = client.post(
+        f"/api/v1/courseware/{cw_id}/redraft",
+        headers=auth_headers(teacher["token"]),
+    )
+    assert r.status_code == 200, r.text
+    # 空课件 redraft：diff 全为 added。
+    assert [d["status"] for d in r.json()["diff"]] == ["added"]
+    # 透传了空壳存下的 objective。
+    assert "能画出对称轴" in captured["prompt"]
+    assert str(asset_id) in captured["prompt"]
+
