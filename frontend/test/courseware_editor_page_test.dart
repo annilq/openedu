@@ -650,29 +650,33 @@ void main() {
 
       // 关键：进入页面没有自动请求 AI（createCourseware 调用计数为 0）。
       expect(repo.createCoursewareCalls, 0);
-      // 空态给出下一步：主动发起按钮。
+      // 空态给出下一步：主动发起按钮（建空壳，不触发 AI）。
       expect(find.text('还没有课件'), findsOneWidget);
-      expect(find.text('新增课件信息'), findsOneWidget);
+      expect(find.text('新增课件'), findsOneWidget);
       // 没有环节列表、没有「开始讲课」（无课件不可讲）。
       expect(find.text('开始讲课'), findsNothing);
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('点「新增课件信息」触发 AI 生成并展示课件', (tester) async {
+    testWidgets('点「新增课件」建空壳（不触发 AI），进入空课件态', (tester) async {
       final repo = _FakeRepo(emptyKpCourseware(), listReturnsEmpty: true);
       await _pumpEditor(tester, repo: repo);
       expect(repo.createCoursewareCalls, 0);
 
-      await tester.tap(find.text('新增课件信息'));
-      // 生成中：明确提示，且仍在忙（不会闪过空白）。
+      await tester.tap(find.text('新增课件'));
+      // 创建中：明确提示（建空壳，不调 AI 起草）。
       await tester.pump();
-      expect(find.text('AI 正在生成课件，请稍候…'), findsOneWidget);
+      expect(find.text('正在创建课件…'), findsOneWidget);
 
       await tester.pumpAndSettle();
-      // 生成完成后展示课件内容（这里假仓库返回有环节的课件）。
+      // 建好空壳：一次 createCourseware（draft=false），展示空课件态（不是有环节的课件）。
       expect(repo.createCoursewareCalls, 1);
-      expect(find.text('新增课件信息'), findsNothing);
+      expect(find.text('新增课件'), findsNothing); // 空态按钮已消失
+      expect(find.text('还没有讲解安排'), findsOneWidget);
+      // 空壳不讲课：开始讲课按钮禁用（仍在树中，文本可找到）；用「AI 补充讲解」填充。
       expect(find.text('开始讲课'), findsOneWidget);
+      expect(find.widgetWithText(AppTextAction, 'AI 补充讲解'), findsOneWidget);
+      expect(find.widgetWithText(AppTextAction, 'AI 重新起草'), findsNothing);
       expect(tester.takeException(), isNull);
     });
 
@@ -885,6 +889,56 @@ void main() {
       expect(repo.updateSectionsCalls, 0);
       expect(find.text('环节一'), findsOneWidget);
       expect(find.text('手动加的环节'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('AI 补充讲解（T05 三项数据回填）', () {
+    CoursewareModel emptyShell() => _editorCourseware(const []);
+
+    testWidgets('空课件：AI 行动标签为「AI 补充讲解」，重起草全 added 并写回同一课件',
+        (tester) async {
+      final repo = _FakeRepo(emptyShell());
+      // 空课件 redraft：diff 全为 added（复用 redraft_diff，空课件即补讲解）。
+      repo.redraftDiff = CoursewareRedraftDiffModel(diff: [
+        CoursewareSectionDiffModel(
+          status: CoursewareSectionDiffStatus.added,
+          drafted: _sec('n1', '补充环节一'),
+        ),
+        CoursewareSectionDiffModel(
+          status: CoursewareSectionDiffStatus.added,
+          drafted: _sec('n2', '补充环节二'),
+        ),
+      ]);
+      await _pumpEditor(tester, repo: repo);
+
+      // 空课件态：行动标签自适应为「AI 补充讲解」（非「AI 重新起草」）。
+      expect(find.widgetWithText(AppTextAction, 'AI 补充讲解'), findsOneWidget);
+      expect(find.widgetWithText(AppTextAction, 'AI 重新起草'), findsNothing);
+
+      // 触发 AI 补充讲解（复用 redraft_diff + 逐段接受写回同一课件）。
+      await tester.tap(find.widgetWithText(AppTextAction, 'AI 补充讲解'));
+      await tester.pumpAndSettle();
+      expect(repo.redraftDiffCalls, 1);
+      expect(find.text('重起草预览'), findsOneWidget);
+
+      await tester.tap(find.text('应用所选'));
+      await tester.pumpAndSettle();
+
+      // 写回同一课件：一次 updateSections，合并结果 = 两个 added。
+      expect(repo.updateSectionsCalls, 1);
+      expect(repo.lastUpdated?.map((s) => s.id).toList(), ['n1', 'n2']);
+      // 关键：没有新建 / 删除课件副本。
+      expect(repo.createCoursewareCalls, 0);
+      expect(repo.deleteCoursewareCalls, 0);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('有课件：AI 行动标签为「AI 重新起草」', (tester) async {
+      final repo = _FakeRepo(_editorCourseware([_sec('a', '环节一')]));
+      await _pumpEditor(tester, repo: repo);
+      expect(find.widgetWithText(AppTextAction, 'AI 重新起草'), findsOneWidget);
+      expect(find.widgetWithText(AppTextAction, 'AI 补充讲解'), findsNothing);
       expect(tester.takeException(), isNull);
     });
   });

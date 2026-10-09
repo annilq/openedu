@@ -77,7 +77,7 @@ class _CoursewareEditorPageState extends ConsumerState<CoursewareEditorPage> {
     try {
       final repo = ref.read(coursewareRepositoryProvider);
       // 只查「这个知识点有没有课件」。**不自动建、不自动让 AI 起草**——没有就停在
-      // 空态，由用户点「新增课件信息」主动触发（决策 2 改为显式发起，避免进入即空白等待）。
+      // 空态，由用户点「新增课件」主动建一份空壳（不触发 AI，决策 2 显式发起）。
       final list =
           await repo.listCourseware(knowledgePointId: widget.knowledgePointId);
       if (!mounted) return;
@@ -94,22 +94,24 @@ class _CoursewareEditorPageState extends ConsumerState<CoursewareEditorPage> {
     }
   }
 
-  /// 首次生成（决策 2 的显式发起）：用户点「新增课件信息」才调用，由后端按知识点
-  /// 跑 AI 起草并返回完整课件。期间保持 [_courseware] 为 null + [_busy] 为真，
-  /// 页面显示「AI 正在生成课件」提示，不再是毫无反馈的空白页。
+  /// 首次生成（courseware-round-3 T01 / T05）：用户点「新增课件」才建一份**空壳**
+  /// （draft=false，不触发 AI）。随后教师手动加环节，或点「AI 补充讲解」让 AI 按
+  /// 知识点 + 已填教学目标回填讲解（T05）。期间 [_busy] 为真，页面给「正在创建课件」提示。
   Future<void> _createFirst() async {
     if (_busy) return;
     setState(() => _busy = true);
     try {
       final repo = ref.read(coursewareRepositoryProvider);
       final created = await repo.createCourseware(
-          knowledgePointId: widget.knowledgePointId);
+        knowledgePointId: widget.knowledgePointId,
+        draft: false,
+      );
       if (!mounted) return;
       setState(() => _courseware = created);
-      AppToast.show(context, '已生成课件讲解安排');
+      AppToast.show(context, '已创建空课件，可手动添加环节或用 AI 补充讲解');
     } catch (e) {
       if (!mounted) return;
-      AppToast.show(context, '生成课件失败：$e');
+      AppToast.show(context, '创建课件失败：$e');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -227,7 +229,7 @@ class _CoursewareEditorPageState extends ConsumerState<CoursewareEditorPage> {
   ///
   /// ⚠️ 不走 [AppPushedPage.trailing]：顶栏右侧只有 40 宽槽位、只允许单个图标行动，
   /// 「开始讲课」是带文字的主按钮，放进 40 宽槽会撑爆（实测 45px 右溢出）。它归到
-  /// 备课行的主操作位，与「AI 重新起草」并列。
+  /// 备课行的主操作位，与「AI 补充讲解 / 重新起草」并列。
   void _openPresent() {
     final cw = _courseware;
     if (cw == null) return;
@@ -319,21 +321,22 @@ class _CoursewareEditorPageState extends ConsumerState<CoursewareEditorPage> {
     if (_error != null) {
       return Center(child: AppError(message: _error!, onRetry: _loadOrCreate));
     }
-    // 显式生成中（点「新增课件信息」后）：明确告知 AI 正在起草，替代原无文案空白页。
+    // 显式创建中（点「新增课件」后）：明确告知正在建空壳，替代原无文案空白页。
     if (_busy && _courseware == null) {
       return const Center(
-        child: AppLoading(message: 'AI 正在生成课件，请稍候…'),
+        child: AppLoading(message: '正在创建课件…'),
       );
     }
     final cw = _courseware;
     if (cw == null) {
-      // 还没有课件：停在空态，由用户主动发起（点「新增课件信息」才调 AI 起草）。
+      // 还没有课件：停在空态，由用户主动发起（点「新增课件」建一份空壳，不触发 AI）。
       return Center(
         child: AppEmptyState(
           icon: LucideIcons.sparkles,
           title: '还没有课件',
-          message: '点「新增课件信息」按这个知识点生成一份讲解安排。',
-          actionLabel: '新增课件信息',
+          message: '点「新增课件」按这个知识点建一份空课件，随后手动添加环节或用'
+              '「AI 补充讲解」。',
+          actionLabel: '新增课件',
           onAction: _createFirst,
         ),
       );
@@ -349,7 +352,9 @@ class _CoursewareEditorPageState extends ConsumerState<CoursewareEditorPage> {
             children: [
               Expanded(child: Text('备课', style: text.bodyMedium)),
               AppTextAction(
-                label: _busy ? '处理中…' : 'AI 重新起草',
+                label: _busy
+                    ? '处理中…'
+                    : (cw.isEmpty ? 'AI 补充讲解' : 'AI 重新起草'),
                 onPressed: _busy ? null : _redraft,
               ),
               const SizedBox(width: AppSpacing.sm),
@@ -366,7 +371,7 @@ class _CoursewareEditorPageState extends ConsumerState<CoursewareEditorPage> {
             child: AppEmptyState(
               icon: LucideIcons.sparkles,
               title: '还没有讲解安排',
-              message: '点「AI 重新起草」按这个知识点生成一份环节草案。',
+              message: '点「AI 补充讲解」按这个知识点生成一份环节草案。',
             ),
           )
         else
