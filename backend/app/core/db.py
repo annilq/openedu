@@ -225,6 +225,31 @@ def run_migrations() -> None:
         # ``class_id`` 列补到 ``user`` 表供学生归属班级（删班后仅置空、不删学生）。
         _add_classes(conn, is_sqlite)
 
+        # —— 课件教学目标（courseware-round-3 T01）——
+        # 空壳课件建出时存教师填的教学目标，供后续「AI 补充讲解」（T05）读取。
+        # 仅补列（无索引 / 无 FK）；表未建（偏序迁移，首次启动走 init_db 建表并带新列）时跳过。
+        try:
+            if is_sqlite:
+                cw_cols = [
+                    r[1]
+                    for r in conn.execute(
+                        text("PRAGMA table_info(courseware)")
+                    ).fetchall()
+                ]
+                if "objective" not in cw_cols:
+                    conn.execute(
+                        text("ALTER TABLE courseware ADD COLUMN objective TEXT")
+                    )
+            else:
+                conn.execute(
+                    text(
+                        "ALTER TABLE courseware ADD COLUMN IF NOT EXISTS objective TEXT"
+                    )
+                )
+        except OperationalError:
+            # 偏序迁移：courseware 表还没建（首次启动由 init_db 建表并带新列），跳过即可。
+            pass
+
         # —— 作业派发关系表（ADR-0069）——
         # 新表用 CREATE TABLE IF NOT EXISTS；唯一约束 (task_id, student_id) 必须写进
         # CREATE TABLE（SQLite ALTER 静默忽略 UNIQUE，ADR-0061 §R）。旧单列 task.student_id

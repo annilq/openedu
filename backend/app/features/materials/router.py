@@ -175,6 +175,18 @@ def list_knowledge_points(
     )
 
 
+@router.get("/knowledge-points/all", response_model=KnowledgePointListResp)
+def list_all_knowledge_points(
+    session: SessionDep, user: CurrentTeacher
+) -> KnowledgePointListResp:
+    """课件「新增」选择器：教师名下**全部**知识点（不要求先选范围）。
+
+    课件入口没有「学科/年级/学期」范围上下文，需要一次拿到可点的全集；路径参数
+    段 ``all`` 与既有 ``/knowledge-points/{kp_id}/scenes`` 不冲突（无单段 ``{id}`` 路由）。
+    """
+    return service.list_all_knowledge_points(session, teacher_id=user.id)
+
+
 @router.get("/knowledge-points/scopes", response_model=KnowledgePointScopeListResp)
 def list_knowledge_point_scopes(
     session: SessionDep, user: CurrentTeacher

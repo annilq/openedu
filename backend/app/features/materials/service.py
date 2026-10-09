@@ -643,6 +643,37 @@ def list_knowledge_points(
     )
 
 
+def list_all_knowledge_points(
+    session: Session, *, teacher_id: uuid.UUID
+) -> KnowledgePointListResp:
+    """课件「新增」选择器：教师名下全部知识点（不要求先选范围）。
+
+    与 [list_knowledge_points] 同口径屏蔽 skeleton（历史遗留的预置目录行，见 ADR-0065）。
+    全量无范围维度、无「为什么空」的 notice——课件入口只要一个可点的列表。
+    """
+    rows = [
+        r
+        for r in repo.list_all_knowledge_points(session, teacher_id=teacher_id)
+        if r.source != KP_SOURCE_SKELETON
+    ]
+    items = [
+        KnowledgePointResp(
+            id=r.id,
+            name=r.name,
+            status=r.status,
+            source=r.source,
+            scenes=r.scenes,
+            semester=r.semester,
+        )
+        for r in rows
+    ]
+    return KnowledgePointListResp(
+        items=items,
+        pending_count=sum(1 for i in items if i.status == "pending"),
+        notice="",
+    )
+
+
 def list_knowledge_point_scopes(
     session: Session, *, teacher_id: uuid.UUID
 ) -> KnowledgePointScopeListResp:

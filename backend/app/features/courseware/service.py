@@ -39,6 +39,7 @@ from app.db.models import (
     KnowledgePoint,
     get_datetime_utc,
 )
+from app.db.models.courseware import COURSEWARE_STATUS_DRAFT
 from app.features.courseware import repository as repo
 from app.features.courseware.schemas import (
     CoursewareCreate,
@@ -486,12 +487,16 @@ def get_courseware(
 def create_courseware(
     session: Session, *, teacher_id: uuid.UUID, req: CoursewareCreate
 ) -> CoursewareResp:
-    """新建课件：取知识点 → AI 起草 → 快照落库。
+    """新建课件。
 
     - 知识点行经 ``core.guard`` 取（不存在 / 非本人 → ``COURSEWARE_KP_NOT_FOUND``）；
     - ``kp_name`` / ``subject`` / ``grade`` / ``semester`` **快照**到课件行，展示
       不依赖 join（§3.2）；
-    - 起草失败**不落库**（抛错在写库之前），教师看到的是原因，不是一份空课件。
+    - ``draft=True``（默认）：取知识点 → AI 起草 → 落库；起草失败**不落库**（抛错在
+      写库之前），教师看到的是原因，不是一份空课件。
+    - ``draft=False``（courseware-round-3 T01）：**跳过 AI 起草**，直接按知识点快照
+      建一份**零环节空壳**课件（不调模型、不抛 LLM 错误），``objective`` 落到课件行
+      备用。教师随后手动填环节、或用「AI 补充讲解」补——此刻内容完全自己掌控。
     """
     kp: KnowledgePoint = require_owned(
         session=session,
@@ -501,6 +506,23 @@ def create_courseware(
         code=ErrCode.COURSEWARE_KP_NOT_FOUND,
         message="知识点不存在或无权访问",
     )
+    if not req.draft:
+        # 空壳：不调 AI、不抛 LLM 错误。零环节写成真 SQL NULL（同 _store_sections）。
+        courseware = Courseware(
+            teacher_id=teacher_id,
+            subject=kp.subject,
+            grade=kp.grade,
+            semester=kp.semester,
+            knowledge_point_id=kp.id,
+            kp_name=kp.name,
+            title=req.title or kp.name,
+            status=COURSEWARE_STATUS_DRAFT,
+            objective=req.objective,
+            sections=None,
+        )
+        row = repo.add_courseware(session, courseware=courseware)
+        return _resp(session, teacher_id=teacher_id, courseware=row)
+
     sections = draft_sections(
         session=session,
         teacher_id=teacher_id,
@@ -524,6 +546,7 @@ def create_courseware(
         knowledge_point_id=kp.id,
         kp_name=kp.name,
         title=req.title or kp.name,
+        objective=req.objective,
         sections=_store_sections(sections),
     )
     row = repo.add_courseware(session, courseware=courseware)

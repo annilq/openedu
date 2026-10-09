@@ -79,15 +79,22 @@ class CoursewareResp(SQLModel):
 
 
 class CoursewareCreate(SQLModel):
-    """新建课件：**走 AI 起草**（决策 2 / §3.4）。
+    """新建课件。
 
-    未配模型时返回 LLM_UNAVAILABLE（ADR-0039：无离线 mock、无内置模型目录），
-    不静默产出空课件——空课件等于把「没有内容」伪装成「有内容」（ADR-0066 纪律）。
+    - ``draft=True``（默认）：走 AI 起草（决策 2 / §3.4）。未配模型时返回
+      LLM_UNAVAILABLE（ADR-0039），不静默产出空课件。
+    - ``draft=False``（courseware-round-3 T01）：跳过 AI 起草，只按知识点快照建
+      **零环节空壳**课件（不调模型、不抛 LLM 错误），教师随后手动填/用「AI 补充
+      讲解」补环节。``objective`` 一并落到课件行，供后续 AI 补充读取（T05）。
     """
 
     knowledge_point_id: UUID
-    # 留空则由起草结果取知识点名
+    # 留空则回落知识点名（空壳与 AI 起草都用这条回落）。
     title: str | None = Field(default=None, max_length=128)
+    # courseware-round-3 T01：是否自动 AI 起草。False = 建空壳（不调模型）。
+    draft: bool = True
+    # 教学目标 / 备注（可选）：空壳建出时存教师填的备课依据，AI 补充讲解时读取。
+    objective: str | None = Field(default=None, max_length=2000)
 
 
 class CoursewareUpdate(SQLModel):

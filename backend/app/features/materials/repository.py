@@ -294,6 +294,29 @@ def list_knowledge_points(
     return list(session.exec(stmt).all())
 
 
+def list_all_knowledge_points(
+    session: Session, *, teacher_id: uuid.UUID
+) -> list[KnowledgePoint]:
+    """教师名下**全部**知识点（跨范围），课件「新增」选择器用。
+
+    课件创建需要跨 (学科, 年级, 学期) 选一个知识点，而 ``list_knowledge_points``
+    受范围约束、``/knowledge-points/scopes`` 只是范围清单。课件入口没有「先选范围」
+    的上下文，所以给一个一次返回全量、屏蔽 skeleton 的列表（复用上层 service 的
+    过滤口径，保持 skeleton 仍不出现在选择器中）。
+    """
+    stmt = (
+        select(KnowledgePoint)
+        .where(KnowledgePoint.teacher_id == teacher_id)
+        .order_by(
+            KnowledgePoint.subject,
+            KnowledgePoint.grade,
+            KnowledgePoint.semester,
+            KnowledgePoint.created_at,
+        )
+    )
+    return list(session.exec(stmt).all())
+
+
 def find_knowledge_point(
     session: Session,
     *,
