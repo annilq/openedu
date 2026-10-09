@@ -1,0 +1,18 @@
+# ── 演示录制产物：体积大 / 可由脚本重建，不进版本库 ──
+# raw/   录屏原始素材（.mov，几十~上百 MB）
+# voice/ TTS 配音（由 gen_voice.py 生成）
+# subs/  字幕（由 gen_subs.py 生成）
+# out/   成片（由 gen_subs.py --burn 生成）
+raw/
+voice/
+subs/
+out/
+
+# 由 gen.py 生成的成品文档与打包（二进制，可重建）
+*.docx
+*.zip
+
+# 兜底：漏网的媒体文件
+*.mov
+*.mp4
+*.mp3
