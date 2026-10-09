@@ -2,6 +2,7 @@ import '../models/courseware.dart';
 import '../models/courseware_asset.dart';
 import '../models/courseware_redraft_diff.dart';
 import '../models/courseware_section.dart';
+import '../../../home/domain/repositories/material_repository.dart';
 
 /// 课件仓库（ADR-0067）：素材 + 课件 + 环节序列。
 ///
@@ -37,11 +38,23 @@ abstract class CoursewareRepository {
     String? semester,
   });
 
-  /// 新建课件：**走 AI 起草**（决策 2）。未配模型时后端返 LLM_UNAVAILABLE，
-  /// 由调用方转成「未配置模型」提示（ADR-0039：不静默产出空课件）。
+  /// 教师名下全部知识点（课件「新增」选择器源）。
+  ///
+  /// 复用资料库目录的 `KnowledgePointOption` 形状（id/name/semester/status/source/scenes），
+  /// 由后端 `GET /materials/knowledge-points/all` 一次返回跨范围的全集，不要求先选范围。
+  /// 课件入口没有「学科/年级/学期」上下文，所以只需一个可点的列表。
+  Future<List<KnowledgePointOption>> listKnowledgePoints();
+
+  /// 新建课件。
+  ///
+  /// - [draft]=true（默认）：走 AI 起草（决策 2），未配模型时后端返 LLM_UNAVAILABLE。
+  /// - [draft]=false（courseware-round-3 T01）：**跳过 AI 起草**，建一份零环节空壳
+  ///   （不调模型、不抛 LLM 错误）；[objective] 一并落到课件行，供后续「AI 补充讲解」读取。
   Future<CoursewareModel> createCourseware({
     required String knowledgePointId,
     String? title,
+    String? objective,
+    bool draft = true,
   });
 
   /// 最近一份课件（「最近课件」回执用，§3.8 的强制补偿项）。

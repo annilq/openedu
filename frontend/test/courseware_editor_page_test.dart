@@ -14,6 +14,7 @@ import 'package:kids_learn/features/courseware/domain/models/courseware_redraft_
 import 'package:kids_learn/features/courseware/domain/models/courseware_section.dart';
 import 'package:kids_learn/features/courseware/domain/models/courseware_section_kind.dart';
 import 'package:kids_learn/features/courseware/domain/repositories/courseware_repository.dart';
+import 'package:kids_learn/features/home/domain/repositories/material_repository.dart';
 import 'package:kids_learn/features/courseware/presentation/pages/courseware_editor_page.dart';
 import 'package:kids_learn/features/courseware/presentation/widgets/editor_section_list.dart'
     show reorderCoursewareSections;
@@ -94,12 +95,18 @@ class _FakeRepo extends CoursewareRepository {
 
   @override
   Future<CoursewareModel> createCourseware(
-          {required String knowledgePointId, String? title}) async {
+          {required String knowledgePointId,
+          String? title,
+          String? objective,
+          bool draft = true}) async {
     createCoursewareCalls++;
     // 人为延迟，让「生成中」提示可被 widget 测试稳定观测（生产端是真 AI 起草，本就慢）。
     await Future.delayed(const Duration(milliseconds: 50));
     return _courseware;
   }
+
+  @override
+  Future<List<KnowledgePointOption>> listKnowledgePoints() async => const [];
 
   @override
   Future<CoursewareModel?> getRecentCourseware() async => null;

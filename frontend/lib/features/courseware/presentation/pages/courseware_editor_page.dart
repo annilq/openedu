@@ -19,6 +19,7 @@ import '../widgets/editor_section_list.dart';
 import '../widgets/courseware_redraft_dialog.dart';
 import 'courseware_present_page.dart';
 import 'courseware_section_edit_dialog.dart';
+import 'courseware_info_edit_dialog.dart';
 
 /// 课件编辑器（ADR-0067 §6 切片 4 / §3.8）：备课主视图。
 ///
@@ -35,6 +36,7 @@ class CoursewareEditorPage extends ConsumerStatefulWidget {
     required this.subject,
     required this.grade,
     required this.semester,
+    this.initialCourseware,
   });
 
   final String knowledgePointId;
@@ -42,6 +44,10 @@ class CoursewareEditorPage extends ConsumerStatefulWidget {
   final String subject;
   final int grade;
   final String semester;
+
+  /// 预载课件（courseware-round-3 T01）：由「新增课件」表单建好空壳后直接带上，
+  /// 跳过 `_loadOrCreate` 的按 KP 查询——既省一次往返，也避免同 KP 多课件时取到旧份。
+  final CoursewareModel? initialCourseware;
 
   @override
   ConsumerState<CoursewareEditorPage> createState() =>
@@ -57,6 +63,12 @@ class _CoursewareEditorPageState extends ConsumerState<CoursewareEditorPage> {
   @override
   void initState() {
     super.initState();
+    // 预载课件：直接进入已建好的空壳，无需再按 KP 查一遭。
+    if (widget.initialCourseware != null) {
+      _courseware = widget.initialCourseware;
+      _loading = false;
+      return;
+    }
     Future.microtask(_loadOrCreate);
   }
 
@@ -105,8 +117,7 @@ class _CoursewareEditorPageState extends ConsumerState<CoursewareEditorPage> {
 
   /// 重新起草（T07）：取新草稿相对当前稿的逐段 diff，教师逐段选择「用新版 / 留旧版」
   /// 后，把合并结果经 [updateSections] 写回**同一课件**——不新建副本（不再先建后删）。
-  Future<void> _redraft() async {
-    if (_busy || _courseware == null) return;
+  Future<void> _redraft() async {    if (_busy || _courseware == null) return;
     setState(() => _busy = true);
     try {
       final repo = ref.read(coursewareRepositoryProvider);
@@ -121,6 +132,29 @@ class _CoursewareEditorPageState extends ConsumerState<CoursewareEditorPage> {
     } catch (e) {
       if (!mounted) return;
       AppToast.show(context, '重新起草失败：$e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// 编辑课件信息（courseware-round-3 T02）：标题 / 状态。复用已有
+  /// `PATCH /courses/{id}`（[updateCourseware]），无需新端点。
+  Future<void> _editInfo() async {
+    final cw = _courseware;
+    if (cw == null || _busy) return;
+    final updated = await showCoursewareInfoEditDialog(context, cw);
+    if (updated == null || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      final saved = await ref
+          .read(coursewareRepositoryProvider)
+          .updateCourseware(cw.id, title: updated.title, status: updated.status);
+      if (!mounted) return;
+      setState(() => _courseware = saved);
+      AppToast.show(context, '已更新课件信息');
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.show(context, '保存课件信息失败：$e');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -205,6 +239,79 @@ class _CoursewareEditorPageState extends ConsumerState<CoursewareEditorPage> {
     );
   }
 
+  /// 课件信息卡片（courseware-round-3 T02）：标题 / 范围 / 状态 / 教学目标，
+  /// 右上角「编辑」打开信息编辑弹窗（复用已有 `PATCH /{id}`）。
+  Widget _infoCard(CoursewareModel cw, AppText text) {
+    final app = AppTheme.colorsOf(context);
+    final scope = [
+      if (cw.subject != null && cw.subject!.isNotEmpty) cw.subject!,
+      if (cw.grade != null) '${cw.grade}年级',
+      if (cw.semester != null && cw.semester!.isNotEmpty) cw.semester!,
+    ].join(' · ');
+    final scopeLabel = scope.isEmpty ? cw.kpName : '$scope · ${cw.kpName}';
+    return Container(
+      margin: const EdgeInsets.fromLTRB(
+          AppSpacing.md, AppSpacing.md, AppSpacing.md, 0),
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: app.surfaceRaised,
+        border: Border.all(color: app.outline, width: AppElevation.borderWidth),
+        borderRadius: BorderRadius.circular(AppRadius.card),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  cw.displayTitle,
+                  style: text.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                ),
+              ),
+              AppTextAction(label: '编辑', onPressed: _busy ? null : _editInfo),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(scopeLabel,
+              style: text.bodySmall?.copyWith(color: app.onSurfaceVariant)),
+          const SizedBox(height: AppSpacing.xs),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.sm, vertical: 2),
+                decoration: BoxDecoration(
+                  color: cw.isReady ? app.primaryContainer : app.surfaceSunken,
+                  borderRadius: BorderRadius.circular(AppRadius.chip),
+                ),
+                child: Text(
+                  cw.isReady ? '可上讲台' : '草稿',
+                  style: text.labelSmall?.copyWith(
+                    color: cw.isReady ? app.onPrimaryContainer : app.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              if (cw.objective != null && cw.objective!.isNotEmpty) ...[
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Text(
+                    '目标：${cw.objective}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: text.bodySmall
+                        ?.copyWith(color: app.onSurfaceVariant),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildBody(AppText text) {
     if (_loading) {
       return const Center(child: AppLoading());
@@ -235,6 +342,7 @@ class _CoursewareEditorPageState extends ConsumerState<CoursewareEditorPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        _infoCard(cw, text),
         Padding(
           padding: const EdgeInsets.all(AppSpacing.md),
           child: Row(

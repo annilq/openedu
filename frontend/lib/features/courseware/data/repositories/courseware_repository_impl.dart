@@ -5,6 +5,7 @@ import '../../domain/models/courseware_asset.dart';
 import '../../domain/models/courseware_redraft_diff.dart';
 import '../../domain/models/courseware_section.dart';
 import '../../domain/repositories/courseware_repository.dart';
+import '../../../home/domain/repositories/material_repository.dart';
 import '../../../../shared/data/remote/network_service.dart';
 
 /// 课件仓库实现：端点不包外层（[NetworkService] 返回 FastAPI 原响应体）。
@@ -77,12 +78,28 @@ class CoursewareRepositoryImpl implements CoursewareRepository {
   Future<CoursewareModel> createCourseware({
     required String knowledgePointId,
     String? title,
+    String? objective,
+    bool draft = true,
   }) async {
     final data = await _network.post('/courseware', body: {
       'knowledge_point_id': knowledgePointId,
       if (title != null) 'title': title,
+      if (objective != null) 'objective': objective,
+      'draft': draft,
     });
     return CoursewareModel.fromJson(Map<String, dynamic>.from(data as Map));
+  }
+
+  @override
+  Future<List<KnowledgePointOption>> listKnowledgePoints() async {
+    final data =
+        await _network.get('/materials/knowledge-points/all');
+    final raw = data as Map<String, dynamic>?;
+    final items = (raw?['items'] as List? ?? const []);
+    return [
+      for (final e in items)
+        KnowledgePointOption.fromJson(Map<String, dynamic>.from(e as Map)),
+    ];
   }
 
   @override
@@ -146,6 +163,8 @@ class CoursewareRepositoryImpl implements CoursewareRepository {
     String semester = '',
   }) async {
     // 复用资料库目录端点：每个知识点条目已带 scenes（后端 KnowledgePointResp.scenes）。
+    // 后端返回 KnowledgePointListResp（{items:[...]}，非裸 List）——必须拆 items，否则
+    // `data as List?` 对 Map 抛 CastError，被调用方 catch 成「读取知识点场景失败」。
     final data = await _network.get(
       '/materials/knowledge-points',
       query: {
@@ -154,7 +173,8 @@ class CoursewareRepositoryImpl implements CoursewareRepository {
         if (semester.isNotEmpty) 'semester': semester,
       },
     );
-    final items = (data as List? ?? const []);
+    final raw = data as Map<String, dynamic>?;
+    final items = (raw?['items'] as List? ?? const []);
     for (final e in items) {
       final m = Map<String, dynamic>.from(e as Map);
       if (m['id'] == kpId) {

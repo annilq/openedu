@@ -9,10 +9,12 @@ import '../../../../shared/widgets/app_empty_state.dart';
 import '../../../../shared/widgets/app_error.dart';
 import '../../../../shared/widgets/app_loading.dart';
 import '../../../../shared/widgets/app_actions.dart';
+import '../../../../shared/widgets/app_buttons.dart';
 import '../../domain/models/courseware.dart';
 import '../../providers/courseware_provider.dart';
 import '../pages/courseware_editor_page.dart';
 import '../pages/courseware_present_page.dart';
+import '../widgets/courseware_create_sheet.dart';
 import 'package:kids_learn/features/home/presentation/widgets/teacher/courseware_recent_bar.dart';
 
 /// 课件中心（方案A：侧栏「课件」一级入口，ADR-0070 之外的新增规划）。
@@ -38,6 +40,26 @@ class CoursewareCenterScreen extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const CoursewareRecentBar(),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.md, AppSpacing.sm, AppSpacing.md, AppSpacing.xs),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '课件',
+                  style: AppTheme.textOf(context).titleLarge,
+                ),
+              ),
+              AppPrimaryButton(
+                label: '新增课件',
+                fullWidth: false,
+                height: AppControl.heightSmOf(context),
+                onPressed: () => _addCourseware(context, ref),
+              ),
+            ],
+          ),
+        ),
         Expanded(
           child: list.when(
             loading: () => const Center(child: AppLoading(message: '加载课件列表…')),
@@ -51,10 +73,12 @@ class CoursewareCenterScreen extends ConsumerWidget {
               if (items.isEmpty) {
                 return Center(
                   child: AppEmptyState(
-                    icon: LucideIcons.bookOpen,
+                    icon: LucideIcons.plusCircle,
                     title: '还没有课件',
-                    message: '课件按知识点组织：去「资料库」选一个知识点，点它的'
-                        '「课件」按钮即可备课、讲课。',
+                    message: '点右上角「新增课件」，选一个知识点就能建一份空课件，'
+                        '随后手动添加环节或用「AI 补充讲解」。',
+                    actionLabel: '新增课件',
+                    onAction: () => _addCourseware(context, ref),
                   ),
                 );
               }
@@ -69,6 +93,27 @@ class CoursewareCenterScreen extends ConsumerWidget {
           ),
         ),
       ],
+    );
+  }
+
+  /// 新增课件：弹表单建空壳（不触发 AI），建好后直接打开编辑器。
+  Future<void> _addCourseware(BuildContext context, WidgetRef ref) async {
+    final created = await showCoursewareCreateSheet(context, ref);
+    if (created == null || !context.mounted) return;
+    ref.invalidate(coursewareListProvider(_allQuery));
+    if (!context.mounted) return;
+    Navigator.push(
+      context,
+      CupertinoPageRoute<void>(
+        builder: (_) => CoursewareEditorPage(
+          knowledgePointId: created.knowledgePointId ?? '',
+          kpName: created.kpName,
+          subject: created.subject ?? '',
+          grade: created.grade ?? 0,
+          semester: created.semester ?? '',
+          initialCourseware: created,
+        ),
+      ),
     );
   }
 }
