@@ -34,7 +34,6 @@ from app.core.errors import AppErrorException, ErrCode
 from app.core.guard import require_owned
 from app.db.models import (
     COURSEWARE_STATUSES,
-    SECTION_KINDS,
     Courseware,
     KnowledgePoint,
     get_datetime_utc,
@@ -80,16 +79,11 @@ _DRAFT_SYSTEM = (
 class _DraftSection(SQLModel):
     """模型产出的单个环节（输出契约，字段宽松——校验与收敛在 service 层）。
 
-    courseware-round-3 T03（去 kind·expand）：环节不再带 kind，统一为内容块容器；
+    courseware-round-3 T07（去 kind·contract）：环节统一为内容块容器，不再带 kind；
     materials / scene / practice 都是可选顶层字段（T05 起允许引用真实素材 / 场景 id）。
-
-    ``kind`` 保留为可选只读兼容字段：旧草稿仍可能带 kind，解析后透传到落库环节
-    （渲染按内容、不依赖它）；新起草 prompt 已声明不再输出 kind，但模型偶发带出
-    也不该抛 AttributeError。
     """
 
     id: str = ""
-    kind: str | None = None
     title: str = ""
     script: str = ""
     payload: dict = Field(default_factory=dict)
@@ -108,21 +102,6 @@ class _CoursewareDraft(SQLModel):
 # ── 环节校验 ────────────────────────────────────────────────────────────
 
 
-def validate_section_kinds(sections: list[CoursewareSection]) -> None:
-    """环节 kind 校验（courseware-round-3 T03·去 kind·expand 后**不再拦截**）。
-
-    旧设计里 kind 是必填注册表字段，未知 / 空 kind 直接 422（ADR-0067 §3.3）。去
-    kind 后环节是统一的「内容块容器」，kind 退化为可选只读的旧数据兼容字段——空 /
-    未知 kind 一律放行，仅在遇到旧数据里的未知 kind 时打 warning 便于排查，绝不 422
-    （删 kind 字段与枚举归 T07 contract）。渲染 / 编辑都「按填了什么」，不依赖 kind。
-    """
-    for s in sections:
-        if s.kind and s.kind not in SECTION_KINDS:
-            warnings.warn(
-                f"课件环节含未登记 kind（兼容只读，不拦截）：{s.kind}", stacklevel=2
-            )
-
-
 def _store_sections(sections: list[CoursewareSection]) -> list[dict] | None:
     """环节序列 → 落库形态。
 
@@ -138,7 +117,6 @@ def _store_sections(sections: list[CoursewareSection]) -> list[dict] | None:
 def _section_to_dict(s: CoursewareSection) -> dict:
     return {
         "id": s.id or uuid.uuid4().hex[:8],
-        "kind": s.kind,
         "title": s.title,
         "script": s.script,
         # T02：话术多段化——整列覆盖写时把段列表一并落库（不丢字段）。
@@ -147,7 +125,7 @@ def _section_to_dict(s: CoursewareSection) -> dict:
             for seg in (s.script_segments or [])
         ],
         "payload": s.payload or {},
-        # 内容块统一化：素材 / 场景与 kind 解耦的顶层字段（旧数据这两键缺失，落库
+        # 内容块统一化：素材 / 场景是顶层字段（旧数据这两键缺失，落库
         # 为缺省值，前端回退 payload 内嵌；新数据优先走顶层字段）。
         "materials": s.materials or [],
         "scene": s.scene,
@@ -404,7 +382,6 @@ def _sections_from_draft(
         sections.append(
             CoursewareSection(
                 id=raw.id or uuid.uuid4().hex[:8],
-                kind=raw.kind if isinstance(raw.kind, str) and raw.kind else None,
                 title=(raw.title or "")[:128],
                 script=(raw.script or "")[:2000],
                 payload=raw.payload if isinstance(raw.payload, dict) else {},
@@ -465,7 +442,7 @@ def compute_section_diff(
 ) -> list[SectionDiffItem]:
     """对照当前稿与新草稿，产出逐段 diff（T07）。
 
-    匹配以 (kind, title) 为键、按出现顺序消费（允许同名多段）：
+    匹配以 (title,) 为键、按出现顺序消费（允许同名多段）：
 
     - 草稿有、当前有同键 → ``modified``（内容不同）/ ``unchanged``（内容相同）；
     - 草稿有、当前没有 → ``added``；
@@ -738,13 +715,12 @@ def replace_sections(
 ) -> CoursewareResp:
     """整体覆盖写环节序列（排序 / 增删改都在前端完成，后端只存结果）。
 
-    kind 过注册表校验（§3.3），空列表落真 SQL NULL。
+    环节统一为内容块容器（T07 起无 kind 字段）；空列表落真 SQL NULL。
     """
     row = repo.get_owned_courseware(
         session, teacher_id=teacher_id, courseware_id=courseware_id
     )
     sections = _fill_ids(list(req.sections or []))
-    validate_section_kinds(sections)
     row.sections = _store_sections(sections)
     row.updated_at = get_datetime_utc()
     row = repo.save_courseware(session, courseware=row)

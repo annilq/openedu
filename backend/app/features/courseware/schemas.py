@@ -3,19 +3,17 @@
 四份契约之一：前后端逐字段对齐的 REST JSON。改这里 = 改契约，必须同步
 ``frontend/lib/features/courseware/domain/models/*.dart``。
 
-环节（section）的统一形状：``{id, kind, title, script, payload}``。
+环节（section）的统一形状：``{id, title, script, payload, materials, scene, practice}``。
 
-- ``kind`` 只取注册表常量（SECTION_KINDS），**不接受自由字符串**。
 - ``script`` 是教师话术（「这些图形有什么共同点？」）。按决策 15，它**当提问卡
   直接投给学生看**，不折叠、不做「仅教师可见」——投影时教师屏 = 学生所见。
-- ``payload`` 按 kind 释义，schema 层**不做多态校验**（那是 kind 各自的事）：
-  - ``media_gallery``: ``{items: [{asset_id, caption}], }``
-  - ``interactive_scene``: **直接嵌一份 ADR-0061 的 SceneSpec**（原样透传）
-  - ``practice``: ``{qtype, count}``
-- ``materials`` / ``scene`` 是与 kind **解耦**的顶层可选字段（环节内容块统一化）：
-  任何 kind 的环节都能挂素材（``[{asset_id, caption}]``）与关联知识点场景
-  （ADR-0061 SceneSpec）。旧 AI 起草数据仍走 ``payload`` 内嵌（items / 整份
-  SceneSpec），由前端回退读取；新数据优先走顶层字段。
+- ``payload`` 是旧 AI 起草数据的兜底容器（``{items: [...]}` / 内嵌 SceneSpec），
+  schema 层不做多态校验——渲染交给各自组件（ADR-0061）。
+- ``materials`` / ``scene`` / ``practice`` 是顶层可选内容块（环节内容块统一化，
+  courseware-round-3 T07 起为唯一事实）：任何环节都能挂素材（``[{asset_id,
+  caption}]``）、关联知识点场景（ADR-0061 SceneSpec）、或课堂练习（``{qtype,
+  count, hints}``）。旧 AI 起草数据走 ``payload`` 内嵌，由前端回退读取；新数据
+  优先走顶层字段。
 """
 
 from datetime import datetime
@@ -40,10 +38,6 @@ class CoursewareSection(SQLModel):
 
     # 空则由后端生成（新建时前端不必预先发号）；同份课件内唯一。
     id: str = Field(default="", max_length=40)
-    # courseware-round-3 T03（去 kind·expand）：环节不再按 kind 类型化，改为「内容块
-    # 统一渲染」——kind 退化为**可选只读**的旧数据兼容字段。新数据可不带 kind；空 /
-    # 未知 kind 都不再 422（删 kind 字段与枚举归 T07 contract）。
-    kind: str | None = Field(default=None, max_length=32)
     title: str = Field(default="", max_length=128)
     # 教师话术 / 提问卡文案（决策 15）。首轮单串legacy仍保留：T02 之后新数据走
     # ``script_segments``，旧单串课件靠它向下兼容（见 domain 的 displaySegments 回退）。

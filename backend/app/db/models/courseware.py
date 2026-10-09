@@ -33,19 +33,6 @@ COURSEWARE_STATUSES: tuple[str, ...] = (
     COURSEWARE_STATUS_READY,
 )
 
-# ── 环节 kind 注册表（ADR-0067 §3.3）─────────────────────────────────────
-# ⚠️ 这是**环节类型**，与 ADR-0061 的 SceneSpec kind（渲染器名 reflection /
-# bar_chart / …）是两层。``interactive_scene`` 这个字符串在两层各出现一次、
-# 语义不同，**两套注册表各自登记、各自契约测试，禁止互相映射复用**。
-SECTION_KIND_MEDIA_GALLERY = "media_gallery"  # 生活素材 / 欣赏（环节 1、3）
-SECTION_KIND_INTERACTIVE_SCENE = "interactive_scene"  # 交互判定（环节 2）
-SECTION_KIND_PRACTICE = "practice"  # 课堂练习（环节 4）
-SECTION_KINDS: tuple[str, ...] = (
-    SECTION_KIND_MEDIA_GALLERY,
-    SECTION_KIND_INTERACTIVE_SCENE,
-    SECTION_KIND_PRACTICE,
-)
-
 # ── 课件素材允许的 MIME（ADR-0067 §3.5：首版只做图片）─────────────────────
 # 与资料（Material）分开：材料是要切分 + 向量化的教材（parser 只吃
 # .pdf/.docx/.txt/.md），素材是要原样显示的图，不进向量库。

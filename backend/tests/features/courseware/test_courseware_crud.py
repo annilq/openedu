@@ -1,4 +1,4 @@
-"""课件端点（ADR-0067 切片 3）：快照 / 越权 / kind 注册表 / 孤儿课件 / 状态不阻塞。
+"""课件端点（ADR-0067 切片 3）：快照 / 越权 / 环节内容块容器 / 孤儿课件 / 状态不阻塞。
 
 全部打在 REST 端点上验（ADR-0061 §U.1 教训：只测 service 会漏掉响应里根本没有
 的 key）。起草函数一律 monkeypatch 掉——本套件**不打真实模型**。
@@ -7,13 +7,14 @@
 1. 建课件把知识点的范围与名字**快照**进课件行（展示不 join）；
 2. 未配模型 → ``LLM_UNAVAILABLE`` 且**不落库**（ADR-0039 / ADR-0066 不伪造）；
 3. 列表按范围过滤 + 别人的课件读不到（归属只经 ``core.guard``）；
-4. ``PUT /sections`` 整体覆盖写；未知 kind 422；清空落真 SQL NULL；
+4. ``PUT /sections`` 整体覆盖写；旧 kind 字段被忽略（不回显）；清空落真 SQL NULL；
 5. 知识点被删后课件**存活**且 ``kp_missing=True``（§4.1）；
 6. draft / ready 都不阻塞任何读操作（§3.2）。
 """
 
 from __future__ import annotations
 
+import json
 import uuid
 
 import pytest
@@ -62,10 +63,10 @@ def _delete_kp(kp_id: uuid.UUID) -> None:
 
 
 def _draft() -> list[service.CoursewareSection]:
-    """起草替身：确定性三环节（去 kind·expand 后不再带 kind，统一内容块容器）。
+    """起草替身：确定性三环节（T07 去 kind 后统一内容块容器，不再带 kind）。
 
     交互演示环节用 payload 里的 SceneSpec kind（ADR-0061 渲染器名 reflection）标识，
-    与已删除的环节 kind 字段是两件事——场景测试据此定位「交互演示」段。
+    场景测试据此定位「交互演示」段。
     """
     return [
         service.CoursewareSection(
@@ -152,8 +153,8 @@ def test_create_snapshots_knowledge_point_scope(client, teacher, drafted):
     assert body["knowledge_point_id"] == str(teacher["kp"])
     assert body["kp_missing"] is False
     assert body["section_count"] == 3
-    # 去 kind·expand：起草产物不再带 kind（统一内容块），下发为 None。
-    assert all(s["kind"] is None for s in body["sections"])
+    # T07 去 kind·contract：响应里不再含有 kind 键（旧数据读取时被忽略，不回显）。
+    assert all("kind" not in s for s in body["sections"])
     # script 是投给学生看的提问卡（决策 15），必须原样下发
     assert body["sections"][0]["script"] == "这些图形有什么共同点？"
     # 起草拿到了知识点元信息（名称 / 学科 / 年级 / 学期）
@@ -249,8 +250,8 @@ def test_list_filters_by_scope_and_hides_other_teachers(client, teacher, drafted
     assert denied.json()["code"] == ErrCode.COURSEWARE_NOT_FOUND.value
 
 
-def test_replace_sections_overwrites_and_rejects_unknown_kind(client, teacher, drafted):
-    """``PUT /sections`` 整体覆盖写；去 kind 后未知 kind 不再 422（kind 退化为可选只读）。"""
+def test_replace_sections_ignores_legacy_kind_field(client, teacher, drafted):
+    """``PUT /sections`` 整体覆盖写；T07 后环节无 kind 字段，旧 kind 输入被忽略且不回显。"""
     cw = _create(client, teacher["token"], teacher["kp"]).json()
     url = f"/api/v1/courseware/{cw['id']}/sections"
 
@@ -258,14 +259,12 @@ def test_replace_sections_overwrites_and_rejects_unknown_kind(client, teacher, d
         "sections": [
             {
                 "id": "a",
-                "kind": "practice",
                 "title": "练习",
                 "script": "这几题你会吗？",
                 "payload": {"qtype": "choice", "count": 2},
             },
             {
                 "id": "b",
-                "kind": "interactive_scene",
                 "title": "判定",
                 "script": "拖动对称轴试试",
                 "payload": {"kind": "reflection"},
@@ -277,7 +276,7 @@ def test_replace_sections_overwrites_and_rejects_unknown_kind(client, teacher, d
     body = r.json()
     assert body["section_count"] == 2
     assert [s["id"] for s in body["sections"]] == ["a", "b"]
-    assert [s["kind"] for s in body["sections"]] == ["practice", "interactive_scene"]
+    assert all("kind" not in s for s in body["sections"])
 
     # 覆盖写：再提交一份只留最后一个环节
     r = client.put(
@@ -289,19 +288,18 @@ def test_replace_sections_overwrites_and_rejects_unknown_kind(client, teacher, d
     assert r.json()["section_count"] == 1
     assert r.json()["sections"][0]["id"] == "b"
 
-    # 去 kind·expand：未知 kind 不再 422（kind 退化为可选只读兼容字段），PUT 成功且
-    # 原内容不动（kind 存为给定值，演示页按内容渲染不依赖它）。
+    # T07 去 kind·contract：环节无 kind 字段，旧 kind 输入被忽略、PUT 成功且原内容不动。
     bad = client.put(
         url,
         headers=auth_headers(teacher["token"]),
-        json={"sections": [{"kind": "video_clip", "title": "视频"}]},
+        json={"sections": [{"title": "视频"}]},
     )
     assert bad.status_code == 200, bad.text
     after = client.get(
         f"/api/v1/courseware/{cw['id']}", headers=auth_headers(teacher["token"])
     ).json()
     assert after["section_count"] == 1
-    assert after["sections"][0]["kind"] == "video_clip"
+    assert "kind" not in after["sections"][0]
 
 
 def test_replace_sections_roundtrips_script_segments(client, teacher, drafted):
@@ -312,7 +310,6 @@ def test_replace_sections_roundtrips_script_segments(client, teacher, drafted):
         "sections": [
             {
                 "id": "a",
-                "kind": "media_gallery",
                 "title": "观察",
                 "script": "这些图形有什么共同点？",
                 "script_segments": [
@@ -357,6 +354,44 @@ def test_clearing_sections_writes_sql_null(client, teacher, drafted):
     assert got[0] == "null"
 
 
+def test_legacy_kind_in_stored_sections_is_ignored(client, teacher, drafted):
+    """T07 回归：历史课件 JSON 里带 kind 键仍能读取并演示（kind 被忽略，不破坏数据）。"""
+    cw = _create(client, teacher["token"], teacher["kp"]).json()
+    cw_id = uuid.UUID(cw["id"])
+    # 直接往库里写一份带 legacy kind 的环节 JSON（模拟 T07 之前的老数据）。
+    with DBSession(engine) as s:
+        s.exec(
+            text("UPDATE courseware SET sections = :secs WHERE id = :cid"),
+            params={
+                "secs": json.dumps(
+                    [
+                        {
+                            "id": "old1",
+                            "kind": "media_gallery",
+                            "title": "老环节",
+                            "script": "老话术",
+                            "materials": [],
+                        }
+                    ]
+                ),
+                "cid": cw_id.hex,
+            },
+        )
+        s.commit()
+
+    got = client.get(
+        f"/api/v1/courseware/{cw['id']}", headers=auth_headers(teacher["token"])
+    )
+    assert got.status_code == 200, got.text
+    body = got.json()
+    assert body["section_count"] == 1
+    sec = body["sections"][0]
+    # kind 键被忽略、不回显；其余内容照常读取。
+    assert "kind" not in sec
+    assert sec["title"] == "老环节"
+    assert sec["script"] == "老话术"
+
+
 def test_courseware_survives_knowledge_point_deletion(client, teacher, drafted):
     """知识点被 ADR-0064 清理后课件**存活**，``kp_missing=True``（§4.1）。"""
     cw = _create(client, teacher["token"], teacher["kp"]).json()
@@ -398,7 +433,7 @@ def test_status_never_blocks_reads(client, teacher, drafted):
             client.put(
                 f"{url}/sections",
                 headers=auth_headers(teacher["token"]),
-                json={"sections": [{"kind": "practice", "title": "练", "script": "?"}]},
+                json={"sections": [{"title": "练", "script": "?"}]},
             ).status_code
             == 200
         )
@@ -467,19 +502,16 @@ def _current_draft_shape():
     """与 ``_draft()`` 完全一致的当前稿（用于「全 unchanged」对照）。"""
     return [
         {
-            "kind": "media_gallery",
             "title": "生活中的对称",
             "script": "这些图形有什么共同点？",
             "payload": {"items": [], "prompt": "先找出共同点"},
         },
         {
-            "kind": "interactive_scene",
             "title": "判断是否轴对称",
             "script": "沿这条线对折，两边能重合吗？",
             "payload": {"kind": "reflection", "title": "轴对称"},
         },
         {
-            "kind": "practice",
             "title": "课堂练习",
             "script": "下面哪些图形是轴对称图形？",
             "payload": {"qtype": "choice", "count": 3},
@@ -497,13 +529,11 @@ def test_redraft_diff_is_per_segment(client, teacher, drafted):
     # 当前稿：把 A 的提问改了（modified），并加了一段草稿里没有的旧环节（removed）。
     current = [
         {
-            "kind": "media_gallery",
             "title": "生活中的对称",
             "script": "改过的提问",  # 与草稿不同 → modified
             "payload": {},
         },
         {
-            "kind": "practice",
             "title": "旧环节",  # 草稿里没有 → removed
             "script": "旧",
             "payload": {"qtype": "choice"},
@@ -644,7 +674,6 @@ def test_drafted_payload_scene_is_not_overridden(client, teacher, drafted, monke
         "draft_sections",
         lambda **_k: [
             service.CoursewareSection(
-                kind="interactive_scene",
                 title="判定",
                 script="对折看看",
                 # 完整 SceneSpec（含 inputs）→ 视为 AI 已给场景
@@ -675,7 +704,6 @@ def test_teacher_can_clear_scene_without_it_being_refilled(client, teacher, draf
             "sections": [
                 {
                     "id": "only",
-                    "kind": "interactive_scene",
                     "title": "判定",
                     "script": "拖动对称轴试试",
                     "payload": {"kind": "reflection"},
