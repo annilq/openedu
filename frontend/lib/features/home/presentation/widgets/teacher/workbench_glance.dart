@@ -21,19 +21,10 @@ import '../../../../../shared/widgets/app_tags.dart' hide AppBadge;
 import '../../../../../shared/widgets/responsive_grid.dart';
 import '../../providers/task_form_prefill.dart';
 
-/// 工作台速览层（ADR-0075 §2.2 / ticket 03）。
-///
-/// 进入即看的教师整体概览，作用域固定 `all`：[analyticsSummaryProvider] 取数，与
-/// 分析层 [analyticsNotifierProvider] 彻底分离（见该 provider 注释）。四块图表：
-///  1. 掌握度概览环形（已掌握 vs 剩余，中心 `X / Y`）；
-///  2. 薄弱知识点横向条形（按 `activeWrong` 降序、accuracy 分级配色）+「就这个出题」钩子；
-///  3. 正确率分组条（练习 / 复习 / 总体，按学科）；
-///  4. 错题分布堆叠条（活跃 vs 已毕业，按学科）。
-///
-/// 孤儿「未知」错题组以警示色条显式保留（ADR-0064 / ADR-0070 §2.4.3），不混入有效分组。
-///
-/// [onDrill] 为薄弱知识点点击钻取回调（落到分析层并预选该知识点）；本层只触发回调、
-/// 具体钻取行为由组合页（ticket 05）接线。
+/// 工作台速览层（ADR-0075 §2.2 / ticket 03）：进入即看的教师整体概览，作用域固定 `all`，
+/// [analyticsSummaryProvider] 取数，与分析层 [analyticsNotifierProvider] 分离。四块图表：
+/// ① 掌握度环形 ② 薄弱知识点横向条 ③ 正确率分组条 ④ 错题分布堆叠条；同行卡片正文统一
+/// [_glanceBodyHeight] 定高对齐（栅格不做等高，见 [AppResponsiveGrid]）。[onDrill] 钻取回调由组合页接线。
 class WorkbenchGlance extends ConsumerWidget {
   final void Function(String knowledgePoint)? onDrill;
 
@@ -73,6 +64,9 @@ class WorkbenchGlance extends ConsumerWidget {
     );
   }
 }
+
+/// 速览层同行卡片正文统一高度（环形吃 size / 列表滚动 / 两类条形显式 height），消除不对齐。
+const double _glanceBodyHeight = 200;
 
 /// 正确率 → 语义色（红 <60% / 琥珀 60–85% / 绿 >85%），与 ADR-0075 §2.3 一致。
 Color _gradeColor(AppColors c, double accuracy) {
@@ -118,6 +112,7 @@ class _MasteryDonutCard extends StatelessWidget {
             Row(
               children: [
                 AppDonutChart(
+                  size: _glanceBodyHeight,
                   segments: [
                     DonutSegment(value: mastered.toDouble(), color: scheme.accent),
                     DonutSegment(
@@ -179,7 +174,7 @@ class _WeakPointsChartCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const SectionTitle('薄弱知识点'),
-          const SizedBox(height: AppSpacing.xs),
+          const SizedBox(height: AppSpacing.sm),
           if (items.isEmpty)
             const AppEmptyState.inline(
               icon: LucideIcons.checkCircle2,
@@ -187,13 +182,20 @@ class _WeakPointsChartCard extends StatelessWidget {
               message: '目前没有活跃错题，继续保持～',
             )
           else
-            for (final it in items)
-              _WeakPointRow(
-                item: it,
-                scheme: scheme,
-                ref: ref,
-                onDrill: onDrill,
+            SizedBox(
+              height: _glanceBodyHeight,
+              child: ListView(
+                children: [
+                  for (final it in items)
+                    _WeakPointRow(
+                      item: it,
+                      scheme: scheme,
+                      ref: ref,
+                      onDrill: onDrill,
+                    ),
+                ],
               ),
+            ),
         ],
       ),
     );
@@ -215,7 +217,6 @@ class _WeakPointRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final grade = _gradeColor(scheme, item.accuracy);
     final row = Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.sm),
       child: Column(
@@ -245,11 +246,8 @@ class _WeakPointRow extends StatelessWidget {
             child: Container(
               height: 10,
               decoration: BoxDecoration(
-                color: grade,
-                border: Border.all(
-                  color: scheme.outline,
-                  width: AppElevation.borderWidthSm,
-                ),
+                color: _gradeColor(scheme, item.accuracy),
+                border: Border.all(color: scheme.outline, width: AppElevation.borderWidthSm),
                 borderRadius: BorderRadius.circular(AppRadius.xs),
               ),
             ),
@@ -311,6 +309,7 @@ class _AccuracyChartCard extends StatelessWidget {
             )
           else ...[
             AppGroupedBarChart(
+              height: _glanceBodyHeight,
               data: [
                 for (final g in resp.groups)
                   GroupedBarDatum(
@@ -379,6 +378,7 @@ class _WrongDistributionChartCard extends StatelessWidget {
             )
           else ...[
             AppStackedBarChart(
+              height: _glanceBodyHeight,
               data: [
                 for (final g in resp.groups)
                   StackedBarDatum(

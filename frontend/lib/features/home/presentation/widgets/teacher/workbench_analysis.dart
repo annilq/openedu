@@ -236,6 +236,7 @@ class _WrongDistributionChartCard extends StatelessWidget {
             )
           else ...[
             AppStackedBarChart(
+              height: 300,
               data: [
                 for (final g in resp.groups)
                   StackedBarDatum(
@@ -298,26 +299,34 @@ class _MasteryChartCard extends StatelessWidget {
               message: '派发并作答任务后，这里会汇总掌握度。',
             )
           else ...[
-            AppBarChart(
-              data: [
-                for (final it in items)
-                  BarDatum(
-                    label: it.knowledgePoint,
-                    value: it.activeWrong.toDouble(),
-                    color: _gradeColor(scheme, it.accuracy),
-                    caption: '正确率 ${_pct(it.accuracy)}'
-                        '${it.level.isNotEmpty ? ' · $it.level' : ''}',
-                  ),
-              ],
-              onTap: onDrill == null
-                  ? null
-                  : (i) => onDrill!(items[i].knowledgePoint),
+            SizedBox(
+              height: 300,
+              child: SingleChildScrollView(
+                child: AppBarChart(
+                  data: [
+                    for (final it in items)
+                      BarDatum(
+                        label: it.knowledgePoint,
+                        value: it.activeWrong.toDouble(),
+                        color: _gradeColor(scheme, it.accuracy),
+                        caption: '正确率 ${_pct(it.accuracy)}'
+                            '${it.level.isNotEmpty ? ' · $it.level' : ''}',
+                      ),
+                  ],
+                  onTap: onDrill == null
+                      ? null
+                      : (i) => onDrill!(items[i].knowledgePoint),
+                ),
+              ),
             ),
             if (overflow > 0)
               Padding(
                 padding: const EdgeInsets.only(top: AppSpacing.xs),
                 child: Text(
-                  '仅展示活跃错题最多的 $items.length 项；其余 $overflow 个知识点可在维度切换后查看。',
+                  // ⚠️ 必须 `${items.length}`：写成 `$items.length` 时 Dart 只把
+                  // `items` 当插值体、`.length` 是字面文本，列表 toString 会渲染成
+                  // 「Instance of 'MasteryGroup'……」并被省略号截断（曾线上误显）。
+                  '仅展示活跃错题最多的 ${items.length} 项；其余 $overflow 个知识点可在维度切换后查看。',
                   style: AppTheme.textOf(context)
                       .labelSmall
                       ?.copyWith(color: scheme.onSurfaceVariant),

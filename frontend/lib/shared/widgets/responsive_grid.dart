@@ -7,6 +7,15 @@ import 'package:kids_learn/shared/theme/app_theme.dart';
 /// 单屏 landing 下，速览层 4 卡 / 分析层 2 图需在宽屏并排以压缩纵向高度，
 /// 窄屏退回单列堆叠。列宽按可用宽度均分并扣除间距，卡片宽度自此被约束、
 /// fl_chart 图表不会因无限宽而放大或让 x 轴标签互相遮挡。
+///
+/// ⚠️ 本栅格**刻意不做等高**，同行对齐改由调用侧「正文统一 `height` 定高」达成。
+/// 两条等高的路都实测踩过坑、不可再用：
+///  - `Row(crossAxisAlignment: stretch)`：栅格外层是竖向无界的 Column（页面滚动
+///    区），stretch 会给子项下发 `tightFor(height: Infinity)` → 抛
+///    「BoxConstraints forces an infinite height」，整页崩。
+///  - `IntrinsicHeight`：不崩，但会反向把高度钉死；`AppCard` 底层 ShadCard 内部是
+///    `Row → Flexible → Column → Flexible`，被钉死后 `Flexible` 转为**压缩**内容
+///    → 图表被容器裁掉。
 class AppResponsiveGrid extends StatelessWidget {
   final List<Widget> children;
   final int colsWide;

@@ -86,6 +86,9 @@ class StackedSegment {
   });
 }
 
+/// 关闭某侧坐标轴标题（三侧共用的 const，避免重复构造）。
+const SideTitles _noTitles = SideTitles(showTitles: false);
+
 /// 数值格式化：去小数，可带单位（如 `%`）。
 String _fmt(double v, [String? unit]) =>
     '${v.round()}${unit ?? ''}';
@@ -114,6 +117,13 @@ class AppDonutChart extends StatelessWidget {
     final scheme = AppTheme.colorsOf(context);
     final text = AppTheme.textOf(context);
     final outer = size / 2;
+    // fl_chart 以 `centerSpaceRadius + section.radius` 作为**外圆**半径绘制（见
+    // pie_chart_painter.dart 的 generateSectionPath / 全圆分支）。原实现令
+    // section.radius = outer，外圆被放大到 ~1.62×outer、被 Stack 的 Clip.hardEdge
+    // 裁掉左侧。修正：环厚 = outer - centerSpace - 描边宽，使外圆恰好落在 SizedBox
+    // 边界内（再留半描边余量，杜绝抗锯齿溢出）。
+    final centerSpace = outer * 0.62;
+    final ringThickness = outer - centerSpace - AppElevation.borderWidthSm;
     return SizedBox(
       width: size,
       height: size,
@@ -127,7 +137,7 @@ class AppDonutChart extends StatelessWidget {
                     (s) => PieChartSectionData(
                       value: s.value,
                       color: s.color,
-                      radius: outer,
+                      radius: ringThickness,
                       title: '',
                       borderSide: BorderSide(
                         color: scheme.outline,
@@ -136,7 +146,7 @@ class AppDonutChart extends StatelessWidget {
                     ),
                   )
                   .toList(),
-              centerSpaceRadius: outer * 0.62,
+              centerSpaceRadius: centerSpace,
               sectionsSpace: AppElevation.borderWidthSm,
               borderData: FlBorderData(show: false),
               pieTouchData: PieTouchData(
@@ -211,7 +221,7 @@ class AppBarChart extends StatelessWidget {
   }
 }
 
-class _BarRow extends StatelessWidget {
+class _BarRow extends StatefulWidget {
   final BarDatum datum;
   final double maxValue;
   final int index;
@@ -231,14 +241,57 @@ class _BarRow extends StatelessWidget {
   });
 
   @override
+  State<_BarRow> createState() => _BarRowState();
+}
+
+class _BarRowState extends State<_BarRow> {
+  OverlayEntry? _tip;
+
+  void _showTip() {
+    if (_tip != null) return;
+    final box = context.findRenderObject();
+    if (box is! RenderBox) return;
+    final topLeft = box.localToGlobal(Offset.zero);
+    final rect = Rect.fromLTWH(
+      topLeft.dx,
+      topLeft.dy,
+      box.size.width,
+      box.size.height,
+    );
+    final entry = OverlayEntry(
+      builder: (_) => _LabelTip(
+        rect: rect,
+        label: widget.datum.label,
+        scheme: widget.scheme,
+        text: widget.text,
+      ),
+    );
+    Overlay.of(context).insert(entry);
+    _tip = entry;
+  }
+
+  void _hideTip() {
+    _tip?.remove();
+    _tip = null;
+  }
+
+  @override
+  void dispose() {
+    _hideTip();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final pct = maxValue > 0 ? (datum.value / maxValue).clamp(0.02, 1.0) : 0.0;
+    final pct = widget.maxValue > 0
+        ? (widget.datum.value / widget.maxValue).clamp(0.02, 1.0)
+        : 0.0;
     final bar = Container(
       height: 18,
       decoration: BoxDecoration(
-        color: datum.color,
+        color: widget.datum.color,
         border: Border.all(
-          color: scheme.outline,
+          color: widget.scheme.outline,
           width: AppElevation.borderWidthSm,
         ),
         borderRadius: BorderRadius.circular(AppRadius.xs),
@@ -248,22 +301,25 @@ class _BarRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
       child: Row(
         children: [
-          SizedBox(
-            width: 104,
+          // 标签列按 flex 分配且向标签倾斜（flex:6 标签 / flex:5 条）：卡片越宽标签越宽，
+          // 长知识点名放宽到 2 行而非 1 行截断；仍超长则长按整行弹出完整名（_LabelTip）。
+          Expanded(
+            flex: 6,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  datum.label,
-                  style: text.labelSmall?.copyWith(color: scheme.onSurface),
-                  maxLines: 1,
+                  widget.datum.label,
+                  style: widget.text.labelSmall
+                      ?.copyWith(color: widget.scheme.onSurface),
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
-                if (datum.caption != null)
+                if (widget.datum.caption != null)
                   Text(
-                    datum.caption!,
-                    style: text.labelSmall
-                        ?.copyWith(color: scheme.onSurfaceVariant),
+                    widget.datum.caption!,
+                    style: widget.text.labelSmall
+                        ?.copyWith(color: widget.scheme.onSurfaceVariant),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -272,6 +328,7 @@ class _BarRow extends StatelessWidget {
           ),
           const SizedBox(width: AppSpacing.sm),
           Expanded(
+            flex: 5,
             child: FractionallySizedBox(
               alignment: Alignment.centerLeft,
               widthFactor: pct,
@@ -280,21 +337,68 @@ class _BarRow extends StatelessWidget {
           ),
           const SizedBox(width: AppSpacing.sm),
           Text(
-            _fmt(datum.value, unit),
-            style: text.labelMedium?.copyWith(
-              color: scheme.onSurface,
+            _fmt(widget.datum.value, widget.unit),
+            style: widget.text.labelMedium?.copyWith(
+              color: widget.scheme.onSurface,
               fontWeight: FontWeight.w700,
             ),
           ),
         ],
       ),
     );
-    if (onTap == null) return row;
-    // 可点区一律 AppFocusableAction（Material-free），承载键盘可达性 + 钻取。
-    return AppFocusableAction(
-      onTap: () => onTap!(index),
-      semanticLabel: datum.label,
-      child: row,
+    final body = widget.onTap == null
+        ? row
+        // 可点区一律 AppFocusableAction（Material-free），承载键盘可达性 + 钻取。
+        : AppFocusableAction(
+            onTap: () => widget.onTap!(widget.index),
+            semanticLabel: widget.datum.label,
+            child: row,
+          );
+    // 长按整行弹出完整标签（叠在最上层 Overlay，不被卡片裁切）；独立于 AppFocusableAction
+    // 的点击钻取，两者手势互不吞掉。
+    return GestureDetector(
+      onLongPress: _showTip,
+      onLongPressEnd: (_) => _hideTip(),
+      child: body,
+    );
+  }
+}
+
+/// 长按横条整行弹出的完整标签提示（非 Material，叠在最上层 Overlay，不被卡片裁切）。
+class _LabelTip extends StatelessWidget {
+  final Rect rect;
+  final String label;
+  final AppColors scheme;
+  final AppText text;
+  const _LabelTip({
+    required this.rect,
+    required this.label,
+    required this.scheme,
+    required this.text,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      left: rect.left,
+      top: rect.bottom + 4,
+      width: rect.width,
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
+        decoration: BoxDecoration(
+          color: scheme.inverseSurface,
+          border: Border.all(
+            color: scheme.outline,
+            width: AppElevation.borderWidthSm,
+          ),
+          borderRadius: BorderRadius.circular(AppRadius.xs),
+        ),
+        child: Text(
+          label,
+          style: text.labelSmall?.copyWith(color: scheme.onInverseSurface),
+        ),
+      ),
     );
   }
 }
@@ -314,7 +418,7 @@ class AppGroupedBarChart extends StatelessWidget {
     required this.data,
     this.unit,
     this.height = 200,
-    this.maxCategories = 8,
+    this.maxCategories = 6,
   });
 
   @override
@@ -364,26 +468,24 @@ class AppGroupedBarChart extends StatelessWidget {
             bottomTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
+                reservedSize: many ? 64 : 32,
                 getTitlesWidget: (v, m) {
                   final idx = v.toInt();
                   if (idx < 0 || idx >= capped.length) {
                     return const SizedBox.shrink();
                   }
-                  final label = Text(
-                    capped[idx].label,
-                    style: text.labelSmall
-                        ?.copyWith(color: scheme.onSurfaceVariant),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  return SideTitleWidget(
+                    meta: m,
+                    angle: many ? -0.42 : 0.0,
+                    // 强制标签留在 x 轴包围盒内：最左/最右标签不再溢出被容器裁掉。
+                    fitInside: SideTitleFitInsideData.fromTitleMeta(m),
+                    child: SizedBox(width: 72, child: Text(capped[idx].label, style: text.labelSmall?.copyWith(color: scheme.onSurfaceVariant), maxLines: 1, overflow: TextOverflow.ellipsis)),
                   );
-                  return many ? Transform.rotate(angle: -0.5, child: label) : label;
                 },
               ),
             ),
-            topTitles: const AxisTitles(
-                sideTitles: SideTitles(showTitles: false)),
-            rightTitles: const AxisTitles(
-                sideTitles: SideTitles(showTitles: false)),
+            topTitles: const AxisTitles(sideTitles: _noTitles),
+            rightTitles: const AxisTitles(sideTitles: _noTitles),
           ),
           barTouchData: BarTouchData(
             enabled: true,
@@ -439,7 +541,7 @@ class AppStackedBarChart extends StatelessWidget {
     super.key,
     required this.data,
     this.height = 200,
-    this.maxCategories = 8,
+    this.maxCategories = 6,
   });
 
   @override
@@ -480,31 +582,28 @@ class AppStackedBarChart extends StatelessWidget {
           gridData: const FlGridData(show: false),
           borderData: FlBorderData(show: false),
           titlesData: FlTitlesData(
-            leftTitles: const AxisTitles(
-                sideTitles: SideTitles(showTitles: false)),
+            leftTitles: const AxisTitles(sideTitles: _noTitles),
             bottomTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
+                reservedSize: many ? 64 : 32,
                 getTitlesWidget: (v, m) {
                   final idx = v.toInt();
                   if (idx < 0 || idx >= capped.length) {
                     return const SizedBox.shrink();
                   }
-                  final label = Text(
-                    capped[idx].label,
-                    style: text.labelSmall
-                        ?.copyWith(color: scheme.onSurfaceVariant),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  return SideTitleWidget(
+                    meta: m,
+                    angle: many ? -0.42 : 0.0,
+                    // 强制标签留在 x 轴包围盒内：最左/最右标签不再溢出被容器裁掉。
+                    fitInside: SideTitleFitInsideData.fromTitleMeta(m),
+                    child: SizedBox(width: 72, child: Text(capped[idx].label, style: text.labelSmall?.copyWith(color: scheme.onSurfaceVariant), maxLines: 1, overflow: TextOverflow.ellipsis)),
                   );
-                  return many ? Transform.rotate(angle: -0.5, child: label) : label;
                 },
               ),
             ),
-            topTitles: const AxisTitles(
-                sideTitles: SideTitles(showTitles: false)),
-            rightTitles: const AxisTitles(
-                sideTitles: SideTitles(showTitles: false)),
+            topTitles: const AxisTitles(sideTitles: _noTitles),
+            rightTitles: const AxisTitles(sideTitles: _noTitles),
           ),
           barTouchData: BarTouchData(
             enabled: true,
