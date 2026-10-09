@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 """生成教育智能体申报材料：开发报告 / Word模板 / 安装手册 / 使用手册 / 视频脚本。
 
+视频脚本（14 段）的段号、时段与旁白正文从 `narration.md` 读取，与 gen_voice.py /
+gen_subs.py 共用同一份事实源；本文件只维护「每段拍什么画面」。
+
 所有 .docx 按附表3 字体规范：
 - 标题：方正小标宋简体 小二(18pt)
 - 一级标题：黑体 三号(16pt)
@@ -8,8 +11,11 @@
 - 三级标题：仿宋_GB2312 三号(16pt)
 - 正文：仿宋_GB2312 三号(16pt)，行间距 28磅，首行缩进2字符
 """
+import re
+from pathlib import Path
+
 from docx import Document
-from docx.shared import Pt, RGBColor
+from docx.shared import Pt, Cm, RGBColor
 from docx.enum.text import WD_LINE_SPACING, WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml.ns import qn
@@ -108,6 +114,38 @@ def add_code(doc, text):
     run = p.add_run(text)
     set_run_font(run, CODE, 10.5)
     return p
+
+
+def set_cell(cell, text, font=BODY, size=10.5, bold=False, align=None,
+             line=15, shading=None, first=False):
+    """填写表格单元格：显式设字体（表格不继承正文样式，不设会落到西文字体）。
+    first=True 复用首段，否则新起一段（多行内容）。"""
+    p = cell.paragraphs[0] if first else cell.add_paragraph()
+    if align is not None:
+        p.alignment = align
+    pf = p.paragraph_format
+    pf.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+    pf.line_spacing = Pt(line)
+    pf.space_after = Pt(2)
+    if text:
+        run = p.add_run(text)
+        set_run_font(run, font, size, bold)
+    if shading:
+        tcPr = cell._tc.get_or_add_tcPr()
+        shd = OxmlElement("w:shd")
+        shd.set(qn("w:val"), "clear")
+        shd.set(qn("w:color"), "auto")
+        shd.set(qn("w:fill"), shading)
+        tcPr.append(shd)
+    return p
+
+
+def set_col_widths(table, widths):
+    """python-docx 列宽需逐格设置，且要钉住 table.autofit 才不会被重算。"""
+    table.autofit = False
+    for row in table.rows:
+        for cell, w in zip(row.cells, widths):
+            cell.width = w
 
 
 # ---------------------------------------------------------------------------
@@ -237,9 +275,9 @@ def gen_template():
     tbl = doc.add_table(rows=1, cols=3)
     tbl.style = "Table Grid"
     tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
-    hdr = tbl.rows[0].cells
-    for c, t in zip(hdr, ["样式名", "字体 / 字号", "用途"]):
-        c.paragraphs[0].add_run(t)
+    for c, t in zip(tbl.rows[0].cells, ["样式名", "字体 / 字号", "用途"]):
+        set_cell(c, t, font=H1, size=10.5, bold=True,
+                 align=WD_ALIGN_PARAGRAPH.CENTER, first=True, shading="F2F2F2")
     rows = [
         ("rTitle", "方正小标宋简体·小二(18pt)", "文档主标题（居中）"),
         ("rH1", "黑体·三号(16pt)", "一级标题，如 一、二、三、四"),
@@ -249,9 +287,10 @@ def gen_template():
     ]
     for name, fs, use in rows:
         cells = tbl.add_row().cells
-        cells[0].paragraphs[0].add_run(name)
-        cells[1].paragraphs[0].add_run(fs)
-        cells[2].paragraphs[0].add_run(use)
+        set_cell(cells[0], name, size=10.5, first=True)
+        set_cell(cells[1], fs, size=10.5, first=True)
+        set_cell(cells[2], use, size=10.5, first=True)
+    set_col_widths(tbl, [Cm(2.3), Cm(6.9), Cm(6.0)])
 
     # 骨架
     add_h1(doc, "一、开发背景")
@@ -371,48 +410,198 @@ def gen_usage():
 
 
 # ---------------------------------------------------------------------------
-# 5. 视频脚本（≤8 分钟）
+# 5. 视频脚本（14 段 · 总时长 5 分 52 秒 / 红线 6 分钟）
+#
+# ⚠️ 单一事实源：段号、标题、时段、旁白正文全部从 narration.md 读取
+#    （与 gen_voice.py / gen_subs.py 同源），本文件只维护「每一段拍什么画面」。
+#    改文案请改 narration.md，不要在下面重复写一遍旁白。
 # ---------------------------------------------------------------------------
+NARRATION = f"{OUT}/narration.md"
+TOTAL_SECONDS = 352          # 14 段合计 5:52
+REDLINE_SECONDS = 360        # 红线 6 分钟
+
+
+def _mmss(sec):
+    return f"{int(sec) // 60} 分 {int(sec) % 60:02d} 秒"
+
+# (段号, 端, 画面内容)
+VIDEO_SHOTS = [
+    (1, "教师",
+     "登录页 → 点「没有账号？注册教师账号」→ 依次填 用户名 / 密码 / 昵称 →"
+     "「注册并进入」直接落到「工作台」→ 侧栏「我的」退出登录 → 再登录回到工作台"),
+    (2, "教师",
+     "侧栏「模型管理」→（我的模型为空）→「添加模型」→ 服务商选 DeepSeek，"
+     "Base URL 自动带出 → 填模型名与 API Key →「测试连接」等结果条变绿 →"
+     "打开「设为默认模型」→ 保存 → 列表出现带「默认」徽标的模型卡"),
+    (3, "教师",
+     "侧栏「素材库」→ 空态「素材库还是空的」→「上传图片」一次选 2～3 张 →"
+     "网格出现缩略图 → 点开一张看原图"),
+    (4, "教师",
+     "侧栏「资料库」→「上传资料」选 1～3 页的 PDF → 行内点「向量化」等状态变为已向量化 →"
+     "切到「知识点管理」，选好 学科 / 年级 / 学期 → 勾选知识点 →「确认选中 (N)」"),
+    (5, "教师",
+     "侧栏「场景库」→ 场景卡列表 → 点开一张进详情「场景实例」，看库默认演示图形 →"
+     "「关联知识点」选一个第 4 段提取的知识点"),
+    (6, "教师",
+     "侧栏「课件」→ 空态「还没有课件」→「新增课件」选知识点 →「创建空课件」"
+     "（此步不触发 AI）→「AI 补充讲解」等环节草案生成 →「开始讲课」进全屏演示 →"
+     "方向键翻 2～3 页 → 叫出「问 AI 老师」现场答疑 →「退出演示」"),
+    (7, "教师",
+     "侧栏「学生」→ 标题「学生管理」，右上角展示「添加学生 / 下载导入模板 / 批量导入」→"
+     "「添加学生」填 学生昵称 / 登录账号 / 密码 / 年级 →「创建学生账号」→"
+     "点进该学生详情，展示「概览 / 错题本 / AI 答疑」三页签"),
+    (8, "教师",
+     "侧栏「任务」→「发布任务」→ 派发目标勾选学生 → 试卷标题「今日练习」、总题数 4 →"
+     "选 学科 / 知识点 / 题型 → 选出题模型 →「生成」（题卡逐张流式浮现）→"
+     "「确认」落库为草稿 →「草稿审核」快速扫一眼 →「锁定并派发」"),
+    (9, "学生",
+     "教师端退出登录 → 用学生账号在同一个登录页登录 → 自动落到学生端「首页」，"
+     "左侧栏变为 5 项（首页 / 复习 / 错题本 / 问 AI 老师 / 掌握度）→"
+     "复习错题横幅 → 问 AI 老师横幅 → 今日任务 →「开始做题」，做 2 题（一对一错）→ 完成打卡"),
+    (10, "学生",
+     "侧栏「复习」→ 顶栏「复习 N/M」→ 作答 →「提交复习」→ 结果弹窗"
+     "（答对：下次 N 天后复习；答错：重新计时）→ 继续下一题 → 完成态「复习完成！正确率 X%」"),
+    (11, "学生",
+     "侧栏「错题本」→ 标题「我的错题本」→ 顺次扫过卡片标签：学科 / 知识点 / 错过 N 次 /"
+     "复习阶段 N，以及「最近答错」「下次复习」两个日期"),
+    (12, "学生",
+     "侧栏「问 AI 老师」→ 输入框（占位「输入你的学习问题…」）输入一道题的问题 →"
+     "「发送」，回答逐字流式输出 → 点「按住 说话」松开，展示语音提问"),
+    (13, "学生",
+     "侧栏「掌握度」→ 标题「我的学科掌握度」→ 汇总行「你已掌握 N / M 个知识点」→"
+     "顺次扫过各知识点的进度条：X 分、等级徽章（已掌握 / 较扎实 / 薄弱 / 待加强）、"
+     "正确率与待复习题数"),
+    (14, "教师",
+     "退出登录 → 用教师账号重新登录 → 侧栏「概览」（页内标题「工作台」）→"
+     "待办三张卡（待审核 / 待派发 / 谁没交）→「最近任务」→ 学情速览（掌握度环形、"
+     "薄弱知识点、正确率）→ 学情分析把「统计范围」切一次维度，图表跟着变"),
+]
+
+# 录制过程中会真实等待的 5 处（剪辑时的处理口径）
+WAITS = [
+    ("第 2 段 · 测试连接", "3～10 s", "保留原速——这是「真的连上了」的证据，出来后停 1 s 再继续"),
+    ("第 4 段 · 向量化", "10 s～数分钟", "后期加速 2～4 倍，或只留「点击 → 已向量化」两端"),
+    ("第 6 段 · AI 补充讲解", "5～20 s", "后期加速 2 倍"),
+    ("第 8 段 · 生成（流式出题）", "15～40 s", "不要剪、不要加速——逐题浮现本身就是亮点"),
+    ("第 12 段 · AI 回答（流式）", "5～20 s", "后期加速 2 倍；这是学生段「AI 活着」的唯一证据"),
+]
+
+# 每段的时长红线（超了就重录，剪辑能加速但补不了镜头）
+REDLINES = {
+    1: 32, 2: 50, 3: 22, 4: 38, 5: 28, 6: 50, 7: 32,
+    8: 52, 9: 32, 10: 30, 11: 25, 12: 32, 13: 26, 14: 35,
+}
+
+_HEAD = re.compile(r"^##\s+(\d+)\s*·\s*(.+?)（(.+?)）\s*$")
+
+
+def load_narration(path=NARRATION):
+    """解析 narration.md → {段号: (标题, 起止时段, 旁白正文)}。"""
+    segs, cur = {}, None
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
+        s = line.strip()
+        m = _HEAD.match(s)
+        if m:
+            cur = int(m.group(1))
+            segs[cur] = (m.group(2).strip(), m.group(3).strip(), [])
+        elif cur is not None and s and not s.startswith(">"):
+            segs[cur][2].append(s)
+    return {k: (t, span, "".join(body)) for k, (t, span, body) in segs.items()}
+
+
 def gen_video():
+    nars = load_narration()
+    missing = [no for no, _, _ in VIDEO_SHOTS if no not in nars]
+    if missing:
+        print(f"  ⚠️ narration.md 缺少第 {missing} 段（请保持与 VIDEO_SHOTS 一致）")
+
     doc = Document()
-    add_title(doc, "演示视频脚本（总时长 ≤ 8 分钟）")
+    add_title(doc, f"演示视频脚本（14 段 · 总时长 {_mmss(TOTAL_SECONDS)}）")
 
-    add_para(doc, "形式：PPT 概述 + App 操作录屏 + 课堂实录片段。画面以录屏为主，关键处加字幕与箭头标注。", font=BODY, indent=True)
+    add_para(doc,
+        "形式：App 操作录屏为主，关键处叠加字幕与箭头标注，配中文旁白音轨。全片 14 段，"
+        "按「教师端 9 段 + 学生端 5 段」的顺序推进，逐段单独录制、单独出字幕，最后按序拼接。"
+        f"总时长 {_mmss(TOTAL_SECONDS)}（{TOTAL_SECONDS} 秒），红线 {REDLINE_SECONDS // 60} 分钟。",
+        indent=True)
+    add_para(doc,
+        "时长口径：每段时长 = 该段配音实测时长 + 动作余量（点按与必须展示的等待）。"
+        "旁白语速按 4.76 字/秒（zh-CN-XiaoxiaoNeural）测算，录制时动作跟随旁白同步进行。", indent=True)
 
-    scenes = [
-        ("1", "0:00-1:00", "片头 + 案例概述",
-         "本校中小学复习痛点：错题散、复习无计划、家长不会讲。本作品是一个基于国产大模型、可本地部署的错题复习教育智能体，覆盖出题、答疑、学情查询、间隔复习。"),
-        ("2", "1:00-2:00", "技术选型与本地部署",
-         "展示\u201c模型管理\u201d添加 DeepSeek（国产大模型）并设为默认；一句话说明前端 Flutter、后端 FastAPI、本地 Docker 部署，数据不出本机。可放 docker compose 启动录屏。"),
-        ("3", "2:00-3:30", "智能出题演示",
-         "录屏：在助手输入\u201c出3道四年级分数选择题\u201d，展示流式生成题卡（题干/选项/解析）；说明支持多学科组卷。画面高亮\u201c参考来源\u201d溯源。"),
-        ("4", "3:30-5:00", "伴学答疑演示",
-         "录屏：学生提问一个错题，AI 给出分步讲解并标注来源；命中图形时展示交互演示。强调适龄、安全闸门。"),
-        ("5", "5:00-6:30", "学情查询与复习",
-         "录屏：教师问\u201c小明最近错题多吗\u201d，助手返回类型化卡片；切到学生端展示\u201c到期复习\u201d与错题本。强调\u201c结论来自真实数据\u201d。"),
-        ("6", "6:30-7:30", "课堂练习模式",
-         "录屏：课件某知识点开启课堂练习，投屏朗读单题、AI 分级提示，教师代录口答。说明不落作答记录。"),
-        ("7", "7:30-8:00", "应用成效与总结",
-         "展示成效截图位（错题下降、掌握度提升、参与度）；总结创新点（单一入口、分层内核、反臆造、本地隐私）与下一步改进。结尾点题：可复现、可迁移的教育智能体。"),
-    ]
-
-    tbl = doc.add_table(rows=1, cols=4)
+    add_h1(doc, "一、分镜表")
+    # 列宽上限取「Letter 默认页边距」的可用宽度 15.24cm，换 A4 也不会溢出
+    widths = [Cm(0.9), Cm(1.8), Cm(1.0), Cm(5.4), Cm(6.1)]
+    tbl = doc.add_table(rows=1, cols=5)
     tbl.style = "Table Grid"
     tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
-    for c, t in zip(tbl.rows[0].cells, ["序号", "时长", "画面内容", "旁白脚本"]):
-        c.paragraphs[0].add_run(t)
-    for no, dur, screen, narr in scenes:
-        cells = tbl.add_row().cells
-        cells[0].paragraphs[0].add_run(no)
-        cells[1].paragraphs[0].add_run(dur)
-        cells[2].paragraphs[0].add_run(screen)
-        cells[3].paragraphs[0].add_run(narr)
+    for c, t in zip(tbl.rows[0].cells, ["序号", "时段", "端", "画面内容", "旁白脚本"]):
+        set_cell(c, t, font=H1, size=10.5, bold=True,
+                 align=WD_ALIGN_PARAGRAPH.CENTER, first=True, shading="F2F2F2")
 
-    add_h1(doc, "录制提示")
-    add_bullet(doc, "每台机器先授权屏幕录制权限（系统设置→隐私与安全→屏幕录制），首次运行需你在弹窗中批准。")
-    add_bullet(doc, "录屏命令示例（macOS，捕获整个屏幕到文件）：")
-    add_code(doc, "ffmpeg -f avfoundation -i \"1:0\" -r 30 -video_size 1920x1080 submission_docs/demo.mp4")
-    add_bullet(doc, "AI 功能需有效的 DeepSeek API Key；无 Key 时相关录屏会显示\u201c未配置模型\u201d。")
+    for no, side, screen in VIDEO_SHOTS:
+        title, span, narr = nars.get(no, ("", "", ""))
+        cells = tbl.add_row().cells
+        set_cell(cells[0], f"{no}", size=10.5, align=WD_ALIGN_PARAGRAPH.CENTER, first=True)
+        set_cell(cells[1], span, size=10.5, align=WD_ALIGN_PARAGRAPH.CENTER, first=True)
+        set_cell(cells[2], side, size=10.5, align=WD_ALIGN_PARAGRAPH.CENTER, first=True)
+        set_cell(cells[3], f"\u3010{title}\u3011{screen}", size=10.5, first=True)
+        set_cell(cells[4], narr, size=10.5, first=True)
+    set_col_widths(tbl, widths)
+
+    add_h1(doc, "二、时长红线")
+    add_para(doc, "录完一段先对红线，超了就重录——剪辑能加速，但不能补镜头。", indent=True)
+    rt = doc.add_table(rows=1, cols=4)
+    rt.style = "Table Grid"
+    rt.alignment = WD_TABLE_ALIGNMENT.CENTER
+    for c, t in zip(rt.rows[0].cells, ["序号", "环节", "目标时长", "红线"]):
+        set_cell(c, t, font=H1, size=10.5, bold=True,
+                 align=WD_ALIGN_PARAGRAPH.CENTER, first=True, shading="F2F2F2")
+    for no, side, _ in VIDEO_SHOTS:
+        title, span, _ = nars.get(no, ("", "", ""))
+        dur = ""
+        m = re.match(r".*–(.*)", span)
+        if m:
+            end = m.group(1)
+            em, es = (int(x) for x in end.split(":"))
+            prev = "0:00"
+            if no > 1:
+                _, pspan, _ = nars.get(no - 1, ("", "", ""))
+                prev = re.match(r".*–(.*)", pspan).group(1)
+            pm, ps = (int(x) for x in prev.split(":"))
+            dur = f"{(em * 60 + es) - (pm * 60 + ps)} s"
+        cells = rt.add_row().cells
+        set_cell(cells[0], str(no), size=10.5, align=WD_ALIGN_PARAGRAPH.CENTER, first=True)
+        set_cell(cells[1], f"{title}（{side}）", size=10.5, first=True)
+        set_cell(cells[2], dur, size=10.5, align=WD_ALIGN_PARAGRAPH.CENTER, first=True)
+        set_cell(cells[3], f"≤ {REDLINES[no]} s", size=10.5,
+                 align=WD_ALIGN_PARAGRAPH.CENTER, first=True)
+    set_col_widths(rt, [Cm(1.1), Cm(8.5), Cm(2.5), Cm(3.1)])
+
+    add_h1(doc, "三、等待时间怎么处理")
+    wt = doc.add_table(rows=1, cols=3)
+    wt.style = "Table Grid"
+    wt.alignment = WD_TABLE_ALIGNMENT.CENTER
+    for c, t in zip(wt.rows[0].cells, ["位置", "大概等多久", "处理"]):
+        set_cell(c, t, font=H1, size=10.5, bold=True,
+                 align=WD_ALIGN_PARAGRAPH.CENTER, first=True, shading="F2F2F2")
+    for where, dur, how in WAITS:
+        cells = wt.add_row().cells
+        set_cell(cells[0], where, size=10.5, first=True)
+        set_cell(cells[1], dur, size=10.5, align=WD_ALIGN_PARAGRAPH.CENTER, first=True)
+        set_cell(cells[2], how, size=10.5, first=True)
+    set_col_widths(wt, [Cm(4.4), Cm(2.5), Cm(8.3)])
+
+    add_h1(doc, "四、录制与合成")
+    add_bullet(doc, "分段录制，一段一个文件：")
+    add_code(doc, "DURATION=60 ./submission_docs/record_app.sh 6   # 录第 6 段 → submission_docs/raw/demo_06.mov")
+    add_bullet(doc, "窗口建议 ≥1280×800，且宽度保持 ≥700——学生端窄于此会从左侧栏切成底部 Tab 栏，画面跳档。")
+    add_bullet(doc, "首次运行需授权「屏幕录制」权限（系统设置 → 隐私与安全性 → 屏幕录制），否则录成黑屏。")
+    add_bullet(doc, "录前清屏：关闭聊天窗口与通知（开勿扰模式）；鼠标点击已默认高亮显示。")
+    add_bullet(doc, "一条命令出成片（字幕 + 配音 + 变速贴合 + 合并）：")
+    add_code(doc, "cd submission_docs && python gen_subs.py --all                # → final_demo.mp4")
+    add_bullet(doc, "脚本量的是每段实际录屏与配音时长，把画面变速去贴合配音（视频长→加速、视频短→减速并定格补足），"
+                    "字幕时间轴即配音时长；无需再手工对齐。")
+    add_bullet(doc, "AI 相关段落依赖「模型管理」中已配置并测试通过的默认模型；未配置时相关录屏会显示「未配置模型」。")
+    add_bullet(doc, "旁白文案单一事实源为 narration.md，改动后先重跑 gen_voice.py（配音）、再跑 gen_subs.py（字幕与合成）。")
 
     path = f"{OUT}/视频脚本.docx"
     doc.save(path)
@@ -420,6 +609,8 @@ def gen_video():
 
 
 if __name__ == "__main__":
-    files = [gen_report(), gen_template(), gen_install(), gen_usage(), gen_video()]
+    # 使用手册 / 安装手册 / 开发记录 已改为由 md2docx.py 从同名 .md 生成（单一事实源，
+    # 内容面向非专业读者）。这里不再生成这三份，避免用旧的偏技术内容把它们覆盖回去。
+    files = [gen_report(), gen_template(), gen_video()]
     for f in files:
         print("wrote", f)

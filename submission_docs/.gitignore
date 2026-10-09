@@ -2,11 +2,13 @@
 # raw/   录屏原始素材（.mov，几十~上百 MB）
 # voice/ TTS 配音（由 gen_voice.py 生成）
 # subs/  字幕（由 gen_subs.py 生成）
-# out/   成片（由 gen_subs.py --burn 生成）
+# out/   分段成片（由 gen_subs.py --all 生成）
 raw/
 voice/
 subs/
 out/
+filelist.txt
+final_demo.mp4
 
 # 由 gen.py 生成的成品文档与打包（二进制，可重建）
 *.docx

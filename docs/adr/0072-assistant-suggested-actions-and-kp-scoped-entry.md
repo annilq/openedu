@@ -1,6 +1,7 @@
 # ADR-0072：AI 学习助手推荐操作与知识点聚焦入口
 
-状态：草案（Proposed），待评审与实施排期。
+状态：已实施（Accepted）。落地于 `a8ea071`（推荐操作目录 + 知识点聚焦 + 判断题闭环，前后端同批）。
+下文「决策」即实现口径，与代码一一对应；「已知遗留」为尚未闭合项。
 
 ## 背景与问题
 
@@ -228,5 +229,14 @@ pending_quiz: dict | None = None   # {'answer': bool, 'kp_id': str, 'question': 
    `(subject, grade, semester, name)` 注入出题 prompt（复用 ADR-0061 的 `find_knowledge_point`
    精确口径），避免同名漂移。
 4. 推荐操作在会话非空后是否常驻：本 ADR 默认仅空态显示；若产品要常驻底部条，需另议宽度/遮挡。
-5. 数据来源：本章节所述交互均基于现有 `AssistantCoursewareContext` / `SectionPractice` /
-   `CoursewareContext` 代码与设计意图，**未实际新增实现**；落地前以 `git status` + 上述文件为据。
+5. ~~数据来源：本章节所述交互均基于现有…**未实际新增实现**~~ —— **已完成落地**（`a8ea071`）：
+   后端 `app/features/assistant/{schemas,router,service}.py`（`SuggestedAction`、`GET /suggested-actions`、
+   `build_suggested_actions`、`_quiz_generate_stream` / `_quiz_judge_stream`、`Conversation.pending_quiz`）；
+   前端 `features/assistant/`（`assistant_suggested_actions.dart`、`AssistantCoursewareContext.knowledgePointId`、
+   `AssistantChatReq.quiz`）。
+6. 已知缺陷（2026-10-10 复核新增）：`pending_quiz` 一旦写入，该会话**后续任意消息**都进
+   `_quiz_judge_stream` 判定分支；非「对/错」的输入（如用户改问新问题）回落固定话术
+   「请用「对」或「错」回答这道题哦～」，且**不递增 attempts、不清 `pending_quiz`** → 会话被锁死。
+   另：承诺「复用 `SectionPractice` 的分级提示文案」未落地，答错引导为 `service.py` 内硬编码两段文本。
+7. 未落地：§2 承诺的「会话**系统提示**围绕知识点聚焦」——`ctx.extra["knowledge_point_id"]`
+   （`service.py:579`）仅被 quiz 路径与 suggested-actions 目录消费，`tutor` / `query` subagent 均未读取。
