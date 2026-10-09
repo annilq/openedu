@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:kids_learn/shared/domain/models/models.dart';
 
 abstract class StudentsRepository {
@@ -34,4 +36,7 @@ abstract class StudentsRepository {
     required List<int> bytes,
     required String filename,
   });
+
+  /// 下载学生导入模板 xlsx（方案A）：表头与导入解析口径一致（姓名 / 学号）。
+  Future<Uint8List> downloadImportTemplate();
 }

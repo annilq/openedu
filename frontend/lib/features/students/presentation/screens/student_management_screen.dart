@@ -86,6 +86,9 @@ class _StudentManagementScreenState
   /// 导入中（禁用导入按钮，避免重复上传）。
   bool _importing = false;
 
+  /// 模板下载中（禁用下载按钮，避免重复请求）。
+  bool _downloadingTemplate = false;
+
   /// 最近一次导入结果，非 null 时弹出结果浮层（ticket 06）。
   StudentImportResultModel? _importResult;
 
@@ -216,6 +219,30 @@ class _StudentManagementScreenState
     }
   }
 
+  /// 下载学生导入模板（方案A）：拉取 xlsx 字节后交由系统保存面板让用户选落盘位置，
+  /// 复用已有的 file_picker（saveFile），不引入新依赖。取消保存不提示。
+  Future<void> _downloadTemplate() async {
+    setState(() => _downloadingTemplate = true);
+    try {
+      final bytes = await ref
+          .read(studentManagementProvider.notifier)
+          .downloadImportTemplate();
+      final uri = await FilePicker.saveFile(
+        dialogTitle: '保存学生导入模板',
+        fileName: 'student_import_template.xlsx',
+        bytes: bytes,
+      );
+      final path = uri?.path;
+      if (mounted && path != null) {
+        AppToast.show(context, '模板已保存：$path');
+      }
+    } catch (e) {
+      if (mounted) AppToast.error(context, e);
+    } finally {
+      if (mounted) setState(() => _downloadingTemplate = false);
+    }
+  }
+
   List<_RowItem> _buildRows(
     List<UserModel> students,
     List<ClassModel> classes,
@@ -274,6 +301,8 @@ class _StudentManagementScreenState
               onSelectAll: () => _selectAll(students),
               onAddStudent: widget.onAddStudent,
               onImport: _importing ? null : _pickAndImport,
+              onDownloadTemplate:
+                  _downloadingTemplate ? null : _downloadTemplate,
             ),
             Padding(
               padding: const EdgeInsets.symmetric(
@@ -346,6 +375,7 @@ class _PageHeader extends StatelessWidget {
   final VoidCallback onSelectAll;
   final VoidCallback? onAddStudent;
   final VoidCallback? onImport;
+  final VoidCallback? onDownloadTemplate;
 
   const _PageHeader({
     required this.state,
@@ -356,6 +386,7 @@ class _PageHeader extends StatelessWidget {
     required this.onSelectAll,
     this.onAddStudent,
     this.onImport,
+    this.onDownloadTemplate,
   });
 
   @override
@@ -385,12 +416,16 @@ class _PageHeader extends StatelessWidget {
               semanticLabel: '添加学生',
               onPressed: onAddStudent,
             ),
-          if (onImport != null)
-            AppIconAction(
-              icon: LucideIcons.upload,
-              semanticLabel: '批量导入',
-              onPressed: onImport,
-            ),
+          AppIconAction(
+            icon: LucideIcons.download,
+            semanticLabel: '下载导入模板',
+            onPressed: onDownloadTemplate,
+          ),
+          AppIconAction(
+            icon: LucideIcons.upload,
+            semanticLabel: '批量导入',
+            onPressed: onImport,
+          ),
           if (selecting) ...[
             AppBadge(
               label: '已选 $selectedCount',

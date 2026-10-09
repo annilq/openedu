@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/domain/models/models.dart';
@@ -98,5 +100,10 @@ class StudentManagementNotifier
     );
     await load();
     return result;
+  }
+
+  /// 下载学生导入模板 xlsx（方案A）：拉取字节后交 UI 落盘，不改动列表状态。
+  Future<Uint8List> downloadImportTemplate() async {
+    return await _students.downloadImportTemplate();
   }
 }

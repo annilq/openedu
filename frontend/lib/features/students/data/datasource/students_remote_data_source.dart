@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:dio/dio.dart';
 
 import '../../../../shared/data/remote/network_service.dart';
@@ -89,5 +91,11 @@ class StudentsRemoteDataSource {
       'file': MultipartFile.fromBytes(bytes, filename: filename),
     });
     return await _network.postForm('/students/import', form);
+  }
+
+  /// 下载学生导入模板 xlsx（方案A）：`GET /students/import-template` 返回原始字节，
+  /// 表头与导入解析口径一致（姓名 / 学号），供教师先下载再填写上传。
+  Future<Uint8List> downloadImportTemplate() async {
+    return await _network.getBytes('/students/import-template');
   }
 }

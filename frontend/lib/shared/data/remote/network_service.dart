@@ -32,4 +32,10 @@ abstract class NetworkService {
   /// 仍是 JSON 文本，吞掉它会把「越权 403」和「字体缺失 503」都挤成
   /// 「请求失败 (xxx)」，教师无法判断该重试还是该找人。
   Future<Uint8List> postBytes(String path, {Map<String, dynamic>? body});
+
+  /// 二进制 GET：返回原始字节（如学生导入模板 xlsx，方案A）。
+  ///
+  /// 与 [postBytes] 同口径：非 2xx 时先解码二进制错误体里的 JSON（code / message），
+  /// 再统一转 [HttpException]，避免把「未登录 401」挤成「请求失败」。
+  Future<Uint8List> getBytes(String path, {Map<String, dynamic>? query});
 }

@@ -28,6 +28,7 @@ from app.features.students.schemas import (
 )
 from app.features.students.service import (
     batch_reassign_class,
+    export_students_import_template,
     export_students_xlsx,
     import_students_from_xlsx,
 )
@@ -73,6 +74,25 @@ async def import_students(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
         )
+
+
+@router.get("/import-template")
+def download_student_import_template(
+    *, session: SessionDep, teacher: CurrentTeacher
+) -> Response:
+    """下载学生导入模板 xlsx（方案A）：表头为「姓名 / 学号」，供教师先下载规范模板再填写上传。
+
+    表头与 ``POST /students/import`` 的解析口径严格一致（``service._NAME_HEADERS`` /
+    ``_NO_HEADERS`` 的中文别名），教师按模板填写即可避免列序错位 / 缺列失败。
+    """
+    data = export_students_import_template()
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": "attachment; filename=student_import_template.xlsx"
+        },
+    )
 
 
 @router.put("/{student_id}", response_model=UserPublic)

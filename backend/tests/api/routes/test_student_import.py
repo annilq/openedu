@@ -15,7 +15,7 @@
 import io
 
 from fastapi.testclient import TestClient
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 
 from app.core.config import settings
 from tests.utils.user import auth_headers, login, register_teacher
@@ -188,3 +188,23 @@ def test_missing_required_header_rejected(client: TestClient):
     r = _import(client, token, data)
     assert r.status_code == 400, r.text
     assert "缺少必要列" in r.json()["message"]
+
+
+def test_import_template_download(client: TestClient):
+    """方案A：下载导入模板返回 xlsx，表头与导入解析口径一致（姓名 / 学号）。
+
+    模板不含数据行，避免教师直接上传示例数据产生脏账号。
+    """
+    token, _ = _teacher(client, "imp_tpl")
+    r = client.get(
+        "/api/v1/students/import-template",
+        headers=auth_headers(token),
+    )
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"] == XLSX_CT
+    assert "student_import_template.xlsx" in r.headers.get("content-disposition", "")
+
+    wb = load_workbook(io.BytesIO(r.content))
+    ws = wb.active
+    rows = list(ws.iter_rows(values_only=True))
+    assert rows == [("姓名", "学号")], rows

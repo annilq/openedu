@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import '../../../../shared/domain/models/models.dart';
 import '../../data/datasource/students_remote_data_source.dart';
 import 'package:kids_learn/shared/domain/repositories/students_repository.dart';
@@ -82,5 +84,10 @@ class StudentsRepositoryImpl implements StudentsRepository {
     final data =
         await _dataSource.importStudents(bytes: bytes, filename: filename);
     return StudentImportResultModel.fromJson(data);
+  }
+
+  @override
+  Future<Uint8List> downloadImportTemplate() async {
+    return await _dataSource.downloadImportTemplate();
   }
 }

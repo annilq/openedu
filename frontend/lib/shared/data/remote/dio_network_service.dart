@@ -244,6 +244,42 @@ class DioNetworkService implements NetworkService {
     }
   }
 
+  @override
+  Future<Uint8List> getBytes(String path, {Map<String, dynamic>? query}) async {
+    final options = Options(
+      method: 'GET',
+      responseType: ResponseType.bytes,
+    ).compose(_dio.options, path, queryParameters: query);
+    try {
+      final resp = await _dio.fetch<List<int>>(options);
+      return Uint8List.fromList(resp.data ?? const []);
+    } on DioException catch (e) {
+      // 二进制响应的错误体是 UTF-8 JSON 文本，必须先解码再走统一错误体——
+      // 否则 401 / 403 的具体原因被抹掉，教师无法判断该重试还是该找人。
+      final data = e.response?.data;
+      if (data is List<int>) {
+        try {
+          final decoded = utf8.decode(data);
+          final map = jsonDecode(decoded);
+          if (map is Map && map['message'] != null) {
+            if (e.response?.statusCode == 401) {
+              _onUnauthorized?.call();
+              throw UnauthorizedException();
+            }
+            throw HttpException(
+              map['message'].toString(),
+              statusCode: e.response?.statusCode,
+              code: map['code']?.toString(),
+            );
+          }
+        } on FormatException {
+          // 错误体不是 JSON：落回统一处理
+        }
+      }
+      _handleError(e);
+    }
+  }
+
   /// 统一捕获 fetch 阶段异常：连接/超时/非 2xx 都转成 AppException。
   ///
   /// 原 [streamPost] 直接在正文 `await _dio.fetch`，该调用抛出的 DioException 不在

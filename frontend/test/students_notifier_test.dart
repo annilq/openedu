@@ -51,6 +51,10 @@ class _SilentNetwork implements NetworkService {
   @override
   Future<Uint8List> postBytes(String path, {Map<String, dynamic>? body}) async =>
       throw UnimplementedError('本测试的替身不涉及二进制下载');
+
+  @override
+  Future<Uint8List> getBytes(String path, {Map<String, dynamic>? query}) async =>
+      throw UnimplementedError('本测试的替身不涉及二进制下载');
 }
 
 void main() {

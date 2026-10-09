@@ -179,6 +179,22 @@ def export_students_xlsx(*, session: Session, teacher_id: UUID) -> bytes:
     return buf.getvalue()
 
 
+def export_students_import_template() -> bytes:
+    """下载学生导入模板 xlsx（方案A）：表头与导入解析口径严格一致——仅「姓名」「学号」两列。
+
+    不含示例行（避免教师直接上传示例数据产生脏账号）；不含「班级 / 初始密码」列
+    （导入不读取班级，初始密码由服务端统一设定，见 ``import_students_from_xlsx``）。
+    与导入/导出共用 openpyxl，无第二套依赖。
+    """
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "学生导入模板"
+    ws.append(["姓名", "学号"])
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
 def batch_reassign_class(
     *,
     session: Session,
