@@ -4,6 +4,13 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../theme/app_theme.dart';
 import 'app_focusable_action.dart';
 
+/// 侧栏项在展开态需要的最小可用宽度：低于此值按 collapsed（仅图标）渲染，
+/// 以规避「折叠/展开动画期间宽度连续变化、而 [SidebarCollapseScope.collapsed]
+/// 布尔量瞬间翻转」导致的展开 Row 横向溢出（见 [AdaptiveShell] 的
+/// [AnimatedContainer] 宽度动画）。取 144 ≈ 侧栏展开宽 240 减去头部/项内边距后，
+/// 仍足够容纳「图标 + 间距 + 文字」；低于此宽必然放不下展开行。
+const double _kSidebarItemExpandedMinWidth = 144;
+
 /// 向侧栏子树广播收缩态 + 切换回调的 InheritedWidget。
 ///
 /// AdaptiveShell 在侧栏 / 收起轨态注入；AppSidebar / AppSidebarItem 通过 [of]
@@ -58,11 +65,17 @@ class AppSidebarItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scope = SidebarCollapseScope.of(context);
-    final collapsed = scope.collapsed;
     final scheme = AppTheme.colorsOf(context);
     final text = AppTheme.textOf(context);
 
-    return Padding(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // collapsed 布尔量在切换瞬间翻转，但 AnimatedContainer 宽度是连续动画的。
+        // 动画途中项若按展开态渲染，展开 Row 会被塞进仍很窄的容器 → 横向溢出。
+        // 用实际可用宽度兜底：窄于阈值时一律按 collapsed（仅图标）渲染。
+        final collapsed =
+            scope.collapsed || constraints.maxWidth < _kSidebarItemExpandedMinWidth;
+        return Padding(
       // margin 提到焦点环外侧：环必须贴着药丸，而不是把 margin 也圈进去。
       padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.sm, vertical: 2),
@@ -85,6 +98,8 @@ class AppSidebarItem extends StatelessWidget {
               : _buildExpanded(scheme, text),
         ),
       ),
+        );
+      },
     );
   }
 

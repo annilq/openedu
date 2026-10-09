@@ -10,6 +10,12 @@ import 'app_content_frame.dart';
 import 'app_avatar.dart';
 import 'app_focusable_action.dart';
 
+/// 底部用户区在展开态需要的最小可用宽度：低于此值按 collapsed（仅头像）渲染，
+/// 复用与导航项同样的兜底逻辑，规避折叠/展开动画途中展开行（头像 + 间距 +
+/// 进入箭头 = 64px 固定）被塞进窄容器导致的横向溢出。取 100 ≈ 头像 40 + 间距 8 +
+/// 箭头 16 的余量；低于此宽必然放不下展开行。
+const double _kUserBlockExpandedMinWidth = 100;
+
 /// 导航目的地（数据驱动）：同一份定义同时喂给侧栏 / 底栏 / 抽屉三种形态，
 /// 避免三种布局各写一套 item，保证选中态与回调唯一来源。
 class AdaptiveNavDestination {
@@ -423,32 +429,37 @@ class AdaptiveUserBlock extends StatelessWidget {
     final scheme = AppTheme.colorsOf(context);
     final scope =
         context.dependOnInheritedWidgetOfExactType<SidebarCollapseScope>();
-    final collapsed = scope?.collapsed ?? false;
     final name = user.displayName;
     final sub = subtitle ?? '教师账号';
 
-    if (collapsed) {
-      return Container(
-        padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
-        decoration: BoxDecoration(
-          border: Border(
-            top: BorderSide(
-              color: scheme.outline,
-              width: AppElevation.borderWidthHairline,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // 同 AppSidebarItem：collapsed 布尔量瞬间翻转，而宽度是连续动画的，
+        // 动画途中若按展开态渲染，头像行会被塞进窄容器 → 横向溢出。
+        final collapsed = (scope?.collapsed ?? false) ||
+            constraints.maxWidth < _kUserBlockExpandedMinWidth;
+        if (collapsed) {
+          return Container(
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+            decoration: BoxDecoration(
+              border: Border(
+                top: BorderSide(
+                  color: scheme.outline,
+                  width: AppElevation.borderWidthHairline,
+                ),
+              ),
             ),
-          ),
-        ),
-        alignment: Alignment.center,
-        child: AppFocusableAction(
-          onTap: onProfileTap,
-          semanticLabel: '$name · $sub',
-          borderRadius: BorderRadius.circular(AppRadius.chip),
-          child: AvatarSquircle.small(name: name),
-        ),
-      );
-    }
+            alignment: Alignment.center,
+            child: AppFocusableAction(
+              onTap: onProfileTap,
+              semanticLabel: '$name · $sub',
+              borderRadius: BorderRadius.circular(AppRadius.chip),
+              child: AvatarSquircle.small(name: name),
+            ),
+          );
+        }
 
-    return AppFocusableAction(
+        return AppFocusableAction(
       onTap: onProfileTap,
       semanticLabel: '$name · $sub',
       child: Container(
@@ -485,6 +496,8 @@ class AdaptiveUserBlock extends StatelessWidget {
           ],
         ),
       ),
+        );
+      },
     );
   }
 }

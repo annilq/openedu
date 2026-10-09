@@ -797,7 +797,9 @@ class AppTheme {
         // 与按钮同高（单行至少 32）：用 minHeight 而非 tight——
         // tight 会把多行输入/带竖向 padding 的输入死钉 32，导致多行内容溢出、
         // 单行文字顶对齐不居中。minHeight 让多行按内容增高、单行仍落在 32。
-        // 注意：单行文字垂直居中需在具体输入上用 editableTextSize 钉高（见 AppTextField）。
+        // 单行文字垂直居中靠 `AppTextField` 的 `strutStyle`（`forceStrutHeight` +
+        // `leadingDistribution: even`）：行盒撑满编辑盒、字形上下均分 → 严格居中。
+        // 裸 `ShadInput` 不暴露 textAlignVertical（默认 top），固定高度下文字贴顶，勿裸用。
         constraints: BoxConstraints(minHeight: controlH),
         decoration: ShadDecoration(
           disableSecondaryBorder: true,
@@ -1558,7 +1560,9 @@ class AppControl {
   /// 多少，文字就偏上多少，因此档位越高偏得越明显。这就是「输入框文字不上下居中」
   /// 的真正原因。
   /// 用 `forceStrutHeight` 把行高强制撑满编辑盒（controlH - 4，扣边框与 shadcn
-  /// 内部预留），Flutter 的半行距（half-leading）会把字形上下均分 → 视觉严格居中。
+  /// 内部预留），再配 `leadingDistribution: even` 把半行距上下均分 → 字形视觉严格居中。
+  /// 注意：漏掉 `even` 时走默认 `proportional`（按字体 ascent/descent 比例分），
+  /// 中文 / Noto 字体会残留 ~1–2px 偏上——这就是「文字没竖直居中」的残留来源。
   ///
   /// 仅用于「精确 controlH 高、无额外竖向 padding」的**单行**输入；多行输入本就该
   /// 顶对齐，带大竖向 padding 的输入（如聊天栏）已因盒子高、文字盒短而被居中，勿用。
@@ -1568,6 +1572,9 @@ class AppControl {
       fontSize: fontSize,
       height: (heightOf(context) - 4) / fontSize,
       forceStrutHeight: true,
+      // even leading 把行盒多余高度上下均分 → 字形严格居中（修复「文字偏上」）。
+      // 默认 proportional 按字体 ascent/descent 比例分，中文 / Noto 会残留 ~1–2px 偏上。
+      leadingDistribution: TextLeadingDistribution.even,
     );
   }
 

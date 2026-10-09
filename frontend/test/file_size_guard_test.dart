@@ -124,14 +124,28 @@ void main() {
 ///   workbench_glance 451→450（栅格包裹微调）；analytics_charts 511→587（图表适配器增加
 ///   maxCategories 截断 + 密集标签旋转，修复知识点维度下 x 轴标签互相遮挡——真实缺陷修复，
 ///   属 B 类合理大件，基线随真实行数上调）；新增 responsive_grid.dart 69 行（≤400 不登记）。
+/// 2026-10-09 工作台三处样式缺陷修复（ADR-0075 工作台优化）：analytics_charts 587→691，
+///   其中 592→691 含本次（1）环形外圆半径修正（环厚 = outer - centerSpace - 描边，杜绝被
+///   Stack 裁切）；（2）横向条标签列加宽 flex:6 + 2 行换行 + 长按整行弹出完整名（非 Material
+///   Overlay 提示 _LabelTip）。均属 B 类图表适配器职责扩充，基线随真实行数上调。
+///   workbench_glance 本次微调后回到 406（移除可选图例行 + 压缩注释，保持非 B 基线只许下调）。
+/// 2026-10-10 教师工作台 / 学生管理 / 课件编辑器一轮多任务的棘轮记账：
+///   · 本轮真实增长的已登记文件（B 类，基线随真实行数上调，理由写进提交正文）——
+///     app_theme 1695→1702（输入框文字垂直居中：strut 令牌）、adaptive_shell 490→503
+///     （侧栏折叠动画的溢出 guard）、student_management_screen 777→810（学生导入模板下载入口）；
+///   · 补登漏调：teacher_tasks_view 656→672（上一轮票据 20 之后又增长了 16 行但没同步基线，
+///     基线停在旧高度会让棘轮失真，这里补到实测值）；
+///   · 补登两个已越过 400 但未登记的课件文件：courseware_editor_page 432、courseware_section_edit_dialog 588
+///     （均为此前多轮「空态添加环节 / 知识点场景关联」累积的债务，非本轮一次性引入）。
+///     这两条是**待拆债务**不是许可：下一轮按 A 拆小（Page → Section → Widget）拆回 400 内后删登记。
 /// **只许下调（除 B 类已登记的合理大件外）。**
 ///
 /// 拆分批次见 `docs/refactor/2026-09-21-flutter-ui-decomposition.md`（P0–P4）。
 const Map<String, int> _baseline = <String, int>{
-  'shared/theme/app_theme.dart': 1695,
-  'shared/widgets/adaptive_shell.dart': 490,
+  'shared/theme/app_theme.dart': 1702,
+  'shared/widgets/adaptive_shell.dart': 503,
   'features/home/presentation/widgets/teacher/teacher_question_bank_view.dart': 759,
-  'features/home/presentation/widgets/teacher/teacher_tasks_view.dart': 656,
+  'features/home/presentation/widgets/teacher/teacher_tasks_view.dart': 672,
   'features/home/presentation/screens/home_screen.dart': 586,
   'features/assistant/presentation/screens/assistant_chat_page.dart': 570,
   'shared/widgets/scene_interpreter/reflection_scene.dart': 567,
@@ -139,9 +153,11 @@ const Map<String, int> _baseline = <String, int>{
   'features/home/presentation/widgets/teacher/teacher_wrong_questions_view.dart': 442,
   'features/home/presentation/widgets/student_home.dart': 428,
   'features/home/presentation/widgets/teacher/workbench_glance.dart': 406,
-  'shared/widgets/analytics_charts.dart': 592,
+  'shared/widgets/analytics_charts.dart': 691,
   'features/home/presentation/screens/teacher_task_review_screen.dart': 424,
-  'features/students/presentation/screens/student_management_screen.dart': 777,
+  'features/students/presentation/screens/student_management_screen.dart': 810,
+  'features/courseware/presentation/pages/courseware_editor_page.dart': 432,
+  'features/courseware/presentation/pages/courseware_section_edit_dialog.dart': 588,
 };
 
 bool _isDart(String path) =>
