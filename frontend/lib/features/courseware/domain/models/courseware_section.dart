@@ -189,7 +189,7 @@ class CoursewareSectionModel {
     Map<String, dynamic>? payload,
     List<CoursewareMaterialItem>? materials,
     Object? scene = _unset,
-    CoursewarePracticeBlock? practice,
+    Object? practice = _unset,
   }) =>
       CoursewareSectionModel(
         id: id ?? this.id,
@@ -204,7 +204,9 @@ class CoursewareSectionModel {
         scene: identical(scene, _unset)
             ? this.scene
             : scene as Map<String, dynamic>?,
-        practice: practice ?? this.practice,
+        practice: identical(practice, _unset)
+            ? this.practice
+            : practice as CoursewarePracticeBlock?,
       );
 
   /// 渲染用的话术段：有 [scriptSegments] 就用它；否则把 legacy 单串 [script]

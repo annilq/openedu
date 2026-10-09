@@ -38,4 +38,15 @@ class CoursewarePracticeBlock {
         'count': count,
         'hints': hints,
       };
+
+  CoursewarePracticeBlock copyWith({
+    String? qtype,
+    int? count,
+    String? hints,
+  }) =>
+      CoursewarePracticeBlock(
+        qtype: qtype ?? this.qtype,
+        count: count ?? this.count,
+        hints: hints ?? this.hints,
+      );
 }

@@ -18,6 +18,7 @@ import '../../domain/models/courseware_asset.dart';
 import '../../domain/models/courseware_section.dart';
 import '../../providers/courseware_provider.dart';
 import 'asset_library_picker.dart';
+import '../widgets/section_practice_edit_block.dart';
 import 'section_scene_association_block.dart';
 
 /// 编辑单个讲解环节（ADR-0067 §3.3，内容块统一化）：
@@ -320,6 +321,13 @@ class _SectionEditDialogState extends ConsumerState<_SectionEditDialog> {
                         },
                         onSelectedIndex: _onSceneSelected,
                         onClear: _clearAssociation,
+                      ),
+                      const SizedBox(height: AppSpacing.lg),
+                      // 课堂练习（T06：第四可选内容块，与素材 / 场景并列）。
+                      SectionPracticeEditBlock(
+                        practice: _draft.practice,
+                        onChanged: (p) =>
+                            setState(() => _draft = _draft.copyWith(practice: p)),
                       ),
                     ],
                   ),

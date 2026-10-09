@@ -17,12 +17,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+import 'package:kids_learn/features/assistant/domain/assistant_event.dart';
+import 'package:kids_learn/features/assistant/domain/assistant_requests.dart';
+import 'package:kids_learn/features/assistant/domain/repositories/assistant_repository.dart';
+import 'package:kids_learn/features/assistant/providers/assistant_provider.dart';
 import 'package:kids_learn/features/courseware/domain/models/courseware.dart';
 import 'package:kids_learn/features/courseware/domain/models/courseware_asset.dart';
 import 'package:kids_learn/features/courseware/domain/models/courseware_section.dart';
 import 'package:kids_learn/features/courseware/domain/models/courseware_section_kind.dart';
+import 'package:kids_learn/features/courseware/domain/models/courseware_practice_block.dart';
 import 'package:kids_learn/features/courseware/presentation/pages/courseware_present_page.dart';
 import 'package:kids_learn/features/courseware/presentation/widgets/courseware_present_step_bar.dart';
+import 'package:kids_learn/features/courseware/presentation/widgets/section_practice.dart';
 import 'package:kids_learn/features/courseware/providers/courseware_provider.dart';
 import 'package:kids_learn/shared/data/local/storage_service.dart';
 import 'package:kids_learn/shared/domain/providers/core_providers.dart';
@@ -34,6 +40,14 @@ import 'package:kids_learn/shared/widgets/scene_interpreter/scene_interpreter.da
 class _FakeStorage extends StorageService {
   @override
   String? getToken() => 'test-token';
+}
+
+/// 演示页里练习环节会渲染 [SectionPractice]，它走 [assistantNotifierProvider]
+/// （默认依赖真实仓库、测试下不配置会崩）。这里给一个空实现，只供组件构建，
+/// 不触发任何出题网络请求（T06 演示页练习可见测试不点「出题」）。
+class _NoopAssistant extends Fake implements AssistantRepository {
+  @override
+  Stream<AssistantEvent> chat(AssistantChatReq req) => const Stream.empty();
 }
 
 const _assetOk = CoursewareAssetModel(
@@ -101,6 +115,7 @@ CoursewareModel _fourSections() => _courseware([
         id: 's3',
         kind: CoursewareSectionKind.practice,
         title: '课堂练习',
+        practice: const CoursewarePracticeBlock(qtype: 'choice', count: 3),
       ),
       _gallerySection(
         const [
@@ -144,6 +159,7 @@ Future<void> _pumpPresent(
         coursewareDetailProvider(courseware.id).overrideWith((_) => courseware),
         coursewareAssetsProvider.overrideWith((_) => assets),
         storageServiceProvider.overrideWithValue(_FakeStorage()),
+        assistantRepositoryProvider.overrideWithValue(_NoopAssistant()),
       ],
       child: ShadApp.custom(
         theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
@@ -199,6 +215,7 @@ CoursewareModel _projectionCourseware() => _courseware([
         id: 'sp',
         kind: CoursewareSectionKind.practice,
         title: '课堂练习',
+        practice: const CoursewarePracticeBlock(qtype: 'choice', count: 3),
       ),
       for (var i = 0; i < 8; i++)
         _gallerySection(
@@ -534,5 +551,32 @@ void main() {
     );
     final swr = tester.widget<AnimatedSwitcher>(find.byType(AnimatedSwitcher));
     expect(swr.duration, Duration.zero);
+  });
+
+  testWidgets('课堂练习环节在演示页渲染 SectionPractice（T06 闭合此前不可见 gap）',
+      (tester) async {
+    await _pumpPresent(
+      tester,
+      courseware: _courseware([
+        CoursewareSectionModel(
+          id: 'sp',
+          title: '课堂练习',
+          script: '判断下面哪些是轴对称图形',
+          practice: const CoursewarePracticeBlock(
+            qtype: 'choice',
+            count: 3,
+            hints: '先观察对称轴',
+          ),
+        ),
+      ]),
+    );
+
+    // T06：练习作为第四内容块在演示页显式渲染，不再只剩「只有话术」空态。
+    expect(find.byType(SectionPractice), findsOneWidget);
+    expect(find.text('课堂提问'), findsOneWidget);
+    expect(find.text('出题'), findsOneWidget);
+    // 没有素材 / 场景仍不应回退成「只有话术」空态。
+    expect(find.text('这一环节只有话术'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 }

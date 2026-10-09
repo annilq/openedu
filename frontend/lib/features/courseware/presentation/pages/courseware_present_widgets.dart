@@ -4,10 +4,12 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_buttons.dart';
 import '../../../../shared/widgets/app_empty_state.dart';
+import '../../domain/models/courseware.dart';
 import '../../domain/models/courseware_section.dart';
 import '../widgets/courseware_script_view.dart';
 import '../widgets/section_interactive_scene.dart';
 import '../widgets/section_media_gallery.dart';
+import '../widgets/section_practice.dart';
 
 /// 主区：环节标题 + 话术提问卡 + 按内容块渲染的环节内容（素材 / 场景 / 练习）。
 ///
@@ -15,9 +17,14 @@ import '../widgets/section_media_gallery.dart';
 /// 物理上不可能；且「这些图形有什么共同点？」抛出去才是引导学生观察，藏起来反而
 /// 没了教学动作。
 class PresentStage extends StatelessWidget {
-  const PresentStage({super.key, required this.section});
+  const PresentStage({
+    super.key,
+    required this.section,
+    required this.courseware,
+  });
 
   final CoursewareSectionModel section;
+  final CoursewareModel courseware;
 
   @override
   Widget build(BuildContext context) {
@@ -84,25 +91,29 @@ class PresentStage extends StatelessWidget {
 
   /// 主区内容：**按填了什么渲染**，与 [CoursewareSectionModel.kind] 无关（内容块统一化）。
   ///
-  /// - 有素材 → 图廊；有关联场景 → 交互演示；两者皆无 → 空态（只有话术）。
+  /// - 有素材 → 图廊；有关联场景 → 交互演示；有练习 → [SectionPractice]；
+  ///   三者皆无 → 空态（只有话术）。
   /// - 去 kind 后任何环节都可能没配内容，给统一的「只有话术」降级提示而非白屏——
   ///   课堂上白屏等于「课件坏了」。练习内容块（[CoursewareSectionModel.practice]）
-  ///   的渲染由 T06 补，这里先只处理素材与场景。
+  ///   由 T06 显式渲染（闭合此前演示页不可见的 gap）。
   Widget _buildBody(BuildContext context) {
     final materials = section.resolvedMaterials;
     final scene = section.resolvedScene;
+    final practice = section.practice;
     final hasMaterials = materials.isNotEmpty;
     final hasScene = scene != null;
-    if (!hasMaterials && !hasScene) {
+    final hasPractice = practice != null;
+    if (!hasMaterials && !hasScene && !hasPractice) {
       return const AppEmptyState(
         icon: LucideIcons.textSelect,
         title: '这一环节只有话术',
-        message: '这一环节还没有关联素材或交互演示，只有教师话术。'
-            '回到课件编辑页给它加上素材或场景。',
+        message: '这一环节还没有关联素材、交互演示或课堂练习，只有教师话术。'
+            '回到课件编辑页给它加上素材、场景或练习。',
         steps: [
           '在课件编辑页打开这个环节',
           '点「添加素材」放进图片',
           '或点「关联知识点场景」选一份交互演示',
+          '或点「课堂练习」加一份当堂练习',
         ],
       );
     }
@@ -111,9 +122,14 @@ class PresentStage extends StatelessWidget {
       children: [
         if (hasMaterials) ...[
           SectionMediaGallery(materials: materials),
-          if (hasScene) const SizedBox(height: AppSpacing.lg),
+          if (hasScene || hasPractice) const SizedBox(height: AppSpacing.lg),
         ],
-        if (hasScene) SectionInteractiveScene(spec: scene),
+        if (hasScene) ...[
+          SectionInteractiveScene(spec: scene),
+          if (hasPractice) const SizedBox(height: AppSpacing.lg),
+        ],
+        if (hasPractice)
+          SectionPractice(courseware: courseware, section: section),
       ],
     );
   }

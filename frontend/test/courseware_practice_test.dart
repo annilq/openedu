@@ -13,7 +13,9 @@ import 'package:kids_learn/features/assistant/providers/assistant_provider.dart'
 import 'package:kids_learn/features/courseware/domain/models/courseware.dart';
 import 'package:kids_learn/features/courseware/domain/models/courseware_section.dart';
 import 'package:kids_learn/features/courseware/domain/models/courseware_section_kind.dart';
+import 'package:kids_learn/features/courseware/domain/models/courseware_practice_block.dart';
 import 'package:kids_learn/features/courseware/presentation/widgets/section_practice.dart';
+import 'package:kids_learn/features/courseware/presentation/widgets/section_practice_edit_block.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
 
 class _RecordingAssistant extends Fake implements AssistantRepository {
@@ -60,7 +62,7 @@ const _section = CoursewareSectionModel(
   kind: CoursewareSectionKind.practice,
   title: '课堂练习',
   script: '下面哪些图形是轴对称图形？',
-  payload: {'qtype': 'choice', 'count': 1},
+  practice: CoursewarePracticeBlock(qtype: 'choice', count: 1),
 );
 
 Future<void> _pumpPractice(
@@ -227,6 +229,62 @@ void main() {
     expect(find.textContaining('未配置模型'), findsOneWidget);
     expect(find.text('重新出题'), findsOneWidget);
   });
+
+  testWidgets('课堂练习编辑块：添加 / 改题型 / 移除（T06 第四内容块）',
+      (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        child: ShadApp.custom(
+          theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
+          appBuilder: (_) => CupertinoApp(
+            home: Directionality(
+              textDirection: TextDirection.ltr,
+              child: SizedBox(
+                width: 900,
+                height: 700,
+                child: const _PracticeBlockHarness(),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 起手无练习：只一颗「添加练习」。
+    expect(find.text('添加练习'), findsOneWidget);
+    expect(find.text('移除练习'), findsNothing);
+
+    await tester.tap(find.text('添加练习'));
+    await tester.pumpAndSettle();
+    // 添加后展开配置：题型 / 题量 / 移除。
+    expect(find.text('题型'), findsOneWidget);
+    expect(find.text('题量'), findsOneWidget);
+    expect(find.text('移除练习'), findsOneWidget);
+
+    // 改题型为「计算题」→ 回写 qtype=calc。点的是选择器触发器（不是「题型」标签）。
+    await tester.tap(find.byWidgetPredicate((w) => w is ShadSelect));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('计算题'));
+    await tester.pumpAndSettle();
+    final block = tester
+        .widget<SectionPracticeEditBlock>(find.byType(SectionPracticeEditBlock))
+        .practice;
+    expect(block?.qtype, 'calc');
+
+    // 移除 → 回到无练习态。
+    await tester.tap(find.text('移除练习'));
+    await tester.pumpAndSettle();
+    expect(find.text('添加练习'), findsOneWidget);
+    expect(find.text('移除练习'), findsNothing);
+    expect(
+      tester
+          .widget<SectionPracticeEditBlock>(find.byType(SectionPracticeEditBlock))
+          .practice,
+      isNull,
+    );
+    expect(tester.takeException(), isNull);
+  });
 }
 
 const _coursewareContext = AssistantCoursewareContext(
@@ -237,3 +295,21 @@ const _coursewareContext = AssistantCoursewareContext(
   grade: 4,
   semester: '下学期',
 );
+
+/// 给练习编辑块套一个有 state 的父，便于测试「添加 / 移除 / 改题型」回写。
+class _PracticeBlockHarness extends StatefulWidget {
+  const _PracticeBlockHarness();
+
+  @override
+  State<_PracticeBlockHarness> createState() => _PracticeBlockHarnessState();
+}
+
+class _PracticeBlockHarnessState extends State<_PracticeBlockHarness> {
+  CoursewarePracticeBlock? practice;
+
+  @override
+  Widget build(BuildContext context) => SectionPracticeEditBlock(
+        practice: practice,
+        onChanged: (p) => setState(() => practice = p),
+      );
+}
