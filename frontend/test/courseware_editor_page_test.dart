@@ -12,7 +12,6 @@ import 'package:kids_learn/features/courseware/domain/models/courseware.dart';
 import 'package:kids_learn/features/courseware/domain/models/courseware_asset.dart';
 import 'package:kids_learn/features/courseware/domain/models/courseware_redraft_diff.dart';
 import 'package:kids_learn/features/courseware/domain/models/courseware_section.dart';
-import 'package:kids_learn/features/courseware/domain/models/courseware_section_kind.dart';
 import 'package:kids_learn/features/courseware/domain/repositories/courseware_repository.dart';
 import 'package:kids_learn/features/home/domain/repositories/material_repository.dart';
 import 'package:kids_learn/features/courseware/presentation/pages/courseware_editor_page.dart';
@@ -26,8 +25,7 @@ import 'package:kids_learn/shared/widgets/app_actions.dart';
 
 CoursewareSectionModel _sec(String id, String title) => CoursewareSectionModel(
       id: id,
-      kind: CoursewareSectionKind.mediaGallery,
-      title: title,
+            title: title,
       script: '话术：$title',
       payload: const {},
     );
@@ -694,8 +692,7 @@ void main() {
   group('interactiveScene 关联知识点场景（方案 A）', () {
     CoursewareSectionModel scene(String id) => CoursewareSectionModel(
           id: id,
-          kind: CoursewareSectionKind.interactiveScene,
-          title: '动手画对称图形',
+                    title: '动手画对称图形',
           payload: const {},
         );
 
@@ -801,8 +798,7 @@ void main() {
       // 旧 mediaGallery：payload.items → resolvedMaterials 回退（素材回退保留）。
       final legacyGallery = CoursewareSectionModel(
         id: 'g',
-        kind: CoursewareSectionKind.mediaGallery,
-        payload: {
+                payload: {
           'items': [
             {'asset_id': 'a1', 'caption': 'x'}
           ]
@@ -820,8 +816,7 @@ void main() {
       // 不再被当作场景（演示严格「按配置显示」，杜绝「没配却显示」）。
       final legacyScene = CoursewareSectionModel(
         id: 's',
-        kind: CoursewareSectionKind.interactiveScene,
-        payload: {'kind': 'reflection'},
+                payload: {'kind': 'reflection'},
       );
       expect(legacyScene.resolvedScene, isNull);
 
@@ -832,8 +827,7 @@ void main() {
       // 其它 kind 的 payload 更不应被误当作场景。
       final practice = CoursewareSectionModel(
         id: 'p',
-        kind: CoursewareSectionKind.practice,
-        payload: {'qtype': 'choice'},
+                payload: {'qtype': 'choice'},
       );
       expect(practice.resolvedScene, isNull);
       expect(practice.resolvedMaterials, isEmpty);
@@ -866,8 +860,6 @@ void main() {
       expect(repo.updateSectionsCalls, 1);
       final saved = repo.lastUpdated!;
       expect(saved.map((s) => s.title).toList(), ['环节一', '手动加的环节']);
-      // 新环节无 kind（T03 去 kind 后无需 kind 选择器）。
-      expect(saved.last.kind, isNull);
       expect(saved.last.title, '手动加的环节');
       // 编辑器列表同步出现新环节。
       expect(find.text('手动加的环节'), findsOneWidget);

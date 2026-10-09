@@ -24,7 +24,6 @@ import 'package:kids_learn/features/assistant/providers/assistant_provider.dart'
 import 'package:kids_learn/features/courseware/domain/models/courseware.dart';
 import 'package:kids_learn/features/courseware/domain/models/courseware_asset.dart';
 import 'package:kids_learn/features/courseware/domain/models/courseware_section.dart';
-import 'package:kids_learn/features/courseware/domain/models/courseware_section_kind.dart';
 import 'package:kids_learn/features/courseware/domain/models/courseware_practice_block.dart';
 import 'package:kids_learn/features/courseware/presentation/pages/courseware_present_page.dart';
 import 'package:kids_learn/features/courseware/presentation/widgets/courseware_present_step_bar.dart';
@@ -63,8 +62,7 @@ CoursewareSectionModel _gallerySection(
 }) =>
     CoursewareSectionModel(
       id: 's1',
-      kind: CoursewareSectionKind.mediaGallery,
-      title: title,
+            title: title,
       script: '这些图形有什么共同点？',
       materials: [
         for (final m in items)
@@ -77,8 +75,7 @@ CoursewareSectionModel _gallerySection(
 
 CoursewareSectionModel _sceneSection() => CoursewareSectionModel(
       id: 's2',
-      kind: CoursewareSectionKind.interactiveScene,
-      title: '判断轴对称',
+            title: '判断轴对称',
       script: '拖对称轴，看两侧能不能完全重合',
       scene: {
         'kind': 'reflection',
@@ -113,8 +110,7 @@ CoursewareModel _fourSections() => _courseware([
       _sceneSection(),
       CoursewareSectionModel(
         id: 's3',
-        kind: CoursewareSectionKind.practice,
-        title: '课堂练习',
+                title: '课堂练习',
         practice: const CoursewarePracticeBlock(qtype: 'choice', count: 3),
       ),
       _gallerySection(
@@ -213,8 +209,7 @@ CoursewareModel _projectionCourseware() => _courseware([
       _sceneSection(),
       CoursewareSectionModel(
         id: 'sp',
-        kind: CoursewareSectionKind.practice,
-        title: '课堂练习',
+                title: '课堂练习',
         practice: const CoursewarePracticeBlock(qtype: 'choice', count: 3),
       ),
       for (var i = 0; i < 8; i++)
@@ -384,8 +379,7 @@ void main() {
       courseware: _courseware([
         CoursewareSectionModel(
           id: 's1',
-          kind: CoursewareSectionKind.mediaGallery,
-          title: '观察素材',
+                    title: '观察素材',
           scriptSegments: [
             CoursewareScriptSegment(
                 text: '开场：看图观察', emphasis: CoursewareScriptEmphasis.bold),
@@ -411,8 +405,7 @@ void main() {
       courseware: _courseware([
         CoursewareSectionModel(
           id: 's2',
-          kind: CoursewareSectionKind.mediaGallery,
-          title: '旧课件',
+                    title: '旧课件',
           script: '这些图形有什么共同点？',
           payload: {'items': []},
         ),

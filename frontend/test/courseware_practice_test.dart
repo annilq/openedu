@@ -12,7 +12,6 @@ import 'package:kids_learn/features/assistant/domain/repositories/assistant_repo
 import 'package:kids_learn/features/assistant/providers/assistant_provider.dart';
 import 'package:kids_learn/features/courseware/domain/models/courseware.dart';
 import 'package:kids_learn/features/courseware/domain/models/courseware_section.dart';
-import 'package:kids_learn/features/courseware/domain/models/courseware_section_kind.dart';
 import 'package:kids_learn/features/courseware/domain/models/courseware_practice_block.dart';
 import 'package:kids_learn/features/courseware/presentation/widgets/section_practice.dart';
 import 'package:kids_learn/features/courseware/presentation/widgets/section_practice_edit_block.dart';
@@ -59,8 +58,7 @@ const _courseware = CoursewareModel(
 
 const _section = CoursewareSectionModel(
   id: 'practice-1',
-  kind: CoursewareSectionKind.practice,
-  title: '课堂练习',
+    title: '课堂练习',
   script: '下面哪些图形是轴对称图形？',
   practice: CoursewarePracticeBlock(qtype: 'choice', count: 1),
 );
