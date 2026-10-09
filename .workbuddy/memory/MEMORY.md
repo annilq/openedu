@@ -7,8 +7,11 @@
 - 禁 `dart format`（本机 tall style 不同 → 噪声 diff）；只靠 analyze。新增原生插件须完整重跑 App（Hot Restart 不补原生注册 → pigeon `channel-error`）；游离 `flutter_tester` 占 `build/test_cache` 锁 → kill。
 - 多会话并行改共享文件：先看 `git status`+mtime，定点 Edit，写完回读（本文件被并发整写覆盖过两次）。
 - 本机 `grep` BSD 版不支持 `a\|b` → `grep -E`；`grep -c` 得0≠没有，用 Grep 工具复核。
+- ⚠️ 本机 `/bin/bash`=**3.2**：`$VAR` 紧跟中文字符会吞多字节首字节 → `unbound variable`，变量引用一律写 `${VAR}`；脚本被 zsh 调用需 `exec bash "$0" "$@"`（zsh 不做未加引号展开）。
+- ⚠️ 本机实测（macOS 26）：`screencapture -v` **拒** `-i`（改 `-J video`）；`lsappinfo […] -only WindowBounds` **恒 NULL**（已废弃）；取窗口改用 `swift -e` + CGWindowList → `screencapture -v -l <windowid>`。`flutter run -d macos` 产物名随工程而变（本仓 = `kids_learn`，非 `Runner`）。
 - 新 ADR 取号前查目录最大号 + `git status docs/adr/` + memory 预留（撞车三次 0055/0058）。
 - SwiftPM 依赖解析走 libgit2：不读 `http_proxy`、不认 gitconfig `insteadOf`；唯一生效的是 SwiftPM mirror（`~/.swiftpm/configuration/mirrors.json` + 工程 `xcshareddata/swiftpm/configuration/mirrors.json`）。本地验证 `swift package resolve --disable-sandbox`。脚本 `frontend/scripts/patch_spm_cwl_mirror.py`（幂等+`--check`）。
+- 文案纪律：**统一写「中小学」，不写 K12**（事实源 `CONTEXT.md` §语言「学段」条）。批量替换后必查残留中英空格——K12 两侧原带空格，换成纯中文会留 `你是 中小学 教研助手`；一侧是英文/数字才保留（`中小学 App`）。
 
 ## 1. 前端分层（ADR-0036/0037）
 - AI 唯一入口 `assistantNotifierProvider`+`AssistantMessageList`；后端唯一端点 `POST /api/v1/assistant/chat`。助手路由优先级即功能（ADR-0054）：写意图 `guide`(20) 高于只读 `query`(12)。
