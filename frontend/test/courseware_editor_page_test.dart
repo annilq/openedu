@@ -22,6 +22,7 @@ import 'package:kids_learn/features/courseware/providers/courseware_provider.dar
 import 'package:kids_learn/shared/data/local/storage_service.dart';
 import 'package:kids_learn/shared/domain/providers/core_providers.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
+import 'package:kids_learn/shared/widgets/app_actions.dart';
 
 CoursewareSectionModel _sec(String id, String title) => CoursewareSectionModel(
       id: id,
@@ -832,6 +833,59 @@ void main() {
       );
       expect(practice.resolvedScene, isNull);
       expect(practice.resolvedMaterials, isEmpty);
+    });
+  });
+
+  group('手动添加环节（T04 课件一等化）', () {
+    testWidgets('添加环节：开空白表单 → 填标题保存 → 末尾追加并整体覆盖写落库',
+        (tester) async {
+      final repo = _FakeRepo(_editorCourseware([_sec('a', '环节一')]));
+      await _pumpEditor(tester, repo: repo);
+
+      // 头部出现「添加环节」入口。
+      expect(find.widgetWithText(AppTextAction, '添加环节'), findsOneWidget);
+
+      // 点「添加环节」→ 弹出与编辑同构的空白表单（标题为「添加环节」，无 kind）。
+      await tester.tap(find.widgetWithText(AppTextAction, '添加环节'));
+      await tester.pumpAndSettle();
+      expect(find.text('保存'), findsOneWidget); // 弹窗已开
+      expect(find.text('关联素材'), findsWidgets);
+
+      // 标题字段（唯一 EditableText）填入新环节名。
+      await tester.enterText(find.byType(EditableText).at(0), '手动加的环节');
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+
+      // 一次整体覆盖写（PUT /{id}/sections），新环节追加到末尾。
+      expect(repo.updateSectionsCalls, 1);
+      final saved = repo.lastUpdated!;
+      expect(saved.map((s) => s.title).toList(), ['环节一', '手动加的环节']);
+      // 新环节无 kind（T03 去 kind 后无需 kind 选择器）。
+      expect(saved.last.kind, isNull);
+      expect(saved.last.title, '手动加的环节');
+      // 编辑器列表同步出现新环节。
+      expect(find.text('手动加的环节'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('添加环节可取消：列表与落库均不动', (tester) async {
+      final repo = _FakeRepo(_editorCourseware([_sec('a', '环节一')]));
+      await _pumpEditor(tester, repo: repo);
+
+      await tester.tap(find.widgetWithText(AppTextAction, '添加环节'));
+      await tester.pumpAndSettle();
+      expect(find.text('保存'), findsOneWidget);
+
+      // 取消 → 弹窗关闭，原课件不动、不落库。
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+
+      expect(repo.updateSectionsCalls, 0);
+      expect(find.text('环节一'), findsOneWidget);
+      expect(find.text('手动加的环节'), findsNothing);
+      expect(tester.takeException(), isNull);
     });
   });
 }

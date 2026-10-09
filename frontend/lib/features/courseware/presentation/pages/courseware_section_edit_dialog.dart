@@ -274,7 +274,10 @@ class _SectionEditDialogState extends ConsumerState<_SectionEditDialog> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('编辑环节', style: text.titleLarge),
+              Text(
+                widget.section.id.isEmpty ? '添加环节' : '编辑环节',
+                style: text.titleLarge,
+              ),
               const SizedBox(height: AppSpacing.md),
               AppTextField(label: '环节标题', controller: _titleCtl),
               const SizedBox(height: AppSpacing.md),

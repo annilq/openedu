@@ -7,6 +7,7 @@ import '../../../../shared/widgets/app_actions.dart';
 import '../../../../shared/widgets/app_buttons.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../domain/models/courseware_section.dart';
+import '../pages/courseware_section_edit_dialog.dart';
 
 /// 编辑器里的环节列表：支持拖拽重排与多选批量删（ADR-0067 第二轮 T01）。
 ///
@@ -23,12 +24,22 @@ class CoursewareEditorSectionList extends ConsumerStatefulWidget {
     required this.onReorder,
     required this.onDeleteSelected,
     required this.onEdit,
+    this.knowledgePointId,
+    required this.subject,
+    required this.grade,
+    required this.semester,
   });
 
   final List<CoursewareSectionModel> sections;
   final ValueChanged<List<CoursewareSectionModel>> onReorder;
   final ValueChanged<List<String>> onDeleteSelected;
   final ValueChanged<CoursewareSectionModel> onEdit;
+
+  /// 课件所属知识点 id（空白环节也能「关联知识点场景」）。null = 孤儿课件，禁用该能力。
+  final String? knowledgePointId;
+  final String subject;
+  final int grade;
+  final String semester;
 
   @override
   ConsumerState<CoursewareEditorSectionList> createState() =>
@@ -63,6 +74,24 @@ class _CoursewareEditorSectionListState
     });
   }
 
+  /// 手动添加环节（courseware-round-3 T04）：打开与编辑同构的空白表单，保存后把新环节
+  /// 追加到列表末尾，经 [onReorder]（即 `PUT /{id}/sections` 整体覆盖写）落库。
+  ///
+  /// 因 T03 已去 kind，空白环节无需 kind 选择器——与「每个环节的内容都是配置选择」一致。
+  Future<void> _addSection() async {
+    final created = await showCoursewareSectionEditDialog(
+      context,
+      ref,
+      CoursewareSectionModel(), // 空白环节：无 kind、title/话术/素材/场景皆空
+      knowledgePointId: widget.knowledgePointId,
+      subject: widget.subject,
+      grade: widget.grade,
+      semester: widget.semester,
+    );
+    if (created == null) return; // 用户取消，列表不动
+    widget.onReorder([...widget.sections, created]);
+  }
+
   @override
   Widget build(BuildContext context) {
     final app = AppTheme.colorsOf(context);
@@ -89,11 +118,14 @@ class _CoursewareEditorSectionListState
                   fullWidth: false,
                   onPressed: _selected.isEmpty ? null : _commitDelete,
                 ),
-              ] else
+              ] else ...[
+                AppTextAction(label: '添加环节', onPressed: _addSection),
+                const SizedBox(width: AppSpacing.sm),
                 AppTextAction(
                   label: '选择',
                   onPressed: items.isEmpty ? null : () => setState(() => _selecting = true),
                 ),
+              ],
             ],
           ),
         ),
