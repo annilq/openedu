@@ -66,7 +66,7 @@
 **A6｜OpenAI 的「何时该建 agent」三判据**
 - 出处：S7（p.5–6）
 - 原文要点：**01 Complex decision-making；02 Difficult-to-maintain rules；03 Heavy reliance on unstructured data。** 并明确收边：**"Before committing to building an agent, validate that your use case can meet these criteria clearly. Otherwise, a deterministic solution may suffice."**
-- 对本项目的含义：K12 场景最贴合的是第 3 条（自然语言、图片题面）；「规则复杂」类（如批改流程、权限判定）不该交给 LLM。
+- 对本项目的含义：中小学场景最贴合的是第 3 条（自然语言、图片题面）；「规则复杂」类（如批改流程、权限判定）不该交给 LLM。
 
 ---
 
@@ -100,7 +100,7 @@
 **B5｜OpenAI 的两种多 agent 形态**
 - 出处：S7（p.17–21）；S10 文档同构
 - 原文要点：**Manager (agents as tools)**——中心 manager 通过 tool call 调用专业 agent，**"This pattern is ideal for workflows where you only want one agent to control workflow execution and have access to the user."**；**Decentralized (handoffs)**——peer agent 单向移交执行权。原文总结："Regardless of the orchestration pattern, the same principles apply: keep components flexible, composable, and driven by clear, well-structured prompts."
-- 对本项目的含义：K12 App 只有一个用户会话入口，应优先 **manager 模式**（保持单一「面对用户」的 agent），避免 handoff 造成上下文所有权不清。
+- 对本项目的含义：中小学 App 只有一个用户会话入口，应优先 **manager 模式**（保持单一「面对用户」的 agent），避免 handoff 造成上下文所有权不清。
 
 ---
 
@@ -219,7 +219,7 @@
 - 原文要点：Relevance classifier、Safety classifier、PII filter、Moderation、**Tool safeguards**（"Assess the risk of each tool available to your agent by assigning a rating—low, medium, or high—based on factors like read-only vs. write access, reversibility, required account permissions, and financial impact. Use these risk ratings to trigger automated actions, such as pausing for guardrail checks before executing high-risk functions or escalating to a human if needed."）、Rules-based protections、Output validation。落地启发式三条：先做数据与内容安全；按真实 edge case 增量加；兼顾安全与体验。
 - 对本项目的含义：**工具级风险分级（low/medium/high）是可以直接照搬的**：涉及"给家长发消息""修改学生作业/成绩"的工具必须是 high + 人工确认。
 
-**E4｜K12 特殊要求：未成年人场景的输出校验**
+**E4｜中小学特殊要求：未成年人场景的输出校验**
 - 出处：[推断]（基于 E3 的 Output validation 与 Anthropic 的建议 extrapolation）
 - 说明：一手来源没有专门针对"教育/app未成年人"的条款；不要把它写成"OpenAI 明确要求"。
 
@@ -356,4 +356,4 @@
 5. **LangGraph 官方没有「何时不需要 graph」的原话**：官网（S12）只有反向表述（LangGraph 很底层，新手建议用 LangChain 高层 agents）；明确讨论"agent 抽象会遮蔽上下文""可以在 from scratch 自建"的是官方博客 S13，而非 API 文档。
 6. **未能找到 CrewAI 关于 `@tool` 装饰器自动注册的一手说明**：当前抓取的 Agents/Tools/Crews 三页中，`@tool` 主要出现在集成文档与其他 SDK 的对照里；"装饰是否等于自动注册"对 CrewAI **无法直接证实**，只能用 I3 的替代事实（官方推荐路径是无装饰器的 JSONC/显式代码）来旁证。
 7. **LangGraph 官网 URL 变更**：https://langchain-ai.github.io/langgraph/ 现在 301 到 https://docs.langchain.com/oss/python/langgraph/overview；引用旧 URL 会在未来失效。
-8. **未找到任何一手来源专门讨论「K12/教育/未成年人」场景的 agent 架构要求**：所有涉及安全的内容都来自通用条款（S7 guardrails、S6 human-in-the-loop）。E4 条目为 [推断]。
+8. **未找到任何一手来源专门讨论「中小学/教育/未成年人」场景的 agent 架构要求**：所有涉及安全的内容都来自通用条款（S7 guardrails、S6 human-in-the-loop）。E4 条目为 [推断]。

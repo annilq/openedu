@@ -61,5 +61,5 @@
 
 - **context compaction**：一手资料已补齐（Anthropic「Effective context engineering」的 compaction / 结构化笔记 / sub-agent 三件套），但**本仓尚未实现任何一档**——最轻量的「工具结果清理（tool result clearing）」也没有。参考 `reference/agent-architecture-design.md` §3 接缝 3。
 - **工具风险分级与 per-tool 失败计数**：OpenAI 指南的 low/medium/high 分级、12-Factor 的 `errorCounter`（~3 次上限）都未落地；本仓只有全局 `max_turns`。
-- **儿童产品的 AI 安全边界**：目前只有本仓 ADR-0008 / 0026 的自建实践，**一手来源里没有任何专门针对 K12/未成年人的条款**（research 文件「存疑」第 8 条），不要写成"某厂商明确要求"。
+- **儿童产品的 AI 安全边界**：目前只有本仓 ADR-0008 / 0026 的自建实践，**一手来源里没有任何专门针对中小学/未成年人的条款**（research 文件「存疑」第 8 条），不要写成"某厂商明确要求"。
 - **GenUI 方向**：CopilotKit generative UI、A2UI、MCP-UI 等「服务端下发 UI schema」方案尚未系统调研，只在本仓 ADR-0042 里作为「明确不做」被提及。

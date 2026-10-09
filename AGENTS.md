@@ -7,7 +7,7 @@
 
 ## 这是什么
 
-K12 错题复习应用：家长出题 → 儿童答题产生错题 → 间隔重复复习直至毕业。Flutter 平板 App + FastAPI 后端
+中小学错题复习应用：家长出题 → 儿童答题产生错题 → 间隔重复复习直至毕业。Flutter 平板 App + FastAPI 后端
 （单 wheel 含 `agent_core` 内核 + `app` 集成层）+ SQLite/PostgreSQL。模型在客户端「模型管理」里手动添加
 （家长 `ModelConfig`，api_key 经 Fernet 加密；**无内置模型目录**，ADR-0039）；未添加时出题/答疑/批改返回
 「未配置模型」提示，**无离线 mock 兜底**。
