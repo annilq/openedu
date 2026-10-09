@@ -56,7 +56,7 @@ _SNIPPET_CHARS = 300
 _PROMPT_TEXT_LIMIT = 2000
 
 _DRAFT_SYSTEM = (
-    "你是 K12 教研助手，为教师备一份「按知识点讲解」的课件。\n"
+    "你是中小学教研助手，为教师备一份「按知识点讲解」的课件。\n"
     "产出 3-4 个**有序**环节，每个环节是统一的内容块容器，形如 "
     '{"id": "", "title": "...", "script": "...", "payload": {...}, '
     '"materials": [...], "scene": ..., "practice": {...}}。\n'

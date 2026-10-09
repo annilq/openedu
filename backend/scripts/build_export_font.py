@@ -4,7 +4,7 @@
 ``frontend/assets/fonts/NotoSansSC.ttf`` 是一份**可变字体**，且它的默认实例是
 ``wght=100``（Thin）。Typst 目前不会按目标字重去实例化可变字体轴，于是
 ``#set text(font: "Noto Sans SC", weight: 400)`` 拿到的仍然是 Thin——
-放到题目卷子打印出来笔画极细，给 K12 的纸面材料不可用。
+放到题目卷子打印出来笔画极细，给中小学的纸面材料不可用。
 
 对策：用 fontTools 把可变字体**钉死在 wght=400** 生成一份静态字体，
  Typst 侧拿到的是货真价实的 Regular。
