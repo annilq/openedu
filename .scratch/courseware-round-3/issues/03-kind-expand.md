@@ -16,12 +16,17 @@
 
 **Blocked by:** None（可立即开始）。
 
-**Status:** ready-for-agent
+**Status:** done（2026-10-09，feat/courseware-round-3 c7166c4 + 879102d，已推 origin）
 
 **验收清单**
-- [ ] 后端 `kind` 可选、空/未知 kind 不再 422；旧带 kind 课件照常读
-- [ ] `compute_section_diff` 匹配键不含 kind，重起草 diff 不误判全新增
-- [ ] AI 起草产物不含 kind 字段
-- [ ] 前端渲染/编辑零 `kind` 新分支（除兼容旧数据的可空只读字段）；枚举 `@deprecated` 但仍在、未删
-- [ ] 去 kind 后回归：旧带 kind 课件能正常演示；新无 kind 课件能与后续 04/05/06 互写
-- [ ] `flutter analyze` 0 issue；`tests/ai/test_layering_invariants.py` 通过；`file_size_guard` 不破
+- [x] 后端 `kind` 可选、空/未知 kind 不再 422；旧带 kind 课件照常读
+- [x] `compute_section_diff` 匹配键不含 kind，重起草 diff 不误判全新增
+- [x] AI 起草产物不含 kind 字段
+- [x] 前端渲染/编辑零 `kind` 新分支（除兼容旧数据的可空只读字段）；枚举 `@deprecated` 但仍在、未删
+- [x] 去 kind 后回归：旧带 kind 课件能正常演示；新无 kind 课件能与后续 04/05/06 互写
+- [x] `flutter analyze` 0 issue；`tests/ai/test_layering_invariants.py` 通过；`file_size_guard` 不破
+
+**实现备注**
+- 前端演示页「未知 kind」旧断言「暂不支持的环节类型」已改为内容推断的「这一环节只有话术」空态（T03 去 kind 后渲染按内容块）。
+- 测试桩补 `storageServiceProvider.overrideWithValue`（ADR-0077 AuthImage 依赖），否则有效素材画廊测试 `AuthImage` 抛 `UnimplementedError`。
+- 新增 `CoursewarePracticeBlock` 模型（qtype/count/hints），为 T06 练习内容块铺路。
