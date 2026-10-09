@@ -92,12 +92,8 @@ Future<void> _pump(WidgetTester tester, _DialogRepo repo,
     ),
   );
   await tester.pumpAndSettle();
-  // 点「打开」弹出对话框。
+  // 点「打开」弹出对话框。第一个范围默认自动选中、目录立即加载，无需再点范围。
   await tester.tap(find.text('打开'));
-  await tester.pumpAndSettle();
-  // 选范围以加载目录。
-  await tester.tap(
-      find.widgetWithText(AppFocusableAction, '数学 4年级 · 上学期'));
   await tester.pumpAndSettle();
 }
 
@@ -124,6 +120,18 @@ class _Opener extends StatelessWidget {
 }
 
 void main() {
+  testWidgets('默认选中第一个范围，进弹窗即展示知识点', (tester) async {
+    final repo = _DialogRepo();
+    await _pump(tester, repo);
+
+    // 无需手动点范围：目录项直接出现（消除「默认进去没数据」的空态）。
+    expect(find.text('轴对称A'), findsOneWidget);
+    expect(find.text('轴对称B'), findsOneWidget);
+    expect(find.text('轴对称C'), findsOneWidget);
+    // 第一条范围处于选中态（填色），无需额外断言颜色，靠可见项佐证已加载。
+    expect(repo.lastKpId, isNull);
+  });
+
   testWidgets('已关联项不被过滤，仍展示且标「已关联」', (tester) async {
     final repo = _DialogRepo();
     await _pump(tester, repo, associatedIds: {'kp-a'});

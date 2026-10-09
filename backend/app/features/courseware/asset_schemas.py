@@ -27,12 +27,6 @@ class CoursewareAssetResp(SQLModel):
     # 读取该素材原图的相对路径（带 API 前缀，前端直接拼 baseUrl 即可）。
     # 走 ``GET /courseware/assets/{id}/file``，与列表同一鉴权路径。
     url: str = ""
-    # 来源标记（T08 / ADR-0067 §3.5·§5）：user_uploaded=教师自传，platform_cc0=平台
-    # 预置 CC0 公共素材。picker 据此展示 CC0 角标与来源 / 许可说明。
-    source: str = ""
-    # CC0 公共素材的来源 URL 与许可类型；非 CC0 恒为空串。
-    source_url: str = ""
-    license: str = ""
 
 
 class CoursewareAssetListResp(SQLModel):

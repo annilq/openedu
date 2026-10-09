@@ -9,7 +9,7 @@ subagent 存在的理由——「创建 / 派发」是**写意图**，而 ``quer
 会把「查一下我创建过的任务」也拽过来。词表只收「动作 + 对象」的完整短语，
 ``hints`` 刻意留空——本 subagent 不接受启发式兜底，宁可漏给 ``query`` 也不误抢查询意图。
 
-**roles 仅教师**：学生端没有布置任务的入口（``visible_businesses`` 按角色过滤，
+**roles 仅教师**：学生端没有发布任务的入口（``visible_businesses`` 按角色过滤，
 这也是 ADR-0026 安全边界的一部分），学生端说「帮我创建任务」仍会落到 ``query`` 的只读答复。
 """
 from __future__ import annotations

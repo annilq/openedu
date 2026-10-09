@@ -21,6 +21,10 @@ class CoursewareModel {
   final String status;
   final List<CoursewareSectionModel> sections;
 
+  /// 教学目标 / 备课依据（courseware-round-3 T01）：空壳课件建出时存教师填的内容，
+  /// 「AI 补充讲解」（T05）会读它当起草上下文。可空。
+  final String? objective;
+
   /// 所属知识点已被清理（孤儿课件）：列表据此标注，课件仍可用。
   final bool kpMissing;
   final DateTime? createdAt;
@@ -36,6 +40,7 @@ class CoursewareModel {
     this.title = '',
     this.status = 'draft',
     this.sections = const [],
+    this.objective,
     this.kpMissing = false,
     this.createdAt,
     this.updatedAt,
@@ -55,6 +60,7 @@ class CoursewareModel {
                 CoursewareSectionModel.fromJson(Map<String, dynamic>.from(e as Map)))
             .toList(),
         kpMissing: json['kp_missing'] as bool? ?? false,
+        objective: json['objective'] as String?,
         createdAt: DateTime.tryParse(json['created_at'] as String? ?? ''),
         updatedAt: DateTime.tryParse(json['updated_at'] as String? ?? ''),
       );

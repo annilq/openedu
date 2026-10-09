@@ -33,19 +33,6 @@ COURSEWARE_STATUSES: tuple[str, ...] = (
     COURSEWARE_STATUS_READY,
 )
 
-# ── 环节 kind 注册表（ADR-0067 §3.3）─────────────────────────────────────
-# ⚠️ 这是**环节类型**，与 ADR-0061 的 SceneSpec kind（渲染器名 reflection /
-# bar_chart / …）是两层。``interactive_scene`` 这个字符串在两层各出现一次、
-# 语义不同，**两套注册表各自登记、各自契约测试，禁止互相映射复用**。
-SECTION_KIND_MEDIA_GALLERY = "media_gallery"  # 生活素材 / 欣赏（环节 1、3）
-SECTION_KIND_INTERACTIVE_SCENE = "interactive_scene"  # 交互判定（环节 2）
-SECTION_KIND_PRACTICE = "practice"  # 课堂练习（环节 4）
-SECTION_KINDS: tuple[str, ...] = (
-    SECTION_KIND_MEDIA_GALLERY,
-    SECTION_KIND_INTERACTIVE_SCENE,
-    SECTION_KIND_PRACTICE,
-)
-
 # ── 课件素材允许的 MIME（ADR-0067 §3.5：首版只做图片）─────────────────────
 # 与资料（Material）分开：材料是要切分 + 向量化的教材（parser 只吃
 # .pdf/.docx/.txt/.md），素材是要原样显示的图，不进向量库。
@@ -56,20 +43,9 @@ COURSEWARE_ASSET_MIMES: tuple[str, ...] = (
     "image/gif",
 )
 
-# ── 素材来源（T08 / ADR-0067 §3.5·§5）──────────────────────────────────────
-# user_uploaded = 教师自己上传；platform_cc0 = 平台预置的 CC0 公共素材，随仓库
-# 离线分发（seed 入库），对所有教师可见、不可删除。
+# ── 素材来源 ───────────────────────────────────────────────────────────────
+# 首版只做教师自传图片（ADR-0077：移除 platform_cc0 预置包，素材库 = 纯教师上传）。
 COURSEWARE_ASSET_SOURCE_USER_UPLOADED = "user_uploaded"
-COURSEWARE_ASSET_SOURCE_PLATFORM_CC0 = "platform_cc0"
-COURSEWARE_ASSET_SOURCES: tuple[str, ...] = (
-    COURSEWARE_ASSET_SOURCE_USER_UPLOADED,
-    COURSEWARE_ASSET_SOURCE_PLATFORM_CC0,
-)
-
-# 平台预置 CC0 素材的归属教师（系统哨兵 id）。CC0 素材不绑定任何真实教师，
-# 用固定哨兵 id 占位；SQLite 不强制外键，运行期靠 source == platform_cc0 做
-# 可见性与删除保护，不依赖外键约束。
-COURSEWARE_CC0_OWNER_ID = uuid.UUID("00000000-0000-0000-0000-0000000000cc")
 
 
 class Courseware(SQLModel, table=True):
@@ -96,6 +72,9 @@ class Courseware(SQLModel, table=True):
     kp_name: str = Field(default="", max_length=128)
     title: str = Field(default="", max_length=128)
     status: str = Field(default=COURSEWARE_STATUS_DRAFT, max_length=16)
+    # 教学目标 / 备注（courseware-round-3 T01）：空壳课件建出时存教师填的备课依据，
+    # 供后续「AI 补充讲解」（T05）读取当作起草上下文。可空、无索引、无 FK。
+    objective: str | None = Field(default=None, max_length=2000)
     # 环节序列：[{id, kind, title, script, payload}]。整体覆盖写，不建子表
     # （ADR-0067 §3.2：子表只带来 JOIN 与孤儿行）。
     #
@@ -141,14 +120,10 @@ class CoursewareAsset(SQLModel, table=True):
     # 宽高用于演示页排版（未知则为 None，布局按可用宽度自适应）
     width: int | None = None
     height: int | None = None
-    # 来源标记（T08 / ADR-0067 §3.5·§5）：user_uploaded=教师自传，platform_cc0=平台
-    # 预置公共素材。默认 user_uploaded（含历史上传行，迁移会回填该默认值）。
+    # 来源标记：user_uploaded=教师自传（ADR-0077 起素材库 = 纯教师上传，无平台预置素材）。
     source: str = Field(
         default=COURSEWARE_ASSET_SOURCE_USER_UPLOADED, max_length=32
     )
-    # CC0 公共素材的来源 URL 与许可类型；非 CC0（教师自传）恒为 None。
-    source_url: str | None = Field(default=None, max_length=1024)
-    license: str | None = Field(default=None, max_length=64)
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore

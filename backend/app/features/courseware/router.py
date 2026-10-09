@@ -1,7 +1,7 @@
 """课件路由（ADR-0067 切片 3）：教师专属——列表 / 新建 / 最近 / 读 / 改 / 覆盖写环节 / 删。
 
 路由只做「接参数 → 调 service」：归属校验在 service（经 ``core.guard``），
-环节 kind 校验在 service（注册表 §3.3）。本文件不持有任何业务规则。
+环节统一为内容块容器（courseware-round-3 T07 已彻底移除 kind 字段）。本文件不持有任何业务规则。
 
 ⚠️ ``/recent`` 必须声明在 ``/{courseware_id}`` **之前**：否则「recent」会被当成
 一个 UUID 去解析，回执端点永远 422（§3.8 的补偿项会静默失效）。
@@ -108,7 +108,7 @@ def replace_sections(
 ) -> CoursewareResp:
     """整体覆盖写环节序列（排序 / 增删改都在前端完成，后端只存结果）。
 
-    kind 不在注册表 → 422 + ``COURSEWARE_BAD_KIND``（§3.3：不接受自由字符串）。
+    环节统一为内容块容器（T07 起无 kind 字段）；空列表落真 SQL NULL。
     """
     return service.replace_sections(
         session, teacher_id=user.id, courseware_id=courseware_id, req=req

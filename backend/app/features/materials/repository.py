@@ -279,7 +279,7 @@ def list_knowledge_points(
     学期语义（ADR-0061 发布任务对接资料库）：
     - ``semester=''`` = **不限学期** → 返回该 (学科, 年级) 下**所有**学期的知识点。
       早期实现按 ``semester == ''`` 精确匹配，而资料涌现出的知识点几乎都带
-      「上/下学期」，于是「不限学期」永远返回空——布置任务表单默认态看不到任何
+      「上/下学期」，于是「不限学期」永远返回空——发布任务表单默认态看不到任何
       真实知识点、只剩骨架兜底，看起来就像「知识点不随学期切换」。
     - ``semester='上/下学期'`` → 精确匹配该学期（教师明确限定了学期就该只看它）。
     """
@@ -291,6 +291,29 @@ def list_knowledge_points(
     if semester:
         stmt = stmt.where(KnowledgePoint.semester == semester)
     stmt = stmt.order_by(KnowledgePoint.semester, KnowledgePoint.created_at)
+    return list(session.exec(stmt).all())
+
+
+def list_all_knowledge_points(
+    session: Session, *, teacher_id: uuid.UUID
+) -> list[KnowledgePoint]:
+    """教师名下**全部**知识点（跨范围），课件「新增」选择器用。
+
+    课件创建需要跨 (学科, 年级, 学期) 选一个知识点，而 ``list_knowledge_points``
+    受范围约束、``/knowledge-points/scopes`` 只是范围清单。课件入口没有「先选范围」
+    的上下文，所以给一个一次返回全量、屏蔽 skeleton 的列表（复用上层 service 的
+    过滤口径，保持 skeleton 仍不出现在选择器中）。
+    """
+    stmt = (
+        select(KnowledgePoint)
+        .where(KnowledgePoint.teacher_id == teacher_id)
+        .order_by(
+            KnowledgePoint.subject,
+            KnowledgePoint.grade,
+            KnowledgePoint.semester,
+            KnowledgePoint.created_at,
+        )
+    )
     return list(session.exec(stmt).all())
 
 

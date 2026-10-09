@@ -43,25 +43,19 @@ class NavigationDestinations {
       AdaptiveNavDestination(
           icon: LucideIcons.listTodo,
           label: '任务',
-          active: active is TaskListPage,
-          onTap: () => go(const TaskListPage())),
-      AdaptiveNavDestination(
-          icon: LucideIcons.pencil,
-          label: '布置任务',
-          active: active is CreateTaskPage,
-          onTap: () => go(const CreateTaskPage()),
-          // ADR-0057 P1：出题进行中在侧栏也亮一个进度徽标，点它即回生成页。
+          // 发布任务已收进任务页（方案 A）：生成页是任务页的一个动作态，不再单列侧栏。
+          // 故它高亮时「任务」也亮；出题中点按即回生成页（ADR-0057 P1）。
+          active: active is TaskListPage || active is CreateTaskPage,
+          onTap: () => gen is TaskGenPreview && gen.streaming
+              ? go(const CreateTaskPage())
+              : go(const TaskListPage()),
+          // ADR-0057 P1：出题进度徽标从「布置任务」迁到「任务」项。
           trailing: genTrailing(gen)),
       AdaptiveNavDestination(
           icon: LucideIcons.users,
           label: '学生',
           active: active is StudentManagementPage,
           onTap: () => go(const StudentManagementPage())),
-      AdaptiveNavDestination(
-          icon: LucideIcons.barChart3,
-          label: '统计',
-          active: active is AnalyticsPage,
-          onTap: () => go(const AnalyticsPage())),
       AdaptiveNavDestination(
           icon: LucideIcons.library,
           label: '题库',
@@ -89,6 +83,11 @@ class NavigationDestinations {
           // 场景后侧栏会「谁都不亮」，教师以为自己离开了导航。
           active: active is SceneLibraryPage || active is SceneLibraryDetailPage,
           onTap: () => go(const SceneLibraryPage())),
+      AdaptiveNavDestination(
+          icon: LucideIcons.images,
+          label: '素材库',
+          active: active is AssetLibraryPage,
+          onTap: () => go(const AssetLibraryPage())),
     ];
   }
 

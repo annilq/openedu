@@ -39,7 +39,7 @@ class MasteryBoard extends ConsumerWidget {
               child: AppEmptyState.inline(
                 icon: LucideIcons.lightbulb,
                 title: isStudent ? '你还没有作答记录' : '还没有作答记录',
-                message: isStudent ? '去做几道题，看看你掌握了什么吧～' : '先布置任务吧～',
+                message: isStudent ? '去做几道题，看看你掌握了什么吧～' : '先发布任务吧～',
               ),
             )
           : AppCard(

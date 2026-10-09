@@ -10,7 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 1. **未登记的新文件不得超过 400 行**——这是 ADR-0058 的主要执行力：它拦不住
 ///    历史债务，但能拦住**下一个** `teacher_question_bank_view.dart`（现已拆出
 ///    `BankQuestionRow`，基线随之下调到 759）。
-/// 2. **已登记的超限文件不得继续增长**（棘轮）——现存 **15** 个超限文件登记在
+/// 2. **已登记的超限文件不得继续增长**（棘轮）——现存 **16** 个超限文件登记在
 ///    [_baseline] 里（另 `dev/theme_preview.dart` 1189 行走豁免），基线**只许下调不许上调**：
 ///    拆小了把基线跟着调小，长回去就失败。
 ///    它不强迫任何人现在就去拆分，但保证这些文件不会继续变长。
@@ -98,7 +98,7 @@ void main() {
 /// 现存超限文件的基线（2026-09-21 实测；2026-10-04 补登 reflection_scene.dart；
 /// 2026-10-05 拆出 BankQuestionRow 后下调 teacher_question_bank_view 838→759；
 /// 2026-10-07 删除已不存在的 teacher_student_selector 登记、student_management_screen 771→775；
-/// 补登 3 个此前提交（analytics/courseware 等）已落地但未登记的 >400 文件：analytics_screen 488、
+/// 补登 2 个此前提交（courseware 等）已落地但未登记的 >400 文件：
 /// section_practice 429、teacher_task_form_view 425；
 /// 2026-10-08 拆分 courseware_present_page 474→320、courseware_section_edit_dialog 470→373，
 /// 两条均移出 _baseline；
@@ -109,13 +109,21 @@ void main() {
 /// 2026-10-08 票据 20（概览→教师工作台）：teacher_tasks_view 649→656（新增 initialTab
 /// 深链参数，承接概览待办卡片跳对应 Tab），功能必需、已在提交正文说明理由）。
 /// 2026-10-08 票据 17（文件规模棘轮补登债务）：分文件定 A/B——
-///   · analytics_screen 488 → **B 确认保留**：学情看板属合理大件，正式登记基线并补 why（见该文件头注释）；
-///     本次补 why 注释 +4 行，基线同步 488→492（B 不拆小，仅登记真实行数）；
 ///   · section_practice 429 → **A 拆小**：抽出 PracticeQuestionPrompt/PracticeAction/PracticeNotice 三子件到
 ///     section_practice_parts.dart，主文件 293 行已回到 400 内，**整条移出 _baseline**；
 ///   · teacher_task_form_view 429 → **A 拆小**：抽出审阅闸门/动作区到 teacher_task_form_actions.dart，
 ///     主文件 384 行已回到 400 内，**整条移出 _baseline**。
 ///   两处 A 拆小均为 ADR-0058 P4「区块/子件独立成文件」，净减为真实职责分离，不是硬压行数。
+/// 2026-10-08 票据 06/07（ADR-0075 概览×统计合并）：删除 analytics_screen 488/492（能力已并入
+///   WorkbenchAnalysis，等价测试见 workbench_analysis_test），并从 _baseline 移除其登记；
+///   拆分出的三个子文件正式登记基线：workbench_analysis 417、workbench_glance 451、
+///   analytics_charts 511（图表适配器层：同组图表 widget 视为一类职责，符合 ADR-0058 §2 例外）。
+///   主壳 teacher_overview_view 拆分后 242 行已回到 400 内，无需登记。
+/// 2026-10-08 工作台优化（宽屏 grid + 去重）：workbench_analysis 417→374 回到 400 内、
+///   **整条移出 _baseline**（去重删除冗余正确率卡 + 图表改用栅格包裹，净减为真实收敛）；
+///   workbench_glance 451→450（栅格包裹微调）；analytics_charts 511→587（图表适配器增加
+///   maxCategories 截断 + 密集标签旋转，修复知识点维度下 x 轴标签互相遮挡——真实缺陷修复，
+///   属 B 类合理大件，基线随真实行数上调）；新增 responsive_grid.dart 69 行（≤400 不登记）。
 /// **只许下调（除 B 类已登记的合理大件外）。**
 ///
 /// 拆分批次见 `docs/refactor/2026-09-21-flutter-ui-decomposition.md`（P0–P4）。
@@ -130,7 +138,8 @@ const Map<String, int> _baseline = <String, int>{
   'features/home/presentation/widgets/teacher/teacher_question_card.dart': 511,
   'features/home/presentation/widgets/teacher/teacher_wrong_questions_view.dart': 442,
   'features/home/presentation/widgets/student_home.dart': 428,
-  'features/analytics/presentation/screens/analytics_screen.dart': 492,
+  'features/home/presentation/widgets/teacher/workbench_glance.dart': 406,
+  'shared/widgets/analytics_charts.dart': 592,
   'features/home/presentation/screens/teacher_task_review_screen.dart': 424,
   'features/students/presentation/screens/student_management_screen.dart': 777,
 };

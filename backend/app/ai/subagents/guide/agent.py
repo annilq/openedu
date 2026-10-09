@@ -39,11 +39,11 @@ TARGET_QUESTION_BANK = "teacher_question_bank"
 
 # 收尾话术：说清「为什么不能」——只回「我不能创建」而不给理由，用户只会再问一遍。
 _FINISH = (
-    "布置任务要由你亲自定题并确认发布，助手这边只负责出题和查数据，"
+    "发布任务要由你亲自定题并确认发布，助手这边只负责出题和查数据，"
     "不能代你创建或派发。入口在下面。"
 )
 
-_CARD_TEXT = "到「布置任务」页选好题目，确认后发布给学生。"
+_CARD_TEXT = "到「任务」页，点右上角「发布任务」，选好题目确认后发布给学生。"
 
 _COURSEWARE_SYSTEM = (
     "你是课堂大屏练习出题助手。教师会把题目读给学生，学生口头回答。"
@@ -118,10 +118,10 @@ class GuideSubAgent(BaseSubAgent):
 
         yield data_event(
             {
-                "title": "布置任务",
+                "title": "发布任务",
                 "text": _CARD_TEXT,
                 "actions": [
-                    {"label": "去布置任务", "target": TARGET_CREATE_TASK},
+                    {"label": "去发布任务", "target": TARGET_CREATE_TASK},
                     {"label": "先看看题库", "target": TARGET_QUESTION_BANK},
                 ],
             },

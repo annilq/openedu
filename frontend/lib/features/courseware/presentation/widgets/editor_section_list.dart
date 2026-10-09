@@ -7,7 +7,7 @@ import '../../../../shared/widgets/app_actions.dart';
 import '../../../../shared/widgets/app_buttons.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../domain/models/courseware_section.dart';
-import '../../domain/models/courseware_section_kind.dart';
+import '../pages/courseware_section_edit_dialog.dart';
 
 /// 编辑器里的环节列表：支持拖拽重排与多选批量删（ADR-0067 第二轮 T01）。
 ///
@@ -24,12 +24,22 @@ class CoursewareEditorSectionList extends ConsumerStatefulWidget {
     required this.onReorder,
     required this.onDeleteSelected,
     required this.onEdit,
+    this.knowledgePointId,
+    required this.subject,
+    required this.grade,
+    required this.semester,
   });
 
   final List<CoursewareSectionModel> sections;
   final ValueChanged<List<CoursewareSectionModel>> onReorder;
   final ValueChanged<List<String>> onDeleteSelected;
   final ValueChanged<CoursewareSectionModel> onEdit;
+
+  /// 课件所属知识点 id（空白环节也能「关联知识点场景」）。null = 孤儿课件，禁用该能力。
+  final String? knowledgePointId;
+  final String subject;
+  final int grade;
+  final String semester;
 
   @override
   ConsumerState<CoursewareEditorSectionList> createState() =>
@@ -64,6 +74,24 @@ class _CoursewareEditorSectionListState
     });
   }
 
+  /// 手动添加环节（courseware-round-3 T04）：打开与编辑同构的空白表单，保存后把新环节
+  /// 追加到列表末尾，经 [onReorder]（即 `PUT /{id}/sections` 整体覆盖写）落库。
+  ///
+  /// 因 T03 已去 kind，空白环节无需 kind 选择器——与「每个环节的内容都是配置选择」一致。
+  Future<void> _addSection() async {
+    final created = await showCoursewareSectionEditDialog(
+      context,
+      ref,
+      CoursewareSectionModel(), // 空白环节：无 kind、title/话术/素材/场景皆空
+      knowledgePointId: widget.knowledgePointId,
+      subject: widget.subject,
+      grade: widget.grade,
+      semester: widget.semester,
+    );
+    if (created == null) return; // 用户取消，列表不动
+    widget.onReorder([...widget.sections, created]);
+  }
+
   @override
   Widget build(BuildContext context) {
     final app = AppTheme.colorsOf(context);
@@ -90,11 +118,14 @@ class _CoursewareEditorSectionListState
                   fullWidth: false,
                   onPressed: _selected.isEmpty ? null : _commitDelete,
                 ),
-              ] else
+              ] else ...[
+                AppTextAction(label: '添加环节', onPressed: _addSection),
+                const SizedBox(width: AppSpacing.sm),
                 AppTextAction(
                   label: '选择',
                   onPressed: items.isEmpty ? null : () => setState(() => _selecting = true),
                 ),
+              ],
             ],
           ),
         ),
@@ -201,15 +232,22 @@ class _CoursewareEditorSectionListState
     AppColors app,
     AppText text,
   ) {
-    final kindLabel = s.isUnknownKind
-        ? '未知环节'
-        : kCoursewareSectionKindLabels[s.kind] ?? s.kind!.value;
-    final icon = switch (s.kind) {
-      CoursewareSectionKind.mediaGallery => LucideIcons.images,
-      CoursewareSectionKind.interactiveScene => LucideIcons.shapes,
-      CoursewareSectionKind.practice => LucideIcons.penLine,
-      _ => LucideIcons.circleHelp,
-    };
+    // 内容块统一化（T03 去 kind）：不再按 kind 分派，按「填了什么」推断图标与分类标签。
+    final IconData icon;
+    final String category;
+    if (s.resolvedScene != null) {
+      icon = LucideIcons.shapes;
+      category = '交互讲解';
+    } else if (s.resolvedMaterials.isNotEmpty) {
+      icon = LucideIcons.images;
+      category = '素材展示';
+    } else if (s.practice != null) {
+      icon = LucideIcons.penLine;
+      category = '课堂练习';
+    } else {
+      icon = LucideIcons.circleHelp;
+      category = '讲解';
+    }
     final onTap =
         _selecting ? () => _toggleSelect(s.id) : () => widget.onEdit(s);
     return AppCard(
@@ -235,7 +273,7 @@ class _CoursewareEditorSectionListState
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    s.title.isEmpty ? kindLabel : s.title,
+                    s.title.isEmpty ? category : s.title,
                     style: text.titleMedium,
                   ),
                   if (s.displaySegments.isNotEmpty) ...[
@@ -252,7 +290,7 @@ class _CoursewareEditorSectionListState
             ),
             const SizedBox(width: AppSpacing.sm),
             Text(
-              kindLabel,
+              category,
               style: text.labelSmall?.copyWith(color: app.secondary),
             ),
           ],

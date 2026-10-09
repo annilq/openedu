@@ -3,7 +3,7 @@ import '../../../../shared/utils/json_decode.dart';
 import '../../domain/repositories/material_repository.dart';
 
 /// 资料库仓库实现：端点拼装与 JSON 解析在此，业务契约（接口 + 选项模型）
-/// 在 `domain/repositories/material_repository.dart`——这样布置任务表单能用
+/// 在 `domain/repositories/material_repository.dart`——这样发布任务表单能用
 /// `KnowledgePointOption.semester` 而不必 import `data/`（ADR 分层 R4）。
 class MaterialRepositoryImpl implements MaterialRepository {
   MaterialRepositoryImpl(this._network);

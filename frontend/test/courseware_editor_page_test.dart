@@ -12,18 +12,20 @@ import 'package:kids_learn/features/courseware/domain/models/courseware.dart';
 import 'package:kids_learn/features/courseware/domain/models/courseware_asset.dart';
 import 'package:kids_learn/features/courseware/domain/models/courseware_redraft_diff.dart';
 import 'package:kids_learn/features/courseware/domain/models/courseware_section.dart';
-import 'package:kids_learn/features/courseware/domain/models/courseware_section_kind.dart';
 import 'package:kids_learn/features/courseware/domain/repositories/courseware_repository.dart';
+import 'package:kids_learn/features/home/domain/repositories/material_repository.dart';
 import 'package:kids_learn/features/courseware/presentation/pages/courseware_editor_page.dart';
 import 'package:kids_learn/features/courseware/presentation/widgets/editor_section_list.dart'
     show reorderCoursewareSections;
 import 'package:kids_learn/features/courseware/providers/courseware_provider.dart';
+import 'package:kids_learn/shared/data/local/storage_service.dart';
+import 'package:kids_learn/shared/domain/providers/core_providers.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
+import 'package:kids_learn/shared/widgets/app_actions.dart';
 
 CoursewareSectionModel _sec(String id, String title) => CoursewareSectionModel(
       id: id,
-      kind: CoursewareSectionKind.mediaGallery,
-      title: title,
+            title: title,
       script: '话术：$title',
       payload: const {},
     );
@@ -39,6 +41,14 @@ CoursewareModel _editorCourseware(List<CoursewareSectionModel> sections) =>
       status: 'ready',
       sections: sections,
     );
+
+/// 测试用假 StorageService：不读写 SharedPreferences，[getToken] 直接返回 null。
+/// 素材图片走 [AuthImage] 取 token 注入鉴权头；测试无后端，返回 null 即不带头，
+/// 不影响 widget 构建（失败由 errorBuilder 兜底，且不触发真实网络）。
+class _FakeStorage extends StorageService {
+  @override
+  String? getToken() => null;
+}
 
 /// 内存假仓库：只实现编辑器用到的 [listCourseware] / [updateSections] / [getRedraftDiff]，
 /// 其余给计数占位，便于断言「重起草不新建/删除副本」。
@@ -84,12 +94,18 @@ class _FakeRepo extends CoursewareRepository {
 
   @override
   Future<CoursewareModel> createCourseware(
-          {required String knowledgePointId, String? title}) async {
+          {required String knowledgePointId,
+          String? title,
+          String? objective,
+          bool draft = true}) async {
     createCoursewareCalls++;
     // 人为延迟，让「生成中」提示可被 widget 测试稳定观测（生产端是真 AI 起草，本就慢）。
     await Future.delayed(const Duration(milliseconds: 50));
     return _courseware;
   }
+
+  @override
+  Future<List<KnowledgePointOption>> listKnowledgePoints() async => const [];
 
   @override
   Future<CoursewareModel?> getRecentCourseware() async => null;
@@ -148,6 +164,8 @@ Future<void> _pumpEditor(
     ProviderScope(
       overrides: [
         coursewareRepositoryProvider.overrideWithValue(repo),
+        // 素材图片走 AuthImage 取 token；测试无后端，用假 StorageService 让构建不崩。
+        storageServiceProvider.overrideWithValue(_FakeStorage()),
         // 素材库检索（picker 用 T04）：测试里不直连 repository，直接喂假素材。
         // 覆盖 coursewareAssetLibraryProvider（picker 实际 watch 的），并按查询串过滤，
         // 使文件名检索框在测试里真实生效。
@@ -369,7 +387,13 @@ void main() {
       await tester.tap(find.text('添加素材'));
       await tester.pumpAndSettle();
       expect(find.text('选择素材'), findsOneWidget);
-      await tester.tap(find.text('建筑立面'));
+      // 新 picker 以缩略图网格展示素材：用语义标签定位「建筑立面」缩略图并点选。
+      await tester.tap(find.bySemanticsLabel('选择素材 建筑立面'));
+      await tester.pumpAndSettle();
+      // 确认（picker 内多选确认）→ 关闭 picker，回到编辑对话框。
+      // 注：编辑对话框原本已带 1 个素材项（a1 蝴蝶标本），picker 以
+      // initialSelected 预选它，点选 建筑立面（b1）后共 2 项，故按钮为「确认（2）」。
+      await tester.tap(find.text('确认（2）'));
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('保存'));
@@ -397,8 +421,9 @@ void main() {
       expect(find.text('蝴蝶标本'), findsWidgets);
       expect(find.text('建筑立面'), findsWidgets);
 
-      // 删除最后一项（item 行的「移除」按钮：段移除在前、素材移除在后，末位是第 2 项）。
-      await tester.tap(find.text('移除').last);
+      // 删除最后一项：素材缩略图右上角的删除按钮（语义标签「移除该素材」，
+      // 末位即第 2 项；素材名仍作为 caption 叠加显示）。
+      await tester.tap(find.bySemanticsLabel('移除该素材').last);
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('保存'));
@@ -448,20 +473,24 @@ void main() {
       ]));
       await openPickerWithGallery(tester, repo);
 
-      // 「我的素材库」并列展示两个素材。
-      expect(find.text('蝴蝶标本'), findsWidgets);
-      expect(find.text('建筑立面'), findsWidgets);
+      // 「我的素材库」以缩略图网格并列展示两个素材（用语义标签定位缩略图）。
+      expect(find.bySemanticsLabel('选择素材 蝴蝶标本'), findsWidgets);
+      expect(find.bySemanticsLabel('选择素材 建筑立面'), findsWidgets);
 
-      // 选择第二个 → 回执仍是 {asset_id, caption}，保存后落到 items。
-      await tester.tap(find.text('建筑立面'));
+      // 选择第二个 → 回执是选中的 asset id 列表，保存后落到 materials。
+      await tester.tap(find.bySemanticsLabel('选择素材 建筑立面'));
       await tester.pumpAndSettle();
+      await tester.tap(find.text('确认（1）'));
+      await tester.pumpAndSettle();
+
       await tester.tap(find.text('保存'));
       await tester.pumpAndSettle();
 
       final mats = repo.lastUpdated!.first.materials;
       expect(mats.length, 1);
       expect(mats.first.assetId, 'b1');
-      expect(mats.first.caption, '建筑立面');
+      // 新 picker 只回传 id，新建项 caption 留空（不再从素材名派生）。
+      expect(mats.first.caption, isEmpty);
       expect(tester.takeException(), isNull);
     });
 
@@ -471,17 +500,17 @@ void main() {
       ]));
       await openPickerWithGallery(tester, repo);
 
-      // 输入「建筑」→ 只剩建筑立面，蝴蝶标本被过滤掉。
+      // 输入「建筑」→ 只剩建筑立面，蝴蝶标本被过滤掉（新 picker 检索框 key 同步）。
       await tester.enterText(
         find.descendant(
-          of: find.byKey(const Key('asset-search')),
+          of: find.byKey(const Key('asset-picker-search')),
           matching: find.byType(EditableText),
         ),
         '建筑',
       );
       await tester.pumpAndSettle();
-      expect(find.text('建筑立面'), findsWidgets);
-      expect(find.text('蝴蝶标本'), findsNothing);
+      expect(find.bySemanticsLabel('选择素材 建筑立面'), findsWidgets);
+      expect(find.bySemanticsLabel('选择素材 蝴蝶标本'), findsNothing);
       expect(tester.takeException(), isNull);
     });
   });
@@ -608,62 +637,6 @@ void main() {
     });
   });
 
-  group('平台 CC0 预置包入库 + 角标（T08）', () {
-    CoursewareSectionModel gallery(String id, String title) =>
-        _sec(id, title).copyWith(payload: const {'items': <Map<String, String>>[]});
-
-    const cc0 = CoursewareAssetModel(
-      id: 'cc0-1',
-      name: '蝴蝶标本（CC0）',
-      mime: 'image/png',
-      url: 'https://example.com/cc0-butterfly.png',
-      source: 'platform_cc0',
-      sourceUrl: 'https://example.com/cc0',
-      license: 'CC0 1.0',
-    );
-    const own = CoursewareAssetModel(
-      id: 'own-1',
-      name: '我的素材',
-      mime: 'image/png',
-      url: '/x/own-1',
-      source: 'user_uploaded',
-      sourceUrl: '',
-      license: '',
-    );
-
-    testWidgets('素材库 picker：CC0 与自有素材并列，CC0 带角标 + 来源/许可详情',
-        (tester) async {
-      final repo = _FakeRepo(_editorCourseware([gallery('a', '环节一')]));
-      await _pumpEditor(tester, repo: repo, assets: [cc0, own]);
-
-      // 打开环节编辑对话框 → 添加素材 → 弹出素材库 picker。
-      await tester.tap(find.text('环节一'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('添加素材'));
-      await tester.pumpAndSettle();
-      expect(find.text('选择素材'), findsOneWidget);
-
-      // 自有素材无 CC0 角标；CC0 素材带角标。
-      expect(find.text('我的素材'), findsWidgets);
-      expect(find.text('CC0'), findsWidgets);
-      // CC0 详情可读：许可 + 来源 URL。
-      expect(find.text('许可：CC0 1.0　来源：https://example.com/cc0'),
-          findsOneWidget);
-      // 非 CC0 不显示来源/许可详情。
-      expect(find.text('许可：　来源：'), findsNothing);
-      expect(tester.takeException(), isNull);
-    });
-
-    test('模型：isPlatformCc0 按 source 判定', () {
-      expect(cc0.isPlatformCc0, isTrue);
-      expect(own.isPlatformCc0, isFalse);
-      expect(
-        const CoursewareAssetModel(id: 'x', name: 'n').isPlatformCc0,
-        isFalse,
-      );
-    });
-  });
-
   group('进入不自动建课件，显式发起 AI 生成（T09）', () {
     CoursewareModel emptyKpCourseware() => _editorCourseware(const []);
 
@@ -675,29 +648,33 @@ void main() {
 
       // 关键：进入页面没有自动请求 AI（createCourseware 调用计数为 0）。
       expect(repo.createCoursewareCalls, 0);
-      // 空态给出下一步：主动发起按钮。
+      // 空态给出下一步：主动发起按钮（建空壳，不触发 AI）。
       expect(find.text('还没有课件'), findsOneWidget);
-      expect(find.text('新增课件信息'), findsOneWidget);
+      expect(find.text('新增课件'), findsOneWidget);
       // 没有环节列表、没有「开始讲课」（无课件不可讲）。
       expect(find.text('开始讲课'), findsNothing);
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('点「新增课件信息」触发 AI 生成并展示课件', (tester) async {
+    testWidgets('点「新增课件」建空壳（不触发 AI），进入空课件态', (tester) async {
       final repo = _FakeRepo(emptyKpCourseware(), listReturnsEmpty: true);
       await _pumpEditor(tester, repo: repo);
       expect(repo.createCoursewareCalls, 0);
 
-      await tester.tap(find.text('新增课件信息'));
-      // 生成中：明确提示，且仍在忙（不会闪过空白）。
+      await tester.tap(find.text('新增课件'));
+      // 创建中：明确提示（建空壳，不调 AI 起草）。
       await tester.pump();
-      expect(find.text('AI 正在生成课件，请稍候…'), findsOneWidget);
+      expect(find.text('正在创建课件…'), findsOneWidget);
 
       await tester.pumpAndSettle();
-      // 生成完成后展示课件内容（这里假仓库返回有环节的课件）。
+      // 建好空壳：一次 createCourseware（draft=false），展示空课件态（不是有环节的课件）。
       expect(repo.createCoursewareCalls, 1);
-      expect(find.text('新增课件信息'), findsNothing);
+      expect(find.text('新增课件'), findsNothing); // 空态按钮已消失
+      expect(find.text('还没有讲解安排'), findsOneWidget);
+      // 空壳不讲课：开始讲课按钮禁用（仍在树中，文本可找到）；用「AI 补充讲解」填充。
       expect(find.text('开始讲课'), findsOneWidget);
+      expect(find.widgetWithText(AppTextAction, 'AI 补充讲解'), findsOneWidget);
+      expect(find.widgetWithText(AppTextAction, 'AI 重新起草'), findsNothing);
       expect(tester.takeException(), isNull);
     });
 
@@ -715,8 +692,7 @@ void main() {
   group('interactiveScene 关联知识点场景（方案 A）', () {
     CoursewareSectionModel scene(String id) => CoursewareSectionModel(
           id: id,
-          kind: CoursewareSectionKind.interactiveScene,
-          title: '动手画对称图形',
+                    title: '动手画对称图形',
           payload: const {},
         );
 
@@ -822,8 +798,7 @@ void main() {
       // 旧 mediaGallery：payload.items → resolvedMaterials 回退（素材回退保留）。
       final legacyGallery = CoursewareSectionModel(
         id: 'g',
-        kind: CoursewareSectionKind.mediaGallery,
-        payload: {
+                payload: {
           'items': [
             {'asset_id': 'a1', 'caption': 'x'}
           ]
@@ -841,8 +816,7 @@ void main() {
       // 不再被当作场景（演示严格「按配置显示」，杜绝「没配却显示」）。
       final legacyScene = CoursewareSectionModel(
         id: 's',
-        kind: CoursewareSectionKind.interactiveScene,
-        payload: {'kind': 'reflection'},
+                payload: {'kind': 'reflection'},
       );
       expect(legacyScene.resolvedScene, isNull);
 
@@ -853,11 +827,111 @@ void main() {
       // 其它 kind 的 payload 更不应被误当作场景。
       final practice = CoursewareSectionModel(
         id: 'p',
-        kind: CoursewareSectionKind.practice,
-        payload: {'qtype': 'choice'},
+                payload: {'qtype': 'choice'},
       );
       expect(practice.resolvedScene, isNull);
       expect(practice.resolvedMaterials, isEmpty);
+    });
+  });
+
+  group('手动添加环节（T04 课件一等化）', () {
+    testWidgets('添加环节：开空白表单 → 填标题保存 → 末尾追加并整体覆盖写落库',
+        (tester) async {
+      final repo = _FakeRepo(_editorCourseware([_sec('a', '环节一')]));
+      await _pumpEditor(tester, repo: repo);
+
+      // 头部出现「添加环节」入口。
+      expect(find.widgetWithText(AppTextAction, '添加环节'), findsOneWidget);
+
+      // 点「添加环节」→ 弹出与编辑同构的空白表单（标题为「添加环节」，无 kind）。
+      await tester.tap(find.widgetWithText(AppTextAction, '添加环节'));
+      await tester.pumpAndSettle();
+      expect(find.text('保存'), findsOneWidget); // 弹窗已开
+      expect(find.text('关联素材'), findsWidgets);
+
+      // 标题字段（唯一 EditableText）填入新环节名。
+      await tester.enterText(find.byType(EditableText).at(0), '手动加的环节');
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+
+      // 一次整体覆盖写（PUT /{id}/sections），新环节追加到末尾。
+      expect(repo.updateSectionsCalls, 1);
+      final saved = repo.lastUpdated!;
+      expect(saved.map((s) => s.title).toList(), ['环节一', '手动加的环节']);
+      expect(saved.last.title, '手动加的环节');
+      // 编辑器列表同步出现新环节。
+      expect(find.text('手动加的环节'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('添加环节可取消：列表与落库均不动', (tester) async {
+      final repo = _FakeRepo(_editorCourseware([_sec('a', '环节一')]));
+      await _pumpEditor(tester, repo: repo);
+
+      await tester.tap(find.widgetWithText(AppTextAction, '添加环节'));
+      await tester.pumpAndSettle();
+      expect(find.text('保存'), findsOneWidget);
+
+      // 取消 → 弹窗关闭，原课件不动、不落库。
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+
+      expect(repo.updateSectionsCalls, 0);
+      expect(find.text('环节一'), findsOneWidget);
+      expect(find.text('手动加的环节'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('AI 补充讲解（T05 三项数据回填）', () {
+    CoursewareModel emptyShell() => _editorCourseware(const []);
+
+    testWidgets('空课件：AI 行动标签为「AI 补充讲解」，重起草全 added 并写回同一课件',
+        (tester) async {
+      final repo = _FakeRepo(emptyShell());
+      // 空课件 redraft：diff 全为 added（复用 redraft_diff，空课件即补讲解）。
+      repo.redraftDiff = CoursewareRedraftDiffModel(diff: [
+        CoursewareSectionDiffModel(
+          status: CoursewareSectionDiffStatus.added,
+          drafted: _sec('n1', '补充环节一'),
+        ),
+        CoursewareSectionDiffModel(
+          status: CoursewareSectionDiffStatus.added,
+          drafted: _sec('n2', '补充环节二'),
+        ),
+      ]);
+      await _pumpEditor(tester, repo: repo);
+
+      // 空课件态：行动标签自适应为「AI 补充讲解」（非「AI 重新起草」）。
+      expect(find.widgetWithText(AppTextAction, 'AI 补充讲解'), findsOneWidget);
+      expect(find.widgetWithText(AppTextAction, 'AI 重新起草'), findsNothing);
+
+      // 触发 AI 补充讲解（复用 redraft_diff + 逐段接受写回同一课件）。
+      await tester.tap(find.widgetWithText(AppTextAction, 'AI 补充讲解'));
+      await tester.pumpAndSettle();
+      expect(repo.redraftDiffCalls, 1);
+      expect(find.text('重起草预览'), findsOneWidget);
+
+      await tester.tap(find.text('应用所选'));
+      await tester.pumpAndSettle();
+
+      // 写回同一课件：一次 updateSections，合并结果 = 两个 added。
+      expect(repo.updateSectionsCalls, 1);
+      expect(repo.lastUpdated?.map((s) => s.id).toList(), ['n1', 'n2']);
+      // 关键：没有新建 / 删除课件副本。
+      expect(repo.createCoursewareCalls, 0);
+      expect(repo.deleteCoursewareCalls, 0);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('有课件：AI 行动标签为「AI 重新起草」', (tester) async {
+      final repo = _FakeRepo(_editorCourseware([_sec('a', '环节一')]));
+      await _pumpEditor(tester, repo: repo);
+      expect(find.widgetWithText(AppTextAction, 'AI 重新起草'), findsOneWidget);
+      expect(find.widgetWithText(AppTextAction, 'AI 补充讲解'), findsNothing);
+      expect(tester.takeException(), isNull);
     });
   });
 }

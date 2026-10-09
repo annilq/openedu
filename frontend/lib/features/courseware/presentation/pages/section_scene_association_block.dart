@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_actions.dart';
@@ -7,9 +8,9 @@ import '../../../../shared/widgets/app_loading.dart';
 
 /// 「关联知识点场景」（统一表单，任意 kind 都能挂）。
 ///
-/// 列出该知识点在「讲解」里已配置的交互演示模板（ADR-0061 SceneSpec），点一份即
-/// 快照式复制进本节顶层 [CoursewareSectionModel.scene]；知识点没配 → 提示去知识点页
-/// 配置；孤儿课件 → 直接不可用。
+/// 列出该知识点在「讲解」里已配置的交互演示模板（ADR-0061 SceneSpec），用下拉
+/// 选择器选一份即快照式复制进本节顶层 [CoursewareSectionModel.scene]；知识点没配 →
+/// 提示去知识点页配置；孤儿课件 → 直接不可用。
 ///
 /// 从 [showCoursewareSectionEditDialog] 的编辑态中提取为独立无状态组件：所需数据
 /// 全部由参数传入，不再直接读编辑页 state（ADR-0058 §4：一个文件只暴露一个公开物）。
@@ -19,18 +20,20 @@ class SectionSceneAssociationBlock extends StatelessWidget {
     required this.knowledgePointId,
     required this.loading,
     required this.scenes,
+    required this.selectedIndex,
     required this.hasScene,
     required this.onRetry,
-    required this.onAssociate,
+    required this.onSelectedIndex,
     required this.onClear,
   });
 
   final String? knowledgePointId;
   final bool loading;
   final List<Map<String, dynamic>>? scenes;
+  final int? selectedIndex;
   final bool hasScene;
   final VoidCallback onRetry;
-  final void Function(Map<String, dynamic>) onAssociate;
+  final void Function(int) onSelectedIndex;
   final VoidCallback onClear;
 
   String _titleOf(Map<String, dynamic> spec) =>
@@ -89,11 +92,34 @@ class SectionSceneAssociationBlock extends StatelessWidget {
           )
         else
           ...[
-            for (final spec in scenes!)
+            Text('选择讲解模板', style: text.labelSmall),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              selectedIndex == null
+                  ? '未关联（点此选择）'
+                  : _titleOf(scenes![selectedIndex!]),
+              style: text.bodyMedium?.copyWith(color: app.onSurfaceVariant),
+            ),
+            if (hasScene) ...[
+              const SizedBox(height: AppSpacing.xs),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '本环节已关联上方选中的交互演示。',
+                      style: text.bodySmall?.copyWith(color: app.onSurfaceVariant),
+                    ),
+                  ),
+                  AppTextAction(label: '清除关联', onPressed: onClear),
+                ],
+              ),
+            ],
+            const SizedBox(height: AppSpacing.sm),
+            for (var i = 0; i < scenes!.length; i++)
               Padding(
                 padding: const EdgeInsets.only(bottom: AppSpacing.sm),
                 child: AppCard(
-                  onTap: () => onAssociate(spec),
+                  onTap: () => onSelectedIndex(i),
                   child: Padding(
                     padding: const EdgeInsets.all(AppSpacing.sm),
                     child: Row(
@@ -102,39 +128,26 @@ class SectionSceneAssociationBlock extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(_titleOf(spec), style: text.titleSmall),
+                              Text(_titleOf(scenes![i]), style: text.titleSmall),
                               const SizedBox(height: AppSpacing.xs),
                               Text(
-                                '类型：${spec['kind'] ?? '未知'}',
+                                '类型：${scenes![i]['kind'] ?? '未知'}',
                                 style: text.bodySmall
                                     ?.copyWith(color: app.onSurfaceVariant),
                               ),
                             ],
                           ),
                         ),
-                        AppTextAction(
-                          label: '选用',
-                          onPressed: () => onAssociate(spec),
-                        ),
+                        if (selectedIndex == i)
+                          Padding(
+                            padding: const EdgeInsets.only(right: AppSpacing.sm),
+                            child: Icon(LucideIcons.check, size: 18, color: app.primary),
+                          ),
                       ],
                     ),
                   ),
                 ),
               ),
-            if (hasScene) ...[
-              const SizedBox(height: AppSpacing.xs),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      '本环节已关联交互演示。',
-                      style: text.bodySmall?.copyWith(color: app.onSurfaceVariant),
-                    ),
-                  ),
-                  AppTextAction(label: '清除关联', onPressed: onClear),
-                ],
-              ),
-            ],
           ],
       ],
     );

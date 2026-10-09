@@ -22,7 +22,7 @@ class OverviewPage extends TeacherPage {
   const OverviewPage();
 }
 
-/// 布置任务（生成页）。
+/// 发布任务（生成页，从「任务」页进入）。
 class CreateTaskPage extends TeacherPage {
   const CreateTaskPage();
 }
@@ -100,13 +100,6 @@ class StudentManagementPage extends TeacherPage {
   const StudentManagementPage();
 }
 
-/// 学情统计页（作用域三态 + 四维聚合，ticket 12）。
-///
-/// 侧栏「统计」项进入本页，消费 `/analytics/*` 三个聚合端点。
-class AnalyticsPage extends TeacherPage {
-  const AnalyticsPage();
-}
-
 /// 学生详情页（带学生 ID，不依赖全局选中态）。
 ///
 /// 取代「先选中学生 → 右侧各视图按全局 `selectedStudentProvider` 取数」的写法：
@@ -176,9 +169,22 @@ class SceneLibraryEditorPage extends TeacherPage {
   });
 }
 
+/// 素材库（ADR-0076）：教师自传图片的集中管理入口。多选上传 / grid 陈列 /
+/// 点缩略图放大 / 逐张删除；课件环节「添加素材」复用的 [showAssetLibraryPicker]
+/// 与这里共用同一份素材库数据。
+class AssetLibraryPage extends TeacherPage {
+  const AssetLibraryPage();
+}
+
 /// 侧栏高亮用的「基础页」：审核页沿用它进来的那一页的高亮。
 ///
 /// 审核不是一个侧栏入口（否则「任务」会在用户从概览进来时错位高亮），而是某一页
 /// 的延续，所以高亮取 [back]。
-TeacherPage highlightFor(TeacherPage page) =>
-    page is TaskReviewPage ? page.back : page;
+TeacherPage highlightFor(TeacherPage page) {
+  // 「发布任务」已收进「任务」页（方案 A）：生成页是任务页的一个动作态，不是独立侧栏
+  // 入口。故它自身、以及由它派生的审核页，都归入「任务」高亮；审核返回也落回任务列表，
+  // 而不是回到一个已不存在的「布置任务」概念页。
+  if (page is TaskReviewPage) return page.back;
+  if (page is CreateTaskPage) return const TaskListPage();
+  return page;
+}

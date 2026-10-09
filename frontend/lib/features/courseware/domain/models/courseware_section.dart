@@ -1,4 +1,4 @@
-import 'courseware_section_kind.dart';
+import 'courseware_practice_block.dart';
 
 /// 话术段的重点级别（ADR-0067 第二轮 T02）：轻量富文本，不引入新渲染引擎。
 enum CoursewareScriptEmphasis {
@@ -64,17 +64,13 @@ class CoursewareMaterialItem {
 /// - [script] 是教师话术（「这些图形有什么共同点？」）。按决策 15，它**当提问卡
 ///   直接投给学生看**——投影时教师屏 = 学生所见，做「仅教师可见」在单屏下物理上
 ///   不可能，且课堂提问本来就该让学生看见。
-/// - [payload] 按 [kind] 释义：
-///   - `mediaGallery`: `{items: [{asset_id, caption}]}`
-///   - `interactiveScene`: **直接是一份 ADR-0061 SceneSpec**（原样透传渲染器）
-///   - `practice`: `{qtype, count}`
-/// - [materials] / [scene] 是与 [kind] **解耦**的顶层可选字段（环节内容块统一化）：
-///   任何 [kind] 的环节都能挂素材与关联知识点场景。旧 AI 起草数据仍走 [payload]
-///   内嵌（items / 整份 SceneSpec），由 [resolvedMaterials] / [resolvedScene] 回退
-///   读取；新数据优先走顶层字段。
+/// - [payload] 是旧 AI 起草数据的兜底容器（内嵌 items / 整份 SceneSpec），渲染交给各自组件。
+/// - [materials] / [scene] / [practice] 是顶层可选内容块（环节内容块统一化，
+///   courseware-round-3 T07 起为唯一事实）：任何环节都能挂素材与关联知识点场景。
+///   旧 AI 起草数据仍走 [payload] 内嵌（items / 整份 SceneSpec），由
+///   [resolvedMaterials] / [resolvedScene] 回退读取；新数据优先走顶层字段。
 class CoursewareSectionModel {
   final String id;
-  final CoursewareSectionKind? kind;
   final String title;
 
   /// 教师话术 / 提问卡文案（首轮单串 legacy）。T02 之后新数据走 [scriptSegments]，
@@ -84,28 +80,50 @@ class CoursewareSectionModel {
   /// 话术多段列表（T02）。空 = 退化读 [script]。
   final List<CoursewareScriptSegment> scriptSegments;
 
-  /// 按 kind 释义的原始 JSON（保持 Map，不做多态建模——渲染交给各自组件）。
+  /// 旧 AI 起草数据的兜底 JSON（保持 Map，不做多态建模——渲染交给各自组件）。
   final Map<String, dynamic> payload;
 
-  /// 素材（内容块统一化）：任何 kind 都能挂。与 [payload]['items'] 并存过渡；
+  /// 素材（内容块统一化）：任何环节都能挂。与 [payload]['items'] 并存过渡；
   /// 渲染优先走 [resolvedMaterials]。
   final List<CoursewareMaterialItem> materials;
 
-  /// 关联的知识点交互场景（ADR-0061 SceneSpec，内容块统一化），任何 kind 都能挂。
+  /// 关联的知识点交互场景（ADR-0061 SceneSpec，内容块统一化），任何环节都能挂。
   /// 与 [payload] 内嵌 SceneSpec（interactive_scene 旧结构）并存过渡；渲染优先走
   /// [resolvedScene]。
   final Map<String, dynamic>? scene;
 
+  /// 课堂练习内容块（courseware-round-3 T06：去 kind 后的第四可选内容块）。
+  /// 与 [materials] / [scene] 并列，任何环节都能挂。旧 AI 起草数据走 [payload]
+  /// 里的 `qtype` 由 [_resolvePractice] 回退读取。
+  final CoursewarePracticeBlock? practice;
+
   const CoursewareSectionModel({
     this.id = '',
-    this.kind,
     this.title = '',
     this.script = '',
     this.scriptSegments = const [],
     this.payload = const {},
     this.materials = const [],
     this.scene,
+    this.practice,
   });
+
+  /// 解析练习内容块：优先顶层 [practice]，否则回退旧 AI 起草的 [payload]['qtype']。
+  static CoursewarePracticeBlock? _resolvePractice(Map<String, dynamic> json) {
+    final top = json['practice'];
+    if (top is Map) {
+      return CoursewarePracticeBlock.fromJson(Map<String, dynamic>.from(top));
+    }
+    final payload = json['payload'];
+    if (payload is Map && payload['qtype'] != null) {
+      return CoursewarePracticeBlock.fromJson({
+        'qtype': payload['qtype'],
+        'count': payload['count'] ?? 3,
+        'hints': payload['hints'] ?? '',
+      });
+    }
+    return null;
+  }
 
   factory CoursewareSectionModel.fromJson(Map<String, dynamic> json) {
     final rawSegs = json['script_segments'];
@@ -124,7 +142,6 @@ class CoursewareSectionModel {
     }
     return CoursewareSectionModel(
       id: json['id'] as String? ?? '',
-      kind: CoursewareSectionKind.tryParse(json['kind'] as String?),
       title: json['title'] as String? ?? '',
       script: json['script'] as String? ?? '',
       scriptSegments: segments,
@@ -135,40 +152,38 @@ class CoursewareSectionModel {
       scene: json['scene'] is Map
           ? Map<String, dynamic>.from(json['scene'] as Map)
           : null,
+      practice: _resolvePractice(json),
     );
   }
 
   Map<String, dynamic> toJson() => {
         'id': id,
-        'kind': kind?.value ?? '',
         'title': title,
         'script': script,
         'script_segments': scriptSegments.map((s) => s.toJson()).toList(),
         'payload': payload,
         'materials': materials.map((m) => m.toJson()).toList(),
         'scene': scene,
+        'practice': practice?.toJson(),
       };
 
   /// 哨兵：用于区分「没传该可选参数」与「显式传 null（要清空）」。
-  /// [copyWith] 的可空字段（[kind] / [scene]）用它对 null 敏感——传 null 即清空，
+  /// [copyWith] 的可空字段（[scene]）用它对 null 敏感——传 null 即清空，
   /// 不传则保留原值（否则 `??` 会把 null 当成「未提供」而保留旧值，导致清除关联失效）。
   static const Object _unset = Object();
 
   CoursewareSectionModel copyWith({
     String? id,
-    Object? kind = _unset,
     String? title,
     String? script,
     List<CoursewareScriptSegment>? scriptSegments,
     Map<String, dynamic>? payload,
     List<CoursewareMaterialItem>? materials,
     Object? scene = _unset,
+    Object? practice = _unset,
   }) =>
       CoursewareSectionModel(
         id: id ?? this.id,
-        kind: identical(kind, _unset)
-            ? this.kind
-            : kind as CoursewareSectionKind?,
         title: title ?? this.title,
         script: script ?? this.script,
         scriptSegments: scriptSegments ?? this.scriptSegments,
@@ -177,6 +192,9 @@ class CoursewareSectionModel {
         scene: identical(scene, _unset)
             ? this.scene
             : scene as Map<String, dynamic>?,
+        practice: identical(practice, _unset)
+            ? this.practice
+            : practice as CoursewarePracticeBlock?,
       );
 
   /// 渲染用的话术段：有 [scriptSegments] 就用它；否则把 legacy 单串 [script]
@@ -207,7 +225,4 @@ class CoursewareSectionModel {
   /// 内嵌在 [payload] 里的 SceneSpec 不再被当作场景渲染（那会让「我没配却显示了」）。
   /// 旧 payload-only 课件若想保留场景，需在编辑器里重新关联一次（落到顶层 [scene]）。
   Map<String, dynamic>? get resolvedScene => scene;
-
-  /// 未知 kind（后端新增了类型而前端还没登记）：渲染时给降级提示而不是白屏。
-  bool get isUnknownKind => kind == null;
 }

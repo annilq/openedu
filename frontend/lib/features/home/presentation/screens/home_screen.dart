@@ -10,7 +10,6 @@ import '../../../../shared/widgets/app_toast.dart';
 import '../../../students/providers/students_provider.dart';
 import '../../../students/presentation/screens/student_form_screen.dart';
 import '../../../students/presentation/screens/student_management_screen.dart';
-import '../../../analytics/presentation/screens/analytics_screen.dart';
 import '../../../assistant/presentation/screens/assistant_chat_page.dart';
 import '../../../export/domain/export_repository.dart';
 import '../../../export/presentation/export_preview_page.dart';
@@ -37,6 +36,7 @@ import '../widgets/teacher/teacher_question_bank_view.dart';
 import '../widgets/teacher/teacher_tasks_view.dart';
 import '../widgets/teacher/material_library_view.dart';
 import '../../../../features/courseware/presentation/screens/courseware_center_screen.dart';
+import '../../../../features/courseware/presentation/screens/asset_library_screen.dart';
 import 'student_mastery_screen.dart';
 import '../../../../shared/widgets/app_actions.dart';
 
@@ -183,7 +183,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return switch (page) {
       OverviewPage() => TeacherOverviewView(
           onNavigateToReview: _navigateToReview,
-          // 空态出口：概览与任务页的「去布置任务」都落到同一个目的地。
+          // 空态出口：概览与任务页的「去发布任务」都落到同一个目的地。
           onNavigateToCreate: () => _go(const CreateTaskPage()),
           // 待办卡片深链：按 Tab 进任务列表（0=草稿箱 / 1=进行中 / 2=已完成）。
           onNavigateToList: (tab) => _go(TaskListPage(initialTab: tab)),
@@ -260,13 +260,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         ),
       ModelsPage() => const TeacherModelManagementScreen(),
+      AssetLibraryPage() => const AssetLibraryScreen(),
       StudentManagementPage() => StudentManagementScreen(
           onOpenStudent: (id) {
             _go(StudentDetailPage(id,
                 initialTab: StudentDetailTab.wrongQuestions));
           },
           onAddStudent: _onNavigateToAddStudent),
-      AnalyticsPage() => const AnalyticsScreen(),
       TaskListPage(initialTab: final tab) => TeacherTasksView(
           onNavigateToReview: _navigateToReview,
           onNavigateToCreate: () => _go(const CreateTaskPage()),

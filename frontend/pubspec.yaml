@@ -27,6 +27,11 @@ dependencies:
   # ⚠️ 该插件不支持 Linux，Web 实现走 Google 云端（国内不可达）——两端由能力门禁
   # （VoiceAvailability.unsupported）挡掉，不渲染麦按钮。
   speech_to_text: ^7.4.0
+  # 教师工作台图表化（ADR-0075）：仅作渲染引擎，**业务页禁裸用**，一律经
+  # `analytics_charts.dart` 适配器注入新粗野令牌（直角 / 2px 墨黑描边 / outline 配色 /
+  # 无模糊硬阴影）。落地前已过「非 Material 树」空构建冒烟测试（见
+  # test/fl_chart_material_gate_test.dart）——本工程禁用 Material 控件。
+  fl_chart: ^0.70.2
 
 dev_dependencies:
   flutter_test:

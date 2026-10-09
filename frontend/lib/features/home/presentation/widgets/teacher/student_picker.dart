@@ -14,8 +14,8 @@ import '../../../../students/providers/students_provider.dart';
 /// 弹窗选择学生：列出本教师全部学生，点选即返回对应 [UserModel]。
 ///
 /// 与已删除的 `selectedStudentProvider` 不同，这里**不写入任何全局状态**——
-/// 只把选择结果交还给调用方（题库生成动作 / 布置任务表单内联选择器），
-/// 由调用方显式使用。这样「题库」「布置任务」不再隐式依赖全局当前学生。
+/// 只把选择结果交还给调用方（题库生成动作 / 发布任务表单内联选择器），
+/// 由调用方显式使用。这样「题库」「发布任务」不再隐式依赖全局当前学生。
 Future<UserModel?> pickStudent(BuildContext context, WidgetRef ref) async {
   return showShadDialog<UserModel?>(
     context: context,

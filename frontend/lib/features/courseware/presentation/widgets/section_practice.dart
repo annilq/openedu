@@ -84,7 +84,7 @@ class _SectionPracticeState extends ConsumerState<SectionPractice> {
   }
 
   Future<void> _requestQuestion() async {
-    final qtype = '${widget.section.payload['qtype'] ?? '题目'}';
+    final qtype = widget.section.practice?.qtype ?? '题目';
     setState(() {
       _started = true;
       _hasQuestion = false;

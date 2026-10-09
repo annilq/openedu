@@ -8,8 +8,8 @@
 /// seed 图形取自库默认（`default_figure_key`，空则回落空占位），轴参数取注册表
 /// 中性种子——与知识点编辑器保存走同一份结构（[buildReflectionSceneSpec]），不在此
 /// 另造一份。切换为即时写回 + 本地勾选态翻转，对话框保持打开以支持连续多选。
-/// 前端按范围列全部项（零后端改动）：先选 (学科, 年级, 学期) 范围，再列出该范围
-/// 下所有知识点。
+/// 前端按范围列全部项（零后端改动）：默认选中第一个 (学科, 年级, 学期) 范围并立即
+/// 列出该范围下所有知识点（避免弹窗空态），用户也可点选其它范围切换。
 library;
 
 import 'package:flutter/widgets.dart';
@@ -99,6 +99,11 @@ class _AssociateKpDialogState extends ConsumerState<_AssociateKpDialog> {
         _scopes = scopes;
         _loading = false;
       });
+      // 默认选中第一个范围：进弹窗即展示知识点，免去「先点范围」才出数据的空态
+      // （用户反馈：默认进去没数据、看不出可点）。
+      if (scopes.isNotEmpty) {
+        _selectScope(scopes.first);
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -226,8 +231,12 @@ class _AssociateKpDialogState extends ConsumerState<_AssociateKpDialog> {
     final body = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text('勾选要关联的知识点；已关联的可点按解除。', style: text.bodySmall),
+        Text('已默认展示第一个范围的知识点；点按任一项即可关联或解除。',
+            style: text.bodySmall),
         const SizedBox(height: AppSpacing.sm),
+        Text('选择范围',
+            style: text.labelMedium?.copyWith(color: app.onSurfaceVariant)),
+        const SizedBox(height: AppSpacing.xs),
         if (_scopes.isEmpty && !_loading)
           Text('还没有可关联的知识点（先去资料库上传教材并提取知识点）。',
               style: text.bodySmall?.copyWith(color: app.onSurfaceVariant))
@@ -247,19 +256,28 @@ class _AssociateKpDialogState extends ConsumerState<_AssociateKpDialog> {
                       vertical: AppSpacing.xs,
                     ),
                     decoration: BoxDecoration(
+                      color: _scope == s ? app.accent : app.surfaceRaised,
                       border: Border.all(
                         color: _scope == s ? app.accent : app.outline,
                         width: 1.5,
                       ),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Text(scopeLabel(s), style: text.labelMedium),
+                    child: Text(
+                      scopeLabel(s),
+                      style: text.labelMedium?.copyWith(
+                        color: _scope == s ? app.onPrimary : app.onSurface,
+                      ),
+                    ),
                   ),
                 ),
             ],
           ),
         if (_scope != null) ...[
           const SizedBox(height: AppSpacing.md),
+          Text('知识点（点按切换关联）',
+              style: text.labelMedium?.copyWith(color: app.onSurfaceVariant)),
+          const SizedBox(height: AppSpacing.xs),
           if (_loading)
             const Center(
               child: Padding(
@@ -304,8 +322,9 @@ class _AssociateKpDialogState extends ConsumerState<_AssociateKpDialog> {
     );
   }
 
-  /// 单条知识点：整行可点按切换关联。已关联 → 勾选方块填色 + 「已关联」标签 + 强调边框；
-  /// 未关联 → 描边方块 + 普通边框。
+  /// 单条知识点：整行可点按切换关联。已关联 → 方块内 ✓ 填色 + 「已关联」标签；
+  /// 未关联 → 方块内 + 图标 + 「关联」标签，明确提示「点我即可关联」，消除
+  /// 「看不出能点」的歧义（用户反馈）。整行 hover 高亮进一步显出可交互。
   Widget _kpTile(KnowledgePointOption kp, AppText text, AppColors app) {
     final selected = kp.id != null && _selected.contains(kp.id);
     return AppFocusableAction(
@@ -329,17 +348,26 @@ class _AssociateKpDialogState extends ConsumerState<_AssociateKpDialog> {
               height: 20,
               decoration: BoxDecoration(
                 color: selected ? app.accent : app.surfaceRaised,
-                border: Border.all(color: app.outline, width: 1.5),
+                border: Border.all(
+                  color: selected ? app.accent : app.outline,
+                  width: 1.5,
+                ),
                 borderRadius: BorderRadius.circular(4),
               ),
-              child: selected
-                  ? Icon(LucideIcons.check, size: 14, color: app.onPrimary)
-                  : null,
+              child: Icon(
+                selected ? LucideIcons.check : LucideIcons.plus,
+                size: 14,
+                color: selected ? app.onPrimary : app.onSurfaceVariant,
+              ),
             ),
             const SizedBox(width: AppSpacing.sm),
             Expanded(child: Text(kp.name, style: text.bodyMedium)),
-            if (selected)
-              Text('已关联', style: text.labelSmall?.copyWith(color: app.accent)),
+            Text(
+              selected ? '已关联' : '关联',
+              style: text.labelSmall?.copyWith(
+                color: selected ? app.accent : app.onSurfaceVariant,
+              ),
+            ),
           ],
         ),
       ),

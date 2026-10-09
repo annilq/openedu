@@ -123,10 +123,8 @@ class Settings(BaseSettings):
     MATERIAL_MAX_BYTES: int = 64 * 1024 * 1024
 
     # —— 课件（ADR-0067）——
-    # 素材与资料共用落盘根目录（物理层复用 per-teacher 目录机制），但**上限独立**：
-    # 课件素材是单张投屏图片，10MB 远超投影所需（4K JPEG 通常 2-5MB）；
-    # 沿用资料的 64MB 会让教师误把整本教材扫描件当素材传进来。
-    COURSEWARE_ASSET_MAX_BYTES: int = 10 * 1024 * 1024
+    # 素材与资料共用落盘根目录（物理层复用 per-teacher 目录机制）。大小上限已移除
+    # （教师自传图片由教师自行控制，服务端不再硬性拒绝大图）。
 
     # —— 学生账号导入与导出（ADR-0068 §2.2）——
     # 导入走 `POST /students/import`：xlsx 解析外部上传，是新增攻击面，必须限制大小与行数。

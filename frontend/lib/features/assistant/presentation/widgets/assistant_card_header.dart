@@ -15,7 +15,7 @@ import '../../domain/assistant_card.dart';
 /// | 错题 / 掌握（要看的问题） | `wrongQuestionList` · `masteryList` · `questionBankList` | `magenta` |
 /// | 结构 / 对话（无行动压力） | `question` · `progress` · `notice` · `childList` · `interactiveScene` · 未登记 | 中性灰 |
 ///
-/// `guide` 归「待办」族：它是**要用户去做一件事**的卡（去布置任务），
+/// `guide` 归「待办」族：它是**要用户去做一件事**的卡（去发布任务），
 /// 与任务列表同一语义，不该长得像一条中性说明。
 ///
 /// 两个族色都是**亮块**，前景一律由 [AppBrutal.onColor] 判成墨黑——不得手写黑/白。

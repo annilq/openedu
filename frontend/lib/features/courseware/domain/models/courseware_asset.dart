@@ -1,9 +1,10 @@
-/// 课件素材：一张要原样投出去的图（ADR-0067 §3.5）。
+/// 课件素材：一张要原样投出去的图（ADR-0067 §3.5，ADR-0076 简化为纯教师上传）。
 ///
 /// 与后端 `app/features/courseware/asset_schemas.py::CoursewareAssetResp` 对齐。
 ///
 /// 与「资料（Material）」是两回事：资料是要切分 + 向量化的教材，素材只负责显示，
-/// 不进向量库、不参与检索。首版只做图片。
+/// 不进向量库、不参与检索。首版只做图片。ADR-0076 起移除平台预置 CC0，素材库只
+/// 收录教师自己上传的图片。
 class CoursewareAssetModel {
   final String id;
   final String name;
@@ -19,16 +20,6 @@ class CoursewareAssetModel {
   /// 读取原图的相对路径（后端下发，前端不自己拼——避免重复实现鉴权前缀）。
   final String url;
 
-  /// 来源标记（T08 / ADR-0067 §3.5·§5）：`user_uploaded`=教师自传，
-  /// `platform_cc0`=平台预置 CC0 公共素材。
-  final String source;
-
-  /// CC0 公共素材的来源 URL（教师可溯源核授权）；非 CC0 为空串。
-  final String sourceUrl;
-
-  /// CC0 公共素材的许可类型（如 `CC0 1.0`）；非 CC0 为空串。
-  final String license;
-
   const CoursewareAssetModel({
     this.id = '',
     this.name = '',
@@ -39,14 +30,7 @@ class CoursewareAssetModel {
     this.createdAt,
     this.knowledgePointId,
     this.url = '',
-    this.source = '',
-    this.sourceUrl = '',
-    this.license = '',
   });
-
-  /// 是否平台预置的 CC0 公共素材（对所有教师可见、不可删除）。
-  bool get isPlatformCc0 =>
-      source == 'platform_cc0';
 
   factory CoursewareAssetModel.fromJson(Map<String, dynamic> json) =>
       CoursewareAssetModel(
@@ -59,8 +43,5 @@ class CoursewareAssetModel {
         createdAt: DateTime.tryParse(json['created_at'] as String? ?? ''),
         knowledgePointId: json['knowledge_point_id'] as String?,
         url: json['url'] as String? ?? '',
-        source: json['source'] as String? ?? '',
-        sourceUrl: json['source_url'] as String? ?? '',
-        license: json['license'] as String? ?? '',
       );
 }

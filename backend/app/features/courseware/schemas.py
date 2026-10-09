@@ -3,19 +3,17 @@
 四份契约之一：前后端逐字段对齐的 REST JSON。改这里 = 改契约，必须同步
 ``frontend/lib/features/courseware/domain/models/*.dart``。
 
-环节（section）的统一形状：``{id, kind, title, script, payload}``。
+环节（section）的统一形状：``{id, title, script, payload, materials, scene, practice}``。
 
-- ``kind`` 只取注册表常量（SECTION_KINDS），**不接受自由字符串**。
 - ``script`` 是教师话术（「这些图形有什么共同点？」）。按决策 15，它**当提问卡
   直接投给学生看**，不折叠、不做「仅教师可见」——投影时教师屏 = 学生所见。
-- ``payload`` 按 kind 释义，schema 层**不做多态校验**（那是 kind 各自的事）：
-  - ``media_gallery``: ``{items: [{asset_id, caption}], }``
-  - ``interactive_scene``: **直接嵌一份 ADR-0061 的 SceneSpec**（原样透传）
-  - ``practice``: ``{qtype, count}``
-- ``materials`` / ``scene`` 是与 kind **解耦**的顶层可选字段（环节内容块统一化）：
-  任何 kind 的环节都能挂素材（``[{asset_id, caption}]``）与关联知识点场景
-  （ADR-0061 SceneSpec）。旧 AI 起草数据仍走 ``payload`` 内嵌（items / 整份
-  SceneSpec），由前端回退读取；新数据优先走顶层字段。
+- ``payload`` 是旧 AI 起草数据的兜底容器（``{items: [...]}` / 内嵌 SceneSpec），
+  schema 层不做多态校验——渲染交给各自组件（ADR-0061）。
+- ``materials`` / ``scene`` / ``practice`` 是顶层可选内容块（环节内容块统一化，
+  courseware-round-3 T07 起为唯一事实）：任何环节都能挂素材（``[{asset_id,
+  caption}]``）、关联知识点场景（ADR-0061 SceneSpec）、或课堂练习（``{qtype,
+  count, hints}``）。旧 AI 起草数据走 ``payload`` 内嵌，由前端回退读取；新数据
+  优先走顶层字段。
 """
 
 from datetime import datetime
@@ -40,7 +38,6 @@ class CoursewareSection(SQLModel):
 
     # 空则由后端生成（新建时前端不必预先发号）；同份课件内唯一。
     id: str = Field(default="", max_length=40)
-    kind: str = Field(max_length=32)
     title: str = Field(default="", max_length=128)
     # 教师话术 / 提问卡文案（决策 15）。首轮单串legacy仍保留：T02 之后新数据走
     # ``script_segments``，旧单串课件靠它向下兼容（见 domain 的 displaySegments 回退）。
@@ -56,6 +53,10 @@ class CoursewareSection(SQLModel):
     # 关联的知识点交互场景（ADR-0061 SceneSpec），任何 kind 都能挂，与 payload
     # 内嵌 SceneSpec（interactive_scene 旧结构）并存过渡。
     scene: dict | None = Field(default=None)
+    # courseware-round-3 T06（去 kind·expand 后的练习内容块）：课堂练习配置
+    # {qtype, count, hints}。与 materials / scene 并列的第四可选内容块，任何环节
+    # 都能挂；旧 AI 起草数据走 payload['qtype'] 由前端回退读取。
+    practice: dict | None = Field(default=None)
 
 
 class CoursewareResp(SQLModel):
@@ -79,15 +80,22 @@ class CoursewareResp(SQLModel):
 
 
 class CoursewareCreate(SQLModel):
-    """新建课件：**走 AI 起草**（决策 2 / §3.4）。
+    """新建课件。
 
-    未配模型时返回 LLM_UNAVAILABLE（ADR-0039：无离线 mock、无内置模型目录），
-    不静默产出空课件——空课件等于把「没有内容」伪装成「有内容」（ADR-0066 纪律）。
+    - ``draft=True``（默认）：走 AI 起草（决策 2 / §3.4）。未配模型时返回
+      LLM_UNAVAILABLE（ADR-0039），不静默产出空课件。
+    - ``draft=False``（courseware-round-3 T01）：跳过 AI 起草，只按知识点快照建
+      **零环节空壳**课件（不调模型、不抛 LLM 错误），教师随后手动填/用「AI 补充
+      讲解」补环节。``objective`` 一并落到课件行，供后续 AI 补充读取（T05）。
     """
 
     knowledge_point_id: UUID
-    # 留空则由起草结果取知识点名
+    # 留空则回落知识点名（空壳与 AI 起草都用这条回落）。
     title: str | None = Field(default=None, max_length=128)
+    # courseware-round-3 T01：是否自动 AI 起草。False = 建空壳（不调模型）。
+    draft: bool = True
+    # 教学目标 / 备注（可选）：空壳建出时存教师填的备课依据，AI 补充讲解时读取。
+    objective: str | None = Field(default=None, max_length=2000)
 
 
 class CoursewareUpdate(SQLModel):

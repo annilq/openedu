@@ -513,9 +513,9 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
 /// 边界，教师端强调「能出题 / 查任务 / 看学情」的能力。骨架走 [AssistantHintCard]，
 /// 与历史空态是同一个东西。
 ///
-/// ⚠️ 教师端那句曾是「一句话就能布置任务」——**它做不到**：助手是只读的（写操作
+/// ⚠️ 教师端那句曾是「一句话就能发布任务」——**它做不到**：助手是只读的（写操作
 /// 一律引导到对应页面）。空态是承诺最密集的位置，写一句做不到的话，用户只会在
-/// 试过之后觉得「这助手坏了」。空态只说**真能做的**，「布置任务」由引导卡给出口。
+/// 试过之后觉得「这助手坏了」。空态只说**真能做的**，「发布任务」由引导卡给出口。
 class _WelcomeHint extends StatelessWidget {
   final bool isTeacher;
 
@@ -525,7 +525,7 @@ class _WelcomeHint extends StatelessWidget {
   Widget build(BuildContext context) => AssistantHintCard(
         icon: LucideIcons.sparkles,
         title: isTeacher ? '可以出题、查学情、看错题' : '有问题就问 AI 老师吧',
-        body: isTeacher ? '布置与派发任务请到「布置任务」页' : '只讲学习内容，其他问题不回答哦',
+        body: isTeacher ? '布置与派发任务请到「任务」页，点右上角「发布任务」' : '只讲学习内容，其他问题不回答哦',
       );
 }
 

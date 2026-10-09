@@ -3,7 +3,7 @@
 覆盖的每条都是本切片的显式决策，不是实现细节：
 
 - 落盘走资料库现成的 per-teacher 目录（不新造根目录）；
-- 只收 ``COURSEWARE_ASSET_MIMES``、限 ``COURSEWARE_ASSET_MAX_BYTES``；
+- 只收 ``COURSEWARE_ASSET_MIMES``（非图片 422），不限制单文件大小；
 - 越权行对别人表现为 404（不存在与越权同一错误，不泄露存在性）；
 - **被课件引用也允许删**（决策 10 / §4.2）。
 """
@@ -115,15 +115,6 @@ def test_non_image_mime_rejected(client, teacher_a, upload_root):
     assert r.json()["code"] == "CW_91005"
     # 拒绝的上传不留残留文件
     assert [p for p in upload_root.rglob("*") if p.is_file()] == []
-
-
-def test_oversize_rejected(client, teacher_a, upload_root, monkeypatch):
-    monkeypatch.setattr(
-        "app.features.courseware.asset_service.settings.COURSEWARE_ASSET_MAX_BYTES", 8
-    )
-    r = _upload(client, teacher_a, content=b"\x89PNG\r\n\x1a\n" + b"x" * 32)
-    assert r.status_code == 413
-    assert r.json()["code"] == "CW_91004"
 
 
 # ── 列表与归属隔离 ───────────────────────────────────────────────────────

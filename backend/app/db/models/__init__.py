@@ -17,7 +17,6 @@ from app.db.models.conversation import Conversation, Message
 from app.db.models.courseware import (
     COURSEWARE_ASSET_MIMES,
     COURSEWARE_STATUSES,
-    SECTION_KINDS,
     Courseware,
     CoursewareAsset,
 )
@@ -63,7 +62,6 @@ __all__ = [
     "CoursewareAsset",
     "COURSEWARE_STATUSES",
     "COURSEWARE_ASSET_MIMES",
-    "SECTION_KINDS",
     "CHUNKER_VERSION",
     "INDEX_STATES",
     "get_datetime_utc",
