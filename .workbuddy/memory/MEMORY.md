@@ -9,9 +9,11 @@
 - 本机 `grep` BSD 版不支持 `a\|b` → `grep -E`；`grep -c` 得0≠没有，用 Grep 工具复核。
 - ⚠️ 本机 `/bin/bash`=**3.2**：`$VAR` 紧跟中文字符会吞多字节首字节 → `unbound variable`，变量引用一律写 `${VAR}`；脚本被 zsh 调用需 `exec bash "$0" "$@"`（zsh 不做未加引号展开）。
 - ⚠️ 本机实测（macOS 26）：`screencapture -v` **拒** `-i`（改 `-J video`）；`lsappinfo […] -only WindowBounds` **恒 NULL**（已废弃）；取窗口改用 `swift -e` + CGWindowList → `screencapture -v -l <windowid>`。`flutter run -d macos` 产物名随工程而变（本仓 = `kids_learn`，非 `Runner`）。
+- ⚠️ 演示成片管线（`submission_docs/`：`record_app.sh` 录 → `gen_voice.py` 配音 → `gen_subs.py --all` 变速贴合+烧字幕+铺音轨+合并）：**时间轴一律取实测**（ffprobe 量 mp3/录屏），不信 narration 标题里的估算。两处必踩的坑——① `tpad`（定格补帧）**必须放在 `fps` 之后**（`setpts → fps → tpad → subtitles`），否则变帧率下补不出帧、音画错位数秒；② libass 的 `FontSize` **不是像素**，无 PlayRes 的 SRT 按 288 高度基准缩放（实际 ≈ `×画面高/288`）。
 - 新 ADR 取号前查目录最大号 + `git status docs/adr/` + memory 预留（撞车三次 0055/0058）。
 - SwiftPM 依赖解析走 libgit2：不读 `http_proxy`、不认 gitconfig `insteadOf`；唯一生效的是 SwiftPM mirror（`~/.swiftpm/configuration/mirrors.json` + 工程 `xcshareddata/swiftpm/configuration/mirrors.json`）。本地验证 `swift package resolve --disable-sandbox`。脚本 `frontend/scripts/patch_spm_cwl_mirror.py`（幂等+`--check`）。
-- 文案纪律：**统一写「中小学」，不写 K12**（事实源 `CONTEXT.md` §语言「学段」条）。批量替换后必查残留中英空格——K12 两侧原带空格，换成纯中文会留 `你是 中小学 教研助手`；一侧是英文/数字才保留（`中小学 App`）。
+- 文案纪律：**统一写「中小学」，不写 K12**；⚠️ 本项目「中小学」= **1–9 年级（小学 + 初中，义务教育），不含高中**——K12 字面到 12 年级，勿照搬（事实源 `CONTEXT.md` §语言「学段」条 + `subjects.py GRADE_MIN/MAX = 1,9` + ADR-0055 §11 / ADR-0068）。批量替换后必查残留中英空格（`你是 中小学 教研助手`）；一侧是英文/数字才保留（`中小学 App`）。
+- 提交材料 docx 由 `submission_docs/gen.py` 生成（`*.docx`/`*.zip` 已在 `.gitignore`）。⚠️ python-docx 默认模板是 **Letter 纸**（左右各 1.25" → 可用宽仅 **15.24 cm**），表格列宽合计超值即溢出 → 用 `set_col_widths` 钉住；表格 run **不继承正文样式**，须显式 `set_run_font`（否则中文落到西文字体）。本机**无 LibreOffice** → docx 不能渲染目检，只走程序化校验。`gen.py#gen_video` 的 14 段分镜：**段号/时段/旁白全部读 `narration.md`**（与 `gen_voice.py`/`gen_subs.py` 同源），本文件只维护「画面」列。
 
 ## 1. 前端分层（ADR-0036/0037）
 - AI 唯一入口 `assistantNotifierProvider`+`AssistantMessageList`；后端唯一端点 `POST /api/v1/assistant/chat`。助手路由优先级即功能（ADR-0054）：写意图 `guide`(20) 高于只读 `query`(12)。
@@ -40,11 +42,14 @@
 ## 4. 测试/截图探针
 - 五坑（`runAsync`/`ShadApp.custom` theme/pdfx/`pumpAndSettle`/MediaQuery 注入位）见 `docs/agents/frontend.md` §7。
 - ⚠️ `ShadApp.custom(appBuilder:)` 不装 `ShadToaster` → widget 测试用 appBuilder 须显式 `ShadToaster(child:)`，否则 `AppToast.show` 抛「Could not find ShadToaster」。
+- ⚠️ **禁止在 `test/` 里写截图装置**：`RenderRepaintBoundary.toImage()` 在无真实合成器的测试环境里永不完成，实测把整条 `flutter test` 从 ~46s 堵到 17min 不返回（且 `tail` 缓冲让你看不到进度）。要目检的结论一律改写成几何断言（`getSize`/widget 字段比对），先例 `test/workbench_charts_layout_test.dart`。
+- 网络层加接口（`NetworkService.getBytes` 那次）要同步 4 个测试替身：`assistant_api_client_test` / `list_archive_test` / `review_notifier_test` / `students_notifier_test`，漏一个整条 test 编译不过。
 - 测试里改 `debugDefaultTargetPlatformOverride` 在 tearDown 复位不及 → 别改平台；长按用 `startGesture`+`pump(kLongPressTimeout)`，点按把 `holdToTalk` 显式传进组件。
 
 ## 5. Git/后端/长列表
 - 平台目录不在版本控制 → 打补丁脚本（`frontend/scripts/patch_macos_network.py` 网络、`patch_voice_permissions.py` 语音 ADR-0063 §10），幂等+`--check`。macOS 沙盒麦克风需 entitlements `com.apple.security.device.audio-input`。常显 `Everything up-to-date` 却已成功 → 以 `git ls-remote origin main` 比对 HEAD。提交按逻辑批次拆、正文写「为什么」；`chore(memory):` 单独提交。
 - ⚠️ `git commit -- <file>` 会重暂存该文件整个工作区 → hunk 级拆分须 `git add -p` 后**不带 pathspec** `git commit`。
+- 判定「守卫失败是本轮引入还是既存」：`git worktree add /tmp/oedu-head HEAD` → 在那边 `flutter test <守卫文件>`（约 10s，需重新 pub get），跑完 `git worktree remove --force`。实测 `a47c53e` 上 **5 条已红**：file_size×2（未登记>400 / 棘轮增长）、`no_bare_gesture`（assistant FAB:118）、`feature_boundaries` R2（courseware→home 3 处）、`analytics_charts` 裸 fl_chart（workbench_analysis/glance）。接手时先跑基线，别把旧账算成本轮。
 - 引擎失败归因：`decrypt()` 解不开只返 `None`；`ToolUnsupportedError` vs `ProviderRequestError`(`kind`+`user_hint`) 落 `genkit.py#classify_failure`；禁 `except Exception` 抹成「请添加模型」。
 - ⚠️ 可空 JSON 列须 `JSON(none_as_null=True)`（ADR-0061 §N/§T），否则 `None` 序列化成文本 `'null'` → `IS NOT NULL` 为真而内容空。已全仓统一（12 列）。存量迁移 `_nullify_text_json_nulls`。
 - ⚠️ 选项标号只由渲染层画且必须同时剥模型前缀（ADR-0061 §T）：后端 `normalize_options` 刻意不剥（答案也带前缀）→ 前端每处选项渲染过 `cleanOptionText`。守卫 `tests/ai/test_option_prefix_contract.py`。
