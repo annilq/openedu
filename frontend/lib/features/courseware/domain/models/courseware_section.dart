@@ -1,3 +1,4 @@
+import 'courseware_practice_block.dart';
 import 'courseware_section_kind.dart';
 
 /// 话术段的重点级别（ADR-0067 第二轮 T02）：轻量富文本，不引入新渲染引擎。
@@ -96,6 +97,11 @@ class CoursewareSectionModel {
   /// [resolvedScene]。
   final Map<String, dynamic>? scene;
 
+  /// 课堂练习内容块（courseware-round-3 T06：去 kind 后的第四可选内容块）。
+  /// 与 [materials] / [scene] 并列，任何环节都能挂。旧 AI 起草数据走 [payload]
+  /// 里的 `qtype` 由 [_resolvePractice] 回退读取。
+  final CoursewarePracticeBlock? practice;
+
   const CoursewareSectionModel({
     this.id = '',
     this.kind,
@@ -105,7 +111,25 @@ class CoursewareSectionModel {
     this.payload = const {},
     this.materials = const [],
     this.scene,
+    this.practice,
   });
+
+  /// 解析练习内容块：优先顶层 [practice]，否则回退旧 AI 起草的 [payload]['qtype']。
+  static CoursewarePracticeBlock? _resolvePractice(Map<String, dynamic> json) {
+    final top = json['practice'];
+    if (top is Map) {
+      return CoursewarePracticeBlock.fromJson(Map<String, dynamic>.from(top));
+    }
+    final payload = json['payload'];
+    if (payload is Map && payload['qtype'] != null) {
+      return CoursewarePracticeBlock.fromJson({
+        'qtype': payload['qtype'],
+        'count': payload['count'] ?? 3,
+        'hints': payload['hints'] ?? '',
+      });
+    }
+    return null;
+  }
 
   factory CoursewareSectionModel.fromJson(Map<String, dynamic> json) {
     final rawSegs = json['script_segments'];
@@ -135,6 +159,7 @@ class CoursewareSectionModel {
       scene: json['scene'] is Map
           ? Map<String, dynamic>.from(json['scene'] as Map)
           : null,
+      practice: _resolvePractice(json),
     );
   }
 
@@ -147,6 +172,7 @@ class CoursewareSectionModel {
         'payload': payload,
         'materials': materials.map((m) => m.toJson()).toList(),
         'scene': scene,
+        'practice': practice?.toJson(),
       };
 
   /// 哨兵：用于区分「没传该可选参数」与「显式传 null（要清空）」。
@@ -163,6 +189,7 @@ class CoursewareSectionModel {
     Map<String, dynamic>? payload,
     List<CoursewareMaterialItem>? materials,
     Object? scene = _unset,
+    CoursewarePracticeBlock? practice,
   }) =>
       CoursewareSectionModel(
         id: id ?? this.id,
@@ -177,6 +204,7 @@ class CoursewareSectionModel {
         scene: identical(scene, _unset)
             ? this.scene
             : scene as Map<String, dynamic>?,
+        practice: practice ?? this.practice,
       );
 
   /// 渲染用的话术段：有 [scriptSegments] 就用它；否则把 legacy 单串 [script]

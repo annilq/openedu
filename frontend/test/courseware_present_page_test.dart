@@ -24,8 +24,17 @@ import 'package:kids_learn/features/courseware/domain/models/courseware_section_
 import 'package:kids_learn/features/courseware/presentation/pages/courseware_present_page.dart';
 import 'package:kids_learn/features/courseware/presentation/widgets/courseware_present_step_bar.dart';
 import 'package:kids_learn/features/courseware/providers/courseware_provider.dart';
+import 'package:kids_learn/shared/data/local/storage_service.dart';
+import 'package:kids_learn/shared/domain/providers/core_providers.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
 import 'package:kids_learn/shared/widgets/scene_interpreter/scene_interpreter.dart';
+
+/// 测试桩：只供 [AuthImage] 取 token，避免真去读 shared_preferences（ADR-0077 鉴权看图
+/// 后，演示页画廊里有效素材会走 AuthImage，必须覆盖 storageServiceProvider）。
+class _FakeStorage extends StorageService {
+  @override
+  String? getToken() => 'test-token';
+}
 
 const _assetOk = CoursewareAssetModel(
   id: 'a1',
@@ -134,6 +143,7 @@ Future<void> _pumpPresent(
       overrides: [
         coursewareDetailProvider(courseware.id).overrideWith((_) => courseware),
         coursewareAssetsProvider.overrideWith((_) => assets),
+        storageServiceProvider.overrideWithValue(_FakeStorage()),
       ],
       child: ShadApp.custom(
         theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
@@ -323,7 +333,8 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('未知 kind 给降级提示而不是白屏', (tester) async {
+  testWidgets('无内容环节给降级空态而不是白屏（T03 去 kind 后按内容渲染）',
+      (tester) async {
     await _pumpPresent(
       tester,
       courseware: _courseware(const [
@@ -331,7 +342,10 @@ void main() {
       ]),
     );
 
-    expect(find.text('暂不支持的环节类型'), findsOneWidget);
+    // T03 去 kind：渲染按内容块，没配任何内容（素材 / 场景 / 练习 / 话术）的环节统一给
+    // 「只有话术」空态而非白屏——课堂上白屏等于「课件坏了」。
+    expect(find.text('这一环节只有话术'), findsOneWidget);
+    expect(find.text('在课件编辑页打开这个环节'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

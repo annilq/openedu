@@ -5,12 +5,11 @@ import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_buttons.dart';
 import '../../../../shared/widgets/app_empty_state.dart';
 import '../../domain/models/courseware_section.dart';
-import '../../domain/models/courseware_section_kind.dart';
 import '../widgets/courseware_script_view.dart';
 import '../widgets/section_interactive_scene.dart';
 import '../widgets/section_media_gallery.dart';
 
-/// 主区：环节标题 + 话术提问卡 + 按 kind 分派的环节内容。
+/// 主区：环节标题 + 话术提问卡 + 按内容块渲染的环节内容（素材 / 场景 / 练习）。
 ///
 /// 话术**不折叠**（决策 15）：投影时教师屏 = 学生所见，做「仅教师可见」在单屏下
 /// 物理上不可能；且「这些图形有什么共同点？」抛出去才是引导学生观察，藏起来反而
@@ -86,30 +85,15 @@ class PresentStage extends StatelessWidget {
   /// 主区内容：**按填了什么渲染**，与 [CoursewareSectionModel.kind] 无关（内容块统一化）。
   ///
   /// - 有素材 → 图廊；有关联场景 → 交互演示；两者皆无 → 空态（只有话术）。
-  /// - 未知 kind 且没有任何内容才给「暂不支持」降级提示，而不是白屏——课堂上白屏等于
-  ///   「课件坏了」。
+  /// - 去 kind 后任何环节都可能没配内容，给统一的「只有话术」降级提示而非白屏——
+  ///   课堂上白屏等于「课件坏了」。练习内容块（[CoursewareSectionModel.practice]）
+  ///   的渲染由 T06 补，这里先只处理素材与场景。
   Widget _buildBody(BuildContext context) {
     final materials = section.resolvedMaterials;
     final scene = section.resolvedScene;
     final hasMaterials = materials.isNotEmpty;
     final hasScene = scene != null;
-    if (section.isUnknownKind && !hasMaterials && !hasScene) {
-      return const AppEmptyState(
-        icon: LucideIcons.circleAlert,
-        title: '暂不支持的环节类型',
-        message: '这份课件里有本版本还不认识的环节类型，这一段先用文字讲。',
-      );
-    }
     if (!hasMaterials && !hasScene) {
-      // 交互探究环节却没配场景：给更贴切的指引，而不是笼统的「只有话术」。
-      if (section.kind == CoursewareSectionKind.interactiveScene) {
-        return const AppEmptyState(
-          icon: LucideIcons.shapes,
-          title: '这一环节还没有配置交互演示',
-          message: '这一环节是交互演示，但还没有填入演示内容。回到课件编辑页打开'
-              '场景编辑器，调好图形与对称轴后这里就会显示。',
-        );
-      }
       return const AppEmptyState(
         icon: LucideIcons.textSelect,
         title: '这一环节只有话术',

@@ -7,7 +7,6 @@ import '../../../../shared/widgets/app_actions.dart';
 import '../../../../shared/widgets/app_buttons.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../domain/models/courseware_section.dart';
-import '../../domain/models/courseware_section_kind.dart';
 
 /// 编辑器里的环节列表：支持拖拽重排与多选批量删（ADR-0067 第二轮 T01）。
 ///
@@ -201,15 +200,22 @@ class _CoursewareEditorSectionListState
     AppColors app,
     AppText text,
   ) {
-    final kindLabel = s.isUnknownKind
-        ? '未知环节'
-        : kCoursewareSectionKindLabels[s.kind] ?? s.kind!.value;
-    final icon = switch (s.kind) {
-      CoursewareSectionKind.mediaGallery => LucideIcons.images,
-      CoursewareSectionKind.interactiveScene => LucideIcons.shapes,
-      CoursewareSectionKind.practice => LucideIcons.penLine,
-      _ => LucideIcons.circleHelp,
-    };
+    // 内容块统一化（T03 去 kind）：不再按 kind 分派，按「填了什么」推断图标与分类标签。
+    final IconData icon;
+    final String category;
+    if (s.resolvedScene != null) {
+      icon = LucideIcons.shapes;
+      category = '交互讲解';
+    } else if (s.resolvedMaterials.isNotEmpty) {
+      icon = LucideIcons.images;
+      category = '素材展示';
+    } else if (s.practice != null) {
+      icon = LucideIcons.penLine;
+      category = '课堂练习';
+    } else {
+      icon = LucideIcons.circleHelp;
+      category = '讲解';
+    }
     final onTap =
         _selecting ? () => _toggleSelect(s.id) : () => widget.onEdit(s);
     return AppCard(
@@ -235,7 +241,7 @@ class _CoursewareEditorSectionListState
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    s.title.isEmpty ? kindLabel : s.title,
+                    s.title.isEmpty ? category : s.title,
                     style: text.titleMedium,
                   ),
                   if (s.displaySegments.isNotEmpty) ...[
@@ -252,7 +258,7 @@ class _CoursewareEditorSectionListState
             ),
             const SizedBox(width: AppSpacing.sm),
             Text(
-              kindLabel,
+              category,
               style: text.labelSmall?.copyWith(color: app.secondary),
             ),
           ],
