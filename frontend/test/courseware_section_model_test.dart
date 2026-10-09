@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kids_learn/features/courseware/domain/models/courseware_section.dart';
-import 'package:kids_learn/features/courseware/domain/models/courseware_section_kind.dart';
 
 /// 环节场景的持久化语义（ADR-0076 · ticket 01：证伪票）。
 ///
@@ -62,7 +61,6 @@ void main() {
     test('toJson → fromJson 后 curated / items / points / 顺序全部保持', () {
       final section = CoursewareSectionModel(
         id: 's1',
-        kind: CoursewareSectionKind.interactiveScene,
         title: '一组图形',
         script: '这些图形有什么共同点？',
         scene: sceneWithGroup(),
@@ -102,7 +100,6 @@ void main() {
     test('没有 scene 的环节往返后仍是 null（不臆造）', () {
       const section = CoursewareSectionModel(
         id: 's1',
-        kind: CoursewareSectionKind.interactiveScene,
         title: '一组图形',
       );
 
@@ -116,7 +113,6 @@ void main() {
     test('不传 scene 时保留原值', () {
       final section = CoursewareSectionModel(
         id: 's1',
-        kind: CoursewareSectionKind.interactiveScene,
         scene: sceneWithGroup(),
       );
 
@@ -133,7 +129,6 @@ void main() {
     test('copyWith(scene: null) 真的把 scene 清成 null（显式清空不被吞）', () {
       final section = CoursewareSectionModel(
         id: 's1',
-        kind: CoursewareSectionKind.interactiveScene,
         scene: sceneWithGroup(),
       );
       expect(section.resolvedScene, isNotNull, reason: '前置：先有场景');

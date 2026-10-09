@@ -23,7 +23,6 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:kids_learn/features/courseware/domain/models/courseware.dart';
 import 'package:kids_learn/features/courseware/domain/models/courseware_section.dart';
-import 'package:kids_learn/features/courseware/domain/models/courseware_section_kind.dart';
 import 'package:kids_learn/features/courseware/presentation/pages/courseware_present_page.dart';
 import 'package:kids_learn/features/courseware/providers/courseware_provider.dart';
 import 'package:kids_learn/shared/domain/figures.dart';
@@ -88,7 +87,6 @@ CoursewareSectionModel _section(
 }) =>
     CoursewareSectionModel(
       id: 's1',
-      kind: CoursewareSectionKind.interactiveScene,
       title: '一组图形里找对称',
       script: '哪些图形对折后能完全重合？',
       scene: scene,

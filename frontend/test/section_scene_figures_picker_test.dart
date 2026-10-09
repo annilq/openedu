@@ -28,8 +28,8 @@ import 'package:kids_learn/features/courseware/domain/models/courseware.dart';
 import 'package:kids_learn/features/courseware/domain/models/courseware_asset.dart';
 import 'package:kids_learn/features/courseware/domain/models/courseware_redraft_diff.dart';
 import 'package:kids_learn/features/courseware/domain/models/courseware_section.dart';
-import 'package:kids_learn/features/courseware/domain/models/courseware_section_kind.dart';
 import 'package:kids_learn/features/courseware/domain/repositories/courseware_repository.dart';
+import 'package:kids_learn/features/home/domain/repositories/material_repository.dart';
 import 'package:kids_learn/features/courseware/presentation/pages/courseware_editor_page.dart';
 import 'package:kids_learn/features/courseware/providers/courseware_provider.dart';
 import 'package:kids_learn/shared/domain/figures.dart';
@@ -47,7 +47,6 @@ Map<String, dynamic> _reflectionSpec() => <String, dynamic>{
 CoursewareSectionModel _section([Map<String, dynamic>? scene]) =>
     CoursewareSectionModel(
       id: 'a',
-      kind: CoursewareSectionKind.interactiveScene,
       title: '动手画对称图形',
       payload: const {},
       scene: scene,
@@ -105,9 +104,15 @@ class _FakeRepo extends CoursewareRepository {
       kpScenes;
 
   @override
-  Future<CoursewareModel> createCourseware(
-          {required String knowledgePointId, String? title}) async =>
+  Future<CoursewareModel> createCourseware({
+    required String knowledgePointId,
+    String? title,
+    String? objective,
+    bool draft = true,
+  }) async =>
       _courseware;
+  @override
+  Future<List<KnowledgePointOption>> listKnowledgePoints() async => const [];
   @override
   Future<CoursewareModel?> getRecentCourseware() async => null;
   @override
