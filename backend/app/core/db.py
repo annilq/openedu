@@ -770,12 +770,12 @@ def _seed_figure_library() -> None:
     from sqlmodel import Session, select
 
     from app.db.models import FigureLibrary
-    from app.features.materials.scene_figures import FIGURES
+    from app.features.materials.scene_figures import BUILTIN_FIGURE_SEED
 
     with Session(engine) as session:
         # `select(FigureLibrary.key)` 在 SQLModel 下返回**标量**（字符串），不是行对象。
         existing = set(session.exec(select(FigureLibrary.key)).all())
-        for shape in FIGURES:
+        for shape in BUILTIN_FIGURE_SEED:
             if shape.key in existing:
                 continue
             n = len(shape.vertices)

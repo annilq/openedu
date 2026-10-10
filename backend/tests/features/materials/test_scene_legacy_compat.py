@@ -16,7 +16,7 @@ DB 交互用真实的 ``db`` fixture（``init_db`` 已 seed 11 个内置图形�
 import uuid
 
 from app.db.models import KnowledgePoint
-from app.features.materials.scene_figures import FIGURES
+from app.features.materials.scene_figures import BUILTIN_FIGURE_SEED
 from app.features.materials.scene_fusion import (
     build_scene_spec_for_question,
     scene_spec_for_read,
@@ -31,7 +31,7 @@ _LEGACY_TRI = [[0.20, 0.80], [0.80, 0.80], [0.50, 0.30]]
 
 
 def _square_points() -> list[list[float]]:
-    square = next(f for f in FIGURES if f.key == "square")
+    square = next(f for f in BUILTIN_FIGURE_SEED if f.key == "square")
     return [[x, y] for x, y in square.vertices]
 
 

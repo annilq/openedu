@@ -9,7 +9,7 @@
 """
 import uuid
 
-from app.features.materials.scene_figures import FIGURES
+from app.features.materials.scene_figures import BUILTIN_FIGURE_SEED
 from app.features.materials.scene_fusion import (
     build_scene_spec_for_question,
     fuse_scene_spec,
@@ -312,7 +312,7 @@ def test_build_scene_spec_end_to_end(db):
             semester="下学期",
             stem="下图是风筝，它是对称图形吗？",
         )
-        kite = next(f for f in FIGURES if f.key == "kite")
+        kite = next(f for f in BUILTIN_FIGURE_SEED if f.key == "kite")
         assert out["points"] == [[x, y] for x, y in kite.vertices]
     finally:
         db.delete(kp)

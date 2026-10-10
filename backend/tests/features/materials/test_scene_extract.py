@@ -169,11 +169,11 @@ class TestOptionGroup:
 
     def test_points_match_figure_library(self, db):
         """下发的 points 必须与图库（DB 种子）逐点一致。"""
-        from app.features.materials.scene_figures import FIGURES
+        from app.features.materials.scene_figures import BUILTIN_FIGURE_SEED
 
         g = extract_option_group(db, ["A. 风筝", "B. 平行四边形"])
         by_caption = {i["caption"]: i for i in g["items"]}
-        for shape in FIGURES:
+        for shape in BUILTIN_FIGURE_SEED:
             if shape.label in by_caption:
                 assert by_caption[shape.label]["points"] == [
                     [x, y] for x, y in shape.vertices

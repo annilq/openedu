@@ -17,7 +17,7 @@ DB 交互用真实的 ``db`` fixture（``init_db`` 已把 11 个内置图形 see
 import uuid
 
 from app.db.models import KnowledgePoint
-from app.features.materials.scene_figures import FIGURES
+from app.features.materials.scene_figures import BUILTIN_FIGURE_SEED
 from app.features.materials.scene_fusion import (
     build_scene_spec_for_question,
     default_scene_from_figure,
@@ -30,7 +30,7 @@ _KP_NAME = "图形的运动（轴对称）"
 
 
 def _square_points() -> list[list[float]]:
-    square = next(f for f in FIGURES if f.key == "square")
+    square = next(f for f in BUILTIN_FIGURE_SEED if f.key == "square")
     return [[x, y] for x, y in square.vertices]
 
 
@@ -134,7 +134,7 @@ def test_build_ignores_stem_angle(db):
 def test_template_still_wins_over_library(db):
     """教师配了模板 → 用模板；题面命中图形只**覆盖几何**，不换成库兜底。"""
     teacher_id = uuid.uuid4()
-    house = next(f for f in FIGURES if f.key == "house")
+    house = next(f for f in BUILTIN_FIGURE_SEED if f.key == "house")
     kp = KnowledgePoint(
         id=uuid.uuid4(),
         teacher_id=teacher_id,
@@ -213,5 +213,5 @@ def test_scene_spec_for_read_empty_snapshot_falls_back(db):
         stem="长方形有几条对称轴？",
     )
     assert out is not None
-    rectangle = next(f for f in FIGURES if f.key == "rectangle")
+    rectangle = next(f for f in BUILTIN_FIGURE_SEED if f.key == "rectangle")
     assert out["points"] == [[x, y] for x, y in rectangle.vertices]
