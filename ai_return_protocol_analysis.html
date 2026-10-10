@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 接口返回协议 & 建议 Action 流向分析</title>
+<style>
+  :root{
+    --bg:#ffffff; --panel:#f6f8fa; --ink:#1f2328; --muted:#57606a;
+    --line:#d0d7de; --brand:#0969da; --green:#1a7f37; --amber:#9a6700;
+    --red:#cf222e; --code-bg:#f0f3f6;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",Segoe UI,sans-serif;
+       background:var(--bg);color:var(--ink);line-height:1.6;font-size:15px}
+  .wrap{max-width:980px;margin:0 auto;padding:32px 24px 64px}
+  h1{font-size:26px;margin:0 0 4px}
+  .sub{color:var(--muted);margin:0 0 28px;font-size:14px}
+  h2{font-size:19px;margin:38px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+  h3{font-size:16px;margin:24px 0 8px}
+  p{margin:10px 0}
+  code{background:var(--code-bg);border:1px solid var(--line);border-radius:5px;
+       padding:1px 6px;font-size:13px;font-family:"SFMono-Regular",Consolas,monospace}
+  table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13.5px}
+  th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+  th{background:var(--panel);font-weight:600}
+  .tag{display:inline-block;font-size:12px;font-weight:600;padding:1px 8px;border-radius:20px;white-space:nowrap}
+  .t-sse{background:#dafbe1;color:var(--green);border:1px solid #aceebb}
+  .t-json{background:#fff8c5;color:var(--amber);border:1px solid #d4a72c66}
+  .t-none{background:#ffebe9;color:var(--red);border:1px solid #ffc1ba}
+  .ok{color:var(--green);font-weight:600}
+  .warn{color:var(--amber);font-weight:600}
+  .bad{color:var(--red);font-weight:600}
+  .callout{border-left:4px solid var(--brand);background:var(--panel);padding:12px 16px;margin:16px 0;border-radius:0 6px 6px 0}
+  .callout.amber{border-color:var(--amber)}
+  .callout.red{border-color:var(--red)}
+  pre{background:var(--code-bg);border:1px solid var(--line);border-radius:8px;padding:14px 16px;
+      overflow-x:auto;font-size:12.5px;line-height:1.5}
+  .chain{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px;margin:14px 0}
+  .chain .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:6px 0}
+  .box{border:1px solid var(--line);border-radius:6px;padding:5px 10px;background:#fff;font-size:13px}
+  .arrow{color:var(--muted);font-size:13px}
+  .box.s{background:#dafbe1;border-color:#aceebb}
+  .box.b{background:#fff8c5;border-color:#d4a72c66}
+  .box.x{background:#ffebe9;border-color:#ffc1ba}
+  .legend{font-size:12px;color:var(--muted);margin-top:8px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:720px){.grid2{grid-template-columns:1fr}}
+  ul{margin:8px 0;padding-left:22px}
+  li{margin:5px 0}
+  .file{color:var(--muted);font-size:12.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>AI 功能返回协议 & 建议 Action 流向分析</h1>
+<p class="sub">基于代码实测（backend + frontend）· 回答两个问题：① 答疑是否 SSE / 各 AI 接口协议是否一致 ② 讲课建议 action 发到后端时 LLM 是否没处理、只返回匹配的数据</p>
+
+<!-- ============ Q1 ============ -->
+<h2>一、所有 AI 接口返回协议是否一致？</h2>
+<p><span class="bad">不一致。</span> 代码里 AI 相关的端点混用了 <b>SSE 流式</b> 与 <b>一次性 JSON</b> 两种协议，且即便都是 SSE，<b>流式的“粒度”也不同</b>（逐 token vs 按轮次缓冲）。</p>
+
+<table>
+<thead><tr><th>端点</th><th>协议</th><th>是否 AI 生成</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td><code>POST /assistant/chat</code></td><td><span class="tag t-sse">SSE</span></td><td>是</td><td>对话式 AI 唯一入口，<code>text/event-stream</code> + <code>X-Accel-Buffering:no</code>（router.py:54）</td></tr>
+<tr><td><code>GET /assistant/suggested-actions</code></td><td><span class="tag t-json">JSON</span></td><td><span class="bad">否</span></td><td>服务端静态目录，零 LLM（service.py:179）</td></tr>
+<tr><td><code>GET /assistant/conversations*</code></td><td><span class="tag t-json">JSON</span></td><td>否</td><td>历史会话读，纯 ORM</td></tr>
+<tr><td><code>POST /tasks/generate</code></td><td><span class="tag t-sse">SSE</span></td><td>是</td><td>结构化出题，流式题卡（tasks/router.py:89）</td></tr>
+<tr><td><code>POST /tasks/{id}/questions/{tq}/regenerate-stream</code></td><td><span class="tag t-sse">SSE</span></td><td>是</td><td>单题流式换题（tasks/router.py:288）</td></tr>
+<tr><td><code>POST /tasks/{id}/regenerate</code></td><td><span class="tag t-json">JSON</span></td><td>是</td><td>整卷同步重生成，一次返回（tasks/router.py:297）</td></tr>
+<tr><td><code>POST /tasks/{id}/questions/{tq}/regenerate</code></td><td><span class="tag t-json">JSON</span></td><td>是</td><td>单题同步换题（tasks/router.py:269）</td></tr>
+<tr><td><code>POST /courseware</code>（AI 起草）</td><td><span class="tag t-json">JSON</span></td><td><span class="warn">是</span></td><td><b>长耗时 AI 内容却一次性返回</b>，<code>provider.stream</code> 内部缓冲后落库（courseware/service.py:260）</td></tr>
+<tr><td><code>POST /courseware/{id}/redraft</code></td><td><span class="tag t-json">JSON</span></td><td><span class="warn">是</span></td><td>同上，返回逐段 diff（courseware/router.py:118）</td></tr>
+</tbody>
+</table>
+
+<div class="callout amber">
+<b>结论：</b>“长耗时的 AI 内容生成”里，<code>/courseware</code> 起草 / <code>redraft</code> 与同步换题是 <b>一次性 JSON</b>，只有 <code>/assistant/chat</code>、<code>/tasks/generate</code>、<code>/tasks/regenerate-stream</code> 是 SSE。这就是用户“等很久才一次性返回”的<b>真凶之一</b>——课件 AI 起草不是 SSE，是自然的一次性等全部生成完才回 JSON。
+</div>
+
+<h3>答疑（tutor）本身其实是真·SSE 逐 token 流</h3>
+<p>“答疑消息不是 SSE”更准确说是<b>观感误判</b>：协议层确为 SSE 且逐增量下推。完整调用链：</p>
+<div class="chain">
+  <div class="row"><span class="box">service.chat()</span><span class="arrow">→</span><span class="box">event_stream()</span><span class="arrow">→</span><span class="box">rt.run()</span><span class="arrow">→</span><span class="box s">tutor.agent.run()</span></div>
+  <div class="row"><span class="arrow">→</span><span class="box s">aexplain_stream()</span><span class="arrow">→</span><span class="box s">provider.tutor_stream()</span><span class="arrow">→</span><span class="box s">adapter.stream()</span><span class="arrow">→</span><span class="box s">genkit.generate_stream()</span></div>
+  <div class="row"><span class="arrow">→</span><span class="box s">逐 chunk → TextDelta(delta) → assistant_message(delta) 每 token 一帧</span></div>
+  <p class="legend">证据：tutor/agent.py:112 逐 delta 下推；aexplain_stream(tutor.py:272) 逐帧 yield；genkit_provider.py:114 tutor_stream 逐 delta；genkit.py:480 用 <code>generate_stream</code> 逐 chunk 产 TextDelta。tutor/agent.py:109-112 注释明写：旧 <code>tutor()</code> 曾缓冲整段 65s 才吐，已改为逐 token。</p>
+</div>
+
+<div class="callout">
+<b>所以答疑“像一次性返回”的三个真实根因（按概率）：</b>
+<ul>
+<li><b>① RAG 检索前置延迟</b>：tutor 在出首 token 前先做知识库检索（tutor.py:298），检索慢 → 前端先静默再出字，观感像“卡一下然后全来”。</li>
+<li><b>② 具体模型/引擎的 <code>generate_stream</code> 缓冲</b>：代码已正确用流式 API，但若所配模型（尤其某些 OpenAI 兼容/o1 类）或代理不支持真流式，整段会攒齐再发。</li>
+<li><b>③ 你看到的其实是学情查询（query）而非答疑（tutor）</b>：工具型 subagent 走 <code>run_with_tools</code>，整轮正文先累积进 <code>acc</code> 到轮末才 <code>yield assistant_message(acc)</code>（subagent.py:393-395），<b>按轮次而非按 token 流式</b>——所以 query 确实“一轮结束才整段冒出来”。</li>
+</ul>
+</div>
+
+<!-- ============ Q2 ============ -->
+<h2>二、讲课时的建议 action，后端 LLM 是否没处理、只返回匹配数据？</h2>
+<p><b>分动作看：判断题（quiz）动作——是，LLM 完全没处理用户点的那句话；讲解/举例动作——否，LLM 仍处理（只是输入是预设文本）。</b></p>
+
+<h3>2.1 建议 action 本身是“服务端静态目录”，不是 LLM 生成的</h3>
+<p>讲课（带 <code>courseware</code> 上下文、有知识点 id）时空态会多出 3 个推荐操作，由 <code>build_suggested_actions</code>（service.py:179）从固定目录装配：</p>
+<table>
+<thead><tr><th>动作</th><th>kind</th><th>quiz</th><th>点击后前端发出</th></tr></thead>
+<tbody>
+<tr><td>举几个生活例子</td><td>prompt</td><td>false</td><td><code>{message: 预设文本, courseware}</code></td></tr>
+<tr><td>出一道判断题</td><td>prompt</td><td><span class="bad">true</span></td><td><code>{message: 预设文本, quiz:true, courseware}</code></td></tr>
+<tr><td>讲解这个知识点</td><td>prompt</td><td>false</td><td><code>{message: 预设文本, courseware}</code></td></tr>
+</tbody>
+</table>
+<p class="file">前端证据：assistant_suggested_action.dart:3 “由服务端按上下文从固定目录装配（非 LLM 生成）”；assistant_suggested_actions.dart:67 <code>onPrompt(a.payload, a.quiz)</code>；chat_page:452 <code>send(payload, courseware, quiz)</code>；assistant_notifier.dart:136 <code>AssistantChatReq(message, courseware, quiz)</code>；assistant_requests.dart:30 仅 <code>quiz:true</code> 时带上。</p>
+
+<h3>2.2 “出一道判断题”= 标志位匹配的零 LLM 路径</h3>
+<p>点击“出一道判断题”后，后端 <code>chat()</code> 在 <b>任何 provider 调用之前</b>就拦截了：</p>
+<pre>if req.quiz:                                  # service.py:545
+    return _stream_sse(_quiz_generate_stream(...))
+# 上面这行直接 return，根本没走到 rt.run()</pre>
+<p><code>_quiz_generate_stream</code>（service.py:245）调用 <code>generate_question</code> 管线，按 <code>_resolve_kp_context</code> 解析出的<b>知识点上下文</b>生成判断题——<b>用户点选的那句预设文本从不被当作指令喂给 LLM</b>。判定逻辑是确定性的小词典（service.py:129-148），答案存 <code>pending_quiz</code> 待用户作答，题卡下发前剥离答案/解析。</p>
+<div class="callout red">
+<b>对你的问题的直接回答：</b>“出一道判断题”这个建议 action，<b>LLM 确实没有处理用户的动作消息</b>——它是 <code>quiz=true</code> 标志位匹配的<b>生成器触发</b>，返回的是“按知识点生成的题”（不是从静态库“匹配”到的，而是 pipeline 现场生成，但不读你的动作文本）。注意：<b>题本身仍是 LLM 生成的</b>，只是不读你点的那句话。
+</div>
+
+<h3>2.3 “讲解 / 举例”动作——LLM 仍处理，但输入是模板</h3>
+<p>这两个动作 <code>quiz=false</code>，走正常 <code>rt.run()</code> → tutor/guide subagent 把<b>预设文本</b>作为 <code>message</code> 正常生成。因此 LLM 会处理，但处理的是<b>服务端写好的模板指令</b>（如“请详细讲解「分数乘法」…”），不是用户自由表达的意图。这是“模板化指令”，不是“零 LLM”。</p>
+
+<div class="grid2">
+<div>
+<h3>判断题动作流向（零 LLM 读消息）</h3>
+<div class="chain">
+  <div class="row"><span class="box">点击「出判断题」</span></div>
+  <div class="row"><span class="arrow">↓ 携带</span><span class="box b">quiz:true + 预设message</span></div>
+  <div class="row"><span class="arrow">↓</span><span class="box">chat() 见 req.quiz</span><span class="arrow">→</span><span class="box x">跳过 rt.run</span></div>
+  <div class="row"><span class="arrow">↓</span><span class="box">_quiz_generate_stream</span><span class="arrow">→</span><span class="box">generate_question(知识点)</span></div>
+  <div class="row"><span class="arrow">↓</span><span class="box s">下发题卡（剥离答案）</span></div>
+  <p class="legend">用户的 message 文本在此链路被<b>完全忽略</b>。</p>
+</div>
+</div>
+<div>
+<h3>讲解/举例动作流向（LLM 处理模板）</h3>
+<div class="chain">
+  <div class="row"><span class="box">点击「讲解/举例」</span></div>
+  <div class="row"><span class="arrow">↓ 携带</span><span class="box b">quiz:false + 预设message</span></div>
+  <div class="row"><span class="arrow">↓</span><span class="box">chat() 走 rt.run()</span></div>
+  <div class="row"><span class="arrow">↓</span><span class="box">tutor/guide subagent</span><span class="arrow">→</span><span class="box s">LLM 处理预设文本</span></div>
+  <div class="row"><span class="arrow">↓</span><span class="box s">逐 token 返回讲解</span></div>
+  <p class="legend">LLM 读到的是模板指令，不是用户自由意图。</p>
+</div>
+</div>
+</div>
+
+<div class="callout">
+<b>设计含义（为什么是刻意的，不是 bug）：</b>
+<ul>
+<li>建议 action 用静态目录（ADR-0072）：零延迟、可控、可单测，避免每次空态都让 LLM 现编推荐项。</li>
+<li>判断题闭环用“确定性小词典判定 + pipeline 出题”：不靠 LLM 自由判定对错，避免小模型乱判（ADR-0040/0042）。</li>
+<li>所以“点 action = AI 理解我的意图”是<b>认知偏差</b>：quiz 是生成器触发，讲解是模板指令。若要让用户感觉“AI 真的在处理我点的东西”，这两类目前都不会把动作文本当语义输入。</li>
+</ul>
+</div>
+
+<!-- ============ 收敛建议 ============ -->
+<h2>三、若要“收敛到一处”，该补的两点</h2>
+<ol>
+<li><b>协议统一</b>：把 <code>/courseware</code> 起草 / <code>redraft</code> 也改成 SSE（或至少流式进度），与 <code>/assistant/chat</code> 同观感；同步换题 <code>regenerate</code> 同理可补流式版。HTTP 多端点可保留（输出契约不同：气泡 / 落库任务 / 落库课件），但<b>“长耗时 AI 内容”不应再是一次性 JSON</b>。</li>
+<li><b>流式粒度统一</b>：query 等工具型 subagent 目前按轮次缓冲（subagent.py:393-395）；若希望与 tutor 一样“边生成边出”，需在 tool loop 里也把 <code>acc</code> 改为逐 delta yield（注意要保留“未查先答”硬失败判定所需的整轮聚合，不能简单拆散）。</li>
+<li><b>建议 action 语义澄清</b>：若产品希望“点讲解 = 针对该知识点深入讲解”而非“发一句模板”，当前模板已足够；若希望“点 action 后 AI 结合对话上下文续接”，需把 <code>history</code> 真正参与（目前 quiz 路径完全没用 history，prompt 路径已带 history）。</li>
+</ol>
+
+<p class="file">本报告全部结论均来自代码实测：backend/app/features/assistant/{router,service}.py、backend/app/domain/{tutor,genkit_provider}.py、backend/agent_core/{runtime,subagent,protocol,adapters/genkit}.py、backend/app/features/{tasks,courseware}/router.py，及 frontend/lib/features/assistant/**。</p>
+
+</div>
+</body>
+</html>
