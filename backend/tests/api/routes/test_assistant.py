@@ -107,11 +107,10 @@ def test_teacher_question_generation_emits_data_events(client):
         assert q.get("subject") and q.get("stem")
 
 
-def test_student_role_awareness_forces_tutor(client):
-    """学生端意图被强制收敛到伴学（出题/查任务意图不会触发非伴学生成，ADR-0026）。
+def test_student_generation_routes_to_question(client):
+    """学生自练出题（ADR-0081 §2.2）：出题意图路由到出题助手，产出题卡，而非强制收敛到伴学答疑。
 
-    决策已显式化：不再经 THINKING(extra.business) 隐式透传（见 #2），
-    而是路由 THINKING 帧标记 ``routing: True``，且 Conversation.kind 由决策写入。
+    决策已显式化：路由 THINKING 帧标记 ``routing: True``，且 Conversation.kind 由决策写入。
     """
     _ptoken, _student, ctoken = _setup(client, "as6_teacher", "as6_kid")
     status, events = _stream(client, ctoken, "帮我出 2 道数学题")
@@ -119,11 +118,11 @@ def test_student_role_awareness_forces_tutor(client):
     # 路由 THINKING 帧标记 routing=True（决策显式化后不再经 extra.business 透传）
     routed = [e for e in events if e["eventType"] == "THINKING" and e.get("extra", {}).get("routing")]
     assert routed, "应产生路由 THINKING 帧"
-    # 学生端被角色可见集强制收敛到伴学答疑（tutor），而非出题/任务
-    assert any("伴学答疑" in e.get("text", "") for e in routed)
-    # 不应出现 question 题卡（证明没有路由到出题 subagent）
+    # 学生端出题意图路由到出题助手（而非被强制收敛到伴学答疑）
+    assert any("出题助手" in e.get("text", "") for e in routed)
+    # 应出现 question 题卡（证明路由到了出题 subagent，学生可自练出题）
     question_cards = [e for e in events if e["eventType"] == "DATA" and e.get("data", {}).get("type") == "question"]
-    assert question_cards == []
+    assert question_cards
 
 
 # ───────────────────────── 学情查询：端到端（ADR-0033 第 6 阶段） ─────────────────────────

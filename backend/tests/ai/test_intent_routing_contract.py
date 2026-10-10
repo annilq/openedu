@@ -86,13 +86,37 @@ def test_decide_action_with_text_still_precedes_text_routing():
     assert decision.extra.get("routed_by") == "action"
 
 
-def test_decide_action_not_visible_for_student_is_explicit():
-    # 出题助手仅教师可见；学生打该动作 → 显式不可见，绝不静默落成 tutor/可见集首个。
+def test_decide_action_routes_student_to_question():
+    # 出题助手现已对师生双开（ADR-0081 §2.2）：学生打 task_generate → 直接路由 question。
     decision = asyncio.run(_decide(IntentSignal(text="", action="task_generate"), role="student"))
+    assert decision.business == "question"
+    assert decision.name == "出题助手"
+    assert decision.extra.get("routed_by") == "action"
+
+
+def test_decide_action_not_visible_when_role_lacks_manifest():
+    # 防御路径：动作命中但其归属 subagent 对当前角色不可见 → 显式 action_not_visible，
+    # 不静默落成答非所问。用合成清单验证代码路径（question 现已双开，不再能触发此分支）。
+    from agent_core.registry import SubAgentManifest
+
+    m = SubAgentManifest(
+        business="limited",
+        name="受限助手",
+        roles=["teacher"],  # 仅教师可见
+        actions=["limited_action"],
+    )
+    rt = AgentRuntime({"limited": m})
+    decision = asyncio.run(
+        rt.decide(
+            IntentSignal(text="", action="limited_action"),
+            role="student",
+            deps=_deps("student"),
+        )
+    )
     assert decision.business is None
     assert decision.name is None
     assert decision.extra.get("reason") == "action_not_visible"
-    assert decision.extra.get("action") == "task_generate"
+    assert decision.extra.get("action") == "limited_action"
 
 
 def test_decide_unknown_action_falls_back_to_text_routing():
