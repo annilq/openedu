@@ -18,6 +18,7 @@ from dataclasses import asdict
 from typing import Any
 from uuid import UUID, uuid4
 
+from agent_core import IntentSignal
 from agent_core.errors import ProviderRequestError
 from agent_core.ports import RuntimeDeps, TextDelta
 from agent_core.protocol import (
@@ -387,7 +388,8 @@ async def chat(
     deps = RuntimeDeps(provider=provider, retriever=retriever, safety=safety)
 
     # 预路由：解析 business（不流式），供落库复用，消除端点对 THINKING(extra) 隐式契约。
-    decision = await rt.decide(message, role=role, deps=deps)
+    # 迁移期：以结构化信号承载输入；动作字段（req.action）待 ADR-0081 落地由 T04 接入。
+    decision = await rt.decide(IntentSignal(text=message), role=role, deps=deps)
     # 课堂请求仍先走既有路由规则，再做上下文定向：出题进入 guide；答错后的
     # 「提示」进入 tutor。这样不改 manifest 优先级，也不让 query 的泛词「学生」抢走提示。
     if req.courseware is not None:

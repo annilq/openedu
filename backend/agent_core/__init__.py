@@ -36,7 +36,7 @@ from agent_core.registry import (
     discover_subagent_manifests,
     get_subagent_class,
 )
-from agent_core.router import classify
+from agent_core.router import IntentSignal, classify
 from agent_core.runtime import AgentRuntime, RouteDecision
 from agent_core.subagent import (
     BaseSubAgent,
@@ -54,6 +54,7 @@ __all__ = [
     "get_subagent_class",
     "build_subagent",
     "classify",
+    "IntentSignal",
     "AssistantEvent",
     "data_event",
     "error",
