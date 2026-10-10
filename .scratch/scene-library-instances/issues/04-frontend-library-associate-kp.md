@@ -1,7 +1,7 @@
 # T04 — 前端库详情：关联知识点(1:N) + 标题编辑 + 解除关联
 
 **Blocked by:** 01, 02
-**Status:** ready-for-agent
+**Status:** done
 
 ## What to build
 

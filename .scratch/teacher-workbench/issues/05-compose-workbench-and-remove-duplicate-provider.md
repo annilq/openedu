@@ -4,7 +4,7 @@
 
 **Blocked by:** 03 (速览层), 04 (分析层)
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] `teacher_overview_view.dart` 组合三段：任务区 + 速览层 + 分析层；默认进入即见速览。
 - [ ] `teacherOverviewProvider`/`TeacherOverviewNotifier` 已删除；工作台取数只经 `analyticsNotifier`，无重复请求。

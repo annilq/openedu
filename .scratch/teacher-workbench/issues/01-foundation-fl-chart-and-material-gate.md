@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] `flutter pub get` 成功，`fl_chart` 进入 `pubspec.yaml` 依赖。
 - [ ] 冒烟测试在非 Material 根树下挂载 fl_chart 并通过（不抛「No Material widget found」）。

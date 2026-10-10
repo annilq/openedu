@@ -4,7 +4,7 @@
 
 **Blocked by:** 05 (组合工作台，子文件拆分已落定后才有真实行数)
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] `test/file_size_guard_test.dart` 的 `_baseline` 调低到拆分后主文件实际行数。
 - [ ] `analytics_charts.dart` / `workbench_glance.dart` / `workbench_analysis.dart` 各自登记基线，均 ≤ 护栏阈值。

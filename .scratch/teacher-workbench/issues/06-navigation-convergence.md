@@ -4,7 +4,7 @@
 
 **Blocked by:** 05 (组合工作台，确保工作台已完整承载原统计能力后才去入口)
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] `AnalyticsPage` 子类、`teacher_destinations.dart` 入口、`home_screen.dart` 映射分支全部删除。
 - [ ] 侧栏无「统计」项，共 9 项，顺序不变；`OverviewPage` 为默认高亮。

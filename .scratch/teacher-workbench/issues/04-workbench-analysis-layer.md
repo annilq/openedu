@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 (图表适配器层)
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] 分析层在子文件中渲染，作用域 all/class + 维度 4 选 + 三聚合，行为与原统计页等价。
 - [ ] 三聚合卡用图表适配器呈现（错题分布堆叠条 / 正确率分组条 / 掌握度条形 + level 徽章）；`_MetricRow` 文字列表不再出现。

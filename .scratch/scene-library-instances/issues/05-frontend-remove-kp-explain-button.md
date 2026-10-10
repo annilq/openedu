@@ -1,7 +1,7 @@
 # T05 — 前端 KP 行移除「讲解」按钮
 
 **Blocked by:** 04
-**Status:** ready-for-agent
+**Status:** done
 
 ## What to build
 

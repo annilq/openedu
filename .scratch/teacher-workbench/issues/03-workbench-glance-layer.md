@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 (图表适配器层)
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] 速览层渲染三块图表 + 错题分布，数据来自 `scope=all` 的现有聚合端点，不新增后端逻辑。
 - [ ] 薄弱知识点按 `activeWrong` 降序、按 accuracy 分级配色；点击触发钻取回调（本张只验证回调触发，钻取落地在 05）。

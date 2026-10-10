@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 (基座——fl_chart 依赖 + Material 冒烟 gate)
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] 四个适配器渲染：环形（掌握度仪表，中心 `X/Y`）、横向条形（薄弱知识点）、分组横向条（正确率）、竖向堆叠条（错题分布 活跃/毕业）。
 - [ ] 视觉对齐：直角、2px 描边、outline 配色、无模糊阴影；暗色模式令牌读取正确。

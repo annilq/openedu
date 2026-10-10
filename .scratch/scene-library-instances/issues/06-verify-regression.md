@@ -1,7 +1,7 @@
 # T06 — 验证收尾：空态文案迁移 + 全量回归
 
 **Blocked by:** 03, 04, 05
-**Status:** ready-for-agent
+**Status:** done
 
 ## What to build
 
