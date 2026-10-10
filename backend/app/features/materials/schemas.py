@@ -269,3 +269,22 @@ class FigureLibraryResp(SQLModel):
     """图形几何库（后端为单一事实源）。空列表属部署异常。"""
 
     figures: list[FigureLibraryItem] = Field(default_factory=list)
+
+
+class FigureLibraryCreate(SQLModel):
+    """画板保存一个用户图形（ADR-0083 决策 1/3）。
+
+    **只收几何，不含任何 axis 属性**：对称轴判定是纯视觉（拖轴 + 翻转），图库
+    不存 authored axis 值。
+
+    - ``points``：归一化顶点 ``[[x, y], ...]``（x/y ∈ 0..1，至少 3 个，按序连成多边形）。
+    - ``edges``：顶点索引对 ``[[i, j], ...]``；缺省 / 空 → 按顶点顺序闭合
+      （与前端 ``closedEdges`` 同义，支持开折线 / 多部件时显式传入）。
+    - ``key`` 刻意**不由客户端指定**：由后端分配（``user_<hex>``），避免与内置 key
+      撞车、也避免改动「key 是稳定契约」的语义。响应里回传分配结果。
+    """
+
+    label: str
+    points: list[list[float]]
+    edges: list[list[int]] | None = None
+    note: str | None = None

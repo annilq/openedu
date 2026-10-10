@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import math
 import uuid
 from collections.abc import Sequence
 from pathlib import Path
@@ -39,6 +40,7 @@ from app.features.materials.scene_templates import (
 )
 from app.features.materials.schemas import (
     ExtractResult,
+    FigureLibraryCreate,
     FigureLibraryItem,
     FigureLibraryResp,
     FolderCreate,
@@ -822,6 +824,114 @@ def list_figure_library(session: Session) -> FigureLibraryResp:
             )
             for r in rows
         ]
+    )
+
+
+# 用户图形的 key 前缀：``user_`` —— 与内置图形的短 key（house/square…）一眼可分，
+# 也方便将来「内置预设不可改、用户行可改」的鉴权落地（ADR-0083 遗留 4）。
+_USER_FIGURE_KEY_PREFIX = "user_"
+
+# 归一化坐标的容许误差：画板拖拽可能产生 1.0000001 这类浮点噪声，不该当成越界。
+_COORD_EPS = 1e-6
+
+
+def _validate_figure_points(points: list[list[float]]) -> list[list[float]]:
+    """校验并归一化顶点：≥3 个、每点两个有限数、坐标在 0..1（容许 1e-6 噪声后夹紧）。
+
+    非法输入抛 ``ValueError``（路由转 422）——**绝不**静默落一份畸形几何：顶点是
+    渲染的事实源，坏几何会让学生看到错图却查不出原因。
+    """
+    if not isinstance(points, list) or len(points) < 3:
+        raise ValueError("points 至少需要 3 个顶点")
+    out: list[list[float]] = []
+    for pt in points:
+        if not (isinstance(pt, (list, tuple)) and len(pt) == 2):
+            raise ValueError("每个顶点必须是 [x, y] 两个数")
+        try:
+            x = float(pt[0])
+            y = float(pt[1])
+        except (TypeError, ValueError) as exc:
+            raise ValueError("顶点坐标必须是数字") from exc
+        if not (math.isfinite(x) and math.isfinite(y)):
+            raise ValueError("顶点坐标必须是有限数")
+        if not (-_COORD_EPS <= x <= 1 + _COORD_EPS) or not (
+            -_COORD_EPS <= y <= 1 + _COORD_EPS
+        ):
+            raise ValueError("顶点坐标必须归一化到 0..1")
+        out.append([min(1.0, max(0.0, x)), min(1.0, max(0.0, y))])
+    return out
+
+
+def _validate_figure_edges(
+    edges: list[list[int]] | None, n: int
+) -> list[list[int]]:
+    """校验顶点索引对；缺省 / 空 → 按顶点顺序闭合（与前端 ``closedEdges`` 同义）。"""
+    if not edges:
+        return [[i, (i + 1) % n] for i in range(n)]
+    out: list[list[int]] = []
+    for e in edges:
+        if not (isinstance(e, (list, tuple)) and len(e) == 2):
+            raise ValueError("每条边必须是 [i, j] 两个顶点索引")
+        try:
+            i = int(e[0])
+            j = int(e[1])
+        except (TypeError, ValueError) as exc:
+            raise ValueError("边索引必须是整数") from exc
+        if not (0 <= i < n and 0 <= j < n):
+            raise ValueError("边索引越界")
+        out.append([i, j])
+    return out
+
+
+def _allocate_user_figure_key(session: Session) -> str:
+    """分配一个不与任何现有行冲突的用户图形 key（``user_<hex>``）。"""
+    for _ in range(16):
+        key = f"{_USER_FIGURE_KEY_PREFIX}{uuid.uuid4().hex[:12]}"
+        exists = session.exec(
+            select(FigureLibrary.key).where(FigureLibrary.key == key)
+        ).first()
+        if exists is None:
+            return key
+    raise RuntimeError("无法分配唯一图形 key")  # pragma: no cover - 概率极低
+
+
+def create_figure_library(
+    session: Session,
+    req: FigureLibraryCreate,
+) -> FigureLibraryItem:
+    """画板保存一个用户图形（ADR-0083 决策 1/3）：分配 key、校验、落用户行。
+
+    - ``key`` 由后端分配（``user_<hex>``），客户端不指定——避免与内置 key 撞车。
+    - 校验顶点（≥3、0..1 归一化）与边（索引不越界），非法输入抛 ``ValueError``。
+    - ``edges`` 缺省 / 空 → 按顶点顺序闭合。
+    - ``is_builtin=False``：区分用户行与内置预设（内置由启动期 seed 写入）。
+    - **不存任何 axis 属性**：对称判定纯视觉（拖轴 + 翻转），图库只留几何。
+    """
+    label = (req.label or "").strip()
+    if not label:
+        raise ValueError("图形名称不能为空")
+    if len(label) > 64:
+        raise ValueError("图形名称过长（≤64 字）")
+    pts = _validate_figure_points(req.points)
+    eds = _validate_figure_edges(req.edges, len(pts))
+    row = FigureLibrary(
+        key=_allocate_user_figure_key(session),
+        label=label,
+        points=pts,
+        edges=eds,
+        note=req.note,
+        is_builtin=False,
+    )
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return FigureLibraryItem(
+        key=row.key,
+        label=row.label,
+        points=row.points or [],
+        edges=row.edges or [],
+        note=row.note,
+        is_builtin=row.is_builtin,
     )
 
 

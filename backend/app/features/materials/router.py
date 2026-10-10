@@ -15,6 +15,8 @@ from app.features.materials import indexing, service
 from app.features.materials.scene_templates import SCENE_LIBRARY
 from app.features.materials.schemas import (
     ExtractResult,
+    FigureLibraryCreate,
+    FigureLibraryItem,
     FigureLibraryResp,
     FolderCreate,
     FolderResp,
@@ -162,6 +164,27 @@ def list_figure_library(
     画廊 / 画板按需拉取——渲染本身不依赖它（SceneSpec 自带几何）。
     """
     return service.list_figure_library(session)
+
+
+@router.post("/scene-library/figures", response_model=FigureLibraryItem)
+def create_figure_library(
+    payload: FigureLibraryCreate,
+    session: SessionDep,
+    user: CurrentTeacher,
+) -> FigureLibraryItem:
+    """画板保存一个用户图形（ADR-0083 决策 1/3）：写 ``figure_library``（``is_builtin=False``）。
+
+    ``key`` 由后端分配（``user_<hex>``）并回传——客户端不指定，避免与内置 key 撞车。
+    只收几何（``points``/``edges``），**不存任何 axis 属性**：对称判定是纯视觉
+    （拖轴 + 翻转）。顶点非法（<3、越界）/ 名称为空 → 422；绝不静默落畸形几何。
+
+    ⚠️ 本路由须排在 ``POST /{material_id}/...`` 之前，否则 ``scene-library`` 会被
+    当成资料 id 吃掉（同 ``GET /scene-library`` 的注册顺序约束）。
+    """
+    try:
+        return service.create_figure_library(session, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("/knowledge-points", response_model=KnowledgePointListResp)
