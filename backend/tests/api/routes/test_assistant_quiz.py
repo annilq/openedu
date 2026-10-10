@@ -2,8 +2,8 @@
 
 monkeypatch 掉真实出题 LLM，验证：
 - quiz=true + 课件上下文 → SSE 下发题卡，答案/解析已剥离（不提前泄题）。
-- 续接同一会话作答 → 待判定态被消费，路由强制到 tutor，题目 + 正确答案随
-  ctx.extra 交给模型（判定与讲解都由 LLM 产出，服务端不留确定性分支）。
+- 续接同一会话作答 → 待判定态被消费，信号归一化定向 ``quiz_judge``（→tutor），题目 +
+  正确答案随 ctx.extra 交给模型（判定与讲解都由 LLM 产出，服务端不留确定性分支）。
 
 同时锁定 SSE 序列化收口（chat 的 quiz 分支必须 yield ev.to_sse()，而非裸对象）。
 """
@@ -104,17 +104,25 @@ def test_quiz_chat_emits_stripped_question_card(client, db, monkeypatch):
 
 
 class _StubRuntime:
-    """桩 runtime：记录本轮路由与 ctx.extra，产出固定一句（替掉真实 LLM）。"""
+    """桩 runtime：记录本轮路由、收到的信号与 ctx.extra，产出固定一句（替掉真实 LLM）。
+
+    T06 起定向迁进信号：服务端在归一化阶段给 ``action=quiz_judge``，桩按清单归属把它映射
+    到 tutor（真路由由 ``test_intent_routing_contract`` 覆盖）。
+    """
 
     def __init__(self) -> None:
         self.business = None
         self.extra = None
+        self.signal = None
 
     def name_of(self, business: str) -> str:
         return {"tutor": "伴学答疑"}.get(business, business)
 
-    async def decide(self, message, *, role, deps):
-        # 刻意给 query：证明待判定态会把路由**强制**扳到 tutor。
+    async def decide(self, signal, *, role, deps):
+        self.signal = signal
+        if getattr(signal, "action", None) == "quiz_judge":
+            return RouteDecision(business="tutor", name="伴学答疑")
+        # 非待判定态：刻意给 query，证明 quiz_judge 动作才把方向扳到 tutor。
         return RouteDecision(business="query", name="资料查询")
 
     async def run(self, message, *, role, ctx, deps, business=None, session=None):
@@ -161,8 +169,9 @@ def test_quiz_judge_routes_to_llm_and_consumes_pending(client, db, monkeypatch):
     answer = "".join(
         e.get("text", "") for e in judge_events if e["eventType"] == "ASSISTANT_MESSAGE"
     )
-    # 模型被真正调用（桩产出正文）；旧的确定性分支不会走到模型。
+    # 模型被真正调用（桩产出正文）；定向经信号（action=quiz_judge）交讲解而非只读检索。
     assert "（模型判定反馈）" in answer
+    assert getattr(rt.signal, "action", None) == "quiz_judge"
     assert rt.business == "tutor"
     pending = (rt.extra or {}).get("pending_quiz") or {}
     assert pending.get("stem") == "平行四边形是轴对称图形"

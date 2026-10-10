@@ -67,6 +67,10 @@ def test_action_ownership_is_unique():
     # 本轮核心声明：出题助手拥有两个动作
     assert owner_of["task_generate"] == "question"
     assert owner_of["task_question_regenerate"] == "question"
+    # T06：课件方向与待判定态方向的动作键——各有归属，且与助手出题**不同键**。
+    assert owner_of["courseware_generate"] == "guide"
+    assert owner_of["courseware_hint"] == "tutor"
+    assert owner_of["quiz_judge"] == "tutor"
 
 
 # ── 动作直配路由结果 ──
@@ -125,6 +129,59 @@ def test_decide_unknown_action_falls_back_to_text_routing():
         _decide(IntentSignal(text="帮我出几道数学题", action="does_not_exist"), role="teacher")
     )
     assert decision.business == "question"
+
+
+# ── T06：课件上下文 / 待判定态定向迁进信号（各有独立动作键） ──
+def test_decide_courseware_generate_routes_to_guide():
+    """课件练习「出题」→ 任务引导（引导到页面），**不是**出题助手（不出卡）。"""
+    decision = asyncio.run(
+        _decide(IntentSignal(text="", action="courseware_generate"), role="teacher")
+    )
+    assert decision.business == "guide"
+    assert decision.name == "任务引导"
+    assert decision.extra.get("routed_by") == "action"
+
+
+def test_decide_courseware_hint_routes_to_tutor():
+    """课件练习「提示」→ 伴学答疑。"""
+    decision = asyncio.run(
+        _decide(IntentSignal(text="", action="courseware_hint"), role="teacher")
+    )
+    assert decision.business == "tutor"
+    assert decision.name == "伴学答疑"
+    assert decision.extra.get("routed_by") == "action"
+
+
+def test_decide_quiz_judge_routes_to_tutor():
+    """待判定态消费后的定向 → 伴学答疑（判定与讲解由模型产出）。"""
+    decision = asyncio.run(
+        _decide(IntentSignal(text="错", action="quiz_judge"), role="teacher")
+    )
+    assert decision.business == "tutor"
+    assert decision.name == "伴学答疑"
+    assert decision.extra.get("routed_by") == "action"
+
+
+def test_two_generate_intents_have_independent_action_keys():
+    """两种「出题」语义不得拍平：课件方向归 guide，助手方向归 question，各持独立动作键。
+
+    这是最难发现的那类回归——功能照常跑，只是去错了地方。用**两个不同的键**把它钉死。
+    """
+    manifests = AgentRuntime.discover().manifests
+    courseware = asyncio.run(
+        _decide(IntentSignal(text="", action="courseware_generate"), role="teacher")
+    )
+    assistant = asyncio.run(
+        _decide(IntentSignal(text="", action="task_generate"), role="teacher")
+    )
+    assert courseware.business == "guide"
+    assert assistant.business == "question"
+    assert courseware.business != assistant.business
+    # 键本身也不可互相包含：课件键只归 guide，助手键只归 question。
+    assert "courseware_generate" in manifests["guide"].actions
+    assert "courseware_generate" not in manifests["question"].actions
+    assert "task_generate" in manifests["question"].actions
+    assert "task_generate" not in manifests["guide"].actions
 
 
 # ── 顺序无关：打乱清单顺序结果不变 ──

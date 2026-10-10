@@ -4,9 +4,9 @@
 待判定题目连同正确答案注入 tutor 上下文，由模型就本题生成反馈。
 
 - 出题：生成判断题 → 题卡剥离答案/解析后下发（不提前泄题）→ 写 pending_quiz。
-- 判定：待判定态被**消费一次**（正确答案落进会话历史）→ 路由强制扳到 tutor
-  → 题目与答案经 ``ctx.extra["pending_quiz"]`` 交给模型。服务端不再有 yes/no
-  词典，也不再保留 attempts 状态机。
+- 判定：待判定态被**消费一次**（正确答案落进会话历史）→ 信号归一化产出 ``quiz_judge``
+  动作（清单归属 tutor）→ 题目与答案经 ``ctx.extra["pending_quiz"]`` 交给模型。服务端不再有
+  yes/no 词典，也不再保留 attempts 状态机；定向不再靠「路由算完再改判」。
 """
 import asyncio
 import uuid
@@ -298,17 +298,25 @@ def test_quiz_hint_context_carries_question_answer_and_rules():
 
 
 class _CaptureRuntime:
-    """桩 runtime：记录 run 收到的 business 与 ctx.extra，产出一句可判定回复。"""
+    """桩 runtime：记录本轮路由、收到的信号与 ctx.extra，产出一句可判定回复。
+
+    T06 起定向迁进信号：服务端在归一化阶段给出 ``action=quiz_judge``，桩按清单归属
+    把该动作映射到 tutor（真路由由 ``test_intent_routing_contract`` 覆盖）。
+    """
 
     def __init__(self) -> None:
         self.business = None
         self.extra = None
+        self.signal = None
 
     def name_of(self, business: str) -> str:
         return {"tutor": "伴学答疑", "query": "资料查询"}.get(business, business)
 
-    async def decide(self, message: str, *, role: str, deps) -> RouteDecision:
-        # 刻意给 query：证明待判定态会把路由**强制**扳到 tutor，而不是照单全收。
+    async def decide(self, signal, *, role: str, deps) -> RouteDecision:
+        self.signal = signal
+        if getattr(signal, "action", None) == "quiz_judge":
+            return RouteDecision(business="tutor", name="伴学答疑")
+        # 非待判定态：刻意给 query，反衬 quiz_judge 动作才把方向扳到 tutor。
         return RouteDecision(business="query", name="资料查询")
 
     async def run(
@@ -321,7 +329,7 @@ class _CaptureRuntime:
 
 
 def test_pending_quiz_routes_to_llm_instead_of_deterministic_reply(db):
-    """待判定态不再短路成硬编码文案：消费后强制 tutor，题目与答案注入 ctx.extra。"""
+    """待判定态不再短路成硬编码文案：信号定向 quiz_judge→tutor，题目与答案注入 ctx.extra。"""
     tid = _teacher_id()
     conv_id = uuid.uuid4()
     conv = _conv(db, teacher_id=tid, conv_id=conv_id)
@@ -338,7 +346,8 @@ def test_pending_quiz_routes_to_llm_instead_of_deterministic_reply(db):
         _drain_chat(chat(caller=caller, req=req, session=db, runtime=rt))
     )
     assert any("DONE" in f for f in frames)
-    # 模型被真正调用（桩 run 产出正文），且路由被扳到讲解而非只读检索。
+    # 模型被真正调用（桩 run 产出正文）；定向经信号（action=quiz_judge）交讲解而非只读检索。
+    assert getattr(rt.signal, "action", None) == "quiz_judge"
     assert rt.business == "tutor"
     assert any("（模型就本题给出的反馈）" in f for f in frames)
 

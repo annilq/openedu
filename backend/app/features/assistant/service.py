@@ -34,7 +34,7 @@ from agent_core.protocol import (
     error,
     run_started,
 )
-from agent_core.runtime import AgentRuntime, RouteDecision
+from agent_core.runtime import AgentRuntime
 from agent_core.runtime_singleton import get_runtime
 from agent_core.subagent import SubAgentContext
 from app.ai.engine import resolve_engine
@@ -337,6 +337,42 @@ def _consume_pending_quiz(
     return pending
 
 
+# ── T06：信号归一化——把「上下文定向」产出为动作键，归属由 SubAgent 清单声明 ──
+#
+# 课件练习方向与待判定态方向原先在**路由算完之后**改判业务（O1 / O3）。现在改为在造信号时
+# 直接产出动作键，`decide` 一次裁决即为最终结果，编排里不再有「路由算完再改判业务」的分支。
+#
+# ⚠️ 两种「出题」语义**各有独立动作键**，不得拍平：
+#   课件里  → `courseware_generate`（guide：引导到课堂大屏出题）
+#   助手里  → `task_generate`      （question：真的出题卡）
+_ACTION_COURSEWARE_GENERATE = "courseware_generate"
+_ACTION_COURSEWARE_HINT = "courseware_hint"
+_ACTION_QUIZ_JUDGE = "quiz_judge"
+
+
+def _build_intent_signal(
+    req: AssistantChatReq, conversation: Conversation | None
+) -> IntentSignal:
+    """把一次请求归一成结构化意图信号（T06）。
+
+    动作键优先级：**待判定态消费 > 课件练习方向 > 客户端显式** ``req.action``。
+    前两者是服务端按上下文归一出的定向（原先的事后改判），后者是客户端的结构化动作；
+    三者都交给唯一裁决点 ``decide`` 做等值匹配（命中即路由、不参与文本优先级竞争）。
+    """
+    text = (req.message or "").strip()
+    if conversation is not None and conversation.pending_quiz is not None:
+        # 待判定态：就这道题说话，交伴学答疑判定/讲解（判定与讲解由模型产出）。
+        action: str | None = _ACTION_QUIZ_JUDGE
+    elif req.courseware is not None:
+        # 课件练习方向：答错求提示 → 伴学答疑；否则按课件出题 → 任务引导（出题到页面）。
+        action = (
+            _ACTION_COURSEWARE_HINT if "提示" in text else _ACTION_COURSEWARE_GENERATE
+        )
+    else:
+        action = req.action
+    return IntentSignal(text=text, action=action)
+
+
 async def chat(
     *,
     caller: Any,
@@ -387,39 +423,11 @@ async def chat(
     safety = StudentSafety() if role == "student" else None
     deps = RuntimeDeps(provider=provider, retriever=retriever, safety=safety)
 
-    # 预路由：解析 business（不流式），供落库复用，消除端点对 THINKING(extra) 隐式契约。
-    # 结构化动作（req.action）经 IntentSignal 交给统一路由：动作直配命中即走对应业务，
-    # 不参与文本优先级竞争；动作命中但当前角色不可见 → 显式 action_not_visible（见下方转错误）。
-    decision = await rt.decide(IntentSignal(text=message, action=req.action), role=role, deps=deps)
-    # 动作不可见（如学生打教师专属动作）：显式拒绝，**不要**静默回落成另一个业务的答非所问。
-    if decision.extra.get("reason") == "action_not_visible":
-        forbidden = decision.extra.get("action")
-
-        async def _action_forbidden() -> AsyncIterator[str]:
-            yield error(f"当前角色无权执行动作「{forbidden}」。", code="ACTION_FORBIDDEN")
-            yield done()
-
-        return _stream_sse(_action_forbidden())
-    # 课堂请求仍先走既有路由规则，再做上下文定向：出题进入 guide；答错后的
-    # 「提示」进入 tutor。这样不改 manifest 优先级，也不让 query 的泛词「学生」抢走提示。
-    if req.courseware is not None:
-        courseware_business = None
-        if "提示" in message:
-            courseware_business = "tutor"
-        elif decision.business == "question":
-            courseware_business = "guide"
-        if courseware_business is not None:
-            decision = RouteDecision(
-                business=courseware_business,
-                name=rt.name_of(courseware_business),
-                extra={**decision.extra, "courseware_practice": True},
-            )
-
-    # ── 会话持久化（复用 Conversation/Message，ADR-0026 多轮） ──
-    # 优先按 session_id 续接已有会话并载入历史；否则新建。
+    # ── 会话定位（先于路由） ──
+    # 待判定态定向要在信号归一化阶段知道「这个会话是否在待判定」，故先把既有会话解析
+    # 出来（只读归属校验）。**新建**会话仍留在路由之后——它的 ``kind`` 取自路由决策。
     conversation: Conversation | None = None
     conv_id: UUID | None = None
-    history: list[dict] | None = None
 
     if req.session_id:
         try:
@@ -431,29 +439,48 @@ async def chat(
             and existing.teacher_id == teacher_id
             and existing.student_id == student_id
         ):
-            # 归属校验通过：续接该会话，载入历史拼入 prompt
             conversation = existing
             conv_id = existing.id
-            conversation.status = "running"
-            # 自动摘要（P2）：compaction 需丢最旧轮次时复用本次 provider 压成摘要注入，
-            # 失败则回退纯丢弃——不额外构造 provider、不阻断主链路。
-            history = await load_chat_history_with_summary(
-                session,
-                conv_id,
-                summarize=lambda dropped: _summarize_dropped(provider, dropped),
-            )
-            session.add(
-                Message(
-                    conversation_id=conv_id,
-                    turn=next_turn(session, conv_id),
-                    role="user",
-                    step="input",
-                    content=message,
-                )
-            )
-            session.commit()
 
-    if conversation is None:
+    # 预路由：动作键在信号归一化阶段产出（课件练习方向 / 待判定态方向 / 客户端结构化动作），
+    # 归属由 SubAgent 清单声明，``decide`` 一次裁决即为最终结果，不再「路由算完再改判业务」。
+    # 动作命中但当前角色不可见 → 显式 action_not_visible（见下方转错误）。
+    signal = _build_intent_signal(req, conversation)
+    decision = await rt.decide(signal, role=role, deps=deps)
+    # 动作不可见（如学生打教师专属动作）：显式拒绝，**不要**静默回落成另一个业务的答非所问。
+    if decision.extra.get("reason") == "action_not_visible":
+        forbidden = decision.extra.get("action")
+
+        async def _action_forbidden() -> AsyncIterator[str]:
+            yield error(f"当前角色无权执行动作「{forbidden}」。", code="ACTION_FORBIDDEN")
+            yield done()
+
+        return _stream_sse(_action_forbidden())
+
+    # ── 会话持久化（复用 Conversation/Message，ADR-0026 多轮） ──
+    # 续接已有会话并载入历史；否则新建（kind 取路由决策）。
+    history: list[dict] | None = None
+
+    if conversation is not None:
+        conversation.status = "running"
+        # 自动摘要（P2）：compaction 需丢最旧轮次时复用本次 provider 压成摘要注入，
+        # 失败则回退纯丢弃——不额外构造 provider、不阻断主链路。
+        history = await load_chat_history_with_summary(
+            session,
+            conv_id,
+            summarize=lambda dropped: _summarize_dropped(provider, dropped),
+        )
+        session.add(
+            Message(
+                conversation_id=conv_id,
+                turn=next_turn(session, conv_id),
+                role="user",
+                step="input",
+                content=message,
+            )
+        )
+        session.commit()
+    else:
         conv_id = uuid4()
         conversation = Conversation(
             id=conv_id,
@@ -485,23 +512,17 @@ async def chat(
             )
         )
     # 续接既有会话且处于待判定态：消费它，并把题目连同正确答案交给 LLM 判定/讲解。
+    # 定向已在信号归一化阶段完成（``action=quiz_judge`` → tutor，见 `_build_intent_signal`），
+    # 这里只负责消费状态与注入上下文。
     #
-    # 这里刻意**不再短路成一条确定性回复流**：用户的这句「对/错/讲解」由模型结合题目
-    # 本身作答。待判定态只消费一次（见 `_consume_pending_quiz`），判定口径在
-    # tutor 的 `_quiz_hint_context` 里，服务端不保留 attempts 状态机。
+    # 刻意**不短路成一条确定性回复流**：用户的这句「对/错/讲解」由模型结合题目本身作答。
+    # 待判定态只消费一次（见 `_consume_pending_quiz`），判定口径在 tutor 的
+    # `_quiz_hint_context` 里，服务端不保留 attempts 状态机。
     pending_quiz: dict[str, Any] | None = None
-    if conversation is not None and conversation.pending_quiz is not None:
+    if conversation.pending_quiz is not None:
         pending_quiz = _consume_pending_quiz(
             session=session, conversation=conversation, conv_id=conv_id
         )
-        if pending_quiz is not None:
-            # 强制走伴学讲解：判定反馈与求讲解本质是同一件事（就这道题说话），
-            # 交给 tutor 而非让它落进 query 的只读检索。
-            decision = RouteDecision(
-                business="tutor",
-                name=rt.name_of("tutor"),
-                extra={**decision.extra, "quiz_pending": True},
-            )
 
     # 业务字段经 ctx.extra 透传（agent_core 不感知任何教育语义）。
     ctx = SubAgentContext(
