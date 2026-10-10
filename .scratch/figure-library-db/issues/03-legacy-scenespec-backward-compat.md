@@ -4,7 +4,7 @@
 
 **Blocked by:** 02（需新渲染器已就位才能验证旧数据经适配后仍正确）
 
-**Status:** ready-for-agent
+**Status:** done
 
 ## 适配层
 - 把旧 inputs[points]/figure 引用等映射为新 `{kind, points, edges}`；`edges` 缺省按顶点顺序补默认（旧数据无 edges）。
@@ -14,8 +14,8 @@
 - 改库（figure_library）/ 改外壳（SCENE_LIBRARY）**不影响**已落库 `Question.scene_spec` 的渲染（ADR-0073 红线）。
 
 ## 验收
-- [ ] 适配层把旧 scene_spec 映射为新形态；edges 按顶点顺序补默认。
-- [ ] 存量 `Question.scene_spec` 样例经适配后渲染正确、几何不丢。
-- [ ] 快照不可变网守：改库/改外壳后已落库 scene 渲染不变。
-- [ ] 断言旧 controls/narrative 不再被读取、house 仅极端兜底。
-- [ ] 全仓 `flutter test` / 后端 pytest 无回归。
+- [x] 适配层把旧 scene_spec 映射为新形态；edges 按顶点顺序补默认。
+- [x] 存量 `Question.scene_spec` 样例经适配后渲染正确、几何不丢。
+- [x] 快照不可变网守：改库/改外壳后已落库 scene 渲染不变。
+- [x] 断言旧 controls/narrative 不再被读取、house 仅极端兜底。
+- [x] 全仓 `flutter test` / 后端 pytest 无回归。

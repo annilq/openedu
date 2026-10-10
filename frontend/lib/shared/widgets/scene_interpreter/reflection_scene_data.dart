@@ -72,49 +72,30 @@ class ReflectionSceneData {
 
   /// 由 SceneSpec 解析（ADR-0061 §9.1 / §O / ADR-0083）。
   ///
+  /// 入口先过 [adaptSceneSpec] 适配层（ADR-0083 T03）：旧形 spec 的
+  /// `inputs[key=='points']` / `figure` 被上提为顶层几何，`controls` / `narrative` /
+  /// `title` / `outputs` 被丢弃（它们已归 kind 外壳，不再从 spec 读）。之后本函数
+  /// 只认新形：顶层 `points` / `edges`。
+  ///
   /// 几何来源优先级：
-  /// 1. 顶层 `points`（ADR-0083 新形：后端 / 画板内联的顶点，`[[x,y],...]`）；
-  /// 2. 旧形 `inputs[].key == 'points'`（back-compat，T03 迁移前的存量数据）；
-  /// 3. `figure` 预设 key 的顶点（旧 spec / 教师面板存的预设名）；
-  /// 4. 都没有 → 房子（首个预设），保证**永不出现空场景**。
+  /// 1. 顶层 `points`（新形：后端 / 画板内联的顶点，`[[x,y],...]`）；
+  /// 2. 旧形 `inputs[key=='points']`（适配层已上提，此处与之等价）；
+  /// 3. `figure` 预设 key 的顶点（旧 spec 只留了 key、没有内联顶点时）；
+  /// 4. 都没有 → 房子（首个预设），保证**永不出现空场景**（house 仅极端兜底）。
   ///
   /// 交互参数（轴初值 / controls / narrative）从 kind 外壳取（[SceneShell.fromSource]）：
-  /// 显式字段优先（编辑器传后端 `defaults`），缺省回落该 kind 默认外壳。旧形 spec
-  /// 的轴参数在 `inputs` 里，这里也一并读入以兼容存量数据。
+  /// 适配层把旧形 spec 里的轴初值上提到顶层（`axisAngle/axisX/axisY`），故存量数据的
+  /// 轴初值仍被采信；controls / narrative 不再来自 spec，一律用外壳默认。
   factory ReflectionSceneData.fromSpec(
     Map<String, dynamic> spec, {
     FigureShape? presetOverride,
   }) {
-    final kind = spec['kind'] as String?;
-    final shell = SceneShell.fromSource(kind, spec);
+    final adapted = adaptSceneSpec(spec);
+    final kind = adapted['kind'] as String?;
+    final shell = SceneShell.fromSource(kind, adapted);
 
-    // —— 旧形 inputs（back-compat；T03 起正式迁移为顶层几何）——
-    final inputs = (spec['inputs'] as List?) ?? const <dynamic>[];
-    double? oldAngle;
-    double? oldAxisX;
-    double? oldAxisY;
-    List<Offset>? oldPoints;
-    String? oldFigure;
-    for (final raw in inputs) {
-      if (raw is! Map) continue;
-      final key = raw['key'] as String?;
-      final val = raw['value'];
-      switch (key) {
-        case 'axisAngle':
-          if (val is num) oldAngle = val.toDouble();
-        case 'axisX':
-          if (val is num) oldAxisX = val.toDouble();
-        case 'axisY':
-          if (val is num) oldAxisY = val.toDouble();
-        case 'points':
-          oldPoints = parsePoints(val);
-        case 'figure':
-          if (val is String && val.isNotEmpty) oldFigure = val;
-      }
-    }
-
-    final points = parsePoints(spec['points']) ?? oldPoints;
-    final figureKey = (spec['figure'] as String?) ?? oldFigure;
+    final points = parsePoints(adapted['points']);
+    final figureKey = adapted['figure'] as String?;
     // 几何回退链：spec 顶点 → 预设（显式 override 或 figure key）→ 房子
     //（figureByKey 未命中也回落首个预设，故 preset 非空）。
     final preset = presetOverride ?? figureByKey(figureKey);
@@ -123,16 +104,16 @@ class ReflectionSceneData {
         : preset.vertices.map((v) => Offset(v.x, v.y)).toList(growable: false);
     return ReflectionSceneData(
       points: pointsOrFallback,
-      edges: parseEdges(spec['edges']),
+      edges: parseEdges(adapted['edges']),
       figureLabel: preset.label,
-      axisAngle: oldAngle ?? shell.axisAngle,
-      axisX: oldAxisX ?? shell.axisX,
-      axisY: oldAxisY ?? shell.axisY,
+      axisAngle: shell.axisAngle,
+      axisX: shell.axisX,
+      axisY: shell.axisY,
       controlsPlay: shell.controlsPlay,
       controlsScrub: shell.controlsScrub,
       narrative: shell.narrative,
       // 旧形 spec 的 editable 仅作 widget 展示开关沿用；新形 spec 无此字段。
-      showAxisControls: (spec['editable'] as bool?) ?? true,
+      showAxisControls: (adapted['editable'] as bool?) ?? true,
     );
   }
 
@@ -168,6 +149,71 @@ class ReflectionSceneData {
     }
     return out.isEmpty ? null : out;
   }
+}
+
+/// 旧 SceneSpec → 新 SceneSpec 的**适配层**（ADR-0083 T03）。
+///
+/// 为什么需要它：已落库的 `Question.scene_spec` / `kp.scenes` 是**快照**，不可回写
+/// （本轮共同纪律「零回写 kp.scenes」），但它们的形状是 ADR-0083 之前的**老形**——
+/// 几何塞在 `inputs[key=='points']`（或只留 `figure` 引用 key）、还带
+/// `controls`/`narrative`/`title`/`outputs`/`editable`。渲染必须能同时吃下新老两种
+/// 形状，故在读取入口统一适配（几何不丢、观感不变），而不是去改写历史快照。
+///
+/// 适配规则（**幂等**：新形输入原样通过）：
+/// 1. **上提几何**：`inputs[key ∈ {points, figure, axisAngle, axisX, axisY}]` 的
+///    `value` 提升为顶层同名字段（顶层已有则不覆盖——顶层是新形权威）。
+/// 2. **丢弃已废字段**：`inputs`/`controls`/`narrative`/`title`/`outputs` 一律移除
+///    ——它们已归 kind 外壳（ADR-0083 决策 5），渲染不再从 spec 读。留着它们会让
+///    旧数据里的旧文案 / 旧控件开关盖掉外壳，把「外壳是唯一交互来源」这个不变量
+///    悄悄破坏（且靠人肉同步）。
+/// 3. **补默认边**：无 `edges` 但有 ≥3 个顶点时，按顶点顺序闭合（[closedEdges]）。
+///    旧数据没有 `edges` 字段，这一步保证它们仍渲染成闭合多边形。
+///
+/// 保留 `editable`：它是**旧形**的展示开关（旧数据里 `editable=false` 表示不挂轴
+/// 滑块），存量观感须一字不变，故沿用；新形 spec 不含此键（决策 5 已从新 spec 删除）。
+/// `figure` 也保留：仅在「旧 spec 没有内联顶点、只留了 key」时才用它兜底取几何
+/// （对应 DB 图库；命中不了由 [figureByKey] 回退房子，属极端兜底）。
+Map<String, dynamic> adaptSceneSpec(Map<String, dynamic> raw) {
+  final out = <String, dynamic>{...raw};
+  // 1. 旧形 inputs → 顶层（仅在新形没有对应顶层键时上提）。
+  final inputs = raw['inputs'];
+  if (inputs is List) {
+    for (final item in inputs) {
+      if (item is! Map) continue;
+      final key = item['key'];
+      if (key is! String) continue;
+      final value = item['value'];
+      switch (key) {
+        case 'points':
+          out.putIfAbsent('points', () => value);
+        case 'figure':
+          // 空串是旧种子的占位（「还没选图形」），不是有效的图形引用。
+          if (value is String && value.isNotEmpty) {
+            out.putIfAbsent('figure', () => value);
+          }
+        case 'axisAngle':
+        case 'axisX':
+        case 'axisY':
+          if (value is num) out.putIfAbsent(key, () => value);
+      }
+    }
+  }
+  // 2. 移除已废字段（决策 5：交互 / 文案归 kind 外壳，spec 不再承载）。
+  for (final banned in const [
+    'inputs',
+    'controls',
+    'narrative',
+    'title',
+    'outputs',
+  ]) {
+    out.remove(banned);
+  }
+  // 3. 缺 edges 时按顶点顺序闭合（旧数据无 edges）。
+  final points = out['points'];
+  if (out['edges'] == null && points is List && points.length >= 3) {
+    out['edges'] = closedEdges(points.length);
+  }
+  return out;
 }
 
 /// 顶点顺序闭合的边集（简单多边形的默认连接）。
