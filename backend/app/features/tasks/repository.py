@@ -248,46 +248,6 @@ def remove_task_question(
     return True
 
 
-def regenerate_one_task_question(
-    *, session: Session, tq_id: uuid.UUID, gen_question: Question
-) -> TaskQuestion | None:
-    """单题重生成：用 QuestionGenerator 生成的新字段覆盖当前 TaskQuestion。
-
-    - 原 question_id 对应的 Question 同步删（R-Q5=b 级联）；
-    - 新题未入题库（Question 只在生成器返回里保存为「临时对象」，不写 Question 表），
-      教师后续还需要点「加入题库」才真正入 Question 表。
-    """
-    tq = session.get(TaskQuestion, tq_id)
-    if tq is None:
-        return None
-    old_qid = tq.question_id
-    # 用新题字段覆盖（保留 subject/grade/knowledge_point/qtype 与生成器一致即可）
-    tq.subject = gen_question.subject
-    tq.grade = gen_question.grade
-    tq.knowledge_point = gen_question.knowledge_point
-    tq.qtype = gen_question.qtype
-    tq.stem = gen_question.stem
-    tq.options = gen_question.options
-    tq.answer = gen_question.answer
-    tq.explanation = gen_question.explanation
-    tq.difficulty = gen_question.difficulty
-    tq.question_id = None  # 新题未入库
-    session.add(tq)
-    session.flush()
-    if old_qid is not None:
-        # 级联安全（闭环）：仅当源题不再被任何任务引用才物理删除。
-        remaining = session.exec(
-            select(TaskQuestion).where(TaskQuestion.question_id == old_qid)
-        ).all()
-        if len(remaining) <= 1:
-            q = session.get(Question, old_qid)
-            if q is not None:
-                session.delete(q)
-    session.commit()
-    session.refresh(tq)
-    return tq
-
-
 def regenerate_all_task_questions(
     *,
     session: Session,

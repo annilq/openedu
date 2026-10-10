@@ -71,7 +71,7 @@ _EXPECTED_ACTION_OWNERS: dict[str, str] = {
     "quiz_generate": "question",
     # 请求方：客户端结构化出题（req.action=task_generate）
     "task_generate": "question",
-    # 请求方：换一题（tasks/service.py::_regenerate_events）
+    # 请求方：整卷重生成（tasks/service.py::_regenerate_events）
     "task_question_regenerate": "question",
 }
 

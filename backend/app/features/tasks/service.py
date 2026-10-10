@@ -12,7 +12,6 @@ repository 函数做多步编排，还把 repository 的私有 sentinel 当控�
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import AsyncIterator
 from datetime import date
 from typing import Any
@@ -26,10 +25,8 @@ from agent_core.ports import RuntimeDeps
 from agent_core.protocol import (
     EVENT_ASSISTANT_MESSAGE,
     EVENT_DATA,
-    EVENT_DONE,
     EVENT_ERROR,
     EVENT_STEP,
-    data_event,
 )
 from agent_core.protocol import (
     done as done_event,
@@ -86,7 +83,6 @@ from app.features.tasks.repository import (
     mark_assignment_completed,
     promote_task_question,
     regenerate_all_task_questions,
-    regenerate_one_task_question,
     rejoin_wrong_question,
     remove_task_question,
     task_question_breakdown,
@@ -478,11 +474,6 @@ def _question_fields(payload: dict) -> dict:
     return {k: payload[k] for k in allowed if k in payload}
 
 
-def _question_from_payload(payload: dict) -> Question:
-    """题卡 dict（``asdict(GeneratedQuestion)``）→ Question（单题重写入库用）。"""
-    return Question(**_question_fields(payload))
-
-
 def _task_question_from_payload(payload: dict) -> TaskQuestion:
     """题卡 dict → 草稿 TaskQuestion（整卷重生成落库用，R-Q1=c：不入题库）。
 
@@ -570,11 +561,11 @@ async def _regenerate_events(
     session: Session,
     action: str = "task_question_regenerate",
 ) -> AsyncIterator[Any]:
-    """换一题走**统一路由**：动作直配得 business → ``rt.run`` 产出运行时帧。
+    """整卷重生成走**统一路由**：动作直配得 business → ``rt.run`` 产出运行时帧。
 
     与首次出题（``generate_task_stream``）同源：检索 / 学科提示 / 溯源引用 /
     工具信封全部由 question subagent 经 runtime 注入，不再直连裸出题管线。
-    ``ACTION_FORBIDDEN`` 只在动作对当前角色不可见时出现（换一题是教师专属，
+    ``ACTION_FORBIDDEN`` 只在动作对当前角色不可见时出现（该动作教师专属，
     正常路径不会触发）；它属于**角色可见性**语义，与归属校验的「任务不存在」是
     两回事，不得混用。
     """
@@ -849,56 +840,6 @@ def remove_one(*, session: Session, teacher: User, task_id: UUID, tq_id: UUID) -
         raise AppErrorException(ErrCode.TASK_QUESTION_NOT_FOUND, "题目不存在")
 
 
-def _swap_question(
-    *, session: Session, tq_id: UUID, gen_question: Question
-) -> QuestionResp:
-    """把新题写回草稿项（R-Q5=b 级联删旧 Question）；不存在则报「题目不存在」."""
-    updated = regenerate_one_task_question(
-        session=session, tq_id=tq_id, gen_question=gen_question
-    )
-    if updated is None:
-        raise AppErrorException(ErrCode.TASK_QUESTION_NOT_FOUND, "题目不存在")
-    return question_to_resp(updated, include_answer=True)
-
-
-def _regenerate_one_inputs(
-    *, session: Session, teacher: User, task_id: UUID, tq_id: UUID
-) -> tuple[RuntimeDeps, SubAgentContext]:
-    """单题重生成的公共前置：鉴权 + 运行时依赖/上下文（同步版与流式版共用）。
-
-    鉴权先于路由：越权 / 不存在统一由 ``_owned_task`` 报「任务不存在」——与统一路由
-    带来的「动作不可见 → 显式拒绝」是**两回事**，不得混用。
-    """
-    task = _owned_task(session=session, teacher=teacher, task_id=task_id)
-    _require_draft(task)
-    tq = _draft_item(session=session, task=task, tq_id=tq_id)
-    deps = RuntimeDeps(
-        provider=build_ai_provider(task.model, teacher_id=teacher.id, session=session),
-        retriever=build_retriever(session=session, teacher_id=teacher.id),
-        safety=None,  # 换一题是教师专属动作；学生安全闸门只在学生经 action 出题时注入
-    )
-    ctx = _question_ctx(
-        role="teacher",
-        teacher_id=teacher.id,
-        student_id=None,
-        model=task.model,
-        subject=tq.subject,
-        specs=[
-            {
-                "subject": tq.subject,
-                "grade": tq.grade,
-                "knowledge_point": tq.knowledge_point,
-                "qtype": tq.qtype,
-                "difficulty": tq.difficulty or "medium",
-                "semester": tq.semester,
-                "count": 1,
-            }
-        ],
-        unindexed=_count_unindexed(session, teacher.id),
-    )
-    return deps, ctx
-
-
 def _collect_regenerate_payloads(
     *, rt: AgentRuntime, deps: RuntimeDeps, ctx: SubAgentContext, session: Session
 ) -> list[dict]:
@@ -937,94 +878,6 @@ def _collect_regenerate_payloads(
             or "无可用 LLM 引擎或题目生成不安全，无法重生成（请在「模型管理」中添加模型并设为默认）",
         )
     return payloads
-
-
-def regenerate_one(
-    *,
-    session: Session,
-    teacher: User,
-    task_id: UUID,
-    tq_id: UUID,
-    runtime: AgentRuntime | None = None,
-) -> QuestionResp:
-    """单题重生成（走统一路由）：沿用原题规格拉新，检索 / 学科提示 / 溯源随题生效。"""
-    rt = runtime or get_runtime()
-    deps, ctx = _regenerate_one_inputs(
-        session=session, teacher=teacher, task_id=task_id, tq_id=tq_id
-    )
-    payloads = _collect_regenerate_payloads(rt=rt, deps=deps, ctx=ctx, session=session)
-    return _swap_question(
-        session=session, tq_id=tq_id, gen_question=_question_from_payload(payloads[0])
-    )
-
-
-async def regenerate_one_stream(
-    *,
-    session: Session,
-    teacher: User,
-    task_id: UUID,
-    tq_id: UUID,
-    runtime: AgentRuntime | None = None,
-) -> AsyncIterator[str]:
-    """单题重生成的流式版：与 ``/tasks/generate`` **同一套运行时帧协议**。
-
-    换一题走统一路由（``rt.decide`` 动作直配 + ``rt.run``），故帧序与首次出题同形：
-    RUN_STARTED → USER_MESSAGE → 路由 THINKING → TOOL_CALL → STEP → [THINKING × n]
-    →（题卡收口）→ TOOL_RESULT → ASSISTANT_MESSAGE → DATA(question) → DONE。
-    前端共用同一个 SSE 解析器与折叠逻辑——URL 换了、解析器不换。
-
-    题卡不在生成时下发（此刻还没有落库 id）：先收进 ``sink``，落库拿到 id 后再发
-    DATA 帧。落库与同步版同一 ``_swap_question``，不引入第二条写路径。
-
-    前置校验同样在流内收口（越权 / 非草稿 / 题不存在 → ERROR 帧）：异步生成器里
-    抛异常只会给客户端留一个 200 + 空正文，比一句人话错误更难排查。
-    """
-    rt = runtime or get_runtime()
-    try:
-        deps, ctx = _regenerate_one_inputs(
-            session=session, teacher=teacher, task_id=task_id, tq_id=tq_id
-        )
-    except AppErrorException as e:
-        yield error_event(e.message, code=getattr(e.code, "value", str(e.code))).to_sse()
-        yield done_event().to_sse()
-        return
-
-    sink: list[dict] = []
-    async for ev in _regenerate_events(rt=rt, ctx=ctx, deps=deps, session=session):
-        if _is_question_frame(ev):
-            # 题卡等落库拿到 id 再发（否则前端会看到「未落库的题」）。
-            sink.append(ev.data["result"])
-            continue
-        if ev.eventType == EVENT_DONE:
-            # 运行时收尾帧由本函数在落库之后自己发。
-            continue
-        yield ev.to_sse()
-
-    if not sink:
-        # 未产出题卡（生成失败）：运行时已下发 STEP(error) 与收尾文案，直接收尾。
-        yield done_event().to_sse()
-        return
-
-    def _commit() -> dict:
-        payload = _swap_question(
-            session=session,
-            tq_id=tq_id,
-            gen_question=_question_from_payload(sink[0]),
-        ).model_dump(mode="json")
-        # 溯源快照随题下发（ADR-0055 §10）：把运行时帧带回的 source_refs 一并交付前端。
-        if sink[0].get("source_refs"):
-            payload["source_refs"] = sink[0]["source_refs"]
-        return payload
-
-    try:
-        payload = await asyncio.to_thread(_commit)
-    except AppErrorException as e:
-        # 业务错误（题不存在 / 非草稿）转成 ERROR 帧：流已开，不能改 HTTP 状态码。
-        yield error_event(e.message, code=getattr(e.code, "value", str(e.code))).to_sse()
-        yield done_event().to_sse()
-        return
-    yield data_event(payload, status="done", extra={"type": "question"}).to_sse()
-    yield done_event().to_sse()
 
 
 def _regenerate_all_inputs(
