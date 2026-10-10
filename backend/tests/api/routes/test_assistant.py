@@ -125,6 +125,60 @@ def test_student_generation_routes_to_question(client):
     assert question_cards
 
 
+def test_student_action_task_generate_routes_to_question(client):
+    """结构化动作经统一路由（T04）：学生显式带 action=task_generate，命中出题助手并产出题卡。
+
+    端点把 req.action 透传给 IntentSignal，统一路由做动作直配——且学生这条路径上
+    输入安全闸门（role==student → StudentSafety）被真正调用（出题链路此前把闸门设为「无」）。
+    """
+    _ptoken, _student, ctoken = _setup(client, "as9_teacher", "as9_kid")
+    status, events = _stream(
+        client, ctoken, "帮我出 2 道数学题", extra={"action": "task_generate"}
+    )
+    assert status == 200, events
+    routed = [e for e in events if e["eventType"] == "THINKING" and e.get("extra", {}).get("routing")]
+    assert routed, "应产生路由 THINKING 帧"
+    assert any("出题助手" in e.get("text", "") for e in routed)
+    question_cards = [e for e in events if e["eventType"] == "DATA" and e.get("data", {}).get("type") == "question"]
+    assert question_cards, "动作直配应将学生出题路由到 question 助手"
+
+
+def test_teacher_only_action_is_explicitly_forbidden(client, monkeypatch):
+    """学生打教师专属动作：显式 ACTION_FORBIDDEN 错误，不静默回落成另一个业务的回答（T04 验收）。"""
+    import app.features.assistant.service as _svc
+    from agent_core.protocol import done as _ae_done
+    from agent_core.protocol import error as _ae_error
+    from agent_core.runtime import RouteDecision
+
+    _ptoken, _student, ctoken = _setup(client, "as10_teacher", "as10_kid")
+
+    class _StubRuntime:
+        def name_of(self, biz):
+            return biz
+
+        async def decide(self, signal, *, role, deps):
+            return RouteDecision(
+                business=None,
+                name=None,
+                extra={"reason": "action_not_visible", "action": "teacher_only_action"},
+            )
+
+        async def run(self, *args, **kwargs):
+            yield _ae_error("unused")
+            yield _ae_done()
+
+    monkeypatch.setattr(_svc, "get_runtime", lambda: _StubRuntime())
+
+    status, events = _stream(
+        client, ctoken, "随便说点什么", extra={"action": "teacher_only_action"}
+    )
+    assert status == 200, events
+    errs = [e for e in events if e["eventType"] == "ERROR"]
+    assert errs, "动作不可见应产出 ERROR 帧而非回落"
+    assert errs[0].get("code") == "ACTION_FORBIDDEN"
+    assert "teacher_only_action" in errs[0].get("message", "")
+
+
 # ───────────────────────── 学情查询：端到端（ADR-0033 第 6 阶段） ─────────────────────────
 #
 # 数据装置复用 query 工具契约测试的 ``_setup``（1 教师 + 2 学生「小明/小红」+ 各自任务
