@@ -4,6 +4,7 @@ import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/exceptions/app_exception.dart';
 import '../../../assistant/domain/assistant_event.dart';
 import '../../../assistant/domain/repositories/assistant_repository.dart';
+import '../../../assistant/domain/stream_stage.dart';
 import '../../../assistant/providers/assistant_provider.dart';
 import '../../domain/repositories/task_review_repository.dart';
 import '../../providers/home_provider.dart';
@@ -133,10 +134,10 @@ class ReviewNotifier extends StateNotifier<ReviewState> {
           throw AppException(ev.message ?? '换一题失败，请稍后重试');
         }
         // 换一题现走统一路由，帧序列与首次出题同形：会多出路由 THINKING
-        // （「正在理解你的需求…」「已选择助手：X」）。它与 QuestionGenFold 同口径——
-        // 属编排阶段文案，不是模型出题思路，不累进推理区（否则面板会闪出路由话术）。
-        final isRouting =
-            ev.extra?['routing'] == true || ev.extra?['business'] != null;
+        // （「正在理解你的需求…」「已选择助手：X」）。「哪些帧算编排阶段」的判据
+        // 以 `stageOfEvent`（单一事实源）为准，不在这里另抄一份谓词；阶段帧不累进
+        // 推理区（否则面板会闪出路由话术）。
+        final isRouting = stageOfEvent(ev) != null;
         if (ev.eventType == AssistantEventType.thinking && !isRouting) {
           live += ev.text ?? '';
           state = ReviewLoaded(cur.task, busyTqId: tqId, liveText: live);

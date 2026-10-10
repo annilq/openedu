@@ -56,8 +56,33 @@ def test_match_action_helper():
     assert match_action("nonexistent_action", manifests) is None
 
 
+# 已声明动作的**完整词表**：动作键 → 归属 business。每个动作在此写明「请求方」
+# （谁产出 / 谁触发这个键）——这是兜住「孤儿（清单里声明了但无人请求）」与「悬空
+# （有请求方但没在清单里声明）」的显式期望集合（spec L121 硬要求）。新增动作键必须
+# 同时在 manifest 与本表各加一行；只加其一，本契约测试即失败。
+_EXPECTED_ACTION_OWNERS: dict[str, str] = {
+    # 请求方：课件练习「出题」方向（service._build_intent_signal；文本分类确为 question 时）
+    "courseware_generate": "guide",
+    # 请求方：课件练习「提示」方向（答错求提示，service._build_intent_signal）
+    "courseware_hint": "tutor",
+    # 请求方：待判定态消费后的判定/讲解（service._build_intent_signal）
+    "quiz_judge": "tutor",
+    # 请求方：判断题闭环出题段（req.quiz=True，service._build_intent_signal）
+    "quiz_generate": "question",
+    # 请求方：客户端结构化出题（req.action=task_generate）
+    "task_generate": "question",
+    # 请求方：换一题（tasks/service.py::_regenerate_events）
+    "task_question_regenerate": "question",
+}
+
+
 def test_action_ownership_is_unique():
-    """每个已声明的动作恰好一个归属 business：无孤儿、无悬空（两业务同持一个动作）。"""
+    """每个已声明的动作属于**恰好一个** business，且完整词表与期望集合一致：
+
+    - 归属唯一（同一动作不被两业务同时声明）；
+    - 无孤儿（清单里声明了但无人请求）；
+    - 无悬空（有请求方但没在清单里声明）。
+    """
     manifests = AgentRuntime.discover().manifests
     owner_of: dict[str, str] = {}
     for biz, m in manifests.items():
@@ -67,15 +92,19 @@ def test_action_ownership_is_unique():
                 "唯一性由契约测试保证，动作直配无需排序规则"
             )
             owner_of[action] = biz
-    # 本轮核心声明：出题助手拥有三个动作
-    assert owner_of["task_generate"] == "question"
-    assert owner_of["task_question_regenerate"] == "question"
-    # T07：判断题出题同归出题助手，但与课件出题（guide）是两个独立键。
-    assert owner_of["quiz_generate"] == "question"
-    # T06：课件方向与待判定态方向的动作键——各有归属，且与助手出题**不同键**。
-    assert owner_of["courseware_generate"] == "guide"
-    assert owner_of["courseware_hint"] == "tutor"
-    assert owner_of["quiz_judge"] == "tutor"
+    # 完整词表比对：多一个（孤儿）或少一个（悬空）都会失败——动作名与清单不同步
+    # 不再静默失效。归属不符也会失败（并打印差异）。
+    mismatched = {
+        k: (owner_of[k], _EXPECTED_ACTION_OWNERS[k])
+        for k in owner_of.keys() & _EXPECTED_ACTION_OWNERS.keys()
+        if owner_of[k] != _EXPECTED_ACTION_OWNERS[k]
+    }
+    assert owner_of == _EXPECTED_ACTION_OWNERS, (
+        f"已声明动作与期望不一致：仅清单有（孤儿）="
+        f"{sorted(set(owner_of) - set(_EXPECTED_ACTION_OWNERS))}，仅期望有（悬空）="
+        f"{sorted(set(_EXPECTED_ACTION_OWNERS) - set(owner_of))}，归属不符="
+        f"{ {k: f'{got}≠{want}' for k, (got, want) in mismatched.items()} }"
+    )
 
 
 # ── 动作直配路由结果 ──
