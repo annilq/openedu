@@ -226,21 +226,25 @@ class TestSquareIsProceduralAndCorrect:
         """
         assert "note" not in self._square().to_dict()
 
-    def test_figure_library_service_matches_source(self):
-        """``GET /materials/scene-library/figures`` 的数据源就是 FIGURES 本身。
+    def test_figure_library_service_matches_source(self, db):
+        """``GET /materials/scene-library/figures`` 读的是 figure_library 表。
 
-        端点与生成脚本读同一份数据，所以「API 下发的几何」与「前端随包内置的
-        几何」不可能不一致——这条测试钉住端点没做二次加工（比如手抖补个兜底）。
+        内置种子由 init_db 的迁移写入；这条测试钉住「端点没做二次加工」——
+        key 与 points 与内置 FIGURES 完全一致，且 edges 按顶点顺序补默认闭合。
         """
         from app.features.materials.service import list_figure_library
 
-        resp = list_figure_library()
-        assert [f.key for f in resp.figures] == [f.key for f in FIGURES]
-        for item, shape in zip(resp.figures, FIGURES):
+        resp = list_figure_library(db)
+        by_key = {f.key: f for f in resp.figures}
+        # 顺序无关：API 按 key 排序返回，FIGURES 是定义序；此处只校验集合一致。
+        assert set(by_key) == {f.key for f in FIGURES}
+        for shape in FIGURES:
+            item = by_key[shape.key]
             assert item.points == [[x, y] for x, y in shape.vertices]
-            # axisCount 必须**如实**等于轴列表长度，不补 1（补了就是教错）
-            assert item.axisCount == len(item.axisAngles)
-            assert item.axisCount == shape.axis_count
+            n = len(shape.vertices)
+            assert item.edges == [[i, (i + 1) % n] for i in range(n)]
+            # 内置图形 is_builtin=True
+            assert item.is_builtin is True
 
 
 def test_frontend_figures_are_not_stale():

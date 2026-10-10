@@ -23,6 +23,7 @@ from app.db.models.courseware import (
 from app.db.models.material import (
     CHUNKER_VERSION,
     INDEX_STATES,
+    FigureLibrary,
     KnowledgePoint,
     Material,
     MaterialChunk,
@@ -58,6 +59,7 @@ __all__ = [
     "MaterialFolder",
     "KnowledgePoint",
     "SceneTemplateConfig",
+    "FigureLibrary",
     "Courseware",
     "CoursewareAsset",
     "COURSEWARE_STATUSES",

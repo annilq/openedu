@@ -153,16 +153,15 @@ def set_scene_default_figure(
 
 
 @router.get("/scene-library/figures", response_model=FigureLibraryResp)
-def list_figure_library(user: CurrentTeacher) -> FigureLibraryResp:
-    """图形几何库（ADR-0073 遗留 4）：后端是顶点**唯一事实源**，这里原样下发。
+def list_figure_library(
+    session: SessionDep, user: CurrentTeacher
+) -> FigureLibraryResp:
+    """图形几何库（ADR-0083）：DB 为唯一事实源，这里原样下发。
 
-    前端随包内置的 `figures.dart` 由同一份数据**生成**（`frontend/scripts/
-    gen_figures.py`），不再手写第二份。此端点供其它客户端 / 未来运行时刷新使用
-    ——即便没有它，渲染也不依赖网络（tablet-first、离线教室）。
-
-    不需要 session：几何是**代码内置常量**，不读库、不按教师隔离。
+    内置 11 个图形由启动期迁移 seed；用户在画板上设计的图形同表写入。此端点供
+    画廊 / 画板按需拉取——渲染本身不依赖它（SceneSpec 自带几何）。
     """
-    return service.list_figure_library()
+    return service.list_figure_library(session)
 
 
 @router.get("/knowledge-points", response_model=KnowledgePointListResp)

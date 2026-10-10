@@ -201,3 +201,25 @@ class SceneTemplateConfig(SQLModel, table=True):
 
     kind: str = Field(max_length=64, primary_key=True)
     default_figure_key: str | None = Field(default=None, max_length=64)
+
+
+class FigureLibrary(SQLModel, table=True):
+    """图形几何库（ADR-0083）：**仅存几何事实**，无任何 axis 属性。
+
+    内置 11 个图形由启动期迁移 seed（``is_builtin=True``）；用户在画板上设计的
+    图形同表写入（``is_builtin=False``）。对称轴判定交给前端「拖轴 + 翻转」的
+    可视化演示，不在此存任何 axis 字段——视觉判定，无需属性。
+
+    ``points`` 归一化顶点 ``[[x, y], ...]``（x/y ∈ 0..1，y 向下）；
+    ``edges`` 顶点连接关系 ``[[i, j], ...]``（默认按顶点顺序闭合多边形）。
+    两者用 ``JSON(none_as_null=True)``，避免清空调成文本 ``'null'``（ADR-0061 §T）。
+    """
+
+    __tablename__ = "figure_library"
+
+    key: str = Field(max_length=64, primary_key=True)
+    label: str = Field(max_length=64)
+    points: list[list[float]] | None = Field(default=None, sa_type=JSON(none_as_null=True))
+    edges: list[list[int]] | None = Field(default=None, sa_type=JSON(none_as_null=True))
+    note: str | None = Field(default=None)
+    is_builtin: bool = Field(default=True)

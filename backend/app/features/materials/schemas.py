@@ -250,21 +250,18 @@ class SceneLibraryResp(SQLModel):
 
 
 class FigureLibraryItem(SQLModel):
-    """一个轴对称教学图形的下发形态（ADR-0073 遗留 4）。
+    """图形几何库里的一个图形（ADR-0083）。
 
-    字段刻意沿用 ``FigureShape.to_dict()`` 的既有键名（``points`` 是 ``[[x, y]]``
-    扁平数组而不是对象数组）——前端按 ``List<Offset>`` 消费，改名要连带改渲染层，
-    而这份数据唯一的价值就是**零转换地被吃下去**。
+    仅存几何事实：顶点 + 连接关系。对称轴判定交给前端「拖轴 + 翻转」的可视化
+    演示，不在此存任何 axis 属性（视觉判定，无需属性）。
     """
 
     key: str
     label: str
     points: list[list[float]] = Field(default_factory=list)
-    defaultAxisAngle: float = 0
-    #: **全部**对称轴角度；空 = 真无对称轴（平行四边形）。如实下发，不补 1。
-    axisAngles: list[float] = Field(default_factory=list)
-    #: 对称轴条数 = len(axisAngles)；「正方形有几条对称轴」的答案就是它。
-    axisCount: int = 0
+    edges: list[list[int]] = Field(default_factory=list)
+    note: str | None = None
+    is_builtin: bool = True
 
 
 class FigureLibraryResp(SQLModel):

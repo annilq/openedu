@@ -21,7 +21,7 @@ from app.core.ai_plumbing import build_ai_provider
 from app.core.config import settings
 from app.core.errors import AppErrorException, ErrCode
 from app.core.guard import require_owned
-from app.db.models import KnowledgePoint, Material, MaterialFolder
+from app.db.models import FigureLibrary, KnowledgePoint, Material, MaterialFolder
 from app.db.models.material import (
     INDEX_STATE_READY,
     INDEX_STATE_STALE,
@@ -33,7 +33,6 @@ from app.domain.subjects import SUBJECTS
 from app.features.materials import indexing
 from app.features.materials import repository as repo
 from app.features.materials.parser import ParseError, extract_text
-from app.features.materials.scene_figures import FIGURES
 from app.features.materials.scene_templates import (
     SCENE_LIBRARY,
     list_builtin_scenes,
@@ -800,21 +799,29 @@ def set_scene_default_figure(
     session.commit()
 
 
-def list_figure_library() -> FigureLibraryResp:
-    """图形几何库（ADR-0073 遗留 4）：后端是顶点**唯一手写事实源**。
+def list_figure_library(session: Session) -> FigureLibraryResp:
+    """图形几何库（ADR-0083）：DB 为唯一事实源，这里原样下发。
 
-    前端 `figures.dart` 已改为由本库生成（`frontend/scripts/gen_figures.py`），
-    不再是第二份手写副本——顶点漂移会让「是否轴对称」的判定变错（学生拖轴永远
-    对不上），而手工同步两处正是漂移的唯一来源。
+    内置 11 个图形由启动期迁移 seed；用户在画板上设计的图形同表写入
+    （``is_builtin=False``）。不再内置 axis 属性——对称轴判定交给前端「拖轴 +
+    翻转」可视化演示（视觉判定，无需属性）。
 
-    端点与生成脚本**读同一份 ``FIGURES``**，所以「API 下发的几何」与「前端随包
-    内置的几何」不可能不一致；需要刷新时重跑脚本即可，不必改两份。
-
-    ⚠️ 这里**不做 house 兜底**：未命中 key 应由调用方降级（返回无图），而不是
-    拿房子顶上——那是渲染层的「永不空」安全网，不是数据层的默认值。
+    ⚠️ 这里**不做 house 兜底**：未命中应由调用方降级（返回无图），而不是拿房子
+    顶上——那是渲染层的「永不空」安全网，不是数据层的默认值。
     """
+    rows = session.exec(select(FigureLibrary).order_by(FigureLibrary.key)).all()
     return FigureLibraryResp(
-        figures=[FigureLibraryItem(**shape.to_dict()) for shape in FIGURES]
+        figures=[
+            FigureLibraryItem(
+                key=r.key,
+                label=r.label,
+                points=r.points or [],
+                edges=r.edges or [],
+                note=r.note,
+                is_builtin=r.is_builtin,
+            )
+            for r in rows
+        ]
     )
 
 

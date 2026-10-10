@@ -761,12 +761,44 @@ def _rename_ownership_columns(conn, is_sqlite: bool) -> None:
     )
 
 
+def _seed_figure_library() -> None:
+    """图形几何库内置种子（ADR-0083）：11 个内置图形以 points+edges 入库，无 axis 字段。
+
+    用 ORM Session 写入，JSON 列（points/edges）由 SQLAlchemy 正确处理（跨 SQLite /
+    Postgres）。幂等：key 为主键，已存在则跳过，重跑 no-op。
+    """
+    from sqlmodel import Session, select
+
+    from app.db.models import FigureLibrary
+    from app.features.materials.scene_figures import FIGURES
+
+    with Session(engine) as session:
+        existing = {r.key for r in session.exec(select(FigureLibrary.key)).all()}
+        for shape in FIGURES:
+            if shape.key in existing:
+                continue
+            n = len(shape.vertices)
+            edges = [[i, (i + 1) % n] for i in range(n)]
+            session.add(
+                FigureLibrary(
+                    key=shape.key,
+                    label=shape.label,
+                    points=[[x, y] for x, y in shape.vertices],
+                    edges=edges,
+                    note=shape.note or None,
+                    is_builtin=True,
+                )
+            )
+        session.commit()
+
+
 def init_db() -> None:
     # 确保模型已注册后再建表（详见 SQLModel 关系初始化注意事项）
     import app.db.models  # noqa: F401  (feature-first: ORM 集中在 app.db.models)
 
     SQLModel.metadata.create_all(engine)
     run_migrations()
+    _seed_figure_library()
 
 
 def _add_classes(conn, is_sqlite: bool) -> None:
