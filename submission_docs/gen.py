@@ -609,8 +609,9 @@ def gen_video():
 
 
 if __name__ == "__main__":
-    # 使用手册 / 安装手册 / 开发记录 已改为由 md2docx.py 从同名 .md 生成（单一事实源，
-    # 内容面向非专业读者）。这里不再生成这三份，避免用旧的偏技术内容把它们覆盖回去。
-    files = [gen_report(), gen_template(), gen_video()]
+    # 使用手册 / 安装手册 / 开发记录 / 开发与应用报告 已改为由 md2docx.py 从同名 .md 生成
+    # （单一事实源，内容面向非专业读者且控制字数）。这里不再生成这四份，
+    # 避免用旧的偏技术内容把它们覆盖回去。
+    files = [gen_template(), gen_video()]
     for f in files:
         print("wrote", f)

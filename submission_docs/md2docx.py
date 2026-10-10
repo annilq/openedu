@@ -14,7 +14,9 @@ from pathlib import Path
 
 from docx import Document
 from docx.shared import Pt, Cm
-from docx.enum.text import WD_LINE_SPACING
+from docx.enum.text import WD_LINE_SPACING, WD_ALIGN_PARAGRAPH
+
+from PIL import Image
 
 # 复用 gen.py 的排版助手与字体常量（gen.py 有 __main__ guard，import 安全）
 from gen import (
@@ -87,6 +89,24 @@ def flush_table(doc, rows):
                      bold=(i == 0), first=True)
     set_col_widths(table, col_widths(ncols))
     add_para(doc, "", size=6, line=8, space_after=0)
+
+
+def add_image(doc, caption: str, rel_path: str) -> None:
+    """嵌入图片 + 居中图注。宽屏图用满可用宽，竖长截图收窄以免超页高。"""
+    img = HERE / rel_path
+    if not img.exists():
+        add_rich(doc, f"（缺图：{rel_path}）")
+        return
+    with Image.open(img) as im:
+        aspect = im.width / im.height
+    width_cm = 15.0 if aspect >= 1.2 else 11.0
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.paragraph_format.space_after = Pt(4)
+    p.add_run().add_picture(str(img), width=Cm(width_cm))
+    if caption:
+        add_para(doc, caption, size=10.5, align=WD_ALIGN_PARAGRAPH.CENTER,
+                 space_after=12)
 
 
 def convert(md_path: Path, docx_path: Path) -> Path:
@@ -166,6 +186,12 @@ def convert(md_path: Path, docx_path: Path) -> Path:
             add_rich(doc, "• " + stripped[2:], left_indent=18)
             continue
 
+        # 图片：![图注](相对路径)
+        m = re.match(r"^!\[(.*?)\]\((.+?)\)$", stripped)
+        if m:
+            add_image(doc, m.group(1).strip(), m.group(2).strip())
+            continue
+
         # 正文
         add_rich(doc, stripped, indent=True)
 
@@ -178,6 +204,7 @@ def main() -> None:
     pairs = [
         ("使用手册.md", "使用手册.docx"),
         ("安装手册.md", "安装手册.docx"),
+        ("开发与应用报告.md", "开发与应用报告.docx"),
         ("开发记录.md", "开发记录.docx"),
         ("提示词开发流程与提示词集.md", "提示词开发流程与提示词集.docx"),
     ]

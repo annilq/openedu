@@ -37,3 +37,13 @@ frontend/test/_shots/
 
 # ── 系统 ──
 .DS_Store
+
+# ── 申报交付物（生成产物不进版本库；.md/.py 源文件仍跟踪）──
+submission_docs/**/*.docx
+submission_docs/**/*.mp4
+submission_docs/**/*.zip
+submission_docs/figures/
+submission_docs/out/
+submission_docs/raw/
+submission_docs/subs/
+submission_docs/voice/
