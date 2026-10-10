@@ -9,237 +9,35 @@ import '../../theme/app_theme.dart';
 import '../app_actions.dart';
 import '../app_slider.dart';
 import 'reflection_scene_data.dart';
+import 'reflection_scene_painter.dart';
 
 // =====================================================================
-// §轴对称交互讲解渲染器（kind = reflection，ADR-0061 决策 9.1）
+// §轴对称交互讲解渲染器（kind = reflection，ADR-0061 决策 9.1 / ADR-0083 决策 8）
 //
-// 几何严格对齐已验证的 HTML 原型（prototypes/reflection_demo.html）：
-// - 折叠角 θ = 进度 × 180°（进度 0..1 ↔ θ 0..π），重合只在 θ=π 判定。
-// - 图形按对称轴裁剪成两个填充半区（半平面裁剪），静止侧（青）/ 折叠侧（橙）。
-// - 折叠侧变换：Pf = C + u·d + v·cosθ·n（u 沿轴分量不变、v 法向分量按 cosθ 缩放）。
-// - 重合判定门控于 θ≈π 且轴为真正对称线（折叠侧 vs 静止侧，禁止与自身反射比对）。
+// 低层绘制与几何（半平面裁剪 / 折叠变换 / 画家）在 `reflection_scene_painter.dart`
+// ——同一份绘制逻辑既服务于**播放态**（本文件），也服务于**编辑态**（画板），
+// 故独立成文件（ADR-0058 §2），避免两处各画一套而漂移。
+//
+// 本文件只做「一份顶点 + 一个 kind 外壳 → 一屏可交互演示」的装配，并承载
+// **编辑态手势**（拖顶点 / 移对称轴）。
 // =====================================================================
 
-/// 预设图形已移出本文件 → `shared/domain/figures.dart`（ADR-0061 §O）。
-///
-/// 本渲染器**不再认识「房子/风筝」这类概念**，只吃一组顶点（ADR-0061 §O）：
-/// 图形数据是教学素材（见 `figures.dart`），由后端按题目选项下发或由内置预设兜底。
-/// `ReflectionFigure` / `ReflectionFigureX` 仅作为**兜底预设集**保留给家长调参
-/// 面板与「spec 未带points」的旧数据。
+/// 顶点命中半径（归一化画布坐标）：拖动时离哪个顶点最近就抓哪个。
+/// 0.06 ≈ 400px 画布上的 24px —— 够手指点中，又不至于一抓抓到隔壁的顶点。
+const double _handleHitRadius = 0.06;
 
-/// 重合判定阈值（归一化空间）。
-const double _coincidenceThreshold = 0.03;
-
-/// 半平面裁剪：保留 (P−C)·n × keepSign ≥ 0 的一侧
-///（keepSign=+1 保留 v≥0 折叠侧；−1 保留 v≤0 静止侧）。
-List<Offset> _clipHalfPlane(
-  List<Offset> poly,
-  Offset c,
-  Offset n,
-  double keepSign,
-) {
-  final out = <Offset>[];
-  final count = poly.length;
-  for (var i = 0; i < count; i++) {
-    final a = poly[i];
-    final b = poly[(i + 1) % count];
-    final va = (a.dx - c.dx) * n.dx + (a.dy - c.dy) * n.dy;
-    final vb = (b.dx - c.dx) * n.dx + (b.dy - c.dy) * n.dy;
-    final ain = va * keepSign >= -1e-9;
-    final bin = vb * keepSign >= -1e-9;
-    if (ain) out.add(a);
-    if (ain != bin) {
-      final t = va / (va - vb);
-      out.add(Offset(a.dx + t * (b.dx - a.dx), a.dy + t * (b.dy - a.dy)));
-    }
-  }
-  return out;
-}
-
-/// 折叠顶点：Pf = C + u·d + v·cosθ·n。
-Offset _foldVertex(Offset p, Offset c, Offset d, Offset n, double theta) {
-  final u = (p.dx - c.dx) * d.dx + (p.dy - c.dy) * d.dy;
-  final v = (p.dx - c.dx) * n.dx + (p.dy - c.dy) * n.dy;
-  final nf = v * math.cos(theta);
-  return Offset(c.dx + u * d.dx + nf * n.dx, c.dy + u * d.dy + nf * n.dy);
-}
-
-/// 是否轴对称：所有顶点关于当前轴（θ=π）反射后，均能在原顶点集中找到
-/// 最近距离 < 阈值的匹配（折叠侧 vs 静止侧比对，非与自身反射比对）。
-bool _isAxisymmetric(List<Offset> poly, Offset c, Offset d, Offset n) {
-  for (final p in poly) {
-    final r = _foldVertex(p, c, d, n, math.pi);
-    final hit = poly.any((q) => (r - q).distance < _coincidenceThreshold);
-    if (!hit) return false;
-  }
-  return true;
-}
-
-class _ReflectionPainter extends CustomPainter {
-  final List<Offset> points;
-  /// 顶点连接关系（索引对）；null/空 = 按顶点顺序闭合（ADR-0083 决策 5）。
-  final List<List<int>>? edges;
-  final Offset c;
-  final Offset d;
-  final Offset n;
-  final double theta;
-  final double axisAngle;
-  final double axisX;
-  final double axisY;
-
-  const _ReflectionPainter({
-    required this.points,
-    this.edges,
-    required this.c,
-    required this.d,
-    required this.n,
-    required this.theta,
-    required this.axisAngle,
-    required this.axisX,
-    required this.axisY,
-  });
-
-  void _poly(
-    Canvas canvas,
-    Size size,
-    List<Offset> poly, {
-    Color? fill,
-    Color? stroke,
-    double strokeWidth = 0,
-  }) {
-    if (poly.length < 3) return;
-    final path = Path();
-    for (var i = 0; i < poly.length; i++) {
-      final p = Offset(poly[i].dx * size.width, poly[i].dy * size.height);
-      if (i == 0) {
-        path.moveTo(p.dx, p.dy);
-      } else {
-        path.lineTo(p.dx, p.dy);
-      }
-    }
-    path.close();
-    if (fill != null) {
-      canvas.drawPath(path, Paint()..color = fill..style = PaintingStyle.fill);
-    }
-    if (stroke != null) {
-      canvas.drawPath(
-        path,
-        Paint()
-          ..color = stroke
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = strokeWidth
-          ..strokeJoin = StrokeJoin.round
-          ..strokeCap = StrokeCap.round,
-      );
-    }
-  }
-
-  void _dashed(Canvas canvas, Offset p1, Offset p2, Color color, double width) {
-    final dx = p2.dx - p1.dx;
-    final dy = p2.dy - p1.dy;
-    final len = math.sqrt(dx * dx + dy * dy);
-    if (len == 0) return;
-    const dash = 8.0;
-    const gap = 5.0;
-    final ux = dx / len;
-    final uy = dy / len;
-    final steps = (len / (dash + gap)).floor();
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = width
-      ..strokeCap = StrokeCap.round;
-    for (var i = 0; i < steps; i++) {
-      final s = i * (dash + gap);
-      canvas.drawLine(
-        Offset(p1.dx + ux * s, p1.dy + uy * s),
-        Offset(p1.dx + ux * (s + dash), p1.dy + uy * (s + dash)),
-        paint,
-      );
-    }
-  }
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final stat = _clipHalfPlane(points, c, n, -1);
-    final fold = _clipHalfPlane(points, c, n, 1);
-    final foldT = fold.map((p) => _foldVertex(p, c, d, n, theta)).toList();
-
-    // 参考轮廓（始终可见，虚线低透明）。按 edges 逐段描边——默认闭合的简单多边形
-    // 与旧行为逐点一致；带自定义连接时（开折线 / 多部件）如实画出（ADR-0083 §5）。
-    final outline = Paint()
-      ..color = AppBrutal.ink.withValues(alpha: 0.4)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = AppElevation.borderWidthHairline
-      ..strokeJoin = StrokeJoin.round
-      ..strokeCap = StrokeCap.round;
-    if (edges != null && edges!.isNotEmpty) {
-      for (final e in edges!) {
-        if (e.length < 2) continue;
-        final i = e[0];
-        final j = e[1];
-        if (i < 0 || j < 0 || i >= points.length || j >= points.length) continue;
-        canvas.drawLine(
-          Offset(points[i].dx * size.width, points[i].dy * size.height),
-          Offset(points[j].dx * size.width, points[j].dy * size.height),
-          outline,
-        );
-      }
-    } else {
-      _poly(
-        canvas,
-        size,
-        points,
-        stroke: AppBrutal.ink.withValues(alpha: 0.4),
-        strokeWidth: AppElevation.borderWidthHairline,
-      );
-    }
-    // 静止侧（青）。
-    _poly(
-      canvas,
-      size,
-      stat,
-      fill: AppBrutal.cyan.withValues(alpha: 0.35),
-      stroke: AppBrutal.ink,
-      strokeWidth: AppElevation.borderWidth,
-    );
-    // 折叠侧（橙，覆盖在上）。
-    _poly(
-      canvas,
-      size,
-      foldT,
-      fill: AppBrutal.orange.withValues(alpha: 0.55),
-      stroke: AppBrutal.ink,
-      strokeWidth: AppElevation.borderWidth,
-    );
-
-    // 对称轴（虚线）。
-    const l = 0.46;
-    final a1 = Offset(
-      (c.dx - l * d.dx) * size.width,
-      (c.dy - l * d.dy) * size.height,
-    );
-    final a2 = Offset(
-      (c.dx + l * d.dx) * size.width,
-      (c.dy + l * d.dy) * size.height,
-    );
-    _dashed(canvas, a1, a2, AppBrutal.ink, AppElevation.borderWidth);
-  }
-
-  @override
-  bool shouldRepaint(_ReflectionPainter old) =>
-      old.theta != theta ||
-      old.axisAngle != axisAngle ||
-      old.axisX != axisX ||
-      old.axisY != axisY ||
-      old.points != points ||
-      !listEquals(old.edges, edges);
-}
-
+/// 对称轴中心的可拖范围（与轴滑块 `min`/`max` 一致）。
+/// 必须同域：拖出来的值若越出滑块量程，滑块会显示在边界、与实际轴对不上。
+const double _axisDragMin = 0.3;
+const double _axisDragMax = 0.7;
 
 /// 轴对称交互演示（kind = reflection）骨架。
 ///
 /// 被动播放：沿内部对称轴对折；主动分析：旋转 / 平移对称轴、改进度，看是否重合。
 /// 重合判定严格门控于 180°（ADR-0061 决策 9.1）。
+///
+/// **同一渲染器 = 播放器 = 画板**（ADR-0083 决策 8）：[editing] 为真即进入编辑态，
+/// 画布接受「拖顶点 / 移对称轴」，并在顶点上画可拖手柄；对折播放一件不少。
 class ReflectionSceneWidget extends StatefulWidget {
   final ReflectionSceneData data;
 
@@ -248,10 +46,20 @@ class ReflectionSceneWidget extends StatefulWidget {
   /// 不传，无副作用。
   final void Function(double angle, double x, double y)? onAxisChanged;
 
+  /// **编辑态**：画布接受手势（拖顶点改几何 / 拖空白处移对称轴），顶点上画手柄，
+  /// 且**不再显示「是不是轴对称」的结论**（ADR-0083 决策 2：判定交给眼睛，作者也不
+  /// 预判——否则作者会照着结论去微调顶点，把「亲手看」这件事跳过去）。
+  final bool editing;
+
+  /// 顶点变更回调（编辑态）：用户拖动某个顶点后回传整份新顶点（父级据此保存）。
+  final ValueChanged<List<Offset>>? onPointsChanged;
+
   const ReflectionSceneWidget({
     super.key,
     required this.data,
     this.onAxisChanged,
+    this.editing = false,
+    this.onPointsChanged,
   });
 
   @override
@@ -274,12 +82,22 @@ class _ReflectionSceneWidgetState extends State<ReflectionSceneWidget>
   late final ShadSliderController _foldC;
   bool _playing = false;
 
+  /// 编辑态的顶点（本地即时反馈用；外部改几何时由 didUpdateWidget 重新同步）。
+  late List<Offset> _editPoints;
+
+  /// 正在拖的顶点索引；null = 没在拖顶点（可能正拖对称轴）。
+  int? _dragVertex;
+
+  /// 是否正拖着对称轴中心。
+  bool _dragAxis = false;
+
   @override
   void initState() {
     super.initState();
     _axisAngle = widget.data.axisAngle;
     _axisX = widget.data.axisX;
     _axisY = widget.data.axisY;
+    _editPoints = List<Offset>.of(widget.data.points);
     _axisAngleC = ShadSliderController(initialValue: _axisAngle);
     _axisXC = ShadSliderController(initialValue: _axisX);
     _axisYC = ShadSliderController(initialValue: _axisY);
@@ -303,8 +121,14 @@ class _ReflectionSceneWidgetState extends State<ReflectionSceneWidget>
   @override
   void didUpdateWidget(covariant ReflectionSceneWidget old) {
     super.didUpdateWidget(old);
+    // 外部（编辑器 / 画板预设）改了顶点就重新同步编辑态副本。用 listEquals 判等：
+    // 若父级只是把我们刚回调的顶点原样传回（回显），这里不会误清掉本地拖拽。
+    if (!listEquals(old.data.points, widget.data.points) &&
+        !listEquals(_editPoints, widget.data.points)) {
+      _editPoints = List<Offset>.of(widget.data.points);
+    }
     // 外部（编辑器）修改默认参数时同步内部状态并复位动画，避免预览卡在旧值。
-    // 几何按points 比对（ADR-0061 §O 顶点驱动）：图形换了 = 顶点变了。
+    // 几何按 points 比对（ADR-0061 §O 顶点驱动）：图形换了 = 顶点变了。
     if (!listEquals(old.data.points, widget.data.points) ||
         old.data.axisAngle != widget.data.axisAngle ||
         old.data.axisX != widget.data.axisX ||
@@ -332,6 +156,10 @@ class _ReflectionSceneWidgetState extends State<ReflectionSceneWidget>
     _fold.dispose();
     super.dispose();
   }
+
+  /// 当前生效的顶点：编辑态用本地副本（即时反馈），否则用外部下发的几何。
+  List<Offset> get _activePoints =>
+      widget.editing ? _editPoints : widget.data.points;
 
   (Offset, Offset, Offset) get _frame {
     final a = _axisAngle * math.pi / 180;
@@ -367,6 +195,65 @@ class _ReflectionSceneWidgetState extends State<ReflectionSceneWidget>
   /// 任一轴滑块变动后写回父级（编辑器弹出语境下让弹窗关闭后仍能按调过的轴保存）。
   void _emitAxis() =>
       widget.onAxisChanged?.call(_axisAngle, _axisX, _axisY);
+
+  // —— 编辑态手势（ADR-0083 决策 8）——
+  //
+  // 画布上的拖拽不是「可点区域」（它没有离散的点击语义、也就不该进 Tab 焦点树），
+  // 故这里用裸 `GestureDetector`；按钮类可点区仍一律走 AppFocusableAction（ADR-0046）。
+
+  /// 画布本地坐标 → 归一化 0..1（夹紧，避免拖出画布外）。
+  Offset _toNormalized(Offset local, double side) => Offset(
+        (local.dx / side).clamp(0.0, 1.0),
+        (local.dy / side).clamp(0.0, 1.0),
+      );
+
+  void _onPanDown(Offset local, double side) {
+    final p = _toNormalized(local, side);
+    // 先找命中半径内最近的顶点；没命中就当作「拖对称轴中心」。
+    var best = -1;
+    var bestD = double.infinity;
+    for (var i = 0; i < _editPoints.length; i++) {
+      final d = (_editPoints[i] - p).distance;
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
+    }
+    if (best >= 0 && bestD <= _handleHitRadius) {
+      _dragVertex = best;
+      _dragAxis = false;
+    } else {
+      _dragVertex = null;
+      _dragAxis = true;
+    }
+  }
+
+  void _onPanUpdate(Offset local, double side) {
+    final p = _toNormalized(local, side);
+    if (_dragVertex != null) {
+      final next = List<Offset>.of(_editPoints);
+      next[_dragVertex!] = p;
+      setState(() => _editPoints = next);
+      widget.onPointsChanged?.call(next);
+      return;
+    }
+    if (_dragAxis) {
+      final nx = p.dx.clamp(_axisDragMin, _axisDragMax);
+      final ny = p.dy.clamp(_axisDragMin, _axisDragMax);
+      setState(() {
+        _axisX = nx;
+        _axisY = ny;
+      });
+      _axisXC.value = nx;
+      _axisYC.value = ny;
+      _emitAxis();
+    }
+  }
+
+  void _onPanEnd() {
+    _dragVertex = null;
+    _dragAxis = false;
+  }
 
   List<Widget> _axisControls() => [
         const SizedBox(height: AppSpacing.sm),
@@ -433,6 +320,22 @@ class _ReflectionSceneWidgetState extends State<ReflectionSceneWidget>
   Widget _statusRow(bool symmetric, bool atEnd, int deg) {
     final colors = AppTheme.colorsOf(context);
     final t = AppTheme.textOf(context);
+    // 编辑态不给结论（ADR-0083 决策 2）：只报对折进度，重合与否由作者自己看。
+    if (widget.editing) {
+      return Container(
+        padding: const EdgeInsets.all(AppSpacing.sm),
+        decoration: BoxDecoration(
+          color: colors.surfaceContainer,
+          borderRadius: BorderRadius.all(Radius.circular(AppRadius.card)),
+        ),
+        child: Text(
+          atEnd
+              ? '对折到 180° —— 自己看两侧是否完全重合'
+              : '对折进行中（$deg°）；拖顶点改图形，拖空白处移动对称轴',
+          style: t.labelMedium!.copyWith(color: colors.onSurfaceVariant),
+        ),
+      );
+    }
     final ok = atEnd && symmetric;
     final bad = atEnd && !symmetric;
     final text = ok
@@ -462,8 +365,8 @@ class _ReflectionSceneWidgetState extends State<ReflectionSceneWidget>
   @override
   Widget build(BuildContext context) {
     final (c, d, n) = _frame;
-    final points = widget.data.points;
-    final symmetric = _isAxisymmetric(points, c, d, n);
+    final points = _activePoints;
+    final symmetric = isAxisymmetric(points, c, d, n);
     final progressDeg = (_fold.value * 180).round();
     final atEnd = _fold.value >= 0.99;
 
@@ -473,11 +376,11 @@ class _ReflectionSceneWidgetState extends State<ReflectionSceneWidget>
         LayoutBuilder(
           builder: (ctx, constraints) {
             final side = constraints.maxWidth;
-            return SizedBox(
+            final canvas = SizedBox(
               width: side,
               height: side,
               child: CustomPaint(
-                painter: _ReflectionPainter(
+                painter: ReflectionScenePainter(
                   points: points,
                   edges: widget.data.edges,
                   c: c,
@@ -487,8 +390,18 @@ class _ReflectionSceneWidgetState extends State<ReflectionSceneWidget>
                   axisAngle: _axisAngle,
                   axisX: _axisX,
                   axisY: _axisY,
+                  showHandles: widget.editing,
                 ),
               ),
+            );
+            if (!widget.editing) return canvas;
+            return GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onPanDown: (dd) => _onPanDown(dd.localPosition, side),
+              onPanUpdate: (dd) => _onPanUpdate(dd.localPosition, side),
+              onPanEnd: (_) => _onPanEnd(),
+              onPanCancel: _onPanEnd,
+              child: canvas,
             );
           },
         ),

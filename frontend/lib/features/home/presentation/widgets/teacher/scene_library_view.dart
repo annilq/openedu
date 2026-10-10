@@ -15,7 +15,9 @@ import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/widgets/app_actions.dart';
 import '../../../../../shared/widgets/app_dialog.dart';
 import '../../../../../shared/widgets/app_focusable_action.dart';
+import '../../../../../shared/widgets/scene_interpreter/reflection_scene_board.dart';
 import '../../../domain/repositories/material_repository.dart';
+import '../../../providers/home_provider.dart';
 import '../../../providers/knowledge_manage_provider.dart';
 
 class TeacherSceneLibraryView extends ConsumerWidget {
@@ -46,11 +48,24 @@ class TeacherSceneLibraryView extends ConsumerWidget {
                   Expanded(
                     child: Text('场景库', style: text.titleLarge),
                   ),
-                  // 「新增场景」只弹开发者提醒：场景（kind）是服务端硬编码资产，前端
-                  // 不直接新增（ADR-0074 T03）——避免误导教师以为能自由建场景类型。
-                  AppTextAction(
-                    label: '新增场景',
-                    onPressed: () => _showNewSceneHint(context),
+                  Wrap(
+                    spacing: AppSpacing.sm,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      // 图形画板（ADR-0083 T04）：教师亲手画图形顶点并入库。
+                      // 与「新增场景」不同——场景（kind）是服务端资产，图形是数据资产，
+                      // 后者正是本轮「让用户在画板上设计顶点并入库」的入口。
+                      AppTextAction(
+                        label: '图形画板',
+                        onPressed: () => _openBoard(context, ref),
+                      ),
+                      // 「新增场景」只弹开发者提醒：场景（kind）是服务端硬编码资产，前端
+                      // 不直接新增（ADR-0074 T03）——避免误导教师以为能自由建场景类型。
+                      AppTextAction(
+                        label: '新增场景',
+                        onPressed: () => _showNewSceneHint(context),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -96,6 +111,18 @@ class TeacherSceneLibraryView extends ConsumerWidget {
           ),
         ),
       ],
+    );
+  }
+
+  /// 打开图形画板（ADR-0083 T04）：把画板产出的几何经 [MaterialRepository.createFigure]
+  /// 存进图库（`is_builtin=false`）。画板本身在 `shared/`、不依赖 features，故这里注入
+  /// 保存回调完成接线（分层：shared 不得 import features）。
+  void _openBoard(BuildContext context, WidgetRef ref) {
+    final repo = ref.read(materialRepositoryProvider);
+    ReflectionSceneBoardDialog.show(
+      context,
+      onSave: (label, points, edges) =>
+          repo.createFigure(label: label, points: points, edges: edges),
     );
   }
 

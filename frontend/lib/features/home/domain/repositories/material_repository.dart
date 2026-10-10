@@ -249,4 +249,16 @@ abstract class MaterialRepository {
     required String kind,
     String? figureKey,
   });
+
+  /// 画板保存一个用户图形（ADR-0083 T04）：`POST /scene-library/figures`。
+  ///
+  /// 只提交**几何**（`points` 归一化顶点、`edges` 顶点索引对），**不含任何 axis
+  /// 属性**——对称判定是纯视觉（拖轴 + 翻转）。`key` 由后端分配（`user_<hex>`），
+  /// 返回它供 UI 提示。名字为空 / 顶点非法（<3、越界）→ 后端 422，抛 [ApiError]。
+  Future<String> createFigure({
+    required String label,
+    required List<List<double>> points,
+    List<List<int>>? edges,
+    String? note,
+  });
 }

@@ -79,4 +79,24 @@ class MaterialRepositoryImpl implements MaterialRepository {
       body: {'default_figure_key': figureKey},
     );
   }
+
+  @override
+  Future<String> createFigure({
+    required String label,
+    required List<List<double>> points,
+    List<List<int>>? edges,
+    String? note,
+  }) async {
+    final data = await _network.post(
+      '/materials/scene-library/figures',
+      body: {
+        'label': label,
+        'points': points,
+        if (edges != null) 'edges': edges,
+        if (note != null) 'note': note,
+      },
+    );
+    final map = decodeMap(data);
+    return map['key'] as String? ?? '';
+  }
 }
