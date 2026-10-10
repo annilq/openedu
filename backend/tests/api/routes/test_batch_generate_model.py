@@ -98,8 +98,8 @@ def test_regenerate_honors_selected_model(client, monkeypatch):
         captured["provider_built"] = True
         return FakeOllamaProvider()
 
-    monkeypatch.setattr("app.features.tasks.service.resolve_engine", fake_resolve)
-    monkeypatch.setattr("app.domain.build_provider", fake_build_provider)
+    monkeypatch.setattr("app.core.ai_plumbing.resolve_engine", fake_resolve)
+    monkeypatch.setattr("app.core.ai_plumbing.build_provider", fake_build_provider)
 
     r = client.post(f"/api/v1/tasks/{tid}/regenerate", headers=auth_headers(ptoken))
     assert r.status_code == 200, r.text
