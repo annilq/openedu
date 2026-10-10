@@ -13,6 +13,8 @@ import 'package:kids_learn/shared/widgets/analytics_charts.dart';
 ///     且自定义横向条的点击钻取回调真的触发；环形中心文案渲染。
 ///  2. **护栏**：全仓只有 `analytics_charts.dart` 能 import / 裸用 fl_chart 的
 ///     `BarChart` / `PieChart`——业务页必须经适配器，不得绕过（否则风格漂移）。
+///     两个探测器都做了精度处理：裸用探测按**词边界**匹配（否则被适配器类名
+///     `AppBarChart(` 里的子串误伤），import 探测**引号不敏感**。
 void main() {
   Widget wrap(Widget child, {Brightness b = Brightness.light}) => CupertinoApp(
         theme: CupertinoThemeData(brightness: b),
@@ -137,23 +139,94 @@ void main() {
     expect(libDir.existsSync(), isTrue,
         reason: '请在 frontend/ 目录下运行（flutter test 的 CWD 应为 frontend/）');
 
-    final importers = <String>[];
-    final bareUsers = <String>[];
+    final sources = <String, String>{};
     for (final entity in libDir.listSync(recursive: true)) {
       if (entity is! File || !entity.path.endsWith('.dart')) continue;
-      final src = entity.readAsStringSync();
       final rel = entity.path.replaceAll(r'\', '/').split('lib/').last;
-      if (src.contains("import 'package:fl_chart")) importers.add(rel);
-      // 裸用 BarChart / PieChart（非 fl_chart 内部、非适配器本文件）即违规。
-      if (rel != 'shared/widgets/analytics_charts.dart' &&
-          (src.contains('BarChart(') || src.contains('PieChart('))) {
-        bareUsers.add(rel);
-      }
+      sources[rel] = entity.readAsStringSync();
     }
 
-    expect(importers, ['shared/widgets/analytics_charts.dart'],
+    expect(flChartImporters(sources), ['shared/widgets/analytics_charts.dart'],
         reason: '只有 analytics_charts.dart 允许 import fl_chart，业务页必须走适配器。');
+    final bareUsers = bareFlChartUsers(sources);
     expect(bareUsers, isEmpty,
         reason: '以下文件裸用了 fl_chart 图表：$bareUsers（应改为经适配器）。');
   });
+
+  // ---- 护栏自身的牙齿：探测器不许**误报**（否则正经代码被它钉死），也不许漏报 ----
+  group('探测器 flChartImporters / bareFlChartUsers', () {
+    test('import 探测引号不敏感（双引号导入同样算违规）', () {
+      expect(
+        flChartImporters(const {
+          'features/a.dart': "import 'package:fl_chart/fl_chart.dart';",
+          'features/b.dart': 'import "package:fl_chart/fl_chart.dart";',
+          'features/c.dart': '// 注释里提到 fl_chart，这不是导入',
+        }),
+        ['features/a.dart', 'features/b.dart'],
+      );
+    });
+
+    test('适配器类名不算裸用（AppBarChart / AppGroupedBarChart / AppStackedBarChart）',
+        () {
+      // 回归：本探测原先用 `src.contains('BarChart(')`，被这三个类名里那截 `BarChart(`
+      // 子串骗到——workbench_analysis / workbench_glance 明明只用适配器，却常年被这条
+      // 护栏判红（ADR-0075 §2.3 护栏自带的 bug，与业务代码无关）。
+      expect(
+        bareFlChartUsers(const {
+          'features/home/presentation/widgets/teacher/workbench_glance.dart':
+              'child: AppGroupedBarChart(data: [])\nchild: AppStackedBarChart(data: [])',
+          'features/home/presentation/widgets/teacher/workbench_analysis.dart':
+              'child: AppBarChart(data: [])\nconst AppBarChart({super.key});',
+        }),
+        isEmpty,
+      );
+    });
+
+    test('真·裸用 BarChart / PieChart 必被抓（否则护栏形同虚设）', () {
+      expect(
+        bareFlChartUsers(const {
+          'features/a.dart': 'child: BarChart(BarChartData())',
+          'features/b.dart': 'child: PieChart(PieChartData())',
+          'features/c.dart': 'child: fl.BarChart(fl.BarChartData())',
+        }),
+        ['features/a.dart', 'features/b.dart', 'features/c.dart'],
+      );
+    });
+
+    test('适配器自身豁免（它就是要 import / 用 fl_chart 的那一个）', () {
+      expect(
+        bareFlChartUsers(const {
+          'shared/widgets/analytics_charts.dart':
+              'child: BarChart(BarChartData())\nchild: PieChart(PieChartData())',
+        }),
+        isEmpty,
+      );
+    });
+  });
 }
+
+/// fl_chart **图表构造器**的裸用探测（ADR-0075 §2.3 护栏）。
+///
+/// **必须词边界锚定**（`\b`）：适配器自己的类名 `AppBarChart(` / `AppGroupedBarChart(` /
+/// `AppStackedBarChart(` 里都**含有**子串 `BarChart(`；裸 `contains('BarChart(')` 会把
+/// 正经的适配器调用误判成违规。`\b` 保证只有当 `BarChart` / `PieChart` 自己是标识符
+/// 的开头时才算「裸用 fl_chart 的构造器」。
+final RegExp _bareFlChartCtor = RegExp(r'\b(?:Bar|Pie)Chart\(');
+
+/// fl_chart 的 import 探测。**引号不敏感**：本仓未开 `prefer_single_quotes`，用双引号
+/// 导入同样合法，只认单引号会漏掉一个「用双引号绕过护栏」的口子。
+final RegExp _flChartImport = RegExp(r'''import\s+['"]package:fl_chart''');
+
+/// 从「相对路径 → 源码」中挑出 import fl_chart 的文件。
+List<String> flChartImporters(Map<String, String> sources) => [
+      for (final e in sources.entries)
+        if (_flChartImport.hasMatch(e.value)) e.key,
+    ];
+
+/// 从「相对路径 → 源码」中挑出裸用 fl_chart 图表构造器的文件（适配器自身除外）。
+List<String> bareFlChartUsers(Map<String, String> sources) => [
+      for (final e in sources.entries)
+        if (e.key != 'shared/widgets/analytics_charts.dart' &&
+            _bareFlChartCtor.hasMatch(e.value))
+          e.key,
+    ];
