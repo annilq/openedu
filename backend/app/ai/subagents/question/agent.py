@@ -39,6 +39,9 @@ def expand_specs(specs) -> list[dict]:
             difficulty = str(sp.get("difficulty", "medium"))
             semester = str(sp.get("semester", ""))
             count = int(sp.get("count", 1))
+            # 判断题标记（ADR-0072）：判断题闭环的规格带 judge=True，让题面为「陈述句 +
+            # 对/错两个选项」；普通按规格出题不带，行为不变。
+            judge = bool(sp.get("judge", False))
         else:
             subject = str(sp.subject)
             grade = int(sp.grade)
@@ -47,6 +50,7 @@ def expand_specs(specs) -> list[dict]:
             difficulty = str(sp.difficulty)
             semester = str(getattr(sp, "semester", "") or "")
             count = int(sp.count)
+            judge = bool(getattr(sp, "judge", False))
         for _ in range(max(0, count)):
             items.append(
                 {
@@ -56,6 +60,7 @@ def expand_specs(specs) -> list[dict]:
                     "qtype": qtype,
                     "difficulty": difficulty,
                     "semester": semester,
+                    "judge": judge,
                 }
             )
     return items
@@ -357,6 +362,8 @@ class QuestionSubAgent(BaseSubAgent):
                 history=ctx.history,
                 weak_examples=weak_examples,
                 multi=item.get("multi", False),
+                # 判断题（ADR-0072 闭环）：题面强制「陈述句 + 对/错两个选项」。
+                judge=item.get("judge", False),
             )
             yield step(
                 step_label(

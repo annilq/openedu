@@ -38,16 +38,19 @@ async def _decide(signal: IntentSignal, *, role: str) -> object:
 
 
 # ── 动作归属声明 ──
-def test_question_manifest_declares_both_actions():
+def test_question_manifest_declares_all_actions():
     m = AgentRuntime.discover().manifests.get("question")
     assert m is not None
-    assert m.actions == ["task_generate", "task_question_regenerate"]
+    # T07：判断题出题（quiz_generate）与按规格出题（task_generate）各有独立键，
+    # 但同归出题助手——前者走判断题闭环（剥离答案 / 写待判定态）。
+    assert m.actions == ["task_generate", "task_question_regenerate", "quiz_generate"]
 
 
 def test_match_action_helper():
     manifests = AgentRuntime.discover().manifests
     assert match_action("task_generate", manifests) == "question"
     assert match_action("task_question_regenerate", manifests) == "question"
+    assert match_action("quiz_generate", manifests) == "question"
     # 空动作 / 未知动作 → None（交给文本路由）
     assert match_action("", manifests) is None
     assert match_action("nonexistent_action", manifests) is None
@@ -64,9 +67,11 @@ def test_action_ownership_is_unique():
                 "唯一性由契约测试保证，动作直配无需排序规则"
             )
             owner_of[action] = biz
-    # 本轮核心声明：出题助手拥有两个动作
+    # 本轮核心声明：出题助手拥有三个动作
     assert owner_of["task_generate"] == "question"
     assert owner_of["task_question_regenerate"] == "question"
+    # T07：判断题出题同归出题助手，但与课件出题（guide）是两个独立键。
+    assert owner_of["quiz_generate"] == "question"
     # T06：课件方向与待判定态方向的动作键——各有归属，且与助手出题**不同键**。
     assert owner_of["courseware_generate"] == "guide"
     assert owner_of["courseware_hint"] == "tutor"
@@ -160,6 +165,33 @@ def test_decide_quiz_judge_routes_to_tutor():
     assert decision.business == "tutor"
     assert decision.name == "伴学答疑"
     assert decision.extra.get("routed_by") == "action"
+
+
+def test_decide_quiz_generate_routes_to_question():
+    """判断题出题（T07）→ 出题助手（经运行时，拿到检索/学科提示/溯源/工具信封）。"""
+    decision = asyncio.run(
+        _decide(IntentSignal(text="", action="quiz_generate"), role="teacher")
+    )
+    assert decision.business == "question"
+    assert decision.name == "出题助手"
+    assert decision.extra.get("routed_by") == "action"
+
+
+def test_quiz_generate_is_distinct_from_courseware_generate():
+    """判断题出题与课件练习出题是两个独立键：前者出卡（question），后者引导（guide）。
+
+    同「两种出题不得拍平」的防回归——键若拍平，判断题闭环会跑到课件大屏去。
+    """
+    manifests = AgentRuntime.discover().manifests
+    quiz = asyncio.run(
+        _decide(IntentSignal(text="", action="quiz_generate"), role="teacher")
+    )
+    courseware = asyncio.run(
+        _decide(IntentSignal(text="", action="courseware_generate"), role="teacher")
+    )
+    assert quiz.business == "question"
+    assert courseware.business == "guide"
+    assert "quiz_generate" not in manifests["guide"].actions
 
 
 def test_two_generate_intents_have_independent_action_keys():
