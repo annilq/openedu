@@ -13,7 +13,11 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 
+import pytest
+
+from agent_core import classify
 from agent_core.ports import RuntimeDeps
 from agent_core.protocol import EVENT_DONE, EVENT_ERROR, EVENT_THINKING
 from agent_core.runtime import AgentRuntime
@@ -133,6 +137,18 @@ def test_run_student_unsafe_stream_no_extra_business():
         assert "business" not in ev.extra, "路由决策不应再经 extra.business 隐式透传"
     # INPUT_UNSAFE 错误码存在
     assert any(ev.code == "INPUT_UNSAFE" for ev in events if ev.eventType == EVENT_ERROR)
+
+
+# ── 路由只有两级：规则 → 启发式，不存在「可选 LLM 分类器」这一级 ──
+def test_runtime_deps_declares_no_llm_classify():
+    """依赖端口不再承诺意图分类器：注入它是调用方错误，须显式失败而非静默忽略。"""
+    assert "llm_classify" not in RuntimeDeps.__dataclass_fields__
+    with pytest.raises(TypeError):
+        RuntimeDeps(provider=FakeLLMProvider(), llm_classify=lambda text, biz: "tutor")
+
+
+def test_classify_takes_no_llm_classify():
+    assert "llm_classify" not in inspect.signature(classify).parameters
 
 
 # ── run：路由 THINKING 帧不再携带 business（侧信道已移除） ──

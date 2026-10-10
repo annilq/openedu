@@ -11,7 +11,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, AsyncIterator, Callable
+from typing import Any, AsyncIterator
 
 
 class TextKind(StrEnum):
@@ -187,12 +187,10 @@ class RuntimeDeps:
     - ``provider``：消息级 LLM（必填）。
     - ``retriever``：可选知识库。
     - ``safety``：可选输入安全闸门（路由前拦截）。
-    - ``llm_classify``：可选意图分类器（弱意图领域可注入 LLM 分类；默认规则 + 启发式）。
     - ``hooks``：可选生命周期钩子（扩展 seam，参考评审 P2）；``None`` 表示不挂载。
     """
 
     provider: LLMProvider
     retriever: Retriever | None = None
     safety: Safety | None = None
-    llm_classify: Callable[[str, list[str]], str] | None = None
     hooks: Hooks | None = None

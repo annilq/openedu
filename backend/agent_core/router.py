@@ -1,16 +1,16 @@
-"""agent_core 意图路由（业务无关：规则优先 + 启发式兜底 + 可插拔 LLM 分类）。
+"""agent_core 意图路由（业务无关：规则优先 + 启发式兜底）。
 
 两级路由：
 1. **规则匹配**：按 ``priority`` 降序逐个匹配可见 subagent 清单里的 ``triggers``，命中即路由。
 2. **启发式兜底**：规则全未命中时匹配 ``hints``；再不中则落到 ``priority`` 最低的业务。
 
-本模块不认识任何具体业务；业务名与词表全部来自 manifest。弱意图领域可传入
-``llm_classify(callable)`` 做最终兜底（约 5 行接线），默认走规则 + 启发式（确定性优先，
-契合儿童产品等对路由确定性有要求的场景）。
+本模块不认识任何具体业务；业务名与词表全部来自 manifest。链路到此为止：没有第三级
+（弱意图的 LLM 兜底另立扩展点，且须显式配置后才生效），确定性优先，契合儿童产品等对
+路由确定性有要求的场景。
 """
 from __future__ import annotations
 
-from typing import Callable, Sequence
+from typing import Sequence
 
 from agent_core.registry import SubAgentManifest
 
@@ -56,9 +56,8 @@ async def classify(
     *,
     available: Sequence[str],
     manifests: dict[str, SubAgentManifest],
-    llm_classify: Callable[[str, list[str]], str] | None = None,
 ) -> str:
-    """把自由文本路由到某个可见 business。链路：规则 → 启发式 →（可选）LLM 兜底。"""
+    """把自由文本路由到某个可见 business。链路：规则 → 启发式。"""
     if not available:
         return "tutor"
 
