@@ -1,16 +1,24 @@
-"""场景融合（ADR-0061 决策 3 / 4）单元测试。
+"""场景融合（ADR-0061 决策 3 / 4 / ADR-0083）单元测试。
 
 覆盖两条主路径：
-- ``fuse_scene_spec``：纯函数，覆盖题面输入 → 题目实例；
+- ``fuse_scene_spec``：纯函数，用题面命中的几何覆盖模板顶层 ``points``/``edges``；
 - ``resolve_scene_spec_for_question``：按题目知识点查教师私有知识点模板 + 分页缓存。
 
-DB 查询用轻量 stub session，不依赖真实数据库，保证单测快且稳定。
+``resolve`` 只用轻量 stub session（只走知识点查询）；``build_scene_spec_for_question``
+会额外查图库 DB 取几何，故那部分用真实 ``db`` fixture。
 """
+import uuid
+
+from app.features.materials.scene_figures import FIGURES
 from app.features.materials.scene_fusion import (
     build_scene_spec_for_question,
     fuse_scene_spec,
     resolve_scene_spec_for_question,
 )
+
+_POINTS_A = [[0.3, 0.7], [0.7, 0.7], [0.5, 0.3]]
+_POINTS_B = [[0.1, 0.9], [0.9, 0.9], [0.5, 0.1]]
+_EDGES = [[0, 1], [1, 2], [2, 0]]
 
 
 def test_fuse_empty_returns_none():
@@ -24,33 +32,22 @@ def test_fuse_empty_returns_none():
 def test_fuse_no_override_copies_template_deeply():
     template = {
         "kind": "reflection",
-        "inputs": [{"key": "axisAngle", "value": 90}],
-        "controls": {"play": True},
-        "narrative": "n",
-        "locked_answer": {"x": 1},
+        "points": [list(p) for p in _POINTS_A],
+        "edges": [list(e) for e in _EDGES],
     }
     out = fuse_scene_spec([template])
     assert out["kind"] == "reflection"
-    assert out["inputs"][0]["value"] == 90
-    assert out["locked_answer"] == {"x": 1}
+    assert out["points"] == _POINTS_A
     # 深拷贝：改原模板不影响产物
-    template["inputs"][0]["value"] = 0
-    assert out["inputs"][0]["value"] == 90
+    template["points"][0][0] = 0.999
+    assert out["points"][0][0] == 0.3
 
 
-def test_fuse_override_inputs():
-    template = {
-        "kind": "reflection",
-        "inputs": [
-            {"key": "axisAngle", "value": 90},
-            {"key": "figure", "value": "house"},
-        ],
-    }
-    out = fuse_scene_spec(
-        [template], overrides={"axisAngle": 45, "figure": "kite"}
-    )
-    vals = {i["key"]: i["value"] for i in out["inputs"]}
-    assert vals == {"axisAngle": 45, "figure": "kite"}
+def test_fuse_override_geometry():
+    template = {"kind": "reflection", "points": [list(p) for p in _POINTS_A], "edges": []}
+    out = fuse_scene_spec([template], overrides={"points": _POINTS_B, "edges": _EDGES})
+    assert out["points"] == _POINTS_B
+    assert out["edges"] == _EDGES
 
 
 class _KP:
@@ -84,8 +81,16 @@ class FakeSession:
         return _ExecChain(self._kp)
 
 
+def _template(points=None):
+    return {
+        "kind": "reflection",
+        "points": [list(p) for p in (points or _POINTS_A)],
+        "edges": [list(e) for e in _EDGES],
+    }
+
+
 def test_resolve_hits_kp_and_caches():
-    kp = _KP([{"kind": "reflection", "inputs": []}])
+    kp = _KP([_template()])
     session = FakeSession(kp)
     cache: dict = {}
     out1 = resolve_scene_spec_for_question(
@@ -164,7 +169,7 @@ class _SequenceSession:
 
 def test_resolve_prefers_exact_semester_match():
     """题目学期 = 上学期 → 首次查询（精确上学期）即命中，不再回落。"""
-    exact = _KP([{"kind": "reflection", "tag": "上学期"}])
+    exact = _KP([{"kind": "reflection", "tag": "上学期", "points": [], "edges": []}])
     session = _SequenceSession([exact])
     out = resolve_scene_spec_for_question(
         session,
@@ -180,7 +185,7 @@ def test_resolve_prefers_exact_semester_match():
 
 def test_resolve_falls_back_to_year_wide_when_no_exact():
     """同学期无模板 → 第二次查询命中整学年（semester=''）模板。"""
-    year_wide = _KP([{"kind": "reflection", "tag": "整学年"}])
+    year_wide = _KP([{"kind": "reflection", "tag": "整学年", "points": [], "edges": []}])
     session = _SequenceSession([None, year_wide])  # 第一次（精确）无果
     out = resolve_scene_spec_for_question(
         session,
@@ -196,7 +201,7 @@ def test_resolve_falls_back_to_year_wide_when_no_exact():
 
 def test_resolve_no_semester_queries_once():
     """题目未指定学期（''）→ 只查整学年一次，不做多余的精确查询。"""
-    year_wide = _KP([{"kind": "reflection", "tag": "整学年"}])
+    year_wide = _KP([{"kind": "reflection", "tag": "整学年", "points": [], "edges": []}])
     session = _SequenceSession([year_wide])
     out = resolve_scene_spec_for_question(
         session,
@@ -212,7 +217,7 @@ def test_resolve_no_semester_queries_once():
 
 def test_resolve_semester_aware_cache_key():
     """缓存键含学期：同学期不同学期是两个独立条目，不互相污染。"""
-    session = _SequenceSession([_KP([{"kind": "reflection", "tag": "A"}])])
+    session = _SequenceSession([_KP([_template()])])
     cache: dict = {}
     kw = dict(
         session=session,
@@ -231,50 +236,32 @@ def test_resolve_semester_aware_cache_key():
     assert session.exec_calls == before
 
 
-# ── 题面 overrides（ADR-0061 §M 第1 步）────────────────────────────────
+# ── 题面几何 overrides（ADR-0061 §M / ADR-0083）──────────────────────────
 
 
-def test_overrides_replace_template_input_values():
-    """题面抽出的值必须**覆盖**模板默认值（否则场景与题目无关）。"""
-    template = [
-        {
-            "kind": "reflection",
-            "inputs": [
-                {"key": "axisAngle", "value": 90},
-                {"key": "figure", "value": "house"},
-                {"key": "axisX", "value": 0.5},
-            ],
-        }
-    ]
-    out = fuse_scene_spec(
-        template, overrides={"figure": "kite", "axisAngle": 45.0}
-    )
-    vals = {i["key"]: i["value"] for i in out["inputs"]}
-    assert vals["figure"] == "kite"
-    assert vals["axisAngle"] == 45.0
-    # 未被覆盖的保持模板默认
-    assert vals["axisX"] == 0.5
+def test_overrides_replace_template_geometry():
+    """题面命中的几何必须**覆盖**模板几何（否则场景与题目无关）。"""
+    out = fuse_scene_spec([_template(_POINTS_A)], overrides={"points": _POINTS_B})
+    assert out["points"] == _POINTS_B
 
 
 def test_overrides_are_applied_on_read_path():
     """读路径带 overrides 时也要生效（生成时/回退解析共用同一条逻辑）。"""
-    template = [{"kind": "reflection", "inputs": [{"key": "figure", "value": "house"}]}]
-    session = FakeSession(_KP(template))
+    session = FakeSession(_KP([_template(_POINTS_A)]))
     out = resolve_scene_spec_for_question(
         session,
         teacher_id="p",
         subject="数学",
         grade=4,
         knowledge_point="图形的运动（轴对称）",
-        overrides={"figure": "arrow"},
+        overrides={"points": _POINTS_B},
     )
-    assert out["inputs"][0]["value"] == "arrow"
+    assert out["points"] == _POINTS_B
 
 
 def test_overrides_bypass_cache():
-    """带题面值时不走缓存：同一知识点的不同题目结果不同，混用会串味。"""
-    template = [{"kind": "reflection", "inputs": [{"key": "figure", "value": "house"}]}]
-    session = FakeSession(_KP(template))
+    """带题面几何时不走缓存：同一知识点的不同题目结果不同，混用会串味。"""
+    session = FakeSession(_KP([_template(_POINTS_A)]))
     cache: dict = {}
     a = resolve_scene_spec_for_question(
         session,
@@ -282,7 +269,7 @@ def test_overrides_bypass_cache():
         subject="数学",
         grade=4,
         knowledge_point="KP",
-        overrides={"figure": "kite"},
+        overrides={"points": _POINTS_A},
         cache=cache,
     )
     b = resolve_scene_spec_for_question(
@@ -291,45 +278,51 @@ def test_overrides_bypass_cache():
         subject="数学",
         grade=4,
         knowledge_point="KP",
-        overrides={"figure": "para"},
+        overrides={"points": _POINTS_B},
         cache=cache,
     )
-    assert a["inputs"][0]["value"] == "kite"
-    assert b["inputs"][0]["value"] == "para"
+    assert a["points"] == _POINTS_A
+    assert b["points"] == _POINTS_B
     assert cache == {}, "带overrides 时不得写入跨题复用缓存"
 
 
-def test_build_scene_spec_end_to_end():
-    """build_scene_spec_for_question = 找模板 +抽题面值 + 融合。"""
-    template = [
-        {
-            "kind": "reflection",
-            "inputs": [
-                {"key": "axisAngle", "value": 90},
-                {"key": "figure", "value": "house"},
-            ],
-        }
-    ]
-    session = FakeSession(_KP(template))
-    out = build_scene_spec_for_question(
-        session,
-        teacher_id="p",
+def test_build_scene_spec_end_to_end(db):
+    """build_scene_spec_for_question = 找模板 + 抽题面图形 + 查图库几何 + 融合。"""
+    teacher_id = uuid.uuid4()
+    from app.db.models import KnowledgePoint
+
+    kp = KnowledgePoint(
+        id=uuid.uuid4(),
+        teacher_id=teacher_id,
         subject="数学",
         grade=4,
-        knowledge_point="图形的运动（轴对称）",
-        semester="下学期",
-        stem="下图是风筝，沿 45° 的线对折能重合吗？",
+        semester="",
+        name="图形的运动（轴对称）",
+        scenes=[_template(_POINTS_A)],
     )
-    vals = {i["key"]: i["value"] for i in out["inputs"]}
-    assert vals["figure"] == "kite"
-    assert vals["axisAngle"] == 45.0
+    db.add(kp)
+    db.commit()
+    try:
+        out = build_scene_spec_for_question(
+            db,
+            teacher_id=teacher_id,
+            subject="数学",
+            grade=4,
+            knowledge_point="图形的运动（轴对称）",
+            semester="下学期",
+            stem="下图是风筝，它是对称图形吗？",
+        )
+        kite = next(f for f in FIGURES if f.key == "kite")
+        assert out["points"] == [[x, y] for x, y in kite.vertices]
+    finally:
+        db.delete(kp)
+        db.commit()
 
 
-def test_build_scene_spec_no_knowledge_point_returns_none():
-    session = FakeSession(_KP([{"kind": "reflection", "inputs": []}]))
+def test_build_scene_spec_no_knowledge_point_returns_none(db):
     assert (
         build_scene_spec_for_question(
-            session,
+            db,
             teacher_id="p",
             subject="数学",
             grade=4,

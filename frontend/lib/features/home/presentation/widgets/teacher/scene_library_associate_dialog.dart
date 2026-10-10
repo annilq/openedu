@@ -156,8 +156,8 @@ class _AssociateKpDialogState extends ConsumerState<_AssociateKpDialog> {
     if (_busy || kp.id == null) return;
     setState(() => _busy = true);
     try {
-      // seed 场景：图形取库默认（空则回落空占位），轴参数取注册表中性种子。
-      final data = ReflectionSceneData.fromSpec(widget.entry.defaults);
+      // seed 场景：图形取库默认（空则回落空占位）。ADR-0083：spec 是纯几何
+      // `{kind, points, edges}`——轴初值/控件/文案由 kind 外壳提供，不进 spec。
       final figureKey = widget.entry.defaultFigureKey;
       final shape = figureKey != null ? figureByKey(figureKey) : null;
       final points = (shape?.vertices ?? [])
@@ -165,12 +165,8 @@ class _AssociateKpDialogState extends ConsumerState<_AssociateKpDialog> {
           .toList(growable: false);
       final seed = buildReflectionSceneSpec(
         kind: widget.entry.kind,
-        title: widget.entry.title,
-        axisAngle: data.axisAngle,
-        axisX: data.axisX,
-        axisY: data.axisY,
-        figureKey: figureKey ?? '',
         points: points,
+        edges: closedEdges(points.length),
       );
       // 保留该 KP 既有其它 kind 的场景，仅追加本 kind 的 seed（ADR-0073 快照不变）。
       final newScenes = <Map<String, dynamic>>[...(kp.scenes ?? []), seed];

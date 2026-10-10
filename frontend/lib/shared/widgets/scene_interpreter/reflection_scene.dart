@@ -77,6 +77,8 @@ bool _isAxisymmetric(List<Offset> poly, Offset c, Offset d, Offset n) {
 
 class _ReflectionPainter extends CustomPainter {
   final List<Offset> points;
+  /// 顶点连接关系（索引对）；null/空 = 按顶点顺序闭合（ADR-0083 决策 5）。
+  final List<List<int>>? edges;
   final Offset c;
   final Offset d;
   final Offset n;
@@ -87,6 +89,7 @@ class _ReflectionPainter extends CustomPainter {
 
   const _ReflectionPainter({
     required this.points,
+    this.edges,
     required this.c,
     required this.d,
     required this.n,
@@ -161,14 +164,35 @@ class _ReflectionPainter extends CustomPainter {
     final fold = _clipHalfPlane(points, c, n, 1);
     final foldT = fold.map((p) => _foldVertex(p, c, d, n, theta)).toList();
 
-    // 参考轮廓（始终可见，虚线低透明）。
-    _poly(
-      canvas,
-      size,
-      points,
-      stroke: AppBrutal.ink.withValues(alpha: 0.4),
-      strokeWidth: AppElevation.borderWidthHairline,
-    );
+    // 参考轮廓（始终可见，虚线低透明）。按 edges 逐段描边——默认闭合的简单多边形
+    // 与旧行为逐点一致；带自定义连接时（开折线 / 多部件）如实画出（ADR-0083 §5）。
+    final outline = Paint()
+      ..color = AppBrutal.ink.withValues(alpha: 0.4)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = AppElevation.borderWidthHairline
+      ..strokeJoin = StrokeJoin.round
+      ..strokeCap = StrokeCap.round;
+    if (edges != null && edges!.isNotEmpty) {
+      for (final e in edges!) {
+        if (e.length < 2) continue;
+        final i = e[0];
+        final j = e[1];
+        if (i < 0 || j < 0 || i >= points.length || j >= points.length) continue;
+        canvas.drawLine(
+          Offset(points[i].dx * size.width, points[i].dy * size.height),
+          Offset(points[j].dx * size.width, points[j].dy * size.height),
+          outline,
+        );
+      }
+    } else {
+      _poly(
+        canvas,
+        size,
+        points,
+        stroke: AppBrutal.ink.withValues(alpha: 0.4),
+        strokeWidth: AppElevation.borderWidthHairline,
+      );
+    }
     // 静止侧（青）。
     _poly(
       canvas,
@@ -207,7 +231,8 @@ class _ReflectionPainter extends CustomPainter {
       old.axisAngle != axisAngle ||
       old.axisX != axisX ||
       old.axisY != axisY ||
-      old.points != points;
+      old.points != points ||
+      !listEquals(old.edges, edges);
 }
 
 
@@ -454,6 +479,7 @@ class _ReflectionSceneWidgetState extends State<ReflectionSceneWidget>
               child: CustomPaint(
                 painter: _ReflectionPainter(
                   points: points,
+                  edges: widget.data.edges,
                   c: c,
                   d: d,
                   n: n,
@@ -488,7 +514,7 @@ class _ReflectionSceneWidgetState extends State<ReflectionSceneWidget>
             ],
           ),
         ],
-        if (widget.data.editable) ..._axisControls(),
+        if (widget.data.showAxisControls) ..._axisControls(),
         if (widget.data.narrative != null) ...[
           const SizedBox(height: AppSpacing.sm),
           Text(widget.data.narrative!, style: AppTheme.textOf(context).bodySmall!),

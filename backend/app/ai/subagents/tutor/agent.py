@@ -16,8 +16,8 @@ from app.domain.subjects import SUBJECTS
 from app.domain.tutor import TutorService
 
 # 与 query 系列工具同款写法：subagent 直接取用 features 的 service / 纯函数
-# （先例见 app/ai/subagents/query/tools/*）。这里两个都是**无副作用的纯函数**
-# ——抽输入 + 按图库合成默认场景，不碰库、不发请求。
+# （先例见 app/ai/subagents/query/tools/*）。抽取是**无副作用的纯函数**（只认题面
+# 文本），几何则由 `default_scene_from_figure` 按 key 查图库 DB（ADR-0083）。
 from app.features.materials.scene_extract import extract_scene_inputs
 from app.features.materials.scene_fusion import default_scene_from_figure
 
@@ -78,20 +78,20 @@ def _quiz_hint_context(pending: dict, base_context: str | None) -> str:
     return f"{base_context}\n\n{block}" if base_context else block
 
 
-def _interactive_scene_for(message: str) -> dict | None:
+def _interactive_scene_for(message: str, session) -> dict | None:
     """学生提问点到图库图形 → 给该图形的默认交互演示；否则 ``None``。
 
-    与出题共用同一条**反臆造纪律**：只有提问确实命中图库里存在的图形才给图。
-    问「今天的作业是什么」不该凭空弹出一个房子——那不是讲解，是编。
+    与出题共用同一条**反臆造纪律**：只有提问确实命中图库（``figure_library`` 表）
+    里存在的图形才给图。问「今天的作业是什么」不该凭空弹出一个房子——那不是讲解，是编。
 
     这里的容错是**有意且必要**的：场景卡是答疑的增强，任何岔子都不能吞掉正文。
     抽不到、图库没命中、乃至函数本身抛错，一律退化成「没有演示、照常讲」。
     """
-    if not message:
+    if not message or session is None:
         return None
     try:
         overrides = extract_scene_inputs(stem=message)
-        return default_scene_from_figure(overrides.get("figure"))
+        return default_scene_from_figure(session, overrides.get("figure"))
     except Exception:
         return None
 
@@ -138,7 +138,7 @@ class TutorSubAgent(BaseSubAgent):
         # AI 答疑也能出示交互演示（ADR-0073 补齐的唯一缺口）：演示作为 DATA 帧
         # **先于正文**下发——学生先看到图形再读讲解，比纯文字描述「沿对称轴对折」
         # 直观得多。前端 AssistantInteractiveSceneCard 早已就位，这里只需发货。
-        scene = _interactive_scene_for(message)
+        scene = _interactive_scene_for(message, session)
         if scene is not None:
             yield data_event(scene, extra={"type": "interactive_scene"})
         # 流式讲解：溯源（rag_sources）先于正文下发，正文逐 token 下推，

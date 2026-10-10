@@ -215,14 +215,15 @@ class SceneLibraryKpRef(SQLModel):
 class SceneLibraryItem(SQLModel):
     """一个内置场景（注册表条目）+ 它的关联知识点。
 
-    ``defaults`` 是**完整的 SceneSpec 中性种子**，不是扁平的参数列表：编辑器选中
-    某个 kind 后直接拿它预填表单并即时预览，前端就不必再手拼一份结构（那正是
-    原先 ``_buildSpec`` 与后端互为镜像的重复来源）。
+    ``defaults`` 是**交互外壳**（ADR-0083 决策 4），不是完整 SceneSpec：含
+    ``axisAngle/axisX/axisY`` 初值、``controls``、``narrative``、``title``，
+    **不含几何**（``points``/``edges``/``figure``）。编辑器选中某 kind 后拿它预填
+    交互参数，几何则由画板 / 图库提供并内联进 SceneSpec。
     """
 
     kind: str
     title: str = ""
-    # 完整 SceneSpec（含 inputs / controls / narrative / outputs），中性种子。
+    # 交互外壳（axisAngle/axisX/axisY + controls + narrative + title），无几何。
     defaults: dict = Field(default_factory=dict)
     associated_knowledge_points: list[SceneLibraryKpRef] = Field(default_factory=list)
     # 「内置实例数量」= 关联知识点数（浏览页共识）：统计的是**内置参考**，

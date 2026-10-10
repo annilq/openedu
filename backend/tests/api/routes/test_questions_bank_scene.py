@@ -6,7 +6,7 @@
 只有打到端点才能钉住这条链路。
 
 两条断言：
-1. 未配模板、题面点名图形 → 图库兜底出图（`figure == "square"`）；
+1. 未配模板、题面点名图形 → 图库兜底出图（新形态 `{kind,points,edges}`，命中的是正方形）；
 2. 纯计算题（题面无图形）→ `scene_spec` 为 null，不臆造。
 """
 import uuid
@@ -79,10 +79,11 @@ def test_bank_list_scene_spec_falls_back_to_figure_library(client):
     spec = item["scene_spec"]
     assert spec is not None, "题库详情 no 图形：scene_spec 不应为 null"
     assert spec["kind"] == "reflection"
-    vals = {i["key"]: i["value"] for i in spec["inputs"]}
-    assert vals["figure"] == "square"
-    # 顶点必须随 spec 下发（只发 figure 的话前端会画回模板默认的房子）
-    assert len(vals["points"]) == 4
+    # ADR-0083：新形态是纯几何 {kind, points, edges}，不再有 inputs
+    assert set(spec) == {"kind", "points", "edges", "derivedFrom"}
+    assert spec["derivedFrom"] == "figure_library"
+    # 顶点必须随 spec 下发（只发 kind 的话前端会画回兜底房子）
+    assert len(spec["points"]) == 4
 
 
 def test_bank_list_no_figure_word_has_no_scene(client):

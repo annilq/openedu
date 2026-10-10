@@ -19,6 +19,10 @@ from __future__ import annotations
 from dataclasses import field
 from typing import Any, NamedTuple
 
+from sqlmodel import Session, select
+
+from app.db.models import FigureLibrary
+
 
 class FigureShape(NamedTuple):
     """一个轴对称教学图形：归一化顶点 + 默认对称轴角度 + **全部**对称轴角度。"""
@@ -273,7 +277,33 @@ _BY_KEY: dict[str, FigureShape] = {f.key: f for f in FIGURES}
 
 
 def figure_by_key(key: str | None) -> FigureShape | None:
-    """按 key 取图形；未命中返回 ``None``（调用方据此降级，不静默回落）。"""
+    """按 key 取图形；未命中返回 ``None``（调用方据此降级，不静默回落）。
+
+    ⚠️ ADR-0083 后本函数**仅供种子 / 迁移与纯函数测试**使用（读代码常量
+    ``FIGURES``）。运行时的几何来源已改为 ``figure_library`` 表——走
+    :func:`figure_geometry`（查 DB），不再回查代码常量。
+    """
     if not key:
         return None
     return _BY_KEY.get(key)
+
+
+def figure_geometry(session: Session, key: str | None) -> dict[str, Any] | None:
+    """按 key 从 ``figure_library`` 表取几何（ADR-0083）：``{key,label,points,edges}``。
+
+    返回值是**纯几何**（无 axis 字段）；未命中返回 ``None``——调用方据此降级为
+    「不给图」，绝不兜底到某个内置图形（那是编造，ADR-0061 §U 反臆造纪律）。
+    """
+    if not key:
+        return None
+    row = session.exec(
+        select(FigureLibrary).where(FigureLibrary.key == key)
+    ).first()
+    if row is None:
+        return None
+    return {
+        "key": row.key,
+        "label": row.label,
+        "points": row.points or [],
+        "edges": row.edges or [],
+    }

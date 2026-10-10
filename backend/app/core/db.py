@@ -773,7 +773,8 @@ def _seed_figure_library() -> None:
     from app.features.materials.scene_figures import FIGURES
 
     with Session(engine) as session:
-        existing = {r.key for r in session.exec(select(FigureLibrary.key)).all()}
+        # `select(FigureLibrary.key)` 在 SQLModel 下返回**标量**（字符串），不是行对象。
+        existing = set(session.exec(select(FigureLibrary.key)).all())
         for shape in FIGURES:
             if shape.key in existing:
                 continue

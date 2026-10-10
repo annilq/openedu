@@ -4,7 +4,6 @@
 // 1. 已关联本 kind 的知识点不再被过滤：弹窗里仍展示，并标「已关联」勾选态。
 // 2. 点按未关联项 → updateKnowledgePointScenes 追加本 kind 的 seed（关联）。
 // 3. 点按已关联项 → updateKnowledgePointScenes 移除本 kind 条目、保留其它 kind（解绑）。
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -72,7 +71,7 @@ const SceneLibraryEntry _entry = SceneLibraryEntry(
   kind: 'reflection',
   title: '反射',
   defaults: {'inputs': []},
-  associatedKnowledgePoints: const [],
+  associatedKnowledgePoints: [],
   defaultFigureKey: null,
 );
 

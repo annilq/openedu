@@ -39,8 +39,8 @@ class ReflectionSceneDialog {
     required ReflectionSceneData data,
     String? optionLabel,
     /// 编辑器语境下把轴滑块变动写回父级（见 [ReflectionSceneWidget.onAxisChanged]）。
-    /// 学生 / 普通预览不传，无副作用。仅当 [data.editable] 为 true（弹窗内显示轴滑块）
-    /// 时这个回调才会被触发。
+    /// 学生 / 普通预览不传，无副作用。仅当 [data.showAxisControls] 为 true（弹窗内
+    /// 显示轴滑块）时这个回调才会被触发。
     void Function(double angle, double x, double y)? onAxisChanged,
   }) {
     final mq = MediaQuery.of(context);

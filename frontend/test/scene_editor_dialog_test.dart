@@ -5,10 +5,11 @@
 // 「边长 = 宽度」的正方形，536 宽的弹窗直接溢出 306px（黄黑条）。
 //
 // §V 之后：面板用图形画廊选图形（不再在面板里挂轴滑块），轴滑块只在「点图形弹出的
-// 对折演示弹窗」里出现（editable 时 3 个轴 + 1 个对折进度）。这里钉三件事：
+// 对折演示弹窗」里出现。ADR-0083 后 spec 瘦成纯几何 `{kind, points, edges}`——轴初值
+// / controls / 文案统一由 kind 外壳提供，故这里钉：
 // 1. 弹窗内容**不溢出**（套了 SingleChildScrollView + 画廊替代下拉，预选图形不撑爆）；
 // 2. **面板不渲染轴滑块**（它们在弹窗里）——否则白占地方还撑爆弹窗；
-// 3. **保存进库的那份是 editable:true** —— 学生端必须能拖轴（①A 的本意）。
+// 3. **保存进库的那份是纯几何**（`{kind, points, edges}`，无 editable/title/inputs）。
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -24,7 +25,7 @@ import 'package:kids_learn/shared/widgets/app_focusable_action.dart';
 import 'package:kids_learn/shared/widgets/app_slider.dart';
 import 'package:kids_learn/shared/widgets/scene_interpreter/reflection_scene.dart';
 
-/// 记录 saveScenes 收到的 spec，用来断言「保存的那份 editable=true」。
+/// 记录 saveScenes 收到的 spec，用来断言「保存的那份是纯几何」。
 class _RecordingManageNotifier extends KnowledgeManageNotifier {
   _RecordingManageNotifier(super.repo);
   List<Map<String, dynamic>>? saved;
@@ -43,7 +44,7 @@ class _StubRepo implements MaterialRepository {
   dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError();
 }
 
-/// 一份合法的「已配置」reflection 模板：图形=房子（默认竖轴 90°）。
+/// 一份合法的「已配置」reflection 模板（新形：图形=房子，纯几何）。
 ///
 /// `pumpEditor` 默认就传它：编辑器仅在「已配置」（`initialScenes` 非空）时才渲染
 /// 完整表单（图形画廊 + 保存按钮）；`unconfigured` 时只显示开发者指引（ADR-0061：
@@ -51,52 +52,20 @@ class _StubRepo implements MaterialRepository {
 const List<Map<String, dynamic>> _configuredScenes = [
   {
     'kind': 'reflection',
-    'title': '图形的运动（轴对称）',
-    'inputs': [
-      {
-        'key': 'axisAngle',
-        'label': '对称轴角度',
-        'value': 90,
-        'min': 0,
-        'max': 180,
-        'step': 1,
-        'unit': '度',
-      },
-      {
-        'key': 'axisX',
-        'label': '对称轴水平',
-        'value': 0.5,
-        'min': 0.3,
-        'max': 0.7,
-        'step': 0.01,
-        'unit': '比例',
-      },
-      {
-        'key': 'axisY',
-        'label': '对称轴垂直',
-        'value': 0.5,
-        'min': 0.3,
-        'max': 0.7,
-        'step': 0.01,
-        'unit': '比例',
-      },
-      {'key': 'figure', 'label': '图形', 'value': 'house'},
-      {
-        'key': 'points',
-        'label': '顶点',
-        'value': [
-          [0.30, 0.70],
-          [0.70, 0.70],
-          [0.70, 0.45],
-          [0.50, 0.25],
-          [0.30, 0.45],
-        ],
-      },
+    'points': [
+      [0.30, 0.70],
+      [0.70, 0.70],
+      [0.70, 0.45],
+      [0.50, 0.25],
+      [0.30, 0.45],
     ],
-    'controls': {'play': true, 'pause': true, 'scrub': true, 'speed': true},
-    'narrative': '这是一个轴对称图形，中间虚线是它的对称轴。',
-    'outputs': {'isAxisymmetric': true},
-    'editable': true,
+    'edges': [
+      [0, 1],
+      [1, 2],
+      [2, 3],
+      [3, 4],
+      [4, 0],
+    ],
   },
 ];
 
@@ -183,10 +152,8 @@ void main() {
     );
   });
 
-  testWidgets('保存的那份 editable=true（①A：学生端能拖轴）', (tester) async {
+  testWidgets('保存的是纯几何 spec（无 editable / title / inputs）', (tester) async {
     await pumpEditor(tester);
-    // 直接读 spec 构造逻辑：保存走 editable:true，预览走 false。
-    // 这里通过「保存后 spec 值」断言。
     final notifier = ProviderScope.containerOf(
       tester.element(find.byType(KnowledgePointSceneEditor)),
     ).read(knowledgeManageProvider.notifier) as _RecordingManageNotifier;
@@ -199,14 +166,15 @@ void main() {
     await tester.pumpAndSettle();
 
     final spec = notifier.saved!.first;
-    expect(
-      spec['editable'],
-      isTrue,
-      reason: '①A：学生端必须能自己旋转/平移对称轴，保存的 spec 必须是 editable:true',
-    );
+    expect(spec['kind'], 'reflection');
+    // ADR-0083 决策 5：旧字段一概不再出现
+    for (final banned in ['editable', 'title', 'inputs', 'controls', 'narrative', 'outputs']) {
+      expect(spec.containsKey(banned), isFalse, reason: '不应再有 $banned');
+    }
   });
 
-  testWidgets('保存的 spec 带 points（顶点权威，ADR-0061 §O）', (tester) async {
+  testWidgets('保存的 spec 带顶层 points + edges（顶点权威，ADR-0061 §O / ADR-0083）',
+      (tester) async {
     await pumpEditor(tester);
     final notifier = ProviderScope.containerOf(
       tester.element(find.byType(KnowledgePointSceneEditor)),
@@ -220,10 +188,10 @@ void main() {
     await tester.pumpAndSettle();
 
     final spec = notifier.saved!.first;
-    final inputs = spec['inputs'] as List;
-    final points = inputs.firstWhere((e) => e['key'] == 'points')['value'];
-    expect(points, isA<List>());
-    expect((points as List).length, greaterThanOrEqualTo(3));
+    expect(spec['points'], isA<List>());
+    expect((spec['points'] as List).length, greaterThanOrEqualTo(3));
+    expect(spec['edges'], isA<List>());
+    expect((spec['edges'] as List).length, greaterThanOrEqualTo(3));
   });
 
   testWidgets('短屏下也不溢出（弹窗高度受限的极端情况）', (tester) async {

@@ -6,7 +6,6 @@ import '../../../../../shared/domain/figures.dart';
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/widgets/app_actions.dart';
 import '../../../../../shared/widgets/app_buttons.dart';
-import '../../../../../shared/widgets/app_inputs.dart';
 import '../../../../../shared/widgets/app_tags.dart';
 import '../../../../../shared/widgets/app_toast.dart';
 import '../../../../../shared/widgets/scene_interpreter/reflection_scene_data.dart';
@@ -73,17 +72,7 @@ class _KnowledgePointSceneEditorState
   /// 当前选中的图形预设（家长面板仍是「挑预设 + 调轴」，ADR-0061 §O）。
   /// 儿童端拿到的 spec 里是**顶点**，不依赖这个预设是否还存在。
   late FigureShape _shape;
-  late double _axisAngle;
-  late double _axisX;
-  late double _axisY;
   bool _saving = false;
-
-  /// 该知识点下的讲解标题（ADR-0074 v4 §2③ 标题按 KP 编辑）。
-  ///
-  /// 初始值取自该知识点既有的 reflection 场景标题；打开未配置（无 scenes）的
-  /// 知识点时为空，待从内置场景库选中起点后由 [_pickScene] 填入注册表标题。
-  /// 保存时原样写回 `kp.scenes` 的 `title` 字段——因此已落库标题不会被默认名覆盖。
-  final TextEditingController _titleController = TextEditingController();
 
   /// 从内置场景库选中的场景（未配置知识点时的模板起点）。null = 还没选。
   ///
@@ -101,41 +90,19 @@ class _KnowledgePointSceneEditorState
         ) ??
         const <String, dynamic>{};
     final data = ReflectionSceneData.fromSpec(initialScene);
-    _shape = figureByKey(
-      kFigureShapes
-          .where((f) => f.label == data.figureLabel)
-          .map((f) => f.key)
-          .firstOrNull,
-    );
-    _axisAngle = data.axisAngle;
-    _axisX = data.axisX;
-    _axisY = data.axisY;
-    // 已配置的知识点：沿用其既有标题，保存时不回退到默认名。
-    final existingTitle = initialScene['title'] as String?;
-    if (existingTitle != null && existingTitle.isNotEmpty) {
-      _titleController.text = existingTitle;
-    }
+    // 新形 spec 只带顶点（无 figure key）→ 按顶点反查是哪个内置预设，回显选中态。
+    _shape = _matchShapeByPoints(data.points) ?? kFigureShapes.first;
   }
 
-  /// 选一个内置场景作模板起点：**用它的中性种子预填默认轴参数**。
-  ///
-  /// 此前这批默认值（位置 0.5、取值范围、单位）在前端 `ReflectionSceneData` 里
-  /// 也镜像了一份；现在只认后端注册表这一个来源，前端不再自己造一套。
+  /// 选一个内置场景作模板起点。
   void _pickScene(SceneLibraryEntry entry) {
-    final data = ReflectionSceneData.fromSpec(entry.defaults);
     setState(() {
       _pickedScene = entry;
-      _axisAngle = data.axisAngle;
-      _axisX = data.axisX;
-      _axisY = data.axisY;
-      // 选中内置场景作模板起点：标题默认取注册表标题（教师可随后手改）。
-      _titleController.text = entry.title;
     });
   }
 
   @override
   void dispose() {
-    _titleController.dispose();
     super.dispose();
   }
 
@@ -148,37 +115,19 @@ class _KnowledgePointSceneEditorState
     if (mounted) Navigator.of(context).pop();
   }
 
-  /// 由当前编辑态构造 ADR-0061 SceneSpec（kind=reflection）。
+  /// 由当前编辑态构造 SceneSpec（kind=reflection）。
   ///
-  /// **同时下发 `points`（顶点）与 `figure`（预设 key）**：顶点是权威（儿童端
-  /// 纯顶点驱动渲染，ADR-0061 §O），预设 key 供本面板下次打开时回显。
-  /// 结构来自 [buildReflectionSceneSpec]（与场景库「关联知识点」seed 同源）。
-  ///
-  /// [editable] 必须**按用途分两处**（ADR-0061 §O/①A）：
-  /// - **保存**时传 `true` —— 儿童端要能自己旋转 / 平移对称轴去验证每个选项
-  ///   是否轴对称，写 false 会把轴控件整个藏掉，等于掐掉最核心的动手环节；
-  /// - **本面板预览**传 `false` —— 面板上方已经有 3 个同样的轴滑块了，预览再
-  ///   画一遍是纯重复，还会把弹窗撑爆（实测 536 宽弹窗溢出 306px）。
-  Map<String, dynamic> _buildSpec({required bool editable}) {
-    // kind / title 取自选中的内置场景，而非写死：它们本来就该与注册表一致，
-    // 写死会让「后端新增场景」在前端扑空。标题优先用教师在本面板填的值（按 KP
-    // 编辑，ADR-0074 v4 §2③），为空才回落注册表标题 / 默认名。
-    final title = _titleController.text.trim();
-    final resolvedTitle = title.isEmpty
-        ? (_pickedScene?.title ?? '图形的运动（轴对称）')
-        : title;
+  /// ADR-0083 决策 5：产出**纯几何** `{kind, points, edges}`——轴参数 / controls /
+  /// 引导文案 / 标题由 kind 外壳提供，不再进 spec；「是否允许儿童拖轴」是渲染层的
+  /// 展示关切（[ReflectionSceneData.showAxisControls]），也不是 spec 字段。
+  Map<String, dynamic> _buildSpec() {
     final points = _shape.vertices
-        .map((v) => [v.x, v.y])
+        .map((v) => <double>[v.x, v.y])
         .toList(growable: false);
     return buildReflectionSceneSpec(
       kind: _pickedScene?.kind ?? 'reflection',
-      title: resolvedTitle,
-      axisAngle: _axisAngle,
-      axisX: _axisX,
-      axisY: _axisY,
-      figureKey: _shape.key,
       points: points,
-      editable: editable,
+      edges: closedEdges(points.length),
     );
   }
 
@@ -188,7 +137,7 @@ class _KnowledgePointSceneEditorState
     try {
       await ref
           .read(knowledgeManageProvider.notifier)
-          .saveScenes(widget.kpId, [_buildSpec(editable: true)]);
+          .saveScenes(widget.kpId, [_buildSpec()]);
       if (mounted) _close();
     } catch (e) {
       if (mounted) {
@@ -264,14 +213,6 @@ class _KnowledgePointSceneEditorState
           const SceneDeveloperGuide(),
         ]
         else ...[
-          // 讲解标题（ADR-0074 v4 §2③）：按知识点编辑，默认取场景名；保存时原样
-          // 写回 kp.scenes 的 title，已落库标题不会被默认名覆盖。
-          AppTextField(
-            label: '讲解标题',
-            hintText: '该知识点下的讲解标题（默认取场景名）',
-            controller: _titleController,
-          ),
-          const SizedBox(height: AppSpacing.md),
           // 图形选择改为画廊（ADR-0061 §V，与题目选项同套组件）：11 个平面图形铺成
           // 网格，点一个即设为模板图形并弹真正的对折演示，下方滑块再微调它的默认
           // 对称轴。取代原下拉选择器——下拉里看不到图形长什么样，家长只能盲选。
@@ -279,32 +220,16 @@ class _KnowledgePointSceneEditorState
             figures: kFigureShapes,
             selectedKey: _shape.key,
             optionLabels: const <String, String>{},
-            hint: '点一个图形设为「默认讲解」，并打开对折演示；'
-                '在演示里拖动对称轴即可微调它的默认轴。',
+            hint: '点一个图形设为「默认讲解」并打开对折演示；'
+                '儿童端可在演示里自己拖动对称轴去验证。',
             onOpen: (figure) {
-              setState(() {
-                // 同一图形再点一次不重置——保留已经调过的默认轴（避免反复打开被清回默认）。
-                if (_shape != figure) {
-                  _shape = figure;
-                  // 换图形时轴角度跟随该图形的默认轴（从房子切到箭头会停在竖轴、
-                  // 一开始就不重合，儿童以为题目错了——与选择器时代一致的行为）。
-                  _axisAngle = figure.defaultAxisAngle;
-                }
-              });
-              // 画廊只画缩略图，真正的可调演示在弹窗里：弹窗的 `ReflectionSceneWidget`
-              // 以 editable:true 渲染，自带对称角度/水平/垂直三个滑块，拖动即写回本面板
-              // 状态（onAxisChanged），关闭后保存的就是调过的默认轴。
+              setState(() => _shape = figure);
+              // 画廊只画缩略图，真正的可调演示在弹窗里（同一个 ReflectionSceneWidget）。
+              // ADR-0083 后对称轴初值归 kind 外壳，面板不再各自持久化轴参数。
               ReflectionSceneDialog.show(
                 context,
-                data: ReflectionSceneData.fromSpec(_buildSpec(editable: true))
+                data: ReflectionSceneData.fromSpec(_buildSpec())
                     .copyWith(figureLabel: figure.label),
-                onAxisChanged: (a, x, y) {
-                  setState(() {
-                    _axisAngle = a;
-                    _axisX = x;
-                    _axisY = y;
-                  });
-                },
               );
             },
           ),
@@ -374,3 +299,24 @@ class _KnowledgePointSceneEditorState
   }
 
 }
+
+/// 按顶点反查内置预设（新形 scene 只带顶点、无 figure key，用于回显选中态）。
+///
+/// 逐点比对（容差 1e-6）：顶点是权威几何，命中即认为「这条 scene 是这个预设」。
+/// 命中不了返回 null（未知图形，属正常——用户可能在画板里画了库外图形）。
+FigureShape? _matchShapeByPoints(List<Offset> points) {
+  for (final f in kFigureShapes) {
+    if (f.vertices.length != points.length) continue;
+    var same = true;
+    for (var i = 0; i < points.length; i++) {
+      if ((f.vertices[i].x - points[i].dx).abs() > 1e-6 ||
+          (f.vertices[i].y - points[i].dy).abs() > 1e-6) {
+        same = false;
+        break;
+      }
+    }
+    if (same) return f;
+  }
+  return null;
+}
+

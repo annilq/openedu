@@ -4,6 +4,7 @@ import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_actions.dart';
 import '../../../../shared/widgets/app_inputs.dart';
 import '../../../../shared/widgets/app_loading.dart';
+import '../../../../shared/widgets/scene_interpreter/scene_shells.dart';
 
 /// 「关联知识点场景」（统一表单，任意 kind 都能挂）。
 ///
@@ -40,15 +41,13 @@ class SectionSceneAssociationBlock extends StatelessWidget {
   /// 知识点未配模板时，直达该知识点的「讲解」配置入口（见 [_SectionEditDialog]）。
   final VoidCallback onConfigure;
 
-  /// 下拉项标签：标题优先，附 kind 便于区分同名单场景；两者皆空回退「未命名模板」。
+  /// 下拉项标签：标题取该 kind 的**外壳展示名**（ADR-0083 决策 5：SceneSpec 已无
+  /// title），附 kind 便于区分；kind 也空则回退「未命名模板」。
   static String _labelOf(Map<String, dynamic> spec) {
-    final title = (spec['title'] as String?)?.trim();
     final kind = (spec['kind'] as String?)?.trim();
-    if (title != null && title.isNotEmpty && kind != null && kind.isNotEmpty) {
-      return '$title（$kind）';
+    if (kind != null && kind.isNotEmpty) {
+      return '${shellFor(kind).title}（$kind）';
     }
-    if (title != null && title.isNotEmpty) return title;
-    if (kind != null && kind.isNotEmpty) return kind;
     return '未命名模板';
   }
 

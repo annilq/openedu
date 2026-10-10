@@ -1,7 +1,10 @@
-"""题面 → 场景输入抽取（ADR-0061 §M 第1 步）单元测试。
+"""题面 → 场景输入抽取（ADR-0061 §M / ADR-0083）单元测试。
 
 核心主张：**抽不到就不抽，绝不猜**。给一个与题目无关的图形比不给场景更糟——
 那会让教师对着错误图形理解本题。所以「空overrides」是合法且常见的结果。
+
+ADR-0083 起：本模块只抽**图形名**（几何由上层按 key 查图库 DB），不再抽角度
+（对称轴初值归 kind 外壳统一给定）。
 """
 import uuid
 
@@ -49,26 +52,20 @@ class TestFigure:
         assert extract_scene_inputs(stem="", options=[]) == {}
 
 
-class TestAxisAngle:
-    def test_degree_symbol(self):
-        assert extract_scene_inputs(stem="把图形沿45° 的线对折")["axisAngle"] == 45.0
+class TestAngleNoLongerExtracted:
+    """ADR-0083 决策 6：对称轴初值归 kind 外壳，每条 scene 不再各自存。
 
-    def test_chinese_degree_unit(self):
-        assert extract_scene_inputs(stem="沿60度的直线对折")["axisAngle"] == 60.0
+    故题面里的角度数值**不再**产出 overrides——场景对称轴一律从反射外壳取（默认
+    90°）。这里把「不再抽角度」钉住，免得有人凭旧记忆把它加回来。
+    """
 
-    def test_first_angle_wins(self):
-        got = extract_scene_inputs(stem="从 30° 转到 90°，哪种是对称轴？")
-        assert got["axisAngle"] == 30.0
+    def test_stem_angle_produces_no_override(self):
+        assert "axisAngle" not in extract_scene_inputs(stem="把图形沿45° 的线对折")
 
-    def test_out_of_range_rejected(self):
-        """360° 是旋转题不是轴对称题 → 不覆盖（否则场景会转到无意义的角度）。"""
-        assert "axisAngle" not in extract_scene_inputs(stem="图形绕中心旋转 360°")
-
-    def test_negative_rejected(self):
-        assert "axisAngle" not in extract_scene_inputs(stem="沿 -30° 对折")
-
-    def test_no_angle_no_key(self):
-        assert "axisAngle" not in extract_scene_inputs(stem="什么是轴对称图形？")
+    def test_only_figure_key_is_extracted(self):
+        got = extract_scene_inputs(stem="正方形沿 45° 的线对折能重合吗？")
+        assert set(got) == {"figure"}
+        assert got["figure"] == "square"
 
 
 class TestAxisPositionNeverGuessed:
@@ -86,51 +83,16 @@ class TestAxisPositionNeverGuessed:
 
 
 class TestCombined:
-    def test_figure_and_angle_together(self):
+    def test_figure_and_angle_together_no_geometry(self):
+        """命中图形只给 key——几何由上层查图库取（ADR-0083）。"""
         got = extract_scene_inputs(
             stem="下图是一个箭头，沿 0° 的水平线对折，能完全重合吗？"
         )
         assert got["figure"] == "arrow"
-        assert got["axisAngle"] == 0.0
-        # 命中 figure 时**必须连带下发几何**（ADR-0061 §Q）：只改 figure 而留着
-        # 模板里的旧顶点，画面上仍是上一个图形（前端 points 优先于 figure 预设）。
-        assert got["points"] == [
-            [0.20, 0.42],
-            [0.62, 0.42],
-            [0.62, 0.30],
-            [0.82, 0.50],
-            [0.62, 0.70],
-            [0.62, 0.58],
-            [0.20, 0.58],
-        ]
-        assert got["axisAngles"] == [0]
-        assert got["axisCount"] == 1
-
-    def test_figure_hit_always_carries_geometry(self):
-        """任何 figure 命中都必须带上 points —— 否则改了等于没改。"""
-        for stem in ("房子", "正方形有几条对称轴", "下列图形中风筝是轴对称图形吗"):
-            got = extract_scene_inputs(stem=stem)
-            assert "figure" in got, stem
-            assert len(got["points"]) >= 3, stem
-            assert got["axisCount"] >= 1, stem
-
-    def test_square_carries_four_axes(self):
-        """"正方形有几条对称轴"的答案 4，必须真的在数据里。"""
-        got = extract_scene_inputs(stem="正方形有几条对称轴？")
-        assert got["figure"] == "square"
-        assert got["axisCount"] == 4
-        assert sorted(got["axisAngles"]) == [0, 45, 90, 135]
-
-    def test_para_carries_no_axes(self):
-        """平行四边形真的没有对称轴 → axis_angles 空、axisCount **如实为 0**。
-
-        不做「至少 1」兜底：这份数据回答的是「有几条对称轴」，兜底=教错。
-        渲染要的初始轴是defaultAxisAngle（另一个字段）。
-        """
-        got = extract_scene_inputs(stem="平行四边形是轴对称图形吗")
-        assert got["figure"] == "para"
-        assert got["axisAngles"] == []
-        assert got["axisCount"] == 0
+        # 不再连带下发几何 / 对称轴属性（几何事实源在 DB，对称判定改为纯视觉）
+        assert "points" not in got
+        assert "axisAngles" not in got
+        assert "axisAngle" not in got
 
     def test_realistic_choice_question(self):
         """真实形态的选择题：多个选项各有图形 → 只取第一个命中的（单kind 结构限制）。"""
@@ -139,7 +101,7 @@ class TestCombined:
             options=["A. 房子", "B. 平行四边形", "C. 箭头", "D. 一般四边形"],
         )
         assert got["figure"] == "house"
-        # 且这是刻意的：逐选项各配一个场景需要新 kind（集合语义），见 ADR §M 第3 步
+        # 且这是刻意的：逐选项各配一个场景走 extract_option_group（选项组）
 
 
 class TestNoneStoresAsSqlNull:
@@ -183,61 +145,61 @@ class TestNoneStoresAsSqlNull:
         assert raw is None, f"实际落库值={raw!r}，期望真正 NULL（而非文本 'null'）"
 
     def test_real_payload_round_trips(self):
-        payload = {"kind": "reflection", "inputs": [{"key": "figure", "value": "kite"}]}
+        payload = {
+            "kind": "reflection",
+            "points": [[0.3, 0.7], [0.7, 0.7], [0.5, 0.3]],
+            "edges": [[0, 1], [1, 2], [2, 0]],
+        }
         read_back, _, _ = self._stored_form(payload)
         assert read_back == payload
 
 
 class TestOptionGroup:
-    """选项组（ADR-0061 §O）：每个选项一个独立可交互图形。"""
+    """选项组（ADR-0061 §O / ADR-0083）：每个选项一个独立可交互图形，几何来自图库 DB。"""
 
-    def test_four_options_each_get_own_figure_and_points(self):
-        g = extract_option_group(["A. 房子", "B. 风筝", "C. 箭头", "D. 平行四边形"])
+    def test_four_options_each_get_own_figure_and_geometry(self, db):
+        g = extract_option_group(db, ["A. 房子", "B. 风筝", "C. 箭头", "D. 平行四边形"])
         assert g is not None
         assert [i["label"] for i in g["items"]] == ["A", "B", "C", "D"]
         assert [i["caption"] for i in g["items"]] == ["房子", "风筝", "箭头", "平行四边形"]
-        # 逐项带自己的顶点（前端据此渲染互不干扰的场景）
+        # 逐项带自己的顶点 + 边（前端据此渲染互不干扰的场景）
         for item in g["items"]:
             assert len(item["points"]) >= 3
-            assert item["defaultAxisAngle"] in (0, 90)
+            assert len(item["edges"]) >= 3
 
-    def test_arrow_gets_horizontal_default_axis(self):
-        """箭头是横向的 → 默认轴 0°。若变成 90°，学生一打开就不重合。"""
-        g = extract_option_group(["A. 箭头", "B. 房子"])
+    def test_points_match_figure_library(self, db):
+        """下发的 points 必须与图库（DB 种子）逐点一致。"""
+        from app.features.materials.scene_figures import FIGURES
+
+        g = extract_option_group(db, ["A. 风筝", "B. 平行四边形"])
         by_caption = {i["caption"]: i for i in g["items"]}
-        assert by_caption["箭头"]["defaultAxisAngle"] == 0
-        assert by_caption["房子"]["defaultAxisAngle"] == 90
+        for shape in FIGURES:
+            if shape.label in by_caption:
+                assert by_caption[shape.label]["points"] == [
+                    [x, y] for x, y in shape.vertices
+                ]
 
-    def test_points_match_figure_library(self):
-        """下发的 points 必须与图形库逐点一致（几何漂移会改判定）。"""
-        from app.features.materials.scene_figures import figure_by_key
-
-        g = extract_option_group(["A. 风筝", "B. 平行四边形"])
-        for item in g["items"]:
-            shape = figure_by_key(item["figureKey"])
-            assert item["points"] == [[x, y] for x, y in shape.vertices]
-
-    def test_label_from_chinese_separator(self):
-        g = extract_option_group(["A、房子", "B、风筝"])
+    def test_label_from_chinese_separator(self, db):
+        g = extract_option_group(db, ["A、房子", "B、风筝"])
         assert [i["label"] for i in g["items"]] == ["A", "B"]
 
-    def test_label_falls_back_to_index_when_no_prefix(self):
-        g = extract_option_group(["房子", "风筝", "箭头"])
+    def test_label_falls_back_to_index_when_no_prefix(self, db):
+        g = extract_option_group(db, ["房子", "风筝", "箭头"])
         assert [i["label"] for i in g["items"]] == ["A", "B", "C"]
 
-    def test_all_or_nothing_when_one_option_unrecognized(self):
+    def test_all_or_nothing_when_one_option_unrecognized(self, db):
         """任一选项识别不出 → 整体 None（半套选项组比没有更容易误导）。"""
         g = extract_option_group(
-            ["A. 房子", "B. 风筝", "C. 箭头", "D. 一些不认识的图形"]
+            db, ["A. 房子", "B. 风筝", "C. 箭头", "D. 一些不认识的图形"]
         )
         assert g is None
 
-    def test_needs_at_least_two_options(self):
-        assert extract_option_group(["A. 房子"]) is None
-        assert extract_option_group([]) is None
-        assert extract_option_group(None) is None
+    def test_needs_at_least_two_options(self, db):
+        assert extract_option_group(db, ["A. 房子"]) is None
+        assert extract_option_group(db, []) is None
+        assert extract_option_group(db, None) is None
 
-    def test_two_options_is_valid(self):
+    def test_two_options_is_valid(self, db):
         """两个选项也能逐个试（不必凑满 4个）。"""
-        g = extract_option_group(["A. 房子", "B. 风筝"])
+        g = extract_option_group(db, ["A. 房子", "B. 风筝"])
         assert g is not None and len(g["items"]) == 2
