@@ -63,6 +63,12 @@ class AssistantChatReq(SQLModel):
     # ADR-0072：出题-判断-引导闭环的触发标记。为真时后端绕开常规 LLM 路由，
     # 直接复用 question 管线出一道判断题并写入 pending_quiz，等待用户自然语言 yes/no 判定。
     quiz: bool = Field(default=False)
+    # ADR-0081 / T04：结构化动作。非空时经 IntentSignal 交给统一路由做「动作直配」
+    # （等值匹配 manifest.actions，先于文本优先级），而非写死业务。出题类动作
+    # （task_generate / task_question_regenerate）声明在 question 清单，师生均可见。
+    # 动作命中但当前角色不可见 → 统一路由返回显式 action_not_visible，端点转为
+    # ACTION_FORBIDDEN 错误，不静默回落成答非所问。
+    action: str | None = None
     # ADR-0067：课件练习只把课堂语境透传给 SubAgent，不创建任务或作答记录。
     courseware: CoursewareContext | None = None
 

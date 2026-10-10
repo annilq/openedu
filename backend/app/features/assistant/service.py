@@ -388,8 +388,18 @@ async def chat(
     deps = RuntimeDeps(provider=provider, retriever=retriever, safety=safety)
 
     # 预路由：解析 business（不流式），供落库复用，消除端点对 THINKING(extra) 隐式契约。
-    # 迁移期：以结构化信号承载输入；动作字段（req.action）待 ADR-0081 落地由 T04 接入。
-    decision = await rt.decide(IntentSignal(text=message), role=role, deps=deps)
+    # 结构化动作（req.action）经 IntentSignal 交给统一路由：动作直配命中即走对应业务，
+    # 不参与文本优先级竞争；动作命中但当前角色不可见 → 显式 action_not_visible（见下方转错误）。
+    decision = await rt.decide(IntentSignal(text=message, action=req.action), role=role, deps=deps)
+    # 动作不可见（如学生打教师专属动作）：显式拒绝，**不要**静默回落成另一个业务的答非所问。
+    if decision.extra.get("reason") == "action_not_visible":
+        forbidden = decision.extra.get("action")
+
+        async def _action_forbidden() -> AsyncIterator[str]:
+            yield error(f"当前角色无权执行动作「{forbidden}」。", code="ACTION_FORBIDDEN")
+            yield done()
+
+        return _stream_sse(_action_forbidden())
     # 课堂请求仍先走既有路由规则，再做上下文定向：出题进入 guide；答错后的
     # 「提示」进入 tutor。这样不改 manifest 优先级，也不让 query 的泛词「学生」抢走提示。
     if req.courseware is not None:
