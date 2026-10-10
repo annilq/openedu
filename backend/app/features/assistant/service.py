@@ -101,7 +101,12 @@ async def _summarize_dropped(provider, dropped: list[dict]) -> str | None:
 # ── ADR-0072：推荐操作目录 + 判断题闭环 ────────────────────────────────────────
 #
 # 推荐操作是服务端静态目录（零延迟、可控、可单测），不靠 LLM 生成；判断题闭环复用
-# question 管线生成 + 确定性 yes/no 小词典判定，不靠 LLM 自由判定（ADR-0040/0042）。
+# question 管线生成，而**判定与讲解一律交给 LLM**——把待判定题目连同正确答案注入
+# tutor 上下文，由模型按学生这句话生成反馈（见 `tutor/agent.py#_quiz_hint_context`）。
+#
+# 早期判定走「yes/no 小词典 + 硬编码文案」的确定性分支：用户一句话进来，服务端拿词典
+# 匹配出「对/错/求讲解」，再拼一段固定文案返回——模型全程没参与，答错支架、讲解口径
+# 都是死的（说辞生硬、无法结合题目本身）。现在只保留「出题」这一段结构化生成。
 
 
 async def _stream_sse(events: AsyncIterator) -> AsyncIterator[str]:
@@ -114,42 +119,20 @@ async def _stream_sse(events: AsyncIterator) -> AsyncIterator[str]:
     async for ev in events:
         yield ev.to_sse()
 
-_JUDGE_TRUE = {
-    "对", "正确", "是的", "对的", "是", "没错", "同意", "当然", "对呀",
-    "恩", "嗯", "yes", "y", "true", "t", "√",
-}
-_JUDGE_FALSE = {
-    "错", "错误", "不对", "不是", "否", "no", "n", "false", "f", "×", "不对呀",
-}
-_EXPLAIN_HINTS = (
-    "讲解", "讲一下", "为什么", "教我", "不懂", "不明白", "解释", "说说", "怎么理解",
-)
+_JUDGE_FALSE_WORDS = ("错", "错误", "false", "f", "no", "n", "×", "不对", "不是")
 
 
 def _judge_answer_bool(answer_text: str | None) -> bool:
-    """把生成的判断题 answer 文本（对/错/正确/错误…）收口成布尔。"""
+    """把生成的判断题 answer 文本（对/错/正确/错误…）收口成布尔。
+
+    只服务于「出题时把正确答案存进 pending_quiz」——判定与讲解由 LLM 产出
+    （见 tutor 的 `_quiz_hint_context`），这里不做任何面向用户的判定。
+    """
     a = (answer_text or "").strip().lower()
-    if a in ("错", "错误", "false", "f", "no", "n", "×", "不对", "不是"):
+    if a in _JUDGE_FALSE_WORDS:
         return False
     # 对 / 正确 / yes / true / 是 / 或其它合法表述 → True
     return True
-
-
-def _parse_yes_no(text: str | None) -> bool | None:
-    """确定性解析用户自然语言对错判定；无明确信号返回 None（让用户重答）。
-
-    false 词优先：避免「不对，应该是错的」被 true 词误判。
-    """
-    t = (text or "").strip().lower()
-    if any(w in t for w in _JUDGE_FALSE):
-        return False
-    if any(w in t for w in _JUDGE_TRUE):
-        return True
-    return None
-
-
-def _is_explain_request(text: str | None) -> bool:
-    return any(h in (text or "") for h in _EXPLAIN_HINTS)
 
 
 def _resolve_kp_context(
@@ -300,7 +283,7 @@ async def _quiz_generate_stream(
         "answer": _judge_answer_bool(q.answer),
         "subject": subject, "grade": grade, "semester": semester, "name": name,
         "stem": q.stem, "options": q.options, "answer_text": q.answer,
-        "explanation": q.explanation, "attempts": 0,
+        "explanation": q.explanation,
     }
     conv = session.get(Conversation, conv_id)
     conv.pending_quiz = pending
@@ -320,97 +303,37 @@ async def _quiz_generate_stream(
     yield done(session_id=str(conv_id))
 
 
-async def _quiz_judge_stream(
-    *, session: Any, conv: Conversation, conv_id: UUID, message: str
-) -> AsyncIterator[str]:
-    """ADR-0072 判断题闭环·判定：确定性解析用户 yes/no，比对已知答案并给反馈。
+def _consume_pending_quiz(
+    *, session: Any, conversation: Conversation, conv_id: UUID
+) -> dict[str, Any] | None:
+    """取出并**消费**待判定态：把正确答案写进会话历史，然后清空 pending_quiz。
 
-    用户消息已在续接分支的 upsert 中落库，这里只记录助手反馈。求讲解 → 揭示答案+解析；
-    答对 → 鼓励（不泄题）；答错 → 分级支架引导（不直接给答案），两次仍错则讲解。
+    判定与讲解改由 LLM 产出后，服务端不再需要 ``attempts`` 计数维持状态机。清空之所以
+    不丢上下文，是因为题目与正确答案在同一事务里落进了 ``Message`` ——后续轮次（哪怕
+    用户又答得含糊）模型从 history 里照样读得到它，不必靠服务端状态记住「第几次」。
+
+    返回待判定字典供本轮注入 tutor 上下文；无待判定态返回 None。
     """
-    pending = dict(conv.pending_quiz or {})
-    name = pending.get("name") or "这个知识点"
-
-    # 求讲解：揭示答案 + 解析（闭环第 5 步）。
-    if _is_explain_request(message):
-        verdict = "对" if pending.get("answer") else "错"
-        expl = pending.get("explanation") or "（暂无详细解析）"
-        text = (
-            f"关于「{name}」：\n「{pending.get('stem', '')}」\n"
-            f"正确的判断是「{verdict}」。{expl}"
-        )
-        conv.pending_quiz = None
-        session.add(
-            Message(conversation_id=conv_id, turn=next_turn(session, conv_id),
-                    role="assistant", step="output", content=text)
-        )
-        session.commit()
-        yield run_started()
-        yield assistant_message(text)
-        yield done(session_id=str(conv_id))
-        return
-
-    verdict = _parse_yes_no(message)
-    if verdict is None:
-        text = "请用「对」或「错」回答这道题哦～"
-        session.add(
-            Message(conversation_id=conv_id, turn=next_turn(session, conv_id),
-                    role="assistant", step="output", content=text)
-        )
-        session.commit()
-        yield run_started()
-        yield assistant_message(text)
-        yield done(session_id=str(conv_id))
-        return
-
-    correct = verdict == bool(pending.get("answer"))
-    if correct:
-        text = f"答对啦！👍 你对「{name}」的判断很准确，继续保持这种思考方式～"
-        conv.pending_quiz = None
-        session.add(
-            Message(conversation_id=conv_id, turn=next_turn(session, conv_id),
-                    role="assistant", step="output", content=text)
-        )
-        session.commit()
-        yield run_started()
-        yield assistant_message(text)
-        yield done(session_id=str(conv_id))
-        return
-
-    attempts = int(pending.get("attempts", 0)) + 1
-    if attempts < 2:
-        pending["attempts"] = attempts
-        conv.pending_quiz = pending
-        text = (
-            f"再想想看～ 判断「{name}」相关的命题，关键是看它是否符合定义或性质。"
-            f"要不要我举一个类似的例子帮你判断？或者回复「讲解」让我详细说说。"
-        )
-        session.add(
-            Message(conversation_id=conv_id, turn=next_turn(session, conv_id),
-                    role="assistant", step="output", content=text)
-        )
-        session.commit()
-        yield run_started()
-        yield assistant_message(text)
-        yield done(session_id=str(conv_id))
-        return
-
-    # 两次都错：直接讲解并揭示答案（不再无限追问）。
-    verdict_word = "对" if pending.get("answer") else "错"
-    expl = pending.get("explanation") or "（暂无详细解析）"
-    text = (
-        f"没关系，这个判断确实容易混淆。\n「{pending.get('stem', '')}」\n"
-        f"正确的判断是「{verdict_word}」。{expl}"
-    )
-    conv.pending_quiz = None
+    pending = conversation.pending_quiz
+    if not isinstance(pending, dict) or not pending:
+        return None
+    pending = dict(pending)
+    verdict = "对" if pending.get("answer") else "错"
     session.add(
-        Message(conversation_id=conv_id, turn=next_turn(session, conv_id),
-                role="assistant", step="output", content=text)
+        Message(
+            conversation_id=conv_id,
+            turn=next_turn(session, conv_id),
+            role="system",
+            step="quiz_answer",
+            content=(
+                f"【本题正确答案】{pending.get('stem') or ''} → {verdict}"
+                f"（{pending.get('explanation') or '暂无解析'}）"
+            ),
+        )
     )
+    conversation.pending_quiz = None
     session.commit()
-    yield run_started()
-    yield assistant_message(text)
-    yield done(session_id=str(conv_id))
+    return pending
 
 
 async def chat(
@@ -549,14 +472,24 @@ async def chat(
                 teacher_id=teacher_id, provider=provider,
             )
         )
-    # 续接既有会话且处于待判定态：进入确定性 yes/no 判定，不进 LLM。
-    # （用户在续接轮发出的消息已由上面 upsert 落库，这里只做判定与回复。）
+    # 续接既有会话且处于待判定态：消费它，并把题目连同正确答案交给 LLM 判定/讲解。
+    #
+    # 这里刻意**不再短路成一条确定性回复流**：用户的这句「对/错/讲解」由模型结合题目
+    # 本身作答。待判定态只消费一次（见 `_consume_pending_quiz`），判定口径在
+    # tutor 的 `_quiz_hint_context` 里，服务端不保留 attempts 状态机。
+    pending_quiz: dict[str, Any] | None = None
     if conversation is not None and conversation.pending_quiz is not None:
-        return _stream_sse(
-            _quiz_judge_stream(
-                session=session, conv=conversation, conv_id=conv_id, message=message
-            )
+        pending_quiz = _consume_pending_quiz(
+            session=session, conversation=conversation, conv_id=conv_id
         )
+        if pending_quiz is not None:
+            # 强制走伴学讲解：判定反馈与求讲解本质是同一件事（就这道题说话），
+            # 交给 tutor 而非让它落进 query 的只读检索。
+            decision = RouteDecision(
+                business="tutor",
+                name=rt.name_of("tutor"),
+                extra={**decision.extra, "quiz_pending": True},
+            )
 
     # 业务字段经 ctx.extra 透传（agent_core 不感知任何教育语义）。
     ctx = SubAgentContext(
@@ -581,6 +514,9 @@ async def chat(
                 if req.courseware is not None
                 else None
             ),
+            # ADR-0072 判定/讲解走 LLM：待判定题目 + 正确答案在此透传给 tutor，
+            # 由它拼进 prompt（见 tutor/agent.py#_quiz_hint_context）。
+            "pending_quiz": pending_quiz,
             "session_id": str(conv_id),
         },
     )

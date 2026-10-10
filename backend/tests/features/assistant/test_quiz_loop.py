@@ -1,14 +1,19 @@
 """ADR-0072：判断题闭环（出题-判定-引导）单测。
 
-出题复用 question 管线（monkeypatch 掉真实 LLM），判定与引导是确定性逻辑、不靠 LLM：
+出题复用 question 管线（monkeypatch 掉真实 LLM）；**判定与讲解一律走 LLM**——
+待判定题目连同正确答案注入 tutor 上下文，由模型就本题生成反馈。
 
 - 出题：生成判断题 → 题卡剥离答案/解析后下发（不提前泄题）→ 写 pending_quiz。
-- 判定：用户自然语言 yes/no → 比对已知答案；答对鼓励、答错分级支架引导（不泄答案）、
-  两次仍错讲解；求讲解 / 含糊回答走各自分支。
+- 判定：待判定态被**消费一次**（正确答案落进会话历史）→ 路由强制扳到 tutor
+  → 题目与答案经 ``ctx.extra["pending_quiz"]`` 交给模型。服务端不再有 yes/no
+  词典，也不再保留 attempts 状态机。
 """
 import asyncio
 import uuid
 from collections.abc import AsyncIterator
+from types import SimpleNamespace
+
+from sqlmodel import select
 
 from agent_core.protocol import (
     EVENT_ASSISTANT_MESSAGE,
@@ -16,44 +21,31 @@ from agent_core.protocol import (
     EVENT_DONE,
     EVENT_ERROR,
     EVENT_RUN_STARTED,
+    assistant_message,
+    done,
 )
-from app.db.models import Conversation
+from agent_core.runtime import RouteDecision
+from app.db.models import Conversation, Message
 from app.db.models.material import KnowledgePoint
 from app.domain.provider import GeneratedQuestion
 from app.features.assistant.schemas import AssistantChatReq, CoursewareContext
 from app.features.assistant.service import (
-    _is_explain_request,
+    _consume_pending_quiz,
     _judge_answer_bool,
-    _parse_yes_no,
     _quiz_generate_stream,
-    _quiz_judge_stream,
+    chat,
 )
-
-# ── 确定性词典（不靠 LLM 的判定核心，单独锁死） ────────────────────────────────
-
-
-def test_parse_yes_no_true_and_false():
-    assert _parse_yes_no("对") is True
-    assert _parse_yes_no("是的，正确") is True
-    assert _parse_yes_no("错") is False
-    assert _parse_yes_no("不对，应该是错的") is False  # false 词优先，不被 true 词误判
-    assert _parse_yes_no("这题我不会") is None  # 无明确信号
 
 
 def test_judge_answer_bool_normalizes():
+    """出题侧仍要把模型的答案文本收口成布尔（存进 pending_quiz 供模型判定用）。"""
     assert _judge_answer_bool("对") is True
     assert _judge_answer_bool("错") is False
     assert _judge_answer_bool("错误") is False
     assert _judge_answer_bool("") is True  # 兜底收口为真，避免答案判定整体崩坏
 
 
-def test_is_explain_request():
-    assert _is_explain_request("讲解一下") is True
-    assert _is_explain_request("为什么是错的") is True
-    assert _is_explain_request("请出一道题") is False
-
-
-# ── 出题 + 判定闭环（monkeypatch 掉真实 LLM） ──────────────────────────────────
+# ── 出题（monkeypatch 掉真实 LLM） ──────────────────────────────────────────────
 
 
 async def _fake_generate_question(provider, *, subject, grade, knowledge_point, qtype, difficulty, semester="", **kwargs):
@@ -154,7 +146,6 @@ def test_quiz_generate_strips_answer_and_writes_pending(db, monkeypatch):
     pending = conv.pending_quiz
     assert pending["answer"] is False
     assert pending["name"] == "轴对称"
-    assert pending["attempts"] == 0
     assert pending["answer_text"] == "错"
     assert pending["explanation"]
 
@@ -245,13 +236,16 @@ def test_quiz_generate_provider_failure_surfaced_as_error_frame(db, monkeypatch)
     assert "API Key" in error_frames[0].message  # 策展提示，不泄露原始报文
 
 
+# ── 判定 / 讲解走 LLM ──────────────────────────────────────────────────────────
+
+
 def _pending_fixture(db, *, conv, answer=True) -> dict:
     pending = {
         "answer": answer,
         "subject": "数学", "grade": 4, "semester": "下学期", "name": "轴对称",
         "stem": "平行四边形是轴对称图形", "options": ["对", "错"],
         "answer_text": "对" if answer else "错",
-        "explanation": "（解析）", "attempts": 0,
+        "explanation": "（解析）",
     }
     conv.pending_quiz = pending
     db.add(conv)
@@ -259,95 +253,109 @@ def _pending_fixture(db, *, conv, answer=True) -> dict:
     return pending
 
 
-def test_quiz_judge_correct_clears_pending(db):
-    """答对：鼓励文案，pending_quiz 清空。"""
+def _msgs(db, conv_id):
+    return list(
+        db.exec(
+            select(Message)
+            .where(Message.conversation_id == conv_id)
+            .order_by(Message.turn.asc())
+        ).all()
+    )
+
+
+def test_consume_pending_quiz_clears_state_and_records_answer(db):
+    """消费待判定态：返回题目字典、清空 pending_quiz，正确答案落进历史供后续轮次用。"""
     tid = _teacher_id()
     conv_id = uuid.uuid4()
     conv = _conv(db, teacher_id=tid, conv_id=conv_id)
-    _pending_fixture(db, conv=conv, answer=True)
+    _pending_fixture(db, conv=conv, answer=False)
 
-    frames = asyncio.run(
-        _drain(_quiz_judge_stream(session=db, conv=conv, conv_id=conv_id, message="对"))
-    )
-    text = "".join(
-        f.text for f in frames if f.eventType == EVENT_ASSISTANT_MESSAGE
-    )
-    assert "答对" in text
+    pending = _consume_pending_quiz(session=db, conversation=conv, conv_id=conv_id)
+    assert pending is not None and pending["answer"] is False
     assert db.get(Conversation, conv_id).pending_quiz is None
 
+    quiz_msgs = [m for m in _msgs(db, conv_id) if m.step == "quiz_answer"]
+    assert len(quiz_msgs) == 1 and "错" in quiz_msgs[0].content
 
-def test_quiz_judge_wrong_first_attempt_keeps_pending_and_does_not_reveal(db):
-    """答错（首次）：分级支架引导，pending_quiz 保留且**不泄答案**。"""
-    tid = _teacher_id()
-    conv_id = uuid.uuid4()
-    conv = _conv(db, teacher_id=tid, conv_id=conv_id)
-    _pending_fixture(db, conv=conv, answer=True)  # 正确应为「对」
-
-    frames = asyncio.run(
-        _drain(_quiz_judge_stream(session=db, conv=conv, conv_id=conv_id, message="错"))
-    )
-    text = "".join(
-        f.text for f in frames if f.eventType == EVENT_ASSISTANT_MESSAGE
-    )
-    assert "再想想" in text
-    # 首次答错不揭示答案：泄露答案的固定句式是「正确的判断是「X」」，
-    # 这里必须不出现；注意知识点名「轴对称」含「对」字，不能用子串「对」误判。
-    assert "正确的判断" not in text
-    pending = db.get(Conversation, conv_id).pending_quiz
-    assert pending is not None and pending["attempts"] == 1
+    # 幂等：再消费一次为空，不会重复往历史里写答案。
+    assert _consume_pending_quiz(session=db, conversation=conv, conv_id=conv_id) is None
+    assert len([m for m in _msgs(db, conv_id) if m.step == "quiz_answer"]) == 1
 
 
-def test_quiz_judge_wrong_twice_reveals_answer(db):
-    """答错两次：直接讲解并揭示答案 + 解析，pending_quiz 清空。"""
+def test_quiz_hint_context_carries_question_answer_and_rules():
+    """待判定上下文：题目 + 正确答案 + 判定/讲解口径一起进 prompt。"""
+    from app.ai.subagents.tutor.agent import _quiz_hint_context
+
+    pending = {
+        "answer": False, "name": "轴对称", "stem": "平行四边形是轴对称图形",
+        "options": ["对", "错"], "explanation": "（解析）",
+    }
+    text = _quiz_hint_context(pending, "已有上下文")
+    assert "已有上下文" in text  # 不覆盖既有上下文，拼在后面
+    assert "平行四边形是轴对称图形" in text
+    assert "正确答案：错" in text  # 模型拿得到答案才谈得上「判」
+    assert "讲解" in text  # 求讲解 → 揭示答案这条口径在 prompt 里
+
+
+class _CaptureRuntime:
+    """桩 runtime：记录 run 收到的 business 与 ctx.extra，产出一句可判定回复。"""
+
+    def __init__(self) -> None:
+        self.business = None
+        self.extra = None
+
+    def name_of(self, business: str) -> str:
+        return {"tutor": "伴学答疑", "query": "资料查询"}.get(business, business)
+
+    async def decide(self, message: str, *, role: str, deps) -> RouteDecision:
+        # 刻意给 query：证明待判定态会把路由**强制**扳到 tutor，而不是照单全收。
+        return RouteDecision(business="query", name="资料查询")
+
+    async def run(
+        self, message, *, role, ctx, deps, business=None, session=None
+    ) -> AsyncIterator:
+        self.business = business
+        self.extra = ctx.extra
+        yield assistant_message("（模型就本题给出的反馈）")
+        yield done(ctx.extra.get("session_id"))
+
+
+def test_pending_quiz_routes_to_llm_instead_of_deterministic_reply(db):
+    """待判定态不再短路成硬编码文案：消费后强制 tutor，题目与答案注入 ctx.extra。"""
     tid = _teacher_id()
     conv_id = uuid.uuid4()
     conv = _conv(db, teacher_id=tid, conv_id=conv_id)
     _pending_fixture(db, conv=conv, answer=True)
 
-    asyncio.run(
-        _drain(_quiz_judge_stream(session=db, conv=conv, conv_id=conv_id, message="错"))
+    rt = _CaptureRuntime()
+    caller = SimpleNamespace(
+        role="teacher",
+        user=SimpleNamespace(id=tid, teacher_id=tid, grade=0),
     )
-    frames2 = asyncio.run(
-        _drain(_quiz_judge_stream(session=db, conv=conv, conv_id=conv_id, message="错"))
+    req = AssistantChatReq(message="错", session_id=str(conv_id))
+
+    frames = asyncio.run(
+        _drain_chat(chat(caller=caller, req=req, session=db, runtime=rt))
     )
-    text2 = "".join(
-        f.text for f in frames2 if f.eventType == EVENT_ASSISTANT_MESSAGE
-    )
-    assert "正确的判断" in text2  # 揭示答案
-    assert "（解析）" in text2  # 揭示解析
+    assert any("DONE" in f for f in frames)
+    # 模型被真正调用（桩 run 产出正文），且路由被扳到讲解而非只读检索。
+    assert rt.business == "tutor"
+    assert any("（模型就本题给出的反馈）" in f for f in frames)
+
+    pending = (rt.extra or {}).get("pending_quiz")
+    assert isinstance(pending, dict)
+    assert pending["stem"] == "平行四边形是轴对称图形"
+    assert pending["answer"] is True  # 正确答案随上下文交给模型
+
+    # 消费：pending_quiz 清空，正确答案入历史（后续轮次仍可判定）。
     assert db.get(Conversation, conv_id).pending_quiz is None
+    assert any(m.step == "quiz_answer" for m in _msgs(db, conv_id))
 
 
-def test_quiz_judge_ambiguous_prompts_again(db):
-    """含糊回答：要求用「对/错」明确作答，不判定。"""
-    tid = _teacher_id()
-    conv_id = uuid.uuid4()
-    conv = _conv(db, teacher_id=tid, conv_id=conv_id)
-    _pending_fixture(db, conv=conv, answer=True)
-
-    frames = asyncio.run(
-        _drain(_quiz_judge_stream(session=db, conv=conv, conv_id=conv_id, message="这题我不会"))
-    )
-    text = "".join(
-        f.text for f in frames if f.eventType == EVENT_ASSISTANT_MESSAGE
-    )
-    assert "请用" in text and "对" in text and "错" in text
-    assert db.get(Conversation, conv_id).pending_quiz is not None  # 仍待判定
-
-
-def test_quiz_judge_explain_reveals_and_clears(db):
-    """求讲解：揭示答案 + 解析，pending_quiz 清空。"""
-    tid = _teacher_id()
-    conv_id = uuid.uuid4()
-    conv = _conv(db, teacher_id=tid, conv_id=conv_id)
-    _pending_fixture(db, conv=conv, answer=True)
-
-    frames = asyncio.run(
-        _drain(_quiz_judge_stream(session=db, conv=conv, conv_id=conv_id, message="讲解一下"))
-    )
-    text = "".join(
-        f.text for f in frames if f.eventType == EVENT_ASSISTANT_MESSAGE
-    )
-    assert "正确的判断" in text
-    assert "（解析）" in text
-    assert db.get(Conversation, conv_id).pending_quiz is None
+async def _drain_chat(chat_coro) -> list[str]:
+    """``chat`` 是 async def 返回异步生成器：先 await 取生成器再迭代。"""
+    gen = await chat_coro
+    frames: list[str] = []
+    async for frame in gen:
+        frames.append(frame)
+    return frames

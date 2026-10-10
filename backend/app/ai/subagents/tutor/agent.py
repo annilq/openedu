@@ -48,6 +48,36 @@ def _courseware_hint_context(
     return f"{base_context}\n\n{classroom}" if base_context else classroom
 
 
+def _quiz_hint_context(pending: dict, base_context: str | None) -> str:
+    """ADR-0072 判断题待判定：把题目与正确答案交给模型，由它判定 / 讲解。
+
+    取代原先「yes/no 小词典 + 硬编码文案」的确定性判定：判定口径固定写在这里（哪句该
+    判、哪句该讲解），**措辞交给模型**——于是反馈能贴着本题说话，而不是一句放之四海
+    皆准的「再想想看～」。模型拿得到正确答案，才谈得上「判」。
+    """
+    name = pending.get("name") or "这个知识点"
+    stem = pending.get("stem") or ""
+    options = [str(o) for o in (pending.get("options") or []) if str(o).strip()]
+    verdict = "对" if pending.get("answer") else "错"
+    expl = pending.get("explanation") or ""
+    block = (
+        "【判断题待判定】\n"
+        f"知识点：{name}\n"
+        f"题目：{stem}\n"
+        f"选项：{' / '.join(options) if options else '对 / 错'}\n"
+        f"正确答案：{verdict}\n"
+        f"解析：{expl}\n"
+        "请针对用户刚说的这句话作答，规则如下：\n"
+        "1) 明确说了对或错：先判对错，再结合本题说明为什么；答错时先给支架"
+        "（提醒观察方向、拆出关键条件），不要一上来就报答案。\n"
+        "2) 答得含糊、看不出判断：请他用「对」或「错」回答，本轮不判定；"
+        "但若他明显在问别的事，就正常回答那件事，不要硬拉回本题。\n"
+        "3) 要求讲解（讲解 / 为什么 / 不懂 等）：直接给出正确答案并完整讲解。\n"
+        "不得编造上面题目与解析之外的结论。"
+    )
+    return f"{base_context}\n\n{block}" if base_context else block
+
+
 def _interactive_scene_for(message: str) -> dict | None:
     """学生提问点到图库图形 → 给该图形的默认交互演示；否则 ``None``。
 
@@ -98,6 +128,11 @@ class TutorSubAgent(BaseSubAgent):
         base_context = ctx.extra.get("context")
         if is_courseware:
             base_context = _courseware_hint_context(courseware, base_context)
+        # 判断题待判定拼在课件分级提示**之后**：分级提示要求「不得直接给出答案」，
+        # 而用户明确求讲解时必须揭示答案——后写的块优先级更高，覆盖前者。
+        pending_quiz = ctx.extra.get("pending_quiz")
+        if isinstance(pending_quiz, dict) and pending_quiz:
+            base_context = _quiz_hint_context(pending_quiz, base_context)
         tc = self._tool("tutor_explain", label="伴学答疑")
         yield tc.call
         # AI 答疑也能出示交互演示（ADR-0073 补齐的唯一缺口）：演示作为 DATA 帧
