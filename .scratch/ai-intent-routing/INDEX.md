@@ -14,9 +14,9 @@
 | ID | 标题 | Blocked by | Status |
 |----|------|-----------|--------|
 | 01 | 删除从未生效的 LLM 分类器参数（prefactor） | — | ready-for-agent |
-| 02 | 意图信号与动作直配内核 | 01 | ready-for-agent |
+| 02 | 意图信号与动作直配内核 | 01 | done |
 | 03 | 修掉单字触发词「查」的误判 | — | ready-for-agent |
-| 04 | 按规格出题走统一路由 | 02 | ready-for-agent |
+| 04 | 按规格出题走统一路由 | 02 | done（动作直配内核 + 端点接线已落地；「服务端按动作合成落库消息」随 ADR-0081 删除结构化端点一并做，见 Backlog） |
 | 05 | 换一题走统一路由 | 04 | ready-for-agent |
 | 06 | 课件上下文与待判定态定向迁进信号 | 04 | ready-for-agent |
 | 07 | 判断题闭环走运行时（含前端帧兼容） | 06 | ready-for-agent |

@@ -11,7 +11,11 @@
   不在对话编排里写 `if`。
 
 **Blocked by:** T01
-**Status:** ready-for-agent
+**Status:** done
+
+> 落库 commit `d13c5ad`（合并进 `ai-intent-routing` @ `1e150c9`）。全量 797 passed / 2 skipped，
+> 含新增契约测试 `tests/ai/test_intent_routing_contract.py`（11 个用例）。
+> 注：端点动作字段 `req.action` 仍待 T04 接入；本票只交付内核与 question 两动作声明。
 
 > 信号类型形状（来自设计底稿，非可运行原型；只列承载决策的部分）：
 >
