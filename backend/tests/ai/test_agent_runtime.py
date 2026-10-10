@@ -78,6 +78,37 @@ def test_decide_teacher_tutor():
     assert decision.name == "伴学答疑"
 
 
+# ── decide：实测路由回归表（设计底稿 2026-10-10 实跑结果，T03 钉死）──
+# 只断言「输入 + 角色 → 决策」，不断言命中第几个词 / 走了哪一级，路由重排也不碎。
+# 三条结构化动作输入（空串 / "出 3 道…知识点：轴对称" / "换一题"）当前仍落伴学答疑，
+# 要等动作直配（T02/T04）才修得好，故不在此表内——钉进来只会让红与本票无关。
+ROUTING_REGRESSION = [
+    # (输入, 角色, business, name)
+    ("查一下这道题为什么选B", "teacher", "tutor", "伴学答疑"),
+    ("今天有什么作业", "teacher", "query", "学情查询"),
+    ("帮我创建一个任务，包含四年级数学题", "teacher", "guide", "任务引导"),
+    ("帮我出2道四年级数学题", "teacher", "question", "出题助手"),
+    # 删除单字「查」后的「不得误伤」面：查询类问句必须仍落学情查询
+    ("我的任务", "teacher", "query", "学情查询"),
+    ("我的错题", "teacher", "query", "学情查询"),
+    ("掌握度", "teacher", "query", "学情查询"),
+    ("该复习哪些题", "teacher", "query", "学情查询"),
+    # 单字「查」从 hints 一并移除后：靠双字以上词（错题 / 待复习 / 题库）仍落学情查询
+    ("帮我查一下我的错题", "teacher", "query", "学情查询"),
+    ("查询我今天的待复习", "teacher", "query", "学情查询"),
+    ("查题库里有哪些题", "teacher", "query", "学情查询"),
+    # 触发词与启发式都不该再用单字「查」接走讲解类提问
+    ("帮我查查轴对称是什么", "teacher", "tutor", "伴学答疑"),
+]
+
+
+@pytest.mark.parametrize(("message", "role", "business", "name"), ROUTING_REGRESSION)
+def test_decide_routing_regression(message, role, business, name):
+    decision = asyncio.run(_decide(message, role=role))
+    assert decision.business == business
+    assert decision.name == name
+
+
 # ── decide：学生端角色可见性（student 永不可见出题；查询恒限自己，见 #1） ──
 def test_decide_student_question_forced_to_tutor():
     decision = asyncio.run(_decide("帮我出几道数学题", role="student"))
