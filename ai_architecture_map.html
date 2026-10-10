@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>openedu · AI 功能架构全景图</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#ffffff; --ink:#0f172a; --muted:#475569;
+    --border:#e2e8f0; --blue:#2563eb; --blue-bg:#eff6ff;
+    --amber:#d97706; --amber-bg:#fffbeb; --green:#16a34a; --green-bg:#f0fdf4;
+    --slate:#64748b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    line-height:1.6;padding:32px 24px 64px}
+  .wrap{max-width:1080px;margin:0 auto}
+  h1{font-size:26px;margin:0 0 4px}
+  .sub{color:var(--muted);margin:0 0 24px;font-size:14px}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;
+    padding:22px 24px;margin:18px 0;box-shadow:0 1px 2px rgba(15,23,42,.04)}
+  h2{font-size:18px;margin:0 0 12px;display:flex;align-items:center;gap:8px}
+  h2 .tag{font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px}
+  .t-blue{background:var(--blue-bg);color:var(--blue)}
+  .t-amber{background:var(--amber-bg);color:var(--amber)}
+  .t-green{background:var(--green-bg);color:var(--green)}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin:8px 0 0}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .dot{width:11px;height:11px;border-radius:3px;display:inline-block}
+  table{width:100%;border-collapse:collapse;font-size:14px;margin-top:6px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--border);vertical-align:top}
+  th{color:var(--muted);font-weight:600;font-size:13px}
+  td code{background:#f1f5f9;padding:1px 6px;border-radius:5px;font-size:12.5px}
+  .verdict{font-weight:600}
+  .v-ok{color:var(--green)} .v-warn{color:var(--amber)} .v-no{color:#dc2626}
+  ul{margin:8px 0 0;padding-left:20px} li{margin:4px 0}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:760px){.grid2{grid-template-columns:1fr}}
+  .note{font-size:13px;color:var(--muted);margin-top:10px}
+  .pill{display:inline-block;font-size:12px;padding:1px 8px;border-radius:999px;background:#f1f5f9;color:#334155;margin:2px 4px 2px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>openedu · AI 功能架构全景图</h1>
+  <p class="sub">前后端贯通 · 师生分流 · 收敛分析 — 基于 <code>backend/</code> 与 <code>frontend/lib/features/</code> 实际代码梳理</p>
+
+  <div class="card">
+    <h2>① 一句话结论 <span class="tag t-green">已收敛处</span></h2>
+    <p style="margin:0"><b>「对话式 AI」已经收敛到唯一一处</b>：所有聊天形态的 AI（问答/答疑/出题对话/课堂提示/判断题闭环/讲课现场）都走同一个
+    <code>POST /api/v1/assistant/chat</code> 端点、同一个 <code>AssistantChatPage</code> 页面、同一个 <code>AssistantNotifier</code> + <code>AiTextFold</code>、同一套 <code>DATA</code> 卡片渲染协议。</p>
+    <p class="note">你感知到的「不统一」，根因不在对话通道，而在两点：<b>(a) 多套「结构化 AI 端点」在做同一件事（出题有 4 条传输通道、课件起草有 2 条）</b>；<b>(b) 师生入口形态与可见能力的不对称</b>（这是刻意的安全/产品决策，不是缺陷）。真正该收口的，是「出题引擎」「卡片渲染」「助手打开入口」三处实现，而非再叠一层统一层。</p>
+  </div>
+
+  <div class="card">
+    <h2>② 架构图 <span class="tag t-blue">graph</span></h2>
+    <svg viewBox="0 0 760 720" width="100%" style="max-width:100%;height:auto;font-family:inherit">
+      <defs>
+        <marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+          <path d="M0,0 L7,3 L0,6 Z" fill="#94a3b8"/>
+        </marker>
+        <marker id="arrowB" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+          <path d="M0,0 L7,3 L0,6 Z" fill="#2563eb"/>
+        </marker>
+        <marker id="arrowA" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+          <path d="M0,0 L7,3 L0,6 Z" fill="#d97706"/>
+        </marker>
+      </defs>
+
+      <!-- ===== Frontend panel ===== -->
+      <rect x="14" y="34" width="236" height="660" rx="12" fill="#ffffff" stroke="#e2e8f0"/>
+      <text x="132" y="58" text-anchor="middle" font-size="14" font-weight="700" fill="#0f172a">前端 AI 触点</text>
+
+      <text x="28" y="84" font-size="11.5" fill="#64748b">对话式入口（蓝）</text>
+      <g stroke="#2563eb" stroke-width="1.4" fill="#eff6ff">
+        <rect x="28" y="92" width="208" height="34" rx="8"/><rect x="28" y="134" width="208" height="34" rx="8"/>
+        <rect x="28" y="176" width="208" height="34" rx="8"/><rect x="28" y="218" width="208" height="34" rx="8"/>
+        <rect x="28" y="260" width="208" height="34" rx="8"/>
+      </g>
+      <text x="36" y="113" font-size="12" fill="#0f172a">学生「问AI老师」tab3</text>
+      <text x="36" y="155" font-size="12" fill="#0f172a">教师可拖动 FAB</text>
+      <text x="36" y="197" font-size="12" fill="#0f172a">课件演示页内 FAB(+context)</text>
+      <text x="36" y="239" font-size="12" fill="#0f172a">课堂练习 出题/提示</text>
+      <text x="36" y="281" font-size="12" fill="#0f172a">推荐操作目录</text>
+
+      <rect x="28" y="306" width="208" height="46" rx="9" fill="#dbeafe" stroke="#2563eb" stroke-width="1.6"/>
+      <text x="132" y="328" text-anchor="middle" font-size="12" font-weight="700" fill="#1d4ed8">AssistantChatPage</text>
+      <text x="132" y="344" text-anchor="middle" font-size="10.5" fill="#1e40af">+ Notifier + AiTextFold</text>
+
+      <text x="28" y="382" font-size="11.5" fill="#64748b">结构化 AI 端点（琥珀）</text>
+      <g stroke="#d97706" stroke-width="1.4" fill="#fffbeb">
+        <rect x="28" y="390" width="208" height="34" rx="8"/><rect x="28" y="432" width="208" height="34" rx="8"/>
+        <rect x="28" y="474" width="208" height="34" rx="8"/>
+      </g>
+      <text x="36" y="411" font-size="12" fill="#0f172a">教师任务表单 → 出题</text>
+      <text x="36" y="453" font-size="12" fill="#0f172a">审核页「换一题」</text>
+      <text x="36" y="495" font-size="12" fill="#0f172a">课件起草 / 重起草</text>
+
+      <rect x="28" y="528" width="208" height="56" rx="8" fill="#f8fafc" stroke="#cbd5e1"/>
+      <text x="36" y="549" font-size="11.5" fill="#475569">非对话 AI（刻意不做聊天）：</text>
+      <text x="36" y="567" font-size="11" fill="#475569">practice 无 · review 无</text>
+      <text x="36" y="582" font-size="11" fill="#475569">tutor = 仅日志 GET /tutor/logs</text>
+
+      <!-- ===== arrows frontend -> center ===== -->
+      <line x1="236" y1="329" x2="288" y2="329" stroke="#2563eb" stroke-width="1.8" marker-end="url(#arrowB)"/>
+      <line x1="236" y1="407" x2="288" y2="470" stroke="#d97706" stroke-width="1.6" marker-end="url(#arrowA)"/>
+      <line x1="236" y1="449" x2="288" y2="512" stroke="#d97706" stroke-width="1.6" marker-end="url(#arrowA)"/>
+      <line x1="236" y1="491" x2="288" y2="556" stroke="#d97706" stroke-width="1.6" marker-end="url(#arrowA)"/>
+
+      <!-- ===== Center: transport/funnel ===== -->
+      <rect x="288" y="300" width="184" height="58" rx="10" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/>
+      <text x="380" y="324" text-anchor="middle" font-size="13" font-weight="700" fill="#1d4ed8">POST /assistant/chat</text>
+      <text x="380" y="343" text-anchor="middle" font-size="10.5" fill="#1e40af">SSE · AG-UI 事件帧</text>
+
+      <rect x="288" y="372" width="184" height="34" rx="8" fill="#ffffff" stroke="#cbd5e1"/>
+      <text x="380" y="393" text-anchor="middle" font-size="11" fill="#334155">rt.decide(role) 预路由</text>
+
+      <rect x="288" y="416" width="184" height="34" rx="8" fill="#ffffff" stroke="#cbd5e1"/>
+      <text x="380" y="437" text-anchor="middle" font-size="11" fill="#334155">quiz 闭环 (req.quiz)</text>
+
+      <g stroke="#d97706" stroke-width="1.4" fill="#fffbeb">
+        <rect x="288" y="466" width="184" height="34" rx="8"/>
+        <rect x="288" y="508" width="184" height="34" rx="8"/>
+        <rect x="288" y="550" width="184" height="34" rx="8"/>
+      </g>
+      <text x="380" y="487" text-anchor="middle" font-size="11" fill="#0f172a">POST /tasks/generate</text>
+      <text x="380" y="529" text-anchor="middle" font-size="11" fill="#0f172a">POST /tasks/…/regenerate</text>
+      <text x="380" y="571" text-anchor="middle" font-size="11" fill="#0f172a">POST /courseware(+redraft)</text>
+
+      <!-- center -> backend subagents -->
+      <line x1="472" y1="329" x2="520" y2="329" stroke="#2563eb" stroke-width="1.8" marker-end="url(#arrowB)"/>
+      <line x1="472" y1="433" x2="520" y2="433" stroke="#2563eb" stroke-width="1.4" marker-end="url(#arrowB)"/>
+      <line x1="472" y1="483" x2="520" y2="600" stroke="#d97706" stroke-width="1.4" marker-end="url(#arrowA)"/>
+      <line x1="472" y1="525" x2="520" y2="640" stroke="#d97706" stroke-width="1.4" marker-end="url(#arrowA)"/>
+      <line x1="472" y1="567" x2="520" y2="680" stroke="#d97706" stroke-width="1.4" marker-end="url(#arrowA)"/>
+
+      <!-- ===== Backend panel ===== -->
+      <rect x="520" y="34" width="226" height="660" rx="12" fill="#ffffff" stroke="#e2e8f0"/>
+      <text x="633" y="58" text-anchor="middle" font-size="14" font-weight="700" fill="#0f172a">后端 AI 内核</text>
+
+      <text x="534" y="84" font-size="11.5" fill="#64748b">4 个 SubAgent（business）</text>
+      <g font-size="11">
+        <rect x="534" y="92" width="198" height="32" rx="8" fill="#ffffff" stroke="#cbd5e1"/>
+        <text x="542" y="112" fill="#0f172a">guide · 任务引导</text><text x="716" y="112" text-anchor="end" fill="#d97706">师 p20</text>
+
+        <rect x="534" y="130" width="198" height="32" rx="8" fill="#ffffff" stroke="#cbd5e1"/>
+        <text x="542" y="150" fill="#0f172a">query · 学情查询</text><text x="716" y="150" text-anchor="end" fill="#2563eb">双 p12</text>
+
+        <rect x="534" y="168" width="198" height="32" rx="8" fill="#ffffff" stroke="#cbd5e1"/>
+        <text x="542" y="188" fill="#0f172a">question · 出题</text><text x="716" y="188" text-anchor="end" fill="#d97706">师 p0</text>
+
+        <rect x="534" y="206" width="198" height="32" rx="8" fill="#ffffff" stroke="#cbd5e1"/>
+        <text x="542" y="226" fill="#0f172a">tutor · 伴学答疑</text><text x="716" y="226" text-anchor="end" fill="#2563eb">双 p-10</text>
+      </g>
+
+      <text x="534" y="262" font-size="11.5" fill="#64748b">分支路由器（不走对话）</text>
+      <g stroke="#d97706" stroke-width="1.4" fill="#fffbeb">
+        <rect x="534" y="270" width="198" height="30" rx="8"/>
+        <rect x="534" y="306" width="198" height="30" rx="8"/>
+        <rect x="534" y="342" width="198" height="30" rx="8"/>
+      </g>
+      <text x="542" y="289" font-size="10.5" fill="#0f172a">tasks/generate router</text>
+      <text x="542" y="325" font-size="10.5" fill="#0f172a">regenerate router</text>
+      <text x="542" y="361" font-size="10.5" fill="#0f172a">courseware router</text>
+
+      <text x="534" y="398" font-size="11.5" fill="#64748b">共享引擎（应唯一实现）</text>
+      <rect x="534" y="406" width="198" height="100" rx="9" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.4"/>
+      <text x="542" y="426" font-size="10.5" fill="#0f172a">• resolve_engine → provider</text>
+      <text x="542" y="444" font-size="10.5" fill="#0f172a">• TutorService</text>
+      <text x="542" y="462" font-size="10.5" fill="#0f172a">• generate_question 管线</text>
+      <text x="542" y="480" font-size="10.5" fill="#0f172a">• build_retriever (RAG)</text>
+      <text x="542" y="498" font-size="10.5" fill="#0f172a">• StudentSafety (仅学生)</text>
+
+      <text x="534" y="540" font-size="11.5" fill="#64748b">产物协议（应单一分派）</text>
+      <rect x="534" y="548" width="198" height="40" rx="9" fill="#eff6ff" stroke="#2563eb"/>
+      <text x="542" y="567" font-size="10.5" fill="#0f172a">DATA{type} 帧 →</text>
+      <text x="542" y="581" font-size="10.5" fill="#0f172a">AssistantCards 分派</text>
+
+      <rect x="534" y="600" width="198" height="48" rx="9" fill="#f8fafc" stroke="#cbd5e1"/>
+      <text x="542" y="619" font-size="10.5" fill="#475569">副作用：TutorLog（学生）</text>
+      <text x="542" y="635" font-size="10.5" fill="#475569">会话/消息落库</text>
+
+      <rect x="534" y="660" width="198" height="24" rx="6" fill="#fffbeb" stroke="#d97706"/>
+      <text x="633" y="676" text-anchor="middle" font-size="10" fill="#0f172a">课件起草 = 内容创作(authoring)</text>
+    </svg>
+    <div class="legend">
+      <span><i class="dot" style="background:#2563eb"></i>对话式 AI（已统一通道）</span>
+      <span><i class="dot" style="background:#d97706"></i>结构化/分支 AI 端点（待收口）</span>
+      <span><i class="dot" style="background:#16a34a"></i>应唯一实现的共享引擎</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>③ 你提到的三个「不统一」根因拆解</h2>
+    <table>
+      <thead><tr><th>感知的不统一</th><th>代码真相</th><th>是否缺陷</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><b>学生 vs 教师交互方式不同</b></td>
+          <td>入口形态不同：学生=首页 tab3「问AI老师」；教师=可拖动 FAB；讲课现场=页内 FAB。但<b>三者都打开同一个 <code>AssistantChatPage</code></b>，底层端点、Notifier、渲染完全一致。角色在<b>后端 JWT</b> 解析（<code>visible_businesses(role)</code>）。</td>
+          <td class="verdict v-no">不是</td>
+        </tr>
+        <tr>
+          <td><b>AI 问答</b></td>
+          <td>走 <code>/assistant/chat</code> 的 <code>tutor</code>(答疑) + <code>query</code>(学情) 两个 subagent。学生只能命中 tutor/query；教师还能命中 guide/question。</td>
+          <td class="verdict v-ok">已统一</td>
+        </tr>
+        <tr>
+          <td><b>AI 出题</b></td>
+          <td>实际有 <b>4 条传输通道</b>做同一件事：① <code>/assistant/chat</code> 的 question subagent（对话出题）② <code>req.quiz</code> 判断题闭环 ③ <code>POST /tasks/generate</code>（教师任务表单）④ <code>/tasks/…/regenerate-stream</code>（换一题）。它们都调用同一个 <code>generate_question</code> 管线，但<b>触发面分散</b>。</td>
+          <td class="verdict v-warn">传输分散</td>
+        </tr>
+        <tr>
+          <td><b>「讲课」</b></td>
+          <td>讲课现场没有独立 LLM 调用：课件演示页 FAB 把 <code>coursewareContext</code> 注入 → 仍走 <code>/assistant/chat</code> 的 <code>tutor</code> subagent。<b>课件话术本身的生成</b>另走 <code>POST /courseware</code>(draft) + <code>/redraft</code> 两条独立端点（内容创作，非对话）。</td>
+          <td class="verdict v-warn">讲解统一/起草独立</td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="note">关键不对称（刻意）：学生端无「历史会话」入口；<code>tutor</code> 功能只是 <code>GET /tutor/logs</code> 日志查看器，不调 LLM。这些是按 ADR-0048 / ADR-008 的有意设计，不是遗漏。</p>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h2>④ 已经收敛到一处 <span class="tag t-green">✓</span></h2>
+      <ul>
+        <li><b>对话通道唯一</b>：所有聊天形态 AI 都过 <code>/assistant/chat</code>。</li>
+        <li><b>前端单页面</b>：一个 <code>AssistantChatPage</code> + <code>assistantNotifierProvider</code> + <code>AiTextFold</code> 折叠器，师生/讲课/练习共用。</li>
+        <li><b>卡片协议统一</b>：所有 AI 产物都是 <code>DATA{type}</code> 帧，由 <code>assistant_cards.dart</code> 单分派器渲染（未知 kind 走降级卡不丢内容）。</li>
+        <li><b>引擎统一</b>：出题都调 <code>generate_question</code> 管线；答疑都调 <code>TutorService</code>。</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h2>⑤ 建议收口到一处 <span class="tag t-amber">→</span></h2>
+      <ul>
+        <li><b>出题引擎单实现</b>：把 ①对话出题 ②quiz闭环 ③tasks/generate ④regenerate 明确收敛为「<code>generate_question</code> 管线的 4 个触发面」，router 层只做装配，逻辑不重复。</li>
+        <li><b>打开助手单入口</b>：在壳层定义唯一 <code>openAssistant(context)</code>，消除学生 tab / 教师 FAB / 讲课 FAB 三处重复拼装 <code>AssistantChatPage</code> + <code>coursewareContext</code>。</li>
+        <li><b>课件起草归属清晰</b>：<code>/courseware</code> draft/redraft 属「内容创作」而非「助手对话」，保留独立但应在文档/类型上明确标注，避免被误认为是第 5 个对话通道。</li>
+        <li><b>不必强行合一</b>：师生入口形态差异是产品决策；结构化出题（任务表单/换题）是批量产出，与流式对话语义不同——保留独立传输但共享引擎即可。</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>⑥ 收敛后的理想心智模型</h2>
+    <p style="margin:0">把 AI 看成 <b>「一个对话入口 + 一个共享引擎 + N 个产品触发面」</b>：</p>
+    <p style="margin:8px 0 0">
+      <span class="pill">对话入口：/assistant/chat</span>
+      <span class="pill">页面：AssistantChatPage</span>
+      <span class="pill">折叠：AssistantNotifier + AiTextFold</span>
+      <span class="pill">引擎：generate_question / TutorService / rag</span>
+      <span class="pill">卡片：DATA{type} → AssistantCards</span>
+    </p>
+    <p class="note">触发面（学生 tab / 教师 FAB / 讲课 FAB / 课堂练习 / 推荐操作 / 判断题闭环 / 任务表单出题 / 换一题 / 课件起草）都只是「往上述单核里喂不同的 context 与意图」，不应各自再带一套 AI 逻辑。</p>
+  </div>
+</div>
+</body>
+</html>
