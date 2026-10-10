@@ -19,6 +19,7 @@
 ## 1. 前端分层（ADR-0036/0037）
 - AI 唯一入口 `assistantNotifierProvider`+`AssistantMessageList`；后端唯一端点 `POST /api/v1/assistant/chat`。助手路由优先级即功能（ADR-0054）：写意图 `guide`(20) 高于只读 `query`(12)。
 - 卡片动作受控枚举 `actions=[{label,target}]`（target 非 URL）；`ShellDestination.fromTarget` 解读，认不出即不动；新增 target 两端同改（`guide/agent.py`+`fromTarget`）。
+- ⚠️ 结构化动作键 = manifest `actions` **等值**匹配（ADR-0081）：`task_generate`/`quiz_generate`/`courseware_generate`/`courseware_hint`。⚠️ `task_question_regenerate` **现指整卷重生成**（单题换一题已删，`79b7eef`；键名历史遗留，唯一消费者 `_regenerate_events`）——别照字面读。
 - 单向 `main/ → features/* → shared/*`；`shared/` 不 import `features/`；各 feature 有 repository、不建 datasource。
 - ⚠️ R4 棘轮：`presentation/` 不得 import `*/data/`（`test/feature_boundaries_test.dart`）。要用 data 类型 → 搬 `domain/repositories/`，data/ 只留 `Impl`。
 - ⚠️ 非 push 路由页面禁裸 `Navigator.pop`（弹根栈=整个App→白屏）；走注入回调或 `maybePop`。
@@ -46,6 +47,7 @@
 - ⚠️ **禁止在 `test/` 里写截图装置**：`RenderRepaintBoundary.toImage()` 在无真实合成器的测试环境里永不完成，实测把整条 `flutter test` 从 ~46s 堵到 17min 不返回（且 `tail` 缓冲让你看不到进度）。要目检的结论一律改写成几何断言（`getSize`/widget 字段比对），先例 `test/workbench_charts_layout_test.dart`。
 - 网络层加接口（`NetworkService.getBytes` 那次）要同步 4 个测试替身：`assistant_api_client_test` / `list_archive_test` / `review_notifier_test` / `students_notifier_test`，漏一个整条 test 编译不过。
 - 测试里改 `debugDefaultTargetPlatformOverride` 在 tearDown 复位不及 → 别改平台；长按用 `startGesture`+`pump(kLongPressTimeout)`，点按把 `holdToTalk` 显式传进组件。
+- ⚠️ 静态护栏（扫源码那类 `test/*_test.dart`）**误报比漏报更坑**：漏报只少拦一次，误报会把正经代码钉死在红线上、逼后来者去改本来正确的代码。子串匹配一律要**词边界锚定**——`contains('BarChart(')` 被适配器自己的类名 `AppBarChart(`/`AppGroupedBarChart(`/`AppStackedBarChart(` 骗到，`analytics_charts_test` 冤枉 `workbench_analysis`/`workbench_glance` 很久（`2c7a320` 修）；判 import 还要**引号不敏感**（本仓未开 `prefer_single_quotes`，双引号导入合法）。
 
 ## 5. Git/后端/长列表
 - 平台目录不在版本控制 → 打补丁脚本（`frontend/scripts/patch_macos_network.py` 网络、`patch_voice_permissions.py` 语音 ADR-0063 §10），幂等+`--check`。macOS 沙盒麦克风需 entitlements `com.apple.security.device.audio-input`。常显 `Everything up-to-date` 却已成功 → 以 `git ls-remote origin main` 比对 HEAD。提交按逻辑批次拆、正文写「为什么」；`chore(memory):` 单独提交。
