@@ -132,7 +132,12 @@ class ReviewNotifier extends StateNotifier<ReviewState> {
         if (ev.eventType == AssistantEventType.error) {
           throw AppException(ev.message ?? '换一题失败，请稍后重试');
         }
-        if (ev.eventType == AssistantEventType.thinking) {
+        // 换一题现走统一路由，帧序列与首次出题同形：会多出路由 THINKING
+        // （「正在理解你的需求…」「已选择助手：X」）。它与 QuestionGenFold 同口径——
+        // 属编排阶段文案，不是模型出题思路，不累进推理区（否则面板会闪出路由话术）。
+        final isRouting =
+            ev.extra?['routing'] == true || ev.extra?['business'] != null;
+        if (ev.eventType == AssistantEventType.thinking && !isRouting) {
           live += ev.text ?? '';
           state = ReviewLoaded(cur.task, busyTqId: tqId, liveText: live);
         }
