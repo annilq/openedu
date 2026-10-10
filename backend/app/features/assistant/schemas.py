@@ -60,8 +60,9 @@ class AssistantChatReq(SQLModel):
     session_id: str | None = None
     model: str | None = None
     history: list[dict] | None = None
-    # ADR-0072：出题-判断-引导闭环的触发标记。为真时后端绕开常规 LLM 路由，
-    # 直接复用 question 管线出一道判断题并写入 pending_quiz，等待用户自然语言 yes/no 判定。
+    # ADR-0072：出题-判断-引导闭环的触发标记。为真时经**统一路由**（信号归一化产出动作
+    # ``quiz_generate``）落到出题助手，由运行时出一道判断题（拿得到检索 / 学科提示 / 溯源 /
+    # 工具信封），后端在题卡下发前剥离答案并写入 pending_quiz，等待用户自然语言 yes/no 判定。
     quiz: bool = Field(default=False)
     # ADR-0081 / T04：结构化动作。非空时经 IntentSignal 交给统一路由做「动作直配」
     # （等值匹配 manifest.actions，先于文本优先级），而非写死业务。出题类动作

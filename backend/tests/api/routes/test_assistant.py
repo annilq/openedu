@@ -144,10 +144,13 @@ def test_student_action_task_generate_routes_to_question(client):
 
 
 def test_teacher_only_action_is_explicitly_forbidden(client, monkeypatch):
-    """学生打教师专属动作：显式 ACTION_FORBIDDEN 错误，不静默回落成另一个业务的回答（T04 验收）。"""
+    """学生打教师专属动作：端点转**真 403**（不再是 200 + ACTION_FORBIDDEN 帧），
+    且不静默回落成另一个业务的回答（T04 验收 / FIX-2，spec 硬约束）。
+
+    端点先 ``await assistant_service.chat(...)`` 再包 ``StreamingResponse``，故动作不可见
+    在 ``chat`` 内抛出会在建流前被全局异常处理器转成 403 —— 不再是「HTTP 200 + 错误帧」。
+    """
     import app.features.assistant.service as _svc
-    from agent_core.protocol import done as _ae_done
-    from agent_core.protocol import error as _ae_error
     from agent_core.runtime import RouteDecision
 
     _ptoken, _student, ctoken = _setup(client, "as10_teacher", "as10_kid")
@@ -163,20 +166,20 @@ def test_teacher_only_action_is_explicitly_forbidden(client, monkeypatch):
                 extra={"reason": "action_not_visible", "action": "teacher_only_action"},
             )
 
-        async def run(self, *args, **kwargs):
-            yield _ae_error("unused")
-            yield _ae_done()
-
     monkeypatch.setattr(_svc, "get_runtime", lambda: _StubRuntime())
 
-    status, events = _stream(
-        client, ctoken, "随便说点什么", extra={"action": "teacher_only_action"}
+    r = client.post(
+        "/api/v1/assistant/chat",
+        headers=auth_headers(ctoken),
+        json={"message": "随便说点什么", "action": "teacher_only_action"},
     )
-    assert status == 200, events
-    errs = [e for e in events if e["eventType"] == "ERROR"]
-    assert errs, "动作不可见应产出 ERROR 帧而非回落"
-    assert errs[0].get("code") == "ACTION_FORBIDDEN"
-    assert "teacher_only_action" in errs[0].get("message", "")
+    assert r.status_code == 403, r.text
+    body = r.json()
+    assert body["code"] == "SYS_10002"  # ErrCode.FORBIDDEN → 403
+    assert body["status"] == 403
+    # 不得静默回落成另一个业务：响应是结构化错误体，**不是**任何 SubAgent 的回答流。
+    assert "当前角色无权执行动作" in body["message"]
+    assert "teacher_only_action" in body["message"]
 
 
 # ───────────────────────── 学情查询：端到端（ADR-0033 第 6 阶段） ─────────────────────────

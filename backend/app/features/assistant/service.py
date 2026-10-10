@@ -18,7 +18,7 @@ from dataclasses import replace
 from typing import Any
 from uuid import UUID, uuid4
 
-from agent_core import IntentSignal
+from agent_core import IntentSignal, classify
 from agent_core.ports import RuntimeDeps, TextDelta
 from agent_core.protocol import (
     EVENT_ASSISTANT_MESSAGE,
@@ -30,7 +30,6 @@ from agent_core.protocol import (
     assistant_message,
     data_event,
     done,
-    error,
     run_started,
 )
 from agent_core.runtime import AgentRuntime
@@ -38,7 +37,7 @@ from agent_core.runtime_singleton import get_runtime
 from agent_core.subagent import SubAgentContext
 from app.ai.engine import resolve_engine
 from app.ai.subagents.tutor.agent import detect_subject
-from app.core.errors import AppErrorException
+from app.core.errors import AppErrorException, ErrCode
 from app.core.guard import require_owned
 from app.db.models import Conversation, Message, get_datetime_utc
 from app.db.models.material import KnowledgePoint
@@ -390,8 +389,12 @@ _ACTION_QUIZ_JUDGE = "quiz_judge"
 _ACTION_QUIZ_GENERATE = "quiz_generate"
 
 
-def _build_intent_signal(
-    req: AssistantChatReq, conversation: Conversation | None
+async def _build_intent_signal(
+    req: AssistantChatReq,
+    conversation: Conversation | None,
+    *,
+    rt: AgentRuntime,
+    role: str,
 ) -> IntentSignal:
     """把一次请求归一成结构化意图信号（T06 / T07）。
 
@@ -401,6 +404,12 @@ def _build_intent_signal(
 
     判断题出题（``req.quiz``）必须排在课件方向之前：它一次请求同时带 ``courseware``
     （知识点上下文）与 ``quiz``，若被课件方向接走会跑到课堂大屏而非出题。
+
+    课件方向**不是「带 courseware 就定向」**：课件上下文只提供「答错求提示」与「真的
+    在求题」两个方向。后者必须先用**同一个**文本分类器（``agent_core.classify``，路由的
+    单一事实源）确认文本意图确为 ``question``——否则课件里问「这道题为什么选 B」（本应
+    伴学答疑）会被 courseware 标记劫持成任务引导。非 question 时 ``action=None``，交回
+    常规文本路由。
     """
     text = (req.message or "").strip()
     if conversation is not None and conversation.pending_quiz is not None:
@@ -410,10 +419,21 @@ def _build_intent_signal(
         # 判断题闭环·出题：走出题助手（同源拿到检索/学科提示/溯源/工具信封）。
         action = _ACTION_QUIZ_GENERATE
     elif req.courseware is not None:
-        # 课件练习方向：答错求提示 → 伴学答疑；否则按课件出题 → 任务引导（出题到页面）。
-        action = (
-            _ACTION_COURSEWARE_HINT if "提示" in text else _ACTION_COURSEWARE_GENERATE
-        )
+        # 课件练习方向：答错求提示 → 伴学答疑；文本确为求题 → 任务引导（出题到页面）；
+        # 其余（如求讲解）→ action=None，照常走文本路由落到 tutor。
+        if "提示" in text:
+            action = _ACTION_COURSEWARE_HINT
+        else:
+            text_business = await classify(
+                text,
+                available=rt.visible_businesses(role),
+                manifests=rt.manifests,
+            )
+            action = (
+                _ACTION_COURSEWARE_GENERATE
+                if text_business == "question"
+                else None
+            )
     else:
         action = req.action
     return IntentSignal(text=text, action=action)
@@ -490,18 +510,18 @@ async def chat(
 
     # 预路由：动作键在信号归一化阶段产出（课件练习方向 / 待判定态方向 / 客户端结构化动作），
     # 归属由 SubAgent 清单声明，``decide`` 一次裁决即为最终结果，不再「路由算完再改判业务」。
-    # 动作命中但当前角色不可见 → 显式 action_not_visible（见下方转错误）。
-    signal = _build_intent_signal(req, conversation)
+    # 动作命中但当前角色不可见 → 显式 action_not_visible，见下方转 403。
+    signal = await _build_intent_signal(req, conversation, rt=rt, role=role)
     decision = await rt.decide(signal, role=role, deps=deps)
-    # 动作不可见（如学生打教师专属动作）：显式拒绝，**不要**静默回落成另一个业务的答非所问。
+    # 动作不可见（如学生打教师专属动作）：**显式 403**（spec 硬约束），**不要**静默回落成
+    # 另一个业务的答非所问，也不要退化成 HTTP 200 + 错误帧。``chat`` 是普通 async 函数
+    # （返回迭代器），端点先 ``await`` 它再包 ``StreamingResponse``，故此处抛出会在建流前
+    # 被全局异常处理器转成真 403。
     if decision.extra.get("reason") == "action_not_visible":
-        forbidden = decision.extra.get("action")
-
-        async def _action_forbidden() -> AsyncIterator[str]:
-            yield error(f"当前角色无权执行动作「{forbidden}」。", code="ACTION_FORBIDDEN")
-            yield done()
-
-        return _stream_sse(_action_forbidden())
+        raise AppErrorException(
+            ErrCode.FORBIDDEN,
+            f"当前角色无权执行动作「{decision.extra.get('action')}」。",
+        )
 
     # ── 会话持久化（复用 Conversation/Message，ADR-0026 多轮） ──
     # 续接已有会话并载入历史；否则新建（kind 取路由决策）。
