@@ -4,8 +4,9 @@
 
 - **单一状态源**：娃娃整页与家长浮层同读 `assistantNotifierProvider`，不再有第二套对话状态（`frontend/lib/features/assistant/presentation/screens/assistant_chat_page.dart:18`、`frontend/lib/features/assistant/presentation/widgets/floating_assistant.dart:96`）。收敛前 `AssistantNotifier` 与 `TutorNotifier` 各持一个 `_currentSessionId`，同一个娃娃在两个入口得到两条互不可见的会话。
 - **单一渲染**：气泡 / 题卡（DATA 帧）/ 安全标记 / 复制按钮统一在 `AssistantMessageList`（`frontend/lib/features/assistant/presentation/widgets/assistant_message_list.dart:17`），两个形态共用。收敛前整页只渲染 `fold.text`，`fold.cards` 被静默丢弃——娃娃经该页提问「我的错题」时题卡不显示。
-- **角色决定形态**：家长端挂悬浮球，娃娃端不挂（AI 只从页签进），每个角色恰好一个入口（`frontend/lib/main/app.dart:118`）。
-- **娃娃端落点**：导航页签改挂 `AssistantChatPage`，导航名与页标题统一为「问 AI 老师」（`frontend/lib/features/home/presentation/screens/home_screen.dart:251`）。
+- **角色决定形态**：教师端与学生端**都挂右下角悬浮球**（`FloatingAssistant`），每个角色恰好一个入口（`frontend/lib/main/app.dart:118`）；两端打开的是同一个 `AssistantChatPage`，仅以 `isTeacher` 切换标题 / 空态口径。
+  > 后续修订：娃娃端原本不挂悬浮球（AI 只从页签进），现改为与教师端一致、统一为右下角浮球，学生端「问 AI 老师」页签随之移除（双端交互统一）。
+- **娃娃端落点**：不再单列「问 AI 老师」页签——学生端 AI 入口统一为右下角浮球（`frontend/lib/features/assistant/presentation/widgets/floating_assistant.dart`）。
 - **清理死 UI**：旧页面的学科 / 年级 / 知识点三个控件不进请求体——`TutorAskReq.subject/grade/knowledgePoint` 从未被发往后端（后端 `subject` 由 `detect_subject(message)` 重算、`grade` 取 JWT 的 `caller.user.grade`、`knowledge_point` 恒 `""`；`backend/app/features/assistant/service.py:93,177,279`）。随本次删除 `tutor_notifier.dart`、`tutor_chat_screen.dart`、`tutor_message_list.dart`、`tutor_chat_input_bar.dart`、`tutor_welcome_hint.dart` 及 `TutorAskReq`。
 - **`features/tutor` 的保留边界**：只留家长侧日志 `GET /tutor/logs`（`frontend/lib/features/tutor/presentation/providers/tutor_logs_notifier.dart:12`、`backend/app/features/tutor/router.py:39`）。它非 AI 生成端点，不并入 assistant 入口；「AI 答疑记录」页面据它渲染。
 - **权限边界未变**：可见 SubAgent 仍由后端单点决定——`AgentRuntime.visible_businesses(role)`（`backend/agent_core/runtime.py:63`）。前端收敛不改任何鉴权/配额/安全语义。

@@ -12,9 +12,10 @@
   一并删除。整页自带返回，浮球**不在整页上重复出现**——它固定在右下角，正好压住整页的输入栏
   （ADR-0036 的「每个角色恰好一个入口」不受影响：入口仍是这一个浮球）。
 
-- **双端只有一个助手页面。** 娃娃端页签与家长端浮球打开的是同一个 `AssistantChatPage`：
-  同一 `assistantNotifierProvider`、同一 `AssistantMessageList`，只用 `isParent` 切换**标题**
-  （「问 AI 老师」/「AI 学习助手」）与**空态引导**口径。
+- **双端只有一个助手页面，且双端都走浮球。** 教师端与学生端的右下角悬浮球（`FloatingAssistant`）
+  打开的是同一个 `AssistantChatPage`：同一 `assistantNotifierProvider`、同一
+  `AssistantMessageList`，只用 `isTeacher` 切换**标题**（学生「问 AI 老师」/ 教师
+  「AI 学习助手」）与**空态引导**口径。学生端已移除独立「问 AI 老师」页签。
   - 文案必须分角色：家长能出题 / 查任务 / 查学情，娃娃端只暴露伴学答疑——这是后端
     `AgentRuntime.visible_businesses(role)` 说了算的，前端不能把「只讲学习内容，其他问题不回答哦」
     照搬给家长，也不能对娃娃承诺「可以出题」。

@@ -85,9 +85,11 @@ Enter 点不动，而 `flutter analyze` 照不出来。
 
 ## 5. 助手页面形态（ADR-0047 / ADR-0048）
 
-- **AI 助手是整页，不是浮层**（ADR-0047）：家长端右下角浮球 `Navigator.push` 打开
-  `AssistantChatPage`（`isParent: true`），娃娃端是「问 AI 老师」页签——同一个页面、同一份会话。
-  push 的整页**不在壳的宽度兜底范围内**，页面自己套 `contentWide`。
+- **AI 助手是整页，不是浮层**（ADR-0047）：教师端与学生端**统一**走右下角浮球
+  `FloatingAssistant`（`Navigator.push` 打开 `AssistantChatPage`，`isTeacher` 按角色切换
+  标题 / 空态口径），两端是同一个页面、同一份会话。学生端不再有独立「问 AI 老师」页签
+  （ADR-0036：每角色恰好一个 AI 入口）。push 的整页**不在壳的宽度兜底范围内**，页面自己套
+  `contentWide`。
 - **会话历史是页内切模式，不是三层栈**（ADR-0048）：家长端助手页在**页内**切
   `chat` / `history` / `reading` 三态（顶栏就是模式切换器），不新增路由。列表分两段——
   「我的对话」点开**恢复续接**、「孩子的对话」点开**只读回放**：后者不是 UX 取舍，是后端语义
