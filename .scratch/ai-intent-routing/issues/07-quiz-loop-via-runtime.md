@@ -5,7 +5,7 @@
 （不是回到固定模板话），题面在作答前仍不带答案。前端折叠逻辑同步多忽略运行时新增的几类帧。
 
 **Blocked by:** T06  
-**Status:** ready-for-agent
+**Status:** done（commit `b58b33e`，已并入 `ai-intent-routing`；新增动作键 `quiz_generate`→question，与课件键互不拍平）
 
 ## 决策锚点
 

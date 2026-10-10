@@ -8,7 +8,7 @@
 助手里「出题」的归属是**出题助手**（真的出卡）。迁移时**不得把两者拍平成同一个动作键**。
 
 **Blocked by:** T04
-**Status:** ready-for-agent
+**Status:** done（commit `1973c19`，已并入 `ai-intent-routing`；新增动作键 `courseware_generate`→guide、`courseware_hint`→tutor、`quiz_judge`→tutor）
 
 ## 决策锚点
 

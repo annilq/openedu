@@ -8,7 +8,7 @@
 **不因改走统一路由而变成 403 或静默改写**。
 
 **Blocked by:** T04
-**Status:** ready-for-agent
+**Status:** done（commit `7c80844`，已并入 `ai-intent-routing`）
 
 ## 决策锚点
 

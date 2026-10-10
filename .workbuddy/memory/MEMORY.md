@@ -6,6 +6,7 @@
 - Flutter SDK `/Users/annilq/Documents/fulttersdk/flutter`（不在 PATH）。`flutter test` **必先关代理**（`no_proxy="127.0.0.1,localhost,::1" NO_PROXY=同`，否则 `Invalid WebSocket upgrade request`），全量~16s。`flutter analyze` 退出码常非0 → 认 `No issues found!`。
 - 禁 `dart format`（本机 tall style 不同 → 噪声 diff）；只靠 analyze。新增原生插件须完整重跑 App（Hot Restart 不补原生注册 → pigeon `channel-error`）；游离 `flutter_tester` 占 `build/test_cache` 锁 → kill。
 - 多会话并行改共享文件：先看 `git status`+mtime，定点 Edit，写完回读（本文件被并发整写覆盖过两次）。
+- ⚠️ **并行 worktree 实测配方**（implement-spec 多子代理）：`git worktree add /tmp/oedu-tXX -b ticket/XX <base>` + `ln -s <主仓>/backend/.venv` 与 `.env`；**跑 pytest 必须 `PYTHONPATH=/private/tmp/oedu-tXX/backend`**——venv 的 `_editable_impl_app.pth` 把 `app` 硬编码指向**主检出**，不带则 import 主检出旧码、得假结果（自检 `… python -c "import app;print(app.__file__)"` 应打印 worktree 路径）。配 `mv .env .env.hidden`+`--basetemp=/tmp/<新目录>`。前端 worktree 可直接 `flutter test`（不需额外 pub get）。
 - 本机 `grep` BSD 版不支持 `a\|b` → `grep -E`；`grep -c` 得0≠没有，用 Grep 工具复核。
 - ⚠️ 本机 `/bin/bash`=**3.2**：`$VAR` 紧跟中文字符会吞多字节首字节 → `unbound variable`，变量引用一律写 `${VAR}`；脚本被 zsh 调用需 `exec bash "$0" "$@"`（zsh 不做未加引号展开）。
 - ⚠️ 本机实测（macOS 26）：`screencapture -v` **拒** `-i`（改 `-J video`）；`lsappinfo […] -only WindowBounds` **恒 NULL**（已废弃）；取窗口改用 `swift -e` + CGWindowList → `screencapture -v -l <windowid>`。`flutter run -d macos` 产物名随工程而变（本仓 = `kids_learn`，非 `Runner`）。
