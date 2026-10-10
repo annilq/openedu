@@ -2,7 +2,7 @@ import '../models/courseware.dart';
 import '../models/courseware_asset.dart';
 import '../models/courseware_redraft_diff.dart';
 import '../models/courseware_section.dart';
-import '../../../home/domain/repositories/material_repository.dart';
+import '../../../../shared/domain/models/knowledge_point_option.dart';
 
 /// 课件仓库（ADR-0067）：素材 + 课件 + 环节序列。
 ///

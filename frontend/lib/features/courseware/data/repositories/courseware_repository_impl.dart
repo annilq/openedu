@@ -5,7 +5,7 @@ import '../../domain/models/courseware_asset.dart';
 import '../../domain/models/courseware_redraft_diff.dart';
 import '../../domain/models/courseware_section.dart';
 import '../../domain/repositories/courseware_repository.dart';
-import '../../../home/domain/repositories/material_repository.dart';
+import '../../../../shared/domain/models/knowledge_point_option.dart';
 import '../../../../shared/data/remote/network_service.dart';
 
 /// 课件仓库实现：端点不包外层（[NetworkService] 返回 FastAPI 原响应体）。

@@ -8,7 +8,7 @@ import '../../../../shared/widgets/app_buttons.dart';
 import '../../../../shared/widgets/app_inputs.dart';
 import '../../../../shared/widgets/app_loading.dart';
 import '../../../../shared/widgets/app_toast.dart';
-import '../../../home/domain/repositories/material_repository.dart';
+import '../../../../shared/domain/models/knowledge_point_option.dart';
 import '../../domain/models/courseware.dart';
 import '../../domain/repositories/courseware_repository.dart';
 import '../../providers/courseware_provider.dart';

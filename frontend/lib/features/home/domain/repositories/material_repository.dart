@@ -9,45 +9,14 @@
 /// 这里只暴露表单需要的最小面，避免 home 反向依赖一个还没落地的 feature。
 library;
 
-/// 知识点选择器条目（ADR-0066）：一律来自已上传的教材，所以**必有 id**。
-class KnowledgePointOption {
-  final String? id;
-  final String name;
+/// `KnowledgePointOption` 已下沉到 `shared/domain/models/`（跨 feature 的业务契约：
+/// 课件 feature 也要用，留在 home 里会让 courseware 横向 import home，违反 R2）。
+/// 这里**只做转出**，保持历史 import 路径可用；新代码请直接引 shared 那份。
+///
+/// `export` 不会让名字在本文件内可见（只作用于 import 本库的人），故同时 `import`。
+import '../../../../shared/domain/models/knowledge_point_option.dart';
 
-  /// pending = 待审（可出题可检索、不计掌握度）；curated = 已转正。
-  final String status;
-
-  /// emerged = 教材涌现（唯一的来源口径）。
-  final String source;
-
-  /// 默认交互式讲解模板（ADR-0061）：[{kind, inputs, controls, ...}]；null = 暂未配置。
-  final List<Map<String, dynamic>>? scenes;
-
-  /// 所属学期（ADR-0061 发布任务对接资料库）：'' = 整学年/未分学期；'上学期' / '下学期'。
-  /// 「不限学期」查询会并集多个学期，前端据此给知识点加学期后缀标注。
-  final String semester;
-
-  const KnowledgePointOption({
-    this.id,
-    required this.name,
-    this.status = 'curated',
-    this.source = 'skeleton',
-    this.scenes,
-    this.semester = '',
-  });
-
-  factory KnowledgePointOption.fromJson(Map<String, dynamic> json) =>
-      KnowledgePointOption(
-        id: json['id'] as String?,
-        name: json['name'] as String? ?? '',
-        status: json['status'] as String? ?? 'curated',
-        source: json['source'] as String? ?? 'skeleton',
-        scenes: (json['scenes'] as List?)
-            ?.map((e) => Map<String, dynamic>.from(e as Map))
-            .toList(),
-        semester: json['semester'] as String? ?? '',
-      );
-}
+export '../../../../shared/domain/models/knowledge_point_option.dart';
 
 /// 知识点目录响应：条目 + **空目录的原因**。
 ///
