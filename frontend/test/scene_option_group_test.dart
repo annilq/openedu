@@ -2,9 +2,9 @@
 //
 // 守三件事：
 // 1. spec 带 optionGroup 时**不再**平铺 N 个场景（§O 旧做法），而是渲染图形画廊；
-// 2. 点一个图形弹 ReflectionSceneDialog，框里是**该图形自己的**完整场景
+// 2. 点一个图形弹 ReflectionSceneDialog，框里是**该条目自己的**完整场景
 //    （拖 A 的轴不影响 B，每次只演示一个）；
-// 3. 每个场景用**该图形自己的**默认轴，不用模板的（否则箭头停在竖轴、一开始就不重合）。
+// 3. 轴初值取 kind 外壳的（ADR-0083 决策 6），不按图形走——图库不存 axis 属性。
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -15,10 +15,11 @@ import 'package:kids_learn/shared/widgets/app_slider.dart';
 import 'package:kids_learn/shared/widgets/scene_interpreter/reflection_figure_gallery.dart';
 import 'package:kids_learn/shared/widgets/scene_interpreter/reflection_scene.dart';
 import 'package:kids_learn/shared/widgets/scene_interpreter/scene_interpreter.dart';
+import 'package:kids_learn/shared/widgets/scene_interpreter/scene_shells.dart';
 
 Map<String, dynamic> _specWithGroup() => {
       'kind': 'reflection',
-      // 模板默认：房子 + 竖轴（教师配的默认值）
+      // 模板默认：房子 + 竖轴（kind 外壳的初值）
       'inputs': [
         {'key': 'figure', 'value': 'house'},
         {'key': 'axisAngle', 'value': 90.0},
@@ -33,7 +34,6 @@ Map<String, dynamic> _specWithGroup() => {
           {
             'label': 'A',
             'caption': '房子',
-            'figureKey': 'house',
             'points': [
               [0.30, 0.70],
               [0.70, 0.70],
@@ -41,12 +41,17 @@ Map<String, dynamic> _specWithGroup() => {
               [0.50, 0.25],
               [0.30, 0.45],
             ],
-            'defaultAxisAngle': 90.0,
+            'edges': [
+              [0, 1],
+              [1, 2],
+              [2, 3],
+              [3, 4],
+              [4, 0],
+            ],
           },
           {
             'label': 'B',
             'caption': '箭头',
-            'figureKey': 'arrow',
             'points': [
               [0.20, 0.42],
               [0.62, 0.42],
@@ -56,8 +61,15 @@ Map<String, dynamic> _specWithGroup() => {
               [0.62, 0.58],
               [0.20, 0.58],
             ],
-            // 横向图形 → 0°（关键：不能沿用模板的 90°）
-            'defaultAxisAngle': 0.0,
+            'edges': [
+              [0, 1],
+              [1, 2],
+              [2, 3],
+              [3, 4],
+              [4, 5],
+              [5, 6],
+              [6, 0],
+            ],
           },
         ],
       },
@@ -100,7 +112,7 @@ void main() {
     expect(find.byType(ReflectionSceneWidget), findsNothing);
   });
 
-  testWidgets('点选项 A（房子）打开弹窗，场景用房子默认轴 90°', (tester) async {
+  testWidgets('点选项 A（房子）打开弹窗，场景轴初值 = kind 外壳的 90°', (tester) async {
     await _pumpScene(tester, _specWithGroup());
 
     await tester.tap(_galleryCard('房子'));
@@ -115,12 +127,11 @@ void main() {
           ),
         )
         .data;
-    // 房子默认竖轴 90°
     expect(data.figureLabel, '房子');
-    expect(data.axisAngle, 90.0);
+    expect(data.axisAngle, shellFor('reflection').axisAngle);
   });
 
-  testWidgets('点选项 B（箭头）打开弹窗，场景用箭头默认轴 0°（不被模板 90° 覆盖）',
+  testWidgets('点选项 B（箭头）打开弹窗，轴初值同样来自 kind 外壳（图形不带 axis）',
       (tester) async {
     await _pumpScene(tester, _specWithGroup());
 
@@ -135,12 +146,12 @@ void main() {
           ),
         )
         .data;
-    // 横向箭头必须回到它自己的 0°，而不是模板的 90°
+    // ADR-0083 决策 2/6：图库与 SceneSpec 都不存 axis，初值统一归 kind 外壳。
     expect(data.figureLabel, '箭头');
-    expect(data.axisAngle, 0.0);
+    expect(data.axisAngle, shellFor('reflection').axisAngle);
   });
 
-  testWidgets('点选项 A 打开的弹窗里，顶点是该图形自己的（房子 5 点）', (tester) async {
+  testWidgets('点选项 A 打开的弹窗里，顶点是该条目自己的（房子 5 点）', (tester) async {
     await _pumpScene(tester, _specWithGroup());
 
     await tester.tap(_galleryCard('房子'));
@@ -155,6 +166,8 @@ void main() {
         )
         .data;
     expect(data.points.length, 5);
+    // 边也来自条目（不是默认闭合）——条目显式给了 edges 就必须被采信。
+    expect(data.edges, hasLength(5));
   });
 
   testWidgets('选项标号与图形名都显示在画廊里（让学生知道在试哪个）', (tester) async {

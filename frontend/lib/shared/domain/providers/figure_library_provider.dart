@@ -16,7 +16,7 @@ import 'core_providers.dart';
 /// - **不落盘**：进程退出即失，不写任何本地缓存（决策 5/6：去掉本地缓存）。
 ///
 /// 为什么选址 `shared`：图库是**跨 feature** 的共享数据（home 的画板 / 知识点编辑器、
-/// 课件的挑图形都用它），与 [kFigureShapes] 同为 scene 域的共享资产。若挂在某个
+/// 课件的挑图形都用它），是 scene 域的共享资产。若挂在某个
 /// feature 上，另一个 feature 引用它就成横向依赖（R2）。
 final figureLibraryProvider = FutureProvider<List<FigureShape>>((ref) async {
   final net = ref.watch(networkServiceProvider);

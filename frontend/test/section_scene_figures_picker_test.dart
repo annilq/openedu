@@ -32,9 +32,11 @@ import 'package:kids_learn/features/courseware/domain/repositories/courseware_re
 import 'package:kids_learn/features/home/domain/repositories/material_repository.dart';
 import 'package:kids_learn/features/courseware/presentation/pages/courseware_editor_page.dart';
 import 'package:kids_learn/features/courseware/providers/courseware_provider.dart';
-import 'package:kids_learn/shared/domain/figures.dart';
+import 'package:kids_learn/shared/domain/providers/figure_library_provider.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
 import 'package:kids_learn/shared/widgets/app_actions.dart';
+
+import 'support/figure_fixtures.dart';
 
 /// 知识点上的一份轴对称讲解模板（编辑器「关联知识点场景」拉回来的就是它）。
 Map<String, dynamic> _reflectionSpec() => <String, dynamic>{
@@ -145,7 +147,11 @@ Future<void> _pumpEditor(WidgetTester tester, {required _FakeRepo repo}) async {
   addTearDown(() => tester.binding.setSurfaceSize(null));
   await tester.pumpWidget(
     ProviderScope(
-      overrides: [coursewareRepositoryProvider.overrideWithValue(repo)],
+      overrides: [
+        coursewareRepositoryProvider.overrideWithValue(repo),
+        // 挑图形的清单来自图库、打开时按需拉取（ADR-0083 决策 7）：测试用夹具顶掉取数。
+        figureLibraryProvider.overrideWith((ref) async => kTestLibrary),
+      ],
       child: ShadApp.custom(
         theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
         appBuilder: (context) => CupertinoApp(
@@ -219,11 +225,14 @@ Map<String, dynamic> _savedGroup(_FakeRepo repo) {
   return scene['optionGroup'] as Map<String, dynamic>;
 }
 
-/// 条目里的图形 key 序列——顺序就是教学编排意图。
-List<String> _keysOf(Map<String, dynamic> group) =>
+/// 条目里的图形名序列——顺序就是教学编排意图。
+///
+/// 条目**不带图库 key**（ADR-0083 决策 6：spec 内联几何、不引用 key），
+/// 所以用 caption（图形中文名）当身份看顺序。
+List<String> _captionsOf(Map<String, dynamic> group) =>
     (group['items'] as List<dynamic>)
         .cast<Map<String, dynamic>>()
-        .map((e) => e['figureKey'] as String)
+        .map((e) => e['caption'] as String)
         .toList();
 
 void main() {
@@ -240,7 +249,7 @@ void main() {
 
     final group = _savedGroup(repo);
     expect(group['curated'], isTrue);
-    expect(_keysOf(group), <String>['square', 'house']);
+    expect(_captionsOf(group), <String>['正方形', '房子']);
 
     // 重开编辑器（保存后页面已换成新环节），回读应一致。
     await tester.tap(find.text('动手画对称图形'));
@@ -266,7 +275,7 @@ void main() {
     expect(find.text('2. 正方形'), findsOneWidget);
 
     await _save(tester, repo);
-    expect(_keysOf(_savedGroup(repo)), <String>['house', 'square']);
+    expect(_captionsOf(_savedGroup(repo)), <String>['房子', '正方形']);
     expect(tester.takeException(), isNull);
   });
 
@@ -324,7 +333,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('points 已展开（不是只有 key），且与图形库顶点一致', (tester) async {
+  testWidgets('条目只写几何（points + edges），与图形库顶点一致', (tester) async {
     final repo = _FakeRepo(_coursewareWith([_section(_reflectionSpec())]));
     await _openDialog(tester, repo);
 
@@ -335,15 +344,14 @@ void main() {
     final items = (_savedGroup(repo)['items'] as List<dynamic>)
         .cast<Map<String, dynamic>>();
     expect(items.length, 2);
-    for (var i = 0; i < items.length; i++) {
-      final item = items[i];
-      expect(item['label'], '');
-      expect(item['caption'], isNotNull);
-      final key = item['figureKey'] as String;
-      // 图形中文名 == 图形库里那一个的 label（渲染层按 caption 命中图形）。
-      final shape = kFigureShapes.firstWhere((f) => f.key == key);
+    // 条目形状 == 后端 `extract_option_group` 的产物：只有 label/caption/points/edges。
+    // **没有** figureKey、**没有**任何 axis 字段（ADR-0083 决策 2/6）。
+    const allowed = {'label', 'caption', 'points', 'edges'};
+    for (final item in items) {
+      expect(item.keys.toSet(), allowed,
+          reason: '条目只该带几何：多出来的键要么是对图库的引用、要么是 axis 残留');
+      final shape = kTestLibrary.firstWhere((f) => f.label == item['caption']);
       expect(item['caption'], shape.label);
-      expect(item['defaultAxisAngle'], shape.defaultAxisAngle);
 
       final points = item['points'];
       expect(points, isA<List>(), reason: 'points 被写成了 ${points.runtimeType}');
@@ -355,6 +363,8 @@ void main() {
         expect(vertex[0], closeTo(shape.vertices[v].x, 1e-9));
         expect(vertex[1], closeTo(shape.vertices[v].y, 1e-9));
       }
+      // 边按顶点顺序闭合（后端 `closedEdges` 口径）。
+      expect(item['edges'], hasLength(shape.vertices.length));
     }
     expect(tester.takeException(), isNull);
   });
@@ -375,7 +385,7 @@ void main() {
     expect(jsonEncode(repo.kpScenes), before,
         reason: '知识点上的场景被回写了（ADR-0073：只写本环节的副本）');
     // 本环节确实写上了——否则这条断言会因为「什么都没做」而假通过。
-    expect(_keysOf(_savedGroup(repo)), <String>['square', 'house']);
+    expect(_captionsOf(_savedGroup(repo)), <String>['正方形', '房子']);
     expect(tester.takeException(), isNull);
   });
 

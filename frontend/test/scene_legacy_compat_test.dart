@@ -160,20 +160,24 @@ void main() {
   });
 
   group('几何回退链 / house 仅极端兜底', () {
-    test('只有 figure key（无内联顶点）→ 用该预设顶点', () {
+    test('只有 figure key（无内联顶点）→ 回退 house（不再按 key 回查图库）', () {
       final data = ReflectionSceneData.fromSpec(
         _legacySpec(points: const [], figure: 'house'),
       );
-      final house = figureByKey('house');
-      expect(data.points.length, house.vertices.length);
-      expect(data.points.first, Offset(house.vertices.first.x, house.vertices.first.y));
+      // ADR-0083 决策 7：运行时零图库依赖 → `figure` 引用键不再被解读，
+      // 没有内联几何就统一兜到 kFallbackFigure。
+      expect(data.points.length, kFallbackFigure.vertices.length);
+      expect(
+        data.points.first,
+        Offset(kFallbackFigure.vertices.first.x, kFallbackFigure.vertices.first.y),
+      );
     });
 
-    test('figure key 对不上图库、又无顶点 → 回退 house（极端兜底）', () {
+    test('figure key 对不上图库、又无顶点 → 同样回退 house（极端兜底）', () {
       final data = ReflectionSceneData.fromSpec(
         _legacySpec(points: const [], figure: '___gone___'),
       );
-      expect(data.points.length, figureByKey('house').vertices.length);
+      expect(data.points.length, kFallbackFigure.vertices.length);
     });
 
     test('有内联顶点时绝不用 house（几何取自 spec）', () {

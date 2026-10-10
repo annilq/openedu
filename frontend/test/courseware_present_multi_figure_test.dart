@@ -6,10 +6,10 @@
 // 看到的那一屏。这条链路上一行业务代码都没改——「零改造」本身就是本票的断言。
 //
 // 守五件事：
-// 1. 三态分派：无图形组 → 单场景；curated → 子集网格；有组无 curated → 整库网格；
-// 2. 子集网格的**顺序 == 教师编排顺序**（刻意用逆库序，被重排就红）；
+// 1. 三态分派：无图形组 → 单场景；有图形组 → 条目那一组卡片（顺序 == 编排顺序）；
+// 2. 卡片顺序**严格等于**条目顺序（刻意用非库序，被重排就红）；
 // 3. 只读卡带 play 角标，且**没有任何「是否轴对称」的判定标记**（§2.5 只画不判）；
-// 4. 点任意一张 → 弹窗里能旋转 / 平移对称轴，初始轴取**图形自带**默认轴（§2.6）；
+// 4. 点任意一张 → 弹窗里能旋转 / 平移对称轴，轴初值取 kind 外壳（ADR-0083 决策 6）；
 // 5. 已有的内容型演示课件（单图、旧 payload 结构）仍渲染单场景，不崩、不变成网格。
 //
 // 挂载纪律：整树**不套 Material**（根是 ShadApp + CupertinoApp，本仓无 Material
@@ -32,36 +32,38 @@ import 'package:kids_learn/shared/widgets/app_slider.dart';
 import 'package:kids_learn/shared/widgets/scene_interpreter/reflection_figure_gallery.dart';
 import 'package:kids_learn/shared/widgets/scene_interpreter/reflection_scene.dart';
 import 'package:kids_learn/shared/widgets/scene_interpreter/reflection_scene_data.dart';
+import 'package:kids_learn/shared/widgets/scene_interpreter/scene_shells.dart';
 
-/// 课件语境的条目（形状与后端 `extract_option_group` 一致）。
+import 'support/figure_fixtures.dart';
+
+/// 课件语境的条目（形状与后端 `extract_option_group` 一致：只有几何，无 key、无 axis）。
 Map<String, dynamic> _item(FigureShape f, {String label = ''}) => {
       'label': label,
       'caption': f.label,
-      'figureKey': f.key,
       // 保存时展开写入（红线 2）：渲染层不回查图形库，断网也能摆出来。
       'points': [
         for (final v in f.vertices) <double>[v.x, v.y],
       ],
-      'defaultAxisAngle': f.defaultAxisAngle,
+      'edges': closedEdges(f.vertices.length),
     };
 
-/// 教师编排好的一组：**逆库序**（正方形 4 → 箭头 2 → 房子 0）。
+/// 教师编排好的一组：**非库序**（正方形 → 箭头 → 房子）。
 ///
-/// 库序正序的子集在「被重排」与「未被重排」两种实现下渲染结果一样，断言没有牙齿。
+/// 按库序排的子集在「被重排」与「未被重排」两种实现下渲染结果一样，断言没有牙齿。
 Map<String, dynamic> _curatedGroup() => {
       'curated': true,
       'items': [
-        _item(kFigureShapes[4]),
-        _item(kFigureShapes[2]),
-        _item(kFigureShapes[0]),
+        _item(kSquareFixture),
+        _item(kArrowFixture),
+        _item(kHouseFixture),
       ],
     };
 
-/// 题库语境的图形组：有条目但**未声明** curated（缺省 = 整库探索）。
+/// 题库语境的图形组：有条目但**未声明** curated（差别只在「挂不挂 A/B/C 角标」）。
 Map<String, dynamic> _plainGroup() => {
       'items': [
-        _item(kFigureShapes[0], label: 'A'),
-        _item(kFigureShapes[2], label: 'B'),
+        _item(kHouseFixture, label: 'A'),
+        _item(kArrowFixture, label: 'B'),
       ],
     };
 
@@ -176,11 +178,11 @@ void main() {
     expect(find.byType(ReflectionFigureGallery), findsOneWidget);
     expect(find.byType(ReflectionSceneWidget), findsNothing,
         reason: '展示态是只读网格，整块可拖的场景不该直接铺在讲课页上');
-    // 逆库序：被「按库序重排」的坏实现会给出 [房子, 箭头, 正方形]。
+    // 非库序：被「重排」的坏实现会给出 [房子, 箭头, 正方形]。
     expect(_cardLabels(tester), <String>[
-      '播放${kFigureShapes[4].label}的对折演示',
-      '播放${kFigureShapes[2].label}的对折演示',
-      '播放${kFigureShapes[0].label}的对折演示',
+      '播放${kSquareFixture.label}的对折演示',
+      '播放${kArrowFixture.label}的对折演示',
+      '播放${kHouseFixture.label}的对折演示',
     ], reason: '编排顺序就是教学意图，重排等于把意图抹掉');
     expect(tester.takeException(), isNull);
   });
@@ -208,7 +210,7 @@ void main() {
     expect(_inGallery(find.byIcon(LucideIcons.x)), findsNothing);
   });
 
-  testWidgets('有图形组但无 curated → 仍是整库网格 + 选项角标（题库观感不变）',
+  testWidgets('有图形组但无 curated → 摆条目那一组 + 选项角标（题库观感）',
       (tester) async {
     await _pumpPresent(
       tester,
@@ -217,31 +219,32 @@ void main() {
     );
 
     final labels = _cardLabels(tester);
-    expect(labels, hasLength(kFigureShapes.length),
-        reason: '缺省必须仍是整库探索——靠「有条目就裁剪」区分语境会剥夺它');
-    expect(labels.first, '播放${kFigureShapes[0].label}的对折演示',
-        reason: '带选项标号的仍排在最前');
+    // 渲染路径零图库依赖（ADR-0083 决策 7）：摆的就是条目里这两个。
+    expect(labels, hasLength(2), reason: '条目即卡片，不再铺「整库」');
+    expect(labels.first, '播放${kHouseFixture.label}的对折演示',
+        reason: '条目顺序即卡片顺序');
     expect(_inGallery(find.text('A')), findsOneWidget);
     expect(_inGallery(find.text('B')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('点任意一张 → 弹出可操作演示：能旋转 / 平移对称轴，初始轴是图形自带的',
+  testWidgets('点任意一张 → 弹出可操作演示：能旋转 / 平移对称轴，轴初值取 kind 外壳',
       (tester) async {
     await _pumpPresent(
       tester,
       courseware: _courseware(_section(_spec(optionGroup: _curatedGroup()))),
     );
 
-    final arrow = kFigureShapes[2];
+    final arrow = kArrowFixture;
     await tester.tap(_inGallery(find.text(arrow.label)));
     await tester.pumpAndSettle();
 
     expect(find.byType(ShadDialog), findsOneWidget);
     final data = _dialogScene(tester);
     expect(data.figureLabel, arrow.label);
-    expect(data.axisAngle, arrow.defaultAxisAngle,
-        reason: '唯一对称轴是横轴的图形一打开就该是横轴，不套用环节的 90°（§2.6）');
+    // ADR-0083 决策 2/6：图库与 SceneSpec 都不存 axis，初值统一归 kind 外壳。
+    expect(data.axisAngle, shellFor('reflection').axisAngle,
+        reason: '轴初值归 kind 外壳，不再「按图形自带默认轴」');
     // 3 个轴控制（角度 / 水平 / 垂直）+ 1 个对折进度条：旋转与平移一件不少。
     expect(
       tester.widgetList<AppSlider>(find.byType(AppSlider)),

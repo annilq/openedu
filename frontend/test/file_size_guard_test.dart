@@ -146,6 +146,12 @@ void main() {
 ///   `onNavigateToTutor` 回调——回到 400 行内，属 A 类净减（真实职责分离）。
 /// **只许下调（除 B 类已登记的合理大件外）。**
 ///
+/// 2026-10（ADR-0083 图库 DB 化 / SceneSpec 几何化）下调：
+///   · reflection_scene 567 → 438：抽出公共 painter 到 reflection_scene_painter.dart、
+///     数据模型与适配层到 reflection_scene_data.dart（T04/T03 落地）。属 A 类净减。
+///   · section_scene_figures_picker 曾因「清单改为按需拉图库」涨到 414 → 抽出图形卡
+///     子件 scene_figure_tile.dart 后回到 322，**未登记**（回到 400 内）。
+///
 /// 拆分批次见 `docs/refactor/2026-09-21-flutter-ui-decomposition.md`（P0–P4）。
 const Map<String, int> _baseline = <String, int>{
   'shared/theme/app_theme.dart': 1702,
@@ -154,7 +160,7 @@ const Map<String, int> _baseline = <String, int>{
   'features/home/presentation/widgets/teacher/teacher_tasks_view.dart': 672,
   'features/home/presentation/screens/home_screen.dart': 586,
   'features/assistant/presentation/screens/assistant_chat_page.dart': 570,
-  'shared/widgets/scene_interpreter/reflection_scene.dart': 567,
+  'shared/widgets/scene_interpreter/reflection_scene.dart': 438,
   'features/home/presentation/widgets/teacher/teacher_question_card.dart': 511,
   'features/home/presentation/widgets/teacher/teacher_wrong_questions_view.dart': 442,
   'features/home/presentation/widgets/teacher/workbench_glance.dart': 406,

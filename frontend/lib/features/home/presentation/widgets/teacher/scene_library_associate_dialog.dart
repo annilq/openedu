@@ -17,6 +17,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../../shared/domain/figures.dart';
+import '../../../../../shared/domain/providers/figure_library_provider.dart';
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/widgets/app_focusable_action.dart';
 import '../../../../../shared/widgets/app_toast.dart';
@@ -158,11 +159,19 @@ class _AssociateKpDialogState extends ConsumerState<_AssociateKpDialog> {
     try {
       // seed 场景：图形取库默认（空则回落空占位）。ADR-0083：spec 是纯几何
       // `{kind, points, edges}`——轴初值/控件/文案由 kind 外壳提供，不进 spec。
+      //
+      // 几何只能来自图库（ADR-0083 决策 1/6：「默认图形」存的是 key，几何在表里）。
+      // 这里按需把图库拉一次；拉不到就退回空顶点（渲染端会兜到中性图形），**不**因此
+      // 让整次关联失败——关联本身与图库可用性是两件事。
       final figureKey = widget.entry.defaultFigureKey;
-      final shape = figureKey != null ? figureByKey(figureKey) : null;
-      final points = (shape?.vertices ?? [])
-          .map((v) => <double>[v.x, v.y])
-          .toList(growable: false);
+      var points = const <List<double>>[];
+      if (figureKey != null && figureKey.isNotEmpty) {
+        final shape = await _defaultFigure(figureKey);
+        points = <List<double>>[
+          for (final v in shape?.vertices ?? const <({double x, double y})>[])
+            <double>[v.x, v.y],
+        ];
+      }
       final seed = buildReflectionSceneSpec(
         kind: widget.entry.kind,
         points: points,
@@ -188,6 +197,22 @@ class _AssociateKpDialogState extends ConsumerState<_AssociateKpDialog> {
         _error = '关联失败：$e';
       });
     }
+  }
+
+  /// 按 key 取库默认图形的几何（图库按需拉取，ADR-0083 决策 7）。
+  ///
+  /// 图库读不出来 → 返回 null（调用方退回空顶点），绝不兜到某个内置图形上：
+  /// 给一个与教师所选无关的图形，比给一个中性占位更糟（会教错）。
+  Future<FigureShape?> _defaultFigure(String key) async {
+    try {
+      final library = await ref.read(figureLibraryProvider.future);
+      for (final f in library) {
+        if (f.key == key) return f;
+      }
+    } catch (_) {
+      // 网络/解析失败与「关联」无关，交给上面的空顶点分支。
+    }
+    return null;
   }
 
   /// 解绑：从 `kp.scenes` 移除本 kind 的条目（保留其它 kind），经 `PATCH …/scenes` 写回。

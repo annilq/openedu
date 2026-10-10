@@ -4,9 +4,8 @@
 // `{key, label, points[[x,y]], edges[[i,j]], note, is_builtin}`——**不含任何 axis 属性**
 // （决策 2：对称靠拖轴 + 翻转视觉判定，图库不再断言轴数与轴向）。
 //
-// 为什么解析不写进 `figures.dart`：后者是 `gen_figures.py` 的**构建期产物**
-// （T06 退役），手写内容会被生成器覆盖、也会打破 parity 锁。图库解析是运行时代码，
-// 必须独立成文件。
+// 为什么解析独立成文件：`figures.dart` 只放**渲染模型 + 极端兜底常量**（它已不再
+// 是从后端常量构建期生成的副本）；「DB 行 → 模型」的解析属取数侧，分开更好维护。
 library;
 
 import '../utils/json_decode.dart';
@@ -27,18 +26,13 @@ List<({double x, double y})> _verticesOf(Object? points) {
   return out;
 }
 
-/// 内置图形缺省时的轴初值。
-///
-/// 图库**不存轴**（ADR-0083 决策 2/8），故这里只能给一个中性值：90°（reflection
-/// 外壳的竖轴初值）。真正打开演示时轴初值取自 kind 外壳
-/// （[ReflectionSceneData.axisAngle]），不看这个字段——它只服务缩略图那条纯装饰的
-/// 虚线（调用方可传 `axisAngle` 覆盖成外壳的值）。
-const double kLibraryDefaultAxisAngle = 90;
-
 /// 一条图库行 → 画廊 / 画板可直接渲染的 [FigureShape]。
 ///
 /// 顶点不足 3 个（画不出多边形）或 `key` 为空 → 返回 null，由调用方跳过：
 /// 图库里出现一条渲染不出来的空行，会让用户「明明存了却找不到」，不如不显示。
+///
+/// 图库行只有几何：`points` 是唯一事实，**没有任何 axis 属性**（ADR-0083 决策 2）
+/// ——对称判定靠用户拖轴 + 翻转自己看，图库不表态。
 FigureShape? figureShapeFromLibraryJson(Map<String, dynamic> json) {
   final key = json['key'] as String?;
   if (key == null || key.isEmpty) return null;
@@ -48,10 +42,6 @@ FigureShape? figureShapeFromLibraryJson(Map<String, dynamic> json) {
     key: key,
     label: json['label'] as String? ?? key,
     vertices: vertices,
-    defaultAxisAngle: kLibraryDefaultAxisAngle,
-    // 图库不再存轴数/轴向（ADR-0083 决策 2）：空表 = 「图库不表态」。
-    // 依赖它的旧路径（如「有几条对称轴」）改由题目答案字段或纯视觉演示承担。
-    axisAngles: const <double>[],
   );
 }
 

@@ -30,8 +30,9 @@ class ReflectionSceneData {
   /// 是否在画布下方显示对称轴滑块（编辑器弹窗语境）。
   ///
   /// **不是 SceneSpec 字段**（ADR-0083 决策 5 已删 `editable`）：它是本 widget 的
-  /// 展示开关——编辑器面板自己有 3 个轴滑块，弹窗预览再画一遍是重复。由调用方在
-  /// 构造时决定，不从 spec 解析。
+  /// 展示开关，由调用方在构造时决定（如 [SceneInterpreter.showAxisControls]）。
+  /// [fromSpec] 仅为兼容**存量快照**仍会读旧形 `editable`——新代码一律显式传参，
+  /// 不再产出该键。
   final bool showAxisControls;
 
   const ReflectionSceneData({
@@ -73,39 +74,33 @@ class ReflectionSceneData {
   /// 由 SceneSpec 解析（ADR-0061 §9.1 / §O / ADR-0083）。
   ///
   /// 入口先过 [adaptSceneSpec] 适配层（ADR-0083 T03）：旧形 spec 的
-  /// `inputs[key=='points']` / `figure` 被上提为顶层几何，`controls` / `narrative` /
-  /// `title` / `outputs` 被丢弃（它们已归 kind 外壳，不再从 spec 读）。之后本函数
-  /// 只认新形：顶层 `points` / `edges`。
+  /// `inputs[key=='points']` 被上提为顶层几何，`controls` / `narrative` / `title` /
+  /// `outputs` 被丢弃（它们已归 kind 外壳，不再从 spec 读）。之后本函数只认新形：
+  /// 顶层 `points` / `edges`。
   ///
-  /// 几何来源优先级：
+  /// 几何来源（决策 7「运行时零图库依赖」）：
   /// 1. 顶层 `points`（新形：后端 / 画板内联的顶点，`[[x,y],...]`）；
-  /// 2. 旧形 `inputs[key=='points']`（适配层已上提，此处与之等价）；
-  /// 3. `figure` 预设 key 的顶点（旧 spec 只留了 key、没有内联顶点时）；
-  /// 4. 都没有 → 房子（首个预设），保证**永不出现空场景**（house 仅极端兜底）。
+  /// 2. `inputs[key=='points']`（适配层已上提，此处与之等价）；
+  /// 3. 都没有 → [kFallbackFigure]（房子），**极端兜底**，只为不出现空画布。
+  ///    **不再按 `figure` key 回查图库**——图库只在创作 UI 打开时按需拉取
+  ///    （`figureLibraryProvider`），运行时渲染零图库依赖。
   ///
   /// 交互参数（轴初值 / controls / narrative）从 kind 外壳取（[SceneShell.fromSource]）：
   /// 适配层把旧形 spec 里的轴初值上提到顶层（`axisAngle/axisX/axisY`），故存量数据的
   /// 轴初值仍被采信；controls / narrative 不再来自 spec，一律用外壳默认。
-  factory ReflectionSceneData.fromSpec(
-    Map<String, dynamic> spec, {
-    FigureShape? presetOverride,
-  }) {
+  factory ReflectionSceneData.fromSpec(Map<String, dynamic> spec) {
     final adapted = adaptSceneSpec(spec);
     final kind = adapted['kind'] as String?;
     final shell = SceneShell.fromSource(kind, adapted);
 
     final points = parsePoints(adapted['points']);
-    final figureKey = adapted['figure'] as String?;
-    // 几何回退链：spec 顶点 → 预设（显式 override 或 figure key）→ 房子
-    //（figureByKey 未命中也回落首个预设，故 preset 非空）。
-    final preset = presetOverride ?? figureByKey(figureKey);
-    final pointsOrFallback = (points != null && points.length >= 3)
-        ? points
-        : preset.vertices.map((v) => Offset(v.x, v.y)).toList(growable: false);
+    final inline = (points != null && points.length >= 3) ? points : null;
     return ReflectionSceneData(
-      points: pointsOrFallback,
+      points: inline ??
+          kFallbackFigure.vertices
+              .map((v) => Offset(v.x, v.y))
+              .toList(growable: false),
       edges: parseEdges(adapted['edges']),
-      figureLabel: preset.label,
       axisAngle: shell.axisAngle,
       axisX: shell.axisX,
       axisY: shell.axisY,
@@ -171,8 +166,9 @@ class ReflectionSceneData {
 ///
 /// 保留 `editable`：它是**旧形**的展示开关（旧数据里 `editable=false` 表示不挂轴
 /// 滑块），存量观感须一字不变，故沿用；新形 spec 不含此键（决策 5 已从新 spec 删除）。
-/// `figure` 也保留：仅在「旧 spec 没有内联顶点、只留了 key」时才用它兜底取几何
-/// （对应 DB 图库；命中不了由 [figureByKey] 回退房子，属极端兜底）。
+/// `figure` 键仍会被上提：它是**存量数据的迁移线索**（旧 spec 可能只留了图形 key、
+/// 没有内联顶点）。运行时**不再**按它回查图库（决策 7：运行时零图库依赖）——这类
+/// 快照由一次性迁移脚本补齐内联几何；实在没有几何可画时统一回退 [kFallbackFigure]。
 Map<String, dynamic> adaptSceneSpec(Map<String, dynamic> raw) {
   final out = <String, dynamic>{...raw};
   // 1. 旧形 inputs → 顶层（仅在新形没有对应顶层键时上提）。

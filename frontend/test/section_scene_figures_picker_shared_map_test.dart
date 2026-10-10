@@ -17,12 +17,16 @@
 import 'dart:convert';
 
 import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:kids_learn/features/courseware/presentation/pages/section_scene_figures_picker.dart';
 import 'package:kids_learn/shared/domain/figures.dart';
+import 'package:kids_learn/shared/domain/providers/figure_library_provider.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
+
+import 'support/figure_fixtures.dart';
 
 /// 知识点上的一份轴对称讲解模板——**自带**一个图形组（题库抽取出来的那种）。
 ///
@@ -33,8 +37,8 @@ Map<String, dynamic> _kpSpec() => <String, dynamic>{
       'editable': true,
       'optionGroup': <String, dynamic>{
         'items': <Map<String, dynamic>>[
-          _item(kFigureShapes[0], label: 'A'),
-          _item(kFigureShapes[2], label: 'B'),
+          _item(kHouseFixture, label: 'A'),
+          _item(kArrowFixture, label: 'B'),
         ],
       },
     };
@@ -42,11 +46,13 @@ Map<String, dynamic> _kpSpec() => <String, dynamic>{
 Map<String, dynamic> _item(FigureShape f, {String label = ''}) => <String, dynamic>{
       'label': label,
       'caption': f.label,
-      'figureKey': f.key,
       'points': <List<double>>[
         for (final v in f.vertices) <double>[v.x, v.y],
       ],
-      'defaultAxisAngle': f.defaultAxisAngle,
+      'edges': <List<int>>[
+        for (var i = 0; i < f.vertices.length; i++)
+          <int>[i, (i + 1) % f.vertices.length],
+      ],
     };
 
 /// 挂上选择器，`onChanged` 的回执记进 [emitted]。
@@ -58,15 +64,22 @@ Future<void> _pumpPicker(
   await tester.binding.setSurfaceSize(const Size(900, 1600));
   addTearDown(() => tester.binding.setSurfaceSize(null));
   await tester.pumpWidget(
-    ShadApp.custom(
-      theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
-      appBuilder: (context) => CupertinoApp(
-        home: SingleChildScrollView(
-          child: Directionality(
-            textDirection: TextDirection.ltr,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: SectionSceneFiguresPicker(scene: scene, onChanged: onChanged),
+    ProviderScope(
+      // 挑图形的清单来自图库、打开时按需拉取（ADR-0083 决策 7）。
+      overrides: [
+        figureLibraryProvider.overrideWith((ref) async => kTestLibrary),
+      ],
+      child: ShadApp.custom(
+        theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
+        appBuilder: (context) => CupertinoApp(
+          home: SingleChildScrollView(
+            child: Directionality(
+              textDirection: TextDirection.ltr,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child:
+                    SectionSceneFiguresPicker(scene: scene, onChanged: onChanged),
+              ),
             ),
           ),
         ),
@@ -83,10 +96,11 @@ Future<void> _toggle(WidgetTester tester, String label) async {
   await tester.pumpAndSettle();
 }
 
-List<String> _keysOf(Map<String, dynamic> group) =>
+/// 条目里的图形名序列（条目不带图库 key，ADR-0083 决策 6）。
+List<String> _captionsOf(Map<String, dynamic> group) =>
     (group['items'] as List<dynamic>)
         .cast<Map<String, dynamic>>()
-        .map((e) => e['figureKey'] as String)
+        .map((e) => e['caption'] as String)
         .toList();
 
 void main() {
@@ -109,7 +123,7 @@ void main() {
     // 写入确实发生了——否则「什么都没做」也会让上一条假通过。
     final group = emitted!['optionGroup'] as Map<String, dynamic>;
     expect(group['curated'], isTrue);
-    expect(_keysOf(group), <String>['house', 'arrow', 'square']);
+    expect(_captionsOf(group), <String>['房子', '箭头', '正方形']);
     expect(tester.takeException(), isNull);
   });
 

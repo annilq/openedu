@@ -18,7 +18,6 @@ import 'package:kids_learn/features/home/domain/repositories/material_repository
 import 'package:kids_learn/features/home/presentation/widgets/teacher/scene_library_view.dart';
 import 'package:kids_learn/features/home/providers/home_provider.dart';
 import 'package:kids_learn/features/home/providers/knowledge_manage_provider.dart';
-import 'package:kids_learn/shared/domain/figures.dart';
 import 'package:kids_learn/shared/domain/providers/figure_library_provider.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
 import 'package:kids_learn/shared/widgets/app_actions.dart';
@@ -27,6 +26,8 @@ import 'package:kids_learn/shared/widgets/app_focusable_action.dart';
 import 'package:kids_learn/shared/widgets/scene_interpreter/reflection_scene.dart';
 import 'package:kids_learn/shared/widgets/scene_interpreter/reflection_scene_board.dart';
 import 'package:kids_learn/shared/widgets/scene_interpreter/reflection_scene_data.dart';
+
+import 'support/figure_fixtures.dart';
 
 /// 挂一棵与生产同构的应用树（根 = ShadApp.custom + CupertinoApp），`home` 由调用方给。
 ///
@@ -69,7 +70,8 @@ Future<void> _pumpBoard(
       tester,
       Padding(
         padding: const EdgeInsets.all(16),
-        child: ReflectionSceneBoard(onSave: onSave),
+        // 画板是哑组件：工具栏预设由调用方注入（这里给图库夹具）。
+        child: ReflectionSceneBoard(onSave: onSave, presets: kTestLibrary),
       ),
     );
 
@@ -106,7 +108,7 @@ void main() {
     expect(find.byType(ReflectionSceneWidget), findsNothing);
     expect(find.text('画板是空的'), findsOneWidget);
 
-    final square = figureByKey('square');
+    final square = kSquareFixture;
     await tester.tap(_galleryCard(square.label));
     await tester.pumpAndSettle();
 
@@ -121,7 +123,7 @@ void main() {
 
   testWidgets('编辑态：拖某个顶点会改几何', (tester) async {
     await _pumpBoard(tester, onSave: _noop());
-    final square = figureByKey('square');
+    final square = kSquareFixture;
     await tester.tap(_galleryCard(square.label));
     await tester.pumpAndSettle();
 
@@ -146,7 +148,7 @@ void main() {
   testWidgets('编辑态：拖空白处移动对称轴，轴滑块跟随', (tester) async {
     await _pumpBoard(tester, onSave: _noop());
     // 房子顶点都远离画布中心 → 从中心拖一定是「移轴」而非抓顶点。
-    await tester.tap(_galleryCard(figureByKey('house').label));
+    await tester.tap(_galleryCard(kHouseFixture.label));
     await tester.pumpAndSettle();
 
     // 初始轴水平 / 垂直都是 0.50。
@@ -179,7 +181,7 @@ void main() {
       },
     );
 
-    final square = figureByKey('square');
+    final square = kSquareFixture;
     await tester.tap(_galleryCard(square.label));
     await tester.pumpAndSettle();
     await tester.tap(find.text('保存到图库'));
@@ -208,7 +210,7 @@ void main() {
         return 'user_x';
       },
     );
-    final square = figureByKey('square');
+    final square = kSquareFixture;
     await tester.tap(_galleryCard(square.label));
     await tester.pumpAndSettle();
 
@@ -241,7 +243,7 @@ void main() {
 
   testWidgets('编辑态不报「是不是轴对称」的结论（决策 2）', (tester) async {
     await _pumpBoard(tester, onSave: _noop());
-    await tester.tap(_galleryCard(figureByKey('square').label));
+    await tester.tap(_galleryCard(kSquareFixture.label));
     await tester.pumpAndSettle();
 
     // 播完对折（1.4s）到 180°：非编辑态这时会报「是轴对称图形」，编辑态不该。
@@ -270,6 +272,7 @@ void main() {
             label: '打开画板',
             onPressed: () => ReflectionSceneBoardDialog.show(
               ctx,
+              presets: kTestLibrary,
               onSave: (label, points, edges) async {
                 savedLabel = label;
                 return 'user_z';
@@ -283,7 +286,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(ReflectionSceneBoard), findsOneWidget);
 
-    final square = figureByKey('square');
+    final square = kSquareFixture;
     await tester.tap(_galleryCard(square.label));
     await tester.pumpAndSettle();
     final saveBtn = find.text('保存到图库');
@@ -304,8 +307,8 @@ void main() {
       size: const Size(900, 1600),
       overrides: [
         materialRepositoryProvider.overrideWithValue(_StubRepo()),
-        // 打开画板前会按需拉图库（ADR-0083 T05）；测试用整库夹具顶掉取数。
-        figureLibraryProvider.overrideWith((ref) async => kFigureShapes),
+        // 打开画板前会按需拉图库（ADR-0083 T05）；测试用图库夹具顶掉取数。
+        figureLibraryProvider.overrideWith((ref) async => kTestLibrary),
         sceneLibraryProvider.overrideWith(
           (ref) async => SceneLibrary.fromJson(const <String, dynamic>{
             'scenes': <dynamic>[],

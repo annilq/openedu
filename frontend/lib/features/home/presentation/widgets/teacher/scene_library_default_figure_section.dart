@@ -47,13 +47,15 @@ class _DefaultFigureSectionState extends ConsumerState<_DefaultFigureSection> {
         FigureLibraryGallery(
           selectedKey: widget.defaultFigureKey,
           hint: '点一个图形设为该场景的默认演示图形',
-          onOpen: (figure) => _set(figure.key),
+          // 名字随图形一起带过来：spec 只存几何、不存名字（ADR-0083 决策 6），
+          // 事后再按 key 回查图库等于又欠一次取数。
+          onOpen: (figure) => _set(figure.key, figure.label),
         ),
       ],
     );
   }
 
-  Future<void> _set(String? figureKey) async {
+  Future<void> _set(String? figureKey, [String? figureLabel]) async {
     try {
       await ref
           .read(materialRepositoryProvider)
@@ -64,7 +66,7 @@ class _DefaultFigureSectionState extends ConsumerState<_DefaultFigureSection> {
       if (figureKey == null) {
         AppToast.show(context, '已清除默认图形');
       } else {
-        AppToast.show(context, '已设为默认图形：${figureByKey(figureKey).label}');
+        AppToast.show(context, '已设为默认图形：${figureLabel ?? figureKey}');
       }
     } catch (e) {
       if (!mounted) return;

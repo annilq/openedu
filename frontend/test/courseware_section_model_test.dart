@@ -12,42 +12,57 @@ import 'package:kids_learn/features/courseware/domain/models/courseware_section.
 void main() {
   /// 一组有序图形（课件编排）。顺序即数组顺序，教学意图落在顺序里，故刻意排成
   /// 非字母序——若模型层重排过，顺序断言就会红。
+  ///
+  /// 条目形状 == 后端 `extract_option_group` 的产物（label / caption / points /
+  /// edges），**没有**图库 key、**没有** axis 字段（ADR-0083 决策 2/6）。
   final items = <Map<String, dynamic>>[
     {
       'label': '',
       'caption': '长方形',
-      'figureKey': 'rectangle',
       'points': <List<double>>[
         <double>[-80, -50],
         <double>[80, -50],
         <double>[80, 50],
         <double>[-80, 50],
       ],
-      'defaultAxisAngle': 0,
+      'edges': <List<int>>[
+        <int>[0, 1],
+        <int>[1, 2],
+        <int>[2, 3],
+        <int>[3, 0],
+      ],
     },
     {
       'label': '',
       'caption': '正方形',
-      'figureKey': 'square',
       'points': <List<double>>[
         <double>[-60, -60],
         <double>[60, -60],
         <double>[60, 60],
         <double>[-60, 60],
       ],
-      'defaultAxisAngle': 90,
+      'edges': <List<int>>[
+        <int>[0, 1],
+        <int>[1, 2],
+        <int>[2, 3],
+        <int>[3, 0],
+      ],
     },
     {
       'label': '',
       'caption': '箭头',
-      'figureKey': 'arrow',
       'points': <List<double>>[
         <double>[-40, 0],
         <double>[10, 0],
         <double>[10, -40],
         <double>[60, 40],
       ],
-      'defaultAxisAngle': 45,
+      'edges': <List<int>>[
+        <int>[0, 1],
+        <int>[1, 2],
+        <int>[2, 3],
+        <int>[3, 0],
+      ],
     },
   ];
 
@@ -74,8 +89,8 @@ void main() {
       final got = group['items'] as List<dynamic>;
       expect(got.length, items.length);
       expect(
-        got.map((e) => (e as Map<String, dynamic>)['figureKey']).toList(),
-        <String>['rectangle', 'square', 'arrow'],
+        got.map((e) => (e as Map<String, dynamic>)['caption']).toList(),
+        <String>['长方形', '正方形', '箭头'],
         reason: '条目顺序被重排过（教学编排意图就落在顺序里）',
       );
 
@@ -84,7 +99,6 @@ void main() {
         final e = got[i] as Map<String, dynamic>;
         expect(e['label'], '');
         expect(e['caption'], want['caption']);
-        expect(e['defaultAxisAngle'], want['defaultAxisAngle']);
         // points 必须是二维顶点数组：非空、没被压平成字符串
         final points = e['points'];
         expect(points, isA<List>(), reason: 'points 被改写成了 ${points.runtimeType}');
@@ -94,6 +108,7 @@ void main() {
           expect((v as List).length, 2);
         }
         expect(points, want['points']);
+        expect(e['edges'], want['edges']);
       }
     });
 

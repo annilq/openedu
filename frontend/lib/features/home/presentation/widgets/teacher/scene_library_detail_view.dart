@@ -1,19 +1,19 @@
 /// 场景详情（ADR-0073）：列出某个内置场景的**全部内置实例**。
 ///
-/// 实例 = 引用了该 kind 的知识点。每个实例展示三件事：属于哪个知识点（含范围，
-/// 因为知识点跨学期同名）、它实际配了什么（据此预览）、以及完整场景预览。
+/// 实例 = 引用了该 kind 的知识点。每个实例展示两件事：属于哪个知识点（含范围，
+/// 因为知识点跨学期同名），以及它实际配的场景预览——预览画布就是「配了什么」的
+/// 唯一答案（新形 SceneSpec 是纯几何、不带图形名，故不再单列一个名字标签）。
 ///
 /// **预览复用 [SceneInterpreter]**，不另写一个查看器：观看 delegate 与课堂里学到的
 /// 渲染路径是同一条，才不会出现「库里看着正常、题目里却不同」的漂移。这里喂的是
-/// **知识点自己的 scenes**（含图形与顶点），而不是注册表的中性种子——中性种子没有
-/// figure/points，渲染出来只是一个占位兜底图形，展示它等于误导。
+/// **知识点自己的 scenes**（内联顶点），而不是注册表的中性种子——中性种子没有
+/// `points`，渲染出来只是一个占位兜底图形，展示它等于误导。
 library;
 
 import 'package:flutter/material.dart' show Icons;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../../shared/domain/figures.dart';
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/widgets/app_actions.dart';
 import '../../../../../shared/widgets/app_toast.dart';
@@ -185,7 +185,7 @@ class _InstanceCard extends StatelessWidget {
 
   /// 优先取「kind == 本页 kind」的场景——即把该 KP 关联到本页的那条。
   /// 找不到（理论上不该发生，关联就是靠这条 kind 把 KP 拉进列表）才退回首个，
-  /// 避免同一 KP 配了多种场景时，卡片预览/图形标签显示成别的 kind，造成
+  /// 避免同一 KP 配了多种场景时，卡片预览显示成别的 kind，造成
   /// 「场景页里看到另一个场景」的错觉（ADR-0074 关联列表）。
   Map<String, dynamic>? _sceneForKind() {
     final scenes = kp.scenes;
@@ -196,27 +196,15 @@ class _InstanceCard extends StatelessWidget {
     );
   }
 
-  /// 该实例实际配的图形名；没配或识别不出返回 null（不臆造一个名字）。
-  String? _figureLabel(Map<String, dynamic>? scene) {
-    if (scene == null) return null;
-    final inputs = scene['inputs'];
-    if (inputs is! List) return null;
-    for (final e in inputs) {
-      if (e is Map && e['key'] == 'figure') {
-        final key = e['value']?.toString() ?? '';
-        if (key.isEmpty) return null;
-        return figureByKey(key).label;
-      }
-    }
-    return null;
-  }
+  // 这里**不**再显示「图形：<名字>」：新形 SceneSpec 是纯几何、不带图形名
+  // （ADR-0083 决策 6 删 `figure` 引用键），要拿名字就得回查图库——而展示层
+  // 不该为了一个标签欠一次取数。想知道配了什么，看下面的预览画布即可。
 
   @override
   Widget build(BuildContext context) {
     final text = AppTheme.textOf(context);
     final app = AppTheme.colorsOf(context);
     final scene = _sceneForKind();
-    final label = _figureLabel(scene);
     final card = Container(
       margin: const EdgeInsets.only(bottom: AppSpacing.sm),
       decoration: BoxDecoration(
@@ -256,10 +244,6 @@ class _InstanceCard extends StatelessWidget {
                                 ?.copyWith(color: app.error),
                           ),
                         ),
-                      if (label != null) ...[
-                        const SizedBox(height: AppSpacing.xs),
-                        Text('图形：$label', style: text.bodySmall),
-                      ],
                     ],
                   ),
                 ),
@@ -276,23 +260,20 @@ class _InstanceCard extends StatelessWidget {
             ),
             if (scene != null) ...[
               const SizedBox(height: AppSpacing.sm),
-              // 预览缩略图：只画画布本身，摘掉交互外壳（播放条/编辑滑块/讲解词）。
+              // 预览缩略图：只画画布本身，不挂轴滑块。
               // ReflectionSceneWidget 以约束 maxWidth 作正方形边长（画布 140×140），
-              // 但其下方还有状态条 + 播放条 + 3 个轴滑块 + 讲解词，整块约需 437px；
-              // 若把预览钉死 140 高，会触发 RenderFlex 溢出约 297px（ADR-0074 T04
-              // 渲染修复）。这里只限宽（140），让预览按自然高度（画布 + 状态条）
-              // 排布——既不溢出，也保留「该知识点配了什么图形」的预览。
+              // 但其下方还有 3 个轴滑块（每个 84 + 44 固定宽 + 滑轨，140 宽下挤成
+              // 几像素、放不下）——缩略图里一律摘掉（ADR-0074 T04 渲染修复）。
+              // 「摘掉」是**展示开关**（[SceneInterpreter.showAxisControls]），不再往
+              // spec 里塞已废的 `editable`/`controls`/`narrative`（ADR-0083 决策 5：
+              // 交互与文案归 kind 外壳，spec 只留几何）。
               SizedBox(
                 width: 140,
                 child: SceneInterpreter(
                   kind: (scene['kind'] as String?) ?? fallbackKind,
-                  // 保留 figure/points/axis（学生真实配置），只摘掉交互外壳。
-                  spec: <String, dynamic>{
-                    ...scene,
-                    'editable': false,
-                    'controls': const <String, dynamic>{},
-                    'narrative': null,
-                  },
+                  // 直接把知识点自己的场景喂进去（几何是唯一权威），不再改写 spec。
+                  spec: scene,
+                  showAxisControls: false,
                 ),
               ),
             ],

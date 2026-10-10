@@ -4,7 +4,7 @@
 // 1. 每张只读卡右上角有 play 角标（可见性提示），且与左上角「默认讲解」角标不重叠；
 // 2. `preserveOrder: true` 时渲染顺序 == 传入顺序（**用逆序子集断言**：正序子集
 //    在库序下也成立，测不出问题）；
-// 3. 不传新参数时行为与改动前完全一致（整库铺开 + 选项角标 + 选项置顶）；
+// 3. 渲染的就是**调用方给的这一批**（画廊是哑组件，没有「默认整库」，ADR-0083 决策 7）；
 // 4. 只读卡上**没有**任何「是否轴对称」的判定标记（§2.5 只画不判）。
 //
 // 挂载纪律：根是 `ShadApp` + `CupertinoApp`，**不套 Material**——本仓没有 Material
@@ -20,14 +20,16 @@ import 'package:kids_learn/shared/theme/app_theme.dart';
 import 'package:kids_learn/shared/widgets/app_focusable_action.dart';
 import 'package:kids_learn/shared/widgets/scene_interpreter/reflection_figure_gallery.dart';
 
-/// 库序的**逆序**子集：房子(0) → 正方形(4) → 一般四边形(10) 反过来取。
+import 'support/figure_fixtures.dart';
+
+/// 库序的**逆序**子集：一般四边形 → 正方形 → 房子。
 ///
 /// 为什么必须逆序：正序子集在库序下也成立，排序函数即便没被跳过测试也照样过——
 /// 那样的断言守不住「教师编排的顺序不被悄悄重排」。
-List<FigureShape> _reverseSubset() => [
-      kFigureShapes[10], // 一般四边形
-      kFigureShapes[4], // 正方形
-      kFigureShapes[0], // 房子
+List<FigureShape> _reverseSubset() => <FigureShape>[
+      kQuadGenFixture, // 一般四边形
+      kSquareFixture, // 正方形
+      kHouseFixture, // 房子
     ];
 
 Future<void> _pumpGallery(
@@ -166,21 +168,22 @@ void main() {
     );
   });
 
-  testWidgets('不传新参数 → 整库铺开 11 张 + 选项角标 + 选项置顶（与今天一致）',
-      (tester) async {
+  testWidgets('渲染的就是调用方给的这一批（画廊没有「默认整库」）', (tester) async {
     await _pumpGallery(
       tester,
       ReflectionFigureGallery(
+        figures: kTestLibrary,
         optionLabels: const <String, String>{'arrow': 'B'},
         onOpen: (_) {},
       ),
     );
 
     final labels = _cardLabels(tester);
-    expect(labels, hasLength(kFigureShapes.length), reason: '默认仍是整库铺开');
+    expect(labels, hasLength(kTestLibrary.length),
+        reason: '画廊是哑组件：给几个画几个，不自己去猜「整库」');
     expect(labels.first, '播放箭头的对折演示', reason: '带选项标号的仍排在最前');
     expect(find.text('B'), findsOneWidget);
-    expect(find.byIcon(LucideIcons.play), findsNWidgets(kFigureShapes.length));
+    expect(find.byIcon(LucideIcons.play), findsNWidgets(kTestLibrary.length));
     expect(tester.takeException(), isNull);
   });
 

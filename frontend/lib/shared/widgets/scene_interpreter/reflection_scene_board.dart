@@ -39,7 +39,9 @@ class ReflectionSceneBoard extends StatefulWidget {
   /// 保存回调（见文件头分层说明）。
   final FigureBoardSave onSave;
 
-  /// 工具栏预设；默认整库（[kFigureShapes]）。
+  /// 工具栏预设（由调用方注入：图库只在创作 UI 打开时按需拉取，ADR-0083 决策 7）。
+  ///
+  /// **没有默认值**：图库几何已不在前端常量里，「预设有哪些」只有取数方知道。
   final List<FigureShape> presets;
 
   /// 关闭出口（页面态经 HomeScreen 单一 `_go(back)` 回落，ADR-0059）。null = 不显示关闭。
@@ -51,7 +53,7 @@ class ReflectionSceneBoard extends StatefulWidget {
   const ReflectionSceneBoard({
     super.key,
     required this.onSave,
-    this.presets = kFigureShapes,
+    required this.presets,
     this.onBack,
     this.title = '图形画板',
   });
@@ -217,7 +219,7 @@ class ReflectionSceneBoardDialog {
   static Future<void> show(
     BuildContext context, {
     required FigureBoardSave onSave,
-    List<FigureShape>? presets,
+    required List<FigureShape> presets,
   }) {
     final app = AppTheme.colorsOf(context);
     return showShadDialog<void>(
@@ -234,7 +236,7 @@ class ReflectionSceneBoardDialog {
             onSave: onSave,
             // 工具栏预设由调用方注入（ADR-0083 决策 7：图库在打开创作 UI 时按需拉取，
             // 取数属 feature 关切）——画板本身不认识 provider，保持哑组件。
-            presets: presets ?? kFigureShapes,
+            presets: presets,
             onBack: () => Navigator.of(ctx).pop(),
           ),
         ),

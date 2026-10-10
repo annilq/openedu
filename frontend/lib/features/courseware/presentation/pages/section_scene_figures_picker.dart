@@ -1,17 +1,23 @@
 import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart' show LucideIcons;
 
 import '../../../../shared/domain/figures.dart';
+import '../../../../shared/domain/providers/figure_library_provider.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_actions.dart';
 import '../../../../shared/widgets/app_empty_state.dart';
-import '../../../../shared/widgets/app_focusable_action.dart';
+import '../../../../shared/widgets/scene_interpreter/reflection_scene_data.dart';
+import '../widgets/scene_figure_tile.dart';
 
 /// 「演示哪几个图形、按什么顺序」（ADR-0076 §2.1 / §2.2 · ticket 04）。
 ///
-/// 教师在本环节已关联的**轴对称**场景上勾选一组内置图形，结果写进
-/// `scene['optionGroup']`；讲课页的解释器据此摆出多张图（`curated` 只渲染条目指定
-/// 的那几张、按条目顺序）。
+/// 教师在本环节已关联的**轴对称**场景上勾选一组图形，结果写进
+/// `scene['optionGroup']`；讲课页的解释器据此摆出多张图（条目顺序 = 讲解顺序）。
+///
+/// 图形清单来自图库、**打开时按需拉取**（ADR-0083 决策 7）：内置预设与用户在画板上
+/// 自建的图形同表，故这里能挑到自己画的图形。这也意味着本组件是**创作 UI**，
+/// 允许依赖 `figureLibraryProvider`（运行时渲染路径如 `SceneOptionGroup` 一律不许）。
 ///
 /// 为什么是独立文件：`courseware_section_edit_dialog.dart` 已 371 行，只剩 29 行
 /// 余量（ADR-0058 §1 的 400 行棘轮）。
@@ -19,7 +25,7 @@ import '../../../../shared/widgets/app_focusable_action.dart';
 /// **只写副本**：[scene] 是本环节的草稿（教师「关联知识点场景」时快照复制进来的
 /// 那一份），改完后整份经 [onChanged] 交回；本组件从不持有、也绝不回写知识点上的
 /// 场景（ADR-0073 红线）。
-class SectionSceneFiguresPicker extends StatefulWidget {
+class SectionSceneFiguresPicker extends ConsumerWidget {
   const SectionSceneFiguresPicker({
     super.key,
     required this.scene,
@@ -33,17 +39,64 @@ class SectionSceneFiguresPicker extends StatefulWidget {
   final void Function(Map<String, dynamic> scene) onChanged;
 
   @override
-  State<SectionSceneFiguresPicker> createState() =>
-      _SectionSceneFiguresPickerState();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(figureLibraryProvider);
+    return async.when(
+      loading: () => const Padding(
+        padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
+        child: Center(child: Text('正在读取图形库…')),
+      ),
+      error: (e, _) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('图形库读取失败', style: AppTheme.textOf(context).titleSmall),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            '挑图形需要连接服务读取图形库。请检查网络后重试（$e）',
+            style: AppTheme.textOf(context)
+                .bodySmall
+                ?.copyWith(color: AppTheme.colorsOf(context).onSurfaceVariant),
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          AppTextAction(
+            label: '重试',
+            onPressed: () => ref.invalidate(figureLibraryProvider),
+          ),
+        ],
+      ),
+      // 图库到货后才立内部状态：勾选态的播种要靠图库把 spec 里的**内联顶点**
+      // 反查回库内图形（条目不带图库 key，ADR-0083 决策 6）。
+      data: (library) => _Picker(
+        scene: scene,
+        library: library,
+        onChanged: onChanged,
+      ),
+    );
+  }
 }
 
-class _SectionSceneFiguresPickerState
-    extends State<SectionSceneFiguresPicker> {
+class _Picker extends StatefulWidget {
+  const _Picker({
+    required this.scene,
+    required this.library,
+    required this.onChanged,
+  });
+
+  final Map<String, dynamic> scene;
+  final List<FigureShape> library;
+  final void Function(Map<String, dynamic> scene) onChanged;
+
+  @override
+  State<_Picker> createState() => _PickerState();
+}
+
+class _PickerState extends State<_Picker> {
   /// 已勾选的图形，**顺序 = 勾选 / 拖动后的顺序**（不是库序）。
   ///
-  /// 为什么它是本地状态而不是每次从 [SectionSceneFiguresPicker.scene] 读回来：
-  /// 数量闸门（<2 张删键）意味着「只勾了 1 张」这个中间态**根本不写进场景**——
-  /// 若以场景为准，教师勾第一张时界面不会有任何反应（勾选被自己写的闸门吃掉了）。
+  /// 为什么它是本地状态而不是每次从 [widget.scene] 读回来：数量闸门（<2 张删键）
+  /// 意味着「只勾了 1 张」这个中间态**根本不写进场景**——若以场景为准，教师勾第一张
+  /// 时界面不会有任何反应（勾选被自己写的闸门吃掉了）。
   late List<FigureShape> _picked;
 
   /// 最近一次写进场景的条目 key（<2 张时是空表——那时键被删了）。
@@ -56,47 +109,45 @@ class _SectionSceneFiguresPickerState
   @override
   void initState() {
     super.initState();
-    _picked = _shapesFromScene(widget.scene);
-    _emitted = _keysFromScene(widget.scene);
+    _picked = _shapesFromScene(widget.scene, widget.library);
+    _emitted = <String>[for (final f in _picked) f.key];
   }
 
   @override
-  void didUpdateWidget(covariant SectionSceneFiguresPicker oldWidget) {
+  void didUpdateWidget(covariant _Picker oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final fromScene = _keysFromScene(widget.scene);
-    if (!_sameKeys(fromScene, _emitted)) {
+    final fromScene = _shapesFromScene(widget.scene, widget.library);
+    final keys = <String>[for (final f in fromScene) f.key];
+    if (!_sameKeys(keys, _emitted)) {
       setState(() {
-        _picked = _shapesFromScene(widget.scene);
-        _emitted = fromScene;
+        _picked = fromScene;
+        _emitted = keys;
       });
     }
   }
 
   /// 场景里已编排的图形（按 items 数组顺序）。
   ///
-  /// 库外 key（后端下发了前端图形库没有的图形）跳过：渲染层按 caption 命中库内
-  /// 图形，留一张渲染不出来的空卡会让「勾了几张」与课堂看到的张数对不上。
-  List<FigureShape> _shapesFromScene(Map<String, dynamic> scene) {
-    final keys = _keysFromScene(scene);
-    return <FigureShape>[
-      for (final key in keys)
-        for (final f in kFigureShapes)
-          if (f.key == key) f,
-    ];
-  }
-
-  static List<String> _keysFromScene(Map<String, dynamic> scene) {
+  /// 条目只带**内联几何**（ADR-0083 决策 6：spec 不引用图库 key），所以这里拿顶点
+  /// 逐点反查图库找回身份。图库里找不到（教师挑完后又把那张图删了 / 顶点被改过）
+  /// 就跳过：留一张渲染不出来、也点不掉的空卡，比少一张更让人困惑。
+  static List<FigureShape> _shapesFromScene(
+    Map<String, dynamic> scene,
+    List<FigureShape> library,
+  ) {
     final group = scene['optionGroup'];
-    if (group is! Map) return const <String>[];
+    if (group is! Map) return const <FigureShape>[];
     final items = group['items'];
-    if (items is! List) return const <String>[];
-    final out = <String>[];
+    if (items is! List) return const <FigureShape>[];
+    final out = <FigureShape>[];
+    final seen = <String>{};
     for (final e in items) {
       if (e is! Map) continue;
-      final key = e['figureKey'] as String?;
-      // 同一图形重复出现只认第一次（顺序即编排，重复没有教学意义）。
-      if (key == null || out.contains(key)) continue;
-      out.add(key);
+      final points = ReflectionSceneData.parsePoints(e['points']);
+      if (points == null) continue;
+      final shape = figureMatchingVertices(library, points);
+      if (shape == null || !seen.add(shape.key)) continue;
+      out.add(shape);
     }
     return out;
   }
@@ -139,7 +190,7 @@ class _SectionSceneFiguresPickerState
     } else {
       updated['optionGroup'] = <String, dynamic>{
         // 必须是**显式开关**（§2.2）：题库 / 错题路径的 items 也非空（它们是选项），
-        // 靠条目有无区分两种语境会剥夺学生的整库探索。
+        // 靠条目有无区分两种语境会改变学生的观感。
         'curated': true,
         'items': <Map<String, dynamic>>[
           for (final f in next) _item(f),
@@ -155,18 +206,20 @@ class _SectionSceneFiguresPickerState
     widget.onChanged(updated);
   }
 
-  /// 与后端 `extract_option_group` 同形状，保证 `SceneOptionItem.fromJson` 直读。
+  /// 与后端 `extract_option_group` **同形状**，保证 `SceneOptionItem.fromJson` 直读。
+  ///
+  /// 只写几何（`points` + `edges`），不写图库 `key`、不写任何 axis 属性（ADR-0083
+  /// 决策 6：SceneSpec 内联几何、不引用 key；决策 2：图库不存 axis）。
   static Map<String, dynamic> _item(FigureShape f) => <String, dynamic>{
-        // 课件语境没有 A/B/C 选项 → 标号留空；caption 用中文名（渲染层按它命中图形）。
+        // 课件语境没有 A/B/C 选项 → 标号留空；caption 用中文名（卡片副标题）。
         'label': '',
         'caption': f.label,
-        'figureKey': f.key,
-        // 顶点**保存时展开**（§4 红线 2）：不能只存 key 让渲染层运行时回查——
+        // 顶点 + 边**保存时展开**（§4 红线 2）：不能只存 key 让渲染层运行时回查——
         // 课堂演示不能依赖一次查询，走廊网络不该成为「图形出不来」的理由。
         'points': <List<double>>[
           for (final v in f.vertices) <double>[v.x, v.y],
         ],
-        'defaultAxisAngle': f.defaultAxisAngle,
+        'edges': closedEdges(f.vertices.length),
       };
 
   @override
@@ -188,7 +241,12 @@ class _SectionSceneFiguresPickerState
           spacing: AppSpacing.sm,
           runSpacing: AppSpacing.sm,
           children: <Widget>[
-            for (final f in kFigureShapes) _tile(context, f),
+            for (final f in widget.library)
+              SceneFigureTile(
+                figure: f,
+                order: _orderOf(f),
+                onTap: () => _toggle(f),
+              ),
           ],
         ),
         const SizedBox(height: AppSpacing.sm),
@@ -219,69 +277,10 @@ class _SectionSceneFiguresPickerState
     );
   }
 
-  /// 图形卡：选中态沿用画廊那套**强调色描边**语言（淡强调底 + 强调色边）。
-  Widget _tile(BuildContext context, FigureShape figure) {
-    final app = AppTheme.colorsOf(context);
-    final text = AppTheme.textOf(context);
+  /// 该图形已勾选时的序号（1 起）；未勾选返回 null。
+  int? _orderOf(FigureShape figure) {
     final at = _picked.indexWhere((f) => f.key == figure.key);
-    final picked = at >= 0;
-    return AppFocusableAction(
-      onTap: () => _toggle(figure),
-      hoverHighlight: true,
-      semanticLabel: picked
-          ? '已勾选${figure.label}，当前第 ${at + 1} 个（再点一次取消）'
-          : '勾选${figure.label}加入演示',
-      borderRadius: BorderRadius.circular(AppRadius.card),
-      child: Container(
-        width: 92,
-        decoration: BoxDecoration(
-          color: picked ? app.accent.withValues(alpha: 0.10) : app.surfaceRaised,
-          borderRadius: BorderRadius.circular(AppRadius.card),
-          border: Border.all(
-            color: picked ? app.accent : AppBrutal.ink,
-            width: AppElevation.borderWidth,
-          ),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            SizedBox(
-              width: 92,
-              height: 76,
-              child: CustomPaint(painter: _FigureOutlinePainter(figure)),
-            ),
-            Container(
-              height: AppElevation.borderWidthHairline,
-              color: AppBrutal.ink,
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.xs,
-                vertical: AppSpacing.xs,
-              ),
-              child: Row(
-                children: [
-                  if (picked) ...[
-                    Icon(LucideIcons.check, size: 12, color: app.accent),
-                    const SizedBox(width: AppSpacing.xs2),
-                  ],
-                  Expanded(
-                    child: Text(
-                      figure.label,
-                      style: text.labelSmall?.copyWith(color: app.onSurface),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+    return at >= 0 ? at + 1 : null;
   }
 
   /// 已选行：序号 + 上移 / 下移 / 移除（序号就是讲课页的演示顺序）。
@@ -319,43 +318,4 @@ class _SectionSceneFiguresPickerState
       ),
     );
   }
-}
-
-/// 选择卡上的图形缩略图：只描边，**不画对称轴、不作任何判定**——「能不能对折重合」
-/// 只能由学生在演示弹窗里亲手折出来（ADR-0061 §O 只画不判）。
-class _FigureOutlinePainter extends CustomPainter {
-  const _FigureOutlinePainter(this.figure);
-
-  final FigureShape figure;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (figure.vertices.length < 3) return;
-    final inset = AppSpacing.sm;
-    final w = size.width - inset * 2;
-    final h = size.height - inset * 2;
-    final path = Path();
-    for (var i = 0; i < figure.vertices.length; i++) {
-      final v = figure.vertices[i];
-      final p = Offset(inset + v.x * w, inset + v.y * h);
-      if (i == 0) {
-        path.moveTo(p.dx, p.dy);
-      } else {
-        path.lineTo(p.dx, p.dy);
-      }
-    }
-    path.close();
-    canvas.drawPath(
-      path,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..color = AppBrutal.ink
-        ..strokeWidth = AppElevation.borderWidth
-        ..strokeJoin = StrokeJoin.round,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _FigureOutlinePainter oldDelegate) =>
-      oldDelegate.figure != figure;
 }

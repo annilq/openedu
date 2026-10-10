@@ -150,11 +150,30 @@ void main() {
       expect(figures.last.label, '我的图形');
     });
 
-    test('图库不表态对称轴：轴数与轴向都不来自 DB（ADR-0083 决策 2）', () {
-      final figures = parseFigureLibrary(_libraryPayload());
-      for (final f in figures) {
-        expect(f.axisAngles, isEmpty, reason: '图库不存 axis，解析层不得凭空补');
-      }
+    test('图库不表态对称轴：行里带 axis 字段也一律不落进模型（ADR-0083 决策 2）', () {
+      final figures = parseFigureLibrary(<String, dynamic>{
+        'figures': <dynamic>[
+          <String, dynamic>{
+            'key': 'house',
+            'label': '房子',
+            'points': <dynamic>[
+              <double>[0.3, 0.7],
+              <double>[0.7, 0.7],
+              <double>[0.5, 0.25],
+            ],
+            // 存量/脏数据里可能残留这些键：模型没有它们可放，解析也不该凭空补。
+            'defaultAxisAngle': 90,
+            'axisAngles': <dynamic>[90, 0],
+            'axisCount': 2,
+          },
+        ],
+      });
+      final shape = figures.single;
+      // 模型只有 key / label / vertices —— 「没有 axis」由类型本身保证，
+      // 无需再断言某个字段为空（那会随模型演进悄悄失效）。
+      expect(shape.key, 'house');
+      expect(shape.label, '房子');
+      expect(shape.vertices.length, 3);
     });
 
     test('label 缺失时回落 key（不显示无名卡）；key 缺失的行跳过', () {

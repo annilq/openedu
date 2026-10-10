@@ -10,30 +10,37 @@ import '../app_focusable_action.dart';
 // =====================================================================
 // §平面图形画廊（ADR-0061 §V）
 //
-// 轴对称交互讲解的**默认视图**：图形库（kFigureShapes）全部平面图形铺成网格，
-// 点一个才进对折演示弹窗。缩略图只画「图形 + 初始对称轴」，不含任何判定——
-// 「能不能重合」必须由学生在弹窗里亲手折出来，画廊不替他看答案。
+// 平面图形铺成网格，点一个才进对折演示弹窗。缩略图只画「图形 + 初始对称轴」，
+// 不含任何判定——「能不能重合」必须由学生在弹窗里亲手折出来，画廊不替他看答案。
+//
+// 本组件是**哑组件**：只吃一个 [figures] 列表，不认识 provider、也不认识图库
+// （ADR-0083 决策 7）。「一批图形从哪来」各有各的答案——创作 UI 走
+// `figureLibraryProvider`（`FigureLibraryGallery`），运行时走 spec 内联几何
+// （`SceneOptionGroup`），故**没有默认值**，必须由调用方显式给出。
 // =====================================================================
 
-/// 平面图形画廊：图形库铺成网格，点一个打开对折演示。
+/// 平面图形画廊：给定图形铺成网格，点一个打开对折演示。
 ///
-/// **为什么默认铺开，而不是把 N 个完整交互场景平铺在页面上**（§O 的旧做法）：
+/// **为什么铺网格，而不是把 N 个完整交互场景平铺在页面上**（§O 的旧做法）：
 /// [ReflectionSceneWidget] 的画布是「边长 = 可用宽度」的正方形，一个场景竖直方向
 /// 就要吃掉 画布 + 状态条 + 播放条 + 3 个轴滑块（≈ 700px）；4 个选项平铺 ≈ 2800px，
 /// 学生只能靠滚动逐个看，「对比着看」实际变成「记不住上一个长什么样」。
-/// 画廊把每个图形压成一张 ~124px 的卡片，一屏放得下全部 11 个：先挑图形、再认真
+/// 画廊把每个图形压成一张 ~124px 的卡片，一屏放得下十来个：先挑图形、再认真
 /// 折——这两步本来就是对折这道题的操作顺序。
 ///
 /// 画廊**不认识弹窗**：[onOpen] 由调用方决定是弹对话框还是推整页，因此本组件
 /// 可以在「题目选项」「知识点讲解」「自由探索」三种语境里复用。
 class ReflectionFigureGallery extends StatelessWidget {
-  /// 展示的图形；默认整库。传子集即为「只给这几个」。
+  /// 要铺开的图形，**顺序即渲染顺序**（调用方给的顺序本身就是意图）。
+  ///
+  /// 没有默认值：图库已不在前端常量里（ADR-0083 决策 1/7），「整库」只有取数方
+  /// 知道。要「整库」就传 `figureLibraryProvider` 的结果，别指望本组件去猜。
   final List<FigureShape> figures;
 
   /// 图形 key → 选项标号（「A」「B」…）。
   ///
-  /// 画廊是**整库**（学生能自由探索任意图形），但题目问的那几个必须看得出来——
-  /// 带标号的排在最前并挂角标，其余照库序跟在后面。
+  /// 画廊是**整批**图形，但题目问的那几个必须看得出来——带标号的排在最前并挂角标，
+  /// 其余照传入序跟在后面（[preserveOrder] 为真时不重排）。
   final Map<String, String> optionLabels;
 
   /// 点开某个图形。
@@ -41,8 +48,8 @@ class ReflectionFigureGallery extends StatelessWidget {
 
   /// 当前选中的图形 key（编辑器语境下 = 模板图形）；null = 不高亮。
   ///
-  /// 画廊本身是整库浏览，但编辑器需要让教师一眼看到「现在配的是哪个」——否则
-  /// 11 张卡片里分不出哪张是模板，保存后也不确定生效没。选中态用强调色描边标示。
+  /// 画廊本身是整批浏览，但编辑器需要让教师一眼看到「现在配的是哪个」——否则
+  /// 十几张卡片里分不出哪张是模板，保存后也不确定生效没。选中态用强调色描边标示。
   final String? selectedKey;
 
   /// 网格上方的一句话说明（讲清「下一步做什么」，空态语言纪律 ADR-0051）。
@@ -50,15 +57,21 @@ class ReflectionFigureGallery extends StatelessWidget {
 
   /// 是否**按 [figures] 的传入顺序**渲染（跳过「选项置顶」排序）。
   ///
-  /// [_ordered] 会把命中的选项顶到最前、其余按库序跟——教师编排好的图形顺序会因此
+  /// [_ordered] 会把命中的选项顶到最前、其余按传入序跟——教师编排好的图形顺序会因此
   /// 被悄悄重排，而课件语境下**顺序就是教学意图**（ADR-0076 §2.2 的 curated）。
-  /// 默认 false：题库 / 错题 / 自由探索路径的观感一字不变。
   final bool preserveOrder;
 
   /// 是否在只读卡右上角画 play 角标。默认 true（全站统一）。
   ///
   /// 个别纯预览语境（如已经身处演示弹窗内）可以关掉。
   final bool showPlayBadge;
+
+  /// 缩略图上那条虚线对称轴的**初值角度**（度，默认 90 = 竖轴）。
+  ///
+  /// 取 kind 交互外壳的 axisAngle（ADR-0083 决策 6：轴初值归 kind 外壳，图形自己不
+  /// 带 axis 属性）。它只是「打开后轴会停在哪」的预告，**不是**在断言「这条是对称轴」
+  /// ——画廊只画不判（ADR-0061 §O）。
+  final double axisAngle;
 
   /// 卡片目标宽度——只用来算列数，实际宽度按可用宽度均分。
   ///
@@ -71,13 +84,14 @@ class ReflectionFigureGallery extends StatelessWidget {
 
   const ReflectionFigureGallery({
     super.key,
-    this.figures = kFigureShapes,
+    required this.figures,
     this.optionLabels = const <String, String>{},
     required this.onOpen,
     this.hint,
     this.selectedKey,
     this.preserveOrder = false,
     this.showPlayBadge = true,
+    this.axisAngle = 90,
   });
 
   @override
@@ -178,7 +192,7 @@ class ReflectionFigureGallery extends StatelessWidget {
                       points: figure.vertices
                           .map((v) => Offset(v.x, v.y))
                           .toList(growable: false),
-                      axisAngle: figure.defaultAxisAngle,
+                      axisAngle: axisAngle,
                     ),
                   ),
                 ),
@@ -296,7 +310,7 @@ class _FigureThumbPainter extends CustomPainter {
   /// 归一化顶点（x/y ∈ 0..1）。
   final List<Offset> points;
 
-  /// 初始对称轴角度（度）。画廊取图形库自己的默认值（箭头 = 0° 横轴）。
+  /// 初始对称轴角度（度）。画廊取 kind 外壳的初值（reflection = 90°，竖轴）。
   final double axisAngle;
 
   const _FigureThumbPainter({required this.points, required this.axisAngle});

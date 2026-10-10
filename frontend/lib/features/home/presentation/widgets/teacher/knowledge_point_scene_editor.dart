@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../../shared/domain/figures.dart';
+import '../../../../../shared/domain/providers/figure_library_provider.dart';
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/widgets/app_actions.dart';
 import '../../../../../shared/widgets/app_buttons.dart';
@@ -19,8 +20,9 @@ import 'scene_library_picker.dart';
 
 /// 知识点交互讲解编辑器（ADR-0061）：家长为一个已落库知识点编写默认交互讲解模板。
 ///
-/// 首版仅暴露 `reflection` 一种 kind（图形的运动·轴对称）——选图形 + 调默认对称轴
-/// 参数，右侧/下方实时预览对折效果，保存后写入 [KnowledgePoint.scenes]。
+/// 首版仅暴露 `reflection` 一种 kind（图形的运动·轴对称）——从**图库**选一个图形
+/// 作模板（几何内联进 spec），点开可试折，保存后写入 [KnowledgePoint.scenes]。
+/// 对称轴初值 / 引导文案归 kind 外壳（ADR-0083 决策 6），面板不再各自持久化轴参数。
 /// 多 kind 时此处扩展「kind 选择」即可，渲染仍走 [SceneInterpreter]。
 ///
 /// **未配置（[initialScenes] 为空）时本弹窗不渲染 reflection 编辑表单**：交互讲解
@@ -69,8 +71,11 @@ class KnowledgePointSceneEditor extends ConsumerStatefulWidget {
 
 class _KnowledgePointSceneEditorState
     extends ConsumerState<KnowledgePointSceneEditor> {
-  /// 当前选中的图形预设（家长面板仍是「挑预设 + 调轴」，ADR-0061 §O）。
-  /// 儿童端拿到的 spec 里是**顶点**，不依赖这个预设是否还存在。
+  /// 当前选中的模板图形。
+  ///
+  /// 初值由 spec 的**内联顶点**构造（`key` 为空串——spec 不带图库 key，ADR-0083
+  /// 决策 6）；等图库拉回来后由 [build] 按顶点反查补上 key，画廊的「默认讲解」
+  /// 高亮因此能对上。儿童端拿到的 spec 里是顶点，不依赖这个图形是否还在库里。
   late FigureShape _shape;
   bool _saving = false;
 
@@ -83,15 +88,20 @@ class _KnowledgePointSceneEditorState
   @override
   void initState() {
     super.initState();
-    // 取首个 reflection 模板作初值；无则按首个预设（房子，竖轴）默认。
+    // 取首个 reflection 模板作初值；无则按空顶点起（下方画廊会引导挑一个）。
     final initialScene = widget.initialScenes?.firstWhere(
           (e) => e['kind'] == 'reflection',
           orElse: () => <String, dynamic>{},
         ) ??
         const <String, dynamic>{};
     final data = ReflectionSceneData.fromSpec(initialScene);
-    // 新形 spec 只带顶点（无 figure key）→ 按顶点反查是哪个内置预设，回显选中态。
-    _shape = _matchShapeByPoints(data.points) ?? kFigureShapes.first;
+    _shape = FigureShape(
+      key: '',
+      label: '',
+      vertices: <({double x, double y})>[
+        for (final p in data.points) (x: p.dx, y: p.dy),
+      ],
+    );
   }
 
   /// 选一个内置场景作模板起点。
@@ -151,6 +161,18 @@ class _KnowledgePointSceneEditorState
   Widget build(BuildContext context) {
     final text = AppTheme.textOf(context);
     final app = AppTheme.colorsOf(context);
+    // 画廊自己的选中态：spec 不带图库 key，故拿顶点去图库里反查（图库还没到货时为
+    // null → 不高亮，不臆造）。与 [FigureLibraryGallery] 读的是同一个 provider，
+    // 所以这里不会多发请求。
+    final selectedKey = _shape.key.isNotEmpty
+        ? _shape.key
+        : figureMatchingVertices(
+            ref.watch(figureLibraryProvider).valueOrNull ??
+                const <FigureShape>[],
+            <Offset>[
+              for (final v in _shape.vertices) Offset(v.x, v.y),
+            ],
+          )?.key;
     // 未配置（initialScenes 为空）时，本弹窗不渲染 reflection 编辑表单——交互讲解
     // 模板是开发者实现的组件、不是家长在前端手配的，所以弹开发者指引（[SceneDeveloperGuide]），
     // 告诉开发者怎样以 reflection 组件为范本新建本知识点所需 kind，而非误导家长把
@@ -220,7 +242,7 @@ class _KnowledgePointSceneEditorState
           // 图形来自图库、**打开时按需拉取**（ADR-0083 决策 7）：内置预设与用户在
           // 画板上自建的图形同表，故这里能看到并使用自己画的图形。
           FigureLibraryGallery(
-            selectedKey: _shape.key,
+            selectedKey: selectedKey,
             optionLabels: const <String, String>{},
             hint: '点一个图形设为「默认讲解」并打开对折演示；'
                 '儿童端可在演示里自己拖动对称轴去验证。',
@@ -300,25 +322,5 @@ class _KnowledgePointSceneEditorState
     );
   }
 
-}
-
-/// 按顶点反查内置预设（新形 scene 只带顶点、无 figure key，用于回显选中态）。
-///
-/// 逐点比对（容差 1e-6）：顶点是权威几何，命中即认为「这条 scene 是这个预设」。
-/// 命中不了返回 null（未知图形，属正常——用户可能在画板里画了库外图形）。
-FigureShape? _matchShapeByPoints(List<Offset> points) {
-  for (final f in kFigureShapes) {
-    if (f.vertices.length != points.length) continue;
-    var same = true;
-    for (var i = 0; i < points.length; i++) {
-      if ((f.vertices[i].x - points[i].dx).abs() > 1e-6 ||
-          (f.vertices[i].y - points[i].dy).abs() > 1e-6) {
-        same = false;
-        break;
-      }
-    }
-    if (same) return f;
-  }
-  return null;
 }
 
