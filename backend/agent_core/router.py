@@ -10,13 +10,49 @@
 """
 from __future__ import annotations
 
-from typing import Sequence
+from dataclasses import dataclass
+from typing import Any, Sequence
 
 from agent_core.registry import SubAgentManifest
 
 
+@dataclass(frozen=True)
+class IntentSignal:
+    """路由输入从「一段文本」升级为「结构化意图信号」。
+
+    - ``text``：用户原始输入；结构化请求（如按规格出题）可为空串。
+    - ``action``：结构化动作键（如 ``task_generate``），与各 manifest ``actions`` 做
+      **等值**匹配，命中即路由。它排在触发词匹配之前、且**不参与**优先级排序——
+      因此不存在「谁的词更长 / 谁的 priority 更高」，也就没有竞争。``None`` 表示纯文本路由。
+    - ``context``：结构化上下文（课件 / 待判定态等），透传给 SubAgent，不参与路由判定。
+    """
+
+    text: str = ""
+    action: str | None = None
+    context: dict[str, Any] | None = None
+
+    @classmethod
+    def from_text(cls, text: str) -> "IntentSignal":
+        return cls(text=text)
+
+
 def _norm(text: str) -> str:
     return (text or "").strip().lower()
+
+
+def match_action(action: str, manifests: dict[str, SubAgentManifest]) -> str | None:
+    """动作直配：动作键与各 manifest ``actions`` **等值**匹配，返回归属 business（唯一）。
+
+    在所有 manifest 上匹配（不只可见集），以便 ``decide`` 区分「命中但不可见」与「未知动作」。
+    遍历按 business 字典序固定，结果对清单顺序不敏感（唯一性由契约测试保证）。
+    """
+    norm = (action or "").strip()
+    if not norm:
+        return None
+    for biz in sorted(manifests):
+        if norm in manifests[biz].actions:
+            return biz
+    return None
 
 
 def _ordered(businesses: Sequence[str], manifests: dict[str, SubAgentManifest]) -> list[str]:

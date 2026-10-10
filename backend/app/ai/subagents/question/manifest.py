@@ -25,5 +25,8 @@ MANIFEST = {
     ],
     # 路由优先级：低于 query（"任务题目" 归 query，ADR-0033 决策 6），高于 tutor（兜底）
     "priority": 0,
+    # 结构化动作：「哪个业务拥有哪个动作」的唯一声明处（ADR-0081 落地前置）。
+    # 出题助手拥有「按规格出题」与「换一题」两个动作；等值匹配、不参与触发词优先级竞争。
+    "actions": ["task_generate", "task_question_regenerate"],
     "skills": ["question_sop"],
 }

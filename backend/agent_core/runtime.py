@@ -31,6 +31,7 @@ from agent_core.registry import (
     build_subagent,
     discover_subagent_manifests,
 )
+from agent_core.router import IntentSignal, match_action
 from agent_core.router import classify as _classify
 from agent_core.subagent import BaseSubAgent, SubAgentContext, run_with_tools
 
@@ -53,6 +54,11 @@ class AgentRuntime:
     def __init__(self, manifests: dict[str, SubAgentManifest]) -> None:
         self._manifests = manifests
 
+    @property
+    def manifests(self) -> dict[str, SubAgentManifest]:
+        """已发现的 subagent 清单（业务键 → 清单），只读视图。"""
+        return self._manifests
+
     # ── 发现 ──
     @classmethod
     def discover(
@@ -71,19 +77,52 @@ class AgentRuntime:
 
     # ── 路由决策（纯计算，不流式、不构建依赖） ──
     async def decide(
-        self, message: str, *, role: str, deps: RuntimeDeps
+        self, signal: "str | IntentSignal", *, role: str, deps: RuntimeDeps
     ) -> RouteDecision:
-        """解析路由决策：角色可见性 → 安全闸门 → 混合路由。
+        """解析路由决策：角色可见性 → 安全闸门 → 结构化动作直配 → 混合文本路由。
 
-        不产出事件帧、不构建 provider。端点可据此在流式前做预航班（配额判定）。
+        输入接受 ``str``（迁移期兼容）或 ``IntentSignal``；不产出事件帧、不构建 provider。
+        端点可据此在流式前做预航班（配额判定）。
+
+        三级路由（动作直配排在文本规则之前）：
+
+        1. **动作直配**：``signal.action`` 与各 manifest ``actions`` 等值匹配，命中即路由，
+           不参与优先级排序、不与文本竞争。
+        2. **规则匹配** / 3. **启发式兜底**：现有文本路由（``classify``），行为不变。
+
+        动作命中但业务对当前角色**不可见** → 返回显式 ``action_not_visible``，**禁止**沿用
+        「换成第一个可见业务」的静默兜底（那会把越权变成答非所问）。未知动作 → 容错回落文本路由，
+        不报错（动作名与清单不同步的静默失效由契约测试兜住）。
         """
+        if isinstance(signal, str):
+            signal = IntentSignal(text=signal)
+        text = signal.text or ""
+
         visible = self.visible_businesses(role)
 
         # 输入安全（首层防御）：被拦截则不路由。
-        if deps.safety is not None and not deps.safety.check_input(message).safe:
+        if deps.safety is not None and not deps.safety.check_input(text).safe:
             return RouteDecision(business=None, name=None)
 
-        business = await _classify(message, available=visible, manifests=self._manifests)
+        # 第一级：结构化动作直配（等值匹配，不参与文本优先级竞争）。
+        if signal.action:
+            owner = match_action(signal.action, self._manifests)
+            if owner is not None:
+                if owner in visible:
+                    return RouteDecision(
+                        business=owner,
+                        name=self.name_of(owner),
+                        extra={"routed_by": "action", "action": signal.action},
+                    )
+                # 动作命中但当前角色不可见：显式不可见，禁止静默回落成答非所问。
+                return RouteDecision(
+                    business=None,
+                    name=None,
+                    extra={"reason": "action_not_visible", "action": signal.action},
+                )
+            # 未知动作：容错回落自然语言路由（不报错）；同名不同步的静默失效由契约测试兜。
+
+        business = await _classify(text, available=visible, manifests=self._manifests)
         # 角色可见性是唯一真相源：classify 只在 visible 内决策。
         if business not in visible:
             business = visible[0] if visible else None

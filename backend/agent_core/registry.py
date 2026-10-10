@@ -37,6 +37,9 @@ class SubAgentManifest:
     hints: list[str] = field(default_factory=list)
     # 路由优先级：大者先匹配；最小者兼作最终兜底业务
     priority: int = 0
+    # 结构化动作键清单（等值匹配，先于触发词；「哪个业务拥有哪个动作」的唯一声明处）。
+    # 动作直配不参与优先级排序，因此无需为它设计排序规则（唯一性由契约测试保证）。
+    actions: list[str] = field(default_factory=list)
     # 本 subagent 引用的 skill（skills/ 下的 .md 文件名，不含扩展名）
     skills: list[str] = field(default_factory=list)
     # skills/*.md 全文拼接（按声明顺序），发现时读取，运行时注入 prompt
@@ -88,6 +91,7 @@ def _manifest_from_dict(business: str, data: dict[str, Any]) -> SubAgentManifest
         triggers=list(data.get("triggers", [])),
         hints=list(data.get("hints", [])),
         priority=int(data.get("priority", 0)),
+        actions=list(data.get("actions", [])),
         skills=list(data.get("skills", [])),
         raw=data,
     )
