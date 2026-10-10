@@ -7,33 +7,45 @@ import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/app_focusable_action.dart';
 import 'draggable_assistant_fab.dart';
 
-/// 教师端 AI 助手宿主（ADR-0036 单入口 / ADR-0047 整页形态）。
+/// AI 助手宿主（ADR-0036 单入口 / ADR-0047 整页形态）——教师端与学生端**共用**。
 ///
 /// 把 [child]（HomeScreen）铺底、右下角叠一个常驻**浮动按钮**；点击后 push 整页
 /// [AssistantChatPage]——助手是**单独页面**，不再是与宿主布局无关的浮层。
 ///
 /// 浮球可被**拖动**到任意位置（[DraggableAssistantFab]），避免压住正文；位置按场景
-/// 持久化。
+/// 持久化（[isTeacher] 区分两端存储键，互不串味）。
 ///
 /// **为什么从浮层改成整页**：浮层尺寸（380×540）与导航壳（侧栏 + `contentWide`
 /// 内容列）没有任何关系，桌面 / 平板下它压在内容上，既不齐侧栏也不齐内容列，看起来
-/// 像贴纸。整页形态则与学生端「问 AI 老师」页签是**同一个页面、同一份会话、同一套
-/// 渲染**，宽度随可用空间自然适配（ADR-0045）。
+/// 像贴纸。整页形态则与学生端是**同一个页面、同一份会话、同一套渲染**，宽度随可用
+/// 空间自然适配（ADR-0045）。
 ///
-/// 入口仍然只有这一个浮动按钮（ADR-0036：每个角色恰好一个 AI 入口）。按钮不在助手
-/// 页上重复出现——整页自带返回，浮球盖在整页右下角会正好压住输入栏。
+/// 入口仍然只有这一个浮动按钮（ADR-0036：每个角色恰好一个 AI 入口）。[isTeacher]
+/// 只切换标题与空态引导的口径（教师 `AI 学习助手` / 学生 `问 AI 老师`），按钮不在
+/// 助手页上重复出现——整页自带返回，浮球盖在整页右下角会正好压住输入栏。
 class FloatingAssistant extends StatelessWidget {
   final Widget child;
 
-  const FloatingAssistant({super.key, required this.child});
+  /// 教师端形态：标题与空态引导按教师口径渲染，并开放历史会话入口。
+  ///
+  /// 学生端不传（默认 false）：标题为「问 AI 老师」、空态强调「只讲学习内容」
+  /// （后端 `AgentRuntime.visible_businesses(role)` 是唯一真相源，学生端不暴露
+  /// 出题 / 查任务等业务）。
+  final bool isTeacher;
+
+  const FloatingAssistant({
+    super.key,
+    required this.child,
+    this.isTeacher = false,
+  });
 
   void _open(BuildContext context) {
     Navigator.of(context).push(
       CupertinoPageRoute<void>(
         // showBack：整页自带返回（push 路由，默认走 Navigator.maybePop）。
-        // isTeacher：标题与空态引导按教师口径渲染——教师能出题 / 查任务，
+        // isTeacher：标题与空态引导按角色口径渲染——教师能出题 / 查任务，
         // 与学生端「只讲学习内容」的边界不同。
-        builder: (_) => const AssistantChatPage(showBack: true, isTeacher: true),
+        builder: (_) => AssistantChatPage(showBack: true, isTeacher: isTeacher),
       ),
     );
   }
@@ -44,7 +56,8 @@ class FloatingAssistant extends StatelessWidget {
       children: [
         child,
         DraggableAssistantFab(
-          storageKey: 'assistant_fab_home',
+          // 两端位置互不串味：教师沿用旧键保留已拖好的位置，学生独立键。
+          storageKey: isTeacher ? 'assistant_fab_home' : 'assistant_fab_student',
           child: AssistantLauncher(onTap: () => _open(context)),
         ),
       ],

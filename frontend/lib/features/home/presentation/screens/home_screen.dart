@@ -10,7 +10,6 @@ import '../../../../shared/widgets/app_toast.dart';
 import '../../../students/providers/students_provider.dart';
 import '../../../students/presentation/screens/student_form_screen.dart';
 import '../../../students/presentation/screens/student_management_screen.dart';
-import '../../../assistant/presentation/screens/assistant_chat_page.dart';
 import '../../../export/domain/export_repository.dart';
 import '../../../export/presentation/export_preview_page.dart';
 import '../../../practice/presentation/screens/practice_screen.dart';
@@ -169,9 +168,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ref.read(dueReviewNotifierProvider.notifier).load();
       case 2: // 错题本
         ref.read(childWrongQuestionsProvider.notifier).load();
-      case 3: // AI 问答：会话由 AssistantNotifier 自我管理，无需全局刷新
-        break;
-      case 4: // 学科掌握度
+      case 3: // 学科掌握度（原页签 4，移除 AI 页签后前移）
         ref.read(masteryNotifierProvider.notifier).load(widget.user.id);
     }
   }
@@ -388,7 +385,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           onNavigateToPractice: _navigateToPractice,
           onNavigateToReview: () => _switchChildTab(1),
           onNavigateToWrongQuestions: () => _switchChildTab(2),
-          onNavigateToTutor: () => _switchChildTab(3),
         ),
         ReviewScreen(
           showBack: false,
@@ -397,7 +393,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           onExportDue: _exportDueReviews,
         ),
         const WrongQuestionsScreen(showBack: false),
-        const AssistantChatPage(showBack: false),
         StudentMasteryScreen(user: widget.user),
       ],
     );

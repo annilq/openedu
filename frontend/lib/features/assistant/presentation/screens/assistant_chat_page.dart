@@ -23,13 +23,13 @@ import '../../../../shared/widgets/app_actions.dart';
 
 /// AI 单入口整页形态（ADR-0036 / ADR-0047）：**双端唯一的助手页面**。
 ///
-/// - 学生端：导航空壳的「问 AI 老师」页签（[showBack] = false）；
-/// - 教师端：浮动按钮 push 出来的整页（[showBack] = true，[isTeacher] = true）。
+/// 教师端与学生端都通过右下角浮动按钮（[FloatingAssistant]）push 本整页进入
+/// （[showBack] = true）；学生端不再有独立页签入口（统一为浮球，ADR-0036/0047）。
 ///
 /// 两端共用同一 [assistantNotifierProvider] 与同一 [AssistantMessageList]——同一个 AI
 /// 能力、同一份会话、同一套渲染，只用 [isTeacher] 切换标题与空态引导的口径。
 ///
-/// 本页可能经 `Navigator.push` 打开（教师端），此时它**不在导航壳的宽度兜底范围内**
+/// 本页经 `Navigator.push` 打开（双端浮球入口），此时它**不在导航壳的宽度兜底范围内**
 /// （ADR-0045），所以整页自带 `contentWide` 上限：消息列表与输入栏同宽同轴，大屏下
 /// 不会出现「气泡收在中间一列、输入框横贯全屏」的错位。
 ///
@@ -54,7 +54,7 @@ class AssistantChatPage extends ConsumerStatefulWidget {
 
   /// 课件练习透传的课堂上下文（ADR-0072 L2）：非空时本页聚焦到该知识点——
   /// 空态渲染推荐操作目录、内容区顶部展示知识点徽标。课件演示页入口会带此参数；
-  /// 全局浮动入口与「问 AI 老师」页签不带（走全局能力目录）。
+  /// 全局浮动入口不带（走全局能力目录）。
   final AssistantCoursewareContext? coursewareContext;
 
   const AssistantChatPage({

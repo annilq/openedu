@@ -11,8 +11,8 @@
 //      静态的多个宽度用例**全都照不出来**（每个用例都是新建 widget 树）。必须
 //      在同一个 tester 里 `setSurfaceSize` 两次才咬得住。
 //
-// 另外覆盖了此前几乎没人守的两条路径：紧凑·学生端**底栏 6 项**的边界（320 宽下
-// 每项只有 ~53px），以及**真实主屏**（`HomeScreen` 教师 / 学生两种角色）。
+// 另外覆盖了此前几乎没人守的两条路径：紧凑·学生端**底栏 5 项**（4 页签 + 「我的」，
+// 320 宽下每项只有 ~64px），以及**真实主屏**（`HomeScreen` 教师 / 学生两种角色）。
 // `flutter analyze` 对这两件事一个字都说不出来——溢出不是类型错误。
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -50,8 +50,8 @@ Future<StorageService> _makeStorage() async {
   return s;
 }
 
-/// 学生端导航共 6 项（5 个页签 + 「我的」）——底栏最挤的真实规模，
-/// 不是 1 项的简化版：项数才是挤压的来源。
+/// 学生端导航共 5 项（4 个页签 + 「我的」）——底栏最挤的真实规模，
+/// 不是 1 项的简化版：项数才是挤压的来源。AI 入口已统一为右下角浮球，不再单列页签。
 List<AdaptiveNavDestination> _childDestinations() => const [
       AdaptiveNavDestination(
           icon: LucideIcons.house, label: '首页', active: true),
@@ -59,8 +59,6 @@ List<AdaptiveNavDestination> _childDestinations() => const [
           icon: LucideIcons.refreshCw, label: '复习', active: false),
       AdaptiveNavDestination(
           icon: LucideIcons.bookOpen, label: '错题本', active: false),
-      AdaptiveNavDestination(
-          icon: LucideIcons.sparkles, label: '问 AI 老师', active: false),
       AdaptiveNavDestination(
           icon: LucideIcons.target, label: '掌握度', active: false),
       AdaptiveNavDestination(

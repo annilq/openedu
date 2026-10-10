@@ -91,7 +91,7 @@ class NavigationDestinations {
     ];
   }
 
-  /// 学生端页签目的地。
+  /// 学生端页签目的地。AI 入口统一走右下角浮球（ADR-0036 / 0047），不再单列页签。
   List<AdaptiveNavDestination> child(int activeIndex) => [
         AdaptiveNavDestination(
             icon: LucideIcons.house,
@@ -109,15 +109,10 @@ class NavigationDestinations {
             active: activeIndex == 2,
             onTap: () => goChildTab(2)),
         AdaptiveNavDestination(
-            icon: LucideIcons.sparkles,
-            label: '问 AI 老师',
-            active: activeIndex == 3,
-            onTap: () => goChildTab(3)),
-        AdaptiveNavDestination(
             icon: LucideIcons.target,
             label: '掌握度',
-            active: activeIndex == 4,
-            onTap: () => goChildTab(4)),
+            active: activeIndex == 3,
+            onTap: () => goChildTab(3)),
       ];
 
   /// 「我的」目的地。教师端与页面共用同一个状态；学生端在显示个人信息时

@@ -52,7 +52,10 @@ void main() {
         child: ShadApp.custom(
           theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
           appBuilder: (context) => CupertinoApp(
-            home: FloatingAssistant(child: const SizedBox.expand(key: bodyKey)),
+            home: FloatingAssistant(
+              isTeacher: true,
+              child: const SizedBox.expand(key: bodyKey),
+            ),
           ),
         ),
       ),

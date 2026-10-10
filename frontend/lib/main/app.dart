@@ -108,19 +108,18 @@ class _MyAppState extends ConsumerState<MyApp> {
         Brightness.dark;
     final active = isDark ? AppTheme.dark : AppTheme.light;
 
-    // AI 单入口（ADR-0036 / 0047）：教师端右下角浮球，点击进助手整页；学生端走
-    // 「问 AI 老师」页签，不叠浮动入口——两者是同一个页面、共用同一个
-    // assistantNotifierProvider 与消息渲染。
+    // AI 单入口（ADR-0036 / 0047）：教师端与学生端**统一**走右下角浮球，点击 push
+    // 进助手整页——同一个页面、同一份会话、同一套消息渲染，只用 [FloatingAssistant.isTeacher]
+    // 切换标题与空态引导口径。两端都恰好一个 AI 入口（ADR-0036）。
     final user = _currentUser;
     final Widget home = !_initialized
         ? const _SplashScreen()
         : user == null
             ? LoginScreen(onLoginSuccess: _onLoginSuccess)
-            : user.isTeacher
-                ? FloatingAssistant(
-                    child: HomeScreen(user: user, onLogout: _logout),
-                  )
-                : HomeScreen(user: user, onLogout: _logout);
+            : FloatingAssistant(
+                isTeacher: user.isTeacher,
+                child: HomeScreen(user: user, onLogout: _logout),
+              );
 
     return ShadApp.custom(
       theme: AppTheme.shadFor(false, userMode, density),

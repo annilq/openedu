@@ -24,7 +24,6 @@ class StudentHome extends ConsumerWidget {
   final void Function(TaskModel task) onNavigateToPractice;
   final VoidCallback onNavigateToReview;
   final VoidCallback onNavigateToWrongQuestions;
-  final VoidCallback onNavigateToTutor;
 
   const StudentHome({
     super.key,
@@ -32,7 +31,6 @@ class StudentHome extends ConsumerWidget {
     required this.onNavigateToPractice,
     required this.onNavigateToReview,
     required this.onNavigateToWrongQuestions,
-    required this.onNavigateToTutor,
   });
 
   @override
@@ -60,9 +58,6 @@ class StudentHome extends ConsumerWidget {
                   dueCount: dueCount,
                   onReview: onNavigateToReview,
                   onWrong: onNavigateToWrongQuestions,
-                ),
-                PopIn(
-                  child: _TutorBanner(onTutor: onNavigateToTutor),
                 ),
                 const SectionTitle('今日任务',
                     padding: EdgeInsets.fromLTRB(AppSpacing.lg, AppSpacing.md,
@@ -278,34 +273,6 @@ class _ReviewBanner extends StatelessWidget {
             label: '去复习',
             fill: AppBrutal.cyan,
             onPressed: onReview,
-            icon: CupertinoIcons.arrow_right,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// AI 老师横幅（撞色 = yellow，亮块配墨黑字 13.25:1）。
-class _TutorBanner extends StatelessWidget {
-  final VoidCallback onTutor;
-  const _TutorBanner({required this.onTutor});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-          AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.md),
-      child: _BrutalBanner(
-        fill: AppBrutal.yellow,
-        icon: CupertinoIcons.sparkles,
-        title: '问 AI 老师',
-        subtitle: '遇到不懂的题，随时来问～',
-        actions: [
-          AppBrutalButton(
-            label: '去提问',
-            fill: AppBrutal.yellow,
-            onPressed: onTutor,
             icon: CupertinoIcons.arrow_right,
           ),
         ],
