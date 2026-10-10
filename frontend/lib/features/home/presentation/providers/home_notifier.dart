@@ -34,8 +34,8 @@ class TaskGenSuccess extends TaskGenState {
 
   /// 少题提示文案（供 UI 直接展示）。
   ///
-  /// ⚠️ 出口只能指向真实存在的入口：草稿页没有「添加题目」、「换一题」也**不能加题**
-  /// （ADR-0056 的硬约束：它只是维持题数不变地换掉一道题），整卷重生成同样已移除。
+  /// ⚠️ 出口只能指向真实存在的入口：草稿页没有「添加题目」，单题「换一题」与整卷重生成
+  /// 均已移除（ADR-0056）。
   /// 于是补齐的唯一路径是「回生成页重来一份」——此前这里指向一个不存在的按钮。
   String get shortMessage => failures.isNotEmpty
       ? '应出 $expected 题，实际只生成 ${task.questions.length} 题：${failures.first}。'

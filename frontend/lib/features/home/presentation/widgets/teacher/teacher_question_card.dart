@@ -7,12 +7,11 @@ import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/utils/option_text.dart';
 import '../../../../../shared/utils/question_labels.dart';
 import '../../../../../shared/widgets/app_motion.dart';
-import '../../../../../shared/widgets/stream_reasoning_panel.dart';
 import '../../../../../shared/widgets/app_actions.dart';
 import '../../../../../shared/widgets/app_card.dart';
 import '../../../../../shared/widgets/app_tags.dart';
 
-/// 草稿审核页的单题卡片：只读展示 / 内联编辑 / 单题动作（入库、删除、换一题）。
+/// 草稿审核页的单题卡片：只读展示 / 内联编辑 / 单题动作（入库、删除）。
 ///
 /// 从 `teacher_task_review_screen.dart` 拆出——原文件 1204 行里有一半是这张卡片
 /// （含自己的编辑表单状态），把「页面编排」与「一题怎么渲染/编辑」混在一起。
@@ -21,21 +20,14 @@ class TeacherQuestionCard extends ConsumerStatefulWidget {
   final QuestionModel question;
   final bool isDraft;
 
-  /// 该卡片正在执行一个单题动作（删除/编辑保存/换一题/加入题库）。
+  /// 该卡片正在执行一个单题动作（删除/编辑保存/加入题库）。
   ///
-  /// 期间按钮全部禁用并显示 spinner。此前没有这个标记：换一题是一次同步 LLM
+  /// 期间按钮全部禁用并显示 spinner。此前没有这个标记：单题动作是一次同步 LLM
   /// 调用，按钮点了长时间没任何反馈，教师连点会并发多个请求。
   final bool busy;
 
-  /// 该卡片正被「换一题」重生成时，模型实时产出的推理文本（THINKING 帧累加）。
-  ///
-  /// 仅当前卡 = busyTqId 时由父级传入（整卷重生成的 liveText 走顶部进度区），
-  /// 非空即在该卡内展示一个「模型思考中」流式面板，替代原本只能干等「处理中…」三字的体验。
-  final String liveText;
-
   final Future<void> Function()? onPromote;
   final Future<void> Function()? onDelete;
-  final Future<void> Function()? onRegenerate;
   final Future<void> Function(Map<String, dynamic> edits)? onEdit;
 
   const TeacherQuestionCard({
@@ -44,10 +36,8 @@ class TeacherQuestionCard extends ConsumerStatefulWidget {
     required this.question,
     required this.isDraft,
     this.busy = false,
-    this.liveText = '',
     this.onPromote,
     this.onDelete,
-    this.onRegenerate,
     this.onEdit,
   });
 
@@ -116,17 +106,6 @@ class TeacherQuestionCardState extends ConsumerState<TeacherQuestionCard> {
             _buildHeader(q, app),
             const SizedBox(height: AppSpacing.md),
             _editing ? _buildEditForm(q) : _buildReadonly(q),
-            // 换一题进行中：在卡片内直接展示模型实时推理文本，而不是让教师只能看到
-            // 「处理中…」三个字干等十几秒。整卷重生成的 liveText 走顶部进度区，这里只渲染单题的。
-            if (!_editing && widget.liveText.isNotEmpty) ...[
-              const SizedBox(height: AppSpacing.md),
-              StreamReasoningPanel(
-                index: null,
-                label: '',
-                reasoning: widget.liveText,
-                streaming: true,
-              ),
-            ],
             const SizedBox(height: AppSpacing.lg),
             if (widget.isDraft) _buildActions(q, app),
           ],
@@ -464,12 +443,6 @@ class TeacherQuestionCardState extends ConsumerState<TeacherQuestionCard> {
           leading: const Icon(LucideIcons.pencil, size: 16),
           child: Text(_editing ? '编辑中…' : '编辑题目'),
         ),
-        ShadButton.outline(
-          
-          onPressed: busy ? null : widget.onRegenerate,
-          leading: const Icon(LucideIcons.rotateCw, size: 16),
-          child: const Text('换一题'),
-        ),
         ShadButton.destructive(
           
           onPressed: busy ? null : widget.onDelete,
@@ -502,7 +475,3 @@ class TeacherQuestionCardState extends ConsumerState<TeacherQuestionCard> {
         _ => d,
       };
 }
-
-// ============ 流式实时文本面板 ============
-// 复用 shared/widgets/stream_reasoning_panel.dart 的 StreamReasoningPanel
-// （「换一题」与整卷重生成共用同一渲染 seam，见 DRY 收敛说明）。

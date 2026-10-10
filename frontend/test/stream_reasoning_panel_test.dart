@@ -7,7 +7,7 @@ import 'package:kids_learn/shared/widgets/stream_reasoning_panel.dart';
 /// 不得依赖自定时 Timer（旧 [ReasoningTypewriterWidget] 在生成期 `_shown` 永不前进，
 /// 题卡到达后全文闪现）。widget 测试中不 advance 任何 Timer，故本测试在旧实现下必失败。
 ///
-/// 覆盖首次出题（`/tasks/generate`）与重生成（`regenerate-stream`）共用的
+/// 覆盖整卷出题（`/tasks/generate`）使用的
 /// [StreamReasoningPanel]（DRY 收敛点）。
 Widget _host(Widget child) => CupertinoApp(home: CupertinoPageScaffold(child: child));
 

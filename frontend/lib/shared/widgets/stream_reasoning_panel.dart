@@ -2,8 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import '../theme/app_theme.dart';
 
-/// 流式推理实时文本面板（DRY 收敛点：首次出题 `/tasks/generate` 与重生成
-/// `regenerate-stream` 共用同一渲染 seam）。
+/// 流式推理实时文本面板（整卷出题 `/tasks/generate` 的渲染 seam）。
 ///
 /// 渲染层退化为对 [reasoning] 的忠实映射：后端已增量下发 THINKING，
 /// 前端无需自有定时器（原 ReasoningTypewriterWidget 的 Timer 与事件到达解耦，

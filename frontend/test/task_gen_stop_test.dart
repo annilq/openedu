@@ -42,12 +42,6 @@ class _FakeAssistant extends AssistantRepository {
   @override
   Stream<AssistantEvent> chat(AssistantChatReq req) => throw UnimplementedError();
   @override
-  Stream<AssistantEvent> regenerateOne({
-    required String taskId,
-    required String tqId,
-  }) =>
-      throw UnimplementedError();
-  @override
   Future<List<AssistantConversation>> conversations() =>
       throw UnimplementedError();
   @override
