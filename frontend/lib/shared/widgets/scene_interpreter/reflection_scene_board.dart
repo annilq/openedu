@@ -217,6 +217,7 @@ class ReflectionSceneBoardDialog {
   static Future<void> show(
     BuildContext context, {
     required FigureBoardSave onSave,
+    List<FigureShape>? presets,
   }) {
     final app = AppTheme.colorsOf(context);
     return showShadDialog<void>(
@@ -231,6 +232,9 @@ class ReflectionSceneBoardDialog {
           width: maxBoardWidth,
           child: ReflectionSceneBoard(
             onSave: onSave,
+            // 工具栏预设由调用方注入（ADR-0083 决策 7：图库在打开创作 UI 时按需拉取，
+            // 取数属 feature 关切）——画板本身不认识 provider，保持哑组件。
+            presets: presets ?? kFigureShapes,
             onBack: () => Navigator.of(ctx).pop(),
           ),
         ),

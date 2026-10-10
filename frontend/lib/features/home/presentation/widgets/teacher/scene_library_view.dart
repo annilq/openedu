@@ -11,10 +11,13 @@ import 'package:flutter/material.dart' show Icons;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../../shared/domain/figures.dart';
+import '../../../../../shared/domain/providers/figure_library_provider.dart';
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/widgets/app_actions.dart';
 import '../../../../../shared/widgets/app_dialog.dart';
 import '../../../../../shared/widgets/app_focusable_action.dart';
+import '../../../../../shared/widgets/app_toast.dart';
 import '../../../../../shared/widgets/scene_interpreter/reflection_scene_board.dart';
 import '../../../domain/repositories/material_repository.dart';
 import '../../../providers/home_provider.dart';
@@ -114,15 +117,36 @@ class TeacherSceneLibraryView extends ConsumerWidget {
     );
   }
 
-  /// 打开图形画板（ADR-0083 T04）：把画板产出的几何经 [MaterialRepository.createFigure]
+  /// 打开图形画板（ADR-0083 T04/T05）：把画板产出的几何经 [MaterialRepository.createFigure]
   /// 存进图库（`is_builtin=false`）。画板本身在 `shared/`、不依赖 features，故这里注入
   /// 保存回调完成接线（分层：shared 不得 import features）。
-  void _openBoard(BuildContext context, WidgetRef ref) {
+  ///
+  /// 工具栏预设**按需拉取**（ADR-0083 决策 7）：打开画板 = 打开创作 UI，此时才
+  /// `GET /scene-library/figures`（会话内一次性、不落盘）；拉不到就不开画板——空工具栏
+  /// 的画板等于让教师对着空白发呆。保存成功后 `invalidate` 一次，让下次打开能看到新行。
+  Future<void> _openBoard(BuildContext context, WidgetRef ref) async {
     final repo = ref.read(materialRepositoryProvider);
-    ReflectionSceneBoardDialog.show(
+    final List<FigureShape> presets;
+    try {
+      presets = await ref.read(figureLibraryProvider.future);
+    } catch (e) {
+      if (context.mounted) AppToast.show(context, '图形库读取失败，无法打开画板：$e');
+      return;
+    }
+    if (!context.mounted) return;
+    await ReflectionSceneBoardDialog.show(
       context,
-      onSave: (label, points, edges) =>
-          repo.createFigure(label: label, points: points, edges: edges),
+      presets: presets,
+      onSave: (label, points, edges) async {
+        final key = await repo.createFigure(
+          label: label,
+          points: points,
+          edges: edges,
+        );
+        // 图库刚多了一行 → 让会话内的缓存失效，下次打开（或画廊）能看到它。
+        ref.invalidate(figureLibraryProvider);
+        return key;
+      },
     );
   }
 

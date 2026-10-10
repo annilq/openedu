@@ -8,8 +8,8 @@ import '../../../../../shared/widgets/app_actions.dart';
 import '../../../../../shared/widgets/app_buttons.dart';
 import '../../../../../shared/widgets/app_tags.dart';
 import '../../../../../shared/widgets/app_toast.dart';
+import '../../../../../shared/widgets/scene_interpreter/figure_library_gallery.dart';
 import '../../../../../shared/widgets/scene_interpreter/reflection_scene_data.dart';
-import '../../../../../shared/widgets/scene_interpreter/reflection_figure_gallery.dart';
 import '../../../../../shared/widgets/scene_interpreter/reflection_scene_dialog.dart';
 import '../../../domain/repositories/material_repository.dart'
     show SceneLibraryEntry;
@@ -213,11 +213,13 @@ class _KnowledgePointSceneEditorState
           const SceneDeveloperGuide(),
         ]
         else ...[
-          // 图形选择改为画廊（ADR-0061 §V，与题目选项同套组件）：11 个平面图形铺成
+          // 图形选择改为画廊（ADR-0061 §V，与题目选项同套组件）：平面图形铺成
           // 网格，点一个即设为模板图形并弹真正的对折演示，下方滑块再微调它的默认
           // 对称轴。取代原下拉选择器——下拉里看不到图形长什么样，家长只能盲选。
-          ReflectionFigureGallery(
-            figures: kFigureShapes,
+          //
+          // 图形来自图库、**打开时按需拉取**（ADR-0083 决策 7）：内置预设与用户在
+          // 画板上自建的图形同表，故这里能看到并使用自己画的图形。
+          FigureLibraryGallery(
             selectedKey: _shape.key,
             optionLabels: const <String, String>{},
             hint: '点一个图形设为「默认讲解」并打开对折演示；'

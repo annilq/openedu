@@ -20,10 +20,43 @@ import 'package:kids_learn/features/home/domain/repositories/material_repository
 import 'package:kids_learn/features/home/presentation/widgets/teacher/knowledge_point_scene_editor.dart';
 import 'package:kids_learn/features/home/providers/home_provider.dart';
 import 'package:kids_learn/features/home/providers/knowledge_manage_provider.dart';
+import 'package:kids_learn/shared/domain/figure_library.dart';
+import 'package:kids_learn/shared/domain/figures.dart';
+import 'package:kids_learn/shared/domain/providers/figure_library_provider.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
 import 'package:kids_learn/shared/widgets/app_focusable_action.dart';
 import 'package:kids_learn/shared/widgets/app_slider.dart';
 import 'package:kids_learn/shared/widgets/scene_interpreter/reflection_scene.dart';
+
+/// 图库夹具（ADR-0083 T05）：画廊已改为**打开时按需拉取**，测试用这份 DB 形状的
+/// 载荷喂给 provider，避免依赖后端、也不依赖构建期常量（`figures.dart` 将被退役）。
+final List<FigureShape> _libraryFixture = parseFigureLibrary(<String, dynamic>{
+  'figures': <dynamic>[
+    <String, dynamic>{
+      'key': 'house',
+      'label': '房子',
+      'points': <dynamic>[
+        <double>[0.30, 0.70],
+        <double>[0.70, 0.70],
+        <double>[0.70, 0.45],
+        <double>[0.50, 0.25],
+        <double>[0.30, 0.45],
+      ],
+      'is_builtin': true,
+    },
+    <String, dynamic>{
+      'key': 'square',
+      'label': '正方形',
+      'points': <dynamic>[
+        <double>[0.28, 0.28],
+        <double>[0.72, 0.28],
+        <double>[0.72, 0.72],
+        <double>[0.28, 0.72],
+      ],
+      'is_builtin': true,
+    },
+  ],
+});
 
 /// 记录 saveScenes 收到的 spec，用来断言「保存的那份是纯几何」。
 class _RecordingManageNotifier extends KnowledgeManageNotifier {
@@ -81,6 +114,8 @@ void main() {
       ProviderScope(
         overrides: [
           materialRepositoryProvider.overrideWithValue(_StubRepo()),
+          // 画廊打开的取数（ADR-0083 决策 7）在测试里直接用夹具顶掉。
+          figureLibraryProvider.overrideWith((ref) async => _libraryFixture),
           knowledgeManageProvider
               .overrideWith((ref) => _RecordingManageNotifier(_StubRepo())),
         ],

@@ -18,6 +18,7 @@ import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/widgets/app_actions.dart';
 import '../../../../../shared/widgets/app_toast.dart';
 import '../../../../../shared/widgets/app_focusable_action.dart';
+import '../../../../../shared/widgets/scene_interpreter/figure_library_gallery.dart';
 import '../../../../../shared/widgets/scene_interpreter/reflection_figure_gallery.dart';
 import '../../../../../shared/widgets/scene_interpreter/scene_interpreter.dart';
 import '../../../providers/home_provider.dart';

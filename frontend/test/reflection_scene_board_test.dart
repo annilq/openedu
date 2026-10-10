@@ -19,6 +19,7 @@ import 'package:kids_learn/features/home/presentation/widgets/teacher/scene_libr
 import 'package:kids_learn/features/home/providers/home_provider.dart';
 import 'package:kids_learn/features/home/providers/knowledge_manage_provider.dart';
 import 'package:kids_learn/shared/domain/figures.dart';
+import 'package:kids_learn/shared/domain/providers/figure_library_provider.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
 import 'package:kids_learn/shared/widgets/app_actions.dart';
 import 'package:kids_learn/shared/widgets/app_buttons.dart';
@@ -303,6 +304,8 @@ void main() {
       size: const Size(900, 1600),
       overrides: [
         materialRepositoryProvider.overrideWithValue(_StubRepo()),
+        // 打开画板前会按需拉图库（ADR-0083 T05）；测试用整库夹具顶掉取数。
+        figureLibraryProvider.overrideWith((ref) async => kFigureShapes),
         sceneLibraryProvider.overrideWith(
           (ref) async => SceneLibrary.fromJson(const <String, dynamic>{
             'scenes': <dynamic>[],

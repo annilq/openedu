@@ -43,8 +43,8 @@ class _DefaultFigureSectionState extends ConsumerState<_DefaultFigureSection> {
           style: text.bodySmall?.copyWith(color: app.onSurfaceVariant),
         ),
         const SizedBox(height: AppSpacing.sm),
-        ReflectionFigureGallery(
-          figures: kFigureShapes,
+        // 图库**按需拉取**（ADR-0083 决策 7）：打开就 GET 一次、会话内复用、不落盘。
+        FigureLibraryGallery(
           selectedKey: widget.defaultFigureKey,
           hint: '点一个图形设为该场景的默认演示图形',
           onOpen: (figure) => _set(figure.key),
