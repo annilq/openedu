@@ -52,6 +52,9 @@ class ModelInfo {
   final String? baseUrl;
   final String modelName;
   final bool isDefault;
+  /// 非敏感标志：后端是否已设置 api_key（明文绝不回传）。前端据此在编辑框
+  /// 显示「已设置密钥（明文不显示）」，避免重开编辑框见空白字段误以为没保存。
+  final bool hasApiKey;
 
   const ModelInfo({
     required this.id,
@@ -60,6 +63,7 @@ class ModelInfo {
     this.baseUrl,
     required this.modelName,
     this.isDefault = false,
+    this.hasApiKey = false,
   });
 
   factory ModelInfo.fromJson(Map<String, dynamic> json) {
@@ -70,6 +74,7 @@ class ModelInfo {
       baseUrl: json['base_url'] as String?,
       modelName: json['model_name'] as String,
       isDefault: json['is_default'] as bool? ?? false,
+      hasApiKey: json['has_api_key'] as bool? ?? false,
     );
   }
 }

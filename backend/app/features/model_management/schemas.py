@@ -66,6 +66,10 @@ class ModelConfigResp(BaseModel):
     base_url: str | None
     model_name: str
     is_default: bool
+    # 非敏感标志：仅告诉前端「是否已设置密钥」，明文绝不回传（安全约束）。
+    # 前端据此在编辑框展示「已设置密钥（明文不显示）」，消除「重开编辑框看到空白
+    # 字段误以为密钥没保存」的歧义（见 model_form_dialog 的 ApiKeyFormField）。
+    has_api_key: bool
 
 
 class ProviderPreset(BaseModel):
@@ -127,7 +131,7 @@ class ModelProbeResp(BaseModel):
 
 
 def _to_resp(mc: ModelConfig) -> ModelConfigResp:
-    """把 ModelConfig ORM 行转为对外响应（不含 api_key 明文）。"""
+    """把 ModelConfig ORM 行转为对外响应（不含 api_key 明文，仅含是否已设置的标志）。"""
     return ModelConfigResp(
         id=mc.id,
         label=mc.label,
@@ -135,4 +139,5 @@ def _to_resp(mc: ModelConfig) -> ModelConfigResp:
         base_url=mc.base_url,
         model_name=mc.model_name,
         is_default=mc.is_default,
+        has_api_key=bool(mc.api_key_enc),
     )

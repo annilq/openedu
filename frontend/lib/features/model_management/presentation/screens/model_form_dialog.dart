@@ -10,6 +10,7 @@ import '../../../../shared/widgets/app_toast.dart';
 import '../../../../shared/widgets/app_motion.dart';
 import '../../domain/model_requests.dart';
 import '../providers/models_notifier.dart';
+import '../widgets/api_key_field.dart';
 import '../../../../shared/widgets/app_buttons.dart';
 
 /// 新增 / 编辑模型的对话框（ShadDialog + 表单字段）。
@@ -343,13 +344,11 @@ class _ModelFormDialogState extends ConsumerState<ModelFormDialog> {
                 hintText: 'http://localhost:11434',
               ),
               const SizedBox(height: AppSpacing.md),
-              AppTextField(
-                label: widget.initial == null ? 'API Key' : 'API Key（留空=不修改）',
+              ApiKeyFormField(
                 controller: _apiKeyCtrl,
-                obscureText: true,
-                hintText: widget.initial != null
-                    ? '••••••••（不改请留空）'
-                    : (preset?.apiKeyHint ?? '必填：填入该服务的 API Key'),
+                isEdit: widget.initial != null,
+                hasApiKey: widget.initial?.hasApiKey ?? false,
+                apiKeyHint: preset?.apiKeyHint,
               ),
               const SizedBox(height: AppSpacing.md),
               Row(
