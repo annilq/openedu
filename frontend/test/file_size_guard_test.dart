@@ -10,7 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 1. **未登记的新文件不得超过 400 行**——这是 ADR-0058 的主要执行力：它拦不住
 ///    历史债务，但能拦住**下一个** `teacher_question_bank_view.dart`（现已拆出
 ///    `BankQuestionRow`，基线随之下调到 759）。
-/// 2. **已登记的超限文件不得继续增长**（棘轮）——现存 **16** 个超限文件登记在
+/// 2. **已登记的超限文件不得继续增长**（棘轮）——现存 **13** 个超限文件登记在
 ///    [_baseline] 里（另 `dev/theme_preview.dart` 1189 行走豁免），基线**只许下调不许上调**：
 ///    拆小了把基线跟着调小，长回去就失败。
 ///    它不强迫任何人现在就去拆分，但保证这些文件不会继续变长。
@@ -137,7 +137,13 @@ void main() {
 ///     基线停在旧高度会让棘轮失真，这里补到实测值）；
 ///   · 补登两个已越过 400 但未登记的课件文件：courseware_editor_page 432、courseware_section_edit_dialog 588
 ///     （均为此前多轮「空态添加环节 / 知识点场景关联」累积的债务，非本轮一次性引入）。
-///     这两条是**待拆债务**不是许可：下一轮按 A 拆小（Page → Section → Widget）拆回 400 内后删登记。
+///     2026-10-10 **两条已拆完并移出登记**：courseware_editor_page 432→363（抽出
+///     `CoursewareEditorInfoCard`）、courseware_section_edit_dialog 588→379（抽出
+///     `SectionMaterialPicker` 224 行含素材库 picker + 缩略图、`SectionScriptSegmentsEditor`
+///     75 行含多段话术行与重点切换）。均为 A 类净减（真实职责分离），不是硬压行数。
+/// 2026-10-10 **student_home 428→395，整条移出 _baseline**：AI 入口统一为右下角浮球后，
+///   学生端不再有「问 AI 老师」页签，随之删除已无落点的首页 AI 横幅（`_TutorBanner`）与
+///   `onNavigateToTutor` 回调——回到 400 行内，属 A 类净减（真实职责分离）。
 /// **只许下调（除 B 类已登记的合理大件外）。**
 ///
 /// 拆分批次见 `docs/refactor/2026-09-21-flutter-ui-decomposition.md`（P0–P4）。
@@ -151,13 +157,10 @@ const Map<String, int> _baseline = <String, int>{
   'shared/widgets/scene_interpreter/reflection_scene.dart': 567,
   'features/home/presentation/widgets/teacher/teacher_question_card.dart': 511,
   'features/home/presentation/widgets/teacher/teacher_wrong_questions_view.dart': 442,
-  'features/home/presentation/widgets/student_home.dart': 428,
   'features/home/presentation/widgets/teacher/workbench_glance.dart': 406,
   'shared/widgets/analytics_charts.dart': 691,
   'features/home/presentation/screens/teacher_task_review_screen.dart': 424,
   'features/students/presentation/screens/student_management_screen.dart': 810,
-  'features/courseware/presentation/pages/courseware_editor_page.dart': 432,
-  'features/courseware/presentation/pages/courseware_section_edit_dialog.dart': 588,
 };
 
 bool _isDart(String path) =>

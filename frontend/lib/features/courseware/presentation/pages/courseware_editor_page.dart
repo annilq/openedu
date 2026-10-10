@@ -15,6 +15,7 @@ import '../../../../shared/widgets/app_toast.dart';
 import '../../domain/models/courseware.dart';
 import '../../domain/models/courseware_section.dart';
 import '../../providers/courseware_provider.dart';
+import '../widgets/courseware_editor_info_card.dart';
 import '../widgets/editor_section_list.dart';
 import '../widgets/courseware_redraft_dialog.dart';
 import 'courseware_present_page.dart';
@@ -277,79 +278,6 @@ class _CoursewareEditorPageState extends ConsumerState<CoursewareEditorPage> {
     );
   }
 
-  /// 课件信息卡片（courseware-round-3 T02）：标题 / 范围 / 状态 / 教学目标，
-  /// 右上角「编辑」打开信息编辑弹窗（复用已有 `PATCH /{id}`）。
-  Widget _infoCard(CoursewareModel cw, AppText text) {
-    final app = AppTheme.colorsOf(context);
-    final scope = [
-      if (cw.subject != null && cw.subject!.isNotEmpty) cw.subject!,
-      if (cw.grade != null) '${cw.grade}年级',
-      if (cw.semester != null && cw.semester!.isNotEmpty) cw.semester!,
-    ].join(' · ');
-    final scopeLabel = scope.isEmpty ? cw.kpName : '$scope · ${cw.kpName}';
-    return Container(
-      margin: const EdgeInsets.fromLTRB(
-          AppSpacing.md, AppSpacing.md, AppSpacing.md, 0),
-      padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        color: app.surfaceRaised,
-        border: Border.all(color: app.outline, width: AppElevation.borderWidth),
-        borderRadius: BorderRadius.circular(AppRadius.card),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Text(
-                  cw.displayTitle,
-                  style: text.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-                ),
-              ),
-              AppTextAction(label: '编辑', onPressed: _busy ? null : _editInfo),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          Text(scopeLabel,
-              style: text.bodySmall?.copyWith(color: app.onSurfaceVariant)),
-          const SizedBox(height: AppSpacing.xs),
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.sm, vertical: 2),
-                decoration: BoxDecoration(
-                  color: cw.isReady ? app.primaryContainer : app.surfaceSunken,
-                  borderRadius: BorderRadius.circular(AppRadius.chip),
-                ),
-                child: Text(
-                  cw.isReady ? '可上讲台' : '草稿',
-                  style: text.labelSmall?.copyWith(
-                    color: cw.isReady ? app.onPrimaryContainer : app.onSurfaceVariant,
-                  ),
-                ),
-              ),
-              if (cw.objective != null && cw.objective!.isNotEmpty) ...[
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: Text(
-                    '目标：${cw.objective}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: text.bodySmall
-                        ?.copyWith(color: app.onSurfaceVariant),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildBody(AppText text) {
     if (_loading) {
       return const Center(child: AppLoading());
@@ -381,7 +309,10 @@ class _CoursewareEditorPageState extends ConsumerState<CoursewareEditorPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _infoCard(cw, text),
+        CoursewareEditorInfoCard(
+          courseware: cw,
+          onEdit: _busy ? null : _editInfo,
+        ),
         Padding(
           padding: const EdgeInsets.all(AppSpacing.md),
           child: Row(

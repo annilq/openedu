@@ -4,24 +4,19 @@ import 'package:flutter/material.dart' show Dialog, showDialog;
 import 'package:flutter/widgets.dart';
 import 'package:flutter/cupertino.dart' show CupertinoPageRoute;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:kids_learn/features/home/presentation/widgets/teacher/knowledge_point_scene_editor.dart';
 
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_actions.dart';
 import '../../../../shared/widgets/app_buttons.dart';
-import '../../../../shared/widgets/app_focusable_action.dart';
 import '../../../../shared/widgets/app_inputs.dart';
 import '../../../../shared/widgets/app_toast.dart';
-import '../../../../shared/widgets/app_loading.dart';
-import '../../../../shared/widgets/app_image_viewer.dart';
-import '../../../../shared/widgets/auth_image.dart';
-import '../../domain/models/courseware_asset.dart';
 import '../../domain/models/courseware_section.dart';
 import '../../providers/courseware_provider.dart';
-import 'asset_library_picker.dart';
+import '../widgets/section_material_picker.dart';
 import '../widgets/section_practice_edit_block.dart';
+import '../widgets/section_script_segments_editor.dart';
 import 'section_scene_association_block.dart';
 import 'section_scene_figures_picker.dart';
 
@@ -244,35 +239,8 @@ class _SectionEditDialogState extends ConsumerState<_SectionEditDialog> {
     super.dispose();
   }
 
-  /// 关联素材：复用多选素材库 picker（ADR-0076）。当前已挂在环节里的素材 id 作为
-  /// 「已选」传给 picker；回执是选中的 asset id 列表。落库时：保留既有素材的 caption、
-  /// 按 picker 顺序重排、剔除未选中的、新选中的给空 caption。
-  Future<void> _addAsset() async {
-    final selectedIds = await showAssetLibraryPicker(
-      context,
-      ref,
-      initialSelected: _draft.materials.map((m) => m.assetId).toList(),
-    );
-    if (selectedIds == null) return;
-    final captionById = {
-      for (final m in _draft.materials) m.assetId: m.caption,
-    };
-    final mats = <CoursewareMaterialItem>[
-      for (final id in selectedIds)
-        CoursewareMaterialItem(
-          assetId: id,
-          caption: captionById[id] ?? '',
-        ),
-    ];
-    setState(() => _draft = _draft.copyWith(materials: mats));
-  }
-
-  void _removeMaterial(String assetId) {
-    final mats =
-        _draft.materials.where((m) => m.assetId != assetId).toList();
-    setState(() => _draft = _draft.copyWith(materials: mats));
-  }
-
+  /// 关联素材的取值与去重都归 [SectionMaterialPicker]（它自带素材库 picker 与
+  /// id→图的解析），这里只接收整列覆盖写的结果。
   void _addSegment() => setState(() {
         _segCtls.add(TextEditingController());
         _segEmphasis.add(CoursewareScriptEmphasis.none);
@@ -291,12 +259,6 @@ class _SectionEditDialogState extends ConsumerState<_SectionEditDialog> {
           CoursewareScriptEmphasis.highlight => CoursewareScriptEmphasis.none,
         };
       });
-
-  String _emphasisLabel(CoursewareScriptEmphasis e) => switch (e) {
-        CoursewareScriptEmphasis.none => '普通',
-        CoursewareScriptEmphasis.bold => '加粗',
-        CoursewareScriptEmphasis.highlight => '高亮',
-      };
 
   void _save() {
     final segs = <CoursewareScriptSegment>[];
@@ -318,7 +280,6 @@ class _SectionEditDialogState extends ConsumerState<_SectionEditDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final app = AppTheme.colorsOf(context);
     final text = AppTheme.textOf(context);
     return Dialog(
       child: ConstrainedBox(
@@ -338,32 +299,25 @@ class _SectionEditDialogState extends ConsumerState<_SectionEditDialog> {
               const SizedBox(height: AppSpacing.md),
               AppTextField(label: '环节标题', controller: _titleCtl),
               const SizedBox(height: AppSpacing.md),
-              Text('教师话术 / 提问卡（可分多段，每段可标重点）',
-                  style: text.labelSmall),
-              const SizedBox(height: AppSpacing.sm),
               Expanded(
                 child: SingleChildScrollView(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      for (var i = 0; i < _segCtls.length; i++)
-                        _segmentRow(i, app, text),
-                      AppTextAction(label: '添加一段', onPressed: _addSegment),
+                      SectionScriptSegmentsEditor(
+                        controllers: _segCtls,
+                        emphasis: _segEmphasis,
+                        onAdd: _addSegment,
+                        onCycleEmphasis: _cycleEmphasis,
+                        onRemove: _removeSegment,
+                      ),
                       const SizedBox(height: AppSpacing.lg),
                       // 关联素材（统一表单，任意 kind 都能挂）。
-                      Row(
-                        children: [
-                          Text('关联素材', style: text.labelMedium),
-                          const Spacer(),
-                          AppPrimaryButton(
-                            label: '添加素材',
-                            fullWidth: false,
-                            onPressed: _addAsset,
-                          ),
-                        ],
+                      SectionMaterialPicker(
+                        materials: _draft.materials,
+                        onChanged: (mats) =>
+                            setState(() => _draft = _draft.copyWith(materials: mats)),
                       ),
-                      const SizedBox(height: AppSpacing.sm),
-                      _materialGrid(app, text),
                       const SizedBox(height: AppSpacing.lg),
                       // 关联知识点场景（统一表单，任意 kind 都能挂）。
                       SectionSceneAssociationBlock(
@@ -422,167 +376,4 @@ class _SectionEditDialogState extends ConsumerState<_SectionEditDialog> {
     );
   }
 
-  Widget _segmentRow(int index, AppColors app, AppText text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: AppTextField(
-              label: '第 ${index + 1} 段',
-              controller: _segCtls[index],
-            ),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          AppTextAction(
-            label: _emphasisLabel(_segEmphasis[index]),
-            onPressed: () => _cycleEmphasis(index),
-          ),
-          AppTextAction(
-            label: '移除',
-            onPressed: () => _removeSegment(index),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 关联素材网格（ADR-0076）：每张素材一个缩略图，点缩略图放大看原图，右上角删除。
-  /// 与 [SectionMediaGallery] 共用 `coursewareAssetsProvider` 解析 id→图；素材被删
-  /// 后引用仍在的显示「素材已移除」占位。
-  Widget _materialGrid(AppColors app, AppText text) {
-    if (_draft.materials.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-        child: Text('还没有关联素材，点上方「添加素材」从素材库挑图。',
-            style: text.bodySmall?.copyWith(color: app.onSurfaceVariant)),
-      );
-    }
-    final assets = ref.watch(coursewareAssetsProvider);
-    return assets.when(
-      loading: () => const Center(child: AppLoading.skeletonInline()),
-      error: (e, _) => Padding(
-        padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-        child: Text('素材列表加载失败：$e',
-            style: text.bodySmall?.copyWith(color: app.error)),
-      ),
-      data: (list) => GridView.count(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        crossAxisCount: 3,
-        mainAxisSpacing: AppSpacing.sm,
-        crossAxisSpacing: AppSpacing.sm,
-        childAspectRatio: 4 / 3,
-        children: [
-          for (final m in _draft.materials)
-            _MaterialTile(
-              item: m,
-              asset: list.where((a) => a.id == m.assetId).firstOrNull,
-              onOpen: () {
-                final a = list.where((x) => x.id == m.assetId).firstOrNull;
-                if (a != null) showImageViewer(context, url: a.url, name: a.name);
-              },
-              onRemove: () => _removeMaterial(m.assetId),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-/// 环节素材缩略图（ADR-0076）：点图放大看原图，右上角删除；找不到对应素材时显示
-/// 「素材已移除」占位（不级联删除，引用保留）。
-class _MaterialTile extends StatelessWidget {
-  const _MaterialTile({
-    required this.item,
-    required this.asset,
-    required this.onOpen,
-    required this.onRemove,
-  });
-
-  final CoursewareMaterialItem item;
-  final CoursewareAssetModel? asset;
-  final VoidCallback onOpen;
-  final VoidCallback onRemove;
-
-  @override
-  Widget build(BuildContext context) {
-    final app = AppTheme.colorsOf(context);
-    final text = AppTheme.textOf(context);
-    final caption = item.caption;
-    return Stack(
-      children: [
-        AppFocusableAction(
-          semanticLabel:
-              asset != null ? '放大查看 ${asset!.name}' : '素材已移除',
-          hoverHighlight: true,
-          onTap: asset != null ? onOpen : null,
-          child: Container(
-            decoration: BoxDecoration(
-              color: app.surfaceContainerLow,
-              borderRadius: BorderRadius.circular(AppRadius.card),
-              border: Border.all(
-                color: app.outline,
-                width: AppElevation.borderWidth,
-              ),
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(AppRadius.card),
-              child: asset != null
-                  ? AuthImage(url: asset!.url, fit: BoxFit.cover)
-                  : const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(AppSpacing.sm),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(LucideIcons.trash2, size: 20),
-                            SizedBox(height: AppSpacing.xs),
-                            Text('素材已移除', textAlign: TextAlign.center),
-                          ],
-                        ),
-                      ),
-                    ),
-            ),
-          ),
-        ),
-        if (caption.isNotEmpty)
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.xs,
-                vertical: 2,
-              ),
-              decoration: BoxDecoration(
-                color: const Color(0xE6000000),
-                borderRadius: BorderRadius.vertical(
-                  bottom: Radius.circular(AppRadius.card),
-                ),
-              ),
-              child: Text(
-                caption,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: text.labelSmall
-                    ?.copyWith(color: const Color(0xFFFFFFFF)),
-              ),
-            ),
-          ),
-        Positioned(
-          top: 2,
-          right: 2,
-          child: AppIconAction(
-            icon: LucideIcons.trash2,
-            iconSize: 15,
-            semanticLabel: '移除该素材',
-            onPressed: onRemove,
-          ),
-        ),
-      ],
-    );
-  }
 }
