@@ -2,7 +2,7 @@
 
 职责：
 1. 文件夹发现：扫描 subagent 文件夹加载 manifest（业务键/可见角色/触发词/skills）。
-2. 意图路由：规则匹配 → 启发式兜底 →（可选）LLM 分类。
+2. 意图路由：规则匹配 → 启发式兜底。
 3. 角色感知：按当前 role 过滤可见 subagent。
 4. 事件流：调用 SubAgent.run / run_with_tools 产出 AG-UI 事件帧，由端点以 SSE 推送。
 5. 真实 tool loop：SubAgent 声明 tools 时，runtime 以「选型→执行→回灌→循环」调度。
@@ -83,9 +83,7 @@ class AgentRuntime:
         if deps.safety is not None and not deps.safety.check_input(message).safe:
             return RouteDecision(business=None, name=None)
 
-        business = await _classify(
-            message, available=visible, manifests=self._manifests, llm_classify=deps.llm_classify
-        )
+        business = await _classify(message, available=visible, manifests=self._manifests)
         # 角色可见性是唯一真相源：classify 只在 visible 内决策。
         if business not in visible:
             business = visible[0] if visible else None
