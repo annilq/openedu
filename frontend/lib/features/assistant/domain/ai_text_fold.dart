@@ -14,8 +14,10 @@ import 'stream_stage.dart';
 /// 卡片不在这里解释字段——只做「信封 → [AssistantCard]」的解析（ADR-0042），
 /// 种类分派与排版在渲染层（`presentation/widgets/assistant_cards.dart`）。
 ///
-/// 不关心的帧（THINKING / TOOL_CALL / TOOL_RESULT / STEP / RUN_STARTED / DONE）
-/// 一律原样返回 [AiTextFold.apply] 的接收者：对话气泡不单独渲染它们。
+/// 不关心的帧（USER_MESSAGE / THINKING / TOOL_CALL / TOOL_RESULT / STEP /
+/// RUN_STARTED / DONE）一律原样返回 [AiTextFold.apply] 的接收者：对话气泡不单独
+/// 渲染它们。其中 USER_MESSAGE 是运行时回显（客户端已本地添加用户气泡），
+/// 路由 THINKING（extra.routing）只作阶段文案（见 [stageOfEvent]），都不进正文。
 class AiTextFold {
   /// 已累积的 AI 正文（ASSISTANT_MESSAGE 增量拼接结果）。
   final String text;
@@ -65,6 +67,9 @@ class AiTextFold {
           blocked: blocked || ev.code == AssistantErrorCode.inputUnsafe,
           errorText: errorText ?? ev.message ?? _fallbackError,
         ),
+      // 运行时编排帧：用户消息回显（T07 起判断题闭环也走运行时，会下发 USER_MESSAGE，
+      // 与本地已添加的用户气泡重复）——绝不当正文，否则用户那句话会被渲染两遍。
+      AssistantEventType.userMessage => this,
       _ => stage == null ? this : _copy(stage: stage),
     };
   }

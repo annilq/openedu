@@ -209,6 +209,51 @@ void main() {
     });
   });
 
+  group('QuestionGenFold · 运行时编排帧（T07 判断题闭环同源）', () {
+    test('USER_MESSAGE + 路由 THINKING 不推进题序、不进推理区，题卡照常落位', () {
+      // T05/T07 起出题走运行时，帧序多出 USER_MESSAGE + 路由 THINKING + 出题 STEP。
+      // 折叠只认模型出题思路与题卡，其余编排帧不得干扰。
+      final f = foldAll([
+        AssistantEvent(eventType: AssistantEventType.runStarted),
+        AssistantEvent(
+          eventType: AssistantEventType.userMessage,
+          text: '出一道判断题',
+        ),
+        AssistantEvent(
+          eventType: AssistantEventType.thinking,
+          text: '正在理解你的需求，并选择最合适的助手…',
+          extra: {'routing': true},
+        ),
+        AssistantEvent(
+          eventType: AssistantEventType.thinking,
+          text: '已选择助手：出题助手',
+          extra: {'routing': true},
+        ),
+        AssistantEvent(
+          eventType: AssistantEventType.toolCall,
+          tool: 'generate_question',
+          label: '出题',
+        ),
+        AssistantEvent(eventType: AssistantEventType.step, label: '出题中'),
+        AssistantEvent(
+          eventType: AssistantEventType.thinking,
+          text: '先确认考查点',
+        ),
+        questionCard('平行四边形是轴对称图形'),
+        AssistantEvent(
+          eventType: AssistantEventType.toolResult,
+          tool: 'generate_question',
+        ),
+        AssistantEvent(eventType: AssistantEventType.done),
+      ]);
+
+      expect(f.questions.length, 1);
+      expect(f.questions.single.stem, '平行四边形是轴对称图形');
+      expect(f.stage, '正在整理结果…');
+      expect(f.liveIndex, -1, reason: '题卡到达后内联区折叠');
+    });
+  });
+
   group('QuestionGenFold · 阶段文案（首题前死窗）', () {
     test('路由 THINKING 进 stage，不进推理区；首题 STEP 后 stage 不干扰', () {
       final f = foldAll([

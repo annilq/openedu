@@ -27,7 +27,12 @@ MANIFEST = {
     # 路由优先级：低于 query（"任务题目" 归 query，ADR-0033 决策 6），高于 tutor（兜底）
     "priority": 0,
     # 结构化动作：「哪个业务拥有哪个动作」的唯一声明处（ADR-0081 落地前置）。
-    # 出题助手拥有「按规格出题」与「换一题」两个动作；等值匹配、不参与触发词优先级竞争。
-    "actions": ["task_generate", "task_question_regenerate"],
+    # 出题助手拥有「按规格出题」「换一题」「判断题出题」三个动作；等值匹配、不参与
+    # 触发词优先级竞争。
+    # - task_generate / task_question_regenerate：整卷出题 / 换一题。
+    # - quiz_generate：判断题闭环的出题段（T07）——同走出题助手（拿检索/学科提示/溯源/
+    #   工具信封），但由 assistant service 剥离答案、写待判定态。与课件练习出题的
+    #   ``courseware_generate``（归 guide）是两个独立键，不得拍平。
+    "actions": ["task_generate", "task_question_regenerate", "quiz_generate"],
     "skills": ["question_sop"],
 }

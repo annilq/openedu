@@ -14,12 +14,11 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncIterator
-from dataclasses import asdict
+from dataclasses import replace
 from typing import Any
 from uuid import UUID, uuid4
 
 from agent_core import IntentSignal
-from agent_core.errors import ProviderRequestError
 from agent_core.ports import RuntimeDeps, TextDelta
 from agent_core.protocol import (
     EVENT_ASSISTANT_MESSAGE,
@@ -38,7 +37,6 @@ from agent_core.runtime import AgentRuntime
 from agent_core.runtime_singleton import get_runtime
 from agent_core.subagent import SubAgentContext
 from app.ai.engine import resolve_engine
-from app.ai.subagents.question.pipeline import generate_question
 from app.ai.subagents.tutor.agent import detect_subject
 from app.core.errors import AppErrorException
 from app.core.guard import require_owned
@@ -101,13 +99,15 @@ async def _summarize_dropped(provider, dropped: list[dict]) -> str | None:
 
 # ── ADR-0072：推荐操作目录 + 判断题闭环 ────────────────────────────────────────
 #
-# 推荐操作是服务端静态目录（零延迟、可控、可单测），不靠 LLM 生成；判断题闭环复用
-# question 管线生成，而**判定与讲解一律交给 LLM**——把待判定题目连同正确答案注入
-# tutor 上下文，由模型按学生这句话生成反馈（见 `tutor/agent.py#_quiz_hint_context`）。
+# 推荐操作是服务端静态目录（零延迟、可控、可单测），不靠 LLM 生成；判断题闭环的**出题段**
+# 经运行时（出题助手，动作 ``quiz_generate``）生成——与普通出题同源，拿得到资料库检索 /
+# 学科提示 / 溯源引用 / 工具信封；而**判定与讲解一律交给 LLM**——把待判定题目连同正确答案
+# 注入 tutor 上下文，由模型按学生这句话生成反馈（见 `tutor/agent.py#_quiz_hint_context`）。
 #
 # 早期判定走「yes/no 小词典 + 硬编码文案」的确定性分支：用户一句话进来，服务端拿词典
 # 匹配出「对/错/求讲解」，再拼一段固定文案返回——模型全程没参与，答错支架、讲解口径
-# 都是死的（说辞生硬、无法结合题目本身）。现在只保留「出题」这一段结构化生成。
+# 都是死的（说辞生硬、无法结合题目本身）。现在服务端只保留「出题规格 + 题面剥离」，
+# 判定/讲解全由模型给出，不再有任何确定性判定分支。
 
 
 async def _stream_sse(events: AsyncIterator) -> AsyncIterator[str]:
@@ -226,12 +226,74 @@ def build_suggested_actions(
     return kp_actions + global_actions
 
 
-async def _quiz_generate_stream(
-    *, session: Any, conv_id: UUID, req: AssistantChatReq, teacher_id: UUID, provider: Any
-) -> AsyncIterator[str]:
-    """ADR-0072 判断题闭环·出题：复用 question 管线出判断题，下发题面 + 写 pending_quiz。
+def _quiz_intro(name: str) -> str:
+    """判断题闭环的题面引导（现场下发与落库回放共用的同一份文案）。"""
+    return f"来一道关于「{name}」的判断题，请判断下面的说法对不对："
 
-    题卡不下发答案/解析，避免用户作答前泄露；正确答案存 pending_quiz 待判定。
+
+def _strip_and_record_quiz(
+    *,
+    session: Any,
+    conv_id: UUID,
+    name: str,
+    subject: str,
+    grade: int,
+    semester: str,
+    result: dict[str, Any],
+) -> dict[str, Any]:
+    """剥离题卡答案/解析/推理 → 写 pending_quiz + 落库题卡消息，返回剥离后的题卡。
+
+    「先出题、答完揭示」的**流程性**剥离：与角色无关、教师端同样剥离（不是按角色裁剪）。
+    正确答案布尔存 ``pending_quiz`` 供模型判定——判定与讲解由 LLM 产出，服务端不留分支。
+    """
+    card = dict(result)
+    card["answer"] = ""
+    card["explanation"] = ""
+    card["reasoning"] = ""
+    pending = {
+        "answer": _judge_answer_bool(result.get("answer")),
+        "subject": subject, "grade": grade, "semester": semester, "name": name,
+        "stem": result.get("stem"), "options": result.get("options"),
+        "answer_text": result.get("answer"),
+        "explanation": result.get("explanation"),
+    }
+    conv = session.get(Conversation, conv_id)
+    conv.pending_quiz = pending
+    session.add(
+        Message(
+            conversation_id=conv_id, turn=next_turn(session, conv_id),
+            role="assistant", step="output",
+            content=_quiz_intro(name),
+            payload={"cards": [{"type": "question", "result": card}]},
+        )
+    )
+    session.commit()
+    return card
+
+
+async def _quiz_generate_stream(
+    *,
+    session: Any,
+    conv_id: UUID,
+    req: AssistantChatReq,
+    teacher_id: UUID,
+    rt: AgentRuntime,
+    deps: RuntimeDeps,
+    role: str,
+    ctx: SubAgentContext,
+    business: str | None,
+) -> AsyncIterator[AssistantEvent]:
+    """ADR-0072 判断题闭环·出题：经**运行时**（出题助手）出判断题。
+
+    与普通出题同源：``rt.run(question)`` 注入资料库检索 / 学科提示 / 溯源引用 / 工具
+    信封——此前直连裸出题管线（``generate_question``）这些一项都没有。本函数只做闭环
+    特有的事：
+
+    1. 投出判断题规格（``judge=True``）：题面为陈述句 + 对/错两个选项。
+    2. 拦截题卡，剥离答案 / 解析 / 推理后下发（不提前泄题），正确答案存 ``pending_quiz``
+       供模型判定（判定与讲解一律由 LLM 产出，服务端不保留任何确定性判定分支）。
+
+    产出 ``AssistantEvent``，由 ``chat`` 经 ``_stream_sse`` 收口成 SSE 帧。
     """
     kp = _resolve_kp_context(session=session, teacher_id=teacher_id, req=req)
     if kp is None:
@@ -240,68 +302,44 @@ async def _quiz_generate_stream(
         yield done(session_id=str(conv_id))
         return
 
-    # 未配置可用模型：干净提示，不放出去撞 401（ADR-0039：唯一配置源是「模型管理」）。
-    if not provider.configured:
-        yield run_started()
-        yield assistant_message(
-            "尚未配置可用的模型。请先在「模型管理」中添加模型并设为默认～"
-        )
-        yield done(session_id=str(conv_id))
-        return
-
     subject, grade, semester, name = kp
-    try:
-        q = await generate_question(
-            provider,
-            subject=subject, grade=grade, knowledge_point=name,
-            qtype="choice", difficulty="easy", semester=semester, judge=True,
-        )
-    except ProviderRequestError as exc:
-        # 鉴权/限流/网络等厂商拒绝：转成 SSE 错误帧，携带策展提示（ADR-0038），
-        # 绝不能让异常穿透生成器导致流被截断 + 服务端刷 traceback。
-        yield run_started()
-        yield error(exc.user_hint, code="PROVIDER_ERROR")
-        yield done(session_id=str(conv_id))
-        return
-    except Exception as exc:  # noqa: BLE001 — 兜底：任何出题期异常都转错误帧，不崩流
-        log.warning("quiz generate failed: %s", exc)
-        yield run_started()
-        yield error("模型服务暂时不可用，请稍后再试或检查模型配置～", code="PROVIDER_ERROR")
-        yield done(session_id=str(conv_id))
-        return
-    if q is None:
-        yield run_started()
-        yield assistant_message("暂时没法生成题目，请稍后再试或换个方式～")
-        yield done(session_id=str(conv_id))
-        return
-
-    # 题卡剥离答案/解析（不提前泄露）；正确答案布尔存 pending_quiz。
-    card = asdict(q)
-    card["answer"] = ""
-    card["explanation"] = ""
-    card["reasoning"] = ""
-    pending = {
-        "answer": _judge_answer_bool(q.answer),
-        "subject": subject, "grade": grade, "semester": semester, "name": name,
-        "stem": q.stem, "options": q.options, "answer_text": q.answer,
-        "explanation": q.explanation,
-    }
-    conv = session.get(Conversation, conv_id)
-    conv.pending_quiz = pending
-    session.add(
-        Message(
-            conversation_id=conv_id, turn=next_turn(session, conv_id),
-            role="assistant", step="output",
-            content=f"来一道关于「{name}」的判断题：",
-            payload={"cards": [{"type": "question", "result": card}]},
-        )
+    # 判断题规格：judge=True 让出题助手产出「陈述句 + 对/错」题面（ADR-0072）。
+    quiz_ctx = replace(
+        ctx,
+        extra={
+            **ctx.extra,
+            "specs": [
+                {
+                    "subject": subject, "grade": grade, "knowledge_point": name,
+                    "qtype": "choice", "difficulty": "easy", "semester": semester,
+                    "count": 1, "judge": True,
+                }
+            ],
+        },
     )
-    session.commit()
 
-    yield run_started()
-    yield assistant_message(f"来一道关于「{name}」的判断题，请判断下面的说法对不对：")
-    yield data_event(card, extra={"type": "question"})
-    yield done(session_id=str(conv_id))
+    got_card = False
+    async for ev in rt.run(
+        ctx.message or "", role=role, ctx=quiz_ctx, deps=deps,
+        business=business, session=session,
+    ):
+        if ev.eventType == EVENT_DATA and ev.data and ev.data.get("type") == "question":
+            result = ev.data.get("result")
+            if isinstance(result, dict):
+                card = _strip_and_record_quiz(
+                    session=session, conv_id=conv_id, name=name, subject=subject,
+                    grade=grade, semester=semester, result=result,
+                )
+                got_card = True
+                yield assistant_message(_quiz_intro(name))
+                yield data_event(card, extra={"type": "question"})
+                continue
+        # 成题后丢弃出题助手的通用收尾：它讲「题卡含解析 / 可布置给学生」，而本题卡
+        # 恰恰剥离了解析、且闭环等待作答——原样转发会自相矛盾。失败态（无题卡）仍透传，
+        # 让「未配置模型 / 生成失败」的原因可见。
+        if got_card and ev.eventType == EVENT_ASSISTANT_MESSAGE:
+            continue
+        yield ev
 
 
 def _consume_pending_quiz(
@@ -345,24 +383,32 @@ def _consume_pending_quiz(
 # ⚠️ 两种「出题」语义**各有独立动作键**，不得拍平：
 #   课件里  → `courseware_generate`（guide：引导到课堂大屏出题）
 #   助手里  → `task_generate`      （question：真的出题卡）
+# 判断题闭环的出题段另用 `quiz_generate`（同归 question，但出题后剥离答案、写待判定态）。
 _ACTION_COURSEWARE_GENERATE = "courseware_generate"
 _ACTION_COURSEWARE_HINT = "courseware_hint"
 _ACTION_QUIZ_JUDGE = "quiz_judge"
+_ACTION_QUIZ_GENERATE = "quiz_generate"
 
 
 def _build_intent_signal(
     req: AssistantChatReq, conversation: Conversation | None
 ) -> IntentSignal:
-    """把一次请求归一成结构化意图信号（T06）。
+    """把一次请求归一成结构化意图信号（T06 / T07）。
 
-    动作键优先级：**待判定态消费 > 课件练习方向 > 客户端显式** ``req.action``。
-    前两者是服务端按上下文归一出的定向（原先的事后改判），后者是客户端的结构化动作；
-    三者都交给唯一裁决点 ``decide`` 做等值匹配（命中即路由、不参与文本优先级竞争）。
+    动作键优先级：**待判定态消费 > 判断题出题 > 课件练习方向 > 客户端显式** ``req.action``。
+    前三者是服务端按上下文归一出的定向（原先的事后改判），末者是客户端的结构化动作；
+    都交给唯一裁决点 ``decide`` 做等值匹配（命中即路由、不参与文本优先级竞争）。
+
+    判断题出题（``req.quiz``）必须排在课件方向之前：它一次请求同时带 ``courseware``
+    （知识点上下文）与 ``quiz``，若被课件方向接走会跑到课堂大屏而非出题。
     """
     text = (req.message or "").strip()
     if conversation is not None and conversation.pending_quiz is not None:
         # 待判定态：就这道题说话，交伴学答疑判定/讲解（判定与讲解由模型产出）。
         action: str | None = _ACTION_QUIZ_JUDGE
+    elif req.quiz:
+        # 判断题闭环·出题：走出题助手（同源拿到检索/学科提示/溯源/工具信封）。
+        action = _ACTION_QUIZ_GENERATE
     elif req.courseware is not None:
         # 课件练习方向：答错求提示 → 伴学答疑；否则按课件出题 → 任务引导（出题到页面）。
         action = (
@@ -501,30 +547,8 @@ async def chat(
         # 无 session_id：兼容客户端自带历史（兜底）
         history = req.history
 
-    # ── ADR-0072 判断题闭环 ──
-    # 出题优先：req.quiz 直接走 question 管线，绕开常规 LLM 路由，并写 pending_quiz。
-    # 子生成器产出 AssistantEvent，经 _stream_sse 收口成 SSE 帧（与常规路径一致）。
-    if req.quiz:
-        return _stream_sse(
-            _quiz_generate_stream(
-                session=session, conv_id=conv_id, req=req,
-                teacher_id=teacher_id, provider=provider,
-            )
-        )
-    # 续接既有会话且处于待判定态：消费它，并把题目连同正确答案交给 LLM 判定/讲解。
-    # 定向已在信号归一化阶段完成（``action=quiz_judge`` → tutor，见 `_build_intent_signal`），
-    # 这里只负责消费状态与注入上下文。
-    #
-    # 刻意**不短路成一条确定性回复流**：用户的这句「对/错/讲解」由模型结合题目本身作答。
-    # 待判定态只消费一次（见 `_consume_pending_quiz`），判定口径在 tutor 的
-    # `_quiz_hint_context` 里，服务端不保留 attempts 状态机。
-    pending_quiz: dict[str, Any] | None = None
-    if conversation.pending_quiz is not None:
-        pending_quiz = _consume_pending_quiz(
-            session=session, conversation=conversation, conv_id=conv_id
-        )
-
     # 业务字段经 ctx.extra 透传（agent_core 不感知任何教育语义）。
+    # 判断题出题与常规对话共用它——出题段在其上补 ``specs``（见 _quiz_generate_stream）。
     ctx = SubAgentContext(
         role=role,
         message=message,
@@ -548,11 +572,38 @@ async def chat(
                 else None
             ),
             # ADR-0072 判定/讲解走 LLM：待判定题目 + 正确答案在此透传给 tutor，
-            # 由它拼进 prompt（见 tutor/agent.py#_quiz_hint_context）。
-            "pending_quiz": pending_quiz,
+            # 由它拼进 prompt（见 tutor/agent.py#_quiz_hint_context）。出题段无待判定态。
+            "pending_quiz": None,
             "session_id": str(conv_id),
         },
     )
+
+    # ── ADR-0072 判断题闭环·出题 ──
+    # 判断题出题经统一路由落到出题助手（动作 ``quiz_generate``，见 _build_intent_signal），
+    # 再由 _quiz_generate_stream 走运行时出题——拿到检索 / 学科提示 / 溯源 / 工具信封，
+    # 并在题卡下发前剥离答案（写 pending_quiz）。子生成器产出 AssistantEvent，经
+    # _stream_sse 收口成 SSE 帧（与常规路径一致）。
+    if signal.action == _ACTION_QUIZ_GENERATE:
+        return _stream_sse(
+            _quiz_generate_stream(
+                session=session, conv_id=conv_id, req=req, teacher_id=teacher_id,
+                rt=rt, deps=deps, role=role, ctx=ctx, business=decision.business,
+            )
+        )
+
+    # 续接既有会话且处于待判定态：消费它，并把题目连同正确答案交给 LLM 判定/讲解。
+    # 定向已在信号归一化阶段完成（``action=quiz_judge`` → tutor，见 `_build_intent_signal`），
+    # 这里只负责消费状态与注入上下文。
+    #
+    # 刻意**不短路成一条确定性回复流**：用户的这句「对/错/讲解」由模型结合题目本身作答。
+    # 待判定态只消费一次（见 `_consume_pending_quiz`），判定口径在 tutor 的
+    # `_quiz_hint_context` 里，服务端不保留 attempts 状态机。
+    pending_quiz: dict[str, Any] | None = None
+    if conversation.pending_quiz is not None:
+        pending_quiz = _consume_pending_quiz(
+            session=session, conversation=conversation, conv_id=conv_id
+        )
+    ctx.extra["pending_quiz"] = pending_quiz
 
     async def event_stream() -> AsyncIterator[str]:
         final_text = ""
