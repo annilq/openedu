@@ -77,8 +77,9 @@ class TaskReviewActionBar extends StatelessWidget {
   /// 主操作用实心 primary，次操作描边，作废用 destructive。
   List<Widget> _buttons(BuildContext context) {
     if (task.isDraft) {
-      // 「整卷重生成」已移除（ADR-0056）：它等价于「这份推翻重来」，与生成页审阅闸门处的
-      // 「重新生成」重复，且要全量重跑。草稿页只保留逐题精修（入库、编辑、删除）。
+      // 「整卷重生成」与单题「换一题」均已移除：「整卷重生成」等价于「这份推翻重来」，
+      // 与生成页审阅闸门处的「重新生成」重复，且要全量重跑；单题换一题为后续产品决定删除。
+      // 草稿页只保留逐题精修（入库、编辑、删除）。
       return [
         ShadButton.outline(
           onPressed: locked || task.promotedCount == task.questions.length

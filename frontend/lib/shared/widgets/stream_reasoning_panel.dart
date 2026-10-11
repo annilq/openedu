@@ -11,7 +11,7 @@ import '../theme/app_theme.dart';
 ///
 /// [index] 为可选题号（从 1 开始）；非空时左侧芯片显示「第 N 题 · 生成中」，
 /// 为空时显示「生成中」。卡片/顶部已有题号场景传 null 即可。[label] 为右侧进度
-/// 文案（如整卷重生成的「第 i/N 题」），可空。
+/// 文案（如首次出题的「第 i/N 题」），可空。
 ///
 /// 仅依赖 `flutter/widgets.dart`，可在 Material-free 的 ShadApp/CupertinoApp
 /// widget 树中安全复用（不引入 Material 祖先假设）。

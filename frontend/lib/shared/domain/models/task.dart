@@ -58,7 +58,7 @@ class TaskModel {
   final String status;
   final List<QuestionModel> questions;
 
-  /// 草稿原始规格，供整卷重生成（R-Q2=c）与审核页摘要展示。
+  /// 草稿原始规格，供审核页摘要展示。
   final List<TaskSpecModel> specs;
 
   /// 派发对象（创建时可选预先绑定，锁定→派发时强制绑定）。

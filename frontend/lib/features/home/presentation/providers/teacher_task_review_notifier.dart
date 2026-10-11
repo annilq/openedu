@@ -110,7 +110,7 @@ class ReviewNotifier extends StateNotifier<ReviewState> {
     state = ReviewLoaded(cur.task, busyTqId: tqId);
     try {
       await _review.removeOne(taskId: taskId, tqId: tqId);
-      // 允许删到 0 题：草稿清空后走空态引导（整卷重生成 / 返回题库重新组卷），
+      // 允许删到 0 题：草稿清空后走空态引导（返回题库重新组卷），
       // 比「最后一题点不动且无任何提示」更可预期。
       final task = cur.task.copyWith(
         questions: cur.task.questions.where((q) => q.id != tqId).toList(),
