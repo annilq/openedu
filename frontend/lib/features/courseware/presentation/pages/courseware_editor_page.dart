@@ -5,7 +5,6 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:flutter/cupertino.dart' show CupertinoPageRoute;
 
 import '../../../../shared/theme/app_theme.dart';
-import '../../../../shared/widgets/app_actions.dart';
 import '../../../../shared/widgets/app_buttons.dart';
 import '../../../../shared/widgets/app_empty_state.dart';
 import '../../../../shared/widgets/app_error.dart';
@@ -17,7 +16,6 @@ import '../../domain/models/courseware_section.dart';
 import '../../providers/courseware_provider.dart';
 import '../widgets/courseware_editor_info_card.dart';
 import '../widgets/editor_section_list.dart';
-import '../widgets/courseware_redraft_dialog.dart';
 import 'courseware_present_page.dart';
 import 'courseware_section_edit_dialog.dart';
 import 'courseware_info_edit_dialog.dart';
@@ -25,8 +23,8 @@ import 'courseware_info_edit_dialog.dart';
 /// 课件编辑器（ADR-0067 §6 切片 4 / §3.8）：备课主视图。
 ///
 /// 从知识点行的「课件」入口进来。自身负责「这个知识点有没有课件」：有就打开最新的那份，
-/// 没有就走 AI 起草（决策 2）。所有讲解安排都落在课件上，**不与知识点的 `scenes` 混**——
-/// 课件是 `scenes` 的上位容器（§3.1）。
+/// 没有就停在空态，由用户主动新建一份**空课件**（ADR-0085：不再 AI 起草）。所有讲解安排
+/// 都落在课件上，**不与知识点的 `scenes` 混**——课件是 `scenes` 的上位容器（§3.1）。
 ///
 /// 演示态由本页 push 出去（[CoursewarePresentPage] 自带全屏框）。
 class CoursewareEditorPage extends ConsumerStatefulWidget {
@@ -77,8 +75,8 @@ class _CoursewareEditorPageState extends ConsumerState<CoursewareEditorPage> {
     setState(() => _loading = true);
     try {
       final repo = ref.read(coursewareRepositoryProvider);
-      // 只查「这个知识点有没有课件」。**不自动建、不自动让 AI 起草**——没有就停在
-      // 空态，由用户点「新增课件」主动建一份空壳（不触发 AI，决策 2 显式发起）。
+      // 只查「这个知识点有没有课件」。**不自动建**——没有就停在空态，由用户点
+      // 「新增课件」主动建一份空课件。
       final list =
           await repo.listCourseware(knowledgePointId: widget.knowledgePointId);
       if (!mounted) return;
@@ -95,9 +93,9 @@ class _CoursewareEditorPageState extends ConsumerState<CoursewareEditorPage> {
     }
   }
 
-  /// 首次生成（courseware-round-3 T01 / T05）：用户点「新增课件」才建一份**空壳**
-  /// （draft=false，不触发 AI）。随后教师手动加环节，或点「AI 补充讲解」让 AI 按
-  /// 知识点 + 已填教学目标回填讲解（T05）。期间 [_busy] 为真，页面给「正在创建课件」提示。
+  /// 首次生成（courseware-round-3 T01）：用户点「新增课件」才建一份**空课件**
+  /// （零环节，不调模型，ADR-0085）。随后教师手动添加环节。期间 [_busy] 为真，
+  /// 页面给「正在创建课件」提示。
   Future<void> _createFirst() async {
     if (_busy) return;
     setState(() => _busy = true);
@@ -105,36 +103,13 @@ class _CoursewareEditorPageState extends ConsumerState<CoursewareEditorPage> {
       final repo = ref.read(coursewareRepositoryProvider);
       final created = await repo.createCourseware(
         knowledgePointId: widget.knowledgePointId,
-        draft: false,
       );
       if (!mounted) return;
       setState(() => _courseware = created);
-      AppToast.show(context, '已创建空课件，可手动添加环节或用 AI 补充讲解');
+      AppToast.show(context, '已创建空课件，可添加环节');
     } catch (e) {
       if (!mounted) return;
       AppToast.show(context, '创建课件失败：$e');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  /// 重新起草（T07）：取新草稿相对当前稿的逐段 diff，教师逐段选择「用新版 / 留旧版」
-  /// 后，把合并结果经 [updateSections] 写回**同一课件**——不新建副本（不再先建后删）。
-  Future<void> _redraft() async {    if (_busy || _courseware == null) return;
-    setState(() => _busy = true);
-    try {
-      final repo = ref.read(coursewareRepositoryProvider);
-      final diff = await repo.getRedraftDiff(_courseware!.id);
-      if (!mounted) return;
-      final merged = await showCoursewareRedraftDialog(context, diff);
-      if (merged == null) return; // 用户取消，原课件不动
-      final saved = await repo.updateSections(_courseware!.id, merged);
-      if (!mounted) return;
-      setState(() => _courseware = saved);
-      AppToast.show(context, '已按所选写回本课件');
-    } catch (e) {
-      if (!mounted) return;
-      AppToast.show(context, '重新起草失败：$e');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -192,7 +167,7 @@ class _CoursewareEditorPageState extends ConsumerState<CoursewareEditorPage> {
     }
   }
 
-  /// 手动添加环节（T04 入口补强）：空课件态也能发起，不再只能靠 AI 补充讲解。
+  /// 手动添加环节（T04 入口补强）：空课件态也能发起——这是唯一的编排入口。
   ///
   /// 与 [CoursewareEditorSectionList._addSection] 同一份逻辑：打开与编辑同构的空白
   /// 表单，保存后把新环节追加到列表末尾，经 [updateSections] 整体覆盖写落库。空态 CTA
@@ -266,7 +241,7 @@ class _CoursewareEditorPageState extends ConsumerState<CoursewareEditorPage> {
   ///
   /// ⚠️ 不走 [AppPushedPage.trailing]：顶栏右侧只有 40 宽槽位、只允许单个图标行动，
   /// 「开始讲课」是带文字的主按钮，放进 40 宽槽会撑爆（实测 45px 右溢出）。它归到
-  /// 备课行的主操作位，与「AI 补充讲解 / 重新起草」并列。
+  /// 备课行的主操作位。
   void _openPresent() {
     final cw = _courseware;
     if (cw == null) return;
@@ -293,13 +268,12 @@ class _CoursewareEditorPageState extends ConsumerState<CoursewareEditorPage> {
     }
     final cw = _courseware;
     if (cw == null) {
-      // 还没有课件：停在空态，由用户主动发起（点「新增课件」建一份空壳，不触发 AI）。
+      // 还没有课件：停在空态，由用户主动发起（点「新增课件」建一份空课件）。
       return Center(
         child: AppEmptyState(
           icon: LucideIcons.sparkles,
           title: '还没有课件',
-          message: '点「新增课件」按这个知识点建一份空课件，随后手动添加环节或用'
-              '「AI 补充讲解」。',
+          message: '点「新增课件」按这个知识点建一份空课件，随后手动添加讲解环节。',
           actionLabel: '新增课件',
           onAction: _createFirst,
         ),
@@ -318,13 +292,6 @@ class _CoursewareEditorPageState extends ConsumerState<CoursewareEditorPage> {
           child: Row(
             children: [
               Expanded(child: Text('备课', style: text.bodyMedium)),
-              AppTextAction(
-                label: _busy
-                    ? '处理中…'
-                    : (cw.isEmpty ? 'AI 补充讲解' : 'AI 重新起草'),
-                onPressed: _busy ? null : _redraft,
-              ),
-              const SizedBox(width: AppSpacing.sm),
               AppPrimaryButton(
                 label: '开始讲课',
                 fullWidth: false,
@@ -338,7 +305,7 @@ class _CoursewareEditorPageState extends ConsumerState<CoursewareEditorPage> {
             child: AppEmptyState(
               icon: LucideIcons.sparkles,
               title: '还没有讲解安排',
-              message: '可以「添加环节」手动设计讲解，或点「AI 补充讲解」按知识点生成环节草案。',
+              message: '点「添加环节」手动设计这个知识点的讲解环节。',
               actionLabel: '添加环节',
               onAction: _addSection,
             ),

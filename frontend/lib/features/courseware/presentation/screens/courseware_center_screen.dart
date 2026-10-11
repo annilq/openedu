@@ -76,7 +76,7 @@ class CoursewareCenterScreen extends ConsumerWidget {
                     icon: LucideIcons.plusCircle,
                     title: '还没有课件',
                     message: '点右上角「新增课件」，选一个知识点就能建一份空课件，'
-                        '随后手动添加环节或用「AI 补充讲解」。',
+                        '随后手动添加讲解环节。',
                     actionLabel: '新增课件',
                     onAction: () => _addCourseware(context, ref),
                   ),

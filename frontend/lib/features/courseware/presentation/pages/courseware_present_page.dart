@@ -143,9 +143,9 @@ class _CoursewarePresentPageState
             icon: LucideIcons.layoutGrid,
             title: '这份课件还没有环节',
             message: '课件是一串讲解环节，现在一个都没有。'
-                '回到课件编辑页用 AI 起草，或手动加第一个环节。',
+                '回到课件编辑页手动加第一个环节。',
             steps: [
-              '在课件编辑页点「AI 起草」生成环节草稿',
+              '在课件编辑页点「添加环节」设计讲解',
               '调顺序、改标题、换素材',
               '回到演示页逐环节投给学生',
             ],

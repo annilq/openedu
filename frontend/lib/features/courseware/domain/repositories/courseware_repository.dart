@@ -1,6 +1,5 @@
 import '../models/courseware.dart';
 import '../models/courseware_asset.dart';
-import '../models/courseware_redraft_diff.dart';
 import '../models/courseware_section.dart';
 import '../../../../shared/domain/models/knowledge_point_option.dart';
 
@@ -45,16 +44,14 @@ abstract class CoursewareRepository {
   /// 课件入口没有「学科/年级/学期」上下文，所以只需一个可点的列表。
   Future<List<KnowledgePointOption>> listKnowledgePoints();
 
-  /// 新建课件。
+  /// 新建课件：按知识点快照建一份**零环节空壳**（ADR-0085：不再 AI 起草）。
   ///
-  /// - [draft]=true（默认）：走 AI 起草（决策 2），未配模型时后端返 LLM_UNAVAILABLE。
-  /// - [draft]=false（courseware-round-3 T01）：**跳过 AI 起草**，建一份零环节空壳
-  ///   （不调模型、不抛 LLM 错误）；[objective] 一并落到课件行，供后续「AI 补充讲解」读取。
+  /// 不调模型，故不存在「未配模型」失败面；[objective]（教学目标 / 备注）落到课件行
+  /// 供课件信息卡展示。内容由教师随后手动增删环节。
   Future<CoursewareModel> createCourseware({
     required String knowledgePointId,
     String? title,
     String? objective,
-    bool draft = true,
   });
 
   /// 最近一份课件（「最近课件」回执用，§3.8 的强制补偿项）。
@@ -76,10 +73,6 @@ abstract class CoursewareRepository {
   );
 
   Future<void> deleteCourseware(String coursewareId);
-
-  /// 重起草：取新草稿相对当前稿的逐段 diff（不新建副本）。教师逐段选完后把合并
-  /// 结果经 [updateSections] 写回同一课件。
-  Future<CoursewareRedraftDiffModel> getRedraftDiff(String coursewareId);
 
   /// 取某知识点已配置的交互讲解模板（KnowledgePoint.scenes）。
   ///

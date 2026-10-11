@@ -24,7 +24,7 @@ import 'section_scene_figures_picker.dart';
 ///
 /// **每个环节都是同一张 CMS 式表单**，与 [CoursewareSectionModel.kind] 无关——
 /// 标题 + 教师话术（提问卡，可多段 + 重点）+ **关联素材** + **关联知识点场景**。
-/// 任何 kind 的环节都能挂素材与场景；旧 AI 起草数据（[payload] 内嵌 items / 整份
+/// 任何 kind 的环节都能挂素材与场景；历史数据（[payload] 内嵌 items / 整份
 /// SceneSpec）在打开编辑时归一化到顶层 [CoursewareSectionModel.materials] /
 /// [CoursewareSectionModel.scene]（见 [resolvedMaterials] / [resolvedScene]），保存时
 /// 不再写 legacy [payload]，让统一表单只操作顶层字段。
@@ -117,7 +117,7 @@ class _SectionEditDialogState extends ConsumerState<_SectionEditDialog> {
 
     _draft = widget.section;
 
-    // 内容块统一化：旧 AI 起草数据（payload 内嵌 items / 整份 SceneSpec）打开即归一化
+    // 内容块统一化：历史数据（payload 内嵌 items / 整份 SceneSpec）打开即归一化
     // 到顶层 materials / scene，让统一表单只操作顶层字段、保存时不再写 legacy payload。
     _draft = _draft.copyWith(
       materials: _draft.resolvedMaterials,

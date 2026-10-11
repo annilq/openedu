@@ -15,9 +15,10 @@ import '../../providers/courseware_provider.dart';
 
 /// 新增课件表单（courseware-round-3 T01）：选知识点 + 标题 + 教学目标。
 ///
-/// 提交时调 [CoursewareRepository.createCourseware]（[draft]=false）建**零环节空壳**
-/// （不触发 AI），返回建好的 [CoursewareModel]，由调用方直接打开编辑器。知识点来源
-/// 走后端 `GET /materials/knowledge-points/all` 一次拿到跨范围全集，不要求先选范围。
+/// 提交时调 [CoursewareRepository.createCourseware] 建**零环节空课件**（ADR-0085：
+/// 不再 AI 起草、不调模型），返回建好的 [CoursewareModel]，由调用方直接打开编辑器。
+/// 知识点来源走后端 `GET /materials/knowledge-points/all` 一次拿到跨范围全集，
+/// 不要求先选范围。
 ///
 /// 返回 null = 用户取消。
 Future<CoursewareModel?> showCoursewareCreateSheet(
@@ -94,7 +95,6 @@ class _CoursewareCreateSheetState extends ConsumerState<_CoursewareCreateSheet> 
             knowledgePointId: kp.id!,
             title: title.isEmpty ? null : title,
             objective: objective.isEmpty ? null : objective,
-            draft: false,
           );
       if (!mounted) return;
       // 直接把建好的空壳交回调用方（避免编辑器再按 KP 查一遭，也避免同 KP 多课件时取到旧的那份）。
@@ -126,7 +126,7 @@ class _CoursewareCreateSheetState extends ConsumerState<_CoursewareCreateSheet> 
               Text('新增课件', style: text.titleLarge),
               const SizedBox(height: AppSpacing.sm),
               Text(
-                '选一个知识点建一份空课件，随后手动添加环节或用「AI 补充讲解」。',
+                '选一个知识点建一份空课件，随后手动添加讲解环节。',
                 style: text.bodySmall?.copyWith(color: app.onSurfaceVariant),
               ),
               const SizedBox(height: AppSpacing.md),
@@ -181,7 +181,7 @@ class _CoursewareCreateSheetState extends ConsumerState<_CoursewareCreateSheet> 
                                     AppTextField(
                                       label: '教学目标 / 备课依据（选填）',
                                       controller: _objectiveCtl,
-                                      hintText: '「AI 补充讲解」时会参考这里',
+                                      hintText: '写给自己看的备课备注',
                                     ),
                                   ],
                                 ),

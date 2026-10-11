@@ -2,7 +2,6 @@ import 'package:dio/dio.dart';
 
 import '../../domain/models/courseware.dart';
 import '../../domain/models/courseware_asset.dart';
-import '../../domain/models/courseware_redraft_diff.dart';
 import '../../domain/models/courseware_section.dart';
 import '../../domain/repositories/courseware_repository.dart';
 import '../../../../shared/domain/models/knowledge_point_option.dart';
@@ -79,13 +78,11 @@ class CoursewareRepositoryImpl implements CoursewareRepository {
     required String knowledgePointId,
     String? title,
     String? objective,
-    bool draft = true,
   }) async {
     final data = await _network.post('/courseware', body: {
       'knowledge_point_id': knowledgePointId,
       if (title != null) 'title': title,
       if (objective != null) 'objective': objective,
-      'draft': draft,
     });
     return CoursewareModel.fromJson(Map<String, dynamic>.from(data as Map));
   }
@@ -145,14 +142,6 @@ class CoursewareRepositoryImpl implements CoursewareRepository {
   @override
   Future<void> deleteCourseware(String coursewareId) async {
     await _network.delete('/courseware/$coursewareId');
-  }
-
-  @override
-  Future<CoursewareRedraftDiffModel> getRedraftDiff(String coursewareId) async {
-    final data = await _network.post('/courseware/$coursewareId/redraft');
-    return CoursewareRedraftDiffModel.fromJson(
-      Map<String, dynamic>.from(data as Map),
-    );
   }
 
   @override
