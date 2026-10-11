@@ -19,7 +19,7 @@
 - AI 唯一入口 `assistantNotifierProvider`+`AssistantMessageList`；后端唯一端点 `POST /api/v1/assistant/chat`。路由优先级即功能(ADR-0054)：写意图 `guide`(20)>只读 `query`(12)。
 - 卡片动作 `actions=[{label,target}]`(target 非 URL)；`ShellDestination.fromTarget` 解读。新增 target 两端同改。
 - ⚠️ 结构化动作键 = manifest `actions` 等值匹配(ADR-0081)：`task_generate`/`quiz_generate`/`courseware_generate`/`courseware_hint`/`quiz_judge`。⚠️ 服务端「重生成」全删(ADR-0084)：出题唯一路径=`POST /tasks/generate`(流式)+`/tasks/from-generated`(落库)；`Task.specs` 仅审核页摘要。
-- ⚠️ 课件内容纯手动编排(ADR-0085)：`POST /courseware` 恒建零环节空壳→编辑器「添加环节」→`PUT /sections`。别和讲课现场助手集成(`courseware_generate`/`courseware_hint`/`quiz_judge`+`SectionPractice`)混为一谈：「AI 生成课件内容」≠「课件里用 AI」。
+- ⚠️ 课件内容纯手动编排(ADR-0085)：`POST /courseware` 恒建零环节空壳→编辑器「添加环节」→`PUT /sections`。课堂练习环节的 AI 出题/提示(原 `SectionPractice`)已端到端删除(ADR-0086)；保留的「课件里用 AI」仅剩讲课现场「问 AI 老师」浮标，走 `courseware_generate`/`courseware_hint`/`quiz_judge`+`AssistantChatReq.courseware`。
 - 单向 `main/ → features/* → shared/*`；`shared/` 不 import `features/`。
 - ⚠️ R4 棘轮：`presentation/` 不得 import `*/data/`(`test/feature_boundaries_test.dart`)。要用 data 类型→搬 `domain/repositories/`。
 - ⚠️ 非 push 路由页面禁裸 `Navigator.pop`（弹根栈=白屏）；走注入回调或 `maybePop`。
@@ -29,7 +29,7 @@
 - 描边三档：2/1.5/1(`borderWidth`/`borderWidthSm`/`borderWidthHairline`)。白物体纸底 `#FDFBF7` 无边界→补描边非加粗。
 - 空态 `AppEmptyState`(ADR-0051)。reduce-motion 须 `reducedMotionOf(context)?Duration.zero:…`；浮层阴影 `_floatingShadows()`(暗色返 none)。
 - ⚠️ `ShadButton.height` 是内容盒高，描边画盒外→可见高=值+2×描边宽(声明32实测40)；并排按钮一律 `Wrap`。图标按钮 `AppIconAction`、行内 `AppTextAction`。
-- ⚠️ `ShadCard` 比内容高时内容贴顶不居中→钉高调用点自包 `Center`。`Row(stretch)` 须包 `IntrinsicHeight`（裸 stretch 在无限高上下文必崩，`stretch_row_guard_test` 守）；**但子树含 `LayoutBuilder`(如 `SceneInterpreter`)时 `IntrinsicHeight` 也崩**——改「色条画成卡片边框」之类不依赖 intrinsic 的布局(`wrong_questions_screen.dart` 先例)。`Column(stretch)` 安全。
+- ⚠️ `ShadCard` 比内容高时内容贴顶不居中→钉高调用点自包 `Center`。`Row(stretch)` 须包 `IntrinsicHeight`（裸 stretch 在无限高上下文必崩，`stretch_row_guard_test` 守）；**但子树含 `LayoutBuilder`(如 `SceneInterpreter`)时 `IntrinsicHeight` 也崩**——改用不依赖 intrinsic 的布局。**但色条也绝不能画成非均匀 `Border` 喂给 `ShadCard`/`AppCard`**：`ShadCard` 内部 `BoxDecoration(borderRadius)` 要求四边同色，非均匀边必抛 `A borderRadius can only be given on borders with uniform colors`(card.dart:206)。正确做法=`Stack`+左侧 `Container` 色条+靠卡片自身 clip 裁圆角(`wrong_questions_screen.dart` 先例)。`Column(stretch)` 安全。
 - ⚠️ ADR-0083：几何单源在 `figure_library` 表(`BUILTIN_FIGURE_SEED` 仅播种，无 axis 字段)；`gen_figures.py`+parity 锁已退役，`figures.dart` 只剩 `FigureShape`+`kFallbackFigure`+`figureMatchingVertices`。SceneSpec=`{kind,points,edges}` 内联几何，运行时零图库依赖；轴初值归 kind 外壳(`scene_shells.dart`)，展示开关 `SceneInterpreter.showAxisControls`。
 - 多图形不平铺(ADR-0061 §V/ADR-0083)：`optionGroup`→图形画廊(条目顺序即渲染顺序；卡宽 124 夹 2–6 列)+弹 `ReflectionSceneDialog`。弹窗画布边长夹 `min(420,屏高−320,屏宽−64)` 再夹[220,420]。画廊只画不判。
 
