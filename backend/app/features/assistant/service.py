@@ -18,7 +18,7 @@ from dataclasses import replace
 from typing import Any
 from uuid import UUID, uuid4
 
-from agent_core import IntentSignal, classify
+from agent_core import IntentSignal
 from agent_core.ports import RuntimeDeps, TextDelta
 from agent_core.protocol import (
     EVENT_ASSISTANT_MESSAGE,
@@ -380,10 +380,10 @@ def _consume_pending_quiz(
 # 直接产出动作键，`decide` 一次裁决即为最终结果，编排里不再有「路由算完再改判业务」的分支。
 #
 # ⚠️ 两种「出题」语义**各有独立动作键**，不得拍平：
-#   课件里  → `courseware_generate`（guide：引导到课堂大屏出题）
 #   助手里  → `task_generate`      （question：真的出题卡）
 # 判断题闭环的出题段另用 `quiz_generate`（同归 question，但出题后剥离答案、写待判定态）。
-_ACTION_COURSEWARE_GENERATE = "courseware_generate"
+# （历史：`courseware_generate` 曾为「课件里引导到课堂大屏出题」的键，ADR-0086 删课堂
+#  练习后连同其前端 UI 一并移除后端半边——见 ADR-0087。）
 _ACTION_COURSEWARE_HINT = "courseware_hint"
 _ACTION_QUIZ_JUDGE = "quiz_judge"
 _ACTION_QUIZ_GENERATE = "quiz_generate"
@@ -398,18 +398,17 @@ async def _build_intent_signal(
 ) -> IntentSignal:
     """把一次请求归一成结构化意图信号（T06 / T07）。
 
-    动作键优先级：**待判定态消费 > 判断题出题 > 课件练习方向 > 客户端显式** ``req.action``。
+    动作键优先级：**待判定态消费 > 判断题出题 > 课件提示方向 > 客户端显式** ``req.action``。
     前三者是服务端按上下文归一出的定向（原先的事后改判），末者是客户端的结构化动作；
     都交给唯一裁决点 ``decide`` 做等值匹配（命中即路由、不参与文本优先级竞争）。
 
     判断题出题（``req.quiz``）必须排在课件方向之前：它一次请求同时带 ``courseware``
-    （知识点上下文）与 ``quiz``，若被课件方向接走会跑到课堂大屏而非出题。
+    （知识点上下文）与 ``quiz``，若被课件方向接走会跑到伴学答疑而非出题。
 
-    课件方向**不是「带 courseware 就定向」**：课件上下文只提供「答错求提示」与「真的
-    在求题」两个方向。后者必须先用**同一个**文本分类器（``agent_core.classify``，路由的
-    单一事实源）确认文本意图确为 ``question``——否则课件里问「这道题为什么选 B」（本应
-    伴学答疑）会被 courseware 标记劫持成任务引导。非 question 时 ``action=None``，交回
-    常规文本路由。
+    课件方向**不是「带 courseware 就定向」**：课件上下文只提供「答错求提示」一个定向
+    （→ ``courseware_hint`` 落 tutor）；其余（含求题 / 求讲解）一律 ``action=None``，
+    交回常规文本路由到 tutor。ADR-0086 删课堂大屏出题后，不再有「课件里引导出题」的
+    ``courseware_generate`` 键（其前端 UI 与后端半边均已移除，见 ADR-0087）。
     """
     text = (req.message or "").strip()
     if conversation is not None and conversation.pending_quiz is not None:
@@ -419,21 +418,10 @@ async def _build_intent_signal(
         # 判断题闭环·出题：走出题助手（同源拿到检索/学科提示/溯源/工具信封）。
         action = _ACTION_QUIZ_GENERATE
     elif req.courseware is not None:
-        # 课件练习方向：答错求提示 → 伴学答疑；文本确为求题 → 任务引导（出题到页面）；
-        # 其余（如求讲解）→ action=None，照常走文本路由落到 tutor。
-        if "提示" in text:
-            action = _ACTION_COURSEWARE_HINT
-        else:
-            text_business = await classify(
-                text,
-                available=rt.visible_businesses(role),
-                manifests=rt.manifests,
-            )
-            action = (
-                _ACTION_COURSEWARE_GENERATE
-                if text_business == "question"
-                else None
-            )
+        # 课件方向：仅「答错求提示」→ 伴学答疑（courseware_hint）；其余（含求题 / 求讲解）
+        # 一律 action=None，交回常规文本路由到 tutor。ADR-0086/0087 后不再有「课件里引导
+        # 出题」的 courseware_generate 键——课件里问「出几道题」现在会落到 tutor 答疑。
+        action = _ACTION_COURSEWARE_HINT if "提示" in text else None
     else:
         action = req.action
     return IntentSignal(text=text, action=action)
