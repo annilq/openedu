@@ -43,13 +43,12 @@ def test_question_manifest_declares_all_actions():
     assert m is not None
     # T07：判断题出题（quiz_generate）与按规格出题（task_generate）各有独立键，
     # 但同归出题助手——前者走判断题闭环（剥离答案 / 写待判定态）。
-    assert m.actions == ["task_generate", "task_question_regenerate", "quiz_generate"]
+    assert m.actions == ["task_generate", "quiz_generate"]
 
 
 def test_match_action_helper():
     manifests = AgentRuntime.discover().manifests
     assert match_action("task_generate", manifests) == "question"
-    assert match_action("task_question_regenerate", manifests) == "question"
     assert match_action("quiz_generate", manifests) == "question"
     # 空动作 / 未知动作 → None（交给文本路由）
     assert match_action("", manifests) is None
@@ -71,8 +70,6 @@ _EXPECTED_ACTION_OWNERS: dict[str, str] = {
     "quiz_generate": "question",
     # 请求方：客户端结构化出题（req.action=task_generate）
     "task_generate": "question",
-    # 请求方：整卷重生成（tasks/service.py::_regenerate_events）
-    "task_question_regenerate": "question",
 }
 
 
@@ -248,7 +245,7 @@ def test_two_generate_intents_have_independent_action_keys():
 # ── 顺序无关：打乱清单顺序结果不变 ──
 def test_action_match_order_independent():
     base = AgentRuntime.discover().manifests
-    for action in ("task_generate", "task_question_regenerate"):
+    for action in ("task_generate",):
         keys = list(base.keys())
         random.Random(0).shuffle(keys)
         shuffled = {k: base[k] for k in keys}

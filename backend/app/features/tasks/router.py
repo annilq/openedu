@@ -266,14 +266,6 @@ def remove_one(
     )
 
 
-@router.post("/{task_id}/regenerate", response_model=TaskResp)
-def regenerate_all(
-    *, session: SessionDep, teacher: CurrentTeacher, task_id: UUID
-) -> TaskResp:
-    """整卷重生成（R-Q2=c）：按 Task.specs 原规格重跑，全量替换草稿项。"""
-    return tasks_service.regenerate_all(session=session, teacher=teacher, task_id=task_id)
-
-
 @router.put("/{task_id}", response_model=TaskResp)
 def edit_task_meta(
     *,

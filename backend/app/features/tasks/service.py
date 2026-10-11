@@ -14,31 +14,16 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from datetime import date
-from typing import Any
 from uuid import UUID
 
 from sqlmodel import Session, select
 
-from agent_core import IntentSignal
 from agent_core.errors import ProviderRequestError
 from agent_core.ports import RuntimeDeps
-from agent_core.protocol import (
-    EVENT_ASSISTANT_MESSAGE,
-    EVENT_DATA,
-    EVENT_ERROR,
-    EVENT_STEP,
-)
-from agent_core.protocol import (
-    done as done_event,
-)
-from agent_core.protocol import (
-    error as error_event,
-)
 from agent_core.runtime import AgentRuntime
 from agent_core.runtime_singleton import get_runtime
 from agent_core.subagent import SubAgentContext
 from app.core.ai_plumbing import build_ai_provider
-from app.core.async_bridge import run_async
 from app.core.errors import AppErrorException, ErrCode
 from app.core.guard import require_owned, require_owned_student
 from app.core.pagination import clamp_page_size, encode_cursor
@@ -82,7 +67,6 @@ from app.features.tasks.repository import (
     list_tasks_by_teacher,
     mark_assignment_completed,
     promote_task_question,
-    regenerate_all_task_questions,
     rejoin_wrong_question,
     remove_task_question,
     task_question_breakdown,
@@ -460,163 +444,6 @@ def owned_student_progress(*, session: Session, teacher: User, student_id: UUID)
 # ───────────────────────── 写路径：内部构件 ─────────────────────────
 
 
-def _question_fields(payload: dict) -> dict:
-    """题卡 dict → 题目字段字典（落库两种形态共用）。
-
-    只取题目本身的字段：``stream_question`` 会额外挂 ``reasoning``（出题思路），
-    那是给人看的推理文本，不进题目表。
-    """
-    allowed = (
-        "subject", "grade", "knowledge_point", "qtype", "stem",
-        "options", "answer", "explanation", "difficulty", "semester",
-        "source_refs", "multi",
-    )
-    return {k: payload[k] for k in allowed if k in payload}
-
-
-def _task_question_from_payload(payload: dict) -> TaskQuestion:
-    """题卡 dict → 草稿 TaskQuestion（整卷重生成落库用，R-Q1=c：不入题库）。
-
-    先过「选择题必须有有效选项」的落库闸门（与 /tasks/from-generated 同口径），
-    再剔除 ``source_refs``——TaskQuestion 快照无此列（溯源只随题库 Question 存）。
-    """
-    fields = dict(_question_fields(payload))
-    options = normalize_options(fields.get("options"))
-    qtype = str(fields.get("qtype", "open"))
-    if qtype == "choice" and not _valid_choice_options(options):
-        raise AppErrorException(
-            ErrCode.TASK_CHOICE_NO_OPTIONS, "选择题缺少有效选项，换题失败，请重试"
-        )
-    fields["options"] = options
-    fields["multi"] = (
-        bool(fields.get("multi", False))
-        and qtype == "choice"
-        and bool(_valid_choice_options(options))
-    )
-    fields.pop("source_refs", None)
-    return TaskQuestion(
-        task_id=None,  # 由 regenerate_all_task_questions 回填
-        question_id=None,  # R-Q1=c：草稿期不入题库
-        **fields,
-    )
-
-
-def _is_question_frame(ev) -> bool:
-    """运行时 DATA 帧是否为题卡（``type=question`` 且 result 为 dict）。"""
-    data = ev.data
-    return (
-        ev.eventType == EVENT_DATA
-        and isinstance(data, dict)
-        and data.get("type") == "question"
-        and isinstance(data.get("result"), dict)
-    )
-
-
-def _question_ctx(
-    *,
-    role: str,
-    teacher_id: UUID,
-    student_id: UUID | None,
-    specs: list[dict],
-    model: str | None,
-    subject: str = "",
-    weak_examples: list[dict] | None = None,
-    unindexed: int = 0,
-) -> SubAgentContext:
-    """出题 subagent 的结构化上下文（规格走 extra["specs"]，不经自然语言往返）。"""
-    return SubAgentContext(
-        role=role,
-        message="",
-        history=None,
-        model=model,
-        skills="",
-        extra={
-            "subject": subject,
-            "teacher_id": teacher_id,
-            "student_id": student_id,
-            "grade": 0,
-            "session_id": None,
-            "weak_examples": weak_examples,
-            "specs": specs,
-            "unindexed_materials": unindexed,
-        },
-    )
-
-
-def _count_unindexed(session: Session, teacher_id: UUID) -> int:
-    """「有 N 份资料未参与本次出题」（ADR-0055 §13）：纯提示性遥测，失败一律按 0。"""
-    try:
-        from app.features.materials import repository as materials_repo
-
-        return materials_repo.count_unindexed(session, teacher_id=teacher_id)
-    except Exception:  # noqa: BLE001 — 绝不阻塞出题主链路
-        return 0
-
-
-async def _regenerate_events(
-    *,
-    rt: AgentRuntime,
-    ctx: SubAgentContext,
-    deps: RuntimeDeps,
-    session: Session,
-    action: str = "task_question_regenerate",
-) -> AsyncIterator[Any]:
-    """整卷重生成走**统一路由**：动作直配得 business → ``rt.run`` 产出运行时帧。
-
-    与首次出题（``generate_task_stream``）同源：检索 / 学科提示 / 溯源引用 /
-    工具信封全部由 question subagent 经 runtime 注入，不再直连裸出题管线。
-    ``ACTION_FORBIDDEN`` 只在动作对当前角色不可见时出现（该动作教师专属，
-    正常路径不会触发）；它属于**角色可见性**语义，与归属校验的「任务不存在」是
-    两回事，不得混用。
-    """
-    decision = await rt.decide(
-        IntentSignal(text="", action=action), role=ctx.role, deps=deps
-    )
-    if decision.business is None:
-        if decision.extra.get("reason") == "action_not_visible":
-            yield error_event(
-                f"当前角色无权执行动作「{action}」。", code="ACTION_FORBIDDEN"
-            )
-        else:
-            yield error_event("输入含不适当内容，已拒绝。", code="INPUT_UNSAFE")
-        yield done_event()
-        return
-    async for ev in rt.run(
-        "", role=ctx.role, ctx=ctx, deps=deps, business=decision.business, session=session
-    ):
-        yield ev
-
-
-def _expand_spec_items(specs: list[dict]) -> list[dict]:
-    """把 specs 摊平成「一题一项」的规格列表（按 count 展开）。
-
-    整卷同步生成与流式逐题生成共用：前者一次性跑完，后者每跑完一项就推一帧
-    STEP 进度，教师能看到「第 i/N 题」而不是干等。
-    """
-    items: list[dict] = []
-    for sp in specs:
-        if isinstance(sp, dict):
-            item = {
-                "subject": str(sp.get("subject", "")),
-                "grade": int(sp.get("grade", 0)),
-                "knowledge_point": str(sp.get("knowledge_point", "")),
-                "qtype": str(sp.get("qtype", "")),
-                "difficulty": str(sp.get("difficulty", "medium")),
-            }
-            count = int(sp.get("count", 1))
-        else:
-            item = {
-                "subject": sp.subject,
-                "grade": sp.grade,
-                "knowledge_point": sp.knowledge_point,
-                "qtype": sp.qtype,
-                "difficulty": sp.difficulty,
-            }
-            count = sp.count
-        items.extend([item] * max(0, count))
-    return items
-
-
 def _owned_task(*, session: Session, teacher: User, task_id: UUID) -> Task:
     """取任务并断言归属当前教师；不存在/越权统一报「任务不存在」（404）。
 
@@ -838,134 +665,6 @@ def remove_one(*, session: Session, teacher: User, task_id: UUID, tq_id: UUID) -
     _draft_item(session=session, task=task, tq_id=tq_id)
     if not remove_task_question(session=session, tq_id=tq_id):
         raise AppErrorException(ErrCode.TASK_QUESTION_NOT_FOUND, "题目不存在")
-
-
-def _collect_regenerate_payloads(
-    *, rt: AgentRuntime, deps: RuntimeDeps, ctx: SubAgentContext, session: Session
-) -> list[dict]:
-    """同步路径：drain 统一路由出题流，收集题卡 dict；失败转 ``AppErrorException``。"""
-
-    async def _drain() -> tuple[list[dict], Any, str | None]:
-        payloads: list[dict] = []
-        err = None
-        reason: str | None = None
-        async for ev in _regenerate_events(rt=rt, ctx=ctx, deps=deps, session=session):
-            if ev.eventType == EVENT_ERROR:
-                err = ev
-            elif ev.eventType == EVENT_STEP and ev.status == "error":
-                reason = ev.label
-            elif ev.eventType == EVENT_ASSISTANT_MESSAGE and not reason:
-                reason = ev.text
-            elif _is_question_frame(ev):
-                payloads.append(ev.data["result"])
-        return payloads, err, reason
-
-    try:
-        payloads, err, reason = run_async(_drain())
-    except ProviderRequestError as e:
-        # 厂商拒绝请求（认证失败 / 限流 / 网络）：给可操作提示，别吞成「请添加模型」（ADR-0038）。
-        raise AppErrorException(ErrCode.LLM_REQUEST_FAILED, e.user_hint) from e
-    if err is not None:
-        if err.code == "PROVIDER_ERROR":
-            raise AppErrorException(
-                ErrCode.LLM_REQUEST_FAILED, err.message or "模型调用被拒绝，请稍后重试"
-            )
-        raise AppErrorException(ErrCode.LLM_UNAVAILABLE, err.message or "出题失败，请重试")
-    if not payloads:
-        raise AppErrorException(
-            ErrCode.LLM_UNAVAILABLE,
-            reason
-            or "无可用 LLM 引擎或题目生成不安全，无法重生成（请在「模型管理」中添加模型并设为默认）",
-        )
-    return payloads
-
-
-def _regenerate_all_inputs(
-    *, session: Session, teacher: User, task_id: UUID
-) -> tuple[Task, list[dict], RuntimeDeps, SubAgentContext]:
-    """整卷重生成的公共前置：鉴权 + 规格校验 + 运行时依赖/上下文。
-
-    返回 ``(task, spec_items, deps, ctx)``。``spec_items`` 已按 count 摊平成
-    「一题一项」，用于核对实出题数是否与规格一致（整卷重生成要求全量替换）。
-    """
-    task = _owned_task(session=session, teacher=teacher, task_id=task_id)
-    _require_draft(task)
-    specs = task.specs
-    if not specs:
-        raise AppErrorException(
-            ErrCode.TASK_EMPTY_SPECS, "当前草稿无生成规格，无法整卷重生成，请返回出题页重新创建"
-        )
-    deps = RuntimeDeps(
-        provider=build_ai_provider(task.model, teacher_id=teacher.id, session=session),
-        retriever=build_retriever(session=session, teacher_id=teacher.id),
-        safety=None,
-    )
-    ctx = _question_ctx(
-        role="teacher",
-        teacher_id=teacher.id,
-        student_id=None,
-        model=task.model,
-        subject=specs[0].get("subject", "") if isinstance(specs[0], dict) else "",
-        specs=specs,
-        unindexed=_count_unindexed(session, teacher.id),
-    )
-    return task, _expand_spec_items(specs), deps, ctx
-
-
-def _commit_regenerated(
-    *, session: Session, task: Task, new_tqs: list[TaskQuestion]
-) -> TaskResp:
-    """整卷重生成的落库段（R-Q2=c 全量替换草稿项），流式/同步版共用。"""
-    updated = regenerate_all_task_questions(
-        session=session, task_id=task.id, new_task_questions=new_tqs
-    )
-    if updated is None:
-        raise AppErrorException(
-            ErrCode.TASK_STATUS_DRAFT_REQUIRED, "仅草稿态可整卷重生成"
-        )
-    return task_to_resp(
-        updated, get_task_questions(session=session, task_id=updated.id), include_answer=True
-    )
-
-
-def regenerate_all(
-    *,
-    session: Session,
-    teacher: User,
-    task_id: UUID,
-    runtime: AgentRuntime | None = None,
-) -> TaskResp:
-    """整卷重生成（R-Q2=c）：按 Task.specs 原规格走统一路由重跑，全量替换草稿项。
-
-    若 Task.specs 为空（非本版流程创建的草稿），抛 VALIDATION 错误，要求教师
-    返回出题页重新生成。整卷要求全量替换，故实出题数少于规格数时如实报错而非
-    静默落一份残缺卷。
-    """
-    rt = runtime or get_runtime()
-    task, spec_items, deps, ctx = _regenerate_all_inputs(
-        session=session, teacher=teacher, task_id=task_id
-    )
-    payloads = _collect_regenerate_payloads(rt=rt, deps=deps, ctx=ctx, session=session)
-    if len(payloads) < len(spec_items):
-        raise AppErrorException(
-            ErrCode.LLM_UNAVAILABLE,
-            f"应出 {len(spec_items)} 题、实出 {len(payloads)} 题，整卷重生成已中止，请重试",
-        )
-    new_tqs: list[TaskQuestion] = []
-    for payload in payloads:
-        tq = _task_question_from_payload(payload)
-        tq.scene_spec = build_scene_spec_for_question(
-            session,
-            teacher_id=teacher.id,
-            subject=tq.subject,
-            grade=tq.grade,
-            knowledge_point=tq.knowledge_point,
-            semester=tq.semester,
-            stem=tq.stem,
-            options=tq.options,
-        )
-        new_tqs.append(tq)
-    return _commit_regenerated(session=session, task=task, new_tqs=new_tqs)
 
 
 def edit_question(

@@ -89,10 +89,10 @@ def batch_generate_task(
 ) -> Task:
     """批量建草稿 Task + 挂草稿项（R-Q1=c：不预写 Question，只写 TaskQuestion）。
 
-    - `specs_dicts`：原始生成规格的 list[dict]，持久化到 Task.specs 以便整卷重生成。
+    - `specs_dicts`：原始生成规格的 list[dict]，持久化到 Task.specs 供审核页摘要展示。
     - `task_questions`：路由层已用出题引擎生成的草稿项（未写 Question）。
       路由层不 commit 直接传进来，避免和 Task 事务拆分。
-    - `model`：出题所用模型引用（内置 id / ModelConfig id），随草稿持久化以便重生成沿用。
+    - `model`：出题所用模型引用（内置 id / ModelConfig id），随草稿持久化以便批改沿用。
     """
     task = Task(
         title=title,
@@ -248,43 +248,6 @@ def remove_task_question(
     return True
 
 
-def regenerate_all_task_questions(
-    *,
-    session: Session,
-    task_id: uuid.UUID,
-    new_task_questions: list[TaskQuestion],
-    specs_dicts: list[dict] | None = None,
-) -> Task | None:
-    """整卷重生成（R-Q2=c）：按原 specs 重跑，全量替换草稿项。
-
-    同时清理当前草稿所有已入库的 Question（R-Q5=b 级联）。
-    若传入 specs_dicts 则更新 Task.specs（教师在 UI 上调整了规格）。
-    """
-    task = session.get(Task, task_id)
-    if task is None or task.status != "draft":
-        return None
-    old = get_task_questions(session=session, task_id=task.id)
-    old_qids = [tq.question_id for tq in old if tq.question_id is not None]
-    # 删旧草稿项（物理）
-    for tq in old:
-        session.delete(tq)
-    # 删旧 Question 行
-    for qid in old_qids:
-        q = session.get(Question, qid)
-        if q is not None:
-            session.delete(q)
-    session.flush()
-    for tq in new_task_questions:
-        tq.task_id = task.id
-    session.add_all(new_task_questions)
-    if specs_dicts is not None:
-        task.specs = specs_dicts or None
-    session.add(task)
-    session.commit()
-    session.refresh(task)
-    return task
-
-
 # ───────── 题库复用闭环（GET /questions / POST /tasks/from-bank 等） ─────────
 def create_task_from_bank(
     *,
@@ -297,7 +260,7 @@ def create_task_from_bank(
     """选项 A：从题库新建任务（draft）。
 
     深拷贝选中题为 TaskQuestion 并回填 question_id（复用源题），
-    作答/错题归集仍指向同一道源题。specs=None：无 AI 生成规格，不支持整卷重生成。
+    作答/错题归集仍指向同一道源题。specs=None：无 AI 生成规格。
     """
     if student_id is not None:
         require_owned_student(

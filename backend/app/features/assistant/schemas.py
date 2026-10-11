@@ -66,7 +66,7 @@ class AssistantChatReq(SQLModel):
     quiz: bool = Field(default=False)
     # ADR-0081 / T04：结构化动作。非空时经 IntentSignal 交给统一路由做「动作直配」
     # （等值匹配 manifest.actions，先于文本优先级），而非写死业务。出题类动作
-    # （task_generate / task_question_regenerate）声明在 question 清单，师生均可见。
+    # （task_generate）声明在 question 清单，师生均可见。
     # 动作命中但当前角色不可见 → 统一路由返回显式 action_not_visible，端点转为
     # ACTION_FORBIDDEN 错误，不静默回落成答非所问。
     action: str | None = None

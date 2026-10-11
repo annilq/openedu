@@ -79,8 +79,8 @@ class TaskFromGenerated(SQLModel):
 
     title: str = Field(max_length=255)
     student_id: uuid.UUID | None = None  # 可空，支持"先成卷晚点派"
-    specs: list[TaskSpec]  # 原始规格，持久化到 Task.specs 以便整卷重生成
-    # 可选模型引用：内置 id / ModelConfig id；落库以便重生成沿用。
+    specs: list[TaskSpec]  # 原始规格，持久化到 Task.specs 供审核页摘要展示
+    # 可选模型引用：内置 id / ModelConfig id；落库以便批改沿用。
     model: str | None = None
     # 已流式生成、待落库的题卡（QuestionPreview.toJson 形态）。
     questions: list[dict]
@@ -90,7 +90,7 @@ class TaskResp(SQLModel):
     id: uuid.UUID
     title: str
     status: str
-    # 原始生成规格（整卷重生成可用；前端展示方便）
+    # 原始生成规格（前端展示用）
     specs: list[dict] | None = None
     questions: list["QuestionResp"] = []  # noqa: F821
     # 派发对象（列表/详情展示“对应学生”用）

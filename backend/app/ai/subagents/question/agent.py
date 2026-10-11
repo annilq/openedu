@@ -294,7 +294,7 @@ def _finish_message(
         reason = failures[0] if failures else "未知原因"
         return (
             f"应出 {requested} 题，实出 {ok} 题：第 {ok + 1} 题生成失败（{reason}）。"
-            f"已保存这 {ok} 题，可在草稿页整卷重生成补齐。"
+            f"已保存这 {ok} 题，可返回出题页重新生成补齐。"
         )
     return f"{head}，{tail}"
 
