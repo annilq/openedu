@@ -2,7 +2,7 @@
 
 - **What to build**: 扩展 `sealed TeacherPage` 增加 `classManagement` case（ADR-0059 导航单源纪律），新增一级导航项「班级管理」，与「学生管理」并列，不取代它。所有入口只调 `_go(page)`，禁止再开并行状态。
 - **Blocked by**: —
-- **Status**: ready-for-agent
+- **Status**: ✅ done（2026-10-11，本轮回合已落地并测过）
 - **验收清单**:
   - `sealed TeacherPage` 新增 `classManagement`；所有导航入口（侧栏/抽屉/底部栏）只经 `_go(page)` 切换到该页，无并行状态变量。
   - 沿用 `teacher_nav_single_source_test.dart` 的既有断言，补充新 case：新增导航项存在且经单源切换；不存在两个并行的"当前页"状态。

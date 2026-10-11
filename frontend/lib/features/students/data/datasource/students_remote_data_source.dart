@@ -12,11 +12,13 @@ class StudentsRemoteDataSource {
     required String username,
     required String password,
     required String displayName,
+    String? classId,
   }) async {
     final body = <String, dynamic>{
       'username': username,
       'password': password,
       'display_name': displayName,
+      if (classId != null) 'class_id': classId,
     };
     return await _network.post('/students', body: body);
   }
@@ -82,9 +84,11 @@ class StudentsRemoteDataSource {
   Future<Map<String, dynamic>> importStudents({
     required List<int> bytes,
     required String filename,
+    String? classId,
   }) async {
     final form = FormData.fromMap({
       'file': MultipartFile.fromBytes(bytes, filename: filename),
+      if (classId != null) 'class_id': classId,
     });
     return await _network.postForm('/students/import', form);
   }

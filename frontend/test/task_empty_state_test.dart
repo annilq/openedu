@@ -164,6 +164,9 @@ class _FakeAnalyticsRepository implements AnalyticsRepository {
 class _StubClassesRepository implements ClassesRepository {
   @override
   Future<List<ClassModel>> getClasses() async => const <ClassModel>[];
+
+  @override
+  dynamic noSuchMethod(Invocation i) => throw UnimplementedError();
 }
 
 class _StubStudentsRepository implements StudentsRepository {
@@ -172,6 +175,7 @@ class _StubStudentsRepository implements StudentsRepository {
     required String username,
     required String password,
     required String displayName,
+    String? classId,
   }) async =>
       UserModel(
         id: 's',
@@ -216,6 +220,7 @@ class _StubStudentsRepository implements StudentsRepository {
   Future<StudentImportResultModel> importStudents({
     required List<int> bytes,
     required String filename,
+    String? classId,
   }) async =>
       const StudentImportResultModel(created: 0, skipped: 0, errors: []);
 

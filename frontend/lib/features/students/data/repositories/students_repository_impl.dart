@@ -13,11 +13,13 @@ class StudentsRepositoryImpl implements StudentsRepository {
     required String username,
     required String password,
     required String displayName,
+    String? classId,
   }) async {
     final data = await _dataSource.createChild(
       username: username,
       password: password,
       displayName: displayName,
+      classId: classId,
     );
     return UserModel.fromJson(data);
   }
@@ -76,9 +78,13 @@ class StudentsRepositoryImpl implements StudentsRepository {
   Future<StudentImportResultModel> importStudents({
     required List<int> bytes,
     required String filename,
+    String? classId,
   }) async {
-    final data =
-        await _dataSource.importStudents(bytes: bytes, filename: filename);
+    final data = await _dataSource.importStudents(
+      bytes: bytes,
+      filename: filename,
+      classId: classId,
+    );
     return StudentImportResultModel.fromJson(data);
   }
 

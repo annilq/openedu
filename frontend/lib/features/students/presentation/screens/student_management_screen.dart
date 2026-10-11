@@ -41,8 +41,24 @@ class StudentManagementScreen extends ConsumerStatefulWidget {
   /// 顶部「添加学生」入口（原侧栏选择器菜单移除后，新增学生改由这里发起）。
   final VoidCallback? onAddStudent;
 
-  const StudentManagementScreen(
-      {super.key, required this.onOpenStudent, this.onAddStudent});
+  /// 班级下钻页（ADR-0086 ticket 04）：非空时只加载该班学生、隐藏筛选 chip、
+  /// 标题含班级名、显示返回按钮。
+  final String? classId;
+
+  /// 下钻页标题用的班级名（由下钻发起方直传，不写全局状态）。
+  final String? className;
+
+  /// 下钻页返回落点（回到班级管理列表）。全量视图为 null，不显示返回按钮。
+  final VoidCallback? onBack;
+
+  const StudentManagementScreen({
+    super.key,
+    required this.onOpenStudent,
+    this.onAddStudent,
+    this.classId,
+    this.className,
+    this.onBack,
+  });
 
   @override
   ConsumerState<StudentManagementScreen> createState() =>
@@ -97,7 +113,10 @@ class _StudentManagementScreenState
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        ref.read(studentManagementProvider.notifier).load();
+        // 下钻页（classId != null）只加载该班学生；全量视图传 null。
+        ref
+            .read(studentManagementProvider.notifier)
+            .load(classId: widget.classId);
       }
     });
   }
@@ -210,7 +229,7 @@ class _StudentManagementScreenState
     try {
       final res = await ref
           .read(studentManagementProvider.notifier)
-          .importStudents(bytes: bytes, filename: file.name);
+          .importStudents(bytes: bytes, filename: file.name, classId: widget.classId);
       if (mounted) setState(() => _importResult = res);
     } catch (e) {
       if (mounted) AppToast.error(context, e);
@@ -303,6 +322,10 @@ class _StudentManagementScreenState
               onImport: _importing ? null : _pickAndImport,
               onDownloadTemplate:
                   _downloadingTemplate ? null : _downloadTemplate,
+              titleOverride: widget.className != null
+                  ? '${widget.className} · ${students.length} 人'
+                  : null,
+              onBack: widget.onBack,
             ),
             Padding(
               padding: const EdgeInsets.symmetric(
@@ -318,7 +341,8 @@ class _StudentManagementScreenState
                     onChanged: _onSearchChanged,
                   ),
                   const SizedBox(height: AppSpacing.sm),
-                  if (state is StudentManagementLoaded)
+                  // 下钻页（classId != null）已是某个班内部，隐藏「全部/各班/未分班」筛选。
+                  if (state is StudentManagementLoaded && widget.classId == null)
                     _FilterChips(
                       classes: state.classes,
                       filter: _filter,
@@ -334,10 +358,12 @@ class _StudentManagementScreenState
                 selecting: _selecting,
                 selected: _selected,
                 onToggleSelect: _toggleSelect,
-                onRetry: () =>
-                    ref.read(studentManagementProvider.notifier).load(),
+                onRetry: () => ref
+                    .read(studentManagementProvider.notifier)
+                    .load(classId: widget.classId),
                 onOpenStudent: widget.onOpenStudent,
                 buildRows: _buildRows,
+                classId: widget.classId,
               ),
             ),
             if (_selecting)
@@ -377,6 +403,12 @@ class _PageHeader extends StatelessWidget {
   final VoidCallback? onImport;
   final VoidCallback? onDownloadTemplate;
 
+  /// 下钻页标题覆盖（含班级名 + 人数）；为空时回退「学生管理」+ 徽标。
+  final String? titleOverride;
+
+  /// 下钻页返回按钮（回到班级管理列表）；全量视图为 null。
+  final VoidCallback? onBack;
+
   const _PageHeader({
     required this.state,
     required this.selecting,
@@ -387,6 +419,8 @@ class _PageHeader extends StatelessWidget {
     this.onAddStudent,
     this.onImport,
     this.onDownloadTemplate,
+    this.titleOverride,
+    this.onBack,
   });
 
   @override
@@ -401,9 +435,15 @@ class _PageHeader extends StatelessWidget {
         AppSpacing.md, AppSpacing.md, AppSpacing.md, AppSpacing.xs),
       child: Row(
         children: [
-          Text('学生管理', style: text.titleLarge),
+          if (onBack != null)
+            AppIconAction(
+              icon: LucideIcons.arrowLeft,
+              semanticLabel: '返回',
+              onPressed: onBack,
+            ),
+          Text(titleOverride ?? '学生管理', style: text.titleLarge),
           const SizedBox(width: AppSpacing.sm),
-          if (!selecting && total != null)
+          if (!selecting && total != null && titleOverride == null)
             AppBadge(
               label: '$total 人',
               background: scheme.surfaceSunken,
@@ -652,6 +692,9 @@ class _Body extends StatelessWidget {
   final void Function(String studentId) onOpenStudent;
   final List<_RowItem> Function(List<UserModel>, List<ClassModel>) buildRows;
 
+  /// 下钻页（classId != null）：已是某个班内部，直接平铺学生，不再分组。
+  final String? classId;
+
   const _Body({
     required this.state,
     required this.filter,
@@ -661,6 +704,7 @@ class _Body extends StatelessWidget {
     required this.onRetry,
     required this.onOpenStudent,
     required this.buildRows,
+    this.classId,
   });
 
   @override
@@ -684,6 +728,23 @@ class _Body extends StatelessWidget {
           icon: LucideIcons.users,
           title: '还没有学生',
           message: '点击右上角「添加学生」或批量导入花名册，学生会出现在这里。',
+        ),
+      );
+    }
+
+    // 下钻页：不套分组头，直接平铺该班学生。
+    if (classId != null) {
+      return ListView.builder(
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+        itemCount: loaded.students.length,
+        itemBuilder: (context, i) => _StudentTile(
+          student: loaded.students[i],
+          wrongCount: loaded.wrongCounts[loaded.students[i].id] ?? 0,
+          selecting: selecting,
+          selected: selected.contains(loaded.students[i].id),
+          onTap: selecting
+              ? () => onToggleSelect(loaded.students[i].id)
+              : () => onOpenStudent(loaded.students[i].id),
         ),
       );
     }

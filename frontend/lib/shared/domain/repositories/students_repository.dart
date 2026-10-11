@@ -7,6 +7,7 @@ abstract class StudentsRepository {
     required String username,
     required String password,
     required String displayName,
+    String? classId,
   });
   Future<UserModel> updateChild({
     required String studentId,
@@ -33,6 +34,7 @@ abstract class StudentsRepository {
   Future<StudentImportResultModel> importStudents({
     required List<int> bytes,
     required String filename,
+    String? classId,
   });
 
   /// 下载学生导入模板 xlsx（方案A）：表头与导入解析口径一致（姓名 / 学号）。

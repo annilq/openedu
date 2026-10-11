@@ -144,6 +144,9 @@ void main() {
 /// 2026-10-10 **student_home 428→395，整条移出 _baseline**：AI 入口统一为右下角浮球后，
 ///   学生端不再有「问 AI 老师」页签，随之删除已无落点的首页 AI 横幅（`_TutorBanner`）与
 ///   `onNavigateToTutor` 回调——回到 400 行内，属 A 类净减（真实职责分离）。
+/// 2026-10-11 票据 06（ADR-0086 班内添加/导入归属本班）：home_screen 586→589
+///   （下钻页「添加学生」经 AddStudentPage 携带 classId/className、保存后回落该班下钻页，
+///   属 B 类组合根真实增长，基线随真实行数上调）。
 /// **只许下调（除 B 类已登记的合理大件外）。**
 ///
 /// 拆分批次见 `docs/refactor/2026-09-21-flutter-ui-decomposition.md`（P0–P4）。
@@ -152,7 +155,7 @@ const Map<String, int> _baseline = <String, int>{
   'shared/widgets/adaptive_shell.dart': 503,
   'features/home/presentation/widgets/teacher/teacher_question_bank_view.dart': 759,
   'features/home/presentation/widgets/teacher/teacher_tasks_view.dart': 672,
-  'features/home/presentation/screens/home_screen.dart': 586,
+  'features/home/presentation/screens/home_screen.dart': 589,
   'features/assistant/presentation/screens/assistant_chat_page.dart': 570,
   'shared/widgets/scene_interpreter/reflection_scene.dart': 567,
   'features/home/presentation/widgets/teacher/teacher_question_card.dart': 511,
@@ -160,7 +163,7 @@ const Map<String, int> _baseline = <String, int>{
   'features/home/presentation/widgets/teacher/workbench_glance.dart': 406,
   'shared/widgets/analytics_charts.dart': 691,
   'features/home/presentation/screens/teacher_task_review_screen.dart': 424,
-  'features/students/presentation/screens/student_management_screen.dart': 810,
+  'features/students/presentation/screens/student_management_screen.dart': 871,
 };
 
 bool _isDart(String path) =>

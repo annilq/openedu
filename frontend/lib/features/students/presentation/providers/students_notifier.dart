@@ -44,12 +44,14 @@ class ChildrenNotifier extends StateNotifier<ChildrenState> {
     required String username,
     required String password,
     required String displayName,
+    String? classId,
   }) async {
     try {
       final created = await _repo.createChild(
         username: username,
         password: password,
         displayName: displayName,
+        classId: classId,
       );
       await loadChildren();
       return created;

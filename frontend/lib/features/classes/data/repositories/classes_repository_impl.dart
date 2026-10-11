@@ -13,4 +13,32 @@ class ClassesRepositoryImpl implements ClassesRepository {
         .map((e) => ClassModel.fromJson(e as Map<String, dynamic>))
         .toList();
   }
+
+  @override
+  Future<ClassModel> createClass({
+    required String name,
+    required int grade,
+  }) async {
+    final map = await _dataSource.createClass(name: name, grade: grade);
+    return ClassModel.fromJson(map);
+  }
+
+  @override
+  Future<ClassModel> updateClass({
+    required String id,
+    required String name,
+    required int grade,
+  }) async {
+    final map = await _dataSource.updateClass(
+      id,
+      name: name,
+      grade: grade,
+    );
+    return ClassModel.fromJson(map);
+  }
+
+  @override
+  Future<void> deleteClass(String id) async {
+    await _dataSource.deleteClass(id);
+  }
 }

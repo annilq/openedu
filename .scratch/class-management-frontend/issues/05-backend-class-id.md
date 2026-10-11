@@ -2,7 +2,7 @@
 
 - **What to build**: 补 ADR-0086 §2.5 的两处缺口。`POST /students`：请求体已能透传 `class_id`（共享 `UserCreate`/`UserBase`），缺口是**缺少对 `class_id` 归属当前教师的校验**——落库前用 `require_owned` 校验班级归属。 `POST /students/import`：当前**不接受** `class_id` 参数；新增可选 `class_id`，导入行直接归入该班（模板仍只「姓名/学号」两列不变），并做归属校验（越权整体失败）。
 - **Blocked by**: —
-- **Status**: ready-for-agent
+- **Status**: ✅ done
 - **验收清单**:
   - `POST /students` 带 `class_id` 后该生 `class_id` 落库且属当前教师；带**他人** `class_id` 应 403。
   - `POST /students/import` 带 `class_id` 后导入学生归入本班；导入后 `GET /students?class_id=` 查到且 `username` + 初始密码能真正登录。

@@ -26,6 +26,9 @@ class StudentFormScreen extends ConsumerStatefulWidget {
   final UserModel? child; // edit 时传入
   final void Function(UserModel saved)? onSaved;
 
+  /// 下钻页（ADR-0086 ticket 06）内置入口创建时，预填归属班级；为 null 走原有全量逻辑。
+  final String? classId;
+
   /// 覆盖层场景（如 home_screen 的编辑层/创建页，未走 Navigator.push）的返回行为。
   /// 为 null 时由 [AppTopBar] 走默认 [Navigator.maybePop]。
   final VoidCallback? onBack;
@@ -35,6 +38,7 @@ class StudentFormScreen extends ConsumerStatefulWidget {
     required this.mode,
     this.child,
     this.onSaved,
+    this.classId,
     this.onBack,
   });
 
@@ -109,6 +113,7 @@ class _StudentFormScreenState extends ConsumerState<StudentFormScreen> {
         username: _usernameCtrl.text.trim(),
         password: _passwordCtrl.text,
         displayName: name,
+        classId: widget.classId,
       );
     }
 

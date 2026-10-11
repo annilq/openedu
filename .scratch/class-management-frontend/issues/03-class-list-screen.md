@@ -2,7 +2,7 @@
 
 - **What to build**: 新增 `features/classes/presentation/ClassManagementScreen`（classes feature 此前缺 `presentation/`）。展示班级卡片列表：名称 + 年级标签（1–9）+ 人数 + 下钻箭头；行内「重命名 / 删除」走页内联浮层（不用 Material `Dialog`，保持无 Material 祖先）。顶部「+ 新建班级」内联表单（名称 + 年级 1–9 选择器），提交建班；重命名/改年级走底部抽屉表单；删除走确认浮层。空态用 `AppEmptyState`。
 - **Blocked by**: 02
-- **Status**: ready-for-agent
+- **Status**: ✅ done（2026-10-11，本轮回合已落地并测过）
 - **验收清单**:
   - 卡片渲染：名称、年级标签、人数、下钻箭头齐备；点卡片触发下钻（ticket 04 消费此落点）。
   - 新建班级：表单提交 → `POST /classes`；年级 1–9 选择器约束；成功后列表出现新卡片。

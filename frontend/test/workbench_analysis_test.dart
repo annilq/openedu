@@ -122,6 +122,9 @@ class FakeClassesRepository implements ClassesRepository {
         ClassModel(id: 'c1', name: '一班', grade: 4, studentCount: 8),
         ClassModel(id: 'c2', name: '二班', grade: 4, studentCount: 5),
       ];
+
+  @override
+  dynamic noSuchMethod(Invocation i) => throw UnimplementedError();
 }
 
 class FakeStudentsRepository implements StudentsRepository {
@@ -130,6 +133,7 @@ class FakeStudentsRepository implements StudentsRepository {
     required String username,
     required String password,
     required String displayName,
+    String? classId,
   }) async =>
       UserModel(
         id: 's',
@@ -173,6 +177,7 @@ class FakeStudentsRepository implements StudentsRepository {
   Future<StudentImportResultModel> importStudents({
     required List<int> bytes,
     required String filename,
+    String? classId,
   }) async =>
       const StudentImportResultModel(created: 0, skipped: 0, errors: []);
 
