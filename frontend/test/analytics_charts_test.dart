@@ -143,9 +143,13 @@ void main() {
       if (entity is! File || !entity.path.endsWith('.dart')) continue;
       final src = entity.readAsStringSync();
       final rel = entity.path.replaceAll(r'\', '/').split('lib/').last;
-      if (src.contains("import 'package:fl_chart")) importers.add(rel);
-      // 裸用 BarChart / PieChart（非 fl_chart 内部、非适配器本文件）即违规。
+      final importsFlChart = src.contains("import 'package:fl_chart");
+      if (importsFlChart) importers.add(rel);
+      // 裸用 = 真 import 了 fl_chart 且直接构造 BarChart/PieChart 构件。业务页经 App* 适配器
+      // 调用（如 AppBarChart/AppStackedBarChart）不算裸用；适配器类以 App 前缀暴露，且只有
+      // analytics_charts.dart 才 import fl_chart，故「含 BarChart( 子串」不能单独判定为违规。
       if (rel != 'shared/widgets/analytics_charts.dart' &&
+          importsFlChart &&
           (src.contains('BarChart(') || src.contains('PieChart('))) {
         bareUsers.add(rel);
       }
