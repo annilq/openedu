@@ -119,14 +119,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     _go(highlightFor(_teacherPage));
   }
 
-  /// StudentFormScreen 保存后的统一回调（创建 + 编辑共用）。
-  void _onChildFormSaved(UserModel saved) {
-    // 列表已在 notifier 内刷新；回到首页/关闭编辑层。
-    _go(const OverviewPage());
-  }
-
-  void _onNavigateToEditStudent(UserModel child) {
-    _go(EditStudentPage(child));
+  void _onNavigateToEditStudent(UserModel child, TeacherPage back) {
+    _go(EditStudentPage(child, back: back));
   }
 
   /// 「我的」入口——**两个角色共用**（侧栏底部用户区 / 紧凑档底栏）。
@@ -203,11 +197,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           onSaved: (_) => _go(_addStudentReturnPage(page)),
           onBack: () => _go(_addStudentReturnPage(page)),
         ),
-      EditStudentPage(child: final child) => StudentFormScreen(
+      EditStudentPage(child: final child, back: final back) => StudentFormScreen(
           mode: ChildFormMode.edit,
           child: child,
-          onSaved: _onChildFormSaved,
-          onBack: () => _go(const OverviewPage()),
+          onSaved: (_) => _go(back),
+          onBack: () => _go(back),
         ),
       QuestionBankPage() => TeacherQuestionBankView(
           onNavigateToReview: _navigateToReview,
@@ -272,7 +266,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       StudentManagementPage() => StudentManagementScreen(
           onOpenStudent: (id) {
             _go(StudentDetailPage(id,
-                initialTab: StudentDetailTab.wrongQuestions));
+                initialTab: StudentDetailTab.wrongQuestions,
+                back: const StudentManagementPage()));
           },
           onAddStudent: _onNavigateToAddStudent),
       ClassManagementPage() => ClassManagementScreen(
@@ -286,7 +281,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           onBack: () => _go(const ClassManagementPage()),
           onOpenStudent: (id) {
             _go(StudentDetailPage(id,
-                initialTab: StudentDetailTab.wrongQuestions));
+                initialTab: StudentDetailTab.wrongQuestions,
+                back: ClassStudentsPage(cid, cname)));
           },
           onAddStudent: () => _onNavigateToAddStudent(cid, cname),
         ),
@@ -307,12 +303,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           },
         ),
       ProfilePage() => ProfileScreen(user: widget.user, onLogout: widget.onLogout),
-      StudentDetailPage(studentId: final id, initialTab: final tab) =>
+      StudentDetailPage(studentId: final id, initialTab: final tab, back: final back) =>
         StudentDetailScreen(
           studentId: id,
           initialTab: tab,
-          onBack: () => _go(const OverviewPage()),
-          onEditStudent: _onNavigateToEditStudent,
+          onBack: () => _go(back),
+          onEditStudent: (child) => _onNavigateToEditStudent(
+            child,
+            StudentDetailPage(id, initialTab: tab, back: back),
+          ),
         ),
     };
   }

@@ -51,7 +51,11 @@ class AddStudentPage extends TeacherPage {
 class EditStudentPage extends TeacherPage {
   final UserModel child;
 
-  const EditStudentPage(this.child);
+  /// 退出编辑后回到的页面——保留「从哪儿进来就回哪儿」。从学生详情（任意来源）进，
+  /// 回落该学生详情页（其 [StudentDetailPage.back] 继续指向最初来源）；缺省回概览。
+  final TeacherPage back;
+
+  const EditStudentPage(this.child, {this.back = const OverviewPage()});
 }
 
 /// 题库。
@@ -117,8 +121,16 @@ class StudentDetailPage extends TeacherPage {
   final String studentId;
   final StudentDetailTab initialTab;
 
-  const StudentDetailPage(this.studentId,
-      {this.initialTab = StudentDetailTab.overview});
+  /// 返回落点：由打开方在 `_go` 时填好（同 [TaskReviewPage.back] /
+  /// [SceneLibraryEditorPage.back]），详情页自身不猜来源。从学生管理页进则回学生管理，
+  /// 从班级下钻页进则回该班下钻页；缺省回概览兜底。
+  final TeacherPage back;
+
+  const StudentDetailPage(
+    this.studentId, {
+    this.initialTab = StudentDetailTab.overview,
+    this.back = const OverviewPage(),
+  });
 }
 
 /// 课件中心（侧栏「课件」一级入口，方案A）。列出本教师全部课件，直达编辑 / 讲课。

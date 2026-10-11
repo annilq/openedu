@@ -241,6 +241,38 @@ void main() {
           reason: '详情页是 drill-down，不应高亮任何顶级侧栏项（单一导航状态语义）');
       expect(tester.takeException(), isNull);
     });
+
+    testWidgets('教师端：学生详情点返回回到「学生」管理页，而非工作台概览',
+        (tester) async {
+      await _pumpTeacherHome(tester);
+      expect(_activeLabels(tester), ['概览']);
+
+      await tester.tap(find.text('学生'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(_activeLabels(tester), ['学生']);
+
+      // 进入学生详情。
+      await tester.tap(find.text('小明'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.text('错题本'), findsWidgets,
+          reason: '学生详情页应渲染');
+      expect(_activeLabels(tester), isEmpty,
+          reason: '详情页是 drill-down，不应高亮任何顶级侧栏项');
+
+      // 点返回：应回落到「学生」管理页并高亮，而不是工作台概览。
+      await tester.tap(find.byWidgetPredicate(
+        (w) => w is AppIconAction && w.semanticLabel == '返回',
+      ));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(_activeLabels(tester), ['学生'],
+          reason: '学生详情返回应回到学生管理页并高亮，而非工作台概览');
+      expect(find.text('学生管理'), findsOneWidget,
+          reason: '返回后应再次渲染学生管理页');
+      expect(tester.takeException(), isNull);
+    });
   });
 
   group('ticket 02/04：班级管理导航与下钻（ADR-0086）', () {
