@@ -244,9 +244,6 @@ class _CoursewareEditorSectionListState
     } else if (s.resolvedMaterials.isNotEmpty) {
       icon = LucideIcons.images;
       category = '素材展示';
-    } else if (s.practice != null) {
-      icon = LucideIcons.penLine;
-      category = '课堂练习';
     } else {
       icon = LucideIcons.circleHelp;
       category = '讲解';

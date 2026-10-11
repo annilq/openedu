@@ -111,6 +111,7 @@ void main() {
 /// 2026-10-08 票据 17（文件规模棘轮补登债务）：分文件定 A/B——
 ///   · section_practice 429 → **A 拆小**：抽出 PracticeQuestionPrompt/PracticeAction/PracticeNotice 三子件到
 ///     section_practice_parts.dart，主文件 293 行已回到 400 内，**整条移出 _baseline**；
+///     2026-10-11 该文件随「课堂练习出题 / 提示」功能端到端删除而移除（详见本次提交）。
 ///   · teacher_task_form_view 429 → **A 拆小**：抽出审阅闸门/动作区到 teacher_task_form_actions.dart，
 ///     主文件 384 行已回到 400 内，**整条移出 _baseline**。
 ///   两处 A 拆小均为 ADR-0058 P4「区块/子件独立成文件」，净减为真实职责分离，不是硬压行数。
