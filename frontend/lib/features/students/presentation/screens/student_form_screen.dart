@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/theme/app_theme.dart';
+import 'package:kids_learn/features/classes/providers/classes_provider.dart';
 import '../../../../shared/widgets/app_inputs.dart';
+import '../../../../shared/widgets/app_loading.dart';
 import '../../../../shared/widgets/app_motion.dart';
 import '../../../../shared/widgets/app_top_bar.dart';
 import '../../providers/students_provider.dart';
@@ -53,7 +55,19 @@ class _StudentFormScreenState extends ConsumerState<StudentFormScreen> {
   bool _submitting = false;
   String? _error;
 
+  /// 班级列表（用于创建时指定归属班级）；编辑时只读展示当前班级。
+  List<ClassModel> _classes = const [];
+  bool _loadingClasses = false;
+  ClassModel? _selectedClass;
+
   bool get _isEdit => widget.mode == ChildFormMode.edit;
+
+  /// 编辑态展示用：当前学生所属班级名（按 [UserModel.classId] 反查）。
+  String get _currentClassName {
+    final id = widget.child?.classId;
+    if (id == null) return '未分班';
+    return _classes.where((c) => c.id == id).firstOrNull?.name ?? '未知班级';
+  }
 
   @override
   void initState() {
@@ -62,6 +76,28 @@ class _StudentFormScreenState extends ConsumerState<StudentFormScreen> {
       final c = widget.child!;
       _nameCtrl.text = c.displayName;
       _usernameCtrl.text = c.username;
+    }
+    _loadClasses();
+  }
+
+  Future<void> _loadClasses() async {
+    setState(() => _loadingClasses = true);
+    try {
+      final classes = await ref.read(classesRepositoryProvider).getClasses();
+      if (!mounted) return;
+      ClassModel? preset;
+      if (widget.classId != null) {
+        preset = classes.where((c) => c.id == widget.classId).firstOrNull;
+      }
+      setState(() {
+        _classes = classes;
+        _selectedClass = preset;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _classes = const []);
+    } finally {
+      if (mounted) setState(() => _loadingClasses = false);
     }
   }
 
@@ -113,7 +149,7 @@ class _StudentFormScreenState extends ConsumerState<StudentFormScreen> {
         username: _usernameCtrl.text.trim(),
         password: _passwordCtrl.text,
         displayName: name,
-        classId: widget.classId,
+        classId: _selectedClass?.id,
       );
     }
 
@@ -162,6 +198,28 @@ class _StudentFormScreenState extends ConsumerState<StudentFormScreen> {
                           label: '学生昵称（例如：大宝）',
                           controller: _nameCtrl,
                         ),
+                        const SizedBox(height: AppSpacing.lg),
+                        // 归属班级：创建时可指定（含从班级下钻页预填）；编辑态仅展示，
+                        // 改班级请到学生列表行内「调整班级」（后端走 batchReassign）。
+                        if (_isEdit)
+                          _LockedField(
+                            label: '所属班级（不可在此修改）',
+                            value: _currentClassName,
+                          )
+                        else if (_loadingClasses)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
+                            child: AppLoading(),
+                          )
+                        else
+                          AppPickerField<ClassModel>(
+                            label: '所属班级',
+                            values: _classes,
+                            labels: _classes.map((c) => c.name).toList(),
+                            value: _selectedClass,
+                            onChanged: (c) => setState(() => _selectedClass = c),
+                            placeholder: '不分配（未分班）',
+                          ),
                         const SizedBox(height: AppSpacing.lg),
                         if (!_isEdit) ...[
                           AppTextField(

@@ -148,6 +148,9 @@ void main() {
 /// 2026-10-11 票据 06（ADR-0086 班内添加/导入归属本班）：home_screen 586→589
 ///   （下钻页「添加学生」经 AddStudentPage 携带 classId/className、保存后回落该班下钻页，
 ///   属 B 类组合根真实增长，基线随真实行数上调）。
+/// 2026-10-11 学生表单/列表补班级归属（ADR-0086 收口）：student_management_screen
+///   885→941（新增行内「调整班级」动作与 _adjustClass，复用 batchReassign；另 class_picker
+///   新增 pickSingleClass 单班级选择器，均属 B 类合理大件，基线随真实行数上调）。
 /// **只许下调（除 B 类已登记的合理大件外）。**
 ///
 /// 2026-10（ADR-0083 图库 DB 化 / SceneSpec 几何化）下调：
@@ -170,7 +173,7 @@ const Map<String, int> _baseline = <String, int>{
   'features/home/presentation/widgets/teacher/workbench_glance.dart': 406,
   'shared/widgets/analytics_charts.dart': 691,
   'features/home/presentation/screens/teacher_task_review_screen.dart': 424,
-  'features/students/presentation/screens/student_management_screen.dart': 885,
+  'features/students/presentation/screens/student_management_screen.dart': 941,
 };
 
 bool _isDart(String path) =>

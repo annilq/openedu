@@ -23,6 +23,7 @@ import '../../../../shared/widgets/app_toast.dart';
 import '../providers/student_management_notifier.dart';
 import '../../providers/student_management_provider.dart';
 import '../widgets/student_import_sheet.dart';
+import '../../../home/presentation/widgets/teacher/class_picker.dart';
 
 /// 学生管理页（ADR-0068 §2.3 / ticket 02 + 03）。
 ///
@@ -211,6 +212,46 @@ class _StudentManagementScreenState
     }
   }
 
+  /// 行内「调整班级」：拉起单班级选择器（预选当前班级），选中后对该学生单独
+  /// 调 [batchReassign]。返回 `null` 表示取消对话框（不改）；返回 [_unclassedMarker]
+  /// 表示显式置为未分班；其余为迁入目标班级。
+  Future<void> _adjustClass(String studentId) async {
+    final state = ref.read(studentManagementProvider);
+    final currentClassId = state is StudentManagementLoaded
+        ? state.students
+            .where((s) => s.id == studentId)
+            .firstOrNull
+            ?.classId
+        : null;
+    final picked = await pickSingleClass(
+      context,
+      ref,
+      initialClassId: currentClassId,
+    );
+    if (!mounted || picked == null) return; // 取消，不改
+    final targetClassId = picked.id.isEmpty ? null : picked.id;
+    if (targetClassId == currentClassId) {
+      AppToast.show(context, '该学生已在此班级');
+      return;
+    }
+    try {
+      await ref.read(studentManagementProvider.notifier).batchReassign(
+            classId: targetClassId,
+            studentIds: [studentId],
+          );
+      if (mounted) {
+        AppToast.show(
+          context,
+          targetClassId == null
+              ? '已调整为未分班'
+              : '已调整到「${picked.name}」',
+        );
+      }
+    } catch (e) {
+      if (mounted) AppToast.error(context, e);
+    }
+  }
+
   Future<void> _pickAndImport() async {
     final files = await FilePicker.pickFiles(
       type: FileType.custom,
@@ -363,6 +404,7 @@ class _StudentManagementScreenState
                     .read(studentManagementProvider.notifier)
                     .load(classId: widget.classId),
                 onOpenStudent: widget.onOpenStudent,
+                onAdjustClass: _adjustClass,
                 buildRows: _buildRows,
                 classId: widget.classId,
               ),
@@ -691,6 +733,7 @@ class _Body extends StatelessWidget {
   final void Function(String) onToggleSelect;
   final VoidCallback onRetry;
   final void Function(String studentId) onOpenStudent;
+  final void Function(String studentId) onAdjustClass;
   final List<_RowItem> Function(List<UserModel>, List<ClassModel>) buildRows;
 
   /// 下钻页（classId != null）：已是某个班内部，直接平铺学生，不再分组。
@@ -704,6 +747,7 @@ class _Body extends StatelessWidget {
     required this.onToggleSelect,
     required this.onRetry,
     required this.onOpenStudent,
+    required this.onAdjustClass,
     required this.buildRows,
     this.classId,
   });
@@ -746,6 +790,7 @@ class _Body extends StatelessWidget {
           onTap: selecting
               ? () => onToggleSelect(loaded.students[i].id)
               : () => onOpenStudent(loaded.students[i].id),
+          onAdjustClass: onAdjustClass,
         ),
       );
     }
@@ -769,6 +814,7 @@ class _Body extends StatelessWidget {
           onTap: selecting
               ? () => onToggleSelect(student.id)
               : () => onOpenStudent(student.id),
+          onAdjustClass: onAdjustClass,
         );
       },
     );
@@ -783,6 +829,7 @@ class _StudentTile extends StatelessWidget {
   final bool selecting;
   final bool selected;
   final VoidCallback onTap;
+  final void Function(String studentId)? onAdjustClass;
 
   const _StudentTile({
     required this.student,
@@ -790,6 +837,7 @@ class _StudentTile extends StatelessWidget {
     this.selecting = false,
     this.selected = false,
     required this.onTap,
+    this.onAdjustClass,
   });
 
   @override
@@ -858,6 +906,14 @@ class _StudentTile extends StatelessWidget {
                         : scheme.onSurfaceVariant,
                   ),
                 ),
+              ),
+            if (!selecting)
+              AppIconAction(
+                icon: LucideIcons.school,
+                semanticLabel: '调整班级',
+                onPressed: onAdjustClass != null
+                    ? () => onAdjustClass!(student.id)
+                    : null,
               ),
             if (!selecting) ...[
               const SizedBox(width: AppSpacing.xs),
