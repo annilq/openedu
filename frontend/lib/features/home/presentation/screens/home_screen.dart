@@ -489,7 +489,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       sidebarBottom: AdaptiveUserBlock(
         user: widget.user,
         onProfileTap: _onProfileTap,
-        subtitle: '${widget.user.grade ?? '?'}年级',
+        // 学生年级已改由所属班级承载（ADR-0086 修正）：此处以「分班状态」替代原年级展示。
+        subtitle: widget.user.classId != null ? '已分班' : '未分班',
       ),
       body: _buildChildView(),
     );

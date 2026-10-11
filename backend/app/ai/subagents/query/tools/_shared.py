@@ -249,8 +249,12 @@ def dump(node: Any) -> Any:
 
 
 def student_meta(student: User) -> dict[str, Any]:
-    """学生的身份摘要（每个分组块都带，供模型消歧与前端卡片展示）。"""
-    return {"id": str(student.id), "name": student.display_name, "grade": student.grade}
+    """学生的身份摘要（每个分组块都带，供模型消歧与前端卡片展示）。
+
+    学生年级已改为仅由所属班级承载（ADR-0086 修正），此处不再带 grade 字段；
+    需要年级时由调用方结合班级信息补全。
+    """
+    return {"id": str(student.id), "name": student.display_name}
 
 
 def student_block(

@@ -797,12 +797,17 @@ def _add_classes(conn, is_sqlite: bool) -> None:
                 conn.execute(
                     text('ALTER TABLE "user" ADD COLUMN class_id VARCHAR(36)')
                 )
+            # ADR-0086 修正：学生年级改由所属班级承载，移除 user.grade 冗余列。
+            if "grade" in user_cols:
+                conn.execute(text('ALTER TABLE "user" DROP COLUMN grade'))
         else:
             conn.execute(
                 text('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS class_id UUID')
             )
+            conn.execute(text('ALTER TABLE "user" DROP COLUMN IF EXISTS grade'))
     except OperationalError:
         # 偏序迁移：user 表还没建（首次启动由 init_db 建表并带新列），跳过即可。
+        # 极老 SQLite（<3.35 不支持 DROP COLUMN）也在此兜底：冗余列无害，模型不再读取。
         pass
 
 

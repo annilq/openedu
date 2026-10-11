@@ -61,10 +61,9 @@ class _TeacherTaskFormViewState extends ConsumerState<TeacherTaskFormView> {
   // 用于同类题仿写；null = 普通出题。
   List<String>? _weakExampleIds;
 
-  /// 出题年级锚点：优先首个含年级的已选学生，否则首个已选班级年级，否则兜底 2。
+  /// 出题年级锚点（ADR-0086 修正）：学生不再持有独立年级，年级完全由所选班级承载。
+  /// 优先首个已选班级年级，否则兜底 2。
   int get _primaryGrade {
-    final s = _selectedStudents.where((e) => e.grade != null).firstOrNull;
-    if (s != null) return s.grade!;
     if (_selectedClasses.isNotEmpty) return _selectedClasses.first.grade;
     return 2;
   }

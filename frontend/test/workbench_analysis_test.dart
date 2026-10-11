@@ -130,28 +130,24 @@ class FakeStudentsRepository implements StudentsRepository {
     required String username,
     required String password,
     required String displayName,
-    int? grade,
   }) async =>
       UserModel(
         id: 's',
         username: username,
         displayName: displayName,
         role: 'child',
-        grade: grade,
       );
 
   @override
   Future<UserModel> updateChild({
     required String studentId,
     String? displayName,
-    int? grade,
   }) async =>
       UserModel(
         id: studentId,
         username: studentId,
         displayName: displayName ?? '',
         role: 'child',
-        grade: grade,
       );
 
   @override

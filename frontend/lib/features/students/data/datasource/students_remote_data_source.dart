@@ -12,25 +12,21 @@ class StudentsRemoteDataSource {
     required String username,
     required String password,
     required String displayName,
-    int? grade,
   }) async {
     final body = <String, dynamic>{
       'username': username,
       'password': password,
       'display_name': displayName,
     };
-    if (grade != null) body['grade'] = grade;
     return await _network.post('/students', body: body);
   }
 
   Future<Map<String, dynamic>> updateChild({
     required String studentId,
     String? displayName,
-    int? grade,
   }) async {
     final body = <String, dynamic>{};
     if (displayName != null) body['display_name'] = displayName;
-    if (grade != null) body['grade'] = grade;
     return await _network.put('/students/$studentId', body: body);
   }
 

@@ -72,28 +72,24 @@ void main() {
         username: '2023001',
         displayName: '小明',
         role: 'child',
-        grade: 3,
         classId: 'c1'),
     UserModel(
         id: 's2',
         username: '2023002',
         displayName: '小红',
         role: 'child',
-        grade: 3,
         classId: 'c1'),
     UserModel(
         id: 's3',
         username: '2023003',
         displayName: '小刚',
         role: 'child',
-        grade: 3,
         classId: 'c2'),
     UserModel(
         id: 's4',
         username: '2023004',
         displayName: '未分班学生',
         role: 'child',
-        grade: 3,
         classId: null),
   ];
   final counts = {'s1': 2, 's2': 0, 's3': 1, 's4': 5};

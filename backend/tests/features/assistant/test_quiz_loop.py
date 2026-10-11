@@ -420,7 +420,7 @@ def test_pending_quiz_routes_to_llm_instead_of_deterministic_reply(db):
     rt = _CaptureRuntime()
     caller = SimpleNamespace(
         role="teacher",
-        user=SimpleNamespace(id=tid, teacher_id=tid, grade=0),
+        user=SimpleNamespace(id=tid, teacher_id=tid, class_id=None, grade=0),
     )
     req = AssistantChatReq(message="错", session_id=str(conv_id))
 

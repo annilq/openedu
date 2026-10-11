@@ -69,16 +69,6 @@ Future<UserModel?> pickStudent(BuildContext context, WidgetRef ref) async {
                         Expanded(
                           child: Text(s.displayName, style: text.bodyMedium),
                         ),
-                        if (s.grade != null && s.grade! > 0)
-                          Padding(
-                            padding:
-                                const EdgeInsets.only(right: AppSpacing.sm),
-                            child: Text(
-                              '${s.grade}年级',
-                              style: text.labelSmall
-                                  ?.copyWith(color: app.onSurfaceVariant),
-                            ),
-                          ),
                       ],
                     ),
                   ),
@@ -179,16 +169,6 @@ Future<List<UserModel>> pickStudents(
                                     child: Text(s.displayName,
                                         style: text.bodyMedium),
                                   ),
-                                  if (s.grade != null && s.grade! > 0)
-                                    Padding(
-                                      padding:
-                                          const EdgeInsets.only(right: AppSpacing.sm),
-                                      child: Text(
-                                        '${s.grade}年级',
-                                        style: text.labelSmall?.copyWith(
-                                            color: app.onSurfaceVariant),
-                                      ),
-                                    ),
                                 ],
                               ),
                             ),

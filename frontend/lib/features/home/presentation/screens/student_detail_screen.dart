@@ -83,13 +83,11 @@ class _StudentDetailScreenState extends ConsumerState<StudentDetailScreen> {
   Widget build(BuildContext context) {
     final student = _studentOf();
     final name = student?.displayName ?? '学生';
-    final grade = student?.grade;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _Header(
           name: name,
-          grade: grade,
           student: student,
           onBack: widget.onBack,
           onEdit: widget.onEditStudent,
@@ -116,19 +114,14 @@ class _StudentDetailScreenState extends ConsumerState<StudentDetailScreen> {
   }
 }
 
-/// 页头：返回 + 学生名 + 年级。
+/// 页头：返回 + 学生名（年级已改由所属班级承载，ADR-0086 修正，不在学生维度展示）。
 class _Header extends StatelessWidget {
   final String name;
-  final int? grade;
   final UserModel? student;
   final VoidCallback? onBack;
   final void Function(UserModel)? onEdit;
   const _Header(
-      {required this.name,
-      this.grade,
-      this.student,
-      this.onBack,
-      this.onEdit});
+      {required this.name, this.student, this.onBack, this.onEdit});
 
   @override
   Widget build(BuildContext context) {
@@ -153,13 +146,6 @@ class _Header extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          if (grade != null && grade! > 0)
-            Padding(
-              padding: const EdgeInsets.only(left: AppSpacing.sm),
-              child: Text('$grade年级',
-                  style: text.labelMedium
-                      ?.copyWith(color: AppTheme.colorsOf(context).onSurfaceVariant)),
-            ),
           if (onEdit != null && student != null)
             AppIconAction(
               icon: LucideIcons.pencil,

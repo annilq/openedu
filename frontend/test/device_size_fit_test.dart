@@ -70,7 +70,6 @@ UserModel _user(String role) => UserModel(
       username: role == 'teacher' ? 'teacher1' : 'kid1',
       displayName: role == 'teacher' ? '妈妈' : '小明',
       role: role,
-      grade: role == 'teacher' ? null : 3,
     );
 
 Widget _host(Widget child, AppUserMode mode) => ShadApp.custom(

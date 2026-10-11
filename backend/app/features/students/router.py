@@ -124,7 +124,6 @@ def update_student(
         session=session,
         user=student,
         display_name=payload.display_name,
-        grade=payload.grade,
     )
     return updated
 

@@ -16,9 +16,10 @@ enum ChildFormMode { create, edit }
 
 /// 教师端：创建 / 编辑学生资料页（F-102 + WF-5）。
 ///
-/// - create：昵称/账号/密码/年级，提交走 createChild。
-/// - edit：回填昵称/年级；账号与密码锁定不可编辑（避免改登录凭证），
-///   提交走 updateChild（仅 display_name/grade）。
+/// - create：昵称/账号/密码，提交走 createChild。
+/// - edit：回填昵称；账号与密码锁定不可编辑（避免改登录凭证），
+///   提交走 updateChild（仅 display_name）。
+/// 学生年级已改由所属班级承载（ADR-0086 修正），本表单不再采集年级。
 /// 保存成功后调用 [onSaved]（由调用方负责刷新列表与关闭页面）。
 class StudentFormScreen extends ConsumerStatefulWidget {
   final ChildFormMode mode;
@@ -45,7 +46,6 @@ class _StudentFormScreenState extends ConsumerState<StudentFormScreen> {
   final _nameCtrl = TextEditingController();
   final _usernameCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
-  int _grade = 2;
   bool _submitting = false;
   String? _error;
 
@@ -58,7 +58,6 @@ class _StudentFormScreenState extends ConsumerState<StudentFormScreen> {
       final c = widget.child!;
       _nameCtrl.text = c.displayName;
       _usernameCtrl.text = c.username;
-      _grade = c.grade ?? 2;
     }
   }
 
@@ -75,7 +74,7 @@ class _StudentFormScreenState extends ConsumerState<StudentFormScreen> {
     final name = _nameCtrl.text.trim();
 
     if (_isEdit) {
-      // 编辑：仅昵称/年级可改，账号密码锁定。
+      // 编辑：仅昵称可改，账号密码锁定。
       if (name.isEmpty) {
         setState(() => _error = '昵称不能为空');
         return;
@@ -104,14 +103,12 @@ class _StudentFormScreenState extends ConsumerState<StudentFormScreen> {
       saved = await notifier.updateChild(
         studentId: widget.child!.id,
         displayName: name,
-        grade: _grade,
       );
     } else {
       saved = await notifier.createChild(
         username: _usernameCtrl.text.trim(),
         password: _passwordCtrl.text,
         displayName: name,
-        grade: _grade,
       );
     }
 
@@ -176,13 +173,6 @@ class _StudentFormScreenState extends ConsumerState<StudentFormScreen> {
                         ] else
                           _LockedField(
                               label: '登录账号（不可修改）', value: _usernameCtrl.text),
-                        AppPickerField<int>(
-                          label: '年级',
-                          values: List.generate(6, (i) => i + 1),
-                          labels: List.generate(6, (i) => '${i + 1} 年级'),
-                          value: _grade,
-                          onChanged: (v) => setState(() => _grade = v),
-                        ),
                         if (_error != null) ...[
                           Text(_error!, style: TextStyle(color: app.error)),
                           const SizedBox(height: AppSpacing.md),

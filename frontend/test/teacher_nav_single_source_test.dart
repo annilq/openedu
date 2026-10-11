@@ -335,7 +335,6 @@ UserModel _child() => UserModel(
       username: 'child1',
       displayName: '小明',
       role: 'child',
-      grade: 2,
     );
 
 /// ticket 16 收尾：让「学生」入口真能加载出学生，从而 drill 进学生详情页。
@@ -349,7 +348,6 @@ final _students = [
     username: '2023001',
     displayName: '小明',
     role: 'child',
-    grade: 3,
     classId: 'c1',
   ),
 ];

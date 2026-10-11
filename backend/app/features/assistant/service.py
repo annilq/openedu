@@ -39,7 +39,7 @@ from app.ai.engine import resolve_engine
 from app.ai.subagents.tutor.agent import detect_subject
 from app.core.errors import AppErrorException, ErrCode
 from app.core.guard import require_owned
-from app.db.models import Conversation, Message, get_datetime_utc
+from app.db.models import Class, Conversation, Message, get_datetime_utc
 from app.db.models.material import KnowledgePoint
 from app.domain import build_provider, build_retriever
 from app.domain.safety import StudentSafety
@@ -67,6 +67,17 @@ from app.features.assistant.schemas import (
 from app.features.tutor.repository import create_tutor_log
 
 log = logging.getLogger(__name__)
+
+
+def _student_grade(session, user) -> int:
+    """学生年级 = 所属班级年级（ADR-0086 修正）。
+
+    学生不再持有独立年级字段，年级完全由班级承载；未分班学生（无班级）返回 0。
+    """
+    if user is None or user.class_id is None:
+        return 0
+    klass = session.get(Class, user.class_id)
+    return klass.grade if klass is not None else 0
 
 # 自动摘要（P2）：compaction 命中预算要丢轮次时，把最旧轮次压成一句摘要注入，
 # 而非直接丢弃，保留长对话的上下文连续性。
@@ -582,7 +593,7 @@ async def chat(
             "grade": (
                 req.courseware.grade
                 if req.courseware is not None and req.courseware.grade is not None
-                else ((caller.user.grade if role == "student" else 0) or 0)
+                else (_student_grade(session, caller.user) if role == "student" else 0)
             ),
             "courseware": courseware,
             # ADR-0072：显式下钻知识点 id，便于 SubAgent 精确聚焦（与 courseware 并存）。
@@ -730,7 +741,7 @@ async def chat(
                     create_tutor_log(
                         session=session,
                         student_id=student_id,
-                        grade=caller.user.grade or 0,
+                        grade=_student_grade(session, caller.user),
                         subject=subject,
                         knowledge_point="",
                         question=message,

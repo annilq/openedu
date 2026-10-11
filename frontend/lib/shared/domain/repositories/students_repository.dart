@@ -7,12 +7,10 @@ abstract class StudentsRepository {
     required String username,
     required String password,
     required String displayName,
-    int? grade,
   });
   Future<UserModel> updateChild({
     required String studentId,
     String? displayName,
-    int? grade,
   });
   Future<List<UserModel>> getChildren();
 
