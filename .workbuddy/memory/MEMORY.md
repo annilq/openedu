@@ -20,6 +20,7 @@
 - AI 唯一入口 `assistantNotifierProvider`+`AssistantMessageList`；后端唯一端点 `POST /api/v1/assistant/chat`。助手路由优先级即功能（ADR-0054）：写意图 `guide`(20) 高于只读 `query`(12)。
 - 卡片动作受控枚举 `actions=[{label,target}]`（target 非 URL）；`ShellDestination.fromTarget` 解读，认不出即不动；新增 target 两端同改（`guide/agent.py`+`fromTarget`）。
 - ⚠️ 结构化动作键 = manifest `actions` **等值**匹配（ADR-0081，完整词表见 `test_intent_routing_contract.py`）：`task_generate`/`quiz_generate`/`courseware_generate`/`courseware_hint`/`quiz_judge`。⚠️ 服务端「重生成」**已全删**（ADR-0084，含单题换一题 + 整卷重生成 + 键 `task_question_regenerate`）：出题唯一路径 = `POST /tasks/generate`（流式）+ `/tasks/from-generated`（落库），草稿处置只有「逐题精修 or 回生成页整份重来」；`Task.specs` 只剩审核页摘要展示之用。
+- ⚠️ 课件内容**纯手动编排**（ADR-0085）：`POST /courseware` 恒建零环节空壳（无 AI 起草/补充讲解/重起草，课件域不依赖模型配置）→ 编辑器「添加环节」→ `PUT /sections` 整体覆盖写。⚠️ 别把它和**讲课现场的助手集成**混为一谈——`courseware_generate`/`courseware_hint`/`quiz_judge` + `AssistantChatReq.courseware` + `SectionPractice` 出题/答错提示是**保留**的；区分口径：**「AI 生成课件内容」≠「课件里用 AI」**。
 - 单向 `main/ → features/* → shared/*`；`shared/` 不 import `features/`；各 feature 有 repository、不建 datasource。
 - ⚠️ R4 棘轮：`presentation/` 不得 import `*/data/`（`test/feature_boundaries_test.dart`）。要用 data 类型 → 搬 `domain/repositories/`，data/ 只留 `Impl`。
 - ⚠️ 非 push 路由页面禁裸 `Navigator.pop`（弹根栈=整个App→白屏）；走注入回调或 `maybePop`。
