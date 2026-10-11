@@ -26,7 +26,6 @@ from sqlmodel import select
 
 from app.core.db import engine
 from app.db.models import KnowledgePoint, User
-from app.features.courseware import service
 from tests.utils.user import auth_headers, login, register_teacher
 
 KP_NAME = "图形的运动（轴对称）"
@@ -111,23 +110,6 @@ def teacher(client):
     return {"token": token, "id": teacher_id, "kp": _seed_kp(teacher_id)}
 
 
-@pytest.fixture()
-def drafted(monkeypatch):
-    """起草环节可用：返回确定性单环节（本票不关心起草内容，只借它建课件）。"""
-
-    def _fake(**_kwargs):
-        return [
-            service.CoursewareSection(
-                kind="interactive_scene",
-                title="判断是否轴对称",
-                script="沿这条线对折，两边能重合吗？",
-                payload={"kind": "reflection"},
-            )
-        ]
-
-    monkeypatch.setattr(service, "draft_sections", _fake)
-
-
 def _create(client, token, kp_id) -> dict:
     r = client.post(
         "/api/v1/courseware",
@@ -166,7 +148,7 @@ def _section_body(scene) -> dict:
 # ── 1. 写 + 读：整组图形原样回来 ──────────────────────────────────────────
 
 
-def test_option_group_survives_put_then_get(client, teacher, drafted):
+def test_option_group_survives_put_then_get(client, teacher):
     """带 ``optionGroup`` 的环节：保存成功，回读后 curated / 条目顺序 / 顶点全在。"""
     cw = _create(client, teacher["token"], teacher["kp"])
 
@@ -210,7 +192,7 @@ def test_option_group_survives_put_then_get(client, teacher, drafted):
 # ── 2. 反向语义：显式清空不被吞 ──────────────────────────────────────────
 
 
-def test_explicit_null_scene_is_not_swallowed(client, teacher, drafted):
+def test_explicit_null_scene_is_not_swallowed(client, teacher):
     """先存一组图形，再显式 ``scene: null`` 保存 → 回读确实是 null。
 
     ``??`` 合并会把「显式清空」当成「没传」而保留旧值，导致删掉图形组时删不掉。
@@ -234,7 +216,7 @@ def test_explicit_null_scene_is_not_swallowed(client, teacher, drafted):
 # ── 3. 不回写：动的是环节副本 ────────────────────────────────────────────
 
 
-def test_saving_section_scene_does_not_write_back_to_kp(client, teacher, drafted):
+def test_saving_section_scene_does_not_write_back_to_kp(client, teacher):
     """保存环节场景后，知识点上的场景快照前后一致（ADR-0073 零回写红线）。"""
     before = _kp_scenes(teacher["kp"])
     assert before == [_KP_SCENE]

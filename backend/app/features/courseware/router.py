@@ -3,6 +3,8 @@
 路由只做「接参数 → 调 service」：归属校验在 service（经 ``core.guard``），
 环节统一为内容块容器（courseware-round-3 T07 已彻底移除 kind 字段）。本文件不持有任何业务规则。
 
+⚠️ 内容由教师手动编辑，后端不产内容（ADR-0085：AI 起草端点已移除）。
+
 ⚠️ ``/recent`` 必须声明在 ``/{courseware_id}`` **之前**：否则「recent」会被当成
 一个 UUID 去解析，回执端点永远 422（§3.8 的补偿项会静默失效）。
 """
@@ -17,7 +19,6 @@ from app.core.deps import CurrentTeacher, SessionDep
 from app.features.courseware import service
 from app.features.courseware.schemas import (
     CoursewareCreate,
-    CoursewareRedraftDiff,
     CoursewareResp,
     CoursewareSectionsUpdate,
     CoursewareUpdate,
@@ -54,11 +55,10 @@ def list_coursewares(
 def create_courseware(
     session: SessionDep, user: CurrentTeacher, req: CoursewareCreate
 ) -> CoursewareResp:
-    """新建课件：**AI 起草后落库**（决策 2 / §3.4）。
+    """新建课件：按知识点快照建一份**零环节空壳**（ADR-0085：不再 AI 起草）。
 
-    未配模型 → 500 + ``LLM_UNAVAILABLE``（「未配置模型，无法起草课件」），且不落库；
-    起草被厂商拒绝 / 产出解析不出 → 502 / ``LLM_REQUEST_FAILED`` 带实际原因。
-    知识点不存在或非本人 → 404 + ``COURSEWARE_KP_NOT_FOUND``。
+    知识点不存在或非本人 → 404 + ``COURSEWARE_KP_NOT_FOUND``。内容由教师随后在
+    编辑器里手动添加环节。本端点不调模型，故不存在「未配模型」失败面。
     """
     return service.create_courseware(session, teacher_id=user.id, req=req)
 
@@ -112,20 +112,6 @@ def replace_sections(
     """
     return service.replace_sections(
         session, teacher_id=user.id, courseware_id=courseware_id, req=req
-    )
-
-
-@router.post("/{courseware_id}/redraft", response_model=CoursewareRedraftDiff)
-def redraft_diff(
-    session: SessionDep, user: CurrentTeacher, courseware_id: UUID
-) -> CoursewareRedraftDiff:
-    """重起草：返回新草稿相对当前稿的**逐段 diff**（不落库、不新建副本）。
-
-    教师逐段选完后，把合并结果经 ``PUT /sections`` 写回同一份课件。起草失败透传
-    （未配模型 / 厂商拒绝 / 解析不出），不落空课件。
-    """
-    return service.redraft_diff(
-        session=session, teacher_id=user.id, courseware_id=courseware_id
     )
 
 

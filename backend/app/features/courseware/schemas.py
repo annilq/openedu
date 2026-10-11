@@ -7,12 +7,12 @@
 
 - ``script`` 是教师话术（「这些图形有什么共同点？」）。按决策 15，它**当提问卡
   直接投给学生看**，不折叠、不做「仅教师可见」——投影时教师屏 = 学生所见。
-- ``payload`` 是旧 AI 起草数据的兜底容器（``{items: [...]}` / 内嵌 SceneSpec），
+- ``payload`` 是历史数据（旧起草产物）的兜底容器（``{items: [...]}` / 内嵌 SceneSpec），
   schema 层不做多态校验——渲染交给各自组件（ADR-0061）。
 - ``materials`` / ``scene`` / ``practice`` 是顶层可选内容块（环节内容块统一化，
   courseware-round-3 T07 起为唯一事实）：任何环节都能挂素材（``[{asset_id,
   caption}]``）、关联知识点场景（ADR-0061 SceneSpec）、或课堂练习（``{qtype,
-  count, hints}``）。旧 AI 起草数据走 ``payload`` 内嵌，由前端回退读取；新数据
+  count, hints}``）。历史数据走 ``payload`` 内嵌，由前端回退读取；新数据
   优先走顶层字段。
 """
 
@@ -48,14 +48,14 @@ class CoursewareSection(SQLModel):
     # 按 kind 释义（见模块 docstring）
     payload: dict = Field(default_factory=dict)
     # 素材（环节内容块统一化）：任何 kind 都能挂，与 payload['items'] 并存过渡。
-    # 新数据走这里；旧 AI 起草数据（payload['items']）由前端回退读取。
+    # 新数据走这里；历史数据（payload['items']）由前端回退读取。
     materials: list[dict] = Field(default_factory=list)
     # 关联的知识点交互场景（ADR-0061 SceneSpec），任何 kind 都能挂，与 payload
     # 内嵌 SceneSpec（interactive_scene 旧结构）并存过渡。
     scene: dict | None = Field(default=None)
     # courseware-round-3 T06（去 kind·expand 后的练习内容块）：课堂练习配置
     # {qtype, count, hints}。与 materials / scene 并列的第四可选内容块，任何环节
-    # 都能挂；旧 AI 起草数据走 payload['qtype'] 由前端回退读取。
+    # 都能挂；历史数据走 payload['qtype'] 由前端回退读取。
     practice: dict | None = Field(default=None)
 
 
@@ -80,21 +80,15 @@ class CoursewareResp(SQLModel):
 
 
 class CoursewareCreate(SQLModel):
-    """新建课件。
+    """新建课件：按知识点快照建一份**零环节空壳**（ADR-0085：不再 AI 起草）。
 
-    - ``draft=True``（默认）：走 AI 起草（决策 2 / §3.4）。未配模型时返回
-      LLM_UNAVAILABLE（ADR-0039），不静默产出空课件。
-    - ``draft=False``（courseware-round-3 T01）：跳过 AI 起草，只按知识点快照建
-      **零环节空壳**课件（不调模型、不抛 LLM 错误），教师随后手动填/用「AI 补充
-      讲解」补环节。``objective`` 一并落到课件行，供后续 AI 补充读取（T05）。
+    内容由教师随后在编辑器里手动增删环节；本请求不调模型，故无「未配模型」失败面。
     """
 
     knowledge_point_id: UUID
-    # 留空则回落知识点名（空壳与 AI 起草都用这条回落）。
+    # 留空则回落知识点名。
     title: str | None = Field(default=None, max_length=128)
-    # courseware-round-3 T01：是否自动 AI 起草。False = 建空壳（不调模型）。
-    draft: bool = True
-    # 教学目标 / 备注（可选）：空壳建出时存教师填的备课依据，AI 补充讲解时读取。
+    # 教学目标 / 备注（可选）：落到课件行，供课件信息卡展示。
     objective: str | None = Field(default=None, max_length=2000)
 
 
@@ -109,23 +103,3 @@ class CoursewareSectionsUpdate(SQLModel):
     """整体覆盖写环节序列（增 / 删 / 改序都在前端完成，后端只存结果）。"""
 
     sections: list[CoursewareSection] = []
-
-
-class SectionDiffItem(SQLModel):
-    """重起草时，新草稿相对当前稿的一处逐段差异。
-
-    - ``status``: ``added`` / ``removed`` / ``modified`` / ``unchanged``；
-    - ``current``: 当前稿里的那段（``removed`` / ``modified`` / ``unchanged`` 有值）；
-    - ``drafted``: 草稿里的那段（``added`` / ``modified`` / ``unchanged`` 有值）。
-    """
-
-    status: str = "unchanged"
-    current: CoursewareSection | None = None
-    drafted: CoursewareSection | None = None
-
-
-class CoursewareRedraftDiff(SQLModel):
-    """重起草的逐段 diff（对照当前课件环节）。前端据此渲染预览，教师逐段选择后
-    把合并结果经 ``PUT /sections`` 写回**同一份**课件（不新建副本）。"""
-
-    diff: list[SectionDiffItem] = []
