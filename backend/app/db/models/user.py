@@ -7,7 +7,6 @@ class UserBase(SQLModel):
     username: str = Field(unique=True, index=True, max_length=64)
     display_name: str = Field(max_length=64)
     role: str = Field(max_length=16, default="student")  # teacher | student
-    grade: int | None = Field(default=None)
     is_active: bool = True
 
 

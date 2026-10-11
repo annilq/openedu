@@ -38,7 +38,6 @@ def _make_student(client: TestClient, token: str, username: str, display_name: s
             "username": username,
             "password": "kid123456",
             "display_name": display_name,
-            "grade": 2,
             "role": "student",
         },
     )

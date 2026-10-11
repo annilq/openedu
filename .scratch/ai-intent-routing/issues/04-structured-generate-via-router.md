@@ -5,7 +5,15 @@
 产出与对话路径**同一套事件帧**。教师可用，学生也可用——而且学生这条路上输入安全闸门**真的被调用**。
 
 **Blocked by:** T02
-**Status:** ready-for-agent
+**Status:** done（动作直配内核 T02 + 端点接线已落地；「服务端按动作合成落库消息」随 ADR-0081 删除 /tasks/generate 等结构化端点时一并完成，见 Backlog）
+
+## 落地备注（2026-10-11）
+
+- `AssistantChatReq.action`（可选）已加；`chat()` 把 `req.action` 透传给 `IntentSignal`，统一路由据此做动作直配，不再在对话编排里写死业务（原先 /tasks/generate 等是硬编码 `business="question"` 绕过 decide）。
+- 动作命中但角色不可见 → `decide` 返 `action_not_visible` → 端点转 `ACTION_FORBIDDEN` 错误帧（修掉了此前 `business=None` 误报 `INPUT_UNSAFE` 的隐患）。
+- 学生 `action=task_generate` 现在真正走统一路由，输入安全闸门（StudentSafety）被调用——修掉此前结构化出题链路 `safety=None` 的缺口。
+- 「落库消息由服务端按动作合成」未在本票内做：当前前端仍发一条自然语言 `message`，动作只作路由提示；该合成逻辑与 ADR-0081「删 /tasks/generate、改走 chat」同批，届时前端只发规格、后端合成消息。
+- 验收点除「服务端合成消息」外均已满足：动作直配命中 / 安全闸门被调用 / 同一套事件帧 / 教师专属动作显式报错 / 学生可出题（落点由 ADR-0082 负责，本票不阻断）。
 
 ## 决策锚点
 

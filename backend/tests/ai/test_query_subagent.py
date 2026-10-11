@@ -116,9 +116,9 @@ def test_wrong_question_phrasing_goes_to_query_not_tutor():
     assert _route("我错了哪些题", "student") == "query"
 
 
-def test_student_out_of_scope_stays_tutor():
-    """学生问「出题」依旧被角色可见性拦到 tutor（ADR-0026 不变量未破）。"""
-    assert _route("帮我出几道数学题", "student") == "tutor"
+def test_student_generation_routes_to_question():
+    """学生自练出题：出题助手对师生双开（ADR-0081 §2.2），故学生出题意图路由到 question，不再强制 tutor。"""
+    assert _route("帮我出几道数学题", "student") == "question"
     assert _route("今天有什么作业", "student") == "query"
 
 

@@ -19,9 +19,9 @@ import '../../../../shared/widgets/app_dialog.dart';
 /// 教师草稿审核页（R-Q1=c / R-Q3 / R-Q4 / R-Q5=b）。
 ///
 /// 入口：TeacherTaskFormView 生成、教师在审阅闸门点「确认」后跳转（ADR-0056）。
-/// 动作：单题/批量加入题库、删除、单题换一题、题干/选项/答案/解析
-/// 内联编辑、锁定确认、派发、作废。整卷重生成已移除——它等价于整份重来，与闸门处的
-/// 「重新生成」重复（ADR-0056）。
+/// 动作：单题/批量加入题库、删除、题干/选项/答案/解析
+/// 内联编辑、锁定确认、派发、作废。整卷重生成与单题「换一题」均已移除——前者等价于
+/// 整份重来、与闸门处的「重新生成」重复（ADR-0056）；后者为后续产品决定删除。
 class TeacherTaskReviewScreen extends ConsumerStatefulWidget {
   final TaskModel task;
 
@@ -103,9 +103,8 @@ class _TeacherTaskReviewScreenState
       ReviewLoaded(
         task: final task,
         busyTqId: final busyTqId,
-        liveText: final liveText,
       ) =>
-        _buildBody(task, busyTqId, liveText),
+        _buildBody(task, busyTqId),
     };
     return CupertinoPageScaffold(
       backgroundColor: app.surface,
@@ -146,7 +145,6 @@ class _TeacherTaskReviewScreenState
   Widget _buildBody(
     TaskModel task,
     String? busyTqId,
-    String liveText,
   ) {
     return AppScrollPage(
       children: [
@@ -159,7 +157,7 @@ class _TeacherTaskReviewScreenState
         ),
         const SizedBox(height: AppSpacing.xl2),
         if (task.questions.isEmpty)
-          // 允许删到 0 题：整卷重生成已移除（ADR-0056），故空态只给指路文案——
+          // 允许删到 0 题：整卷重生成 / 单题换一题均已移除，故空态只给指路文案——
           // 草稿页不能加题，删空之后只能回生成页/题库重来，或作废这份草稿。
           const _EmptyHint()
         else
@@ -173,12 +171,8 @@ class _TeacherTaskReviewScreenState
                 isDraft: task.isDraft,
                 // 进行中：按钮全禁 + spinner，杜绝连点并发。
                 busy: busyTqId == task.questions[i].id,
-                // 单题动作的实时文本只给当前这张卡（整卷的走顶部进度区）。
-                liveText: busyTqId == task.questions[i].id ? liveText : '',
                 onPromote: () => _onPromoteOne(task.id, task.questions[i].id),
                 onDelete: () => _onDelete(task.id, task.questions[i].id),
-                onRegenerate: () =>
-                    _onRegenerateOne(task.id, task.questions[i].id),
                 onEdit: (edits) =>
                     _onEdit(task.id, task.questions[i].id, edits),
               ),
@@ -222,19 +216,6 @@ class _TeacherTaskReviewScreenState
           .removeOne(taskId: taskId, tqId: tqId);
       if (!mounted) return;
       AppToast.show(context, '已删除');
-    } catch (e) {
-      if (!mounted) return;
-      AppToast.error(context, e);
-    }
-  }
-
-  Future<void> _onRegenerateOne(String taskId, String tqId) async {
-    try {
-      await ref
-          .read(teacherTaskReviewProvider(widget.task.id).notifier)
-          .regenerateOne(taskId: taskId, tqId: tqId);
-      if (!mounted) return;
-      AppToast.show(context, '已生成新题目');
     } catch (e) {
       if (!mounted) return;
       AppToast.error(context, e);

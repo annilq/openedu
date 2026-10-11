@@ -266,42 +266,6 @@ def remove_one(
     )
 
 
-@router.post("/{task_id}/questions/{tq_id}/regenerate", response_model=QuestionResp)
-def regenerate_one(
-    *, session: SessionDep, teacher: CurrentTeacher, task_id: UUID, tq_id: UUID
-) -> QuestionResp:
-    """单题重生成：沿用原题的 subject/grade/knowledge_point/qtype/difficulty 拉新。"""
-    return tasks_service.regenerate_one(
-        session=session, teacher=teacher, task_id=task_id, tq_id=tq_id
-    )
-
-
-@router.post("/{task_id}/questions/{tq_id}/regenerate-stream")
-async def regenerate_one_stream(
-    *, session: SessionDep, teacher: CurrentTeacher, task_id: UUID, tq_id: UUID
-) -> StreamingResponse:
-    """单题重生成的流式版（SSE，事件协议同 /tasks/generate）。
-
-    同步版一次 LLM 调用常超过前端 30 秒 receiveTimeout，教师点「换一题」会长时间
-    无反馈；流式版复用长超时并逐帧推进度。落库与同步版同一 service 路径。
-    """
-    return StreamingResponse(
-        tasks_service.regenerate_one_stream(
-            session=session, teacher=teacher, task_id=task_id, tq_id=tq_id
-        ),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
-
-
-@router.post("/{task_id}/regenerate", response_model=TaskResp)
-def regenerate_all(
-    *, session: SessionDep, teacher: CurrentTeacher, task_id: UUID
-) -> TaskResp:
-    """整卷重生成（R-Q2=c）：按 Task.specs 原规格重跑，全量替换草稿项。"""
-    return tasks_service.regenerate_all(session=session, teacher=teacher, task_id=task_id)
-
-
 @router.put("/{task_id}", response_model=TaskResp)
 def edit_task_meta(
     *,

@@ -19,9 +19,9 @@ from app.features.assistant.schemas import AssistantChatReq
 from app.features.assistant.service import chat
 
 
-def _caller(role: str, *, user_id: uuid.UUID, teacher_id: uuid.UUID, grade: int = 0):
-    """轻量 caller 桩（不触 HTTP）：服务只读 role / user.id / user.teacher_id / user.grade。"""
-    return SimpleNamespace(role=role, user=SimpleNamespace(id=user_id, teacher_id=teacher_id, grade=grade))
+def _caller(role: str, *, user_id: uuid.UUID, teacher_id: uuid.UUID, grade: int = 0, class_id=None):
+    """轻量 caller 桩（不触 HTTP）：服务只读 role / user.id / user.teacher_id / user.class_id。"""
+    return SimpleNamespace(role=role, user=SimpleNamespace(id=user_id, teacher_id=teacher_id, class_id=class_id, grade=grade))
 
 
 class _StubRuntime:

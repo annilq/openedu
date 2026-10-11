@@ -44,6 +44,16 @@ def _stream(client, token: str, message: str, *, extra: dict | None = None):
         return response.status_code, _parse_sse("".join(response.iter_text()))
 
 
+def _routed_text(events: list[dict]) -> list[str]:
+    """从事件流里取路由 THINKING 帧的文案（decision.name）。"""
+    return [
+        event.get("text", "")
+        for event in events
+        if event["eventType"] == "THINKING"
+        and event.get("extra", {}).get("routing")
+    ]
+
+
 def _task_counts() -> tuple[int, int]:
     with Session(engine) as session:
         return (
@@ -132,6 +142,38 @@ def test_courseware_question_routes_to_guide_and_never_creates_task(
         assert conversation.teacher_id == teacher_id
         assert conversation.student_id is None
         assert conversation.kind == "guide"
+
+
+def test_courseware_direction_is_driven_by_text_not_by_flag(client, fake_llm):
+    """课件上下文只提供「提示 / 求题」两个方向，普通提问不得被课件标记劫持（FIX-1 回归）。
+
+    旧缺陷：``_build_intent_signal`` 里**任何**带 ``courseware`` 且不含「提示」的输入都被
+    定向成 ``courseware_generate`` → guide。于是课件里问「这道题为什么选 B」（本应伴学
+    答疑）被错误送去任务引导。现在只有**同一个文本分类器**判定为 ``question``（真在求题）
+    才定向 guide，其余交回文本路由。
+    """
+    token, _teacher_id = _teacher(client)
+    context = _courseware()
+
+    # 1) 课件里求讲解 → 伴学答疑（**不是**任务引导）：courseware 标记不得把提问劫持成出题。
+    status, events = _stream(client, token, "这道题为什么选 B", extra=context)
+    assert status == 200, events
+    routed = _routed_text(events)
+    assert any("伴学答疑" in t for t in routed), routed
+    assert not any("任务引导" in t for t in routed), routed
+
+    # 2) 课件里求提示 → 伴学答疑。
+    status, events = _stream(client, token, "给我一点提示", extra=context)
+    assert status == 200, events
+    routed = _routed_text(events)
+    assert any("伴学答疑" in t for t in routed), routed
+
+    # 3) 课件里真在求题 → 任务引导（引导到页面），保持既有课件出题语义。
+    status, events = _stream(client, token, "再出几道题", extra=context)
+    assert status == 200, events
+    routed = _routed_text(events)
+    assert any("任务引导" in t for t in routed), routed
+    assert not any("伴学答疑" in t for t in routed), routed
 
 
 class _NoModelProvider(FakeLLMProvider):

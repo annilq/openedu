@@ -105,9 +105,8 @@ def _create_student(client, ptoken: str, username: str, display_name: str) -> di
         json={
             "username": username,
             "password": KID_PASSWORD,
-            "display_name": display_name,
-            "grade": 2,
-            "role": "student",
+        "display_name": display_name,
+        "role": "student",
         },
     )
     assert r.status_code == 201, r.text
@@ -428,7 +427,7 @@ def test_envelope_shape_is_uniform_across_tools(client):
             "total_items",
         }, spec.name
         for block in payload["students"]:
-            assert set(block) >= {"id", "name", "grade", "items", "meta"}
+            assert set(block) >= {"id", "name", "items", "meta"}
             assert isinstance(block["items"], list)
 
 

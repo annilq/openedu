@@ -1,12 +1,21 @@
 from uuid import UUID
 
-from fastapi import APIRouter, File, HTTPException, Query, Response, UploadFile, status
+from fastapi import (
+    APIRouter,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Response,
+    UploadFile,
+    status,
+)
 
 from app.core.config import settings
 from app.core.deps import CurrentTeacher, SessionDep
 from app.core.errors import ErrCode
-from app.core.guard import require_owned_student
-from app.db.models import Question, User, WrongQuestion
+from app.core.guard import require_owned, require_owned_student
+from app.db.models import Class, Question, User, WrongQuestion
 from app.features.auth.repository import (
     create_user,
     delete_student,
@@ -42,6 +51,16 @@ def create_student(
 ) -> UserPublic:
     if get_user_by_username(session=session, username=student_in.username):
         raise HTTPException(status_code=400, detail="Username already registered")
+    # 归属校验：建生若指定班级，该班级必须属于当前教师（ADR-0086 后端小扩展）。
+    if student_in.class_id is not None:
+        require_owned(
+            session=session,
+            owner_id=teacher.id,
+            model=Class,
+            obj_id=student_in.class_id,
+            code=ErrCode.FORBIDDEN,
+            message="班级不存在或不属于你的账号",
+        )
     student = create_user(
         session=session,
         user_create=student_in,
@@ -53,13 +72,28 @@ def create_student(
 
 @router.post("/import", response_model=StudentImportResult)
 async def import_students(
-    *, session: SessionDep, teacher: CurrentTeacher, file: UploadFile = File(...)
+    *,
+    session: SessionDep,
+    teacher: CurrentTeacher,
+    file: UploadFile = File(...),
+    class_id: UUID | None = Form(default=None),
 ) -> StudentImportResult:
     """批量导入学生（ADR-0068 §2.2）：上传 xlsx 花名册，username=学号、初始密码=配置值。
 
     - 文件大小超限 → 413；缺必要列 / 行数超限 / 空文件 → 400。
     - 逐行缺列或学号冲突 → 落 ``skipped`` 并回传行号，整体仍 200（见 ``StudentImportResult``）。
+    - 归属校验：若指定 ``class_id``，该班级必须属于当前教师，否则整体失败（越权不部分成功）。
     """
+    # 归属校验前置：班级越权直接 403，避免读文件后才失败或产生归属错误的账号。
+    if class_id is not None:
+        require_owned(
+            session=session,
+            owner_id=teacher.id,
+            model=Class,
+            obj_id=class_id,
+            code=ErrCode.FORBIDDEN,
+            message="班级不存在或不属于你的账号",
+        )
     data = await file.read()
     if len(data) > settings.STUDENT_IMPORT_MAX_BYTES:
             raise HTTPException(
@@ -68,7 +102,7 @@ async def import_students(
         )
     try:
         return import_students_from_xlsx(
-            session=session, teacher_id=teacher.id, data=data
+            session=session, teacher_id=teacher.id, data=data, class_id=class_id
         )
     except ValueError as exc:
         raise HTTPException(
@@ -124,7 +158,6 @@ def update_student(
         session=session,
         user=student,
         display_name=payload.display_name,
-        grade=payload.grade,
     )
     return updated
 

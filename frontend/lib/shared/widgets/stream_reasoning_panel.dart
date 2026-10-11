@@ -2,8 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import '../theme/app_theme.dart';
 
-/// 流式推理实时文本面板（DRY 收敛点：首次出题 `/tasks/generate` 与重生成
-/// `regenerate-stream` 共用同一渲染 seam）。
+/// 流式推理实时文本面板（整卷出题 `/tasks/generate` 的渲染 seam）。
 ///
 /// 渲染层退化为对 [reasoning] 的忠实映射：后端已增量下发 THINKING，
 /// 前端无需自有定时器（原 ReasoningTypewriterWidget 的 Timer 与事件到达解耦，
@@ -12,7 +11,7 @@ import '../theme/app_theme.dart';
 ///
 /// [index] 为可选题号（从 1 开始）；非空时左侧芯片显示「第 N 题 · 生成中」，
 /// 为空时显示「生成中」。卡片/顶部已有题号场景传 null 即可。[label] 为右侧进度
-/// 文案（如整卷重生成的「第 i/N 题」），可空。
+/// 文案（如首次出题的「第 i/N 题」），可空。
 ///
 /// 仅依赖 `flutter/widgets.dart`，可在 Material-free 的 ShadApp/CupertinoApp
 /// widget 树中安全复用（不引入 Material 祖先假设）。

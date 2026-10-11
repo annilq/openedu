@@ -9,7 +9,6 @@ def _create_student(client, ptoken, username="kid1"):
             "username": username,
             "password": "kid123456",
             "display_name": "学生",
-            "grade": 2,
             "role": "student",
         },
     )
@@ -180,4 +179,3 @@ def test_auth_me(client):
     me2 = client.get("/api/v1/auth/me", headers=auth_headers(ctoken))
     assert me2.status_code == 200
     assert me2.json()["role"] == "student"
-    assert me2.json()["grade"] == 2

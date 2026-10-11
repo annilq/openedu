@@ -26,7 +26,6 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:kids_learn/features/courseware/domain/models/courseware.dart';
 import 'package:kids_learn/features/courseware/domain/models/courseware_asset.dart';
-import 'package:kids_learn/features/courseware/domain/models/courseware_redraft_diff.dart';
 import 'package:kids_learn/features/courseware/domain/models/courseware_section.dart';
 import 'package:kids_learn/features/courseware/domain/repositories/courseware_repository.dart';
 import 'package:kids_learn/features/home/domain/repositories/material_repository.dart';
@@ -125,9 +124,6 @@ class _FakeRepo extends CoursewareRepository {
       _courseware;
   @override
   Future<void> deleteCourseware(String coursewareId) async {}
-  @override
-  Future<CoursewareRedraftDiffModel> getRedraftDiff(String coursewareId) async =>
-      CoursewareRedraftDiffModel(diff: const []);
   @override
   Future<List<CoursewareAssetModel>> getAssets({
     String? knowledgePointId,

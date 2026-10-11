@@ -89,10 +89,10 @@ def batch_generate_task(
 ) -> Task:
     """批量建草稿 Task + 挂草稿项（R-Q1=c：不预写 Question，只写 TaskQuestion）。
 
-    - `specs_dicts`：原始生成规格的 list[dict]，持久化到 Task.specs 以便整卷重生成。
+    - `specs_dicts`：原始生成规格的 list[dict]，持久化到 Task.specs 供审核页摘要展示。
     - `task_questions`：路由层已用出题引擎生成的草稿项（未写 Question）。
       路由层不 commit 直接传进来，避免和 Task 事务拆分。
-    - `model`：出题所用模型引用（内置 id / ModelConfig id），随草稿持久化以便重生成沿用。
+    - `model`：出题所用模型引用（内置 id / ModelConfig id），随草稿持久化以便批改沿用。
     """
     task = Task(
         title=title,
@@ -248,83 +248,6 @@ def remove_task_question(
     return True
 
 
-def regenerate_one_task_question(
-    *, session: Session, tq_id: uuid.UUID, gen_question: Question
-) -> TaskQuestion | None:
-    """单题重生成：用 QuestionGenerator 生成的新字段覆盖当前 TaskQuestion。
-
-    - 原 question_id 对应的 Question 同步删（R-Q5=b 级联）；
-    - 新题未入题库（Question 只在生成器返回里保存为「临时对象」，不写 Question 表），
-      教师后续还需要点「加入题库」才真正入 Question 表。
-    """
-    tq = session.get(TaskQuestion, tq_id)
-    if tq is None:
-        return None
-    old_qid = tq.question_id
-    # 用新题字段覆盖（保留 subject/grade/knowledge_point/qtype 与生成器一致即可）
-    tq.subject = gen_question.subject
-    tq.grade = gen_question.grade
-    tq.knowledge_point = gen_question.knowledge_point
-    tq.qtype = gen_question.qtype
-    tq.stem = gen_question.stem
-    tq.options = gen_question.options
-    tq.answer = gen_question.answer
-    tq.explanation = gen_question.explanation
-    tq.difficulty = gen_question.difficulty
-    tq.question_id = None  # 新题未入库
-    session.add(tq)
-    session.flush()
-    if old_qid is not None:
-        # 级联安全（闭环）：仅当源题不再被任何任务引用才物理删除。
-        remaining = session.exec(
-            select(TaskQuestion).where(TaskQuestion.question_id == old_qid)
-        ).all()
-        if len(remaining) <= 1:
-            q = session.get(Question, old_qid)
-            if q is not None:
-                session.delete(q)
-    session.commit()
-    session.refresh(tq)
-    return tq
-
-
-def regenerate_all_task_questions(
-    *,
-    session: Session,
-    task_id: uuid.UUID,
-    new_task_questions: list[TaskQuestion],
-    specs_dicts: list[dict] | None = None,
-) -> Task | None:
-    """整卷重生成（R-Q2=c）：按原 specs 重跑，全量替换草稿项。
-
-    同时清理当前草稿所有已入库的 Question（R-Q5=b 级联）。
-    若传入 specs_dicts 则更新 Task.specs（教师在 UI 上调整了规格）。
-    """
-    task = session.get(Task, task_id)
-    if task is None or task.status != "draft":
-        return None
-    old = get_task_questions(session=session, task_id=task.id)
-    old_qids = [tq.question_id for tq in old if tq.question_id is not None]
-    # 删旧草稿项（物理）
-    for tq in old:
-        session.delete(tq)
-    # 删旧 Question 行
-    for qid in old_qids:
-        q = session.get(Question, qid)
-        if q is not None:
-            session.delete(q)
-    session.flush()
-    for tq in new_task_questions:
-        tq.task_id = task.id
-    session.add_all(new_task_questions)
-    if specs_dicts is not None:
-        task.specs = specs_dicts or None
-    session.add(task)
-    session.commit()
-    session.refresh(task)
-    return task
-
-
 # ───────── 题库复用闭环（GET /questions / POST /tasks/from-bank 等） ─────────
 def create_task_from_bank(
     *,
@@ -337,7 +260,7 @@ def create_task_from_bank(
     """选项 A：从题库新建任务（draft）。
 
     深拷贝选中题为 TaskQuestion 并回填 question_id（复用源题），
-    作答/错题归集仍指向同一道源题。specs=None：无 AI 生成规格，不支持整卷重生成。
+    作答/错题归集仍指向同一道源题。specs=None：无 AI 生成规格。
     """
     if student_id is not None:
         require_owned_student(

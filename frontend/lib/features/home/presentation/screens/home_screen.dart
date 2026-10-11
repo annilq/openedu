@@ -10,6 +10,7 @@ import '../../../../shared/widgets/app_toast.dart';
 import '../../../students/providers/students_provider.dart';
 import '../../../students/presentation/screens/student_form_screen.dart';
 import '../../../students/presentation/screens/student_management_screen.dart';
+import '../../../classes/presentation/screens/class_management_screen.dart';
 import '../../../export/domain/export_repository.dart';
 import '../../../export/presentation/export_preview_page.dart';
 import '../../../practice/presentation/screens/practice_screen.dart';
@@ -141,8 +142,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     setState(() => _showProfile = true);
   }
 
-  /// 侧栏头部「添加学生」。
-  void _onNavigateToAddStudent() => _go(const AddStudentPage());
+  /// 侧栏头部「添加学生」。[classId]/[className] 非空表示由班级下钻页发起
+  /// （ADR-0086 ticket 06）：新建学生直接归入该班，保存后回该班下钻页。
+  void _onNavigateToAddStudent([String? classId, String? className]) =>
+      _go(AddStudentPage(classId: classId, className: className));
+
+  /// 班内新建学生后的回落页：由班级下钻页发起时回该班下钻页，否则回概览。
+  /// 单一出口，避免 [AddStudentPage] 的 onSaved / onBack 各自重复三元。
+  TeacherPage _addStudentReturnPage(AddStudentPage page) =>
+      page.classId != null && page.className != null
+          ? ClassStudentsPage(page.classId!, page.className!)
+          : const OverviewPage();
 
   /// 切换学生端 Tab：改变 IndexedStack 索引，并在该页「变为可见」时重新拉取最新数据。
   ///
@@ -189,8 +199,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       CreateTaskPage() => const TeacherTaskFormView(),
       AddStudentPage() => StudentFormScreen(
           mode: ChildFormMode.create,
-          onSaved: _onChildFormSaved,
-          onBack: () => _go(const OverviewPage()),
+          classId: page.classId,
+          onSaved: (_) => _go(_addStudentReturnPage(page)),
+          onBack: () => _go(_addStudentReturnPage(page)),
         ),
       EditStudentPage(child: final child) => StudentFormScreen(
           mode: ChildFormMode.edit,
@@ -264,6 +275,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 initialTab: StudentDetailTab.wrongQuestions));
           },
           onAddStudent: _onNavigateToAddStudent),
+      ClassManagementPage() => ClassManagementScreen(
+          onOpenClass: (id, name) => _go(ClassStudentsPage(id, name)),
+        ),
+      ClassStudentsPage(classId: final cid, className: final cname) =>
+        StudentManagementScreen(
+          classId: cid,
+          className: cname,
+          // 下钻页的返回回落到班级管理列表（单一出口，不裸 Navigator.pop）。
+          onBack: () => _go(const ClassManagementPage()),
+          onOpenStudent: (id) {
+            _go(StudentDetailPage(id,
+                initialTab: StudentDetailTab.wrongQuestions));
+          },
+          onAddStudent: () => _onNavigateToAddStudent(cid, cname),
+        ),
       TaskListPage(initialTab: final tab) => TeacherTasksView(
           onNavigateToReview: _navigateToReview,
           onNavigateToCreate: () => _go(const CreateTaskPage()),
@@ -489,7 +515,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       sidebarBottom: AdaptiveUserBlock(
         user: widget.user,
         onProfileTap: _onProfileTap,
-        subtitle: '${widget.user.grade ?? '?'}年级',
+        // 学生年级已改由所属班级承载（ADR-0086 修正）：此处以「分班状态」替代原年级展示。
+        subtitle: widget.user.classId != null ? '已分班' : '未分班',
       ),
       body: _buildChildView(),
     );

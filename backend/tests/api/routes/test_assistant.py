@@ -107,11 +107,10 @@ def test_teacher_question_generation_emits_data_events(client):
         assert q.get("subject") and q.get("stem")
 
 
-def test_student_role_awareness_forces_tutor(client):
-    """学生端意图被强制收敛到伴学（出题/查任务意图不会触发非伴学生成，ADR-0026）。
+def test_student_generation_routes_to_question(client):
+    """学生自练出题（ADR-0081 §2.2）：出题意图路由到出题助手，产出题卡，而非强制收敛到伴学答疑。
 
-    决策已显式化：不再经 THINKING(extra.business) 隐式透传（见 #2），
-    而是路由 THINKING 帧标记 ``routing: True``，且 Conversation.kind 由决策写入。
+    决策已显式化：路由 THINKING 帧标记 ``routing: True``，且 Conversation.kind 由决策写入。
     """
     _ptoken, _student, ctoken = _setup(client, "as6_teacher", "as6_kid")
     status, events = _stream(client, ctoken, "帮我出 2 道数学题")
@@ -119,11 +118,68 @@ def test_student_role_awareness_forces_tutor(client):
     # 路由 THINKING 帧标记 routing=True（决策显式化后不再经 extra.business 透传）
     routed = [e for e in events if e["eventType"] == "THINKING" and e.get("extra", {}).get("routing")]
     assert routed, "应产生路由 THINKING 帧"
-    # 学生端被角色可见集强制收敛到伴学答疑（tutor），而非出题/任务
-    assert any("伴学答疑" in e.get("text", "") for e in routed)
-    # 不应出现 question 题卡（证明没有路由到出题 subagent）
+    # 学生端出题意图路由到出题助手（而非被强制收敛到伴学答疑）
+    assert any("出题助手" in e.get("text", "") for e in routed)
+    # 应出现 question 题卡（证明路由到了出题 subagent，学生可自练出题）
     question_cards = [e for e in events if e["eventType"] == "DATA" and e.get("data", {}).get("type") == "question"]
-    assert question_cards == []
+    assert question_cards
+
+
+def test_student_action_task_generate_routes_to_question(client):
+    """结构化动作经统一路由（T04）：学生显式带 action=task_generate，命中出题助手并产出题卡。
+
+    端点把 req.action 透传给 IntentSignal，统一路由做动作直配——且学生这条路径上
+    输入安全闸门（role==student → StudentSafety）被真正调用（出题链路此前把闸门设为「无」）。
+    """
+    _ptoken, _student, ctoken = _setup(client, "as9_teacher", "as9_kid")
+    status, events = _stream(
+        client, ctoken, "帮我出 2 道数学题", extra={"action": "task_generate"}
+    )
+    assert status == 200, events
+    routed = [e for e in events if e["eventType"] == "THINKING" and e.get("extra", {}).get("routing")]
+    assert routed, "应产生路由 THINKING 帧"
+    assert any("出题助手" in e.get("text", "") for e in routed)
+    question_cards = [e for e in events if e["eventType"] == "DATA" and e.get("data", {}).get("type") == "question"]
+    assert question_cards, "动作直配应将学生出题路由到 question 助手"
+
+
+def test_teacher_only_action_is_explicitly_forbidden(client, monkeypatch):
+    """学生打教师专属动作：端点转**真 403**（不再是 200 + ACTION_FORBIDDEN 帧），
+    且不静默回落成另一个业务的回答（T04 验收 / FIX-2，spec 硬约束）。
+
+    端点先 ``await assistant_service.chat(...)`` 再包 ``StreamingResponse``，故动作不可见
+    在 ``chat`` 内抛出会在建流前被全局异常处理器转成 403 —— 不再是「HTTP 200 + 错误帧」。
+    """
+    import app.features.assistant.service as _svc
+    from agent_core.runtime import RouteDecision
+
+    _ptoken, _student, ctoken = _setup(client, "as10_teacher", "as10_kid")
+
+    class _StubRuntime:
+        def name_of(self, biz):
+            return biz
+
+        async def decide(self, signal, *, role, deps):
+            return RouteDecision(
+                business=None,
+                name=None,
+                extra={"reason": "action_not_visible", "action": "teacher_only_action"},
+            )
+
+    monkeypatch.setattr(_svc, "get_runtime", lambda: _StubRuntime())
+
+    r = client.post(
+        "/api/v1/assistant/chat",
+        headers=auth_headers(ctoken),
+        json={"message": "随便说点什么", "action": "teacher_only_action"},
+    )
+    assert r.status_code == 403, r.text
+    body = r.json()
+    assert body["code"] == "SYS_10002"  # ErrCode.FORBIDDEN → 403
+    assert body["status"] == 403
+    # 不得静默回落成另一个业务：响应是结构化错误体，**不是**任何 SubAgent 的回答流。
+    assert "当前角色无权执行动作" in body["message"]
+    assert "teacher_only_action" in body["message"]
 
 
 # ───────────────────────── 学情查询：端到端（ADR-0033 第 6 阶段） ─────────────────────────

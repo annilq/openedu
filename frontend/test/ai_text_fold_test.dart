@@ -216,6 +216,81 @@ void main() {
     });
   });
 
+  group('AiTextFold · 判断题闭环帧兼容（T07）', () {
+    test('运行时编排帧（USER_MESSAGE + 两条路由 THINKING）不进正文/卡片，题卡照常挂载', () {
+      // T07 起判断题出题走运行时：帧序列多出 USER_MESSAGE + 两条路由 THINKING，
+      // 还有工具信封与出题 STEP。它们都不得污染题卡渲染（题面作答前仍不带答案）。
+      final f = foldAll([
+        AssistantEvent(eventType: AssistantEventType.runStarted),
+        AssistantEvent(
+          eventType: AssistantEventType.userMessage,
+          text: '请为「轴对称」出一道判断题',
+        ),
+        AssistantEvent(
+          eventType: AssistantEventType.thinking,
+          text: '正在理解你的需求，并选择最合适的助手…',
+          extra: {'routing': true},
+        ),
+        AssistantEvent(
+          eventType: AssistantEventType.thinking,
+          text: '已选择助手：出题助手',
+          extra: {'routing': true},
+        ),
+        AssistantEvent(
+          eventType: AssistantEventType.toolCall,
+          tool: 'generate_question',
+          label: '出题',
+        ),
+        AssistantEvent(
+          eventType: AssistantEventType.step,
+          label: '正在为《数学》4年级「轴对称」出选择题…',
+        ),
+        // 模型出题思路（无 routing 标记）：不当阶段、也不进正文。
+        AssistantEvent(
+          eventType: AssistantEventType.thinking,
+          text: '先确认考查点',
+        ),
+        AssistantEvent(
+          eventType: AssistantEventType.assistantMessage,
+          text: '来一道关于「轴对称」的判断题，请判断下面的说法对不对：',
+        ),
+        AssistantEvent(
+          eventType: AssistantEventType.data,
+          data: {
+            'type': 'question',
+            'result': {
+              'stem': '平行四边形是轴对称图形',
+              'options': ['对', '错'],
+              'answer': '',
+              'explanation': '',
+            },
+          },
+        ),
+        AssistantEvent(
+          eventType: AssistantEventType.toolResult,
+          tool: 'generate_question',
+        ),
+        AssistantEvent(
+          eventType: AssistantEventType.done,
+          sessionId: 'conv-1',
+        ),
+      ]);
+
+      expect(
+        f.text,
+        '来一道关于「轴对称」的判断题，请判断下面的说法对不对：',
+        reason: 'USER_MESSAGE 与路由/推理 THINKING 不得拼进正文',
+      );
+      expect(f.cards.length, 1);
+      expect(f.cards.single.kind, AssistantCardKind.question);
+      expect(f.cards.single.rawPayload['stem'], '平行四边形是轴对称图形');
+      // 题面作答前不带答案（后端已剥离，前端原样渲染）。
+      expect(f.cards.single.rawPayload['answer'], '');
+      expect(f.sources, isEmpty);
+      expect(f.blocked, isFalse);
+    });
+  });
+
   group('AiTextFold · 错误与安全兜底', () {
     test('ERROR 帧记录文案，并给出默认兜底文案', () {
       final withMessage = foldAll([

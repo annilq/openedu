@@ -1,6 +1,6 @@
 /// 课堂练习内容块（courseware-round-3 T06：去 kind 后的第四可选内容块）。
 ///
-/// 与 [CoursewareSectionModel.materials] / [scene] 并列，任何环节都能挂。旧 AI 起草
+/// 与 [CoursewareSectionModel.materials] / [scene] 并列，任何环节都能挂。历史
 /// 数据走 [CoursewareSectionModel.practice] 的回退读取（[CoursewareSectionModel] 里
 /// 优先顶层 `practice`，否则回退旧 `payload['qtype']`）。
 ///
@@ -33,7 +33,7 @@ class CoursewarePracticeBlock {
     );
   }
 
-  /// 把任意来源值收敛成非空字符串：旧 AI 起草数据把 [hints] 存成字符串数组，
+  /// 把任意来源值收敛成非空字符串：历史数据把 [hints] 存成字符串数组，
   /// 新数据（[toJson]）是单串；两者都要能解析，否则 `as String?` 在 List 上抛
   /// 「type List is not subtype of string」，单条脏数据会拖垮整份课件列表解析。
   static String _coerceHints(dynamic raw) {

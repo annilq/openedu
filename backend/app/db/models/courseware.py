@@ -72,8 +72,9 @@ class Courseware(SQLModel, table=True):
     kp_name: str = Field(default="", max_length=128)
     title: str = Field(default="", max_length=128)
     status: str = Field(default=COURSEWARE_STATUS_DRAFT, max_length=16)
-    # 教学目标 / 备注（courseware-round-3 T01）：空壳课件建出时存教师填的备课依据，
-    # 供后续「AI 补充讲解」（T05）读取当作起草上下文。可空、无索引、无 FK。
+    # 教学目标 / 备注（courseware-round-3 T01）：教师建课件时填的备课依据，供课件
+    # 信息卡展示。可空、无索引、无 FK。（原先还供「AI 补充讲解」当起草上下文，
+    # 该能力已移除，见 ADR-0085。）
     objective: str | None = Field(default=None, max_length=2000)
     # 环节序列：[{id, kind, title, script, payload}]。整体覆盖写，不建子表
     # （ADR-0067 §3.2：子表只带来 JOIN 与孤儿行）。

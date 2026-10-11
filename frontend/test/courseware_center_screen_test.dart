@@ -11,7 +11,6 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:kids_learn/features/courseware/domain/models/courseware.dart';
 import 'package:kids_learn/features/courseware/domain/models/courseware_asset.dart';
-import 'package:kids_learn/features/courseware/domain/models/courseware_redraft_diff.dart';
 import 'package:kids_learn/features/courseware/domain/models/courseware_section.dart';
 import 'package:kids_learn/features/courseware/domain/repositories/courseware_repository.dart';
 import 'package:kids_learn/features/courseware/presentation/pages/courseware_editor_page.dart';
@@ -55,7 +54,6 @@ class _FakeRepo extends CoursewareRepository {
   String? lastCreateKpId;
   String? lastCreateTitle;
   String? lastCreateObjective;
-  bool? lastCreateDraft;
   String? lastUpdateTitle;
   String? lastUpdateStatus;
 
@@ -79,12 +77,10 @@ class _FakeRepo extends CoursewareRepository {
     required String knowledgePointId,
     String? title,
     String? objective,
-    bool draft = true,
   }) async {
     lastCreateKpId = knowledgePointId;
     lastCreateTitle = title;
     lastCreateObjective = objective;
-    lastCreateDraft = draft;
     return _cw(
       id: 'cw-new',
       title: title ?? '图形的运动（轴对称）',
@@ -113,10 +109,6 @@ class _FakeRepo extends CoursewareRepository {
 
   @override
   Future<void> deleteCourseware(String coursewareId) async {}
-
-  @override
-  Future<CoursewareRedraftDiffModel> getRedraftDiff(String coursewareId) async =>
-      CoursewareRedraftDiffModel(diff: const []);
 
   @override
   Future<List<Map<String, dynamic>>?> getKnowledgePointScenes({
@@ -245,11 +237,10 @@ void main() {
       // 打开表单即拉取知识点全集（选择器数据源）。
       expect(repo.listKnowledgePointsCalls, greaterThanOrEqualTo(1));
       // 未选知识点不应触发建课件。
-      expect(repo.lastCreateDraft, isNull);
+      expect(repo.lastCreateKpId, isNull);
     });
 
-    testWidgets('选知识点后创建空壳：走 draft=false（不触发 AI）并打开编辑器',
-        (tester) async {
+    testWidgets('选知识点后创建空课件（不调模型）并打开编辑器', (tester) async {
       final repo = _FakeRepo(listReturnsEmpty: true, knowledgePoints: [
         const KnowledgePointOption(id: 'kp1', name: '图形的运动（轴对称）'),
         const KnowledgePointOption(id: 'kp2', name: '分数加减'),
@@ -267,8 +258,7 @@ void main() {
       await tester.tap(find.widgetWithText(AppPrimaryButton, '创建空课件'));
       await tester.pumpAndSettle();
 
-      // 关键：空壳走 draft=false，不触发 AI 起草。
-      expect(repo.lastCreateDraft, isFalse);
+      // ADR-0085：新建只按知识点建空课件，不触发任何 AI 起草。
       expect(repo.lastCreateKpId, 'kp1');
       // 建好后直接进入编辑器（课件信息卡可见）。
       expect(find.text('课件信息'), findsNothing); // 信息卡仅在编辑器内

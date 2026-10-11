@@ -20,9 +20,9 @@ class Task(TaskBase, table=True):
     teacher_id: uuid.UUID = Field(foreign_key="user.id")
     student_id: uuid.UUID | None = Field(default=None, foreign_key="user.id")  # 可空，assigned 时绑
     # 出题所用模型引用（内置 id / ModelConfig id）；缺省 None = 后端回退（mock/langchain）。
-    # 落库以便「整卷重生成 / 单题重生成」沿用同一模型，避免静默回退 mock。
+    # 落库以便后续批改（answer）沿用同一模型，避免静默回退 mock。
     model: str | None = Field(default=None)
-    # 原始生成规格：from-generated 完整保存，整卷重生成时按此规格重跑并覆盖草稿项（R-Q2=c）。
+    # 原始生成规格：from-generated 完整保存，供审核页摘要展示。
     specs: list[dict] | None = Field(default=None, sa_type=JSON(none_as_null=True))
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,

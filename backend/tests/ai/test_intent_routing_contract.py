@@ -38,23 +38,48 @@ async def _decide(signal: IntentSignal, *, role: str) -> object:
 
 
 # ── 动作归属声明 ──
-def test_question_manifest_declares_both_actions():
+def test_question_manifest_declares_all_actions():
     m = AgentRuntime.discover().manifests.get("question")
     assert m is not None
-    assert m.actions == ["task_generate", "task_question_regenerate"]
+    # T07：判断题出题（quiz_generate）与按规格出题（task_generate）各有独立键，
+    # 但同归出题助手——前者走判断题闭环（剥离答案 / 写待判定态）。
+    assert m.actions == ["task_generate", "quiz_generate"]
 
 
 def test_match_action_helper():
     manifests = AgentRuntime.discover().manifests
     assert match_action("task_generate", manifests) == "question"
-    assert match_action("task_question_regenerate", manifests) == "question"
+    assert match_action("quiz_generate", manifests) == "question"
     # 空动作 / 未知动作 → None（交给文本路由）
     assert match_action("", manifests) is None
     assert match_action("nonexistent_action", manifests) is None
 
 
+# 已声明动作的**完整词表**：动作键 → 归属 business。每个动作在此写明「请求方」
+# （谁产出 / 谁触发这个键）——这是兜住「孤儿（清单里声明了但无人请求）」与「悬空
+# （有请求方但没在清单里声明）」的显式期望集合（spec L121 硬要求）。新增动作键必须
+# 同时在 manifest 与本表各加一行；只加其一，本契约测试即失败。
+_EXPECTED_ACTION_OWNERS: dict[str, str] = {
+    # 请求方：课件练习「出题」方向（service._build_intent_signal；文本分类确为 question 时）
+    "courseware_generate": "guide",
+    # 请求方：课件练习「提示」方向（答错求提示，service._build_intent_signal）
+    "courseware_hint": "tutor",
+    # 请求方：待判定态消费后的判定/讲解（service._build_intent_signal）
+    "quiz_judge": "tutor",
+    # 请求方：判断题闭环出题段（req.quiz=True，service._build_intent_signal）
+    "quiz_generate": "question",
+    # 请求方：客户端结构化出题（req.action=task_generate）
+    "task_generate": "question",
+}
+
+
 def test_action_ownership_is_unique():
-    """每个已声明的动作恰好一个归属 business：无孤儿、无悬空（两业务同持一个动作）。"""
+    """每个已声明的动作属于**恰好一个** business，且完整词表与期望集合一致：
+
+    - 归属唯一（同一动作不被两业务同时声明）；
+    - 无孤儿（清单里声明了但无人请求）；
+    - 无悬空（有请求方但没在清单里声明）。
+    """
     manifests = AgentRuntime.discover().manifests
     owner_of: dict[str, str] = {}
     for biz, m in manifests.items():
@@ -64,9 +89,19 @@ def test_action_ownership_is_unique():
                 "唯一性由契约测试保证，动作直配无需排序规则"
             )
             owner_of[action] = biz
-    # 本轮核心声明：出题助手拥有两个动作
-    assert owner_of["task_generate"] == "question"
-    assert owner_of["task_question_regenerate"] == "question"
+    # 完整词表比对：多一个（孤儿）或少一个（悬空）都会失败——动作名与清单不同步
+    # 不再静默失效。归属不符也会失败（并打印差异）。
+    mismatched = {
+        k: (owner_of[k], _EXPECTED_ACTION_OWNERS[k])
+        for k in owner_of.keys() & _EXPECTED_ACTION_OWNERS.keys()
+        if owner_of[k] != _EXPECTED_ACTION_OWNERS[k]
+    }
+    assert owner_of == _EXPECTED_ACTION_OWNERS, (
+        f"已声明动作与期望不一致：仅清单有（孤儿）="
+        f"{sorted(set(owner_of) - set(_EXPECTED_ACTION_OWNERS))}，仅期望有（悬空）="
+        f"{sorted(set(_EXPECTED_ACTION_OWNERS) - set(owner_of))}，归属不符="
+        f"{ {k: f'{got}≠{want}' for k, (got, want) in mismatched.items()} }"
+    )
 
 
 # ── 动作直配路由结果 ──
@@ -86,13 +121,37 @@ def test_decide_action_with_text_still_precedes_text_routing():
     assert decision.extra.get("routed_by") == "action"
 
 
-def test_decide_action_not_visible_for_student_is_explicit():
-    # 出题助手仅教师可见；学生打该动作 → 显式不可见，绝不静默落成 tutor/可见集首个。
+def test_decide_action_routes_student_to_question():
+    # 出题助手现已对师生双开（ADR-0081 §2.2）：学生打 task_generate → 直接路由 question。
     decision = asyncio.run(_decide(IntentSignal(text="", action="task_generate"), role="student"))
+    assert decision.business == "question"
+    assert decision.name == "出题助手"
+    assert decision.extra.get("routed_by") == "action"
+
+
+def test_decide_action_not_visible_when_role_lacks_manifest():
+    # 防御路径：动作命中但其归属 subagent 对当前角色不可见 → 显式 action_not_visible，
+    # 不静默落成答非所问。用合成清单验证代码路径（question 现已双开，不再能触发此分支）。
+    from agent_core.registry import SubAgentManifest
+
+    m = SubAgentManifest(
+        business="limited",
+        name="受限助手",
+        roles=["teacher"],  # 仅教师可见
+        actions=["limited_action"],
+    )
+    rt = AgentRuntime({"limited": m})
+    decision = asyncio.run(
+        rt.decide(
+            IntentSignal(text="", action="limited_action"),
+            role="student",
+            deps=_deps("student"),
+        )
+    )
     assert decision.business is None
     assert decision.name is None
     assert decision.extra.get("reason") == "action_not_visible"
-    assert decision.extra.get("action") == "task_generate"
+    assert decision.extra.get("action") == "limited_action"
 
 
 def test_decide_unknown_action_falls_back_to_text_routing():
@@ -103,10 +162,90 @@ def test_decide_unknown_action_falls_back_to_text_routing():
     assert decision.business == "question"
 
 
+# ── T06：课件上下文 / 待判定态定向迁进信号（各有独立动作键） ──
+def test_decide_courseware_generate_routes_to_guide():
+    """课件练习「出题」→ 任务引导（引导到页面），**不是**出题助手（不出卡）。"""
+    decision = asyncio.run(
+        _decide(IntentSignal(text="", action="courseware_generate"), role="teacher")
+    )
+    assert decision.business == "guide"
+    assert decision.name == "任务引导"
+    assert decision.extra.get("routed_by") == "action"
+
+
+def test_decide_courseware_hint_routes_to_tutor():
+    """课件练习「提示」→ 伴学答疑。"""
+    decision = asyncio.run(
+        _decide(IntentSignal(text="", action="courseware_hint"), role="teacher")
+    )
+    assert decision.business == "tutor"
+    assert decision.name == "伴学答疑"
+    assert decision.extra.get("routed_by") == "action"
+
+
+def test_decide_quiz_judge_routes_to_tutor():
+    """待判定态消费后的定向 → 伴学答疑（判定与讲解由模型产出）。"""
+    decision = asyncio.run(
+        _decide(IntentSignal(text="错", action="quiz_judge"), role="teacher")
+    )
+    assert decision.business == "tutor"
+    assert decision.name == "伴学答疑"
+    assert decision.extra.get("routed_by") == "action"
+
+
+def test_decide_quiz_generate_routes_to_question():
+    """判断题出题（T07）→ 出题助手（经运行时，拿到检索/学科提示/溯源/工具信封）。"""
+    decision = asyncio.run(
+        _decide(IntentSignal(text="", action="quiz_generate"), role="teacher")
+    )
+    assert decision.business == "question"
+    assert decision.name == "出题助手"
+    assert decision.extra.get("routed_by") == "action"
+
+
+def test_quiz_generate_is_distinct_from_courseware_generate():
+    """判断题出题与课件练习出题是两个独立键：前者出卡（question），后者引导（guide）。
+
+    同「两种出题不得拍平」的防回归——键若拍平，判断题闭环会跑到课件大屏去。
+    """
+    manifests = AgentRuntime.discover().manifests
+    quiz = asyncio.run(
+        _decide(IntentSignal(text="", action="quiz_generate"), role="teacher")
+    )
+    courseware = asyncio.run(
+        _decide(IntentSignal(text="", action="courseware_generate"), role="teacher")
+    )
+    assert quiz.business == "question"
+    assert courseware.business == "guide"
+    assert "quiz_generate" not in manifests["guide"].actions
+
+
+def test_two_generate_intents_have_independent_action_keys():
+    """两种「出题」语义不得拍平：课件方向归 guide，助手方向归 question，各持独立动作键。
+
+    这是最难发现的那类回归——功能照常跑，只是去错了地方。用**两个不同的键**把它钉死。
+    """
+    manifests = AgentRuntime.discover().manifests
+    courseware = asyncio.run(
+        _decide(IntentSignal(text="", action="courseware_generate"), role="teacher")
+    )
+    assistant = asyncio.run(
+        _decide(IntentSignal(text="", action="task_generate"), role="teacher")
+    )
+    assert courseware.business == "guide"
+    assert assistant.business == "question"
+    assert courseware.business != assistant.business
+    # 键本身也不可互相包含：课件键只归 guide，助手键只归 question。
+    assert "courseware_generate" in manifests["guide"].actions
+    assert "courseware_generate" not in manifests["question"].actions
+    assert "task_generate" in manifests["question"].actions
+    assert "task_generate" not in manifests["guide"].actions
+
+
 # ── 顺序无关：打乱清单顺序结果不变 ──
 def test_action_match_order_independent():
     base = AgentRuntime.discover().manifests
-    for action in ("task_generate", "task_question_regenerate"):
+    for action in ("task_generate",):
         keys = list(base.keys())
         random.Random(0).shuffle(keys)
         shuffled = {k: base[k] for k in keys}

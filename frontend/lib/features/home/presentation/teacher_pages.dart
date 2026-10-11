@@ -38,8 +38,13 @@ class TaskListPage extends TeacherPage {
 }
 
 /// 添加学生（StudentFormScreen 创建态）。
+///
+/// [classId]/[className] 非空表示由班级下钻页发起（ADR-0086 ticket 06）：新建学生
+/// 直接归入该班，保存后回落该班下钻页而非概览。
 class AddStudentPage extends TeacherPage {
-  const AddStudentPage();
+  final String? classId;
+  final String? className;
+  const AddStudentPage({this.classId, this.className});
 }
 
 /// 编辑学生资料（StudentFormScreen 编辑态）。
@@ -174,6 +179,25 @@ class SceneLibraryEditorPage extends TeacherPage {
 /// 与这里共用同一份素材库数据。
 class AssetLibraryPage extends TeacherPage {
   const AssetLibraryPage();
+}
+
+/// 班级管理（ADR-0086 容器）：班级卡片列表（建 / 改 / 删），点卡片下钻到该班
+/// 学生管理页（[ClassStudentsPage]）。与 [StudentManagementPage]（全部学生扁平视图）
+/// 并列，不取代它。
+class ClassManagementPage extends TeacherPage {
+  const ClassManagementPage();
+}
+
+/// 班级下钻页（ADR-0086）：从 [ClassManagementPage] 点某班级卡片进入，复用既有
+/// [StudentManagementScreen]（以 `classId` 参数化），展示只属于该班的学生。
+///
+/// [className] 由下钻发起方（班级卡片）直传，作为页标题，不写入任何全局选中态
+/// （同 [StudentDetailPage] 的做法，避免「看着 A 班却显示 B 班」这类漏清 bug）。
+class ClassStudentsPage extends TeacherPage {
+  final String classId;
+  final String className;
+
+  const ClassStudentsPage(this.classId, this.className);
 }
 
 /// 侧栏高亮用的「基础页」：审核页沿用它进来的那一页的高亮。

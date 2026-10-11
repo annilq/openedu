@@ -109,11 +109,12 @@ def test_decide_routing_regression(message, role, business, name):
     assert decision.name == name
 
 
-# ── decide：学生端角色可见性（student 永不可见出题；查询恒限自己，见 #1） ──
-def test_decide_student_question_forced_to_tutor():
+# ── decide：学生端角色可见性（师生均可出题，见 ADR-0081 §2.2；查询恒限自己，见 ADR-0033） ──
+def test_decide_student_can_generate_question():
+    """ADR-0081 §2.2：学生可自练出题，出题助手对师生双开，故学生自由文本出题路由到 question。"""
     decision = asyncio.run(_decide("帮我出几道数学题", role="student"))
-    assert decision.business == "tutor"
-    assert decision.name == "伴学答疑"
+    assert decision.business == "question"
+    assert decision.name == "出题助手"
 
 
 def test_decide_student_query_visible():

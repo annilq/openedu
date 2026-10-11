@@ -63,6 +63,8 @@ class StudentManagementNotifier
     try {
       final classes = await _classes.getClasses();
       final students = await _students.getStudents(
+        // classId 透传：下钻页（ticket 04）只拉该班学生；全量视图传 null。
+        classId: classId,
         keyword: nextKeyword.isEmpty ? null : nextKeyword,
       );
       final counts = await _students.getWrongQuestionCounts();
@@ -93,10 +95,12 @@ class StudentManagementNotifier
   Future<StudentImportResultModel> importStudents({
     required List<int> bytes,
     required String filename,
+    String? classId,
   }) async {
     final result = await _students.importStudents(
       bytes: bytes,
       filename: filename,
+      classId: classId,
     );
     await load();
     return result;

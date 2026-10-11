@@ -20,6 +20,7 @@ import 'package:kids_learn/shared/domain/repositories/students_repository.dart';
 import 'package:kids_learn/features/students/providers/students_provider.dart';
 import 'package:kids_learn/shared/widgets/app_sidebar.dart' show AppSidebarItem;
 import 'package:kids_learn/shared/widgets/app_focusable_action.dart';
+import 'package:kids_learn/shared/widgets/app_actions.dart' show AppIconAction;
 
 /// 教师端导航「单一事实源」守卫（ADR-0059）。
 ///
@@ -108,7 +109,7 @@ void main() {
       expect(_activeLabels(tester), ['首页']);
 
       await tester.tap(find.byWidgetPredicate(
-        (w) => w is AppFocusableAction && w.semanticLabel == '小明 · 2年级',
+        (w) => w is AppFocusableAction && w.semanticLabel == '小明 · 未分班',
       ));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
@@ -242,6 +243,87 @@ void main() {
     });
   });
 
+  group('ticket 02/04：班级管理导航与下钻（ADR-0086）', () {
+    // ⚠️ 这两个页面态（ClassManagementPage / ClassStudentsPage）是班级管理前端收尾
+    // 新增的 `TeacherPage` 分支；只靠 sealed 穷尽性只能保证「编译过」，UI 层若没真
+    // 构建过仍可能漏接 `onOpenClass` / `onBack` 跳转。`flutter analyze` 照不出来，必须真点。
+    testWidgets('教师端：点「班级管理」高亮唯一且渲染班级管理页', (tester) async {
+      await _pumpTeacherHome(tester);
+      expect(_activeLabels(tester), ['概览']);
+
+      await tester.tap(find.text('班级管理'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(_activeLabels(tester), ['班级管理'],
+          reason: '同一时刻侧栏只能有一个高亮项（单一导航状态）');
+      // 班级卡片（桩返回「三(1)班」）应真实渲染。
+      expect(find.text('三(1)班'), findsOneWidget,
+          reason: 'ClassManagementScreen 应真正渲染班级卡片');
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('教师端：从班级卡片下钻进班级，标题含班级名、无筛选 chip、返回回到列表',
+        (tester) async {
+      await _pumpTeacherHome(tester);
+      await tester.tap(find.text('班级管理'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.text('三(1)班'), findsOneWidget);
+
+      // 点班级卡片下钻（经 HomeScreen 接好的 `onOpenClass` 进入 ClassStudentsPage）。
+      await tester.tap(find.text('三(1)班'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      // 下钻页标题含班级名；全量视图的「全部/各班/未分班」筛选 chip 在此隐藏。
+      expect(find.textContaining('三(1)班'), findsWidgets,
+          reason: '下钻页标题应含班级名');
+      expect(find.text('全部'), findsNothing,
+          reason: '下钻页不应出现全量视图的筛选 chip');
+      expect(tester.takeException(), isNull);
+
+      // 返回回落到班级管理列表（单一出口，不裸 Navigator.pop）。
+      await tester.tap(find.byWidgetPredicate(
+        (w) => w is AppFocusableAction && w.semanticLabel == '返回',
+      ));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(_activeLabels(tester), ['班级管理'],
+          reason: '从班级下钻返回应回到班级管理列表并高亮');
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('ticket 06：班内添加/导入归属本班（ADR-0086）', () {
+    // ⚠️ 下钻页「添加学生」必须落到 StudentFormScreen 创建态（而非概览或无反应），
+    // 且把本班 classId 经 AddStudentPage 传入表单——这是 ticket 05 后端 class_id 归属的
+    // 前端入口。`flutter analyze` 照不出来，必须真点。
+    testWidgets('教师端：班级下钻页「添加学生」打开创建态表单', (tester) async {
+      await _pumpTeacherHome(tester);
+      await tester.tap(find.text('班级管理'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.tap(find.text('三(1)班'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.text('全部'), findsNothing, reason: '已进入班级下钻页');
+
+      // 下钻页「添加学生」入口（AppIconAction）应打开 StudentFormScreen。
+      await tester.tap(find.byWidgetPredicate(
+        (w) => w is AppIconAction && w.semanticLabel == '添加学生',
+      ));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.text('学生昵称（例如：大宝）'), findsOneWidget,
+          reason: '下钻页「添加学生」应打开创建态表单（StudentFormScreen）');
+      expect(find.text('添加学生账号'), findsOneWidget,
+          reason: '表单标题应为创建态');
+      expect(tester.takeException(), isNull);
+    });
+  });
+
   group('T02：场景编辑器收编为 sealed 导航状态（ADR-0074）', () {
     // ⚠️ 编辑器原来由知识点行 `showDialog(KnowledgePointSceneEditor)` 直接开——把
     // 「当前该看哪个页面」偷变成并列状态，漏清就弹根栈（白屏）。现在它是
@@ -335,7 +417,6 @@ UserModel _child() => UserModel(
       username: 'child1',
       displayName: '小明',
       role: 'child',
-      grade: 2,
     );
 
 /// ticket 16 收尾：让「学生」入口真能加载出学生，从而 drill 进学生详情页。
@@ -349,7 +430,6 @@ final _students = [
     username: '2023001',
     displayName: '小明',
     role: 'child',
-    grade: 3,
     classId: 'c1',
   ),
 ];

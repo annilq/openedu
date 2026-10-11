@@ -9,16 +9,19 @@ from app.db.models import UserBase
 
 class UserCreate(UserBase):
     password: str = Field(min_length=4, max_length=128)
+    # 建生时可选归入某班级（ADR-0086 后端小扩展）；归属校验在 router 层做。
+    # 不放在 UserBase：User 表模型已自显式声明 class_id，避免 SQLModel 重复字段。
+    class_id: UUID | None = None
 
 
 class UserUpdate(SQLModel):
-    """教师编辑学生资料（WF-5）：仅昵称/年级可改，账号密码锁定不编辑。
+    """教师编辑学生资料（WF-5）：仅昵称可改，账号密码锁定不编辑。
 
+    学生年级已改为仅由所属班级承载（ADR-0086 修正），不再有独立的年级字段。
     所有字段可选；仅传非空字段进行局部更新。
     """
 
     display_name: str | None = Field(default=None, max_length=64)
-    grade: int | None = Field(default=None)
 
 
 class LoginRequest(SQLModel):

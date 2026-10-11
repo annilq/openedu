@@ -26,9 +26,10 @@ class ProfileScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final app = AppTheme.colorsOf(context);
     final text = AppTheme.textOf(context);
+    // 学生年级已改由所属班级承载（ADR-0086 修正）：此处以分班状态替代原年级标签。
     final roleTag = user.isTeacher
         ? AppTags.normal('教师账号')
-        : AppTags.info('${user.grade ?? "?"}年级');
+        : AppTags.info(user.classId != null ? '已分班' : '未分班');
 
     return ListView(
       padding: const EdgeInsets.symmetric(
@@ -91,14 +92,6 @@ class ProfileScreen extends ConsumerWidget {
                 label: '角色',
                 value: user.isTeacher ? '教师' : '学生',
               ),
-              if (user.grade != null) ...[
-                _Divider(),
-                _InfoRow(
-                  icon: LucideIcons.bookOpen,
-                  label: '年级',
-                  value: '${user.grade}年级',
-                ),
-              ],
             ],
             ),
           ),

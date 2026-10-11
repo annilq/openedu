@@ -34,7 +34,7 @@ SQLite（默认零依赖）/ PostgreSQL（Docker / 云）
 | `protocol.py` | `AssistantEvent`（AG-UI 式事件信封）+ `to_sse()` | 前端按 `eventType` 分发 |
 | `tools.py` | 工具抽象与注册基类 | — |
 | `registry.py` | `discover_subagent_manifests`：扫目录自动注册 SubAgent（**新增 agent = 丢一个文件夹**） | 发现即注册，免手工登记 |
-| `router.py` | 路由：规则优先 + 启发式兜底 + 可选 LLM 分类 | 路由确定性是儿童产品硬要求 |
+| `router.py` | 路由：动作直配 → 触发词规则 → 启发式兜底/最低优先级（无第三级 LLM 兜底） | 路由确定性是儿童产品硬要求 |
 | `runtime_singleton.py` | `AgentRuntime` 单例装配点 | — |
 | `adapters/genkit.py` | **全工程唯一** `import genkit` 落点，且全部函数体内延迟导入 | 未装 genkit 也能 import 内核 |
 

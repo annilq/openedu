@@ -86,7 +86,7 @@ def _parse_xlsx(data: bytes, *, max_rows: int) -> tuple[list[str], list[tuple]]:
 
 
 def import_students_from_xlsx(
-    *, session: Session, teacher_id: UUID, data: bytes
+    *, session: Session, teacher_id: UUID, data: bytes, class_id: UUID | None = None
 ) -> StudentImportResult:
     """批量导入学生（ADR-0068 §2.2）。
 
@@ -136,6 +136,7 @@ def import_students_from_xlsx(
                 username=username,
                 display_name=display_name,
                 password=settings.STUDENT_DEFAULT_PASSWORD,
+                class_id=class_id,
             ),
             role="student",
             teacher_id=teacher_id,

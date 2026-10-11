@@ -13,7 +13,6 @@ import uuid
 from sqlmodel import select
 
 from app.db.models.task import TaskQuestion
-from app.features.tasks import service as tasks_service
 from tests.utils.user import auth_headers, register_teacher
 
 
@@ -312,23 +311,3 @@ def test_from_generated_with_reasoning_drops_it(client, db):
     for row in rows:
         dumped = row.model_dump()
         assert "reasoning" not in dumped, dumped
-
-
-def test_question_fields_whitelist_drops_reasoning():
-    """锁住 _question_fields 白名单：reasoning 必须被排除。"""
-    payload = {
-        "subject": "数学",
-        "grade": 2,
-        "knowledge_point": "加法",
-        "qtype": "calc",
-        "stem": "1+2=?",
-        "options": None,
-        "answer": "3",
-        "explanation": "1+2=3",
-        "difficulty": "easy",
-        "reasoning": "不应被采集的出题思路",
-        "ai_note": "也不该以别的名字落库",
-    }
-    fields = tasks_service._question_fields(payload)
-    assert "reasoning" not in fields
-    assert "ai_note" not in fields

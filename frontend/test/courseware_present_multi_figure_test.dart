@@ -259,7 +259,7 @@ void main() {
     await _pumpPresent(
       tester,
       courseware: _courseware(
-        // 旧 AI 起草数据把整份 SceneSpec 内嵌在 payload 里，顶层另有 scene：
+        // 历史数据把整份 SceneSpec 内嵌在 payload 里，顶层另有 scene：
         // 统一化后渲染只读顶层 scene，legacy payload 不应把它变成网格或空屏。
         _section(spec, payload: Map<String, dynamic>.from(spec)),
       ),

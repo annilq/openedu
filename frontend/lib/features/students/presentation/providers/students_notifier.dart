@@ -44,14 +44,14 @@ class ChildrenNotifier extends StateNotifier<ChildrenState> {
     required String username,
     required String password,
     required String displayName,
-    int? grade,
+    String? classId,
   }) async {
     try {
       final created = await _repo.createChild(
         username: username,
         password: password,
         displayName: displayName,
-        grade: grade,
+        classId: classId,
       );
       await loadChildren();
       return created;
@@ -61,17 +61,16 @@ class ChildrenNotifier extends StateNotifier<ChildrenState> {
     }
   }
 
-  /// 编辑学生资料（WF-5）：昵称/年级；成功返回更新后的用户并刷新列表，失败返回 null。
+  /// 编辑学生资料（WF-5）：仅昵称可改（年级已改由班级承载，ADR-0086 修正）；
+  /// 成功返回更新后的用户并刷新列表，失败返回 null。
   Future<UserModel?> updateChild({
     required String studentId,
     String? displayName,
-    int? grade,
   }) async {
     try {
       final updated = await _repo.updateChild(
         studentId: studentId,
         displayName: displayName,
-        grade: grade,
       );
       await loadChildren();
       return updated;

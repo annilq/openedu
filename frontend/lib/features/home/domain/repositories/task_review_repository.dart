@@ -2,7 +2,7 @@ import '../../../../shared/domain/models/models.dart';
 
 /// 草稿任务审核：逐题增删编辑、入库、锁定、派发、作废。
 ///
-/// 流式动作（换一题 / 整卷重生成）走
+/// AI 出题（整卷生成）走
 /// `assistant/domain/repositories/assistant_repository.dart`——那边才是 AI 能力。
 abstract class TaskReviewRepository {
   Future<TaskModel> load(String taskId);

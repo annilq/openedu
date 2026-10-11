@@ -63,7 +63,6 @@ void main() {
     username: 'dabao',
     displayName: '大宝',
     role: 'child',
-    grade: 2,
   );
 
   group('ChildrenNotifier', () {
@@ -73,7 +72,6 @@ void main() {
             username: any(named: 'username'),
             password: any(named: 'password'),
             displayName: any(named: 'displayName'),
-            grade: any(named: 'grade'),
           )).thenAnswer((_) async => dabao);
       when(() => repo.getChildren()).thenAnswer((_) async => [dabao]);
       final notifier = ChildrenNotifier(repo);
@@ -82,14 +80,12 @@ void main() {
         username: 'dabao',
         password: '1234',
         displayName: '大宝',
-        grade: 2,
       );
 
       verify(() => repo.createChild(
             username: 'dabao',
             password: '1234',
             displayName: '大宝',
-            grade: 2,
           )).called(1);
       final state = notifier.state as StudentsLoaded;
       expect(state.students.length, 1);
@@ -102,7 +98,6 @@ void main() {
             username: any(named: 'username'),
             password: any(named: 'password'),
             displayName: any(named: 'displayName'),
-            grade: any(named: 'grade'),
           )).thenThrow(Exception('username already registered'));
       final notifier = ChildrenNotifier(repo);
 
@@ -110,7 +105,6 @@ void main() {
         username: 'dabao',
         password: '1234',
         displayName: '大宝',
-        grade: 2,
       );
 
       expect(notifier.state, isA<ChildrenError>());

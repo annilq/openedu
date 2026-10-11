@@ -2,8 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kids_learn/features/courseware/domain/models/courseware_practice_block.dart';
 import 'package:kids_learn/features/courseware/domain/models/courseware_section.dart';
 
-/// 练习内容块 / 环节解析对历史 AI 起草数据的容错（修复「type List is not subtype of
-/// string」：旧数据把 practice 的 `hints` 存成字符串数组，新数据（toJson）是单串，
+/// 练习内容块 / 环节解析对历史数据的容错（修复「type List is not subtype of
+/// string」：早期起草产物把 practice 的 `hints` 存成字符串数组，新数据（toJson）是单串，
 /// 解析层两种都要吃得下，否则单条脏记录会拖垮整份课件列表）。
 void main() {
   group('CoursewarePracticeBlock.fromJson 容错', () {

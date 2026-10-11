@@ -1,15 +1,16 @@
 """课件端点（ADR-0067 切片 3）：快照 / 越权 / 环节内容块容器 / 孤儿课件 / 状态不阻塞。
 
 全部打在 REST 端点上验（ADR-0061 §U.1 教训：只测 service 会漏掉响应里根本没有
-的 key）。起草函数一律 monkeypatch 掉——本套件**不打真实模型**。
+的 key）。ADR-0085 后课件由教师**手动编辑**：新建只产**零环节空壳**，内容经
+``PUT /sections`` 整体覆盖写——本套件因此不涉及任何模型调用，也不再需要起草桩。
 
-覆盖的六条边界：
-1. 建课件把知识点的范围与名字**快照**进课件行（展示不 join）；
-2. 未配模型 → ``LLM_UNAVAILABLE`` 且**不落库**（ADR-0039 / ADR-0066 不伪造）；
-3. 列表按范围过滤 + 别人的课件读不到（归属只经 ``core.guard``）；
-4. ``PUT /sections`` 整体覆盖写；旧 kind 字段被忽略（不回显）；清空落真 SQL NULL；
-5. 知识点被删后课件**存活**且 ``kp_missing=True``（§4.1）；
-6. draft / ready 都不阻塞任何读操作（§3.2）。
+覆盖的边界：
+1. 建课件把知识点的范围与名字**快照**进课件行（展示不 join），且建出的是空壳；
+2. 列表按范围过滤 + 别人的课件读不到（归属只经 ``core.guard``）；
+3. ``PUT /sections`` 整体覆盖写；旧 kind 字段被忽略（不回显）；清空落真 SQL NULL；
+4. 知识点被删后课件**存活**且 ``kp_missing=True``（§4.1）；
+5. draft / ready 都不阻塞任何读操作（§3.2）；
+6. AI 起草端点（``POST /redraft``）已移除（ADR-0085）。
 """
 
 from __future__ import annotations
@@ -23,9 +24,8 @@ from sqlmodel import Session as DBSession
 from sqlmodel import select
 
 from app.core.db import engine
-from app.core.errors import AppErrorException, ErrCode
-from app.db.models import Courseware, CoursewareAsset, KnowledgePoint, User
-from app.features.courseware import service
+from app.core.errors import ErrCode
+from app.db.models import Courseware, KnowledgePoint, User
 from tests.utils.user import auth_headers, login, register_teacher
 
 KP_NAME = "图形的运动（轴对称）"
@@ -62,39 +62,6 @@ def _delete_kp(kp_id: uuid.UUID) -> None:
             s.commit()
 
 
-def _draft() -> list[service.CoursewareSection]:
-    """起草替身：确定性三环节（T07 去 kind 后统一内容块容器，不再带 kind）。
-
-    交互演示环节用 payload 里的 SceneSpec kind（ADR-0061 渲染器名 reflection）标识，
-    场景测试据此定位「交互演示」段。
-    """
-    return [
-        service.CoursewareSection(
-            title="生活中的对称",
-            script="这些图形有什么共同点？",
-            payload={"items": [], "prompt": "先找出共同点"},
-        ),
-        service.CoursewareSection(
-            title="判断是否轴对称",
-            script="沿这条线对折，两边能重合吗？",
-            payload={"kind": "reflection", "title": "轴对称"},
-        ),
-        service.CoursewareSection(
-            title="课堂练习",
-            script="下面哪些图形是轴对称图形？",
-            payload={"qtype": "choice", "count": 3},
-        ),
-    ]
-
-
-def _interactive(body: dict) -> dict:
-    """定位「交互演示」环节：去 kind 后靠 payload 里的 SceneSpec kind 兜底识别。"""
-    return next(
-        s for s in body["sections"]
-        if (s.get("payload") or {}).get("kind") == "reflection"
-    )
-
-
 @pytest.fixture()
 def teacher(client):
     """教师账号 + token + 一个知识点。"""
@@ -107,41 +74,25 @@ def teacher(client):
     return {"token": token, "id": teacher_id, "kp": _seed_kp(teacher_id=teacher_id)}
 
 
-@pytest.fixture()
-def no_model(monkeypatch):
-    """起草环节不可用：未配置模型（ADR-0039：无离线 mock）。"""
-
-    def _raise(**_kwargs):
-        raise AppErrorException(
-            ErrCode.LLM_UNAVAILABLE,
-            "未配置模型，无法起草课件（请在「模型管理」中添加模型并设为默认）",
-        )
-
-    monkeypatch.setattr(service, "draft_sections", _raise)
+def _create(client, token, kp_id, *, title=None, objective=None):
+    """新建课件（ADR-0085 后恒为**零环节空壳**，不调模型）。"""
+    payload: dict = {"knowledge_point_id": str(kp_id)}
+    if title is not None:
+        payload["title"] = title
+    if objective is not None:
+        payload["objective"] = objective
+    return client.post("/api/v1/courseware", headers=auth_headers(token), json=payload)
 
 
-@pytest.fixture()
-def drafted(monkeypatch):
-    """起草环节可用：返回确定性三环节，并记录调用参数。"""
-    calls: list[dict] = []
-
-    def _fake(**kwargs):
-        calls.append(kwargs)
-        return _draft()
-
-    monkeypatch.setattr(service, "draft_sections", _fake)
-    return calls
-
-
-def _create(client, token, kp_id):
-    return client.post(
-        "/api/v1/courseware",
+def _put_sections(client, token, cw_id, sections):
+    return client.put(
+        f"/api/v1/courseware/{cw_id}/sections",
         headers=auth_headers(token),
-        json={"knowledge_point_id": str(kp_id)},
+        json={"sections": sections},
     )
 
 
-def test_create_snapshots_knowledge_point_scope(client, teacher, drafted):
+def test_create_snapshots_knowledge_point_scope(client, teacher):
     """建课件：范围与知识点名从知识点行**快照**进课件行（§3.2 展示不 join）。"""
     r = _create(client, teacher["token"], teacher["kp"])
     assert r.status_code == 200, r.text
@@ -152,61 +103,35 @@ def test_create_snapshots_knowledge_point_scope(client, teacher, drafted):
     assert body["semester"] == "上学期"
     assert body["knowledge_point_id"] == str(teacher["kp"])
     assert body["kp_missing"] is False
-    assert body["section_count"] == 3
-    # T07 去 kind·contract：响应里不再含有 kind 键（旧数据读取时被忽略，不回显）。
-    assert all("kind" not in s for s in body["sections"])
-    # script 是投给学生看的提问卡（决策 15），必须原样下发
-    assert body["sections"][0]["script"] == "这些图形有什么共同点？"
-    # 起草拿到了知识点元信息（名称 / 学科 / 年级 / 学期）
-    call = drafted[0]
-    assert call["kp_name"] == KP_NAME and call["subject"] == "数学"
-    assert call["grade"] == 4 and call["semester"] == "上学期"
+    # ADR-0085：新建只产零环节空壳，内容由教师手动添加。
+    assert body["section_count"] == 0 and body["sections"] == []
 
-    # 库里确实是快照，不是 join 出来的
+    # 库里确实是快照，不是 join 出来的；空壳的 sections 是 NULL（不是空列表）。
     with DBSession(engine) as s:
         row = s.get(Courseware, uuid.UUID(body["id"]))
         assert row.kp_name == KP_NAME and row.subject == "数学"
+        assert row.sections is None
 
 
-def test_create_without_model_real_engine_path(client, teacher):
-    """不打起草桩：引擎真的解析不到模型 → ``LLM_UNAVAILABLE``（ADR-0039 无 mock 兜底）。
-
-    上面那条用例打桩只验了「失败不落库」；这条走真实的 ``build_ai_provider``，
-    钉住「未配模型」不是靠 service 里的一句 if 演出来的。
-    """
-    r = _create(client, teacher["token"], teacher["kp"])
-    assert r.status_code == 500, r.text
-    assert r.json()["code"] == ErrCode.LLM_UNAVAILABLE.value
-    assert "未配置模型" in r.json()["message"]
-
-
-def test_create_without_model_returns_llm_unavailable_and_persists_nothing(
-    client, teacher, no_model
-):
-    """未配模型：500 + ``LLM_UNAVAILABLE``，且**不落库**（不产空课件）。"""
-    r = _create(client, teacher["token"], teacher["kp"])
-    assert r.status_code == 500, r.text
-    assert r.json()["code"] == ErrCode.LLM_UNAVAILABLE.value
-    assert "未配置模型" in r.json()["message"]
-
-    listing = client.get("/api/v1/courseware", headers=auth_headers(teacher["token"]))
-    assert listing.json() == []
+def test_create_persists_objective_without_calling_model(client, teacher):
+    """教学目标 / 备注落到课件行；新建不调模型——没有「未配模型」这一失败面（ADR-0085）。"""
+    r = _create(client, teacher["token"], teacher["kp"], objective="能画出对称轴")
+    assert r.status_code == 200, r.text
     with DBSession(engine) as s:
-        rows = s.exec(
-            select(Courseware).where(Courseware.teacher_id == teacher["id"])
-        ).all()
-    assert rows == []
+        row = s.get(Courseware, uuid.UUID(r.json()["id"]))
+        assert row.objective == "能画出对称轴"
 
 
-def test_create_with_unknown_knowledge_point_is_404(client, teacher, drafted):
-    """知识点不存在 → ``COURSEWARE_KP_NOT_FOUND``，不进起草。"""
+def test_create_with_unknown_knowledge_point_is_404(client, teacher):
+    """知识点不存在 → ``COURSEWARE_KP_NOT_FOUND``，且不落库。"""
     r = _create(client, teacher["token"], uuid.uuid4())
     assert r.status_code == 404, r.text
     assert r.json()["code"] == ErrCode.COURSEWARE_KP_NOT_FOUND.value
-    assert drafted == []
+    listing = client.get("/api/v1/courseware", headers=auth_headers(teacher["token"]))
+    assert listing.json() == []
 
 
-def test_list_filters_by_scope_and_hides_other_teachers(client, teacher, drafted):
+def test_list_filters_by_scope_and_hides_other_teachers(client, teacher):
     """列表按范围过滤；别人的课件读不到（越权 404，不降级成 200 空）。"""
     other_user = f"cw_{uuid.uuid4().hex[:8]}"
     register_teacher(client, username=other_user)
@@ -250,7 +175,7 @@ def test_list_filters_by_scope_and_hides_other_teachers(client, teacher, drafted
     assert denied.json()["code"] == ErrCode.COURSEWARE_NOT_FOUND.value
 
 
-def test_replace_sections_ignores_legacy_kind_field(client, teacher, drafted):
+def test_replace_sections_ignores_legacy_kind_field(client, teacher):
     """``PUT /sections`` 整体覆盖写；T07 后环节无 kind 字段，旧 kind 输入被忽略且不回显。"""
     cw = _create(client, teacher["token"], teacher["kp"]).json()
     url = f"/api/v1/courseware/{cw['id']}/sections"
@@ -302,7 +227,7 @@ def test_replace_sections_ignores_legacy_kind_field(client, teacher, drafted):
     assert "kind" not in after["sections"][0]
 
 
-def test_replace_sections_roundtrips_script_segments(client, teacher, drafted):
+def test_replace_sections_roundtrips_script_segments(client, teacher):
     """PUT /sections 透传话术多段 + 重点（T02），GET 原样回；旧单串 script 仍兼容。"""
     cw = _create(client, teacher["token"], teacher["kp"]).json()
     url = f"/api/v1/courseware/{cw['id']}/sections"
@@ -337,7 +262,7 @@ def test_replace_sections_roundtrips_script_segments(client, teacher, drafted):
     assert got["sections"][0]["script_segments"] == seg
 
 
-def test_clearing_sections_writes_sql_null(client, teacher, drafted):
+def test_clearing_sections_writes_sql_null(client, teacher):
     """清空环节写的是**真 SQL NULL**，不是文本 ``'null'``（§3.2 none_as_null）。"""
     cw = _create(client, teacher["token"], teacher["kp"]).json()
     url = f"/api/v1/courseware/{cw['id']}/sections"
@@ -354,7 +279,7 @@ def test_clearing_sections_writes_sql_null(client, teacher, drafted):
     assert got[0] == "null"
 
 
-def test_legacy_kind_in_stored_sections_is_ignored(client, teacher, drafted):
+def test_legacy_kind_in_stored_sections_is_ignored(client, teacher):
     """T07 回归：历史课件 JSON 里带 kind 键仍能读取并演示（kind 被忽略，不破坏数据）。"""
     cw = _create(client, teacher["token"], teacher["kp"]).json()
     cw_id = uuid.UUID(cw["id"])
@@ -392,9 +317,18 @@ def test_legacy_kind_in_stored_sections_is_ignored(client, teacher, drafted):
     assert sec["script"] == "老话术"
 
 
-def test_courseware_survives_knowledge_point_deletion(client, teacher, drafted):
+def test_courseware_survives_knowledge_point_deletion(client, teacher):
     """知识点被 ADR-0064 清理后课件**存活**，``kp_missing=True``（§4.1）。"""
     cw = _create(client, teacher["token"], teacher["kp"]).json()
+    _put_sections(
+        client,
+        teacher["token"],
+        cw["id"],
+        [
+            {"title": "生活中的对称", "script": "这些图形有什么共同点？"},
+            {"title": "课堂练习", "script": "下面哪些图形是轴对称图形？"},
+        ],
+    )
     _delete_kp(teacher["kp"])
 
     got = client.get(
@@ -405,7 +339,7 @@ def test_courseware_survives_knowledge_point_deletion(client, teacher, drafted):
     assert body["kp_missing"] is True
     # 展示靠快照：名字还在，环节还在
     assert body["kp_name"] == KP_NAME
-    assert body["section_count"] == 3
+    assert body["section_count"] == 2
 
     listed = client.get(
         "/api/v1/courseware", headers=auth_headers(teacher["token"])
@@ -413,7 +347,7 @@ def test_courseware_survives_knowledge_point_deletion(client, teacher, drafted):
     assert [r["kp_missing"] for r in listed] == [True]
 
 
-def test_status_never_blocks_reads(client, teacher, drafted):
+def test_status_never_blocks_reads(client, teacher):
     """draft / ready 都不阻塞任何读操作——状态只是列表标签（§3.2）。"""
     cw = _create(client, teacher["token"], teacher["kp"]).json()
     assert cw["status"] == "draft"
@@ -451,7 +385,7 @@ def test_recent_is_null_when_no_courseware(client, teacher):
     assert r.json() is None
 
 
-def test_recent_follows_latest_update(client, teacher, drafted):
+def test_recent_follows_latest_update(client, teacher):
     """回执指向**最近更新**的那份（改过标题也要顶上来）。"""
     first = _create(client, teacher["token"], teacher["kp"]).json()
     kp2 = _seed_kp(teacher_id=teacher["id"], name="分数的初步认识", grade=5)
@@ -468,7 +402,7 @@ def test_recent_follows_latest_update(client, teacher, drafted):
     assert r.json()["id"] == first["id"]
 
 
-def test_delete_courseware(client, teacher, drafted):
+def test_delete_courseware(client, teacher):
     """删课件：再取 404。"""
     cw = _create(client, teacher["token"], teacher["kp"]).json()
     r = client.delete(
@@ -483,130 +417,12 @@ def test_delete_courseware(client, teacher, drafted):
     )
 
 
-def test_draft_failure_is_not_reported_as_missing_model(client, teacher, monkeypatch):
-    """起草失败要给**人话原因**，不许被抹成「请添加模型」（ADR-0038）。"""
-
-    def _boom(**_kwargs):
-        raise AppErrorException(ErrCode.LLM_REQUEST_FAILED, "AI 起草课件失败：模型返回超时")
-
-    monkeypatch.setattr(service, "draft_sections", _boom)
-    r = _create(client, teacher["token"], teacher["kp"])
-    assert r.status_code == 502, r.text
-    body = r.json()
-    assert body["code"] == ErrCode.LLM_REQUEST_FAILED.value
-    assert "超时" in body["message"]
-    assert "未配置模型" not in body["message"]
-
-
-def _current_draft_shape():
-    """与 ``_draft()`` 完全一致的当前稿（用于「全 unchanged」对照）。"""
-    return [
-        {
-            "title": "生活中的对称",
-            "script": "这些图形有什么共同点？",
-            "payload": {"items": [], "prompt": "先找出共同点"},
-        },
-        {
-            "title": "判断是否轴对称",
-            "script": "沿这条线对折，两边能重合吗？",
-            "payload": {"kind": "reflection", "title": "轴对称"},
-        },
-        {
-            "title": "课堂练习",
-            "script": "下面哪些图形是轴对称图形？",
-            "payload": {"qtype": "choice", "count": 3},
-        },
-    ]
-
-
-def test_redraft_diff_is_per_segment(client, teacher, drafted):
-    """``POST /redraft`` 返回逐段 diff：当前稿改过一段→modified，草稿多出的→added，
-    当前稿独有的→removed；且**不新建课件副本**（列表数不变）。"""
-    r = _create(client, teacher["token"], teacher["kp"])
-    assert r.status_code == 200, r.text
-    cw_id = r.json()["id"]
-
-    # 当前稿：把 A 的提问改了（modified），并加了一段草稿里没有的旧环节（removed）。
-    current = [
-        {
-            "title": "生活中的对称",
-            "script": "改过的提问",  # 与草稿不同 → modified
-            "payload": {},
-        },
-        {
-            "title": "旧环节",  # 草稿里没有 → removed
-            "script": "旧",
-            "payload": {"qtype": "choice"},
-        },
-    ]
-    r = client.put(
-        f"/api/v1/courseware/{cw_id}/sections",
-        headers=auth_headers(teacher["token"]),
-        json={"sections": current},
-    )
-    assert r.status_code == 200, r.text
-
-    # 重起草：draft_sections 仍返回确定性三环节 [A, B, C]。
+def test_redraft_endpoint_is_gone(client, teacher):
+    """ADR-0085：AI 起草端点已移除——不再提供逐段重起草（``POST /redraft`` → 404）。"""
+    cw = _create(client, teacher["token"], teacher["kp"]).json()
     r = client.post(
-        f"/api/v1/courseware/{cw_id}/redraft",
+        f"/api/v1/courseware/{cw['id']}/redraft",
         headers=auth_headers(teacher["token"]),
-    )
-    assert r.status_code == 200, r.text
-    diff = r.json()["diff"]
-
-    # 期望顺序：按草稿序铺 A(modified) / B(added) / C(added)，末尾收 旧环节(removed)。
-    assert [d["status"] for d in diff] == ["modified", "added", "added", "removed"]
-    assert diff[0]["current"]["title"] == "生活中的对称"
-    assert diff[0]["drafted"]["title"] == "生活中的对称"
-    assert diff[1]["status"] == "added" and diff[1]["drafted"]["title"] == "判断是否轴对称"
-    assert diff[2]["status"] == "added" and diff[2]["drafted"]["title"] == "课堂练习"
-    assert diff[3]["status"] == "removed" and diff[3]["current"]["title"] == "旧环节"
-
-    # 不新建副本：列表仍是 1 份。
-    r = client.get(
-        "/api/v1/courseware",
-        headers=auth_headers(teacher["token"]),
-        params={"knowledge_point_id": str(teacher["kp"])},
-    )
-    assert r.status_code == 200
-    assert len(r.json()) == 1
-
-
-def test_redraft_diff_unchanged_when_current_matches_draft(client, teacher, drafted):
-    """当前稿与草稿逐字一致 → 全部 unchanged（教师无需逐段翻）。"""
-    r = _create(client, teacher["token"], teacher["kp"])
-    cw_id = r.json()["id"]
-
-    r = client.put(
-        f"/api/v1/courseware/{cw_id}/sections",
-        headers=auth_headers(teacher["token"]),
-        json={"sections": _current_draft_shape()},
-    )
-    assert r.status_code == 200, r.text
-
-    r = client.post(
-        f"/api/v1/courseware/{cw_id}/redraft",
-        headers=auth_headers(teacher["token"]),
-    )
-    assert r.status_code == 200, r.text
-    diff = r.json()["diff"]
-    assert [d["status"] for d in diff] == ["unchanged", "unchanged", "unchanged"]
-    assert all(d["current"] is not None and d["drafted"] is not None for d in diff)
-
-
-def test_redraft_diff_respects_ownership(client, teacher, drafted):
-    """别人的课件读不到：重起草越权返回 404（归属只经 core.guard）。"""
-    r = _create(client, teacher["token"], teacher["kp"])
-    cw_id = r.json()["id"]
-
-    # 另一个教师
-    username = f"other_{uuid.uuid4().hex[:8]}"
-    register_teacher(client, username=username)
-    other_token = login(client, username, "pw123456").json()["access_token"]
-
-    r = client.post(
-        f"/api/v1/courseware/{cw_id}/redraft",
-        headers=auth_headers(other_token),
     )
     assert r.status_code == 404, r.text
 
@@ -630,64 +446,7 @@ def _set_kp_scenes(kp_id: uuid.UUID, scenes: list[dict] | None) -> None:
         s.commit()
 
 
-def test_create_does_not_attach_kp_scene_to_interactive_section(client, teacher, drafted):
-    """知识点配了场景，但 AI 起草环节没显式带场景 → 不自动补（演示按配置显示）。
-
-    演示页只渲染课件里**显式保存**的 ``scene``；建课件时不再把知识点默认场景
-    塞进每个交互环节，避免「我没配场景却显示了」的错觉。
-    """
-    _set_kp_scenes(teacher["kp"], [_REFLECTION_SCENE])
-    body = _create(client, teacher["token"], teacher["kp"]).json()
-    scene_section = _interactive(body)
-    assert scene_section["scene"] is None
-
-
-def test_attach_leaves_other_kinds_alone(client, teacher, drafted):
-    """非交互环节（素材画廊 / 练习）不带场景；场景只可能由 AI 在交互环节显式给。
-
-    建课件不再自动补场景，所以除起草环节自身携带外，其余环节 ``scene`` 一定为 None。
-    """
-    _set_kp_scenes(teacher["kp"], [_REFLECTION_SCENE])
-    body = _create(client, teacher["token"], teacher["kp"]).json()
-    interactive = _interactive(body)
-    others = [s for s in body["sections"] if s is not interactive]
-    assert others, "起草应含非交互环节"
-    assert all(s["scene"] is None for s in others)
-
-
-def test_no_kp_scene_means_no_scene_not_a_fabricated_one(client, teacher, drafted):
-    """知识点没配场景 → 环节就是没有场景，**不臆造**一份。"""
-    body = _create(client, teacher["token"], teacher["kp"]).json()
-    scene_section = _interactive(body)
-    assert scene_section["scene"] is None
-
-
-def test_drafted_payload_scene_is_not_overridden(client, teacher, drafted, monkeypatch):
-    """AI 起草未在顶层给 ``scene`` 时，保持 ``None``，绝不臆造或回退补一份。
-
-    演示页只渲染显式保存的 ``scene``；起草环节若 AI 没给场景，落库即 ``None``，
-    教师需在编辑器里显式关联后才会在演示中出现。
-    """
-    _set_kp_scenes(teacher["kp"], [_REFLECTION_SCENE])
-    monkeypatch.setattr(
-        service,
-        "draft_sections",
-        lambda **_k: [
-            service.CoursewareSection(
-                title="判定",
-                script="对折看看",
-                # 完整 SceneSpec（含 inputs）→ 视为 AI 已给场景
-                payload={"kind": "reflection", "inputs": [], "title": "本题的图"},
-            )
-        ],
-    )
-    body = _create(client, teacher["token"], teacher["kp"]).json()
-    scene_section = _interactive(body)
-    assert scene_section["scene"] is None
-    assert scene_section["payload"]["title"] == "本题的图"
-
-
-def test_teacher_can_clear_scene_without_it_being_refilled(client, teacher, drafted):
+def test_teacher_can_clear_scene_without_it_being_refilled(client, teacher):
     """教师显式发送 ``scene=None`` 保存 → 落库为 None，不被任何逻辑回填。
 
     课件从不在保存路径注入场景：教师「清除场景」按钮（发 ``null``）会真正生效，
@@ -719,164 +478,3 @@ def test_teacher_can_clear_scene_without_it_being_refilled(client, teacher, draf
         f"/api/v1/courseware/{cw['id']}", headers=auth_headers(teacher["token"])
     ).json()
     assert body["sections"][0]["scene"] is None
-
-
-# ── T05：AI 补充讲解·三项数据回填（素材 / 场景 / 教学目标真实入 prompt） ──
-
-
-def _seed_asset(teacher_id: uuid.UUID, kp_id: uuid.UUID) -> uuid.UUID:
-    """塞一张绑定到该知识点的真实素材，供起草候选查询（search_assets 按 kp 过滤）。"""
-    with DBSession(engine) as s:
-        asset = CoursewareAsset(
-            teacher_id=teacher_id,
-            knowledge_point_id=kp_id,
-            name="轴对称示例图.png",
-            storage_key=f"{teacher_id}/seed.png",
-            mime="image/png",
-            size_bytes=1234,
-        )
-        s.add(asset)
-        s.commit()
-        s.refresh(asset)
-        return asset.id
-
-
-def test_ai_supplement_references_real_assets_and_scenes_not_fabricated(
-    client, teacher, monkeypatch
-):
-    """T05 三项数据回填：起草前查到的真实素材 / 场景进 prompt，产出只许引用真实 id。
-
-    不打真实模型（monkeypatch ``_collect_draft`` 抓 prompt + 回一份引用了真实 /
-    编造 id 的草稿）；真实 ``draft_sections`` 仍跑——验 prompt 注入（objective +
-    真实 asset_id + 场景 kind）与「编造 id 服务端剥掉」不信任模型输出的纪律。
-    """
-    asset_id = _seed_asset(teacher["id"], teacher["kp"])
-    _set_kp_scenes(teacher["kp"], [_REFLECTION_SCENE])
-
-    captured: dict[str, object] = {}
-
-    async def _fake_collect(provider, prompt):  # noqa: ANN001 — 仅测试桩
-        captured["prompt"] = prompt
-        # 一份混了「真实引用」与「编造引用」的草稿：服务端应当只放行真实的。
-        return {
-            "sections": [
-                {
-                    "id": "",
-                    "title": "生活中的对称",
-                    "script": "这些图形有什么共同点？",
-                    "payload": {},
-                    "materials": [
-                        {"asset_id": str(asset_id), "caption": "对称图形"},
-                        {"asset_id": "fabricated-id-123", "caption": "编造的"},
-                    ],
-                    "scene": {
-                        "kind": "reflection",
-                        "title": "轴对称",
-                        "inputs": [],
-                    },
-                },
-                {
-                    "id": "",
-                    "title": "判断是否轴对称",
-                    "script": "对折重合吗？",
-                    "payload": {},
-                    "scene": {"kind": "made_up_kind", "title": "假的"},  # 编造 → 剥掉
-                },
-                {
-                    "id": "",
-                    "title": "课堂练习",
-                    "script": "练一练",
-                    "payload": {},
-                    "practice": {"qtype": "choice", "count": 3, "hints": ""},
-                },
-            ]
-        }
-
-    monkeypatch.setattr(service, "_collect_draft", _fake_collect)
-    # 绕过「未配模型」闸门：本用例不关心引擎，只关心回填与收敛。
-    monkeypatch.setattr(service, "build_ai_provider", lambda **_k: None)
-
-    objective = "能识别轴对称图形并画出对称轴"
-    r = client.post(
-        "/api/v1/courseware",
-        headers=auth_headers(teacher["token"]),
-        json={"knowledge_point_id": str(teacher["kp"]), "objective": objective},
-    )
-    assert r.status_code == 200, r.text
-    body = r.json()
-
-    # prompt 注入了三项真实依据：教学目标 + 真实素材 id + 已配置场景 kind。
-    prompt = captured["prompt"]
-    assert objective in prompt
-    assert str(asset_id) in prompt
-    assert "reflection" in prompt
-    assert "可用素材（asset_id）" in prompt
-
-    by_title = {s["title"]: s for s in body["sections"]}
-    # 真实素材引用保留，编造的 asset_id 被剥掉（只留 1 个真实素材）。
-    mats = by_title["生活中的对称"]["materials"]
-    assert len(mats) == 1
-    assert mats[0]["asset_id"] == str(asset_id)
-    # 真实场景模板保留。
-    assert by_title["生活中的对称"]["scene"]["kind"] == "reflection"
-    # 编造的场景 kind 被剥成 None。
-    assert by_title["判断是否轴对称"]["scene"] is None
-    # 练习内容块照常透传。
-    assert by_title["课堂练习"]["practice"]["qtype"] == "choice"
-    # 教学目标也落进了课件行（供后续 redraft 透传）。
-    with DBSession(engine) as s:
-        row = s.get(Courseware, uuid.UUID(body["id"]))
-        assert row.objective == objective
-
-
-def test_redraft_passes_objective_and_uses_real_candidates(client, teacher, monkeypatch):
-    """T05：``redraft_diff`` 把课件行的 objective 与知识点真实候选透传给起草。
-
-    空课件 redraft 即「AI 补充讲解」：diff 应全为 added，且 prompt 含 objective。
-    """
-    asset_id = _seed_asset(teacher["id"], teacher["kp"])
-    _set_kp_scenes(teacher["kp"], [_REFLECTION_SCENE])
-
-    # 先建一份零环节空壳（draft=False，不触发 AI）。
-    shell = client.post(
-        "/api/v1/courseware",
-        headers=auth_headers(teacher["token"]),
-        json={
-            "knowledge_point_id": str(teacher["kp"]),
-            "draft": False,
-            "objective": "能画出对称轴",
-        },
-    )
-    assert shell.status_code == 200, shell.text
-    cw_id = shell.json()["id"]
-
-    captured: dict[str, object] = {}
-
-    async def _fake_collect(provider, prompt):  # noqa: ANN001 — 仅测试桩
-        captured["prompt"] = prompt
-        return {
-            "sections": [
-                {
-                    "id": "",
-                    "title": "补充讲解",
-                    "script": "看这张图",
-                    "payload": {},
-                    "materials": [{"asset_id": str(asset_id), "caption": "图"}],
-                }
-            ]
-        }
-
-    monkeypatch.setattr(service, "_collect_draft", _fake_collect)
-    monkeypatch.setattr(service, "build_ai_provider", lambda **_k: None)
-
-    r = client.post(
-        f"/api/v1/courseware/{cw_id}/redraft",
-        headers=auth_headers(teacher["token"]),
-    )
-    assert r.status_code == 200, r.text
-    # 空课件 redraft：diff 全为 added。
-    assert [d["status"] for d in r.json()["diff"]] == ["added"]
-    # 透传了空壳存下的 objective。
-    assert "能画出对称轴" in captured["prompt"]
-    assert str(asset_id) in captured["prompt"]
-

@@ -177,7 +177,7 @@ class _MaterialKnowledgeManageViewState
 
   /// 打开课件编辑器（ADR-0067 §3.8）：从知识点行出发，进入该知识点的课件备课 / 演示。
   ///
-  /// 编辑器自己决定「已有则打开、没有则 AI 起草」，这里只负责导航。
+  /// 编辑器自己决定「已有则打开、没有则停在空态由用户新建」，这里只负责导航。
   void _openCourseware(dynamic kp) {
     if (kp.id == null) return;
     final km = ref.read(knowledgeManageProvider);

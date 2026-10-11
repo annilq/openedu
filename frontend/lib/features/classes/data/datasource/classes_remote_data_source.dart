@@ -12,4 +12,34 @@ class ClassesRemoteDataSource {
     final data = await _network.get('/classes');
     return data as List<dynamic>;
   }
+
+  /// 新建班级（ADR-0086 班级管理）。
+  Future<Map<String, dynamic>> createClass({
+    required String name,
+    required int grade,
+  }) async {
+    final data = await _network.post(
+      '/classes',
+      body: {'name': name, 'grade': grade},
+    );
+    return data as Map<String, dynamic>;
+  }
+
+  /// 重命名 / 改年级（ADR-0086）。
+  Future<Map<String, dynamic>> updateClass(
+    String id, {
+    required String name,
+    required int grade,
+  }) async {
+    final data = await _network.patch(
+      '/classes/$id',
+      body: {'name': name, 'grade': grade},
+    );
+    return data as Map<String, dynamic>;
+  }
+
+  /// 删除班级：仅置空学生 class_id（ADR-0068/0086）。
+  Future<void> deleteClass(String id) async {
+    await _network.delete('/classes/$id');
+  }
 }

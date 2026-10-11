@@ -139,6 +139,9 @@ class _FakeClasses extends ClassesRepository {
   Future<List<ClassModel>> getClasses() async => [
         ClassModel(id: 'c1', name: '一班', grade: 4, studentCount: 8),
       ];
+
+  @override
+  dynamic noSuchMethod(Invocation i) => throw UnimplementedError();
 }
 
 class _FakeStudents extends StudentsRepository {
@@ -147,7 +150,8 @@ class _FakeStudents extends StudentsRepository {
           {required String username,
           required String password,
           required String displayName,
-          int? grade}) async =>
+          int? grade,
+          String? classId}) async =>
       UserModel(
           id: 's', username: username, displayName: displayName, role: 'child');
   @override
@@ -170,7 +174,9 @@ class _FakeStudents extends StudentsRepository {
           {required String? classId, required List<String> studentIds}) async {}
   @override
   Future<StudentImportResultModel> importStudents(
-          {required List<int> bytes, required String filename}) async =>
+          {required List<int> bytes,
+          required String filename,
+          String? classId}) async =>
       const StudentImportResultModel(created: 0, skipped: 0, errors: []);
   @override
   Future<Uint8List> downloadImportTemplate() async => Uint8List(0);
