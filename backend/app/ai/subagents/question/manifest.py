@@ -31,8 +31,7 @@ MANIFEST = {
     # 优先级竞争。
     # - task_generate：客户端结构化出题（req.action）。
     # - quiz_generate：判断题闭环的出题段（T07）——同走出题助手（拿检索/学科提示/溯源/
-    #   工具信封），但由 assistant service 剥离答案、写待判定态。与课件练习出题的
-    #   ``courseware_generate``（归 guide）是两个独立键，不得拍平。
+    #   工具信封），但由 assistant service 剥离答案、写待判定态。
     "actions": ["task_generate", "quiz_generate"],
     "skills": ["question_sop"],
 }

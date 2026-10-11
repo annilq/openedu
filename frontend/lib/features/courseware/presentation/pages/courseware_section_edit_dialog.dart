@@ -15,7 +15,6 @@ import '../../../../shared/widgets/app_toast.dart';
 import '../../domain/models/courseware_section.dart';
 import '../../providers/courseware_provider.dart';
 import '../widgets/section_material_picker.dart';
-import '../widgets/section_practice_edit_block.dart';
 import '../widgets/section_script_segments_editor.dart';
 import 'section_scene_association_block.dart';
 import 'section_scene_figures_picker.dart';
@@ -344,12 +343,6 @@ class _SectionEditDialogState extends ConsumerState<_SectionEditDialog> {
                           ),
                         ],
                       const SizedBox(height: AppSpacing.lg),
-                      // 课堂练习（T06：第四可选内容块，与素材 / 场景并列）。
-                      SectionPracticeEditBlock(
-                        practice: _draft.practice,
-                        onChanged: (p) =>
-                            setState(() => _draft = _draft.copyWith(practice: p)),
-                      ),
                     ],
                   ),
                 ),

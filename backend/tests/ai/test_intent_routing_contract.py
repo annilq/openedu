@@ -60,9 +60,7 @@ def test_match_action_helper():
 # （有请求方但没在清单里声明）」的显式期望集合（spec L121 硬要求）。新增动作键必须
 # 同时在 manifest 与本表各加一行；只加其一，本契约测试即失败。
 _EXPECTED_ACTION_OWNERS: dict[str, str] = {
-    # 请求方：课件练习「出题」方向（service._build_intent_signal；文本分类确为 question 时）
-    "courseware_generate": "guide",
-    # 请求方：课件练习「提示」方向（答错求提示，service._build_intent_signal）
+    # 请求方：课件里「提示」方向（答错求提示，service._build_intent_signal）
     "courseware_hint": "tutor",
     # 请求方：待判定态消费后的判定/讲解（service._build_intent_signal）
     "quiz_judge": "tutor",
@@ -163,16 +161,6 @@ def test_decide_unknown_action_falls_back_to_text_routing():
 
 
 # ── T06：课件上下文 / 待判定态定向迁进信号（各有独立动作键） ──
-def test_decide_courseware_generate_routes_to_guide():
-    """课件练习「出题」→ 任务引导（引导到页面），**不是**出题助手（不出卡）。"""
-    decision = asyncio.run(
-        _decide(IntentSignal(text="", action="courseware_generate"), role="teacher")
-    )
-    assert decision.business == "guide"
-    assert decision.name == "任务引导"
-    assert decision.extra.get("routed_by") == "action"
-
-
 def test_decide_courseware_hint_routes_to_tutor():
     """课件练习「提示」→ 伴学答疑。"""
     decision = asyncio.run(
@@ -201,45 +189,6 @@ def test_decide_quiz_generate_routes_to_question():
     assert decision.business == "question"
     assert decision.name == "出题助手"
     assert decision.extra.get("routed_by") == "action"
-
-
-def test_quiz_generate_is_distinct_from_courseware_generate():
-    """判断题出题与课件练习出题是两个独立键：前者出卡（question），后者引导（guide）。
-
-    同「两种出题不得拍平」的防回归——键若拍平，判断题闭环会跑到课件大屏去。
-    """
-    manifests = AgentRuntime.discover().manifests
-    quiz = asyncio.run(
-        _decide(IntentSignal(text="", action="quiz_generate"), role="teacher")
-    )
-    courseware = asyncio.run(
-        _decide(IntentSignal(text="", action="courseware_generate"), role="teacher")
-    )
-    assert quiz.business == "question"
-    assert courseware.business == "guide"
-    assert "quiz_generate" not in manifests["guide"].actions
-
-
-def test_two_generate_intents_have_independent_action_keys():
-    """两种「出题」语义不得拍平：课件方向归 guide，助手方向归 question，各持独立动作键。
-
-    这是最难发现的那类回归——功能照常跑，只是去错了地方。用**两个不同的键**把它钉死。
-    """
-    manifests = AgentRuntime.discover().manifests
-    courseware = asyncio.run(
-        _decide(IntentSignal(text="", action="courseware_generate"), role="teacher")
-    )
-    assistant = asyncio.run(
-        _decide(IntentSignal(text="", action="task_generate"), role="teacher")
-    )
-    assert courseware.business == "guide"
-    assert assistant.business == "question"
-    assert courseware.business != assistant.business
-    # 键本身也不可互相包含：课件键只归 guide，助手键只归 question。
-    assert "courseware_generate" in manifests["guide"].actions
-    assert "courseware_generate" not in manifests["question"].actions
-    assert "task_generate" in manifests["question"].actions
-    assert "task_generate" not in manifests["guide"].actions
 
 
 # ── 顺序无关：打乱清单顺序结果不变 ──

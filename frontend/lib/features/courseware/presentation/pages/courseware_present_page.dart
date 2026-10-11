@@ -196,7 +196,6 @@ class _CoursewarePresentPageState
                           child: PresentStage(
                             key: ValueKey(index),
                             section: courseware.sections[index],
-                            courseware: courseware,
                           ),
                         ),
                       ),
