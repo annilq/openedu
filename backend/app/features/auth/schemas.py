@@ -9,6 +9,9 @@ from app.db.models import UserBase
 
 class UserCreate(UserBase):
     password: str = Field(min_length=4, max_length=128)
+    # 建生时可选归入某班级（ADR-0086 后端小扩展）；归属校验在 router 层做。
+    # 不放在 UserBase：User 表模型已自显式声明 class_id，避免 SQLModel 重复字段。
+    class_id: UUID | None = None
 
 
 class UserUpdate(SQLModel):
