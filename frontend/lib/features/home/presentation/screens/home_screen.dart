@@ -147,6 +147,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void _onNavigateToAddStudent([String? classId, String? className]) =>
       _go(AddStudentPage(classId: classId, className: className));
 
+  /// 班内新建学生后的回落页：由班级下钻页发起时回该班下钻页，否则回概览。
+  /// 单一出口，避免 [AddStudentPage] 的 onSaved / onBack 各自重复三元。
+  TeacherPage _addStudentReturnPage(AddStudentPage page) =>
+      page.classId != null && page.className != null
+          ? ClassStudentsPage(page.classId!, page.className!)
+          : const OverviewPage();
+
   /// 切换学生端 Tab：改变 IndexedStack 索引，并在该页「变为可见」时重新拉取最新数据。
   ///
   /// 关键修复：学生端所有 Tab 被同一 [IndexedStack] 常驻挂载，[initState] 只在 App
@@ -193,12 +200,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       AddStudentPage() => StudentFormScreen(
           mode: ChildFormMode.create,
           classId: page.classId,
-          onSaved: (saved) => _go(page.classId != null && page.className != null
-              ? ClassStudentsPage(page.classId!, page.className!)
-              : const OverviewPage()),
-          onBack: () => _go(page.classId != null && page.className != null
-              ? ClassStudentsPage(page.classId!, page.className!)
-              : const OverviewPage()),
+          onSaved: (_) => _go(_addStudentReturnPage(page)),
+          onBack: () => _go(_addStudentReturnPage(page)),
         ),
       EditStudentPage(child: final child) => StudentFormScreen(
           mode: ChildFormMode.edit,

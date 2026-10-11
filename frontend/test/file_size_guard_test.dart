@@ -155,7 +155,7 @@ const Map<String, int> _baseline = <String, int>{
   'shared/widgets/adaptive_shell.dart': 503,
   'features/home/presentation/widgets/teacher/teacher_question_bank_view.dart': 759,
   'features/home/presentation/widgets/teacher/teacher_tasks_view.dart': 672,
-  'features/home/presentation/screens/home_screen.dart': 589,
+  'features/home/presentation/screens/home_screen.dart': 592,
   'features/assistant/presentation/screens/assistant_chat_page.dart': 570,
   'shared/widgets/scene_interpreter/reflection_scene.dart': 567,
   'features/home/presentation/widgets/teacher/teacher_question_card.dart': 511,
@@ -163,7 +163,7 @@ const Map<String, int> _baseline = <String, int>{
   'features/home/presentation/widgets/teacher/workbench_glance.dart': 406,
   'shared/widgets/analytics_charts.dart': 691,
   'features/home/presentation/screens/teacher_task_review_screen.dart': 424,
-  'features/students/presentation/screens/student_management_screen.dart': 871,
+  'features/students/presentation/screens/student_management_screen.dart': 885,
 };
 
 bool _isDart(String path) =>

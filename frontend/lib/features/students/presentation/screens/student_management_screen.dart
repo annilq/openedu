@@ -323,7 +323,8 @@ class _StudentManagementScreenState
               onDownloadTemplate:
                   _downloadingTemplate ? null : _downloadTemplate,
               titleOverride: widget.className != null
-                  ? '${widget.className} · ${students.length} 人'
+                  ? '${widget.className} · '
+                      '${_classHeadcount(state, widget.classId) ?? students.length} 人'
                   : null,
               onBack: widget.onBack,
             ),
@@ -664,7 +665,7 @@ class _ClassPicker extends StatelessWidget {
                       if (classes.isEmpty)
                         Padding(
                           padding: const EdgeInsets.all(AppSpacing.md),
-                          child: Text('还没有班级，请先在侧栏新建班级。',
+                          child: Text('还没有班级，请先在「班级管理」里新建。',
                               style: text.labelMedium?.copyWith(
                                 color: scheme.onSurfaceVariant,
                               )),
@@ -868,4 +869,17 @@ class _StudentTile extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 班级真实人数（[ClassModel.studentCount]），用于下钻标题展示「N 人」。
+///
+/// 下钻页 [getStudents] 会按关键词过滤，[state.students] 是过滤后的子集；
+/// 标题里的「N 人」应按规范表示班级规模，故从 [StudentManagementLoaded.classes]
+/// 取对应班级的 headcount，搜索时也不随之缩水。找不到该班级时回退到列表长度。
+int? _classHeadcount(StudentManagementState state, String? classId) {
+  if (classId == null || state is! StudentManagementLoaded) return null;
+  for (final c in state.classes) {
+    if (c.id == classId) return c.studentCount;
+  }
+  return null;
 }

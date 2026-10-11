@@ -78,7 +78,7 @@ class _ClassFormState extends State<_ClassForm> {
           AppPickerField<int>(
             label: '年级',
             values: _grades,
-            labels: _grades.map((g) => '$g 年级').toList(),
+            labels: _grades.map(_gradeLabel).toList(),
             value: _grade,
             onChanged: (g) => setState(() => _grade = g),
           ),

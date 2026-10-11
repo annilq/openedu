@@ -21,6 +21,9 @@ import '../providers/class_management_provider.dart';
 
 part 'class_management_form.dart';
 
+/// `int` 年级 → 「N 年级」展示文案（ADR-0086：年级统一由所属班级承载，1–9）。
+String _gradeLabel(int grade) => '$grade 年级';
+
 /// 班级管理页（ADR-0086 容器）。
 ///
 /// 班级卡片列表（名称 + 年级 + 人数 + 下钻箭头）；顶部「+ 新建班级」内联表单；
@@ -72,6 +75,29 @@ class _ClassManagementScreenState extends ConsumerState<ClassManagementScreen> {
     }
   }
 
+  Widget _buildInlineCreateForm() {
+    return Padding(
+      padding:
+          const EdgeInsets.fromLTRB(AppSpacing.md, 0, AppSpacing.md, AppSpacing.sm),
+      child: _ClassForm(
+        initialName: '',
+        initialGrade: 1,
+        onSubmit: (name, grade) async {
+          try {
+            await ref
+                .read(classManagementProvider.notifier)
+                .createClass(name: name, grade: grade);
+            if (mounted) setState(() => _creating = false);
+          } catch (e) {
+            // ignore: use_build_context_synchronously
+            if (mounted) AppToast.error(context, e);
+          }
+        },
+        onCancel: () => setState(() => _creating = false),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(classManagementProvider);
@@ -89,27 +115,7 @@ class _ClassManagementScreenState extends ConsumerState<ClassManagementScreen> {
               total: classes.length,
               onToggleCreate: () => setState(() => _creating = !_creating),
             ),
-            if (_creating)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.md, 0, AppSpacing.md, AppSpacing.sm),
-                child: _ClassForm(
-                  initialName: '',
-                  initialGrade: 1,
-                  onSubmit: (name, grade) async {
-                    try {
-                      await ref
-                          .read(classManagementProvider.notifier)
-                          .createClass(name: name, grade: grade);
-                      if (mounted) setState(() => _creating = false);
-                    } catch (e) {
-                      // ignore: use_build_context_synchronously
-                      if (mounted) AppToast.error(context, e);
-                    }
-                  },
-                  onCancel: () => setState(() => _creating = false),
-                ),
-              ),
+            if (_creating) _buildInlineCreateForm(),
             Expanded(
               child: _Body(
                 state: state,
@@ -288,7 +294,7 @@ class _ClassCard extends StatelessWidget {
                           ),
                           const SizedBox(height: AppSpacing.xs2),
                           Text(
-                            '${cls.grade} 年级 · ${cls.studentCount} 人',
+                            '${_gradeLabel(cls.grade)} · ${cls.studentCount} 人',
                             style: text.labelSmall?.copyWith(
                               color: scheme.onSurfaceVariant,
                             ),
