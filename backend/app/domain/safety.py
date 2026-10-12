@@ -92,3 +92,12 @@ class StudentSafety(Safety):
     def check_input(self, text: str) -> SafetyResult:
         v = check_input(text)
         return SafetyResult(safe=v.safe, reason=v.reason)
+
+    def check_output(self, text: str) -> SafetyResult:
+        """输出闸门：基类默认放行会让 ``Message.output_safe`` 恒为真（ADR-0088）。
+
+        伴学的产物要落 ``output_safe``，就必须真的扫一遍敏感词——沿用 ``check_output``
+        的确定性规则，与 ``app.domain.tutor`` 的口径同源。
+        """
+        v = check_output(text)
+        return SafetyResult(safe=v.safe, reason=v.reason)

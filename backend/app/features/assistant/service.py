@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncIterator
+from time import perf_counter
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -59,9 +60,13 @@ from app.features.assistant.schemas import (
     AssistantConversationResp,
     SuggestedAction,
 )
+from app.features.assistant.trace import elapsed_ms, json_text, usage_of
 from app.features.tutor.repository import create_tutor_log
 
 log = logging.getLogger(__name__)
+
+# 输入被拒但闸门未给出原因时的兜底文案（``INPUT_UNSAFE`` 帧只带 code 不带 reason）。
+_BLOCK_REASON_GATE = "输入被安全闸门拦截"
 
 
 def _student_grade(session, user) -> int:
@@ -117,6 +122,23 @@ async def _summarize_dropped(provider, dropped: list[dict]) -> str | None:
 
 # 知识点上下文解析（含 quiz 出题）已下沉到 question 子代理（读取 ctx.extra 的
 # knowledge_point_id / courseware 字段自行解析），service 不再持有出题侧的 KP 解析。
+
+
+def _pair_call(
+    pending: list[tuple[str | None, Message]], tool: str | None
+) -> Message | None:
+    """取出与 ``ev.tool`` 配对的 tool_call 行（ADR-0088 步级 usage）。
+
+    runtime 把一次工具调用的 ``TOOL_CALL`` / ``TOOL_RESULT`` 紧邻 yield，故按名精确
+    匹配即可；同名缺失（label 覆盖 / 帧序非常规）时回落最早未配对的一条，宁可配对
+    错位也不丢整条成本。
+    """
+    if not pending:
+        return None
+    for i, (name, msg) in enumerate(pending):
+        if name == tool:
+            return pending.pop(i)[1]
+    return pending.pop(0)[1]
 
 
 def _surface_of(role: Role) -> str:
@@ -270,6 +292,18 @@ async def chat(
     safety = StudentSafety() if role == Role.STUDENT else None
     deps = RuntimeDeps(provider=provider, retriever=retriever, safety=safety)
 
+    # 安全判定（ADR-0088）：学生面走 StudentSafety，教师面 ``safety`` 为 None → 一律放行。
+    # 与 agent_core 路由里的输入闸门是同一个确定性扫描，重复调用无副作用。
+    verdict = safety.check_input(message) if safety is not None else None
+    input_safe = verdict.safe if verdict is not None else True
+    input_reason = None if verdict is None or verdict.safe else verdict.reason
+    # 输入侧标记同一轮内每步共用一份：排障时要能定位「哪一步属于被拦的这次运行」。
+    input_flags = {
+        "input_safe": input_safe,
+        "blocked": not input_safe,
+        "block_reason": input_reason,
+    }
+
     # ── 会话定位（先于路由） ──
     # 待判定态定向要在信号归一化阶段知道「这个会话是否在待判定」，故先把既有会话解析
     # 出来（只读归属校验）。**新建**会话仍留在路由之后——它的 ``kind`` 取自路由决策。
@@ -293,7 +327,9 @@ async def chat(
     # 归属由 SubAgent 清单声明，``decide`` 一次裁决即为最终结果，不再「路由算完再改判业务」。
     # 动作命中但当前角色不可见 → 显式 action_not_visible，见下方转 403。
     signal = IntentSignal(text=message, action=req.action)
+    _routing_started = perf_counter()
     decision = await rt.decide(signal, role=_surface_of(role), deps=deps)
+    routing_ms = elapsed_ms(_routing_started)
     # 动作不可见（如学生打教师专属动作）：**显式 403**（spec 硬约束），**不要**静默回落成
     # 另一个业务的答非所问，也不要退化成 HTTP 200 + 错误帧。``chat`` 是普通 async 函数
     # （返回迭代器），端点先 ``await`` 它再包 ``StreamingResponse``，故此处抛出会在建流前
@@ -324,6 +360,7 @@ async def chat(
                 role="user",
                 step="input",
                 content=message,
+                **input_flags,
             )
         )
         session.commit()
@@ -342,7 +379,14 @@ async def chat(
         )
         session.add(conversation)
         session.add(
-            Message(conversation_id=conv_id, turn=0, role="user", step="input", content=message)
+            Message(
+                conversation_id=conv_id,
+                turn=0,
+                role="user",
+                step="input",
+                content=message,
+                **input_flags,
+            )
         )
         session.commit()
         # 无 session_id：兼容客户端自带历史（兜底）
@@ -376,6 +420,15 @@ async def chat(
         },
     )
 
+    # ── 可观测取值（ADR-0088 §2.5）：步级 model / usage 的口径在此定一次 ──
+    # model 记**解析后**的引擎模型（真正被调的那个），未配置模型时回退请求显式值。
+    model_id = engine.model if engine is not None else req.model
+    # 生成步 prompt 侧的 token 估算来源：本轮提问 + 拼入的可见历史。
+    # SOP / 工具 schema 不在本层组装，故不计入——估算只保证量级可用，不冒充模型方回传。
+    prompt_text = message + "".join(
+        (h.get("content") or "") for h in (history or []) if isinstance(h, dict)
+    )
+
     # ── 出题 / 判定闭环（ADR-0089，子代理化） ──
     # 判断题的出题与判定不再有服务端分支：question 子代理从文本/知识点上下文自主决定
     # 是否出 judge 规格的题卡（含答案），题卡原样落对话历史、前端按 `judge` 标记隐藏答案
@@ -393,6 +446,12 @@ async def chat(
         # 排到第二轮的提问之前，模型拿到的是倒置的上下文。
         turn = next_turn(session, conv_id)
         blocked_flag = False
+        # 步级计时（ADR-0088）：``boundary`` 是上一个步边界，``gen_started`` 是首个
+        # 正文/卡片的到达时刻——生成步的耗时从它起算，而不是从收尾时刻（那样恒为 0）。
+        boundary = perf_counter()
+        gen_started: float | None = None
+        # 已落库但尚未配到结果帧的 tool_call 行（工具名 → 行）。
+        pending_calls: list[tuple[str | None, Message]] = []
 
         # 复用预航班决策（decision），避免重复路由；run 返回事件流。
         stream: AsyncIterator[AssistantEvent] = rt.run(
@@ -413,6 +472,8 @@ async def chat(
                     role="system",
                     step="routing",
                     content=decision.name or decision.business,
+                    latency_ms=routing_ms,
+                    **input_flags,
                 )
             )
             turn += 1
@@ -421,18 +482,30 @@ async def chat(
             async for ev in stream:
                 # 持久化（边流边记）
                 if ev.eventType == EVENT_TOOL_CALL:
-                    tool_msgs.append(
-                        Message(
-                            conversation_id=conv_id,
-                            turn=turn,
-                            role="tool",
-                            step="tool_call",
-                            content=ev.label or ev.tool or "",
-                            payload=ev.args,
-                        )
+                    call = Message(
+                        conversation_id=conv_id,
+                        turn=turn,
+                        role="tool",
+                        step="tool_call",
+                        content=ev.label or ev.tool or "",
+                        payload=ev.args,
+                        model=model_id,
+                        latency_ms=elapsed_ms(boundary),
+                        **input_flags,
                     )
+                    tool_msgs.append(call)
+                    pending_calls.append((ev.tool, call))
+                    boundary = perf_counter()
                     turn += 1
                 elif ev.eventType == EVENT_TOOL_RESULT:
+                    # 一次工具调用 = 一条可计费行：token 记在**调用**步（结果步只是
+                    # 结果回灌，重复记账会让会话总成本翻倍）。
+                    paired = _pair_call(pending_calls, ev.tool)
+                    if paired is not None:
+                        paired.usage = usage_of(
+                            prompt=json_text(paired.payload),
+                            completion=json_text(ev.result),
+                        )
                     tool_msgs.append(
                         Message(
                             conversation_id=conv_id,
@@ -441,16 +514,24 @@ async def chat(
                             step="tool_result",
                             content=ev.tool or "",
                             payload={"result": ev.result},
+                            model=model_id,
+                            latency_ms=elapsed_ms(boundary),
+                            **input_flags,
                         )
                     )
+                    boundary = perf_counter()
                     turn += 1
                 elif ev.eventType == EVENT_ASSISTANT_MESSAGE and ev.text:
+                    if gen_started is None:
+                        gen_started = perf_counter()
                     final_text += ev.text
                 elif ev.eventType == EVENT_DATA and ev.data:
                     # DATA 帧整帧落库：`{type(判别键), result(载荷)}` 一起存。
                     # 只存 result 会丢掉种类——与前端 fold 丢弃 `data.type` 是同一类
                     # 缺陷（ADR-0042）：落库的 payload 必须自描述，否则将来做历史回放
                     # 时无法把卡片分派回正确的渲染器。
+                    if gen_started is None:
+                        gen_started = perf_counter()
                     cards.append(ev.data)
                 elif ev.eventType == EVENT_ERROR:
                     conv_status = "error"
@@ -465,6 +546,13 @@ async def chat(
             for m in tool_msgs:
                 session.add(m)
             if final_text or cards:
+                # 输出闸门（学生面）：ADR-0088 要求 ``output_safe`` 写实，故过一遍
+                # ``check_output``；教师面 ``safety`` 为 None → 一律放行。
+                out_verdict = (
+                    safety.check_output(final_text) if safety is not None else None
+                )
+                output_safe = out_verdict.safe if out_verdict is not None else True
+                output_reason = None if output_safe else out_verdict.reason
                 session.add(
                     Message(
                         conversation_id=conv_id,
@@ -473,6 +561,22 @@ async def chat(
                         step="output",
                         content=final_text,
                         payload={"cards": cards} if cards else None,
+                        model=model_id,
+                        usage=usage_of(
+                            prompt=prompt_text,
+                            completion=final_text + json_text(cards),
+                        ),
+                        latency_ms=elapsed_ms(
+                            gen_started if gen_started is not None else boundary
+                        ),
+                        input_safe=input_safe,
+                        output_safe=output_safe,
+                        blocked=bool(blocked_flag) or not input_safe or not output_safe,
+                        block_reason=(
+                            input_reason
+                            or output_reason
+                            or (_BLOCK_REASON_GATE if blocked_flag else None)
+                        ),
                     )
                 )
             conversation.status = conv_status
