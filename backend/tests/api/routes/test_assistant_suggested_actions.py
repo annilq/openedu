@@ -2,7 +2,7 @@
 
 不接 LLM：目录是服务端静态装配。覆盖：
 - 全局目录（不带 knowledge_point_id）：教师 4 项，导航标签为「看看孩子错题」。
-- 知识点目录（带归属通过的 id）：叠加知识点动作（含 quiz 判断题），共 7 项。
+- 知识点目录（带归属通过的 id）：叠加知识点动作（含判断题 prompt），共 7 项。
 - 知识点 id 未知 / 查不到：回落全局目录（不抛错）。
 """
 import uuid
@@ -31,11 +31,11 @@ def test_suggested_actions_global_for_teacher(client, db):
     assert len(actions) == 4
     labels = [a["label"] for a in actions]
     assert "看看孩子错题" in labels
-    assert all(a["quiz"] is False for a in actions)
+    assert all(a["payload"] for a in actions)
 
 
 def test_suggested_actions_with_owned_kp_prepend(client, db):
-    """带归属通过的知识点 id：前 3 项为知识点动作，共 7 项，判断题动作 quiz=true。"""
+    """带归属通过的知识点 id：前 3 项为知识点动作，共 7 项，判断题动作走自然语言 prompt。"""
     r = register_teacher(client, username="sa_kp_teacher")
     token = r.json()["access_token"]
     tid = _teacher_id(db, "sa_kp_teacher")
@@ -59,7 +59,7 @@ def test_suggested_actions_with_owned_kp_prepend(client, db):
     assert labels[:3] == ["举几个生活例子", "出一道判断题", "讲解这个知识点"]
 
     quiz = [a for a in actions if a["label"] == "出一道判断题"][0]
-    assert quiz["kind"] == "prompt" and quiz["quiz"] is True
+    assert quiz["kind"] == "prompt" and "判断题" in quiz["payload"]
     assert "轴对称" in quiz["payload"]
 
 
@@ -76,4 +76,4 @@ def test_suggested_actions_unknown_kp_falls_back(client, db):
     assert resp.status_code == 200, resp.text
     actions = resp.json()
     assert len(actions) == 4
-    assert all(a["quiz"] is False for a in actions)
+    assert all(a["payload"] for a in actions)

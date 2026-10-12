@@ -2,7 +2,7 @@
 
 目录是服务端静态装配（零延迟、可控、可单测），不靠 LLM。覆盖：
 - 全局目录（无知识点 id）：角色分叉的导航标签与 prompt / navigate 分野。
-- 知识点目录（带 id 且归属通过）：叠加知识点动作（含 quiz 判断题），且行内插值知识点名。
+- 知识点目录（带 id 且归属通过）：叠加知识点动作（含判断题 prompt），且行内插值知识点名。
 - 知识点 id 越权 / 查不到：回落全局目录（不抛错、不泄他人知识点）。
 """
 import uuid
@@ -55,11 +55,11 @@ def test_global_actions_role_fork(db):
     # 两条线都只有 1 个 navigate 动作，payload 是既有 ShellDestination 枚举。
     nav = [a for a in student if a.kind == "navigate"]
     assert len(nav) == 1 and nav[0].payload == "teacher_task_list"
-    assert all(a.quiz is False for a in student)
+    assert all(a.payload for a in student)
 
 
 def test_kp_actions_prepend_when_owned(db):
-    """带知识点 id 且归属通过：前 3 项是知识点动作（含 quiz 判断题），后接全局能力。"""
+    """带知识点 id 且归属通过：前 3 项是知识点动作（含判断题 prompt），后接全局能力。"""
     tid = uuid.uuid4()
     kp = _make_kp(db, teacher_id=tid, name="轴对称")
 
@@ -74,7 +74,8 @@ def test_kp_actions_prepend_when_owned(db):
 
     by_label = _by_label(actions)
     quiz_action = by_label["出一道判断题"]
-    assert quiz_action.kind == "prompt" and quiz_action.quiz is True
+    # 判断题走自然语言入口（ADR-0089）：prompt 文本自含「判断题」，由出题子代理自主判定。
+    assert quiz_action.kind == "prompt" and "判断题" in quiz_action.payload
     # 知识点动作 prompt 内插值了知识点名。
     assert "轴对称" in quiz_action.payload
     assert "轴对称" in by_label["举几个生活例子"].payload

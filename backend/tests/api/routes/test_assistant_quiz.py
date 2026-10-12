@@ -1,14 +1,12 @@
-"""ADR-0072 / T07 判断题闭环：端到端（经 SSE 端点）单测。
+"""ADR-0089 判断题闭环：端到端（经 SSE 端点）单测。
 
-覆盖：
+「答案进历史」形态，服务端不再有出题/判定分支：
 
-- 出题（``quiz=true`` + 课件上下文）经**运行时**（出题助手）出判断题：SSE 出现
-  ``USER_MESSAGE`` + 两条路由 ``THINKING``（旧直连管线没有这些帧），题卡的答案 / 解析
-  已剥离（不提前泄题），正确答案落 ``pending_quiz``。
-- 续接同一会话作答 → 待判定态被消费，信号归一化定向 ``quiz_judge``（→tutor），题目 +
-  正确答案随 ctx.extra 交给模型（判定与讲解都由 LLM 产出，服务端不留确定性分支）。
-
-同时锁定 SSE 序列化收口（chat 的 quiz 分支必须 yield ev.to_sse()，而非裸对象）。
+- 出题：纯文本（含「判断题」）+ 课件上下文 → **文本路由**落到出题助手（不再有
+  ``quiz_generate`` 动作键 / ``quiz=true`` 旗标）→ 题卡**连答案一起**下发并落库
+  （不再剥离、不再写 ``pending_quiz``）。
+- 判定：续接同一会话作答 → 由 tutor 承接；题目与答案经**对话历史**（题卡渲染进
+  assistant content）进入模型上下文，判定与讲解都由 LLM 产出。
 """
 import json
 import uuid
@@ -24,7 +22,7 @@ from agent_core.protocol import (
     user_message,
 )
 from agent_core.runtime import RouteDecision
-from app.db.models import Conversation, User
+from app.db.models import Conversation, Message, User
 from app.db.models.material import KnowledgePoint
 from tests.utils.user import auth_headers, register_teacher
 
@@ -43,13 +41,29 @@ _KNOWN_FRAME_TYPES = {
     "DONE",
 }
 
+# 出题助手产出的判断题卡（judge=True，**含答案**）：原样下发 / 落库。
+_STUB_CARD = {
+    "subject": "数学",
+    "grade": 4,
+    "knowledge_point": "轴对称",
+    "qtype": "choice",
+    "stem": "平行四边形是轴对称图形",
+    "options": ["对", "错"],
+    "answer": "错",
+    "explanation": "平行四边形两组对边平行且相等，但不是轴对称图形。",
+    "reasoning": "先确认考查点",
+    "difficulty": "easy",
+    "semester": "下学期",
+    "judge": True,
+}
+
 
 def _parse_sse(text):
     out = []
     for line in text.split("\n"):
         line = line.strip()
         if line.startswith("data: "):
-            out.append(json.loads(line[len("data: "):]))
+            out.append(json.loads(line[len("data: ") :]))
     return out
 
 
@@ -79,11 +93,46 @@ def _stream(client, token, body):
     return status, events
 
 
-def test_quiz_chat_runs_via_runtime_and_strips_question_card(client, db):
-    """出题经运行时（出题助手）：SSE 出现 USER_MESSAGE + 路由 THINKING，题卡剥离答案/解析。
+class _JudgeLoopRuntime:
+    """桩 runtime：出题轮产出含答案的判断题卡，作答轮定向 tutor 并记录历史。
 
-    真实 runtime + 确定性替身 LLM：题卡由出题 subagent 产出（与普通出题同一路径），
-    故断言的「经运行时」证据（用户消息帧 / 路由思考帧）真实反映编排形态。
+    ADR-0089 起定向不再有 quiz_generate / quiz_judge 动作键：出题轮按文本路由到
+    question，作答轮（「对 / 错 / 不会」）落到 tutor，判定依据是对话历史里的题卡。
+    """
+
+    def __init__(self) -> None:
+        self.business = None
+        self.extra = None
+        self.history = None
+
+    async def decide(self, signal, *, role, deps) -> RouteDecision:
+        text = getattr(signal, "text", "") or ""
+        if any(kw in text for kw in ("判断题", "出一道", "出题", "练习题")):
+            return RouteDecision(business="question", name="出题助手")
+        return RouteDecision(business="tutor", name="伴学答疑")
+
+    async def run(self, message, *, role, ctx, deps, business=None, session=None):
+        self.business = business
+        self.extra = ctx.extra
+        self.history = ctx.history
+        if business == "question":
+            yield run_started()
+            yield user_message(message)
+            yield thinking("正在理解你的需求，并选择最合适的助手…", extra={"routing": True})
+            yield thinking("已选择助手：出题助手", extra={"routing": True})
+            yield data_event(dict(_STUB_CARD), extra={"type": "question"})
+            yield assistant_message("请判断「对」或「错」后回答。")
+            yield done(ctx.extra.get("session_id"))
+            return
+        yield assistant_message("（模型就本题给出的判定反馈）")
+        yield done(ctx.extra.get("session_id"))
+
+
+def test_quiz_chat_runs_via_runtime_and_keeps_answer(client, db):
+    """出题经文本路由落到出题助手：题卡**连答案一起**下发（不再剥离 / 无 pending_quiz）。
+
+    真实 runtime + 确定性替身 LLM（``fake_llm`` autouse 夹具）：题卡由出题 subagent
+    产出，故断言的「经运行时」证据（用户消息帧 / 路由思考帧）真实反映编排形态。
     """
     r = register_teacher(client, username="qz_teacher")
     token = r.json()["access_token"]
@@ -91,13 +140,15 @@ def test_quiz_chat_runs_via_runtime_and_strips_question_card(client, db):
     kp = _make_kp(db, tid=tid)
 
     status, events = _stream(
-        client, token,
+        client,
+        token,
         {
-            "message": "出一道判断题",
-            "quiz": True,
+            "message": "请为「轴对称」出一道判断题，只展示题目和两个选项，等我回答。",
             "courseware": {
                 "knowledge_point_id": str(kp.id),
-                "subject": "数学", "grade": 4, "semester": "下学期",
+                "subject": "数学",
+                "grade": 4,
+                "semester": "下学期",
                 "knowledge_point": "轴对称",
             },
         },
@@ -108,7 +159,7 @@ def test_quiz_chat_runs_via_runtime_and_strips_question_card(client, db):
     # SSE 序列化收口正确：每个帧都是 dict（data: {...}），不是裸对象 repr。
     assert all(isinstance(e, dict) for e in events)
 
-    # 经运行时的证据：用户消息帧 + 两条路由思考帧（旧直连管线一条都不发）。
+    # 经运行时的证据：用户消息帧 + 两条路由思考帧。
     assert "USER_MESSAGE" in types
     routed = [
         e for e in events
@@ -126,92 +177,45 @@ def test_quiz_chat_runs_via_runtime_and_strips_question_card(client, db):
     ]
     assert len(questions) == 1
     q = questions[0]
-    # 题面照发，但答案 / 解析 / 推理被剥离（不提前泄题）。
-    assert q["stem"] == "这是一道测试题的题干，用于测试替身产出。"
-    assert q["answer"] == ""
-    assert q["explanation"] == ""
-    assert q["reasoning"] == ""
+    # 出题子代理自主判定 judge 规格；题面 + 答案 + 解析**全量下发**（前端隐藏待揭示）。
+    assert q["judge"] is True
+    assert q["answer"] == "B"
+    assert q["explanation"]
+    assert q["stem"]
 
-    # 正确答案（替身答案「B」按兜底收口为真）+ 元信息落 pending_quiz。
+    # 服务端再无待判定态列；题卡（含答案）随 assistant 行落库。
     sid = [e for e in events if e["eventType"] == "DONE"][-1]["session_id"]
-    pending = db.get(Conversation, uuid.UUID(sid)).pending_quiz
-    assert pending and pending["stem"] == q["stem"]
-    assert pending["answer"] is True
-
-
-# 判断题规格产出的替身题卡（未剥离答案）：service 必须负责剥离。
-_STUB_CARD = {
-    "subject": "数学", "grade": 4, "knowledge_point": "轴对称",
-    "qtype": "choice", "stem": "平行四边形是轴对称图形", "options": ["对", "错"],
-    "answer": "错", "explanation": "平行四边形不是轴对称图形。",
-    "reasoning": "先确认考查点", "difficulty": "easy", "semester": "下学期",
-}
-
-
-class _StubRuntime:
-    """桩 runtime：生成轮产出题卡（写 pending_quiz），作答轮把方向交给 tutor。
-
-    T06/T07 起定向迁进信号：服务端在归一化阶段给 ``quiz_generate`` / ``quiz_judge``，
-    桩按动作把生成 / 判定分派到 question / tutor（真路由由 ``test_intent_routing_contract``
-    覆盖）。
-    """
-
-    def __init__(self) -> None:
-        self.business = None
-        self.extra = None
-        self.signal = None
-
-    def name_of(self, business: str) -> str:
-        return {"tutor": "伴学答疑", "question": "出题助手"}.get(business, business)
-
-    async def decide(self, signal, *, role, deps):
-        self.signal = signal
-        action = getattr(signal, "action", None)
-        if action == "quiz_judge":
-            return RouteDecision(business="tutor", name="伴学答疑")
-        if action == "quiz_generate":
-            return RouteDecision(business="question", name="出题助手")
-        # 非待判定态：刻意给 query，证明 quiz_judge/quiz_generate 动作才把方向扳对。
-        return RouteDecision(business="query", name="资料查询")
-
-    async def run(self, message, *, role, ctx, deps, business=None, session=None):
-        self.business = business
-        self.extra = ctx.extra
-        if business == "question":
-            yield run_started()
-            yield user_message(message)
-            yield thinking("正在理解你的需求，并选择最合适的助手…", extra={"routing": True})
-            yield thinking("已选择助手：出题助手", extra={"routing": True})
-            yield data_event(_STUB_CARD, extra={"type": "question"})
-            yield assistant_message(
-                "已生成 1 道题，题卡中包含题目、选项与解析，可据此布置给学生。"
-            )
-            yield done(ctx.extra.get("session_id"))
-            return
-        yield assistant_message("（模型判定反馈）")
-        yield done(ctx.extra.get("session_id"))
+    conv = db.get(Conversation, uuid.UUID(sid))
+    assert not hasattr(conv, "pending_quiz")
+    rows = db.exec(
+        select(Message).where(Message.conversation_id == uuid.UUID(sid))
+    ).all()
+    stored = [
+        c["result"]
+        for m in rows
+        if m.payload
+        for c in (m.payload.get("cards") or [])
+        if isinstance(c, dict) and c.get("type") == "question"
+    ]
+    assert any(c.get("judge") is True and c["answer"] == "B" for c in stored)
 
 
 def _ask_quiz(client, token, kp_id) -> str:
-    """首轮：经运行时出一道判断题，返回会话 id。"""
+    """首轮：经运行时的出题助手出一道判断题，返回会话 id。"""
     _status, events = _stream(
-        client, token,
+        client,
+        token,
         {
-            "message": "出一道判断题",
-            "quiz": True,
+            "message": "请为「轴对称」出一道判断题，只展示题目和两个选项，等我回答。",
             "courseware": {"knowledge_point_id": str(kp_id)},
         },
     )
     return [e for e in events if e["eventType"] == "DONE"][-1]["session_id"]
 
 
-def _pending_cleared(db, sid: str) -> bool:
-    return db.get(Conversation, uuid.UUID(sid)).pending_quiz is None
-
-
-def test_quiz_judge_routes_to_llm_and_consumes_pending(client, db, monkeypatch):
-    """判定走 LLM：不是服务端拼硬编码文案，而是路由到 tutor 并带上题目与正确答案。"""
-    rt = _StubRuntime()
+def test_quiz_judge_turn_reads_card_from_history(client, db, monkeypatch):
+    """判定走 LLM：题目与答案经**对话历史**进模型上下文，服务端不注入待判定态。"""
+    rt = _JudgeLoopRuntime()
     monkeypatch.setattr("app.features.assistant.service.get_runtime", lambda: rt)
 
     r = register_teacher(client, username="qz2_teacher")
@@ -221,25 +225,29 @@ def test_quiz_judge_routes_to_llm_and_consumes_pending(client, db, monkeypatch):
     sid = _ask_quiz(client, token, kp.id)
     assert sid, "首轮 DONE 帧应回写会话 id"
 
-    status2, judge_events = _stream(client, token, {"message": "错", "session_id": sid})
+    status2, judge_events = _stream(client, token, {"message": "对", "session_id": sid})
     assert status2 == 200, judge_events
     answer = "".join(
         e.get("text", "") for e in judge_events if e["eventType"] == "ASSISTANT_MESSAGE"
     )
-    # 模型被真正调用（桩产出正文）；定向经信号（action=quiz_judge）交讲解而非只读检索。
-    assert "（模型判定反馈）" in answer
-    assert getattr(rt.signal, "action", None) == "quiz_judge"
+    # 模型被真正调用（桩产出正文）；定向由文本路由落到 tutor。
+    assert "（模型就本题给出的判定反馈）" in answer
     assert rt.business == "tutor"
-    pending = (rt.extra or {}).get("pending_quiz") or {}
-    assert pending.get("stem") == "平行四边形是轴对称图形"
-    assert pending.get("answer") is False  # 真答案为「错」，随上下文交给模型
-    # 待判定态只消费一次：清空后下一轮不再被拦截。
-    assert _pending_cleared(db, sid)
+    # 服务端不再注入待判定态：ctx.extra 里没有 pending_quiz。
+    assert "pending_quiz" not in (rt.extra or {})
+
+    # 「答案进历史」：题卡（含题干与正确答案）渲染进 assistant 的 content，
+    # tutor 正是从这段历史读到答案来判定。
+    assistant_turns = [
+        h.get("content", "") for h in (rt.history or []) if h.get("role") == "assistant"
+    ]
+    assert any("平行四边形是轴对称图形" in t for t in assistant_turns)
+    assert any("正确答案：错" in t for t in assistant_turns)
 
 
 def test_quiz_ambiguous_also_routes_to_llm(client, db, monkeypatch):
     """含糊回答同样交给模型（不再有「请用对/错回答」的确定性兜底）。"""
-    rt = _StubRuntime()
+    rt = _JudgeLoopRuntime()
     monkeypatch.setattr("app.features.assistant.service.get_runtime", lambda: rt)
 
     r = register_teacher(client, username="qz3_teacher")
@@ -255,6 +263,6 @@ def test_quiz_ambiguous_also_routes_to_llm(client, db, monkeypatch):
     answer = "".join(
         e.get("text", "") for e in judge_events if e["eventType"] == "ASSISTANT_MESSAGE"
     )
-    assert "（模型判定反馈）" in answer
+    assert "（模型就本题给出的判定反馈）" in answer
     assert rt.business == "tutor"
-    assert _pending_cleared(db, sid)
+    assert "pending_quiz" not in (rt.extra or {})

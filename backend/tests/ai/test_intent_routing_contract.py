@@ -41,15 +41,15 @@ async def _decide(signal: IntentSignal, *, role: str) -> object:
 def test_question_manifest_declares_all_actions():
     m = AgentRuntime.discover().manifests.get("question")
     assert m is not None
-    # T07：判断题出题（quiz_generate）与按规格出题（task_generate）各有独立键，
-    # 但同归出题助手——前者走判断题闭环（剥离答案 / 写待判定态）。
-    assert m.actions == ["task_generate", "quiz_generate"]
+    # ADR-0089：出题助手只声明「按规格出题」（task_generate）。判断题闭环（出题-判定-讲解）
+    # 已整体下沉到子代理：出题从自由文本/上下文自主判定 judge 规格，判定由 tutor 从对话
+    # 历史读答案，不再有 quiz_generate / quiz_judge / courseware_hint 动作键。
+    assert m.actions == ["task_generate"]
 
 
 def test_match_action_helper():
     manifests = AgentRuntime.discover().manifests
     assert match_action("task_generate", manifests) == "question"
-    assert match_action("quiz_generate", manifests) == "question"
     # 空动作 / 未知动作 → None（交给文本路由）
     assert match_action("", manifests) is None
     assert match_action("nonexistent_action", manifests) is None
@@ -60,12 +60,6 @@ def test_match_action_helper():
 # （有请求方但没在清单里声明）」的显式期望集合（spec L121 硬要求）。新增动作键必须
 # 同时在 manifest 与本表各加一行；只加其一，本契约测试即失败。
 _EXPECTED_ACTION_OWNERS: dict[str, str] = {
-    # 请求方：课件里「提示」方向（答错求提示，service._build_intent_signal）
-    "courseware_hint": "tutor",
-    # 请求方：待判定态消费后的判定/讲解（service._build_intent_signal）
-    "quiz_judge": "tutor",
-    # 请求方：判断题闭环出题段（req.quiz=True，service._build_intent_signal）
-    "quiz_generate": "question",
     # 请求方：客户端结构化出题（req.action=task_generate）
     "task_generate": "question",
 }
@@ -161,34 +155,9 @@ def test_decide_unknown_action_falls_back_to_text_routing():
 
 
 # ── T06：课件上下文 / 待判定态定向迁进信号（各有独立动作键） ──
-def test_decide_courseware_hint_routes_to_tutor():
-    """课件练习「提示」→ 伴学答疑。"""
-    decision = asyncio.run(
-        _decide(IntentSignal(text="", action="courseware_hint"), role="teacher")
-    )
-    assert decision.business == "tutor"
-    assert decision.name == "伴学答疑"
-    assert decision.extra.get("routed_by") == "action"
-
-
-def test_decide_quiz_judge_routes_to_tutor():
-    """待判定态消费后的定向 → 伴学答疑（判定与讲解由模型产出）。"""
-    decision = asyncio.run(
-        _decide(IntentSignal(text="错", action="quiz_judge"), role="teacher")
-    )
-    assert decision.business == "tutor"
-    assert decision.name == "伴学答疑"
-    assert decision.extra.get("routed_by") == "action"
-
-
-def test_decide_quiz_generate_routes_to_question():
-    """判断题出题（T07）→ 出题助手（经运行时，拿到检索/学科提示/溯源/工具信封）。"""
-    decision = asyncio.run(
-        _decide(IntentSignal(text="", action="quiz_generate"), role="teacher")
-    )
-    assert decision.business == "question"
-    assert decision.name == "出题助手"
-    assert decision.extra.get("routed_by") == "action"
+# ADR-0089：courseware_hint / quiz_judge / quiz_generate 三个动作键已删除——课件提示由
+# courseware 上下文触发，判断题出题/判定由 question / tutor 子代理自主驱动（文本/历史），
+# 服务端不再在信号归一化阶段硬发射动作键。
 
 
 # ── 顺序无关：打乱清单顺序结果不变 ──
