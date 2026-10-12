@@ -15,7 +15,7 @@ from app.core.config import settings
 from app.core.deps import CurrentTeacher, SessionDep
 from app.core.errors import ErrCode
 from app.core.guard import require_owned, require_owned_student
-from app.db.models import Class, Question, User, WrongQuestion
+from app.db.models import Class, Question, Role, User, WrongQuestion
 from app.features.auth.repository import (
     create_user,
     delete_student,
@@ -64,7 +64,7 @@ def create_student(
     student = create_user(
         session=session,
         user_create=student_in,
-        role="student",
+        role=Role.STUDENT,
         teacher_id=teacher.id,
     )
     return student
@@ -148,7 +148,7 @@ def update_student(
         code=ErrCode.NOT_FOUND,
         message="学生不存在或不属于你的账号",
     )
-    if student.role != "student":
+    if student.role != Role.STUDENT:
         raise HTTPException(status_code=400, detail="仅可编辑学生账号")
     # 局部更新：忽略未传入（None）的字段
     patch = payload.model_dump(exclude_unset=True)
@@ -251,7 +251,7 @@ def delete_student_endpoint(
         code=ErrCode.FORBIDDEN,
         message="学生不存在或不属于你的账号",
     )
-    if student.role != "student":
+    if student.role != Role.STUDENT:
         raise HTTPException(status_code=400, detail="仅可删除学生账号")
     counts = delete_student(session=session, student=student)
     return DeletedStudentResp(student_id=student_id, **counts)

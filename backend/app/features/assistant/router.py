@@ -27,7 +27,7 @@ from fastapi.responses import StreamingResponse
 from app.core.deps import CallerDep, CurrentTeacher, SessionDep
 from app.core.errors import AppErrorException, ErrCode
 from app.core.guard import require_owned
-from app.db.models import Conversation
+from app.db.models import Conversation, Role
 from app.features.assistant import service as assistant_service
 from app.features.assistant.schemas import (
     AssistantChatReq,
@@ -68,7 +68,12 @@ def suggested_actions(
     教师/学生通用（``CallerDep`` 解析角色）；知识点归属经 ``require_owned`` 校验，
     越权或查不到回落全局目录。导航类动作的 payload 是既有 ``ShellDestination`` 枚举。
     """
-    teacher_id = caller.user.id if caller.role == "teacher" else caller.user.teacher_id
+    # admin 复用 teacher 面（ADR-0088）：教师与 admin 都以自身为 owner；仅学生走 teacher_id。
+    teacher_id = (
+        caller.user.id
+        if caller.role in (Role.TEACHER, Role.ADMIN)
+        else caller.user.teacher_id
+    )
     return assistant_service.build_suggested_actions(
         knowledge_point_id=knowledge_point_id, role=caller.role,
         teacher_id=teacher_id, session=session,

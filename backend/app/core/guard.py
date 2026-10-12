@@ -20,7 +20,7 @@ from uuid import UUID
 from sqlmodel import Session, SQLModel
 
 from app.core.errors import AppErrorException, ErrCode
-from app.db.models import User
+from app.db.models import Role, User
 
 _T = TypeVar("_T", bound=SQLModel)
 
@@ -58,6 +58,36 @@ def find_owned(
     if obj is None or getattr(obj, "teacher_id", None) != owner_id:
         return None
     return obj
+
+
+def require_owned_or_admin(
+    *,
+    session: Session,
+    owner_id: UUID,
+    model: type[_T],
+    obj_id: UUID,
+    user: User,
+    code: ErrCode = ErrCode.FORBIDDEN,
+    message: str = "无权访问该资源",
+) -> _T:
+    """归属校验，但 ``admin`` 豁免（ADR-0088）。
+
+    admin 是「超级教师」，可越教师边界读全部资源（如查看任意教师的 AI 运行轨迹）。
+    仅用于「只读审计 / 排障」类端点；任何写操作仍需显式 owner 校验，不被此函数豁免。
+    """
+    if user.role == Role.ADMIN:
+        obj = session.get(model, obj_id)
+        if obj is None:
+            raise AppErrorException(code, message)
+        return obj
+    return require_owned(
+        session=session,
+        owner_id=owner_id,
+        model=model,
+        obj_id=obj_id,
+        code=code,
+        message=message,
+    )
 
 
 def require_owned_student(

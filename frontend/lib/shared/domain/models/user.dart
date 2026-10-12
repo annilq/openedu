@@ -5,7 +5,7 @@ class UserModel {
   final String id;
   final String username;
   final String displayName;
-  final String role; // teacher | child
+  final String role; // teacher | student | admin（后端 Role 枚举，ADR-0088）
   final bool isActive;
 
   /// 所属班级 ID（ADR-0068）：后端 `UserPublic.class_id` 增量字段，未分班为 null。

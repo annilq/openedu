@@ -8,6 +8,7 @@ from fastapi.responses import Response
 
 from app.core.deps import CallerDep, SessionDep
 from app.core.errors import AppErrorException, ErrCode
+from app.db.models import Role
 from app.features.export.schemas import ExportSheetReq
 from app.features.export.service import build_sheet_pdf
 
@@ -37,7 +38,7 @@ def export_sheet(
     caller: CallerDep,
     body: ExportSheetReq,
 ) -> Response:
-    if caller.role == "student":
+    if caller.role == Role.STUDENT:
         _student_only_scope(caller, body)
         # 学生的 teacher_id 就是归属守卫要的 owner；取不到时守卫会按越权拒绝。
         teacher_id = caller.user.teacher_id or caller.user.id

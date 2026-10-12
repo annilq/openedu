@@ -86,6 +86,12 @@ class Settings(BaseSettings):
     # 默认值即 backend/ 下绝对路径，CWD 无关（ADR-0041）。
     DATABASE_URL: str = f"sqlite:///{_BACKEND_DIR / 'app.db'}"
 
+    # 默认管理员种子（ADR-0088）：仅在**两者都显式配置**时，启动期幂等创建一个
+    # Role.ADMIN 账号。不配置则不创建——绝不写死口令（安全红线）。
+    # 首次登录后应立即改密（后续可加强制改密流程）。
+    ADMIN_SEED_USERNAME: str | None = None
+    ADMIN_SEED_PASSWORD: str | None = None
+
     @field_validator("DATABASE_URL", mode="before")
     @classmethod
     def _validate_db_url(cls, value: str) -> str:

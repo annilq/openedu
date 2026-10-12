@@ -30,6 +30,7 @@ from app.core.db import engine  # noqa: E402
 from app.db.models import (  # noqa: E402
     Material,
     MaterialChunk,  # noqa: E402
+    Role,
     User,
 )
 from app.db.models.material import (  # noqa: E402
@@ -55,7 +56,7 @@ def get_teacher_id(session: Session) -> uuid.UUID:
     # 优先用 annilq 这个教师账号；没有就取第一个 teacher
     user = session.exec(select(User).where(User.username == "annilq")).first()
     if user is None:
-        user = session.exec(select(User).where(User.role == "teacher")).first()
+        user = session.exec(select(User).where(User.role == Role.TEACHER)).first()
     if user is None:
         raise SystemExit("数据库里没有教师账号，请先注册一个教师")
     return user.id

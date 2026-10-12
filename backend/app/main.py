@@ -11,13 +11,40 @@ from app.core.config import settings
 from app.core.db import engine, init_db
 from app.core.errors import register_error_handlers
 from app.core.secrets import check_runtime_secrets_health
+from app.db.models import Role
+from app.features.auth.repository import create_user, get_user_by_username
+from app.features.auth.schemas import UserCreate
 from app.features.export.fonts import check_export_font_health
+
+
+def _seed_admin() -> None:
+    """启动期幂等创建默认管理员（ADR-0088）。
+
+    仅当 ``ADMIN_SEED_USERNAME`` 与 ``ADMIN_SEED_PASSWORD`` **两者都显式配置**时才创建，
+    否则静默跳过——绝不写死口令。已存在同名账号则 no-op。
+    """
+    username = settings.ADMIN_SEED_USERNAME
+    password = settings.ADMIN_SEED_PASSWORD
+    if not username or not password:
+        return
+    with Session(engine) as s:
+        if get_user_by_username(session=s, username=username) is not None:
+            return
+        create_user(
+            session=s,
+            user_create=UserCreate(
+                username=username, display_name="管理员", password=password
+            ),
+            role=Role.ADMIN,
+        )
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 家自用：启动时建表即可，无需 Alembic 迁移流程
     init_db()
+    # 默认管理员种子（ADR-0088）：环境显式配置时才创建，绝不写死口令。
+    _seed_admin()
     # 启动期密钥健康检查：尽早暴露密钥轮换 / 缺配，而非提问时才 401（ADR-0041）
     with Session(engine) as s:
         check_runtime_secrets_health(s)

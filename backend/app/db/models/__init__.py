@@ -36,11 +36,12 @@ from app.db.models.question import Question
 from app.db.models.task import Task, TaskBase, TaskQuestion
 from app.db.models.task_assignment import TaskAssignment
 from app.db.models.tutor import TutorLog
-from app.db.models.user import User, UserBase
+from app.db.models.user import Role, User, UserBase
 
 __all__ = [
     "User",
     "UserBase",
+    "Role",
     "Class",
     "Task",
     "TaskBase",

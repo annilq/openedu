@@ -29,6 +29,7 @@ from app.core.guard import require_owned, require_owned_student
 from app.core.pagination import clamp_page_size, encode_cursor
 from app.db.models import (
     Question,
+    Role,
     Task,
     TaskAssignment,
     TaskQuestion,
@@ -797,7 +798,7 @@ def bulk_assign_task(
             select(User.id).where(
                 User.class_id.in_(class_ids),  # type: ignore[union-attr]
                 User.teacher_id == teacher.id,
-                User.role == "student",
+                User.role == Role.STUDENT,
             )
         ).all()
         target.update(rows)
@@ -894,7 +895,7 @@ def _answerable_task(*, session: Session, user: User, task_id: UUID) -> tuple[Ta
     task = session.get(Task, task_id)
     if task is None:
         raise AppErrorException(ErrCode.TASK_NOT_FOUND, "任务不存在")
-    if user.role == "student":
+    if user.role == Role.STUDENT:
         in_relation = is_student_assigned(
             session=session, task_id=task_id, student_id=user.id
         )

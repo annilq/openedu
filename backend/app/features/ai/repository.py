@@ -17,13 +17,18 @@ from app.db.models import Conversation, Message
 def list_conversations(
     *,
     session: Session,
-    teacher_id: uuid.UUID,
+    teacher_id: uuid.UUID | None = None,
     student_id: uuid.UUID | None = None,
     kind: str | None = None,
     limit: int = 100,
 ) -> list[Conversation]:
-    """按 owner(teacher_id) 查 AI 运行；可再按 student/kind 过滤，时间倒序。"""
-    stmt = select(Conversation).where(Conversation.teacher_id == teacher_id)
+    """按 owner(teacher_id) 查 AI 运行；可再按 student/kind 过滤，时间倒序。
+
+    ``teacher_id=None``（admin，ADR-0088）表示不过滤 owner，返回全部 AI 运行。
+    """
+    stmt = select(Conversation)
+    if teacher_id is not None:
+        stmt = stmt.where(Conversation.teacher_id == teacher_id)
     if student_id is not None:
         stmt = stmt.where(Conversation.student_id == student_id)
     if kind is not None:

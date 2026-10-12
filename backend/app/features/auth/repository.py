@@ -8,6 +8,7 @@ from app.core.security import get_password_hash, verify_password
 from app.db.models import (
     AnswerRecord,
     Checkin,
+    Role,
     TaskAssignment,
     User,
     WrongQuestion,
@@ -19,7 +20,7 @@ def create_user(
     *,
     session: Session,
     user_create: UserCreate,
-    role: str,
+    role: Role,
     teacher_id: uuid.UUID | None = None,
 ) -> User:
     db_obj = User.model_validate(

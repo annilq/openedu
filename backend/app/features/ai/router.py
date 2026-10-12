@@ -14,8 +14,8 @@ from fastapi import APIRouter
 
 from app.core.deps import CurrentTeacher, SessionDep
 from app.core.errors import ErrCode
-from app.core.guard import require_owned
-from app.db.models import Conversation
+from app.core.guard import require_owned_or_admin
+from app.db.models import Conversation, Role
 from app.features.ai.repository import get_conversation_messages, list_conversations
 from app.features.ai.schemas import (
     ConversationDetailResp,
@@ -30,8 +30,13 @@ router = APIRouter(prefix="/ai", tags=["ai"])
 def debug_list_conversations(
     *, session: SessionDep, teacher: CurrentTeacher, kind: str | None = None, limit: int = 100
 ) -> list[ConversationResp]:
-    """教师查看自家 AI 运行列表（出题/批改/agent），可按 kind 过滤，时间倒序。"""
-    rows = list_conversations(session=session, teacher_id=teacher.id, kind=kind, limit=limit)
+    """教师查看自家 AI 运行列表（出题/批改/agent），可按 kind 过滤，时间倒序。
+
+    admin（ADR-0088）越教师边界：``teacher_id=None`` 表示看全部 AI 运行。
+    """
+    # admin 看全部；教师只看自家（teacher_id=自身）。
+    teacher_id = None if teacher.role == Role.ADMIN else teacher.id
+    rows = list_conversations(session=session, teacher_id=teacher_id, kind=kind, limit=limit)
     return [ConversationResp(**r.model_dump()) for r in rows]
 
 
@@ -39,12 +44,16 @@ def debug_list_conversations(
 def debug_get_conversation(
     *, session: SessionDep, teacher: CurrentTeacher, conv_id: UUID
 ) -> ConversationDetailResp:
-    """教师查看一次 AI 运行的概要 + 全部步骤（按 turn 回放）。越权（非本教师）→ 403。"""
-    conv = require_owned(
+    """教师查看一次 AI 运行的概要 + 全部步骤（按 turn 回放）。越权（非本教师）→ 403。
+
+    admin（ADR-0088）豁免归属：可查看任意教师的 AI 运行（只读审计/排障）。
+    """
+    conv = require_owned_or_admin(
         session=session,
         owner_id=teacher.id,
         model=Conversation,
         obj_id=conv_id,
+        user=teacher,
         code=ErrCode.FORBIDDEN,
         message="Not your conversation",
     )
