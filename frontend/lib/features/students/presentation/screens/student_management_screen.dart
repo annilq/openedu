@@ -20,10 +20,10 @@ import '../../../../shared/widgets/app_loading.dart';
 import '../../../../shared/widgets/app_section_title.dart';
 import '../../../../shared/widgets/app_focusable_action.dart';
 import '../../../../shared/widgets/app_toast.dart';
+import '../../../../shared/widgets/class_picker.dart';
 import '../providers/student_management_notifier.dart';
 import '../../providers/student_management_provider.dart';
 import '../widgets/student_import_sheet.dart';
-import '../../../home/presentation/widgets/teacher/class_picker.dart';
 
 /// 学生管理页（ADR-0068 §2.3 / ticket 02 + 03）。
 ///
@@ -213,19 +213,19 @@ class _StudentManagementScreenState
   }
 
   /// 行内「调整班级」：拉起单班级选择器（预选当前班级），选中后对该学生单独
-  /// 调 [batchReassign]。返回 `null` 表示取消对话框（不改）；返回 [_unclassedMarker]
-  /// 表示显式置为未分班；其余为迁入目标班级。
+  /// 调 [batchReassign]。返回 `null` 表示取消（不改）；id 为空 = 显式置为未分班。
+  ///
+  /// 班级清单取本页已加载的 [StudentManagementLoaded.classes]，不再回源拉一次。
   Future<void> _adjustClass(String studentId) async {
     final state = ref.read(studentManagementProvider);
-    final currentClassId = state is StudentManagementLoaded
-        ? state.students
-            .where((s) => s.id == studentId)
-            .firstOrNull
-            ?.classId
-        : null;
+    if (state is! StudentManagementLoaded) return;
+    final currentClassId = state.students
+        .where((s) => s.id == studentId)
+        .firstOrNull
+        ?.classId;
     final picked = await pickSingleClass(
       context,
-      ref,
+      classes: Future<List<ClassModel>>.value(state.classes),
       initialClassId: currentClassId,
     );
     if (!mounted || picked == null) return; // 取消，不改

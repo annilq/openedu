@@ -225,4 +225,45 @@ void main() {
     // 成功后退出选择模式。
     expect(find.text('选择'), findsOneWidget);
   });
+
+  testWidgets('行内「调整班级」：拉起单班级选择器 → 选中目标班 → 只改这名学生',
+      (tester) async {
+    final fake = _FakeStudentsRepo(students, counts);
+    SharedPreferences.setMockInitialValues({});
+    final storage = StorageService();
+    await storage.init();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          storageServiceProvider.overrideWithValue(storage),
+          studentsRepositoryProvider.overrideWithValue(fake),
+          classesRepositoryProvider.overrideWithValue(_FakeClassesRepo(classes)),
+        ],
+        child: ShadApp.custom(
+          theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
+          appBuilder: (context) => CupertinoApp(
+            home: ShadToaster(
+              child: StudentManagementScreen(onOpenStudent: (_) {}),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    // 行内图标（第一行 = 小明，当前在 c1）拉起单选弹窗。
+    await tester.tap(find.bySemanticsLabel('调整班级').first);
+    await tester.pumpAndSettle();
+    expect(find.text('调整班级'), findsOneWidget);
+
+    // 弹窗里点三(2)班：只把 s1 迁过去，不动其余学生。
+    // 语义标签会与行内文字合并（「调整到三(2)班\n三(2)班\n3年级 · 1人」），故用正则匹配。
+    await tester.tap(find.bySemanticsLabel(RegExp(r'调整到三\(2\)班')));
+    await tester.pumpAndSettle();
+
+    expect(fake.batchCalls, hasLength(1));
+    expect(fake.batchCalls.first['class_id'], 'c2');
+    expect(fake.batchCalls.first['student_ids'], ['s1']);
+  });
 }
