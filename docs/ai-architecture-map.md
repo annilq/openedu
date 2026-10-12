@@ -1,7 +1,7 @@
 # AI 相关功能架构图（前后端）
 
-> 梳理时间：2026-10-11，分支 `ai-intent-routing`。
-> 范围：**当前仍存活**的 AI 能力。已删除的不画进图：服务端「重生成」(`regenerate_one`/`regenerate_all`，ADR-0084)、课件 AI 起草/补充讲解/重新起草(ADR-0085)、课堂练习环节出题/提示 `SectionPractice`(ADR-0086)、课件练习后端半边 `courseware_generate` 信号与 guide 出题分支(ADR-0087)。
+> 梳理时间：2026-10-11，分支 `ai-intent-routing`。  
+> 范围：**当前仍存活**的 AI 能力。已删除的不画进图：服务端「重生成」(`regenerate_one`/`regenerate_all`，ADR-0084)、课件 AI 起草/补充讲解/重新起草(ADR-0085)、课堂练习环节出题/提示 `SectionPractice`(ADR-0086)、课件练习后端半边 `courseware_generate` 信号与 guide 出题分支(ADR-0087)。  
 > 探查基于代码实态（grep 全仓确认引用点），非函数名猜测。
 
 ---
@@ -58,12 +58,12 @@ flowchart TD
 
 ### 2.3 四个 SubAgent（manifest 契约）
 
-| business | priority | roles | actions（声明） | 职责 |
-|---|---|---|---|---|
-| `guide` | 20 | teacher | （无） | 写意图：创建/派发任务 → 导航到页面（纯由文本 triggers 命中，经 `TARGET_*` → `ShellDestination`） |
-| `query` | 12 | teacher+student | （无） | 只读学情查询：任务/错题/待复习/掌握度 |
-| `question` | 0 | teacher+student | `task_generate`, `quiz_generate` | 出题助手：按规格出题、判断题闭环出题段 |
-| `tutor` | -10 | teacher+student | `courseware_hint`, `quiz_judge` | 伴学答疑：适龄讲解、答错提示、判定讲解 |
+| business   | priority | roles           | actions（声明）                      | 职责                                                                      |
+| ---------- | -------- | --------------- | -------------------------------- | ----------------------------------------------------------------------- |
+| `guide`    | 20       | teacher         | （无）                              | 写意图：创建/派发任务 → 导航到页面（纯由文本 triggers 命中，经 `TARGET_*` → `ShellDestination`） |
+| `query`    | 12       | teacher+student | （无）                              | 只读学情查询：任务/错题/待复习/掌握度                                                    |
+| `question` | 0        | teacher+student | `task_generate`, `quiz_generate` | 出题助手：按规格出题、判断题闭环出题段                                                     |
+| `tutor`    | -10      | teacher+student | `courseware_hint`, `quiz_judge`  | 伴学答疑：适龄讲解、答错提示、判定讲解                                                     |
 
 ### 2.4 专属结构化出题端点
 
@@ -158,6 +158,7 @@ flowchart LR
 ## 6. 文件地图（Where Things Live）
 
 **后端**
+
 - `app/features/assistant/router.py` — 统一端点 + 会话读/删
 - `app/features/assistant/schemas.py` — `AssistantChatReq` / `CoursewareContext` / `SuggestedAction`
 - `app/features/assistant/service.py` — `chat` 编排 + `_build_intent_signal` + quiz 闭环 + `build_suggested_actions`
@@ -167,6 +168,7 @@ flowchart LR
 - `app/features/ai/router.py` / `app/features/tutor/router.py` — 历史/备用路由（注意区分）
 
 **前端**
+
 - `features/assistant/presentation/{screens,wigits,provider}` — `AssistantChatPage` / `assistant_notifier` / `assistant_message_list` / `assistant_input_bar` / `assistant_suggested_actions`
 - `features/assistant/data/assistant_api_client.dart` — `streamChat` + `streamGenerate`
 - `features/assistant/domain/` — `assistant_requests` / `assistant_event` / `assistant_card` / `ai_text_fold` / `conversation`
