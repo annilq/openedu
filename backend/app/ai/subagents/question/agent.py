@@ -214,6 +214,11 @@ def parse_specs_from_text(text: str) -> list[dict]:
     # 只是 multi=True，渲染为复选、批改按集合比对。
     multi = "多选" in text or "多选题" in text
 
+    # 判断题标记（ADR-0089）：自然语言出现「判断题 / 判断对错 / 判断正误」即视为
+    # 判断题，由出题子代理自主产出 judge 规格（不再经服务端信号归一化与 quiz_generate
+    # 动作键）。题面为「陈述句 + 对/错两个选项」，题卡含答案原样落对话历史、前端隐藏待揭示。
+    judge = "判断题" in text or "判断对错" in text or "判断正误" in text
+
     kp = ""
     m = re.search(r"关于\s*《?\s*([\u4e00-\u9fa5A-Za-z0-9]+)", text)
     if m:
@@ -238,6 +243,7 @@ def parse_specs_from_text(text: str) -> list[dict]:
                 "semester": "",
                 "count": count,
                 "multi": multi,
+                "judge": judge,
             }
         )
     return specs
@@ -313,6 +319,36 @@ class QuestionSubAgent(BaseSubAgent):
             items = build_prompt_from_specs(structured)
         else:
             specs = parse_specs_from_text(message)
+            # 上下文回填（ADR-0089）：自由文本没识别到学科时，用请求透传的 ctx.extra
+            # （subject / grade / 知识点来自课件或知识点下钻）补全，使「出一道判断题」
+            # 按钮在知识点语境下无需用户再敲科目年级即可产出相关题。出题/判定决定权
+            # 整体在子代理，服务端只负责把这些上下文透传进来。
+            if not specs:
+                extra_subject = str(ctx.extra.get("subject") or "")
+                if extra_subject:
+                    cw = ctx.extra.get("courseware") or {}
+                    kp_name = (
+                        str(cw.get("knowledge_point") or "")
+                        if isinstance(cw, dict)
+                        else ""
+                    )
+                    specs.append(
+                        {
+                            "subject": extra_subject,
+                            "grade": int(ctx.extra.get("grade") or 0),
+                            "knowledge_point": kp_name,
+                            "qtype": "choice",
+                            "difficulty": "medium",
+                            "semester": "",
+                            "count": 1,
+                            "multi": False,
+                            "judge": (
+                                "判断题" in message
+                                or "判断对错" in message
+                                or "判断正误" in message
+                            ),
+                        }
+                    )
             if not specs:
                 yield self._finish(
                     "请告诉我科目、年级和题型，例如：「帮我出 3 道三年级分数选择题」。"

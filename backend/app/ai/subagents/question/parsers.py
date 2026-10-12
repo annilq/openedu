@@ -58,6 +58,8 @@ class QuestionOut(BaseModel):
     reasoning: str = ""
     # 是否多选题（ADR-0004 D5）：由 spec 透传，落库进 TaskQuestion.multi。
     multi: bool = False
+    # 是否判断题（ADR-0089）：由 spec 透传，题卡原样落历史、前端隐藏答案待揭示。
+    judge: bool = False
 
 
 class QuestionSchema(BaseModel):
@@ -94,6 +96,8 @@ class QuestionSpec:
     semester: str = ""
     # 是否多选题（ADR-0004 D5）：不可变身份之外、随题透传的标记。
     multi: bool = False
+    # 是否判断题（ADR-0089）：不可变身份之外、随题透传的标记。
+    judge: bool = False
 
 
 def assemble_question(
@@ -132,6 +136,7 @@ def assemble_question(
         explanation=explanation,
         reasoning=text,
         multi=spec.multi,
+        judge=spec.judge,
     )
 
 
@@ -192,6 +197,7 @@ class SchemaQuestionParser:
                     explanation=out.explanation,
                     difficulty=out.difficulty,
                     semester=out.semester,
+                    judge=out.judge,
                 ),
                 reasoning=out.reasoning,
             )

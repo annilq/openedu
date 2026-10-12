@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncIterator
-from dataclasses import replace
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -27,10 +26,6 @@ from agent_core.protocol import (
     EVENT_TOOL_CALL,
     EVENT_TOOL_RESULT,
     AssistantEvent,
-    assistant_message,
-    data_event,
-    done,
-    run_started,
 )
 from agent_core.runtime import AgentRuntime
 from agent_core.runtime_singleton import get_runtime
@@ -39,7 +34,7 @@ from app.ai.engine import resolve_engine
 from app.ai.subagents.tutor.agent import detect_subject
 from app.core.errors import AppErrorException, ErrCode
 from app.core.guard import require_owned
-from app.db.models import Class, Conversation, Message, get_datetime_utc
+from app.db.models import Class, Conversation, Message, Role, get_datetime_utc
 from app.db.models.material import KnowledgePoint
 from app.domain import build_provider, build_retriever
 from app.domain.safety import StudentSafety
@@ -107,76 +102,41 @@ async def _summarize_dropped(provider, dropped: list[dict]) -> str | None:
     return text or None
 
 
-# ── ADR-0072：推荐操作目录 + 判断题闭环 ────────────────────────────────────────
+# ── 推荐操作目录（ADR-0072，出题-判断闭环的子代理化见 ADR-0089） ───────────────
 #
-# 推荐操作是服务端静态目录（零延迟、可控、可单测），不靠 LLM 生成；判断题闭环的**出题段**
-# 经运行时（出题助手，动作 ``quiz_generate``）生成——与普通出题同源，拿得到资料库检索 /
-# 学科提示 / 溯源引用 / 工具信封；而**判定与讲解一律交给 LLM**——把待判定题目连同正确答案
-# 注入 tutor 上下文，由模型按学生这句话生成反馈（见 `tutor/agent.py#_quiz_hint_context`）。
-#
-# 早期判定走「yes/no 小词典 + 硬编码文案」的确定性分支：用户一句话进来，服务端拿词典
-# 匹配出「对/错/求讲解」，再拼一段固定文案返回——模型全程没参与，答错支架、讲解口径
-# 都是死的（说辞生硬、无法结合题目本身）。现在服务端只保留「出题规格 + 题面剥离」，
-# 判定/讲解全由模型给出，不再有任何确定性判定分支。
+# 推荐操作是服务端静态目录（零延迟、可控、可单测），不靠 LLM 生成。
+# 判断题闭环（出题-判定-讲解）现由 question / tutor 子代理自主驱动（ADR-0089）：
+# 出题助手从自由文本/知识点上下文自主判断是否出判断题；伴学答疑从对话历史（题卡含答案）
+# 自行判对错、给支架、按需揭示答案。服务端不再有出题/判定的分支逻辑。
 
 
-async def _stream_sse(events: AsyncIterator) -> AsyncIterator[str]:
-    """把内部子生成器产出的 AssistantEvent 统一转成 SSE 帧。
 
-    ``chat`` 是普通 async 函数（返回异步生成器，而非自身成为生成器），故 quiz / judge
-    子生成器产出的事件在这里收口成 ``to_sse()`` 字符串——与常规路径的 ``event_stream``
-    一致，避免 ``StreamingResponse`` 拿到裸事件对象、产出非 SSE 文本。
+# 答案的「跨轮记忆」现由对话历史承载（题卡含答案，前端按需揭示），不再有服务端
+# 布尔收口——见 ADR-0089。
+
+
+# 知识点上下文解析（含 quiz 出题）已下沉到 question 子代理（读取 ctx.extra 的
+# knowledge_point_id / courseware 字段自行解析），service 不再持有出题侧的 KP 解析。
+
+
+def _surface_of(role: Role) -> str:
+    """账户角色 → agent_core 调用面（ADR-0088）。
+
+    agent_core 是业务无关内核，其 ``role`` 只有 ``teacher``/``student`` 两种「调用面」，
+    零 app.* 依赖，绝不能 import ``Role`` 枚举。故在此把账户角色折算成调用面：
+    仅学生走 student 面（注入儿童安全闸门、家长话术），教师与 admin 都走 teacher 面
+    （admin 是「超级教师」，复用教师级能力）。
     """
-    async for ev in events:
-        yield ev.to_sse()
-
-_JUDGE_FALSE_WORDS = ("错", "错误", "false", "f", "no", "n", "×", "不对", "不是")
-
-
-def _judge_answer_bool(answer_text: str | None) -> bool:
-    """把生成的判断题 answer 文本（对/错/正确/错误…）收口成布尔。
-
-    只服务于「出题时把正确答案存进 pending_quiz」——判定与讲解由 LLM 产出
-    （见 tutor 的 `_quiz_hint_context`），这里不做任何面向用户的判定。
-    """
-    a = (answer_text or "").strip().lower()
-    if a in _JUDGE_FALSE_WORDS:
-        return False
-    # 对 / 正确 / yes / true / 是 / 或其它合法表述 → True
-    return True
-
-
-def _resolve_kp_context(
-    *, session: Any, teacher_id: UUID, req: AssistantChatReq
-) -> tuple[str, int, str, str] | None:
-    """返回 (subject, grade, semester, name) 用于出题/聚焦；缺失返回 None。
-
-    优先级：``knowledge_point_id``（require_owned 精确）> courseware 的 name+subject+grade。
-    越权或查不到落入 except → 回落 name 口径或 None。
-    """
-    cw = req.courseware
-    kp_id = cw.knowledge_point_id if cw is not None else None
-    if kp_id is not None:
-        try:
-            kp = require_owned(
-                session=session, owner_id=teacher_id, model=KnowledgePoint, obj_id=kp_id
-            )
-        except AppErrorException:
-            kp = None
-        if kp is not None:
-            return (kp.subject, kp.grade, kp.semester, kp.name)
-    if cw is not None and cw.subject and cw.grade and cw.knowledge_point:
-        return (cw.subject, cw.grade, cw.semester or "", cw.knowledge_point)
-    return None
+    return "student" if role == Role.STUDENT else "teacher"
 
 
 def build_suggested_actions(
-    *, knowledge_point_id: UUID | None, role: str, teacher_id: UUID, session: Any
+    *, knowledge_point_id: UUID | None, role: Role, teacher_id: UUID, session: Any
 ) -> list[SuggestedAction]:
     """ADR-0072：按上下文从固定目录装配推荐操作。
 
     - 全局目录：问答 / 出几道题练练 / 看错题（角色分叉）/ 查学习进度。
-    - 知识点目录（带 id）：举例 / 出一道判断题(quiz) / 讲解，并叠加全局能力。
+    - 知识点目录（带 id）：举例 / 出一道判断题 / 讲解，并叠加全局能力。
     越权或 id 缺失 → 回落全局目录。
     """
     global_actions: list[SuggestedAction] = [
@@ -191,7 +151,7 @@ def build_suggested_actions(
     ]
     global_actions.append(
         SuggestedAction(
-            label="查看我的错题" if role == "student" else "看看孩子错题",
+            label="查看我的错题" if role == Role.STUDENT else "看看孩子错题",
             kind="navigate",
             payload="teacher_task_list",
         )
@@ -226,7 +186,6 @@ def build_suggested_actions(
         SuggestedAction(
             label="出一道判断题", kind="prompt",
             payload=f"请为「{name}」出一道判断题，只展示题目和两个选项，等我回答。",
-            quiz=True,
         ),
         SuggestedAction(
             label="讲解这个知识点", kind="prompt",
@@ -236,206 +195,29 @@ def build_suggested_actions(
     return kp_actions + global_actions
 
 
-def _quiz_intro(name: str) -> str:
-    """判断题闭环的题面引导（现场下发与落库回放共用的同一份文案）。"""
-    return f"来一道关于「{name}」的判断题，请判断下面的说法对不对："
+# 判断题的题面引导文案现由出题子代理/前端负责，service 不再单独维护。
 
 
-def _strip_and_record_quiz(
-    *,
-    session: Any,
-    conv_id: UUID,
-    name: str,
-    subject: str,
-    grade: int,
-    semester: str,
-    result: dict[str, Any],
-) -> dict[str, Any]:
-    """剥离题卡答案/解析/推理 → 写 pending_quiz + 落库题卡消息，返回剥离后的题卡。
-
-    「先出题、答完揭示」的**流程性**剥离：与角色无关、教师端同样剥离（不是按角色裁剪）。
-    正确答案布尔存 ``pending_quiz`` 供模型判定——判定与讲解由 LLM 产出，服务端不留分支。
-    """
-    card = dict(result)
-    card["answer"] = ""
-    card["explanation"] = ""
-    card["reasoning"] = ""
-    pending = {
-        "answer": _judge_answer_bool(result.get("answer")),
-        "subject": subject, "grade": grade, "semester": semester, "name": name,
-        "stem": result.get("stem"), "options": result.get("options"),
-        "answer_text": result.get("answer"),
-        "explanation": result.get("explanation"),
-    }
-    conv = session.get(Conversation, conv_id)
-    conv.pending_quiz = pending
-    session.add(
-        Message(
-            conversation_id=conv_id, turn=next_turn(session, conv_id),
-            role="assistant", step="output",
-            content=_quiz_intro(name),
-            payload={"cards": [{"type": "question", "result": card}]},
-        )
-    )
-    session.commit()
-    return card
+# 题卡不再由 service 剥离答案/写 pending_quiz：出题子代理产出的题卡（含答案）原样落库，
+# 前端按 `judge` 标记隐藏答案、待揭示；tutor 从历史读答案判定——见 ADR-0089。
 
 
-async def _quiz_generate_stream(
-    *,
-    session: Any,
-    conv_id: UUID,
-    req: AssistantChatReq,
-    teacher_id: UUID,
-    rt: AgentRuntime,
-    deps: RuntimeDeps,
-    role: str,
-    ctx: SubAgentContext,
-    business: str | None,
-) -> AsyncIterator[AssistantEvent]:
-    """ADR-0072 判断题闭环·出题：经**运行时**（出题助手）出判断题。
-
-    与普通出题同源：``rt.run(question)`` 注入资料库检索 / 学科提示 / 溯源引用 / 工具
-    信封——此前直连裸出题管线（``generate_question``）这些一项都没有。本函数只做闭环
-    特有的事：
-
-    1. 投出判断题规格（``judge=True``）：题面为陈述句 + 对/错两个选项。
-    2. 拦截题卡，剥离答案 / 解析 / 推理后下发（不提前泄题），正确答案存 ``pending_quiz``
-       供模型判定（判定与讲解一律由 LLM 产出，服务端不保留任何确定性判定分支）。
-
-    产出 ``AssistantEvent``，由 ``chat`` 经 ``_stream_sse`` 收口成 SSE 帧。
-    """
-    kp = _resolve_kp_context(session=session, teacher_id=teacher_id, req=req)
-    if kp is None:
-        yield run_started()
-        yield assistant_message("缺少知识点上下文，无法出题。请在课件页进入助手后再试～")
-        yield done(session_id=str(conv_id))
-        return
-
-    subject, grade, semester, name = kp
-    # 判断题规格：judge=True 让出题助手产出「陈述句 + 对/错」题面（ADR-0072）。
-    quiz_ctx = replace(
-        ctx,
-        extra={
-            **ctx.extra,
-            "specs": [
-                {
-                    "subject": subject, "grade": grade, "knowledge_point": name,
-                    "qtype": "choice", "difficulty": "easy", "semester": semester,
-                    "count": 1, "judge": True,
-                }
-            ],
-        },
-    )
-
-    got_card = False
-    async for ev in rt.run(
-        ctx.message or "", role=role, ctx=quiz_ctx, deps=deps,
-        business=business, session=session,
-    ):
-        if ev.eventType == EVENT_DATA and ev.data and ev.data.get("type") == "question":
-            result = ev.data.get("result")
-            if isinstance(result, dict):
-                card = _strip_and_record_quiz(
-                    session=session, conv_id=conv_id, name=name, subject=subject,
-                    grade=grade, semester=semester, result=result,
-                )
-                got_card = True
-                yield assistant_message(_quiz_intro(name))
-                yield data_event(card, extra={"type": "question"})
-                continue
-        # 成题后丢弃出题助手的通用收尾：它讲「题卡含解析 / 可布置给学生」，而本题卡
-        # 恰恰剥离了解析、且闭环等待作答——原样转发会自相矛盾。失败态（无题卡）仍透传，
-        # 让「未配置模型 / 生成失败」的原因可见。
-        if got_card and ev.eventType == EVENT_ASSISTANT_MESSAGE:
-            continue
-        yield ev
+# 判断题出题不再有专属子生成器：统一走 question 子代理（文本/上下文路由），由它
+# 自主产出 judge 规格——不再经 ``_quiz_generate_stream`` 拦截剥离。见 ADR-0089。
 
 
-def _consume_pending_quiz(
-    *, session: Any, conversation: Conversation, conv_id: UUID
-) -> dict[str, Any] | None:
-    """取出并**消费**待判定态：把正确答案写进会话历史，然后清空 pending_quiz。
-
-    判定与讲解改由 LLM 产出后，服务端不再需要 ``attempts`` 计数维持状态机。清空之所以
-    不丢上下文，是因为题目与正确答案在同一事务里落进了 ``Message`` ——后续轮次（哪怕
-    用户又答得含糊）模型从 history 里照样读得到它，不必靠服务端状态记住「第几次」。
-
-    返回待判定字典供本轮注入 tutor 上下文；无待判定态返回 None。
-    """
-    pending = conversation.pending_quiz
-    if not isinstance(pending, dict) or not pending:
-        return None
-    pending = dict(pending)
-    verdict = "对" if pending.get("answer") else "错"
-    session.add(
-        Message(
-            conversation_id=conv_id,
-            turn=next_turn(session, conv_id),
-            role="system",
-            step="quiz_answer",
-            content=(
-                f"【本题正确答案】{pending.get('stem') or ''} → {verdict}"
-                f"（{pending.get('explanation') or '暂无解析'}）"
-            ),
-        )
-    )
-    conversation.pending_quiz = None
-    session.commit()
-    return pending
+# 无待判定态消费：题目与答案随题卡落库于对话历史，tutor 子代理自行读历史判定，
+# 服务端不再维护 pending_quiz 状态机——见 ADR-0089。
 
 
-# ── T06：信号归一化——把「上下文定向」产出为动作键，归属由 SubAgent 清单声明 ──
+# ── 意图信号：现仅承载「文本 + 客户端显式 action 透传」（ADR-0089） ──
 #
-# 课件练习方向与待判定态方向原先在**路由算完之后**改判业务（O1 / O3）。现在改为在造信号时
-# 直接产出动作键，`decide` 一次裁决即为最终结果，编排里不再有「路由算完再改判业务」的分支。
-#
-# ⚠️ 两种「出题」语义**各有独立动作键**，不得拍平：
-#   助手里  → `task_generate`      （question：真的出题卡）
-# 判断题闭环的出题段另用 `quiz_generate`（同归 question，但出题后剥离答案、写待判定态）。
-# （历史：`courseware_generate` 曾为「课件里引导到课堂大屏出题」的键，ADR-0086 删课堂
-#  练习后连同其前端 UI 一并移除后端半边——见 ADR-0087。）
-_ACTION_COURSEWARE_HINT = "courseware_hint"
-_ACTION_QUIZ_JUDGE = "quiz_judge"
-_ACTION_QUIZ_GENERATE = "quiz_generate"
-
-
-async def _build_intent_signal(
-    req: AssistantChatReq,
-    conversation: Conversation | None,
-    *,
-    rt: AgentRuntime,
-    role: str,
-) -> IntentSignal:
-    """把一次请求归一成结构化意图信号（T06 / T07）。
-
-    动作键优先级：**待判定态消费 > 判断题出题 > 课件提示方向 > 客户端显式** ``req.action``。
-    前三者是服务端按上下文归一出的定向（原先的事后改判），末者是客户端的结构化动作；
-    都交给唯一裁决点 ``decide`` 做等值匹配（命中即路由、不参与文本优先级竞争）。
-
-    判断题出题（``req.quiz``）必须排在课件方向之前：它一次请求同时带 ``courseware``
-    （知识点上下文）与 ``quiz``，若被课件方向接走会跑到伴学答疑而非出题。
-
-    课件方向**不是「带 courseware 就定向」**：课件上下文只提供「答错求提示」一个定向
-    （→ ``courseware_hint`` 落 tutor）；其余（含求题 / 求讲解）一律 ``action=None``，
-    交回常规文本路由到 tutor。ADR-0086 删课堂大屏出题后，不再有「课件里引导出题」的
-    ``courseware_generate`` 键（其前端 UI 与后端半边均已移除，见 ADR-0087）。
-    """
-    text = (req.message or "").strip()
-    if conversation is not None and conversation.pending_quiz is not None:
-        # 待判定态：就这道题说话，交伴学答疑判定/讲解（判定与讲解由模型产出）。
-        action: str | None = _ACTION_QUIZ_JUDGE
-    elif req.quiz:
-        # 判断题闭环·出题：走出题助手（同源拿到检索/学科提示/溯源/工具信封）。
-        action = _ACTION_QUIZ_GENERATE
-    elif req.courseware is not None:
-        # 课件方向：仅「答错求提示」→ 伴学答疑（courseware_hint）；其余（含求题 / 求讲解）
-        # 一律 action=None，交回常规文本路由到 tutor。ADR-0086/0087 后不再有「课件里引导
-        # 出题」的 courseware_generate 键——课件里问「出几道题」现在会落到 tutor 答疑。
-        action = _ACTION_COURSEWARE_HINT if "提示" in text else None
-    else:
-        action = req.action
-    return IntentSignal(text=text, action=action)
+# 早期版本在此做「信号归一化」：按请求上下文（待判定态 / 出判断题 / 课件提示）服务端硬发射
+# 动作键（quiz_judge / quiz_generate / courseware_hint），再交给 `decide` 动作直配。ADR-0089
+# 把这些决定权交回子代理：出题由 question 子代理从文本/知识点上下文自主判定是否出判断题；
+# 判定由 tutor 子代理从对话历史（题卡含答案）自行判对错；课件提示由 tutor 的 courseware
+# 上下文触发。因此这里不再有任何出题/判定分支，只构造纯文本信号（保留客户端显式 action
+# 透传，如 task_generate）。
 
 
 async def chat(
@@ -454,10 +236,10 @@ async def chat(
     message = (req.message or "").strip()
 
     role = caller.role
-    if role == "student":
+    if role == Role.STUDENT:
         student_id = caller.user.id
         teacher_id = caller.user.teacher_id
-    else:  # teacher
+    else:  # teacher | admin
         teacher_id = caller.user.id
         student_id = None
 
@@ -485,7 +267,7 @@ async def chat(
     # RAG（ADR-0055 §13）：教师端传 (session, teacher_id) 启用资料库向量检索；
     # 学生端 teacher_id 为 None → 自动回落 mock（资料库是教师私有的）。
     retriever = build_retriever(session=session, teacher_id=teacher_id)
-    safety = StudentSafety() if role == "student" else None
+    safety = StudentSafety() if role == Role.STUDENT else None
     deps = RuntimeDeps(provider=provider, retriever=retriever, safety=safety)
 
     # ── 会话定位（先于路由） ──
@@ -510,8 +292,8 @@ async def chat(
     # 预路由：动作键在信号归一化阶段产出（课件练习方向 / 待判定态方向 / 客户端结构化动作），
     # 归属由 SubAgent 清单声明，``decide`` 一次裁决即为最终结果，不再「路由算完再改判业务」。
     # 动作命中但当前角色不可见 → 显式 action_not_visible，见下方转 403。
-    signal = await _build_intent_signal(req, conversation, rt=rt, role=role)
-    decision = await rt.decide(signal, role=role, deps=deps)
+    signal = IntentSignal(text=message, action=req.action)
+    decision = await rt.decide(signal, role=_surface_of(role), deps=deps)
     # 动作不可见（如学生打教师专属动作）：**显式 403**（spec 硬约束），**不要**静默回落成
     # 另一个业务的答非所问，也不要退化成 HTTP 200 + 错误帧。``chat`` 是普通 async 函数
     # （返回迭代器），端点先 ``await`` 它再包 ``StreamingResponse``，故此处抛出会在建流前
@@ -567,7 +349,7 @@ async def chat(
         history = req.history
 
     # 业务字段经 ctx.extra 透传（agent_core 不感知任何教育语义）。
-    # 判断题出题与常规对话共用它——出题段在其上补 ``specs``（见 _quiz_generate_stream）。
+    # 判断题出题与常规对话共用它——出题段在其上补 ``specs``（由 question 子代理驱动）。
     ctx = SubAgentContext(
         role=role,
         message=message,
@@ -581,7 +363,7 @@ async def chat(
             "grade": (
                 req.courseware.grade
                 if req.courseware is not None and req.courseware.grade is not None
-                else (_student_grade(session, caller.user) if role == "student" else 0)
+                else (_student_grade(session, caller.user) if role == Role.STUDENT else 0)
             ),
             "courseware": courseware,
             # ADR-0072：显式下钻知识点 id，便于 SubAgent 精确聚焦（与 courseware 并存）。
@@ -590,39 +372,15 @@ async def chat(
                 if req.courseware is not None
                 else None
             ),
-            # ADR-0072 判定/讲解走 LLM：待判定题目 + 正确答案在此透传给 tutor，
-            # 由它拼进 prompt（见 tutor/agent.py#_quiz_hint_context）。出题段无待判定态。
-            "pending_quiz": None,
             "session_id": str(conv_id),
         },
     )
 
-    # ── ADR-0072 判断题闭环·出题 ──
-    # 判断题出题经统一路由落到出题助手（动作 ``quiz_generate``，见 _build_intent_signal），
-    # 再由 _quiz_generate_stream 走运行时出题——拿到检索 / 学科提示 / 溯源 / 工具信封，
-    # 并在题卡下发前剥离答案（写 pending_quiz）。子生成器产出 AssistantEvent，经
-    # _stream_sse 收口成 SSE 帧（与常规路径一致）。
-    if signal.action == _ACTION_QUIZ_GENERATE:
-        return _stream_sse(
-            _quiz_generate_stream(
-                session=session, conv_id=conv_id, req=req, teacher_id=teacher_id,
-                rt=rt, deps=deps, role=role, ctx=ctx, business=decision.business,
-            )
-        )
-
-    # 续接既有会话且处于待判定态：消费它，并把题目连同正确答案交给 LLM 判定/讲解。
-    # 定向已在信号归一化阶段完成（``action=quiz_judge`` → tutor，见 `_build_intent_signal`），
-    # 这里只负责消费状态与注入上下文。
-    #
-    # 刻意**不短路成一条确定性回复流**：用户的这句「对/错/讲解」由模型结合题目本身作答。
-    # 待判定态只消费一次（见 `_consume_pending_quiz`），判定口径在 tutor 的
-    # `_quiz_hint_context` 里，服务端不保留 attempts 状态机。
-    pending_quiz: dict[str, Any] | None = None
-    if conversation.pending_quiz is not None:
-        pending_quiz = _consume_pending_quiz(
-            session=session, conversation=conversation, conv_id=conv_id
-        )
-    ctx.extra["pending_quiz"] = pending_quiz
+    # ── 出题 / 判定闭环（ADR-0089，子代理化） ──
+    # 判断题的出题与判定不再有服务端分支：question 子代理从文本/知识点上下文自主决定
+    # 是否出 judge 规格的题卡（含答案），题卡原样落对话历史、前端按 `judge` 标记隐藏答案
+    # 待揭示；tutor 子代理从对话历史读题卡答案自行判对错、给支架、按需揭示。服务端不再
+    # 维护 pending_quiz 状态机，也不剥离/注入答案。
 
     async def event_stream() -> AsyncIterator[str]:
         final_text = ""
@@ -639,7 +397,7 @@ async def chat(
         # 复用预航班决策（decision），避免重复路由；run 返回事件流。
         stream: AsyncIterator[AssistantEvent] = rt.run(
             message,
-            role=role,
+            role=_surface_of(role),
             ctx=ctx,
             deps=deps,
             business=decision.business,
@@ -724,7 +482,7 @@ async def chat(
             conversation.updated_at = get_datetime_utc()
 
             # ADR-008：学生端伴学交互落 TutorLog（教师可见，F-305）
-            if role == "student" and decision.business == "tutor":
+            if role == Role.STUDENT and decision.business == "tutor":
                 try:
                     create_tutor_log(
                         session=session,

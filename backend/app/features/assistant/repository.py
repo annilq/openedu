@@ -78,12 +78,53 @@ def _visible_rows(session: Session, conv_id: UUID) -> list[Message]:
     )
 
 
+def _question_card_text(card: dict) -> str:
+    """题卡 → 喂给模型的纯文本（题干 / 选项 / 答案 / 解析）。
+
+    ADR-0089：判断题的判定依据是**对话历史里的题卡**——落库存的是 DATA 整帧，
+    ``_read_history`` 原先只取 ``content``，答案随 ``payload`` 一起被丢掉，tutor 便
+    无从判定。这里把题卡关键字段渲染进该轮 assistant 的 content，「答案进历史」
+    才真正可读。判断题带 ``【判断题卡】`` 头，便于 tutor 认出待判定轮。
+    """
+    if card.get("type") != "question":
+        return ""
+    result = card.get("result")
+    if not isinstance(result, dict):
+        return ""
+    judge = result.get("judge") is True
+    parts: list[str] = ["【判断题卡】" if judge else "【题目卡】"]
+    stem = str(result.get("stem") or "").strip()
+    if stem:
+        parts.append(stem)
+    options = [str(o).strip() for o in (result.get("options") or []) if str(o).strip()]
+    if options:
+        parts.append("选项：" + " / ".join(options))
+    answer = str(result.get("answer") or "").strip()
+    if answer:
+        parts.append(f"正确答案：{answer}")
+    explanation = str(result.get("explanation") or "").strip()
+    if explanation:
+        parts.append(f"解析：{explanation}")
+    return "\n".join(parts)
+
+
 def _read_history(session: Session, conv_id: UUID) -> list[dict]:
-    """读取会话原始历史（user 输入 + assistant 输出）为 [{role, content}]。"""
-    return [
-        {"role": m.role, "content": m.content or ""}
-        for m in _visible_rows(session, conv_id)
-    ]
+    """读取会话原始历史（user 输入 + assistant 输出）为 [{role, content}]。
+
+    题卡随 assistant 行落库于 ``payload["cards"]``（DATA 整帧）；为让模型读到题面与
+    答案（ADR-0089 的判断题判定即依赖它），把题卡文本拼进该轮 content——``content``
+    仍是唯一文本通道，不动 ``{role, content}`` 契约。
+    """
+    out: list[dict] = []
+    for m in _visible_rows(session, conv_id):
+        content = m.content or ""
+        card_text = "\n\n".join(
+            t for t in (_question_card_text(c) for c in _cards_of(m)) if t
+        )
+        if card_text:
+            content = f"{content}\n\n{card_text}" if content else card_text
+        out.append({"role": m.role, "content": content})
+    return out
 
 
 def read_conversation_bubbles(session: Session, conv_id: UUID) -> list[dict]:

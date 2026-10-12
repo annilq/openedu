@@ -477,23 +477,23 @@ def run_migrations() -> None:
             )
         )
 
-        # —— conversation.pending_quiz（ADR-0072 出题-判断-引导闭环的跨轮状态）——
-        # 仅补列：无索引 / 无 FK（快照式，与 ADR-0061 同纪律）。SQLite 用 TEXT 存 JSON，
-        # postgres 用 JSON（与项目其余 JSON 列约定一致）。ADD COLUMN 在 SQLite 下被静默
-        # 忽略约束（ADR-0061 §R），本列无需约束，故直接补即可，无需重建表。
+        # —— conversation.pending_quiz 弃用（ADR-0089）——
+        # 出题-判断闭环的跨轮状态改由对话历史（题卡含答案）承载，不再有服务端 pending_quiz
+        # 列。启动期为旧库做幂等删列：新库（create_all 已不含该列）直接 no-op。
+        # SQLite 的 DROP COLUMN 需 3.35+（2021），项目运行环境满足。
         if is_sqlite:
             conv_cols = [
                 r[1]
                 for r in conn.execute(text("PRAGMA table_info(conversation)")).fetchall()
             ]
-            if "pending_quiz" not in conv_cols:
+            if "pending_quiz" in conv_cols:
                 conn.execute(
-                    text("ALTER TABLE conversation ADD COLUMN pending_quiz TEXT")
+                    text("ALTER TABLE conversation DROP COLUMN pending_quiz")
                 )
         else:  # postgres
             conn.execute(
                 text(
-                    "ALTER TABLE conversation ADD COLUMN IF NOT EXISTS pending_quiz JSON"
+                    "ALTER TABLE conversation DROP COLUMN IF EXISTS pending_quiz"
                 )
             )
 

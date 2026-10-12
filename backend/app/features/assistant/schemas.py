@@ -43,14 +43,11 @@ class SuggestedAction(SQLModel):
     - ``kind='prompt'``：``payload`` 是预置提示文本，前端点击即 ``send(payload)``。
     - ``kind='navigate'``：``payload`` 是既有 ``ShellDestination`` 枚举（如
       ``teacher_question_bank``），前端点击走壳导航。
-    - ``quiz``：True 时该 prompt 动作触发出题-判断-引导闭环（后端出判断题 + 写
-      pending_quiz），前端以 ``send(payload, quiz: true)`` 下发。仅 prompt 类使用。
     """
 
     label: str
     kind: str  # 'prompt' | 'navigate'
     payload: str
-    quiz: bool = False
 
 
 class AssistantChatReq(SQLModel):
@@ -60,10 +57,6 @@ class AssistantChatReq(SQLModel):
     session_id: str | None = None
     model: str | None = None
     history: list[dict] | None = None
-    # ADR-0072：出题-判断-引导闭环的触发标记。为真时经**统一路由**（信号归一化产出动作
-    # ``quiz_generate``）落到出题助手，由运行时出一道判断题（拿得到检索 / 学科提示 / 溯源 /
-    # 工具信封），后端在题卡下发前剥离答案并写入 pending_quiz，等待用户自然语言 yes/no 判定。
-    quiz: bool = Field(default=False)
     # ADR-0081 / T04：结构化动作。非空时经 IntentSignal 交给统一路由做「动作直配」
     # （等值匹配 manifest.actions，先于文本优先级），而非写死业务。出题类动作
     # （task_generate）声明在 question 清单，师生均可见。

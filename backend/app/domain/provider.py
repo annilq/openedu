@@ -58,6 +58,9 @@ class GeneratedQuestion:
     # 资料溯源快照（ADR-0055 §10）：[{material, snippet}]；无 RAG 时为 None。
     # 由 SubAgent 在题卡帧上注入（pipeline 不感知检索层）。
     source_refs: list[dict] | None = None
+    # 是否判断题（ADR-0089）：出题助手自主判定的判断题卡带此标记，题卡连同 answer
+    # 原样落对话历史；前端据此隐藏答案待揭示，tutor 从历史读答案判定。
+    judge: bool = False
 
 
 # ─────────────── 出题流式事件（引擎层语义 schema，与传输协议无关） ───────────────

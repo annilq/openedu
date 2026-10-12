@@ -189,6 +189,7 @@ def build_question_prompts(
         difficulty=difficulty,
         semester=semester,
         multi=multi,
+        judge=judge,
     )
     return QUESTION_SYSTEM_PROMPT, user_prompt, spec
 
@@ -241,6 +242,7 @@ async def stream_question(
                         difficulty=out.difficulty,
                         semester=out.semester,
                         multi=out.multi,
+                        judge=out.judge,
                     ),
                     reasoning=out.reasoning,
                 )
