@@ -13,9 +13,16 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// 下面登记的站点分两类，都是「裸语法但安全」的：
 ///
-/// 1. **行内已包 IntrinsicHeight**（5 处）：左侧学科色条靠 Row(stretch) 撑满卡片，
+/// 1. **行内已包 IntrinsicHeight**（4 处）：左侧学科色条靠 Row(stretch) 撑满卡片，
 ///    已在**调用点**用 `IntrinsicHeight` 包住了对应 widget（见各处注释）。这类内容
 ///    高度有界，IntrinsicHeight 是合适解法。
+///
+/// ~~（已删）[wrong_questions_screen.dart] 的 `_WrongQuestionCard`~~
+/// **该站点已随 ADR-0061 §V 消失**：色条不再靠 Row(stretch) + IntrinsicHeight 撑满行高
+/// （IntrinsicHeight 会向子树取 intrinsic 高度，撞上卡片内 SceneInterpreter 的
+/// LayoutBuilder 崩溃），改成卡片内 `Stack` + 左侧 `Positioned` ColoredBox，
+/// 靠 `ClipRRect` 裁圆角（`b2b0157` / `5b70a1d`）。文件与类都还在，只是不再有裸
+/// Row(stretch)——基线条目过期，按 ADR-0044「只许下调」删除。
 ///
 /// ~~2. **父级高度本身有界**（[adaptive_shell.dart] 的 master-detail 双栏）~~
 /// **该站点已随 ADR-0059 消失**（壳不再有双栏，只剩「侧栏 | 内容」的
@@ -29,7 +36,6 @@ const _knownBareRowStretch = <String>{
   'features/home/presentation/widgets/student_home.dart::_TaskCard',
   'features/practice/presentation/widgets/practice_question_view.dart::PracticeQuestionView',
   'features/practice/presentation/widgets/practice_review_view.dart::_WrongToFixCard',
-  'features/review/presentation/screens/wrong_questions_screen.dart::_WrongQuestionCard',
   'features/assistant/presentation/widgets/assistant_question_card.dart::AssistantQuestionCard',
 };
 
