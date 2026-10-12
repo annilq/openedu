@@ -68,6 +68,7 @@
 - qtype 域 `{choice,fill,calc,open}`。填空/计算/应用共用输入框；选择走选项卡。
 - 多选 `multi:bool`(默认False)；`TaskSpec.multi=True` 仅允许 `qtype=='choice'`(否422)。前端 `AppOptionTile.multi` 方块复选；提交 `(_selectedOptions..sort()).join('|')`；评分按选项集合比对。
 - 判断题：无独立类型，`choice`+对/错二选一(前端 `isJudgeQuestion`)→复用单选卡、UI 标「判断题」。
+- ⚠️ ADR-0090 判断题闭环子代理化：`Conversation.pending_quiz` 已删（`core/db.py` 启动期 DROP COLUMN；SQLite 先 PRAGMA 探列）；service.py 的 `_build_intent_signal`/quiz 早返回/pending 消费全删，`chat()` 直接 `IntentSignal(text,action)`。出题=question 子代理自判 `judge`（文本含「判断题/判断对错/判断正误」）+ ctx.extra 回填学科/年级；`judge` 贯通 `GeneratedQuestion→QuestionSpec→assemble_question→pipeline→asdict` 进题卡 JSON。判定=tutor 读历史题卡文本：`_read_history` 经 `_question_card_text` 把题干/选项/**正确答案**/解析渲染进 assistant content（原先丢 `payload["cards"]` 是设计缺口）；SOP「判断题待判定」小节。前端 `assistant_question_card` 判断题未揭示藏答案/解析（`AppTextAction('显示答案')`）。question manifest 动作仅 `task_generate`、tutor `[]`；`SuggestedAction.quiz`/`AssistantChatReq.quiz` 已删。
 - 选择题须带≥2有效选项，否则拦 `TASK_CHOICE_NO_OPTIONS(422)`。
 
 ## 7. 班级管理（ADR-0068 后端 + 0086 前端）
