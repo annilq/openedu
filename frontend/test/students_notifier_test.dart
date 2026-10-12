@@ -126,6 +126,8 @@ void main() {
   });
 
   group('StudentFormScreen 表单校验', () {
+    /// 首帧 `_loadingClasses` 为真 → 班级选择器位置先渲染 [AppLoading] 的 spinner，
+    /// 该 spinner 由 `flutter_animate` 的 `Animate` 驱动。
     Future<void> pumpScreen(WidgetTester tester) async {
       await tester.pumpWidget(
         ProviderScope(
@@ -141,6 +143,19 @@ void main() {
           ),
         ),
       );
+      // 两步泵帧，缺一不可（这是装置问题，不是产品校验逻辑问题）：
+      // 1. `Animate.initState` 会走 `_restart()` 起一个 `Duration.zero` 的
+      //    `Future.delayed`。`tester.pump()` 不带时长的重载**不会推进假时钟**，
+      //    这个 future 永远不触发；而 `Animate.dispose` 只 `ignore()` 它、并不取消
+      //    底层 Timer → 测试收尾的 invariant 检查报「pending timers」。
+      //    因此必须在 spinner **还在树上**时显式推进时钟，让 `_play()` 作用于活状态。
+      //    （不能用 `pumpAndSettle`：spinner 是 `onPlay: (c) => c.repeat()` 的无限
+      //    循环动画，永远 settle 不了，会把测试挂死。）
+      await tester.pump(const Duration(milliseconds: 1));
+      // 2. 再泵一帧让 `_loadClasses` 的异步分支落地（`_SilentNetwork` 返回 null →
+      //    走 catch），spinner 随 `_loadingClasses` 转假而卸载，重复动画的 ticker
+      //    一并停止，后续交互不会被无限 ticker 干扰。
+      await tester.pump();
     }
 
     /// 定位带指定标签的输入框：AppTextField 的 label 是与 ShadInput 平级的 Text，
