@@ -1,25 +1,31 @@
 import 'package:flutter/widgets.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-import '../../../../../shared/theme/app_theme.dart';
-import '../../../../../shared/widgets/app_empty_state.dart';
-import '../../../../../shared/widgets/app_error.dart';
-import '../../../../../shared/widgets/app_loading.dart';
-import '../../../../../shared/widgets/app_focusable_action.dart';
-import '../../../../../shared/domain/models/class_model.dart';
-import '../../../../classes/providers/classes_provider.dart';
+import '../theme/app_theme.dart';
+import 'app_empty_state.dart';
+import 'app_error.dart';
+import 'app_loading.dart';
+import 'app_focusable_action.dart';
+import '../domain/models/class_model.dart';
 
-/// 多选班级：从 [classesRepositoryProvider] 拉取本教师班级，勾选后返回**完整**选中集合。
+/// 班级选择器：教师端两处复用（发布任务表单的派发班级、学生管理页的行内调整班级）。
 ///
-/// 返回空列表表示取消。
+/// **为什么在 shared/**：原先放在 `features/home/presentation/widgets/teacher/`，
+/// 学生管理页横向 import 它就违反了分层单向规则（ADR-0037 R2，守卫见
+/// `feature_boundaries_test.dart`）。被两个 feature 复用的能力按规则下沉 shared/，
+/// 而不是让 students 反向依赖 home。
+///
+/// **为什么班级列表由调用方注入**：`shared/` 不得 import `features/`（R1），
+/// 而班级取数组合根 `classesRepositoryProvider` 属于 classes feature。故本文件只认
+/// [Future] + [ClassModel]（都在 shared/domain），由调用方决定数据从哪来——
+/// 副作用是选择器不再绑定具体 repository，也就能脱离 provider 单测。
+///
+/// 调用方应在弹窗外创建一次 future 再传入，避免 FutureBuilder 每次重建重发请求。
 Future<List<ClassModel>> pickClasses(
-  BuildContext context,
-  WidgetRef ref, {
+  BuildContext context, {
+  required Future<List<ClassModel>> classes,
   List<String> initialSelectedIds = const [],
 }) async {
-  // 未来在弹窗外创建一次，避免 FutureBuilder 每次重建重发请求。
-  final future = ref.read(classesRepositoryProvider).getClasses();
   final picked = await showShadDialog<List<ClassModel>>(
     context: context,
     builder: (ctx) => ShadDialog.alert(
@@ -28,7 +34,7 @@ Future<List<ClassModel>> pickClasses(
         width: double.maxFinite,
         height: 420,
         child: _ClassesPicker(
-          future: future,
+          future: classes,
           initialSelectedIds: initialSelectedIds,
         ),
       ),
@@ -40,15 +46,14 @@ Future<List<ClassModel>> pickClasses(
 /// 未分班哨兵：区别于「取消对话框」的 `null`，使调用方知道用户**显式**选了未分班。
 const ClassModel _unclassedMarker = ClassModel(id: '', name: '未分班', grade: 0);
 
-/// 单选班级：从 [classesRepositoryProvider] 拉取本教师班级，选中后返回该 [ClassModel]；
+/// 单选班级：列出 [classes]，选中后返回该 [ClassModel]；
 /// 选「不分配（未分班）」返回 [_unclassedMarker]（非 `null`），取消对话框才返回 `null`。
 /// 用于学生表单指定归属班级、学生列表行内「调整班级」。
 Future<ClassModel?> pickSingleClass(
-  BuildContext context,
-  WidgetRef ref, {
+  BuildContext context, {
+  required Future<List<ClassModel>> classes,
   String? initialClassId,
 }) async {
-  final future = ref.read(classesRepositoryProvider).getClasses();
   final picked = await showShadDialog<ClassModel?>(
     context: context,
     builder: (ctx) => ShadDialog.alert(
@@ -57,7 +62,7 @@ Future<ClassModel?> pickSingleClass(
         width: double.maxFinite,
         height: 420,
         child: _SingleClassPicker(
-          future: future,
+          future: classes,
           initialClassId: initialClassId,
         ),
       ),
