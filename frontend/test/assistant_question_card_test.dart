@@ -97,7 +97,7 @@ void main() {
     testWidgets('答案 / 解析 / 出题思路三样均不在场', (tester) async {
       await _pumpCard(tester, _judgeCard);
 
-      // 逐一断言，不能只断一様：三样是**各自**被 `showAnswer` 门控的三段渲染，
+      // 逐一断言，不能只断一样：三样是**各自**被 `showAnswer` 门控的三段渲染，
       // 少门控任何一段都会剧透。
       expect(find.textContaining('答案：'), findsNothing);
       expect(find.textContaining('解析：'), findsNothing);
