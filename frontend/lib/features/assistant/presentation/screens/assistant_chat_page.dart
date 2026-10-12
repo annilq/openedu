@@ -449,9 +449,9 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
         _WelcomeHint(isTeacher: widget.isTeacher),
         AssistantSuggestedActions(
           coursewareContext: widget.coursewareContext,
-          onPrompt: (payload, quiz) => ref
+          onPrompt: (payload) => ref
               .read(assistantNotifierProvider.notifier)
-              .send(payload, courseware: widget.coursewareContext, quiz: quiz),
+              .send(payload, courseware: widget.coursewareContext),
           onNavigate: _dispatchTarget,
         ),
       ],

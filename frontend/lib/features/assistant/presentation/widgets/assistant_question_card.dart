@@ -4,6 +4,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/utils/option_text.dart';
 import '../../../../shared/utils/question_labels.dart';
+import '../../../../shared/widgets/app_actions.dart';
 import '../../../../shared/widgets/app_tags.dart';
 import '../../../../shared/widgets/scene_interpreter/scene_interpreter.dart';
 import '../../domain/assistant_card.dart';
@@ -26,6 +27,9 @@ class AssistantQuestionCard extends StatelessWidget {
     final raw = card.rawPayload;
     final subject = cardStr(raw['subject']);
     final hasSubject = subject.isNotEmpty;
+    // 判断题标记（ADR-0089）：题卡连答案一起落对话历史，前端据此先收起答案，
+    // 待学生作答、伴学答疑判对错后再按需揭示。
+    final isJudge = raw['judge'] == true;
     // 学科色条颜色：色相只是三重编码（ADR-0044）中的一重，chip 另带几何标记。
     final subjectColor = hasSubject
         ? SubjectAccent.forContext(SubjectAccent.fromName(subject), context).accent
@@ -69,6 +73,7 @@ class AssistantQuestionCard extends StatelessWidget {
                 sceneSpec: raw['scene_spec'] is Map
                     ? Map<String, dynamic>.from(raw['scene_spec'] as Map)
                     : null,
+                isJudge: isJudge,
               ),
             ],
           ),
@@ -80,9 +85,13 @@ class AssistantQuestionCard extends StatelessWidget {
 
 /// 题目正文：标签行 → 题干 → 选项 → 答案 → 解析 → 出题思路。
 ///
+/// 判断题（ADR-0089，`judge: true`）默认收起答案 / 解析 / 出题思路，只露出「显示答案」
+/// 按钮——题卡连答案一起落对话历史，学生先作答、由伴学答疑判对错，再按需揭示。
+/// 非判断题照常即时展示答案。
+///
 /// 与左侧色条、卡头分开，是因为色条要撑满整卡高度、卡头是跨卡片共用的，
 /// 只有这一段是题卡独有的内容。
-class _QuestionBody extends StatelessWidget {
+class _QuestionBody extends StatefulWidget {
   final String subject;
   final int grade;
   final String qtype;
@@ -93,6 +102,7 @@ class _QuestionBody extends StatelessWidget {
   final String explanation;
   final String reasoning;
   final Map<String, dynamic>? sceneSpec;
+  final bool isJudge;
 
   const _QuestionBody({
     required this.subject,
@@ -105,13 +115,23 @@ class _QuestionBody extends StatelessWidget {
     required this.explanation,
     required this.reasoning,
     this.sceneSpec,
+    required this.isJudge,
   });
+
+  @override
+  State<_QuestionBody> createState() => _QuestionBodyState();
+}
+
+class _QuestionBodyState extends State<_QuestionBody> {
+  bool _revealed = false;
 
   @override
   Widget build(BuildContext context) {
     final scheme = AppTheme.colorsOf(context);
     final text = AppTheme.textOf(context);
-    final hasScene = sceneSpec != null && sceneSpec!['kind'] is String;
+    final hasScene = widget.sceneSpec != null && widget.sceneSpec!['kind'] is String;
+    // 判断题未揭示前收起答案/解析/出题思路；已揭示或非判断题 → 全量展示。
+    final showAnswer = _revealed || !widget.isJudge;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -119,50 +139,62 @@ class _QuestionBody extends StatelessWidget {
           spacing: AppSpacing.sm,
           runSpacing: AppSpacing.xs,
           children: [
-            if (subject.isNotEmpty)
-              AppTags.subject(SubjectAccent.fromName(subject), label: subject),
-            if (grade > 0) AppTags.normal('$grade 年级'),
-            if (qtype.isNotEmpty) AppTags.normal(qtypeLabel(qtype)),
-            if (difficulty.isNotEmpty)
-              AppTags.normal(difficultyLabel(difficulty)),
+            if (widget.subject.isNotEmpty)
+              AppTags.subject(SubjectAccent.fromName(widget.subject), label: widget.subject),
+            if (widget.grade > 0) AppTags.normal('${widget.grade} 年级'),
+            if (widget.qtype.isNotEmpty) AppTags.normal(qtypeLabel(widget.qtype)),
+            if (widget.difficulty.isNotEmpty)
+              AppTags.normal(difficultyLabel(widget.difficulty)),
           ],
         ),
-        if (stem.isNotEmpty) ...[
+        if (widget.stem.isNotEmpty) ...[
           const SizedBox(height: AppSpacing.md),
           Text(
-            stem,
+            widget.stem,
             style: text.bodyMedium?.copyWith(
               color: scheme.onSurface,
               height: 1.5,
             ),
           ),
         ],
-        if (options.isNotEmpty) ...[
+        if (widget.options.isNotEmpty) ...[
           const SizedBox(height: AppSpacing.sm),
-          _QuestionOptions(options: options),
+          _QuestionOptions(options: widget.options),
         ],
-        if (answer.isNotEmpty) ...[
+        // 判断题待判定：先作答再揭示——未揭示时只给揭示入口与轻提示。
+        if (widget.isJudge && !_revealed) ...[
           const SizedBox(height: AppSpacing.sm),
-          _QuestionAnswerLine(answer: answer),
+          Text(
+            '请判断「对」或「错」后回答，判完再点这里核对。',
+            style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+          AppTextAction(
+            label: '显示答案',
+            onPressed: () => setState(() => _revealed = true),
+          ),
         ],
-        if (explanation.isNotEmpty) ...[
+        if (showAnswer && widget.answer.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.sm),
+          _QuestionAnswerLine(answer: widget.answer),
+        ],
+        if (showAnswer && widget.explanation.isNotEmpty) ...[
           const SizedBox(height: AppSpacing.xs),
           Text(
-            '解析：$explanation',
+            '解析：${widget.explanation}',
             style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
           ),
         ],
-        if (reasoning.isNotEmpty) ...[
+        if (showAnswer && widget.reasoning.isNotEmpty) ...[
           const SizedBox(height: AppSpacing.sm),
-          AssistantReasoningDisclosure(reasoning: reasoning),
+          AssistantReasoningDisclosure(reasoning: widget.reasoning),
         ],
         if (hasScene) ...[
           const SizedBox(height: AppSpacing.md),
           AppTags.info('交互讲解'),
           const SizedBox(height: AppSpacing.sm),
           SceneInterpreter(
-            kind: sceneSpec!['kind'] as String,
-            spec: sceneSpec!,
+            kind: widget.sceneSpec!['kind'] as String,
+            spec: widget.sceneSpec!,
           ),
         ],
       ],

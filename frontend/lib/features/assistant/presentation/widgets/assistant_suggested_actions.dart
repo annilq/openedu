@@ -7,9 +7,10 @@ import 'package:kids_learn/shared/domain/models/assistant_courseware_context.dar
 import '../../domain/assistant_suggested_action.dart';
 import '../../providers/assistant_provider.dart';
 
-/// 空态推荐操作目录（ADR-0072）：从服务端静态目录拉取，渲染成可点 chips。
+/// 空态推荐操作目录（ADR-0072 / ADR-0089）：从服务端静态目录拉取，渲染成可点 chips。
 ///
-/// - prompt 类：点击 `onPrompt(payload, quiz)`——普通 prompt 或出题-判断闭环(quiz)。
+/// - prompt 类：点击 `onPrompt(payload)`——普通提示，或触发出题子代理从文本自主判定
+///   是否出判断题（不再有 quiz 旗标，ADR-0089）。
 /// - navigate 类：点击 `onNavigate(payload)`（payload 是既有 `ShellDestination` 枚举）。
 ///
 /// 目录由后端按 `knowledge_point_id` 装配：无 id→全局能力；有 id→知识点目录(叠加全局)。
@@ -23,7 +24,7 @@ final suggestedActionsProvider = FutureProvider.autoDispose
 
 class AssistantSuggestedActions extends ConsumerWidget {
   final AssistantCoursewareContext? coursewareContext;
-  final void Function(String payload, bool quiz) onPrompt;
+  final void Function(String payload) onPrompt;
   final void Function(String target) onNavigate;
 
   const AssistantSuggestedActions({
@@ -64,7 +65,7 @@ class AssistantSuggestedActions extends ConsumerWidget {
                         if (a.kind == 'navigate') {
                           onNavigate(a.payload);
                         } else {
-                          onPrompt(a.payload, a.quiz);
+                          onPrompt(a.payload);
                         }
                       },
                     ),
