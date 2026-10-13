@@ -16,6 +16,7 @@ from uuid import UUID
 from sqlmodel import Session, delete, func, select
 
 from app.db.models import Conversation, Message, User
+from app.features.materials.scene_figure_key import _cards_of, _visible_rows
 
 # compaction（P1/P2）护栏：超过则丢弃最旧轮次，避免长推理对话撑爆 prompt。
 # 经验保守值，仅做「不溢出」上界；精确计费交给模型方。
@@ -53,29 +54,6 @@ def title_of(conv: Conversation, first_user: str) -> str:
 def _estimate_tokens(history: list[dict]) -> int:
     """粗估历史 token 数：内容按 ~4 字符 / token + 单条结构开销。"""
     return sum(len(m.get("content") or "") // 4 + _MSG_TOKEN_OVERHEAD for m in history)
-
-
-def _visible_rows(session: Session, conv_id: UUID) -> list[Message]:
-    """会话内的**可见轮次**（user 输入 + assistant 输出），按 ``turn`` 升序。
-
-    「可见」是领域判定而非 SQL 细节：``system/routing`` 与 ``tool/*`` 是运行轨迹，
-    不属于对话内容。prompt 历史与用户面回放共用本查询——同一口径写两遍，
-    迟早会出现「喂给模型的上下文」与「回放给用户的气泡」不一致。
-
-    ``turn`` 是**唯一排序键**，它必须全局单调（跨轮不撞号）才有意义，
-    见 ``service.chat`` 的 turn 起点与 `tests/api/routes/test_assistant.py` 的守卫。
-    """
-    return list(
-        session.exec(
-            select(Message)
-            .where(
-                Message.conversation_id == conv_id,
-                Message.role.in_(["user", "assistant"]),
-                Message.step.in_(["input", "output"]),
-            )
-            .order_by(Message.turn.asc())
-        ).all()
-    )
 
 
 def _question_card_text(card: dict) -> str:
@@ -142,44 +120,6 @@ def read_conversation_bubbles(session: Session, conv_id: UUID) -> list[dict]:
         {"role": m.role, "text": m.content or "", "cards": _cards_of(m)}
         for m in _visible_rows(session, conv_id)
     ]
-
-
-def _cards_of(m: Message) -> list[dict]:
-    """assistant 输出行的 DATA 卡片；畸形载荷按「无卡片」处理，不抛错。"""
-    if m.role != "assistant" or not isinstance(m.payload, dict):
-        return []
-    cards = m.payload.get("cards")
-    if not isinstance(cards, list):
-        return []
-    return [c for c in cards if isinstance(c, dict)]
-
-
-def last_scene_figure_key(session: Session, conv_id: Any) -> str | None:
-    """本会话**最近一次**已发射的交互场景图形身份键（ADR-0089 §4 去重护栏）。
-
-    读取口径与 prompt 历史 / 用户面回放**共用**同一套「可见轮次」判定
-    （``_visible_rows`` + ``_cards_of``）：场景卡整帧落库在 assistant 输出行的
-    ``payload["cards"]``（``{type, result}``），按 ``turn`` 倒序找第一条
-    ``type == "interactive_scene"`` 的卡片，取其中 ``result.figure.key``。
-
-    返回 ``None`` 的三种情形一视同仁：会话 id 畸形 / 本会话从未发射过场景卡 /
-    最近一条场景卡没有身份键——调用方据此**照常发射**（去重只在「键相同」时生效）。
-    """
-    if session is None or conv_id is None:
-        return None
-    try:
-        cid = conv_id if isinstance(conv_id, UUID) else UUID(str(conv_id))
-    except (ValueError, TypeError, AttributeError):
-        return None
-    for m in reversed(_visible_rows(session, cid)):
-        for card in _cards_of(m):
-            if card.get("type") != "interactive_scene":
-                continue
-            result = card.get("result")
-            figure = result.get("figure") if isinstance(result, dict) else None
-            key = figure.get("key") if isinstance(figure, dict) else None
-            return key if isinstance(key, str) and key else None
-    return None
 
 
 def _split_compaction(
