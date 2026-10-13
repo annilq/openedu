@@ -23,6 +23,7 @@ import '../../../../shared/widgets/app_toast.dart';
 import '../../../../shared/widgets/class_picker.dart';
 import '../providers/student_management_notifier.dart';
 import '../../providers/student_management_provider.dart';
+import '../../../../shared/presentation/resource.dart';
 import '../widgets/student_import_sheet.dart';
 
 /// 学生管理页（ADR-0068 §2.3 / ticket 02 + 03）。
@@ -215,17 +216,17 @@ class _StudentManagementScreenState
   /// 行内「调整班级」：拉起单班级选择器（预选当前班级），选中后对该学生单独
   /// 调 [batchReassign]。返回 `null` 表示取消（不改）；id 为空 = 显式置为未分班。
   ///
-  /// 班级清单取本页已加载的 [StudentManagementLoaded.classes]，不再回源拉一次。
+  /// 班级清单取本页已加载的 [StudentManagementData.classes]，不再回源拉一次。
   Future<void> _adjustClass(String studentId) async {
-    final state = ref.read(studentManagementProvider);
-    if (state is! StudentManagementLoaded) return;
-    final currentClassId = state.students
+    final data = ref.read(studentManagementProvider).dataOrNull;
+    if (data == null) return;
+    final currentClassId = data.students
         .where((s) => s.id == studentId)
         .firstOrNull
         ?.classId;
     final picked = await pickSingleClass(
       context,
-      classes: Future<List<ClassModel>>.value(state.classes),
+      classes: Future<List<ClassModel>>.value(data.classes),
       initialClassId: currentClassId,
     );
     if (!mounted || picked == null) return; // 取消，不改
@@ -343,9 +344,7 @@ class _StudentManagementScreenState
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(studentManagementProvider);
-    final students = state is StudentManagementLoaded
-        ? state.students
-        : const <UserModel>[];
+    final students = state.dataOrNull?.students ?? const <UserModel>[];
 
     return Stack(
       children: [
@@ -384,9 +383,9 @@ class _StudentManagementScreenState
                   ),
                   const SizedBox(height: AppSpacing.sm),
                   // 下钻页（classId != null）已是某个班内部，隐藏「全部/各班/未分班」筛选。
-                  if (state is StudentManagementLoaded && widget.classId == null)
+                  if (state.dataOrNull != null && widget.classId == null)
                     _FilterChips(
-                      classes: state.classes,
+                      classes: state.dataOrNull!.classes,
                       filter: _filter,
                       onChanged: _onFilterChanged,
                     ),
@@ -418,9 +417,9 @@ class _StudentManagementScreenState
               ),
           ],
         ),
-        if (_pickingClass && state is StudentManagementLoaded)
+        if (_pickingClass && state.dataOrNull != null)
           _ClassPicker(
-            classes: state.classes,
+            classes: state.dataOrNull!.classes,
             onPick: _moveToClass,
             onDismiss: () => setState(() => _pickingClass = false),
           ),
@@ -436,7 +435,7 @@ class _StudentManagementScreenState
 
 /// 页面标题行：标题 + 总数徽标；选择模式下切换为「选择/取消」与已选计数。
 class _PageHeader extends StatelessWidget {
-  final StudentManagementState state;
+  final Resource<StudentManagementData> state;
   final bool selecting;
   final int selectedCount;
   final int visibleCount;
@@ -470,9 +469,7 @@ class _PageHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = AppTheme.colorsOf(context);
     final text = AppTheme.textOf(context);
-    final total = state is StudentManagementLoaded
-        ? (state as StudentManagementLoaded).students.length
-        : null;
+    final total = state.dataOrNull?.students.length;
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         AppSpacing.md, AppSpacing.md, AppSpacing.md, AppSpacing.xs),
@@ -726,7 +723,7 @@ class _ClassPicker extends StatelessWidget {
 
 /// 列表主体：按状态分流加载 / 错误 / 空 / 分组列表。
 class _Body extends StatelessWidget {
-  final StudentManagementState state;
+  final Resource<StudentManagementData> state;
   final String? filter;
   final bool selecting;
   final Set<String> selected;
@@ -754,19 +751,18 @@ class _Body extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (state is StudentManagementLoading ||
-        state is StudentManagementInitial) {
-      return const Center(child: AppLoading());
-    }
-    if (state is StudentManagementError) {
+    if (state.errorOrNull != null) {
       return Center(
         child: AppError(
-          message: (state as StudentManagementError).message,
+          message: state.errorOrNull!,
           onRetry: onRetry,
         ),
       );
     }
-    final loaded = state as StudentManagementLoaded;
+    final loaded = state.dataOrNull;
+    if (loaded == null) {
+      return const Center(child: AppLoading());
+    }
     if (loaded.students.isEmpty) {
           return Center(
         child: AppEmptyState(
@@ -930,11 +926,12 @@ class _StudentTile extends StatelessWidget {
 /// 班级真实人数（[ClassModel.studentCount]），用于下钻标题展示「N 人」。
 ///
 /// 下钻页 [getStudents] 会按关键词过滤，[state.students] 是过滤后的子集；
-/// 标题里的「N 人」应按规范表示班级规模，故从 [StudentManagementLoaded.classes]
+/// 标题里的「N 人」应按规范表示班级规模，故从 [StudentManagementData.classes]
 /// 取对应班级的 headcount，搜索时也不随之缩水。找不到该班级时回退到列表长度。
-int? _classHeadcount(StudentManagementState state, String? classId) {
-  if (classId == null || state is! StudentManagementLoaded) return null;
-  for (final c in state.classes) {
+int? _classHeadcount(Resource<StudentManagementData> state, String? classId) {
+  final data = state.dataOrNull;
+  if (classId == null || data == null) return null;
+  for (final c in data.classes) {
     if (c.id == classId) return c.studentCount;
   }
   return null;
