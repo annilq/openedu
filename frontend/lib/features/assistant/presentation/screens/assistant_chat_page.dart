@@ -469,7 +469,7 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
   /// 知识点聚焦徽标（L2）：课件入口带 [widget.coursewareContext] 时出现，
   /// 展示「知识点名 · 学科 · 年级 · 学期」，让使用者一眼知道这段对话聚焦在哪。
   ///
-  /// 走 surfaceContainer 底 + hairline 边，与 `_PresentStage` 的提问卡同一视觉档；
+  /// 走 surfaceSunken 底 + hairline 边，与 `_PresentStage` 的提问卡同一视觉档；
   /// 放在内容区顶部、与消息 / 输入框同宽同轴（AppTopBar 无 subtitle 槽，故不放顶栏）。
   Widget _knowledgePointBadge() {
     final scheme = AppTheme.colorsOf(context);
@@ -488,7 +488,7 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
         padding: const EdgeInsets.symmetric(
             horizontal: AppSpacing.md, vertical: AppSpacing.sm),
         decoration: BoxDecoration(
-          color: scheme.surfaceContainer,
+          color: scheme.surfaceSunken,
           borderRadius: BorderRadius.circular(AppRadius.card),
           border: Border.all(
             color: scheme.outline,

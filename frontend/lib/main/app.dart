@@ -138,7 +138,7 @@ class _MyAppState extends ConsumerState<MyApp> {
             ...GlobalCupertinoLocalizations.delegates,
           ],
           builder: (context, child) => ShadAppBuilder(
-            backgroundColor: active.surfaceContainerLow,
+            backgroundColor: active.surfaceRaised,
             child: FocusTraversalGroup(
               // 桌面端 Tab 遍历（ADR-0045）：按阅读顺序（侧栏 → 主栏 → 详情栏）串起全站
               // 可聚焦元素。这里显式声明策略而不依赖缺省，是为了让「顺序可预期」这件事

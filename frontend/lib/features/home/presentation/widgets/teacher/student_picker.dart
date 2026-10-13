@@ -8,7 +8,7 @@ import '../../../../../shared/widgets/app_error.dart';
 import '../../../../../shared/widgets/app_loading.dart';
 import '../../../../../shared/widgets/app_focusable_action.dart';
 import '../../../../../shared/domain/models/user.dart';
-import '../../../../students/presentation/providers/students_notifier.dart';
+import '../../../../../shared/presentation/resource.dart';
 import '../../../../students/providers/students_provider.dart';
 
 /// 弹窗选择学生：列出本教师全部学生，点选即返回对应 [UserModel]。
@@ -29,18 +29,21 @@ Future<UserModel?> pickStudent(BuildContext context, WidgetRef ref) async {
             final state = r.watch(studentsNotifierProvider);
             final app = AppTheme.colorsOf(c);
             final text = AppTheme.textOf(c);
-            if (state is ChildrenInitial || state is ChildrenLoading) {
+            if (state is ResourceIdle<List<UserModel>> ||
+                state is ResourceLoading<List<UserModel>>) {
               return const AppLoading();
             }
-            if (state is ChildrenError) {
+            if (state is ResourceError<List<UserModel>>) {
               return AppError(
                 message: state.message,
                 onRetry: () =>
                     r.read(studentsNotifierProvider.notifier).loadChildren(),
               );
             }
-            if (state is! StudentsLoaded) return const SizedBox.shrink();
-            if (state.students.isEmpty) {
+            if (state is! ResourceLoaded<List<UserModel>>) {
+              return const SizedBox.shrink();
+            }
+            if (state.data.isEmpty) {
               return AppEmptyState(
                 icon: LucideIcons.users,
                 title: '还没有学生',
@@ -49,11 +52,11 @@ Future<UserModel?> pickStudent(BuildContext context, WidgetRef ref) async {
             }
             return ListView.separated(
               shrinkWrap: true,
-              itemCount: state.students.length,
+              itemCount: state.data.length,
               separatorBuilder: (_, __) =>
                   const SizedBox(height: AppSpacing.xs),
               itemBuilder: (_, i) {
-                final s = state.students[i];
+                final s = state.data[i];
                 return AppFocusableAction(
                   onTap: () => Navigator.of(ctx).pop(s),
                   hoverHighlight: true,
@@ -103,18 +106,21 @@ Future<List<UserModel>> pickStudents(
             final state = r.watch(studentsNotifierProvider);
             final app = AppTheme.colorsOf(c);
             final text = AppTheme.textOf(c);
-            if (state is ChildrenInitial || state is ChildrenLoading) {
+            if (state is ResourceIdle<List<UserModel>> ||
+                state is ResourceLoading<List<UserModel>>) {
               return const AppLoading();
             }
-            if (state is ChildrenError) {
+            if (state is ResourceError<List<UserModel>>) {
               return AppError(
                 message: state.message,
                 onRetry: () =>
                     r.read(studentsNotifierProvider.notifier).loadChildren(),
               );
             }
-            if (state is! StudentsLoaded) return const SizedBox.shrink();
-            if (state.students.isEmpty) {
+            if (state is! ResourceLoaded<List<UserModel>>) {
+              return const SizedBox.shrink();
+            }
+            if (state.data.isEmpty) {
               return AppEmptyState(
                 icon: LucideIcons.users,
                 title: '还没有学生',
@@ -129,11 +135,11 @@ Future<List<UserModel>> pickStudents(
                     Expanded(
                       child: ListView.separated(
                         shrinkWrap: true,
-                        itemCount: state.students.length,
+                        itemCount: state.data.length,
                         separatorBuilder: (_, __) =>
                             const SizedBox(height: AppSpacing.xs),
                         itemBuilder: (_, i) {
-                          final s = state.students[i];
+                          final s = state.data[i];
                           final on = chosen.contains(s.id);
                           return AppFocusableAction(
                             onTap: () => setInner(() {
@@ -181,8 +187,8 @@ Future<List<UserModel>> pickStudents(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
                         ShadButton.outline(
-                          onPressed: () => Navigator.of(ctx).pop(
-                            state.students
+                          onPressed:                           () => Navigator.of(ctx).pop(
+                            state.data
                                 .where((s) => chosen.contains(s.id))
                                 .toList(),
                           ),

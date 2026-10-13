@@ -364,22 +364,22 @@ class _PreviewHomeState extends State<_PreviewHome> {
     return _Section(
       tag: 'B',
       title: 'secondary 去琥珀：不再"像 warning"',
-      desc: '改前 shadcn secondary 接的是 secondaryContainer #FAF3E8（琥珀=warning 底），'
+      desc: '改前 shadcn secondary 接的是 semanticWarning #FAF3E8（琥珀=warning 底），'
           '于是次级按钮看起来像警告，且 hover 无反馈（hover 色=底色）。'
-          '改后走中性 surfaceContainerHigh + 1px outline 描边，并补了 hover。',
+          '改后走中性 surfaceSunken + 1px outline 描边，并补了 hover。',
       body: _Compare(
         before: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             ShadButton.secondary(
               size: ShadButtonSize.sm,
-              backgroundColor: app.secondaryContainer,
-              foregroundColor: app.onSecondaryContainer,
-              hoverBackgroundColor: app.secondaryContainer, // 原状：hover 无变化
+              backgroundColor: app.semanticWarning,
+              foregroundColor: app.semanticWarningFg,
+              hoverBackgroundColor: app.semanticWarning, // 原状：hover 无变化
               onPressed: () {},
               child: Text(
                 '稍后再说',
-                style: t.labelMedium?.copyWith(color: app.onSecondaryContainer),
+                style: t.labelMedium?.copyWith(color: app.semanticWarningFg),
               ),
             ),
             const SizedBox(height: AppSpacing.sm),
@@ -451,35 +451,35 @@ class _PreviewHomeState extends State<_PreviewHome> {
             runSpacing: AppSpacing.sm,
             children: [
               _LegacyPill(
-                bg: app.surfaceContainerHigh,
+                bg: app.surfaceSunken,
                 fg: app.onSurface,
-                hoverBg: app.surfaceContainerHighest,
+                hoverBg: app.surfaceActive,
                 label: '普通',
               ),
               _LegacyPill(
-                bg: app.infoContainer,
-                fg: app.onInfoContainer,
+                bg: app.semanticInfo,
+                fg: app.semanticInfoFg,
                 hoverBg: app.accent,
                 label: '待复习',
                 icon: LucideIcons.info,
               ),
               _LegacyPill(
-                bg: app.secondaryContainer,
-                fg: app.onSecondaryContainer,
+                bg: app.semanticWarning,
+                fg: app.semanticWarningFg,
                 hoverBg: app.secondary,
                 label: 'AI 生成',
                 icon: LucideIcons.sparkles,
               ),
               _LegacyPill(
-                bg: app.tertiaryContainer,
-                fg: app.onTertiaryContainer,
+                bg: app.semanticPositive,
+                fg: app.semanticPositiveFg,
                 hoverBg: app.tertiary,
                 label: '已掌握',
                 icon: LucideIcons.check,
               ),
               _LegacyPill(
-                bg: app.errorContainer,
-                fg: app.onErrorContainer,
+                bg: app.semanticError,
+                fg: app.semanticErrorFg,
                 hoverBg: app.error,
                 label: '错题',
                 icon: LucideIcons.triangleAlert,
@@ -590,7 +590,7 @@ class _PreviewHomeState extends State<_PreviewHome> {
               width: 26,
               height: 26,
               decoration: BoxDecoration(
-                color: app.surfaceContainerLow,
+                color: app.surfaceRaised,
                 borderRadius: BorderRadius.circular(AppRadius.xs),
                 border: Border.all(color: c, width: 1),
               ),

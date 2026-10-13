@@ -2,20 +2,20 @@ import 'package:flutter/material.dart' show Icons;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../../shared/domain/figures.dart';
-import '../../../../../shared/domain/providers/figure_library_provider.dart';
-import '../../../../../shared/domain/scene_spec.dart';
-import '../../../../../shared/theme/app_theme.dart';
-import '../../../../../shared/widgets/app_actions.dart';
-import '../../../../../shared/widgets/app_buttons.dart';
-import '../../../../../shared/widgets/app_tags.dart';
-import '../../../../../shared/widgets/app_toast.dart';
-import '../../../../../shared/widgets/scene_interpreter/figure_library_gallery.dart';
-import '../../../../../shared/widgets/scene_interpreter/reflection_scene_data.dart';
-import '../../../../../shared/widgets/scene_interpreter/reflection_scene_dialog.dart';
+import '../../../../../domain/figures.dart';
+import '../../../../../domain/providers/figure_library_provider.dart';
+import '../../../../../domain/scene_spec.dart';
+import '../../../../../theme/app_theme.dart';
+import '../../../../../widgets/app_actions.dart';
+import '../../../../../widgets/app_buttons.dart';
+import '../../../../../widgets/app_tags.dart';
+import '../../../../../widgets/app_toast.dart';
+import '../../../../../widgets/scene_interpreter/figure_library_gallery.dart';
+import '../../../../../widgets/scene_interpreter/reflection_scene_data.dart';
+import '../../../../../widgets/scene_interpreter/reflection_scene_dialog.dart';
 import '../../../domain/repositories/material_repository.dart'
     show SceneLibraryEntry;
-import '../../../providers/knowledge_manage_provider.dart';
+import '../../../providers/material_providers.dart';
 import 'scene_developer_guide.dart';
 import 'scene_library_picker.dart';
 
@@ -162,9 +162,10 @@ class _KnowledgePointSceneEditorState
     }
     setState(() => _saving = true);
     try {
-      await ref
-          .read(knowledgeManageProvider.notifier)
-          .saveScenes(widget.kpId, [_buildSpec().toJson()]);
+      await ref.read(materialRepositoryProvider).updateKnowledgePointScenes(
+            kpId: widget.kpId,
+            scenes: [_buildSpec().toJson()],
+          );
       if (mounted) _close();
     } catch (e) {
       if (mounted) {

@@ -156,7 +156,7 @@ class _MaterialTile extends StatelessWidget {
           onTap: asset != null ? onOpen : null,
           child: Container(
             decoration: BoxDecoration(
-              color: app.surfaceContainerLow,
+              color: app.surfaceRaised,
               borderRadius: BorderRadius.circular(AppRadius.card),
               border: Border.all(
                 color: app.outline,

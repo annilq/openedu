@@ -18,7 +18,7 @@ import '../../providers/home_notifier.dart';
 import '../../providers/task_form_prefill.dart';
 import 'student_picker.dart';
 import 'dispatch_targets_row.dart';
-import '../../../domain/repositories/material_repository.dart'
+import 'package:kids_learn/shared/features/materials/domain/repositories/material_repository.dart'
     show KnowledgePointOption;
 import 'teacher_task_preview_section.dart';
 import 'teacher_task_spec_row.dart';

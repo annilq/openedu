@@ -66,13 +66,13 @@ class CoursewareEditorInfoCard extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(
                     horizontal: AppSpacing.sm, vertical: 2),
                 decoration: BoxDecoration(
-                  color: cw.isReady ? app.primaryContainer : app.surfaceSunken,
+                  color: cw.isReady ? app.semanticInfo : app.surfaceSunken,
                   borderRadius: BorderRadius.circular(AppRadius.chip),
                 ),
                 child: Text(
                   cw.isReady ? '可上讲台' : '草稿',
                   style: text.labelSmall?.copyWith(
-                    color: cw.isReady ? app.onPrimaryContainer : app.onSurfaceVariant,
+                    color: cw.isReady ? app.semanticInfoFg : app.onSurfaceVariant,
                   ),
                 ),
               ),

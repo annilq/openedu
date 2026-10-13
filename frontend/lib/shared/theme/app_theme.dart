@@ -290,31 +290,29 @@ class AppTheme {
     // CTA / 品牌主色：新粗野蓝（深块，配白字 4.88）
     primary: Color(0xFF2F6FD0),
     onPrimary: Color(0xFFFFFFFF),
-    primaryContainer: Color(0xFFDCE7FA), // 浅蓝容器（头像底 / 选中底）
-    onPrimaryContainer: Color(0xFF1D4E9C),
+    semanticInfo: Color(0xFFDCE7FA), // 浅蓝容器（头像底 / 选中底）
+    semanticInfoFg: Color(0xFF1D4E9C),
     // warning 语义（琥珀，亮块配墨黑）
     secondary: Color(0xFFF08C00),
     onSecondary: AppBrutal.ink,
-    secondaryContainer: Color(0xFFFFF0CC), // = semanticWarning 底
-    onSecondaryContainer: Color(0xFF6B4700), // = semanticWarningFg
+    semanticWarning: Color(0xFFFFF0CC), // = semanticWarning 底
+    semanticWarningFg: Color(0xFF6B4700), // = semanticWarningFg
     // positive 语义（绿，亮块配墨黑）
     tertiary: Color(0xFF2B9348),
     onTertiary: AppBrutal.ink,
-    tertiaryContainer: Color(0xFFDFF3E4), // = semanticPositive 底
-    onTertiaryContainer: Color(0xFF1D6B33), // = semanticPositiveFg
+    semanticPositive: Color(0xFFDFF3E4), // = semanticPositive 底
+    semanticPositiveFg: Color(0xFF1D6B33), // = semanticPositiveFg
     // error 语义（深红，配白字 5.56）
     error: Color(0xFFC92525),
     onError: Color(0xFFFFFFFF),
-    errorContainer: Color(0xFFFFE2E0), // = semanticError 底
-    onErrorContainer: Color(0xFFA51C1C), // = semanticErrorFg
+    semanticError: Color(0xFFFFE2E0), // = semanticError 底
+    semanticErrorFg: Color(0xFFA51C1C), // = semanticErrorFg
     // Surface 层次（纸底体系：[AppBrutal.paper] → 纯白浮起）
     surface: AppBrutal.paper, // 内容区纸底
     onSurface: AppBrutal.ink,
-    surfaceContainerLowest: Color(0xFFFFFFFF), // = surfaceRaised
-    surfaceContainerLow: Color(0xFFFFFFFF), // = surfaceRaised（卡片）
-    surfaceContainer: Color(0xFFF2F0EA), // = surfaceSunken（侧栏）
-    surfaceContainerHigh: Color(0xFFF2F0EA), // = surfaceSunken（仅作 surface 色调，禁止当边框用）
-    surfaceContainerHighest: Color(0xFFE8E5DC), // = surfaceActive
+    surfaceRaised: Color(0xFFFFFFFF), // = surfaceRaised（卡片）
+    surfaceSunken: Color(0xFFF2F0EA), // = surfaceSunken（仅作 surface 色调，禁止当边框用）
+    surfaceActive: Color(0xFFE8E5DC), // = surfaceActive
     onSurfaceVariant: Color(0xFF5C6068),
     outline: AppBrutal.ink, // 墨黑描边（ADR-0044：功能必需，非装饰）
     inverseSurface: AppBrutal.ink,
@@ -325,8 +323,6 @@ class AppTheme {
     surfaceHover: Color(0xFFF2F0EA),
     outlineHover: AppBrutal.ink,
     // info 语义（蓝系）
-    infoContainer: Color(0xFFDCE7FA), // = semanticInfo 底（AI 标记亦走此档）
-    onInfoContainer: Color(0xFF1D4E9C), // = semanticInfoFg
     // CTA hover（蓝 CTA：hover 加深一档）
     ctaHover: Color(0xFF245AB0),
     // Toast 浮层：墨黑底 + 纸色字（新粗野反色，不用中性深炭）
@@ -344,27 +340,25 @@ class AppTheme {
     brightness: Brightness.dark,
     primary: Color(0xFF7FA8F0), // 暗底品牌蓝（亮块，配深炭字）
     onPrimary: Color(0xFF141412),
-    primaryContainer: Color(0xFF16233D), // 深蓝容器（选中/头像底）
-    onPrimaryContainer: Color(0xFFB3C9F7), // 浅蓝（容器前景）
+    semanticInfo: Color(0xFF16233D), // 深蓝容器（选中/头像底）
+    semanticInfoFg: Color(0xFFB3C9F7), // 浅蓝（容器前景）
     secondary: Color(0xFFFFC94D), // warning 琥珀
     onSecondary: Color(0xFF141412),
-    secondaryContainer: Color(0xFF3A3218), // = semanticWarning 底
-    onSecondaryContainer: Color(0xFFFFE89A), // = semanticWarningFg
+    semanticWarning: Color(0xFF3A3218), // = semanticWarning 底
+    semanticWarningFg: Color(0xFFFFE89A), // = semanticWarningFg
     tertiary: Color(0xFF6FC48A), // positive
     onTertiary: Color(0xFF141412),
-    tertiaryContainer: Color(0xFF16301F), // = semanticPositive 底
-    onTertiaryContainer: Color(0xFFA7E0BE), // = semanticPositiveFg
+    semanticPositive: Color(0xFF16301F), // = semanticPositive 底
+    semanticPositiveFg: Color(0xFFA7E0BE), // = semanticPositiveFg
     error: Color(0xFFFF8C7A),
     onError: Color(0xFF141412),
-    errorContainer: Color(0xFF3A1F1C), // = semanticError 底
-    onErrorContainer: Color(0xFFFFC0B4), // = semanticErrorFg
+    semanticError: Color(0xFF3A1F1C), // = semanticError 底
+    semanticErrorFg: Color(0xFFFFC0B4), // = semanticErrorFg
     surface: Color(0xFF141412), // 内容区深炭
     onSurface: Color(0xFFF5F3EE),
-    surfaceContainerLowest: Color(0xFF1C1C1A), // = surfaceRaised
-    surfaceContainerLow: Color(0xFF1C1C1A), // = surfaceRaised（卡片）
-    surfaceContainer: Color(0xFF1A1A18), // = surfaceSunken（侧栏）
-    surfaceContainerHigh: Color(0xFF1A1A18), // = surfaceSunken（仅作 surface 色调，禁止当边框用）
-    surfaceContainerHighest: Color(0xFF2A2A28), // = surfaceActive
+    surfaceRaised: Color(0xFF1C1C1A), // = surfaceRaised（卡片）
+    surfaceSunken: Color(0xFF1A1A18), // = surfaceSunken（仅作 surface 色调，禁止当边框用）
+    surfaceActive: Color(0xFF2A2A28), // = surfaceActive
     onSurfaceVariant: Color(0xFFA8A49B),
     outline: Color(0xFF8A8780), // 暗模式亮描边：保证色块边界仍可辨
     inverseSurface: Color(0xFFF5F3EE),
@@ -373,8 +367,6 @@ class AppTheme {
     onAccent: Color(0xFF141412),
     surfaceHover: Color(0xFF232320),
     outlineHover: Color(0xFFA8A49B),
-    infoContainer: Color(0xFF16233D), // = semanticInfo 底（AI 标记亦走此档）
-    onInfoContainer: Color(0xFFB3C9F7), // = semanticInfoFg
     ctaHover: Color(0xFFFFFFFF),
     toast: Color(0xFFF5F3EE), // 暗模式下 Toast 反色为浅底
     onToast: Color(0xFF141412),
@@ -452,9 +444,7 @@ class AppTheme {
 
   /// 设计系统令牌 → shadcn `custom` 色表。
   ///
-  /// 命名以 `.impeccable.md` 的 public 令牌名为准（语义名优先），
-  /// 旧的角色名 key（primaryContainer / secondaryContainer / tertiaryContainer /
-  /// infoContainer…）一并保留做兼容，**新代码只用语义名**。
+  /// 命名以 `.impeccable.md` 的 public 令牌名为准（语义名优先）。
   static Map<String, Color> _customColors(AppColors c) {
     final isDark = c.brightness == Brightness.dark;
     final Map<String, Color> subject = {};
@@ -519,21 +509,6 @@ class AppTheme {
       'scrim': c.scrim,
       // —— 学科色（ADR-0014）——
       ...subject,
-      // —— 旧角色名（兼容，新代码勿用）——
-      'infoContainer': c.infoContainer,
-      'onInfoContainer': c.onInfoContainer,
-      'primaryContainer': c.primaryContainer,
-      'onPrimaryContainer': c.onPrimaryContainer,
-      'secondaryContainer': c.secondaryContainer,
-      'onSecondaryContainer': c.onSecondaryContainer,
-      'tertiaryContainer': c.tertiaryContainer,
-      'onTertiaryContainer': c.onTertiaryContainer,
-      'errorContainer': c.errorContainer,
-      'onErrorContainer': c.onErrorContainer,
-      'surfaceContainerLowest': c.surfaceContainerLowest,
-      'surfaceContainer': c.surfaceContainer,
-      'surfaceContainerHigh': c.surfaceContainerHigh,
-      'surfaceContainerHighest': c.surfaceContainerHighest,
     };
   }
 
@@ -615,7 +590,7 @@ class AppTheme {
       primaryForeground: c.onPrimary,
       secondary: c.surfaceSunken,
       secondaryForeground: c.onSurface,
-      muted: c.surfaceContainer,
+      muted: c.surfaceSunken,
       mutedForeground: c.onSurfaceVariant,
       // 陷阱提示：shadcn 的 `accent` 是「hover 高亮」语义（=我们的 surfaceSunken），
       // **不是**设计系统 accent 靛蓝。靛蓝走 `ring` / `selection` / custom['accent']。
@@ -1004,31 +979,29 @@ class AppColors {
 
   final Color primary;
   final Color onPrimary;
-  final Color primaryContainer;
-  final Color onPrimaryContainer;
+  final Color semanticInfo;
+  final Color semanticInfoFg;
 
   final Color secondary;
   final Color onSecondary;
-  final Color secondaryContainer;
-  final Color onSecondaryContainer;
+  final Color semanticWarning;
+  final Color semanticWarningFg;
 
   final Color tertiary;
   final Color onTertiary;
-  final Color tertiaryContainer;
-  final Color onTertiaryContainer;
+  final Color semanticPositive;
+  final Color semanticPositiveFg;
 
   final Color error;
   final Color onError;
-  final Color errorContainer;
-  final Color onErrorContainer;
+  final Color semanticError;
+  final Color semanticErrorFg;
 
   final Color surface;
   final Color onSurface;
-  final Color surfaceContainerLowest;
-  final Color surfaceContainerLow;
-  final Color surfaceContainer;
-  final Color surfaceContainerHigh;
-  final Color surfaceContainerHighest;
+  final Color surfaceRaised;
+  final Color surfaceSunken;
+  final Color surfaceActive;
   final Color onSurfaceVariant;
   final Color outline;
 
@@ -1040,8 +1013,6 @@ class AppColors {
   final Color onAccent;
   final Color surfaceHover;
   final Color outlineHover;
-  final Color infoContainer;
-  final Color onInfoContainer;
   final Color ctaHover; // CTA（近黑/反色）按钮的 hover 底色
   final Color toast; // Toast 浮层底
   final Color onToast; // Toast 浮层文字
@@ -1051,27 +1022,25 @@ class AppColors {
     required this.brightness,
     required this.primary,
     required this.onPrimary,
-    required this.primaryContainer,
-    required this.onPrimaryContainer,
+    required this.semanticInfo,
+    required this.semanticInfoFg,
     required this.secondary,
     required this.onSecondary,
-    required this.secondaryContainer,
-    required this.onSecondaryContainer,
+    required this.semanticWarning,
+    required this.semanticWarningFg,
     required this.tertiary,
     required this.onTertiary,
-    required this.tertiaryContainer,
-    required this.onTertiaryContainer,
+    required this.semanticPositive,
+    required this.semanticPositiveFg,
     required this.error,
     required this.onError,
-    required this.errorContainer,
-    required this.onErrorContainer,
+    required this.semanticError,
+    required this.semanticErrorFg,
     required this.surface,
     required this.onSurface,
-    required this.surfaceContainerLowest,
-    required this.surfaceContainerLow,
-    required this.surfaceContainer,
-    required this.surfaceContainerHigh,
-    required this.surfaceContainerHighest,
+    required this.surfaceRaised,
+    required this.surfaceSunken,
+    required this.surfaceActive,
     required this.onSurfaceVariant,
     required this.outline,
     required this.inverseSurface,
@@ -1080,49 +1049,11 @@ class AppColors {
     required this.onAccent,
     required this.surfaceHover,
     required this.outlineHover,
-    required this.infoContainer,
-    required this.onInfoContainer,
     required this.ctaHover,
     required this.toast,
     required this.onToast,
     required this.scrim,
   });
-
-  /// 浮起表面（卡片/容器背景）。
-  Color get surfaceRaised => surfaceContainerLow;
-
-  /// 下沉表面（侧栏/凹槽/弱化背景）。
-  Color get surfaceSunken => surfaceContainerHigh;
-
-  /// 选中态表面。
-  Color get surfaceActive => surfaceContainerHighest;
-
-  // ============ 语义色别名（文档 @.impeccable.md 的 public 令牌名） ============
-  //
-  // 底层存储沿用 shadcn / Material 角色名（primary/secondary/tertiary…），
-  // 但**业务代码一律只用本段语义别名**，与文档令牌名一一对应，杜绝
-  // 「用 secondaryContainer 表达 warning」这类角色名错读（CONTEXT.md 已把
-  // primaryContainer/secondaryContainer/tertiaryContainer 列为 Avoid 词）。
-
-  /// 正向（positive）容器底 / 前景。
-  Color get semanticPositive => tertiaryContainer;
-
-  Color get semanticPositiveFg => onTertiaryContainer;
-
-  /// 警告（warning）容器底 / 前景。
-  Color get semanticWarning => secondaryContainer;
-
-  Color get semanticWarningFg => onSecondaryContainer;
-
-  /// 错误（error）容器底 / 前景。
-  Color get semanticError => errorContainer;
-
-  Color get semanticErrorFg => onErrorContainer;
-
-  /// 信息（info）容器底 / 前景。
-  Color get semanticInfo => infoContainer;
-
-  Color get semanticInfoFg => onInfoContainer;
 
   /// CTA 按钮底 / 文字（文档 `cta` / `onCta`）。
   Color get cta => primary;

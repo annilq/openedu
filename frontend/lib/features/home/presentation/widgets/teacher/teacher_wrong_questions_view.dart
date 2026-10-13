@@ -260,12 +260,12 @@ class _TeacherWrongQuestionsState
               width: 52,
               height: 52,
               decoration: BoxDecoration(
-                color: scheme.errorContainer,
+                color: scheme.semanticError,
                 borderRadius: BorderRadius.circular(AppRadius.card),
               ),
               alignment: Alignment.center,
               child: Icon(LucideIcons.bookOpen,
-                  size: 28, color: scheme.onErrorContainer),
+                  size: 28, color: scheme.semanticErrorFg),
             ),
             const SizedBox(width: AppSpacing.xl),
             Text('请先在侧栏选择学生', style: AppTheme.textOf(context).bodyLarge),
@@ -399,14 +399,14 @@ class _TeacherWrongCardState extends State<_TeacherWrongCard> {
         Container(
           padding: const EdgeInsets.all(AppSpacing.md),
           decoration: BoxDecoration(
-            color: scheme.tertiaryContainer,
+            color: scheme.semanticPositive,
             borderRadius: BorderRadius.circular(AppRadius.card),
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Icon(LucideIcons.checkCircle2,
-                  size: 20, color: scheme.onTertiaryContainer),
+                  size: 20, color: scheme.semanticPositiveFg),
               const SizedBox(width: AppSpacing.sm),
               Expanded(
                 child: Text(
@@ -415,7 +415,7 @@ class _TeacherWrongCardState extends State<_TeacherWrongCard> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: AppTheme.textOf(context).bodyMedium?.copyWith(
-                        color: scheme.onTertiaryContainer,
+                        color: scheme.semanticPositiveFg,
                         fontWeight: FontWeight.w600,
                       ),
                 ),

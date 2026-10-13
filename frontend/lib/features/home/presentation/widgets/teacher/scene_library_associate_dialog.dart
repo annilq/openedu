@@ -23,7 +23,7 @@ import '../../../../../shared/domain/scene_spec.dart';
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/widgets/app_focusable_action.dart';
 import '../../../../../shared/widgets/app_toast.dart';
-import '../../../domain/repositories/material_repository.dart';
+import 'package:kids_learn/shared/features/materials/domain/repositories/material_repository.dart';
 import '../../../providers/home_provider.dart';
 
 /// 打开关联选择器。

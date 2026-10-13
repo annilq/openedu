@@ -14,6 +14,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:kids_learn/shared/domain/repositories/students_repository.dart';
 import 'package:kids_learn/features/students/presentation/providers/students_notifier.dart';
+import 'package:kids_learn/shared/presentation/resource.dart';
 import 'package:kids_learn/features/students/providers/students_provider.dart'
     show studentsNotifierProvider;
 import 'package:kids_learn/features/home/data/repositories/question_bank_repository_impl.dart';
@@ -318,7 +319,7 @@ class _UnusedChildrenRepo implements StudentsRepository {
 class _SeededChildrenNotifier extends ChildrenNotifier {
   _SeededChildrenNotifier(List<UserModel> students)
       : super(_UnusedChildrenRepo()) {
-    state = StudentsLoaded(students);
+    state = ResourceLoaded<List<UserModel>>(students);
   }
 }
 

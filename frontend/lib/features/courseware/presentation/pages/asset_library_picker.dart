@@ -236,7 +236,7 @@ class _Tile extends StatelessWidget {
           children: [
             Container(
               decoration: BoxDecoration(
-                color: app.surfaceContainerLow,
+                color: app.surfaceRaised,
                 borderRadius: BorderRadius.circular(AppRadius.card),
                 border: Border.all(
                   color: selected ? app.primary : app.outline,

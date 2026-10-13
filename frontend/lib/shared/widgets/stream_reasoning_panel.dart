@@ -59,7 +59,7 @@ class StreamReasoningPanel extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(
                     horizontal: AppSpacing.sm, vertical: 2),
                 decoration: BoxDecoration(
-                  color: app.primaryContainer,
+                  color: app.semanticInfo,
                   borderRadius: BorderRadius.circular(AppRadius.chip),
                   // 标签类小色块一律 1.5px 墨黑描边（与学科 chip / 题号 chip 同口径）：
                   // 浅蓝容器底在纸底上对比不足，不描边则标签边界糊掉。
@@ -70,7 +70,7 @@ class StreamReasoningPanel extends StatelessWidget {
                 ),
                 child: Text(chipText,
                     style: text.labelSmall?.copyWith(
-                        color: app.onPrimaryContainer,
+                        color: app.semanticInfoFg,
                         fontWeight: FontWeight.w700)),
               ),
               const Spacer(),

@@ -5,7 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter/cupertino.dart' show CupertinoPageRoute;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:kids_learn/features/home/presentation/widgets/teacher/knowledge_point_scene_editor.dart';
+import 'package:kids_learn/shared/features/materials/presentation/widgets/teacher/knowledge_point_scene_editor.dart';
 
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_actions.dart';

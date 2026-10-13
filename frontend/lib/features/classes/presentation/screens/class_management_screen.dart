@@ -16,7 +16,7 @@ import '../../../../shared/widgets/app_focusable_action.dart';
 import '../../../../shared/widgets/app_inputs.dart';
 import '../../../../shared/widgets/app_loading.dart';
 import '../../../../shared/widgets/app_toast.dart';
-import '../providers/class_management_notifier.dart';
+import '../../../../shared/presentation/resource.dart';
 import '../providers/class_management_provider.dart';
 
 part 'class_management_form.dart';
@@ -101,9 +101,7 @@ class _ClassManagementScreenState extends ConsumerState<ClassManagementScreen> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(classManagementProvider);
-    final classes = state is ClassManagementLoaded
-        ? state.classes
-        : const <ClassModel>[];
+    final classes = state.dataOrNull ?? const <ClassModel>[];
 
     return Stack(
       children: [
@@ -193,7 +191,7 @@ class _Header extends StatelessWidget {
 
 /// 列表主体：按状态分流加载 / 错误 / 空 / 卡片列表。
 class _Body extends StatelessWidget {
-  final ClassManagementState state;
+  final Resource<List<ClassModel>> state;
   final void Function(String classId, String className) onOpenClass;
   final void Function(ClassModel) onRename;
   final Future<void> Function(ClassModel) onDelete;
@@ -209,19 +207,19 @@ class _Body extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (state is ClassManagementInitial ||
-        state is ClassManagementLoading) {
+    if (state.dataOrNull == null && state.errorOrNull == null) {
+      // ResourceIdle / ResourceLoading 同占位。
       return const Center(child: AppLoading());
     }
-    if (state is ClassManagementError) {
+    if (state.errorOrNull != null) {
       return Center(
         child: AppError(
-          message: (state as ClassManagementError).message,
+          message: state.errorOrNull!,
           onRetry: () {},
         ),
       );
     }
-    final classes = (state as ClassManagementLoaded).classes;
+    final classes = state.dataOrNull!;
     if (classes.isEmpty) {
       return AppEmptyState(
         icon: LucideIcons.school,

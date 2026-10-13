@@ -67,7 +67,7 @@ class AppOptionTile extends StatelessWidget {
           curve: Curves.easeOut,
           padding: const EdgeInsets.all(AppSpacing.xl),
           decoration: BoxDecoration(
-            color: selected ? scheme.primaryContainer : scheme.surfaceRaised,
+            color: selected ? scheme.semanticInfo : scheme.surfaceRaised,
             borderRadius: BorderRadius.circular(AppRadius.card),
             // 未选中态也必须有墨黑描边：surfaceRaised 是纯白，纸底是 #FDFBF7，
             // 两者对比仅 ~1.02——旧写法只在选中时描边，未选中时选项块在卡片上
@@ -116,7 +116,7 @@ class AppOptionTile extends StatelessWidget {
                     style: text.titleMedium?.copyWith(
                       fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
                       color: selected
-                          ? scheme.onPrimaryContainer
+                          ? scheme.semanticInfoFg
                           : scheme.onSurface,
                     ),
                   ),

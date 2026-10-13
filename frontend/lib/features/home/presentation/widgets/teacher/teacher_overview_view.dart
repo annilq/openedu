@@ -4,6 +4,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../../shared/domain/models/models.dart';
 import '../../../../../shared/presentation/paging.dart';
+import '../../../../../shared/presentation/resource.dart';
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/utils/load_once.dart';
 import '../../../../../shared/widgets/app_scroll_page.dart';
@@ -14,7 +15,6 @@ import '../../../../../shared/widgets/app_card.dart';
 import '../../../../../shared/widgets/app_section_title.dart';
 import '../../../../../shared/widgets/app_tags.dart';
 import '../../../../analytics/presentation/providers/analytics_notifier_provider.dart';
-import '../../../../students/presentation/providers/students_notifier.dart';
 import '../../../../students/providers/students_provider.dart';
 import '../../providers/teacher_tasks_notifier.dart';
 import '../../providers/teacher_todo_provider.dart';
@@ -56,8 +56,7 @@ class TeacherOverviewView extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final studentsState = ref.watch(studentsNotifierProvider);
-    final studentCount =
-        studentsState is StudentsLoaded ? studentsState.students.length : 0;
+    final studentCount = studentsState.dataOrNull?.length ?? 0;
 
     final tasksState = ref.watch(teacherTasksNotifierProvider);
     ref.loadWhenIdle(
@@ -71,7 +70,7 @@ class TeacherOverviewView extends ConsumerWidget {
     final todoState = ref.watch(teacherTodoProvider);
     ref.loadWhenIdle(
       teacherTodoProvider,
-      (s) => s is TeacherTodoInitial,
+      (s) => s is ResourceIdle,
       () => ref.read(teacherTodoProvider.notifier).load(),
     );
 
@@ -104,7 +103,7 @@ class TeacherOverviewView extends ConsumerWidget {
     BuildContext context,
     WidgetRef ref,
     PagingState<TaskModel> tasksState,
-    ChildrenState studentsState,
+    Resource<List<UserModel>> studentsState,
   ) {
     if (tasksState.isLoading) {
       return const AppLoading.skeletonInline(skeletonLines: 2);
@@ -179,10 +178,10 @@ class _Header extends StatelessWidget {
 }
 
 /// studentId → 昵称 解析器（无匹配返回 null）。
-String? Function(String?) _studentNameResolver(ChildrenState state) {
+String? Function(String?) _studentNameResolver(Resource<List<UserModel>> state) {
   final map = <String, String>{};
-  if (state is StudentsLoaded) {
-    for (final c in state.students) {
+  if (state is ResourceLoaded<List<UserModel>>) {
+    for (final c in state.data) {
       map[c.id] = c.displayName;
     }
   }

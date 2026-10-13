@@ -30,7 +30,7 @@ import 'package:kids_learn/features/courseware/domain/models/courseware.dart';
 import 'package:kids_learn/features/courseware/domain/models/courseware_asset.dart';
 import 'package:kids_learn/features/courseware/domain/models/courseware_section.dart';
 import 'package:kids_learn/features/courseware/domain/repositories/courseware_repository.dart';
-import 'package:kids_learn/features/home/domain/repositories/material_repository.dart';
+import 'package:kids_learn/shared/features/materials/domain/repositories/material_repository.dart';
 import 'package:kids_learn/features/courseware/presentation/pages/courseware_editor_page.dart';
 import 'package:kids_learn/features/courseware/providers/courseware_provider.dart';
 import 'package:kids_learn/shared/domain/providers/figure_library_provider.dart';

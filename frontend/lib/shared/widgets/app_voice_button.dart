@@ -118,7 +118,7 @@ class AppVoiceButton extends StatelessWidget {
               : AppControl.heightOf(context),
           decoration: BoxDecoration(
             // 录音态复用既有「激活」语义（accent），不新造一套颜色（ADR-0063 §4）。
-            color: listening ? scheme.accent : scheme.surfaceContainerLow,
+            color: listening ? scheme.accent : scheme.surfaceRaised,
             borderRadius: BorderRadius.circular(
                 expanded ? AppRadius.input : AppRadius.chip),
             border: Border.all(

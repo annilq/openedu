@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
-import 'package:kids_learn/features/home/domain/repositories/material_repository.dart';
+import 'package:kids_learn/shared/features/materials/domain/repositories/material_repository.dart';
 import 'package:kids_learn/features/home/providers/knowledge_manage_provider.dart';
 
 class _MockRepo extends Mock implements MaterialRepository {}

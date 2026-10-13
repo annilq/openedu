@@ -128,7 +128,7 @@ class _GalleryTile extends StatelessWidget {
         Container(
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
-            color: app.surfaceContainerLow,
+            color: app.surfaceRaised,
             borderRadius: BorderRadius.circular(AppRadius.card),
             border: Border.all(
               color: app.outline,
@@ -199,7 +199,7 @@ class _RemovedAssetTile extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
-        color: app.surfaceContainerLow,
+        color: app.surfaceRaised,
         borderRadius: BorderRadius.circular(AppRadius.card),
         border: Border.all(
           color: app.outline,

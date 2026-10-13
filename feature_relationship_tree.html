@@ -130,7 +130,7 @@
       <text class="nlabel" x="455" y="42" text-anchor="middle">materials</text>
       <text class="elabel" x="455" y="60" text-anchor="middle">资料库 / RAG</text>
       <!-- courseware -->
-      <rect class="nbox warn" x="380" y="150" width="150" height="56" rx="10"/>
+      <rect class="nbox" x="380" y="150" width="150" height="56" rx="10"/>
       <text class="nlabel" x="455" y="172" text-anchor="middle">courseware</text>
       <text class="elabel" x="455" y="190" text-anchor="middle">课件 / 讲解环节</text>
       <!-- home fe -->
@@ -163,12 +163,9 @@
       <text class="elabel" x="454" y="300" text-anchor="middle">驱动复习/掌握度</text>
       <line x1="95" y1="206" x2="95" y2="278" stroke="#94a3b8" stroke-width="1.5"/>
       <text class="elabel" x="110" y="245" text-anchor="middle">派发</text>
-      <!-- circular warn: courseware <-> home -->
-      <path d="M530,178 C600,230 600,250 530,278" fill="none" stroke="#d97706" stroke-width="2"/>
-      <text class="elabel" x="612" y="240" text-anchor="middle" fill="#d97706">循环依赖</text>
-      <path d="M380,278 C310,230 310,210 380,178" fill="none" stroke="#d97706" stroke-width="2"/>
+      <!-- resolved: courseware no longer imports home (materials lifted to neutral layer) -->
     </svg>
-    <div class="callout red">告警：<b>home（前端）↔ courseware（前端）</b> 构成跨特性循环依赖，且 home 直接穿透到 assistant 的 domain 仓储（应只依赖 provider 层）。这是当前最明确的架构债务，详见报告 §4。</div>
+    <div class="callout ok">已解除：<b>home（前端）↔ courseware（前端）</b> 的循环依赖。场景库编辑器 / 图库 / 画板已上提至中性层 <code>shared/features/materials</code>（domain + data + providers + presentation），home 与 courseware 改为只依赖该中性层，<b>courseware 不再 import home</b>（LCC-02 / ticket-02）。home 对 assistant 仓储的穿透也已改为只经 provider 层（ticket-03）。</div>
   </div>
 
   <div class="card">
@@ -183,7 +180,7 @@
       <tbody>
         <tr><td><span class="verdict v-bad">死包</span> <code>app/api/routes/</code></td><td>后端</td><td>整包仅 <code>__pycache__</code>，0 个 <code>.py</code> 源，未被任何代码引用</td><td>删除残留字节码</td></tr>
         <tr><td><span class="verdict v-bad">死特性</span> <code>app/features/children/</code></td><td>后端</td><td>整特性仅 <code>__pycache__</code>，0 个 <code>.py</code> 源，未注册</td><td>删除残留字节码</td></tr>
-        <tr><td><span class="verdict v-legacy">遗留</span> 旧 Linear 令牌块</td><td><code>frontend/lib/shared/theme/app_theme.dart:522-536</code></td><td>旧角色名令牌（primaryContainer 等）与新语义令牌并存，标注「兼容，新代码勿用」</td><td>移除旧块 + 迁移 ~20 个文件到语义令牌</td></tr>
+        <tr><td><span class="verdict v-ok">已清理</span> 旧 Linear 令牌块</td><td><code>frontend/lib/shared/theme/app_theme.dart</code></td><td>旧角色名令牌（primaryContainer 等）与新语义令牌曾并存 → 已移除旧块并将 42 个文件迁移到语义令牌（LCC-05/06）</td><td>已执行</td></tr>
         <tr><td><span class="verdict v-legacy">遗留</span> 双密钥回退</td><td><code>backend/app/core/crypto.py:28</code></td><td><code>MODEL_APIKEY_SECRET or SECRET_KEY</code> 双常数回退</td><td>统一为单一密钥源</td></tr>
         <tr><td><span class="verdict v-legacy">半迁移</span> <code>Resource&lt;T&gt;</code></td><td><code>frontend/lib/shared/presentation/resource.dart</code></td><td>新统一加载态封装仅 3 处使用，~30 处仍手写 <code>AppLoading</code></td><td>全站铺开或回退其一</td></tr>
         <tr><td><span class="verdict v-warn">文档漂移</span> parent/child 措辞</td><td>architecture.md + 14 处注释/索引名</td><td>产品已定位 teacher/student，文档与注释仍写家长/child</td><td>批量改为教师/学生</td></tr>
@@ -219,15 +216,15 @@ const NODES = {
   be_ai:{label:"ai (可观测)",kind:"后端",loc:"",health:"ok",purpose:"AI 运行轨迹回放端点（ADR-0088，管理员跨教师查看）。",deps:[]},
   be_health:{label:"health",kind:"后端",loc:"router 8 行",health:"ok",purpose:"健康检查。",deps:[]},
 
-  fe_home:{label:"home",kind:"前端",loc:"13324 行 / 62 文件",health:"warn",purpose:"教师工作台 + 学生首页 + 导航壳（含 sealed TeacherPage）。组合根，装配各 feature 页面，但耦合最重。",deps:[{v:"组合",t:"fe_assistant"},{v:"组合",t:"fe_courseware"},{v:"组合",t:"fe_export"},{v:"组合",t:"fe_materials"},{v:"组合",t:"fe_analytics"},{v:"组合",t:"fe_tutor"},{v:"组合",t:"fe_classes"},{v:"组合",t:"fe_profile"},{v:"穿透到",t:"fe_assistant",warn:true}]},
+  fe_home:{label:"home",kind:"前端",loc:"13324 行 / 62 文件",health:"warn",purpose:"教师工作台 + 学生首页 + 导航壳（含 sealed TeacherPage）。组合根，装配各 feature 页面，但耦合最重。",deps:[{v:"组合",t:"fe_assistant"},{v:"组合",t:"fe_courseware"},{v:"组合",t:"fe_export"},{v:"组合",t:"fe_materials"},{v:"组合",t:"fe_analytics"},{v:"组合",t:"fe_tutor"},{v:"组合",t:"fe_classes"},{v:"组合",t:"fe_profile"}]},
   fe_assistant:{label:"assistant",kind:"前端",loc:"5266 行 / 42 文件",health:"ok",purpose:"AI 答疑助手（对话 / 卡片 / 运行轨迹），按 SSE 事件帧渲染。",deps:[]},
-  fe_courseware:{label:"courseware",kind:"前端",loc:"4799 行 / 26 文件",health:"warn",purpose:"课件中心 / 编辑器 / 讲课页。与 home 双向循环依赖。",deps:[{v:"回引",t:"fe_home",warn:true}]},
+  fe_courseware:{label:"courseware",kind:"前端",loc:"4799 行 / 26 文件",health:"ok",purpose:"课件中心 / 编辑器 / 讲课页。原与 home 的循环依赖已解除（场景库编辑器 / 画板 / 图库上提中性层 shared/features/materials，courseware 不再 import home）。",deps:[]},
   fe_students:{label:"students",kind:"前端",loc:"1827 行 / 9 文件",health:"ok",purpose:"学生管理 / 表单 / 导入。",deps:[{v:"用",t:"fe_classes"}]},
   fe_classes:{label:"classes",kind:"前端",loc:"682 行 / 7 文件",health:"ok",purpose:"班级管理容器 + 班级下钻（ADR-0086）。",deps:[]},
   fe_practice:{label:"practice",kind:"前端",loc:"989 行 / 8 文件",health:"ok",purpose:"练习作答。",deps:[]},
   fe_review:{label:"review",kind:"前端",loc:"1052 行 / 8 文件",health:"ok",purpose:"复习 / 错题本。",deps:[]},
   fe_analytics:{label:"analytics",kind:"前端",loc:"572 行 / 8 文件",health:"ok",purpose:"学情图表（fl_chart 适配器，ADR-0044/0075）。",deps:[{v:"用",t:"fe_classes"},{v:"用",t:"fe_students"}]},
-  fe_materials:{label:"materials",kind:"前端",loc:"631 行 / 3 文件",health:"ok",purpose:"资料库（仅 domain 层，被 home 复用，非废弃）。",deps:[]},
+  fe_materials:{label:"materials",kind:"前端",loc:"≈940 行 / 6 文件",health:"ok",purpose:"资料库中性层（shared/features/materials：domain + data + providers + presentation）。场景库编辑器 / 画板 / 图库，被 home 与 courseware 复用，破 home↔courseware 循环依赖。",deps:[]},
   fe_model:{label:"model_management",kind:"前端",loc:"1189 行 / 10 文件",health:"ok",purpose:"AI 模型管理。",deps:[]},
   fe_export:{label:"export",kind:"前端",loc:"455 行 / 5 文件",health:"ok",purpose:"导出 PDF / 打印预览。",deps:[]},
   fe_tutor:{label:"tutor",kind:"前端",loc:"106 行 / 5 文件",health:"warn",purpose:"AI 伴学答疑日志查看（F-305）。极薄特性，接近桩级。",deps:[]},
@@ -354,9 +351,8 @@ const EDGES = [
   {s:"be_materials",v:"入题库",t:"be_questions"},
   {s:"be_tutor",v:"直连仓储(违规)",t:"be_assistant",warn:true},
   {s:"be_analytics",v:"拉学生",t:"be_auth"},
-  {s:"fe_home",v:"组合/穿透",t:"fe_assistant",warn:true},
-  {s:"fe_home",v:"循环依赖",t:"fe_courseware",warn:true},
-  {s:"fe_courseware",v:"循环依赖",t:"fe_home",warn:true},
+  {s:"fe_home",v:"组合",t:"fe_assistant"},
+  {s:"fe_home",v:"组合(单向)",t:"fe_courseware"},
   {s:"fe_analytics",v:"用",t:"fe_classes"},
   {s:"fe_analytics",v:"用",t:"fe_students"},
   {s:"fe_students",v:"用",t:"fe_classes"}

@@ -1,14 +1,20 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/domain/providers/core_providers.dart';
-import '../data/repositories/material_repository_impl.dart';
-import '../domain/repositories/material_repository.dart';
 import '../data/repositories/question_bank_repository_impl.dart';
 import '../data/repositories/task_review_repository_impl.dart';
 import '../data/repositories/tasks_repository_impl.dart';
 import '../domain/repositories/question_bank_repository.dart';
 import '../domain/repositories/task_review_repository.dart';
 import '../domain/repositories/tasks_repository.dart';
+import 'package:kids_learn/shared/features/materials/providers/material_providers.dart';
+import 'package:kids_learn/shared/features/materials/domain/repositories/material_repository.dart';
+
+/// 资料库仓库 provider 已迁到中性层 `shared/features/materials`（破 home↔courseware
+/// 循环依赖）；这里再导出以维持既有调用方的 import 路径不变（同 `assistant_provider`
+/// 的既有公开面约定）。
+export 'package:kids_learn/shared/features/materials/providers/material_providers.dart'
+    show materialRepositoryProvider;
 
 /// home feature 的**组合根**。选址理由见
 /// `features/authentication/providers/auth_provider.dart` 的同名注释。
@@ -22,10 +28,6 @@ final questionBankRepositoryProvider = Provider<QuestionBankRepository>((ref) {
 
 final taskReviewRepositoryProvider = Provider<TaskReviewRepository>((ref) {
   return TaskReviewRepositoryImpl(ref.watch(networkServiceProvider));
-});
-
-final materialRepositoryProvider = Provider<MaterialRepository>((ref) {
-  return MaterialRepositoryImpl(ref.watch(networkServiceProvider));
 });
 
 /// 知识点选择器数据源（ADR-0055 §4）：按 (subject, grade, semester) 取「涌现目录 + 骨架兜底」。

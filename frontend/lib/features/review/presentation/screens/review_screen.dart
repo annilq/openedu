@@ -4,6 +4,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/presentation/resource.dart';
 import '../../../../shared/widgets/app_answer_result_dialog.dart';
 import '../../../../shared/widgets/app_error.dart';
 import '../../../../shared/widgets/app_loading.dart';
@@ -136,7 +137,8 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
     setState(() => _selectedOptions.clear());
 
     final nextState = ref.read(dueReviewNotifierProvider);
-    if (nextState is DueReviewLoaded && nextState.items.isEmpty) {
+    if (nextState is ResourceLoaded<List<ReviewItemModel>> &&
+        nextState.data.isEmpty) {
       setState(() {
         _done = true;
         _submitting = false;
@@ -198,20 +200,23 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
     final scheme = AppTheme.colorsOf(context);
     final state = ref.watch(dueReviewNotifierProvider);
 
-    ref.listen<DueReviewState>(dueReviewNotifierProvider, (prev, next) {
+    ref.listen<Resource<List<ReviewItemModel>>>(dueReviewNotifierProvider,
+        (prev, next) {
       // 重新拉取 = 新一轮复习：清掉上一轮的进度。不清的话 `_done` 一旦为真就
       // 永久为真——页签常驻不重建，之后就算有新题到期也只会停在上一次那张完成卡。
-      // （`answer()` 直接给 `DueReviewLoaded`，不会经过 `DueReviewLoading`，
+      // （`answer()` 直接给 `ResourceLoaded`，不会经过 `ResourceLoading`，
       //   所以答完最后一题不会被这里误清。）
-      if (next is DueReviewLoading) {
+      if (next is ResourceLoading<List<ReviewItemModel>>) {
         _done = false;
         _currentIndex = 0;
         _correctCount = 0;
         _totalCount = 0;
         return;
       }
-      if (next is DueReviewLoaded && !_done && _totalCount == 0) {
-        _totalCount = next.items.length;
+      if (next is ResourceLoaded<List<ReviewItemModel>> &&
+          !_done &&
+          _totalCount == 0) {
+        _totalCount = next.data.length;
       }
     });
 
@@ -230,48 +235,48 @@ class _ReviewScreenState extends ConsumerState<ReviewScreen> {
                   : '复习',
               showBack: widget.showBack,
               onBack: widget.onExit,
-              trailing: widget.onExportDue != null &&
-                      state is DueReviewLoaded &&
-                      state.items.isNotEmpty
-                  ? AppIconAction(
-                      icon: LucideIcons.printer,
-                      semanticLabel: '打印今日复习卷',
-                      onPressed: widget.onExportDue,
-                    )
-                  : null,
+                trailing: widget.onExportDue != null &&
+                        state is ResourceLoaded<List<ReviewItemModel>> &&
+                        state.data.isNotEmpty
+                    ? AppIconAction(
+                        icon: LucideIcons.printer,
+                        semanticLabel: '打印今日复习卷',
+                        onPressed: widget.onExportDue,
+                      )
+                    : null,
             ),
             Expanded(
               child: switch (state) {
-                DueReviewInitial() ||
-                DueReviewLoading() =>
+                ResourceIdle<List<ReviewItemModel>>() ||
+                ResourceLoading<List<ReviewItemModel>>() =>
                   const AppLoading(message: '加载待复习...'),
-                DueReviewError() => AppError(
+                ResourceError<List<ReviewItemModel>>() => AppError(
                     message: state.message,
                     onRetry: () =>
                         ref.read(dueReviewNotifierProvider.notifier).load(),
                   ),
-                DueReviewLoaded() => _done
+                ResourceLoaded<List<ReviewItemModel>>() => _done
                     ? _buildDoneView(context)
-                    : (state.items.isEmpty
+                    : (state.data.isEmpty
                         ? ReviewEmptyView(onBack: widget.onExit)
                         : PopIn(
                             // key 稳定 → 切到下一题时重放弹簧入场，已在屏上的不重放。
                             key: ValueKey<int>(_currentIndex),
                             child: ReviewQuestionView(
-                              item: state.items[
-                                  _currentIndex.clamp(0, state.items.length - 1)],
+                              item: state.data[
+                                  _currentIndex.clamp(0, state.data.length - 1)],
                               selectedOptions: _selectedOptions,
                               answerController: _answerController,
                               submitting: _submitting,
-                              answerReady: _answerReady(state.items[_currentIndex
-                                  .clamp(0, state.items.length - 1)]),
+                              answerReady: _answerReady(state.data[_currentIndex
+                                  .clamp(0, state.data.length - 1)]),
                               onOptionTap: (v) => _onOptionTap(
-                                  state.items[_currentIndex
-                                      .clamp(0, state.items.length - 1)],
+                                  state.data[_currentIndex
+                                      .clamp(0, state.data.length - 1)],
                                   v),
                               onAnswerChanged: () => setState(() {}),
-                              onSubmit: () => _submit(state.items[_currentIndex
-                                  .clamp(0, state.items.length - 1)]),
+                              onSubmit: () => _submit(state.data[_currentIndex
+                                  .clamp(0, state.data.length - 1)]),
                             ),
                           )),
               },

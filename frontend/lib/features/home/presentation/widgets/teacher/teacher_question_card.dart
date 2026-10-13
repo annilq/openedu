@@ -187,7 +187,7 @@ class TeacherQuestionCardState extends ConsumerState<TeacherQuestionCard> {
                         height: 28,
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
-                          color: app.surfaceContainerHigh,
+                          color: app.surfaceSunken,
                           borderRadius: BorderRadius.circular(AppRadius.sm),
                         ),
                         child: Text(label,
@@ -212,20 +212,20 @@ class TeacherQuestionCardState extends ConsumerState<TeacherQuestionCard> {
               width: double.infinity,
               padding: const EdgeInsets.all(AppSpacing.md),
               decoration: BoxDecoration(
-                color: app.primaryContainer,
+                color: app.semanticInfo,
                 borderRadius: BorderRadius.circular(AppRadius.bubble),
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Icon(LucideIcons.keyRound,
-                      size: 18, color: app.onPrimaryContainer),
+                      size: 18, color: app.semanticInfoFg),
                   const SizedBox(width: AppSpacing.sm),
                   Expanded(
                     child: Text(
                       '答案：${q.answer!}',
                       style: AppTheme.textOf(context).bodyMedium?.copyWith(
-                            color: app.onPrimaryContainer,
+                            color: app.semanticInfoFg,
                             height: 1.5,
                           ),
                     ),
@@ -411,7 +411,7 @@ class TeacherQuestionCardState extends ConsumerState<TeacherQuestionCard> {
       );
 
   ShadDecoration _fieldDecoration(dynamic app) => ShadDecoration(
-        color: app.surfaceContainerLow,
+        color: app.surfaceRaised,
         border: ShadBorder.all(
           color: app.outline,
           width: 1,

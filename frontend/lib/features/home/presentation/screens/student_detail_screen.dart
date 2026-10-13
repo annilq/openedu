@@ -13,7 +13,6 @@ import '../../../../shared/widgets/app_scroll_page.dart';
 import '../../../../shared/widgets/app_section_title.dart';
 import '../../../../shared/widgets/app_actions.dart';
 import '../../../review/presentation/providers/review_notifier.dart';
-import '../../../students/presentation/providers/students_notifier.dart';
 import '../../../students/providers/students_provider.dart';
 import '../../../tutor/presentation/providers/tutor_logs_notifier.dart';
 import '../providers/home_notifier.dart';
@@ -71,8 +70,8 @@ class _StudentDetailScreenState extends ConsumerState<StudentDetailScreen> {
 
   UserModel? _studentOf() {
     final state = ref.watch(studentsNotifierProvider);
-    if (state is StudentsLoaded) {
-      for (final c in state.students) {
+    if (state is ResourceLoaded<List<UserModel>>) {
+      for (final c in state.data) {
         if (c.id == widget.studentId) return c;
       }
     }

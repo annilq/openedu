@@ -79,8 +79,8 @@ class _WrongQuestionsScreenState extends ConsumerState<WrongQuestionsScreen> {
                 height: 40,
                 padding: EdgeInsets.zero,
                 backgroundColor: const Color(0x00000000),
-                hoverBackgroundColor: scheme.surfaceContainerHigh,
-                pressedBackgroundColor: scheme.surfaceContainer,
+                hoverBackgroundColor: scheme.surfaceSunken,
+                pressedBackgroundColor: scheme.surfaceSunken,
                 onPressed: _refresh,
                 child: Icon(
                   LucideIcons.refreshCw,
@@ -173,7 +173,7 @@ class _WrongQuestionsScreenState extends ConsumerState<WrongQuestionsScreen> {
                     width: 88,
                     height: 88,
                     decoration: BoxDecoration(
-                      color: scheme.tertiaryContainer,
+                      color: scheme.semanticPositive,
                       borderRadius: BorderRadius.circular(28),
                       // 色块 = 2px 墨黑描边 + 硬阴影（ADR-0044）。
                       border: Border.all(
@@ -182,7 +182,7 @@ class _WrongQuestionsScreenState extends ConsumerState<WrongQuestionsScreen> {
                     ),
                     alignment: Alignment.center,
                     child: Icon(LucideIcons.badgeCheck,
-                        size: 44, color: scheme.onTertiaryContainer),
+                        size: 44, color: scheme.semanticPositiveFg),
                   ),
                   const SizedBox(height: AppSpacing.xl2),
                   Text('还没有错题',
@@ -278,7 +278,7 @@ class _WrongQuestionCard extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(
                         horizontal: AppSpacing.md, vertical: AppSpacing.sm),
                     decoration: BoxDecoration(
-                      color: scheme.surfaceContainerHigh,
+                      color: scheme.surfaceSunken,
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Column(

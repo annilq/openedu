@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:kids_learn/features/home/domain/repositories/material_repository.dart';
+import 'package:kids_learn/shared/features/materials/domain/repositories/material_repository.dart';
 
 /// T03（ADR-0074）：前端模型须解析后端下发的 `default_figure_key`，
 /// 缺省回落 null（与现状一致）。这是「库默认图形」能落到 UI 的前提。

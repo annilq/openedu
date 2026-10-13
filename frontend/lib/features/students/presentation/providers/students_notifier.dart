@@ -1,43 +1,21 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/domain/models/models.dart';
+import '../../../../shared/presentation/resource.dart';
 import 'package:kids_learn/shared/domain/repositories/students_repository.dart';
 
-sealed class ChildrenState {
-  const ChildrenState();
-}
-
-class ChildrenInitial extends ChildrenState {
-  const ChildrenInitial();
-}
-
-class ChildrenLoading extends ChildrenState {
-  const ChildrenLoading();
-}
-
-class StudentsLoaded extends ChildrenState {
-  final List<UserModel> students;
-  const StudentsLoaded(this.students);
-}
-
-class ChildrenError extends ChildrenState {
-  final String message;
-  const ChildrenError(this.message);
-}
-
-class ChildrenNotifier extends StateNotifier<ChildrenState> {
+// 学生端：本教师全部学生列表（LCC-08）。
+//
+// 取一次就显示；createChild / updateChild 成功后重载整列表（返回新用户给调用方）。
+// 带写动作且需回传值，故用自定义 notifier `with ResourceLoader`，保留 _repo 与
+// 写方法；四态落法下沉到 ResourceLoader.runLoad，不再手写 sealed 四态类。
+class ChildrenNotifier
+    extends StateNotifier<Resource<List<UserModel>>>
+    with ResourceLoader<List<UserModel>> {
   final StudentsRepository _repo;
-  ChildrenNotifier(this._repo) : super(const ChildrenInitial());
+  ChildrenNotifier(this._repo) : super(const ResourceIdle());
 
-  Future<void> loadChildren() async {
-    state = const ChildrenLoading();
-    try {
-      final students = await _repo.getChildren();
-      state = StudentsLoaded(students);
-    } catch (e) {
-      state = ChildrenError(e.toString());
-    }
-  }
+  Future<void> loadChildren() => runLoad(_repo.getChildren);
 
   /// 创建学生；成功返回新用户（并自动刷新列表），失败返回 null（state 置 Error）。
   Future<UserModel?> createChild({
@@ -56,7 +34,7 @@ class ChildrenNotifier extends StateNotifier<ChildrenState> {
       await loadChildren();
       return created;
     } catch (e) {
-      state = ChildrenError(e.toString());
+      state = ResourceError<List<UserModel>>(e.toString());
       return null;
     }
   }
@@ -75,7 +53,7 @@ class ChildrenNotifier extends StateNotifier<ChildrenState> {
       await loadChildren();
       return updated;
     } catch (e) {
-      state = ChildrenError(e.toString());
+      state = ResourceError<List<UserModel>>(e.toString());
       return null;
     }
   }

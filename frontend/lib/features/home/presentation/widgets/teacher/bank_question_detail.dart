@@ -109,7 +109,7 @@ class BankQuestionDetail extends StatelessWidget {
               Text(
                 '标准答案：${item.answer}',
                 style: text.bodyMedium?.copyWith(
-                  color: app.onTertiaryContainer,
+                  color: app.semanticPositiveFg,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -175,7 +175,7 @@ class _KnowledgeFacts extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(AppSpacing.sm),
       decoration: BoxDecoration(
-        color: app.surfaceContainerHigh,
+        color: app.surfaceSunken,
         borderRadius: BorderRadius.circular(AppSpacing.xs),
         border: Border.all(color: app.outline),
       ),

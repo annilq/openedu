@@ -3,13 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/presentation/resource.dart';
 import 'package:kids_learn/features/classes/providers/classes_provider.dart';
 import '../../../../shared/widgets/app_inputs.dart';
 import '../../../../shared/widgets/app_loading.dart';
 import '../../../../shared/widgets/app_motion.dart';
 import '../../../../shared/widgets/app_top_bar.dart';
 import '../../providers/students_provider.dart';
-import '../providers/students_notifier.dart';
 import '../../../../shared/widgets/app_buttons.dart';
 import '../../../../shared/widgets/app_card.dart';
 
@@ -161,7 +161,9 @@ class _StudentFormScreenState extends ConsumerState<StudentFormScreen> {
     final state = ref.read(studentsNotifierProvider);
     setState(() {
       _submitting = false;
-      if (state is ChildrenError) _error = _friendlyError(state.message);
+      if (state is ResourceError<List<UserModel>>) {
+        _error = _friendlyError(state.message);
+      }
     });
   }
 
@@ -279,7 +281,7 @@ class _LockedField extends StatelessWidget {
           padding: const EdgeInsets.symmetric(
               horizontal: AppSpacing.md, vertical: AppSpacing.md),
           decoration: BoxDecoration(
-            color: app.surfaceContainerLow,
+            color: app.surfaceRaised,
             borderRadius: BorderRadius.circular(AppRadius.bubble),
             border: Border.all(
               color: AppBrutal.ink,

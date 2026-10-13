@@ -4,7 +4,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/widgets/app_actions.dart';
 import '../../../../../shared/widgets/app_inputs.dart';
-import '../../../domain/repositories/material_repository.dart'
+import 'package:kids_learn/shared/features/materials/domain/repositories/material_repository.dart'
     show KnowledgePointOption;
 
 /// 一行学科规格的编辑器（年级 + 学期 + 学科 + 知识点 + 题型 + 题数 + 删除）。

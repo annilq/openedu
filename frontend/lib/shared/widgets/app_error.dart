@@ -53,7 +53,7 @@ class AppError extends StatelessWidget {
               width: 88,
               height: 88,
               decoration: BoxDecoration(
-                color: app.errorContainer,
+                color: app.semanticError,
                 borderRadius: BorderRadius.circular(28),
                 // 状态大色块与结果卡 / 做题反馈弹窗同口径：语义容器底（浅红）在
                 // 纸底上对比不足 1.5:1，靠墨黑描边把色块「钉」出来（ADR-0044）。
@@ -65,7 +65,7 @@ class AppError extends StatelessWidget {
               child: Icon(
                 LucideIcons.alertCircle,
                 size: 48,
-                color: app.onErrorContainer,
+                color: app.semanticErrorFg,
               ),
             ),
             const SizedBox(height: AppSpacing.lg),

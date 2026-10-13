@@ -38,7 +38,7 @@ class AppProgressBar extends StatelessWidget {
         value: animated,
         minHeight: height,
         color: color ?? app.accent,
-        backgroundColor: trackColor ?? app.surfaceContainerHighest,
+        backgroundColor: trackColor ?? app.surfaceActive,
       ),
     );
   }

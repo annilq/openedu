@@ -196,7 +196,7 @@ class _SpecsSummary extends StatelessWidget {
               padding: const EdgeInsets.symmetric(
                   horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
               decoration: BoxDecoration(
-                color: app.surfaceContainerHigh,
+                color: app.surfaceSunken,
                 borderRadius: BorderRadius.circular(AppRadius.sm),
                 // 小信息 chip = 1.5px 墨黑描边（ADR-0044，与学科 chip 同宽）。
                 border: Border.all(

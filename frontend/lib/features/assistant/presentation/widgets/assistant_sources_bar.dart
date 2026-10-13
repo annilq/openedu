@@ -121,7 +121,7 @@ class _SourceChip extends StatelessWidget {
               vertical: AppSpacing.xs2,
             ),
             decoration: BoxDecoration(
-              color: scheme.surfaceContainerLow,
+              color: scheme.surfaceRaised,
               border: Border.all(
                 color: scheme.outline,
                 width: AppElevation.borderWidthSm,

@@ -63,8 +63,13 @@ extension ResourceX<T> on Resource<T> {
 /// 共享的「取一次 → 落状态」流程。
 ///
 /// `Loading / Error` 的落法、异常文案的口径全部在这里定，子类只提供「去哪儿取」。
-mixin _ResourceLoader<T> on StateNotifier<Resource<T>> {
-  Future<void> _run(Future<T> Function() fetch) async {
+///
+/// 暴露为公开 mixin：只读资源用现成的 [ResourceNotifier] / [ParamResourceNotifier]，
+/// 但凡还带写动作（增 / 改 / 删后重载）的页面，自定义 notifier 也 `with ResourceLoader`
+/// 即可复用同一套四态落法，不必再手写 `Loading → get → Loaded / catch → Error`。
+mixin ResourceLoader<T> on StateNotifier<Resource<T>> {
+  /// 取一次 → 落四态。公开以便自定义 notifier 在写动作后调它重载。
+  Future<void> runLoad(Future<T> Function() fetch) async {
     state = ResourceLoading<T>();
     try {
       state = ResourceLoaded<T>(await fetch());
@@ -88,22 +93,22 @@ mixin _ResourceLoader<T> on StateNotifier<Resource<T>> {
 /// );
 /// ```
 class ResourceNotifier<T> extends StateNotifier<Resource<T>>
-    with _ResourceLoader<T> {
+    with ResourceLoader<T> {
   ResourceNotifier(this._fetch) : super(const ResourceIdle());
 
   final ResourceFetch<T> _fetch;
 
-  Future<void> load() => _run(_fetch);
+  Future<void> load() => runLoad(_fetch);
 }
 
 /// 取数依赖入参的只读资源（如「按 studentId 取进度」）。
 ///
 /// [A] 是入参类型；不需要入参时用 [ResourceNotifier]。
 class ParamResourceNotifier<T, A> extends StateNotifier<Resource<T>>
-    with _ResourceLoader<T> {
+    with ResourceLoader<T> {
   ParamResourceNotifier(this._fetch) : super(const ResourceIdle());
 
   final ParamResourceFetch<T, A> _fetch;
 
-  Future<void> load(A arg) => _run(() => _fetch(arg));
+  Future<void> load(A arg) => runLoad(() => _fetch(arg));
 }

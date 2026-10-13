@@ -247,7 +247,7 @@ class _ExportPreviewPageState extends ConsumerState<ExportPreviewPage> {
                 width: double.infinity,
                 padding: const EdgeInsets.all(AppSpacing.sm),
                 decoration: BoxDecoration(
-                  color: app.surfaceContainerHigh,
+                  color: app.surfaceSunken,
                   borderRadius: BorderRadius.circular(AppRadius.sm),
                   border: Border.all(
                     color: AppBrutal.ink,

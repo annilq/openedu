@@ -4,6 +4,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/presentation/shell_navigation.dart';
 import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/presentation/resource.dart';
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/widgets/adaptive_shell.dart';
 import '../../../../shared/widgets/app_toast.dart';
@@ -26,7 +27,7 @@ import '../teacher_pages.dart';
 import '../child_pages.dart';
 import '../widgets/teacher/scene_library_detail_view.dart';
 import '../widgets/teacher/scene_library_view.dart';
-import '../widgets/teacher/knowledge_point_scene_editor.dart';
+import 'package:kids_learn/shared/features/materials/presentation/widgets/teacher/knowledge_point_scene_editor.dart';
 import '../screens/student_detail_screen.dart';
 import '../screens/teacher_task_review_screen.dart';
 import 'teacher_destinations.dart';
@@ -386,7 +387,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   /// （来源 = wrong_book、学生 = 自己），客户端无从越过自己的错题本。
   void _exportDueReviews() {
     final state = ref.read(dueReviewNotifierProvider);
-    if (state is! DueReviewLoaded || state.items.isEmpty) return;
+    if (state.dataOrNull == null || state.dataOrNull!.isEmpty) return;
     Navigator.of(context).push(
       CupertinoPageRoute(
         builder: (_) => ExportPreviewPage(
@@ -396,8 +397,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
           title: '今日复习',
           downgradedCount: countDowngradedQuestions(
-            stems: state.items.map((e) => e.stem),
-            optionLists: state.items.map((e) => e.options),
+            stems: state.dataOrNull!.map((e) => e.stem),
+            optionLists: state.dataOrNull!.map((e) => e.options),
           ),
         ),
       ),

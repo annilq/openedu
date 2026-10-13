@@ -125,7 +125,7 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
                 curve: Curves.easeOutCubic,
                 width: railWidth,
                 decoration: BoxDecoration(
-                  color: scheme.surfaceContainerHigh,
+                  color: scheme.surfaceSunken,
                   border: Border(
                     right: BorderSide(
                       color: scheme.outline,
@@ -192,7 +192,7 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
         ),
         Container(
           decoration: BoxDecoration(
-            color: scheme.surfaceContainerHigh,
+            color: scheme.surfaceSunken,
             border: Border(top: BorderSide(color: scheme.outline, width: AppElevation.borderWidthHairline)),
           ),
           child: SafeArea(
@@ -248,7 +248,7 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
           width: AppLayout.sidebarExpanded,
           child: Container(
             decoration: BoxDecoration(
-              color: scheme.surfaceContainerHigh,
+              color: scheme.surfaceSunken,
               border: Border(right: BorderSide(color: scheme.outline, width: AppElevation.borderWidthHairline)),
             ),
             child: Column(
@@ -381,7 +381,7 @@ class _CompactTopBar extends StatelessWidget {
       height: 52,
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerHigh,
+        color: scheme.surfaceSunken,
         border: Border(bottom: BorderSide(color: scheme.outline, width: AppElevation.borderWidthHairline)),
       ),
       child: Row(

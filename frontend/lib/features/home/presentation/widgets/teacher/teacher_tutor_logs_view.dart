@@ -103,12 +103,12 @@ class _TutorLogCard extends StatelessWidget {
                 height: 32,
                 margin: const EdgeInsets.only(right: AppSpacing.sm, top: 2),
                 decoration: BoxDecoration(
-                  color: scheme.primaryContainer,
+                  color: scheme.semanticInfo,
                   borderRadius: BorderRadius.circular(10),
                 ),
                 alignment: Alignment.center,
                 child: Icon(LucideIcons.circleHelp,
-                    size: 18, color: scheme.onPrimaryContainer),
+                    size: 18, color: scheme.semanticInfoFg),
               ),
               Expanded(
                 child: Text('问：${log.question}',
@@ -131,12 +131,12 @@ class _TutorLogCard extends StatelessWidget {
                 height: 32,
                 margin: const EdgeInsets.only(right: AppSpacing.sm, top: 2),
                 decoration: BoxDecoration(
-                  color: scheme.secondaryContainer,
+                  color: scheme.semanticWarning,
                   borderRadius: BorderRadius.circular(10),
                 ),
                 alignment: Alignment.center,
                 child: Icon(LucideIcons.sparkles,
-                    size: 18, color: scheme.onSecondaryContainer),
+                    size: 18, color: scheme.semanticWarningFg),
               ),
               Expanded(
                 child: Text('答：${log.answer}',

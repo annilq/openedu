@@ -12,6 +12,7 @@ import 'package:kids_learn/features/students/presentation/providers/students_not
 import 'package:kids_learn/features/students/presentation/screens/student_form_screen.dart';
 import 'package:kids_learn/shared/data/remote/network_service.dart';
 import 'package:kids_learn/shared/domain/models/models.dart';
+import 'package:kids_learn/shared/presentation/resource.dart';
 import 'package:kids_learn/shared/widgets/app_inputs.dart';
 import 'package:kids_learn/shared/domain/providers/core_providers.dart';
 
@@ -87,9 +88,9 @@ void main() {
             password: '1234',
             displayName: '大宝',
           )).called(1);
-      final state = notifier.state as StudentsLoaded;
-      expect(state.students.length, 1);
-      expect(state.students.first.displayName, '大宝');
+      final state = notifier.state as ResourceLoaded<List<UserModel>>;
+      expect(state.data.length, 1);
+      expect(state.data.first.displayName, '大宝');
     });
 
     test('createChild 失败：进入 Error 状态', () async {
@@ -107,7 +108,7 @@ void main() {
         displayName: '大宝',
       );
 
-      expect(notifier.state, isA<ChildrenError>());
+      expect(notifier.state, isA<ResourceError<List<UserModel>>>());
     });
 
     test('loadChildren：Initial → Loading → Loaded（空列表）', () async {
@@ -115,13 +116,13 @@ void main() {
       when(() => repo.getChildren()).thenAnswer((_) async => <UserModel>[]);
       final notifier = ChildrenNotifier(repo);
 
-      expect(notifier.state, isA<ChildrenInitial>());
+      expect(notifier.state, isA<ResourceIdle>());
       final future = notifier.loadChildren();
-      expect(notifier.state, isA<ChildrenLoading>());
+      expect(notifier.state, isA<ResourceLoading<List<UserModel>>>());
       await future;
 
-      final state = notifier.state as StudentsLoaded;
-      expect(state.students, isEmpty);
+      final state = notifier.state as ResourceLoaded<List<UserModel>>;
+      expect(state.data, isEmpty);
     });
   });
 

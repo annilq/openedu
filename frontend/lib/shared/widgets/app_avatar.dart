@@ -51,8 +51,8 @@ class AvatarSquircle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final app = AppTheme.colorsOf(context);
-    final background = bg ?? app.primaryContainer;
-    final foreground = fg ?? app.onPrimaryContainer;
+    final background = bg ?? app.semanticInfo;
+    final foreground = fg ?? app.semanticInfoFg;
     return ShadAvatar(
       null,
       size: Size.square(size),

@@ -170,7 +170,7 @@ class _TagChip extends StatelessWidget {
         // AI 归 info 靛蓝档：不新增与 warning 琥珀重复的色，保持「一色 + 四档语义色」。
         _TagSemantics.ai => (app.semanticInfo, app.semanticInfoFg),
         _TagSemantics.success => (app.semanticPositive, app.semanticPositiveFg),
-        // 曾经误用 errorContainer（红）表达 warning——与文档 semanticWarning
+        // 曾经误用 semanticError（红）表达 warning——与文档 semanticWarning
         // 琥珀档不符，红/琥珀语义串味。改走语义别名，杜绝再次错读。
         _TagSemantics.warning => (app.semanticWarning, app.semanticWarningFg),
       };

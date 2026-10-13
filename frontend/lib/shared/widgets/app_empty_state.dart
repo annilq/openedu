@@ -39,7 +39,7 @@ class AppEmptyState extends StatelessWidget {
   /// 只在该空态是**首次空**（用户还没跑通过流程）时给；跑通过之后再看就是噪音。
   final List<String>? steps;
 
-  /// 色块底：`null` = 安静态（`surfaceContainerLow` + 墨黑边 + onSurfaceVariant 图标）；
+  /// 色块底：`null` = 安静态（`surfaceRaised` + 墨黑边 + onSurfaceVariant 图标）；
   /// 传 [AppBrutal] 撞色 = 强调态（撞色底 + 墨黑边 + [AppBrutal.onColor] 图标），
   /// 用于学生端这类需要情绪价值的场景。
   final Color? tone;
@@ -83,7 +83,7 @@ class AppEmptyState extends StatelessWidget {
     final text = AppTheme.textOf(context);
     final emphasized = tone != null;
 
-    final blockFill = emphasized ? tone! : app.surfaceContainerLow;
+    final blockFill = emphasized ? tone! : app.surfaceRaised;
     final blockIconColor =
         emphasized ? AppBrutal.onColor(tone!) : app.onSurfaceVariant;
     final blockShadows = emphasized && app.brightness != Brightness.dark
@@ -270,7 +270,7 @@ class _StepBadge extends StatelessWidget {
       height: 20,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: app.surfaceContainerLow,
+        color: app.surfaceRaised,
         borderRadius: BorderRadius.circular(AppRadius.xs),
         border: Border.all(
           color: app.outline,
