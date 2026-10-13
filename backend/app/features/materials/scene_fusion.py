@@ -8,13 +8,19 @@ points/edges」的合并语义废止）。
 
 三个生产函数：
 - :func:`fuse_scene_spec`：纯函数，知识点模板 → SceneSpec（可选替换主图形）；
-- :func:`scene_spec_from_figure`：盖章原语，图库 key → SceneSpec（图库兜底）；
-- :func:`build_scene_spec_for_question`：生成时构建本题快照（抽题面图形 + 融合）。
+- :func:`scene_spec_from_figure`：盖章原语，身份键 → SceneSpec（key → 权威几何）；
+- :func:`build_scene_spec_for_question`：生成 / 读取时构建本题快照（知识点模板）。
 
 **不做双读**（ADR-0091）：模板 / 快照只认新形，旧形（顶层 ``points``/``edges``、
 ``optionGroup``、``derivedFrom``、``inputs``）经 :func:`normalize_scene_spec`
 一律拒绝——存量旧数据由 ``scripts/migrate_scene_specs.py`` 一次性迁移，代码不留
 适配分支。
+
+**不猜图形**（ADR-0089）：本模块**不接收 ``stem`` / ``options``**——「扫题面 / 扫选项
+文字反猜图形」的正则整族已随 ``scene_extract.py`` 一起删除。主图形替换的入口是
+:func:`resolve_scene_spec_for_question` 的 ``figure`` 形参，由 AI 显式给出的身份键
+经盖章取权威几何驱动（出题侧选项内嵌图形见 ``features/tasks``；答疑侧三层识别见
+``ai/subagents/tutor/scene_intent.py``）。
 
 匹配策略（学期维度，ADR-0061 发布任务对接资料库）：
 - 优先精确命中 ``(subject, grade, name, semester)``（同知识点同学期的专属讲解）。
@@ -37,10 +43,9 @@ from sqlmodel import Session, select
 from app.db.models import KnowledgePoint
 from app.domain.figures import Figure
 from app.domain.scene_spec import SceneSpec, normalize_scene_spec
-from app.features.materials.scene_extract import extract_scene_inputs
 from app.features.materials.scene_figures import figure_geometry
 
-# reflection 的 kind 字面量（唯一实现的 kind，ADR-0073/0083）。图库兜底只出这一种。
+# reflection 的 kind 字面量（唯一实现的 kind，ADR-0073/0083）。盖章原语恒给这一种。
 _REFLECTION_KIND = "reflection"
 
 
@@ -96,19 +101,17 @@ def fuse_scene_spec(
 
 
 def scene_spec_from_figure(session: Session, figure_key: str | None) -> SceneSpec | None:
-    """盖章原语（ADR-0091）：图库 key → SceneSpec{kind=reflection, figure=Figure}。
+    """盖章原语（ADR-0089 §1 改名的产物）：身份键 → SceneSpec{kind=reflection, figure}。
 
-    为什么必须有兜底：讲解的**几何**权威来源是图库（``figure_library`` 表）。题面
-    明写「正方形」时，图库里本来就有权威顶点——「没配模板就不出图」会让「正方形有
-    几条对称轴」这类**最典型**的题裸奔，教师看到的就是「功能没做」。
+    名字里**不再有「兜底 / 默认」**：那是旧链路的说法，会让人误以为这是一种降级路径。
+    它其实是新链路的主路径——AI 给出图形身份键之后，「按该键取权威几何并产出纯几何
+    场景」正是必须走的一步。
 
-    边界（防臆造，与 :func:`extract_scene_inputs` 同一纪律）：**只有题面确实
-    命中了图库图形才生成**。命中不了（纯计算题「图书馆有 86 本书」）返回 ``None``
-    ——那种题本来也没有图形可讲，硬给一个图形就是编。
-
-    产物带图库 ``key``：身份 / 溯源 / 校验用，渲染不消费（ADR-0091 决策 2 反转
-    ADR-0083 决策 6：「规格不含 key」收窄为「渲染不消费 key」）。交互参数（对称轴
-    初值 / controls / 引导文案）由前端按 kind 从外壳取，不进 spec（ADR-0083 决策 5）。
+    几何的**唯一权威**是图形几何库（``figure_library`` 表）：本函数按 ``key`` 查它，
+    拿不到该行 → ``None``（调用方据此不发射，绝不臆造一个图形）。产物带 ``key``：
+    身份 / 溯源 / 校验用，渲染不消费（ADR-0091 决策 2 把 ADR-0083 决策 6「规格不含
+    key」收窄为「渲染不消费 key」）。交互参数（对称轴初值 / controls / 引导文案）由
+    前端按 kind 从外壳取，不进 spec（ADR-0083 决策 5）。
     """
     figure = figure_geometry(session, figure_key)
     if figure is None:
@@ -117,7 +120,7 @@ def scene_spec_from_figure(session: Session, figure_key: str | None) -> SceneSpe
 
 
 def _stamp(figure: Figure) -> SceneSpec:
-    """盖章：Figure → SceneSpec（reflection 外壳 + 该图形）。图库兜底与题面替换共用。"""
+    """盖章：Figure → SceneSpec（reflection 外壳 + 该图形）。一条路径，一种形状。"""
     return SceneSpec(kind=_REFLECTION_KIND, figure=figure)
 
 
@@ -130,11 +133,9 @@ def scene_spec_for_read(
     grade: int,
     knowledge_point: str,
     semester: str = "",
-    stem: str | None = None,
-    options: list[str] | None = None,
     cache: dict[tuple, SceneSpec | None] | None = None,
 ) -> SceneSpec | None:
-    """读取路径的统一口径（ADR-0061 §U）：**快照优先 → 实时解析（含图库兜底）**。
+    """读取路径的统一口径（ADR-0061 §U）：**快照优先 → 实时解析**。
 
     三处消费方（题库详情 / 错题本 / 任务详情）必须走**同一个函数**。此前各自内联
     ``q.scene_spec or build_...``，题库 REST 端点甚至整段漏写——于是同一道题
@@ -143,11 +144,11 @@ def scene_spec_for_read(
     - 有快照（出题时算好、贴合本题图形）→ 经 :func:`normalize_scene_spec` 校验后
       返回，知识点模板后续改动不影响已生成的题；**旧形 / 畸形快照一律拒绝**
       （ADR-0091 不做双读），回退实时解析；
-    - 无快照（老数据 / 模板是后来才配的）→ 实时解析，仍无则**图库兜底**。
+    - 无快照（老数据 / 模板是后来才配的）→ 实时解析（按知识点 + 学期找模板）。
 
-    ``options`` 暂不参与生产（ADR-0091 ticket 02：扫选项文字反猜图形的路径已删，
-    逐选项图形由 AI 链路「模型引用身份键 + 盖章」接回）；保留形参是为呼叫方零
-    改动，AI 链路票接回时它重新生效。
+    ADR-0089 起**不再有 ``stem`` / ``options`` 形参**：读路径曾经用它们去「反猜图形」，
+    正则整族已删（无模板、题面又点名了图形的老数据不再出图——这是删除猜测逻辑的
+    既定代价，新内容由 AI 显式身份键接住；见模块 docstring）。
     """
     if isinstance(snapshot, dict) and snapshot:
         spec = normalize_scene_spec(snapshot)
@@ -161,7 +162,6 @@ def scene_spec_for_read(
         grade=grade,
         knowledge_point=knowledge_point,
         semester=semester,
-        stem=stem,
         cache=cache,
     )
 
@@ -289,42 +289,30 @@ def build_scene_spec_for_question(
     grade: int,
     knowledge_point: str,
     semester: str = "",
-    stem: str | None = None,
-    options: list[str] | None = None,
     cache: dict[tuple, SceneSpec | None] | None = None,
 ) -> SceneSpec | None:
-    """生成时构建本题的场景快照（ADR-0061 §M/N/O / ADR-0083 / ADR-0091）。
+    """按题目归属的知识点构建本题的场景快照（ADR-0061 §M/N/O / ADR-0091）。
 
-    =「按学期找知识点模板」+「从题面抽命中的图形，查图库取几何**替换主图形**」+
-    「融合」，与读取路径共用同一套逻辑，区别只在于**结果会被落库**
-    （``Question/TaskQuestion.scene_spec``）。落库后讲解走快照（模板再改也不影响
-    已生成的题）；老数据没有快照时才回退本函数。
+    与读取路径共用同一套解析逻辑（:func:`resolve_scene_spec_for_question`），区别只在
+    调用语境：出题时算好并**落库**（``Question/TaskQuestion.scene_spec``），落库后讲解
+    走快照（模板再改也不影响已生成的题）；老数据没有快照时读路径回退到本函数。
 
-    **选项组不再在这里挂载**（ADR-0091 ticket 02）：扫选项文字反猜图形的路径已删，
-    逐选项图形改由 AI 链路「模型引用身份键 + 盖章」接回——届时每个选项带的是图库
-    身份键，不再是展示名反猜。``options`` 形参为此保留（呼叫方零改动），接回时生效。
+    主图形此刻**只来自知识点模板**——教师配的就是权威。ADR-0089 删掉了「扫题面 /
+    扫选项文字反猜图形」的正则整族，故本函数不再收 ``stem`` / ``options``；
+    「按 AI 显式给出的身份键替换主图形」的入口保留在
+    :func:`resolve_scene_spec_for_question` 的 ``figure`` 形参上（几何仍由图库盖章）。
 
-    ``stem`` 缺省（不传）时退化为「纯模板拷贝」——等价于旧行为。
-    ``cache`` 透传给 :func:`resolve_scene_spec_for_question`（仅在抽不到题面图形、
-    即无主图形替换时生效——带题面图形的不能跨题复用）。
+    ``cache`` 透传给 :func:`resolve_scene_spec_for_question`（无主图形替换时可跨题复用
+    同「知识点 + 学期」的解析结果）。
     """
     if not knowledge_point:
         return None
-    figure_key = extract_scene_inputs(stem=stem).get("figure")
-    figure = figure_geometry(session, figure_key)
-    spec = resolve_scene_spec_for_question(
+    return resolve_scene_spec_for_question(
         session,
         teacher_id=teacher_id,
         subject=subject,
         grade=grade,
         knowledge_point=knowledge_point,
         semester=semester,
-        figure=figure,
         cache=cache,
     )
-    if spec is None:
-        # 图库兜底（ADR-0061 §U）：没有模板时，只要题面点名了图形就照样出图。
-        if figure is None:
-            return None
-        return _stamp(figure)
-    return spec

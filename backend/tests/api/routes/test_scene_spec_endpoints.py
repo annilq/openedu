@@ -1,17 +1,21 @@
-"""端点级断言：错题本 / 复习两条链路按端点下发 ADR-0091 新形（ADR-0091 ticket 03）。
+"""端点级断言：错题本 / 复习两条链路按端点下发 ADR-0089/0091 新形（ADR-0091 ticket 03）。
 
 为什么是**接口级**而不是只测 service：只测 service 会漏掉某个端点整段忘了下发
 新形（历史教训见 ``test_questions_bank_scene.py``）。题库列表端点已由那份文件钉住，
 这里补另两条消费端：学生错题本（``GET /tasks/wrong-questions``）与到期复习
 （``GET /review/due``）。两者都必须下发 ``SceneSpec`` 新形——顶点在主图形里、
 带图库身份键、无顶层 ``points/edges``、无 ``derivedFrom``。
+
+ADR-0089 契约：图形**只来自教师配的知识点模板**，后端不再扫题面/选项文字反猜。
+故出题前先为该知识点配一个 reflection 模板（含正方形主图形），生成期落库快照即带
+该图形——题面里的「正方形」文字只是人类可读描述，不再驱动任何正则猜测。
 """
 import uuid
 
 from sqlmodel import Session, select
 
 from app.core.db import engine
-from app.db.models import WrongQuestion
+from app.db.models import KnowledgePoint, WrongQuestion
 from tests.utils.user import auth_headers, login, register_teacher
 
 
@@ -31,8 +35,45 @@ def _create_student(client, ptoken, username):
     return r.json()
 
 
+def _configure_axis_kp(session: Session, teacher_id: uuid.UUID) -> None:
+    """为「图形的运动（轴对称）」配一个 reflection 模板（含正方形主图形）。
+
+    ADR-0089 契约：主图形只来自知识点模板——后端不再扫题面/选项文字反猜。
+    """
+    session.add(
+        KnowledgePoint(
+            id=uuid.uuid4(),
+            teacher_id=teacher_id,
+            subject="数学",
+            grade=4,
+            semester="",
+            name="图形的运动（轴对称）",
+            scenes=[
+                {
+                    "kind": "reflection",
+                    "figure": {
+                        "key": "square",
+                        "label": "正方形",
+                        "points": [
+                            [0.2, 0.2],
+                            [0.8, 0.2],
+                            [0.8, 0.8],
+                            [0.2, 0.8],
+                        ],
+                        "edges": [[0, 1], [1, 2], [2, 3], [3, 0]],
+                    },
+                }
+            ],
+        )
+    )
+    session.commit()
+
+
 def _make_figure_task(client, ptoken, student_id):
-    """出题时题面点名「正方形」→ 生成期落库 SceneSpec 新形快照。"""
+    """出题前先配知识点模板 → 生成期落库 SceneSpec 新形快照（图形来自模板）。"""
+    pid = uuid.UUID(client.get("/api/v1/auth/me", headers=auth_headers(ptoken)).json()["id"])
+    with Session(engine) as s:
+        _configure_axis_kp(s, pid)
     r = client.post(
         "/api/v1/tasks/from-generated",
         headers=auth_headers(ptoken),

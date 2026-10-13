@@ -15,7 +15,6 @@ ADR-0091 起**不做双读**：旧形模板（顶层 points/edges、optionGroup�
 import uuid
 
 from app.domain.figures import Figure
-from app.features.materials.scene_figures import BUILTIN_FIGURE_SEED
 from app.features.materials.scene_fusion import (
     build_scene_spec_for_question,
     fuse_scene_spec,
@@ -354,7 +353,7 @@ def test_figure_bypasses_cache():
 
 
 def test_build_scene_spec_end_to_end(db):
-    """build_scene_spec_for_question = 找模板 + 抽题面图形 + 查图库几何 + 替换主图形。"""
+    """build_scene_spec_for_question = 找知识点模板 → 融合主图形（ADR-0089：不猜题面）。"""
     teacher_id = uuid.uuid4()
     from app.db.models import KnowledgePoint
 
@@ -377,12 +376,10 @@ def test_build_scene_spec_end_to_end(db):
             grade=4,
             knowledge_point="图形的运动（轴对称）",
             semester="下学期",
-            stem="下图是风筝，它是对称图形吗？",
         )
+        # 主图形只来自知识点模板（ADR-0089：不再扫题面/选项反猜）。
         assert out is not None
-        kite = next(f for f in BUILTIN_FIGURE_SEED if f.key == "kite")
-        assert out.figure.key == "kite"
-        assert out.figure.points == [[x, y] for x, y in kite.vertices]
+        assert out.figure.key == "house"
     finally:
         db.delete(kp)
         db.commit()
@@ -401,37 +398,46 @@ def test_build_scene_spec_no_knowledge_point_returns_none(db):
     )
 
 
-def test_build_ignores_option_text_for_main_figure(db):
-    """ADR-0091 ticket 02：选项文字不再反猜**主图形**（旧行为会回退命中选项）。"""
+def test_build_unknown_knowledge_point_returns_none(db):
+    """ADR-0089：没有匹配的知识点（无模板）即返回 None，绝不臆造图形。"""
     out = build_scene_spec_for_question(
         db,
         teacher_id=uuid.uuid4(),
         subject="数学",
         grade=4,
         knowledge_point="图形的运动（轴对称）",
-        stem="下面哪个图形是轴对称图形？",
-        options=["A. 正方形", "B. 平行四边形"],
     )
-    # 无模板 + 题面抽不到、选项不再被扫 → None，不臆造
     assert out is None
 
 
-def test_build_attaches_no_option_group(db):
-    """ADR-0091 ticket 02：扫选项文字反猜图形的路径已删——不再挂 optionGroup。
+def test_build_template_figure_without_option_group(db):
+    """教师配了模板 → 用模板主图形；选项文字反猜路径已删（ADR-0089 ticket 02）。"""
+    teacher_id = uuid.uuid4()
+    from app.db.models import KnowledgePoint
 
-    逐选项图形改由 AI 链路「模型引用身份键 + 盖章」接回；在那之前，选项文字
-    不参与任何图形生产（宁可少一个交互演示，也不文本反猜教错）。
-    """
-    out = build_scene_spec_for_question(
-        db,
-        teacher_id=uuid.uuid4(),
+    kp = KnowledgePoint(
+        id=uuid.uuid4(),
+        teacher_id=teacher_id,
         subject="数学",
         grade=4,
-        knowledge_point="图形的运动（轴对称）",
-        stem="正方形是轴对称图形吗？",
-        options=["A. 房子", "B. 风筝", "C. 箭头", "D. 平行四边形"],
+        semester="",
+        name="图形的运动（轴对称）",
+        scenes=[_template(_POINTS_A)],
     )
-    assert out is not None
-    # 主图形来自题面（正方形）；选项组不再挂载
-    assert out.figure.key == "square"
-    assert out.options is None
+    db.add(kp)
+    db.commit()
+    try:
+        out = build_scene_spec_for_question(
+            db,
+            teacher_id=teacher_id,
+            subject="数学",
+            grade=4,
+            knowledge_point="图形的运动（轴对称）",
+        )
+        assert out is not None
+        # 主图形来自模板；选项组不再挂载（逐选项图形由 AI 链路接回）。
+        assert out.figure.key == "house"
+        assert out.options is None
+    finally:
+        db.delete(kp)
+        db.commit()

@@ -171,8 +171,6 @@ def wrong_question_to_resp(
             grade=q.grade,
             knowledge_point=q.knowledge_point,
             semester=q.semester,
-            stem=q.stem,
-            options=option_texts(q.options),
             cache=scene_cache,
         ),
     )
@@ -629,8 +627,6 @@ def create_from_generated(
                 grade=grade,
                 knowledge_point=kp,
                 semester=semester,
-                stem=stem,
-                options=option_texts(options),
             )
             # ADR-0091 ticket 02：生产端产有类型 SceneSpec，JSON 列只收 dict——
             # 落库边界序列化（响应侧 model_dump 归 ticket 03，此处是持久化侧）。

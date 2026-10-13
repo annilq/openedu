@@ -8,12 +8,11 @@ ADR-0091 把这条路**堵死**：几何唯一载体是 ``Figure``，代码只�
 （``kind`` + 主 ``figure`` + 可选 ``options`` 图形数组），旧形经
 :func:`normalize_scene_spec` 一律拒绝——存量数据由
 ``scripts/migrate_scene_specs.py`` 一次性迁移，不留适配分支。本文件钉住后端侧
-的三条拒绝语义：
+的两条拒绝语义（ADR-0089 起后端**不再从题面/选项猜图形**，故旧形被拒后
+无图库兜底、只有「回退到有效模板」或 ``None``）：
 
-1. 旧形模板 → 融合拒绝（``None``）；题面点名图形时**回退图库盖章**照旧出图，
-   但绝不把旧形骨架当结果透传；
-2. 旧形模板 + 题面没有图形 → ``None``（没有几何可画就不画，不猜）；
-3. 旧形快照 → 读取路径拒绝透传，回退实时解析（快照铁律仍在：拒绝发生在
+1. 旧形模板 → 融合拒绝（``None``）：没有可上提的新形几何、也无题面猜测；
+2. 旧形快照 → 读取路径拒绝透传，回退实时解析（快照铁律仍在：拒绝发生在
    「要不要用它」的判定上，不改写任何已落库数据）。
 
 DB 交互用真实的 ``db`` fixture（``init_db`` 已 seed 11 个内置图形）。
@@ -71,8 +70,8 @@ def _make_kp(teacher_id, scenes: list[dict]) -> KnowledgePoint:
     )
 
 
-def test_legacy_template_rejected_falls_back_to_stamp(db):
-    """旧形模板 → 融合拒绝；题面点名正方形 → 回退图库盖章出图（新形）。"""
+def test_legacy_template_rejected_yields_none(db):
+    """旧形模板 → 融合拒绝（None）；后端不再从题面猜图形，故无兜底出图。"""
     teacher_id = uuid.uuid4()
     kp = _make_kp(teacher_id, [_legacy_scene()])
     db.add(kp)
@@ -84,21 +83,16 @@ def test_legacy_template_rejected_falls_back_to_stamp(db):
             subject=_SUBJECT,
             grade=_GRADE,
             knowledge_point=_KP_NAME,
-            stem="正方形有几条对称轴？",
         )
-        assert spec is not None
-        # 出图走的是图库盖章（新形 figure），不是旧形骨架透传
-        assert spec.figure.key == "square"
-        assert spec.figure.points == _square_points()
-        dumped = spec.model_dump()
-        assert "inputs" not in dumped and "points" not in dumped
+        # 旧形被拒绝、又无题面猜测 → 没有场景（不双读、不兜底）
+        assert spec is None
     finally:
         db.delete(kp)
         db.commit()
 
 
 def test_legacy_template_without_figure_yields_none(db):
-    """旧形模板 + 题面没有图形 → None：旧几何不再被上提，没有几何可画就不画。"""
+    """旧形模板 + 无题面 → None：旧几何不再被上提，没有几何可画就不画。"""
     teacher_id = uuid.uuid4()
     kp = _make_kp(teacher_id, [_legacy_scene()])
     db.add(kp)
@@ -111,10 +105,7 @@ def test_legacy_template_without_figure_yields_none(db):
             grade=_GRADE,
             knowledge_point=_KP_NAME,
             semester="",
-            # 纯文字题面：抽不出任何图形 key。
-            stem="这条折线一共有几段？",
         )
-        # 旧形被拒绝、又无题面图形可盖章 → 没有场景（不猜、不兜底）
         assert spec is None
     finally:
         db.delete(kp)
@@ -122,23 +113,44 @@ def test_legacy_template_without_figure_yields_none(db):
 
 
 def test_scene_spec_for_read_rejects_legacy_snapshot(db):
-    """快照不可变 + 不做双读：旧形快照拒绝透传，回退实时解析出图（新形）。"""
-    legacy_snapshot = {
-        "kind": "reflection",
-        "inputs": [{"key": "points", "value": _LEGACY_TRI}],
-        "narrative": "旧文案",
-        "editable": True,
-    }
-    out = scene_spec_for_read(
-        db,
-        snapshot=legacy_snapshot,
-        teacher_id=uuid.uuid4(),
-        subject=_SUBJECT,
-        grade=_GRADE,
-        knowledge_point=_KP_NAME,
-        stem="正方形有几条对称轴？",
+    """快照不可变 + 不做双读：旧形快照拒绝透传，回退到有效模板（而非旧形骨架）。"""
+    teacher_id = uuid.uuid4()
+    kp = _make_kp(
+        teacher_id,
+        [
+            {
+                "kind": "reflection",
+                "figure": {
+                    "key": "house",
+                    "label": "房子",
+                    "points": _square_points(),
+                    "edges": [[0, 1], [1, 2], [2, 0]],
+                },
+            }
+        ],
     )
-    # 旧快照原样不被返回；回退实时解析 → 图库盖章（正方形）
-    assert out is not None
-    assert out.figure.key == "square"
-    assert out.figure.points == _square_points()
+    db.add(kp)
+    db.commit()
+    try:
+        legacy_snapshot = {
+            "kind": "reflection",
+            "inputs": [{"key": "points", "value": _LEGACY_TRI}],
+            "narrative": "旧文案",
+            "editable": True,
+        }
+        out = scene_spec_for_read(
+            db,
+            snapshot=legacy_snapshot,
+            teacher_id=teacher_id,
+            subject=_SUBJECT,
+            grade=_GRADE,
+            knowledge_point=_KP_NAME,
+        )
+        # 旧快照原样不被返回；回退实时解析 → 用教师配置的有效模板
+        assert out is not None
+        assert out.figure.key == "house"
+        dumped = out.model_dump()
+        assert "inputs" not in dumped and "points" not in dumped
+    finally:
+        db.delete(kp)
+        db.commit()

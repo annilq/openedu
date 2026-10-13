@@ -96,8 +96,6 @@ def list_bank_questions(
                     grade=q.grade,
                     knowledge_point=q.knowledge_point,
                     semester=q.semester,
-                    stem=q.stem,
-                    options=q.options,
                     cache=scene_cache,
                 )
             ),
