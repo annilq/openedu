@@ -11,9 +11,10 @@ from __future__ import annotations
 import copy
 import uuid
 
+from app.domain.figures import Figure
 from app.features.materials.scene_fusion import (
-    default_scene_from_figure,
     fuse_scene_spec,
+    scene_spec_from_figure,
 )
 from app.features.materials.scene_templates import (
     REFLECTION_SHELL,
@@ -83,38 +84,47 @@ def test_snapshot_unaffected_by_registry_change():
     kp_scenes = [
         {
             "kind": "reflection",
-            "points": [[0.3, 0.7], [0.7, 0.7], [0.5, 0.3]],
-            "edges": [[0, 1], [1, 2], [2, 0]],
+            "figure": {
+                "key": "house",
+                "points": [[0.3, 0.7], [0.7, 0.7], [0.5, 0.3]],
+                "edges": [[0, 1], [1, 2], [2, 0]],
+            },
         }
     ]
-    override = {"points": [[0, 0], [1, 1], [0, 1]], "edges": [[0, 1], [1, 2], [2, 0]]}
-    snapshot = fuse_scene_spec(kp_scenes, overrides=override)
+    override = Figure(
+        key="kite",
+        points=[[0, 0], [1, 1], [0, 1]],
+        edges=[[0, 1], [1, 2], [2, 0]],
+    )
+    snapshot = fuse_scene_spec(kp_scenes, figure=override)
     before = copy.deepcopy(snapshot)
     try:
         SCENE_LIBRARY["reflection"]["axisAngle"] = 1
         SCENE_LIBRARY["reflection"]["title"] = "改过的默认值"
         assert snapshot == before
-        assert fuse_scene_spec(kp_scenes, overrides=override) == before
+        assert fuse_scene_spec(kp_scenes, figure=override) == before
     finally:
         SCENE_LIBRARY["reflection"]["axisAngle"] = 90
         SCENE_LIBRARY["reflection"]["title"] = "轴对称演示"
 
 
-def test_default_scene_from_figure_is_pure_geometry(db):
-    """图库兜底产出**纯几何** SceneSpec：只有 kind / points / edges（+derivedFrom）。"""
-    spec = default_scene_from_figure(db, "square")
+def test_stamp_from_figure_is_new_shape(db):
+    """图库盖章产出**新形** SceneSpec：kind + 主 figure（ADR-0091），无旧字段。"""
+    spec = scene_spec_from_figure(db, "square")
     assert spec is not None
-    assert spec["kind"] == "reflection"
-    assert spec["derivedFrom"] == "figure_library"
-    # 只剩几何字段（+来源标记）——旧字段一概不再出现
-    assert set(spec) == {"kind", "points", "edges", "derivedFrom"}
-    assert len(spec["points"]) == 4
-    assert len(spec["edges"]) == 4
+    assert spec.kind == "reflection"
+    dumped = spec.model_dump()
+    assert set(dumped) == {"kind", "figure", "options", "curated"}
+    # 来源标记字段已从生产端移除（ADR-0091 删除清单）
+    assert "derivedFrom" not in dumped
+    assert dumped["figure"]["key"] == "square"
+    assert len(dumped["figure"]["points"]) == 4
+    assert len(dumped["figure"]["edges"]) == 4
 
 
-def test_default_scene_does_not_fabricate_figure(db):
-    assert default_scene_from_figure(db, None) is None
-    assert default_scene_from_figure(db, "not-a-figure") is None
+def test_stamp_does_not_fabricate_figure(db):
+    assert scene_spec_from_figure(db, None) is None
+    assert scene_spec_from_figure(db, "not-a-figure") is None
 
 
 class _FakeKp:
@@ -148,11 +158,11 @@ def test_list_scene_library_counts_distinct_knowledge_points():
     same = _FakeKp(
         "轴对称",
         [
-            {"kind": "reflection", "points": [[0, 0], [1, 0], [0, 1]]},
-            {"kind": "reflection", "points": [[0, 0], [1, 0], [0, 1]]},  # 同知识点第二个同 kind 场景
+            {"kind": "reflection", "figure": {"key": "house", "points": [[0, 0], [1, 0], [0, 1]], "edges": [[0, 1], [1, 2], [2, 0]]}},
+            {"kind": "reflection", "figure": {"key": "kite", "points": [[0, 0], [1, 0], [0, 1]], "edges": [[0, 1], [1, 2], [2, 0]]}},  # 同知识点第二个同 kind 场景
         ],
     )
-    other = _FakeKp("平移", [{"kind": "rotation", "points": []}])
+    other = _FakeKp("平移", [{"kind": "rotation", "figure": {"key": "x", "points": [[0, 0], [1, 0], [0, 1]], "edges": [[0, 1], [1, 2], [2, 0]]}}])
     none = _FakeKp("还没配", None)
     library = list_scene_library(
         _ListSession([same, other, none]), teacher_id=uuid.uuid4()

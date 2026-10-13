@@ -1,14 +1,20 @@
-"""场景融合（ADR-0061 决策 3 / 4 / ADR-0083）单元测试。
+"""场景融合（ADR-0061 决策 3 / 4 / ADR-0083 / ADR-0091）单元测试。
 
 覆盖两条主路径：
-- ``fuse_scene_spec``：纯函数，用题面命中的几何覆盖模板顶层 ``points``/``edges``；
+- ``fuse_scene_spec``：纯函数，知识点模板 → SceneSpec；题面图形**替换主图形**
+  （ADR-0091：原「覆盖顶层 points/edges」语义废止）；
 - ``resolve_scene_spec_for_question``：按题目知识点查教师私有知识点模板 + 分页缓存。
+
+ADR-0091 起**不做双读**：旧形模板（顶层 points/edges、optionGroup、inputs）
+经校验入口一律拒绝——本文件钉住拒绝语义，存量旧数据归迁移脚本
+（``scripts/migrate_scene_specs.py``）。
 
 ``resolve`` 只用轻量 stub session（只走知识点查询）；``build_scene_spec_for_question``
 会额外查图库 DB 取几何，故那部分用真实 ``db`` fixture。
 """
 import uuid
 
+from app.domain.figures import Figure
 from app.features.materials.scene_figures import BUILTIN_FIGURE_SEED
 from app.features.materials.scene_fusion import (
     build_scene_spec_for_question,
@@ -21,6 +27,28 @@ _POINTS_B = [[0.1, 0.9], [0.9, 0.9], [0.5, 0.1]]
 _EDGES = [[0, 1], [1, 2], [2, 0]]
 
 
+def _figure(key: str = "house", points: list | None = None) -> Figure:
+    return Figure(
+        key=key,
+        label=key,
+        points=[list(p) for p in (points or _POINTS_A)],
+        edges=[list(e) for e in _EDGES],
+    )
+
+
+def _template(points=None, *, figure_key: str = "house") -> dict:
+    """新形模板（ADR-0091）：kind + 一个主图形，顶点在 figure 里。"""
+    return {
+        "kind": "reflection",
+        "figure": {
+            "key": figure_key,
+            "label": figure_key,
+            "points": [list(p) for p in (points or _POINTS_A)],
+            "edges": [list(e) for e in _EDGES],
+        },
+    }
+
+
 def test_fuse_empty_returns_none():
     assert fuse_scene_spec(None) is None
     assert fuse_scene_spec([]) is None
@@ -29,25 +57,64 @@ def test_fuse_empty_returns_none():
     assert fuse_scene_spec([123]) is None
 
 
-def test_fuse_no_override_copies_template_deeply():
+def test_fuse_no_figure_copies_template_deeply():
+    out = fuse_scene_spec([_template()])
+    assert out is not None
+    assert out.kind == "reflection"
+    assert out.figure is not None
+    assert out.figure.points == _POINTS_A
+    # 深拷贝：改原模板不影响产物（快照铁律）
+    template = _template()
+    out = fuse_scene_spec([template])
+    template["figure"]["points"][0][0] = 0.999
+    assert out.figure.points[0][0] == 0.3
+
+
+def test_fuse_replaces_main_figure():
+    """题面命中的图形**替换主图形**（ADR-0091：不再是「覆盖顶层字段」）。"""
+    out = fuse_scene_spec([_template(_POINTS_A)], figure=_figure("kite", _POINTS_B))
+    assert out is not None
+    assert out.figure.key == "kite"
+    assert out.figure.points == _POINTS_B
+
+
+def test_fuse_replace_keeps_options_and_curated():
+    """替换只动主图形：options / curated 原样保留（课件编排语境不丢）。"""
     template = {
         "kind": "reflection",
-        "points": [list(p) for p in _POINTS_A],
-        "edges": [list(e) for e in _EDGES],
+        "figure": {
+            "key": "house",
+            "points": [list(p) for p in _POINTS_A],
+            "edges": [list(e) for e in _EDGES],
+        },
+        "options": [
+            {
+                "key": "square",
+                "label": "正方形",
+                "points": [list(p) for p in _POINTS_B],
+                "edges": [list(e) for e in _EDGES],
+            }
+        ],
+        "curated": True,
     }
-    out = fuse_scene_spec([template])
-    assert out["kind"] == "reflection"
-    assert out["points"] == _POINTS_A
-    # 深拷贝：改原模板不影响产物
-    template["points"][0][0] = 0.999
-    assert out["points"][0][0] == 0.3
+    out = fuse_scene_spec([template], figure=_figure("kite", _POINTS_B))
+    assert out is not None
+    assert out.figure.key == "kite"
+    assert out.options is not None and out.options[0].key == "square"
+    assert out.curated is True
 
 
-def test_fuse_override_geometry():
-    template = {"kind": "reflection", "points": [list(p) for p in _POINTS_A], "edges": []}
-    out = fuse_scene_spec([template], overrides={"points": _POINTS_B, "edges": _EDGES})
-    assert out["points"] == _POINTS_B
-    assert out["edges"] == _EDGES
+def test_fuse_rejects_legacy_template():
+    """旧形模板一律拒绝（ADR-0091 不做双读）——不静默包成 figure。"""
+    legacy_top = {"kind": "reflection", "points": _POINTS_A, "edges": _EDGES}
+    assert fuse_scene_spec([legacy_top]) is None
+    legacy_inputs = {"kind": "reflection", "inputs": [{"key": "points", "value": _POINTS_A}]}
+    assert fuse_scene_spec([legacy_inputs]) is None
+    legacy_group = {
+        "kind": "reflection",
+        "optionGroup": {"items": [{"caption": "房子", "points": _POINTS_A, "edges": _EDGES}]},
+    }
+    assert fuse_scene_spec([legacy_group]) is None
 
 
 class _KP:
@@ -81,14 +148,6 @@ class FakeSession:
         return _ExecChain(self._kp)
 
 
-def _template(points=None):
-    return {
-        "kind": "reflection",
-        "points": [list(p) for p in (points or _POINTS_A)],
-        "edges": [list(e) for e in _EDGES],
-    }
-
-
 def test_resolve_hits_kp_and_caches():
     kp = _KP([_template()])
     session = FakeSession(kp)
@@ -101,7 +160,9 @@ def test_resolve_hits_kp_and_caches():
         knowledge_point="图形的运动（轴对称）",
         cache=cache,
     )
-    assert out1["kind"] == "reflection"
+    assert out1 is not None
+    assert out1.kind == "reflection"
+    assert out1.figure.key == "house"
     assert session.exec_calls == 1
 
     # 第二次命中缓存，不再访问 session
@@ -169,7 +230,7 @@ class _SequenceSession:
 
 def test_resolve_prefers_exact_semester_match():
     """题目学期 = 上学期 → 首次查询（精确上学期）即命中，不再回落。"""
-    exact = _KP([{"kind": "reflection", "tag": "上学期", "points": [], "edges": []}])
+    exact = _KP([_template(figure_key="exact")])
     session = _SequenceSession([exact])
     out = resolve_scene_spec_for_question(
         session,
@@ -179,13 +240,14 @@ def test_resolve_prefers_exact_semester_match():
         knowledge_point="图形的运动（轴对称）",
         semester="上学期",
     )
-    assert out["tag"] == "上学期"
+    assert out is not None
+    assert out.figure.key == "exact"
     assert session.exec_calls == 1  # 精确命中，未触发回落
 
 
 def test_resolve_falls_back_to_year_wide_when_no_exact():
     """同学期无模板 → 第二次查询命中整学年（semester=''）模板。"""
-    year_wide = _KP([{"kind": "reflection", "tag": "整学年", "points": [], "edges": []}])
+    year_wide = _KP([_template(figure_key="year_wide")])
     session = _SequenceSession([None, year_wide])  # 第一次（精确）无果
     out = resolve_scene_spec_for_question(
         session,
@@ -195,13 +257,14 @@ def test_resolve_falls_back_to_year_wide_when_no_exact():
         knowledge_point="图形的运动（轴对称）",
         semester="下学期",
     )
-    assert out["tag"] == "整学年"
+    assert out is not None
+    assert out.figure.key == "year_wide"
     assert session.exec_calls == 2  # 精确未中 → 回落整学年
 
 
 def test_resolve_no_semester_queries_once():
     """题目未指定学期（''）→ 只查整学年一次，不做多余的精确查询。"""
-    year_wide = _KP([{"kind": "reflection", "tag": "整学年", "points": [], "edges": []}])
+    year_wide = _KP([_template(figure_key="year_wide")])
     session = _SequenceSession([year_wide])
     out = resolve_scene_spec_for_question(
         session,
@@ -211,7 +274,8 @@ def test_resolve_no_semester_queries_once():
         knowledge_point="图形的运动（轴对称）",
         semester="",
     )
-    assert out["tag"] == "整学年"
+    assert out is not None
+    assert out.figure.key == "year_wide"
     assert session.exec_calls == 1
 
 
@@ -236,17 +300,19 @@ def test_resolve_semester_aware_cache_key():
     assert session.exec_calls == before
 
 
-# ── 题面几何 overrides（ADR-0061 §M / ADR-0083）──────────────────────────
+# ── 题面图形替换主图形（ADR-0061 §M / ADR-0083 / ADR-0091）────────────────
 
 
-def test_overrides_replace_template_geometry():
-    """题面命中的几何必须**覆盖**模板几何（否则场景与题目无关）。"""
-    out = fuse_scene_spec([_template(_POINTS_A)], overrides={"points": _POINTS_B})
-    assert out["points"] == _POINTS_B
+def test_figure_replaces_template_main_figure():
+    """题面命中的图形必须**替换**模板主图形（否则场景与题目无关）。"""
+    out = fuse_scene_spec([_template(_POINTS_A)], figure=_figure("kite", _POINTS_B))
+    assert out is not None
+    assert out.figure.key == "kite"
+    assert out.figure.points == _POINTS_B
 
 
-def test_overrides_are_applied_on_read_path():
-    """读路径带 overrides 时也要生效（生成时/回退解析共用同一条逻辑）。"""
+def test_figure_is_applied_on_read_path():
+    """读路径带题面图形时也要生效（生成时/回退解析共用同一条逻辑）。"""
     session = FakeSession(_KP([_template(_POINTS_A)]))
     out = resolve_scene_spec_for_question(
         session,
@@ -254,13 +320,14 @@ def test_overrides_are_applied_on_read_path():
         subject="数学",
         grade=4,
         knowledge_point="图形的运动（轴对称）",
-        overrides={"points": _POINTS_B},
+        figure=_figure("kite", _POINTS_B),
     )
-    assert out["points"] == _POINTS_B
+    assert out is not None
+    assert out.figure.key == "kite"
 
 
-def test_overrides_bypass_cache():
-    """带题面几何时不走缓存：同一知识点的不同题目结果不同，混用会串味。"""
+def test_figure_bypasses_cache():
+    """带题面图形时不走缓存：同一知识点的不同题目结果不同，混用会串味。"""
     session = FakeSession(_KP([_template(_POINTS_A)]))
     cache: dict = {}
     a = resolve_scene_spec_for_question(
@@ -269,7 +336,7 @@ def test_overrides_bypass_cache():
         subject="数学",
         grade=4,
         knowledge_point="KP",
-        overrides={"points": _POINTS_A},
+        figure=_figure("kite", _POINTS_A),
         cache=cache,
     )
     b = resolve_scene_spec_for_question(
@@ -278,16 +345,16 @@ def test_overrides_bypass_cache():
         subject="数学",
         grade=4,
         knowledge_point="KP",
-        overrides={"points": _POINTS_B},
+        figure=_figure("para", _POINTS_B),
         cache=cache,
     )
-    assert a["points"] == _POINTS_A
-    assert b["points"] == _POINTS_B
-    assert cache == {}, "带overrides 时不得写入跨题复用缓存"
+    assert a.figure.key == "kite"
+    assert b.figure.key == "para"
+    assert cache == {}, "带题面图形时不得写入跨题复用缓存"
 
 
 def test_build_scene_spec_end_to_end(db):
-    """build_scene_spec_for_question = 找模板 + 抽题面图形 + 查图库几何 + 融合。"""
+    """build_scene_spec_for_question = 找模板 + 抽题面图形 + 查图库几何 + 替换主图形。"""
     teacher_id = uuid.uuid4()
     from app.db.models import KnowledgePoint
 
@@ -312,8 +379,10 @@ def test_build_scene_spec_end_to_end(db):
             semester="下学期",
             stem="下图是风筝，它是对称图形吗？",
         )
+        assert out is not None
         kite = next(f for f in BUILTIN_FIGURE_SEED if f.key == "kite")
-        assert out["points"] == [[x, y] for x, y in kite.vertices]
+        assert out.figure.key == "kite"
+        assert out.figure.points == [[x, y] for x, y in kite.vertices]
     finally:
         db.delete(kp)
         db.commit()
@@ -330,3 +399,39 @@ def test_build_scene_spec_no_knowledge_point_returns_none(db):
         )
         is None
     )
+
+
+def test_build_ignores_option_text_for_main_figure(db):
+    """ADR-0091 ticket 02：选项文字不再反猜**主图形**（旧行为会回退命中选项）。"""
+    out = build_scene_spec_for_question(
+        db,
+        teacher_id=uuid.uuid4(),
+        subject="数学",
+        grade=4,
+        knowledge_point="图形的运动（轴对称）",
+        stem="下面哪个图形是轴对称图形？",
+        options=["A. 正方形", "B. 平行四边形"],
+    )
+    # 无模板 + 题面抽不到、选项不再被扫 → None，不臆造
+    assert out is None
+
+
+def test_build_attaches_no_option_group(db):
+    """ADR-0091 ticket 02：扫选项文字反猜图形的路径已删——不再挂 optionGroup。
+
+    逐选项图形改由 AI 链路「模型引用身份键 + 盖章」接回；在那之前，选项文字
+    不参与任何图形生产（宁可少一个交互演示，也不文本反猜教错）。
+    """
+    out = build_scene_spec_for_question(
+        db,
+        teacher_id=uuid.uuid4(),
+        subject="数学",
+        grade=4,
+        knowledge_point="图形的运动（轴对称）",
+        stem="正方形是轴对称图形吗？",
+        options=["A. 房子", "B. 风筝", "C. 箭头", "D. 平行四边形"],
+    )
+    assert out is not None
+    # 主图形来自题面（正方形）；选项组不再挂载
+    assert out.figure.key == "square"
+    assert out.options is None

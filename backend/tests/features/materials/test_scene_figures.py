@@ -110,14 +110,17 @@ class TestFigureLibraryEndpoint:
         axis_like = {k for k in dumped if "axis" in k.lower()}
         assert axis_like == set(), f"图库响应不该带 axis 字段，实测 {axis_like}"
 
-    def test_figure_geometry_reads_db_and_returns_plain_geometry(self, db):
+    def test_figure_geometry_reads_db_and_returns_figure(self, db):
+        """ADR-0091：查表产物就是统一的 ``Figure``（几何唯一载体，不再投影成 dict）。"""
+        from app.domain.figures import Figure
         from app.features.materials.scene_figures import figure_geometry
 
         geom = figure_geometry(db, "square")
-        assert geom is not None
-        assert set(geom) == {"key", "label", "points", "edges"}
-        assert len(geom["points"]) == 4
-        assert len(geom["edges"]) == 4
+        assert isinstance(geom, Figure)
+        assert geom.key == "square"
+        assert geom.label == "正方形"
+        assert len(geom.points) == 4
+        assert len(geom.edges) == 4
         # 未命中返回 None——绝不兜底到某个内置图形（反臆造，ADR-0061 §U）
         assert figure_geometry(db, "nope") is None
         assert figure_geometry(db, None) is None
