@@ -100,6 +100,10 @@ class RunTraceStep {
   final bool blocked;
   final String? blockReason;
 
+  /// 脱敏标记（ADR-0088 ticket 03）：True = 正文/tool 载荷已被后端掩码，
+  /// `content` 是占位符「⟨已脱敏⟩」，原文不在响应里；管理员走破窗显原文。
+  final bool redacted;
+
   const RunTraceStep({
     required this.id,
     this.turn = 0,
@@ -113,6 +117,7 @@ class RunTraceStep {
     this.outputSafe = true,
     this.blocked = false,
     this.blockReason,
+    this.redacted = false,
   });
 
   factory RunTraceStep.fromJson(Map<String, dynamic> json) => RunTraceStep(
@@ -131,6 +136,7 @@ class RunTraceStep {
         outputSafe: json['output_safe'] as bool? ?? true,
         blocked: json['blocked'] as bool? ?? false,
         blockReason: json['block_reason'] as String?,
+        redacted: json['redacted'] as bool? ?? false,
       );
 }
 

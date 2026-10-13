@@ -12,6 +12,7 @@ from app.db.models.base import (
     get_review_due_utc,
     get_usage_date_utc,
 )
+from app.db.models.break_glass import BreakGlassAccess
 from app.db.models.class_entity import Class
 from app.db.models.conversation import Conversation, Message
 from app.db.models.courseware import (
@@ -55,6 +56,7 @@ __all__ = [
     "TutorLog",
     "Conversation",
     "Message",
+    "BreakGlassAccess",
     "Material",
     "MaterialChunk",
     "MaterialFolder",

@@ -3,6 +3,7 @@
 import uuid
 from datetime import datetime
 
+from pydantic import BaseModel, Field
 from sqlmodel import SQLModel
 
 
@@ -39,6 +40,9 @@ class MessageResp(SQLModel):
     latency_ms: int | None = None
     usage: dict | None = None
     created_at: datetime | None = None
+    # 脱敏标记（ADR-0088 ticket 03）：True = 正文/tool 载荷已被掩码，原文不在响应里。
+    # 默认 True（安全默认）：任何不经破窗构造的 MessageResp 都按脱敏处理。
+    redacted: bool = True
 
 
 class ConversationDetailResp(SQLModel):
@@ -46,3 +50,19 @@ class ConversationDetailResp(SQLModel):
 
     conversation: ConversationResp
     messages: list[MessageResp] = []
+
+
+class BreakGlassReason(BaseModel):
+    """破窗请求体：管理员查看运行全文必须给出理由（留痕审计）。"""
+
+    reason: str = Field(min_length=1, max_length=512)
+
+
+class BreakGlassLogResp(SQLModel):
+    """破窗访问留痕（审计可读）。"""
+
+    id: uuid.UUID
+    actor_id: uuid.UUID
+    conversation_id: uuid.UUID
+    reason: str
+    created_at: datetime | None = None

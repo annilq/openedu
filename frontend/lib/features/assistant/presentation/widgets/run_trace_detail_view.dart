@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+import '../../../../services/auth_session/domain/providers/auth_session_provider.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_actions.dart';
 import '../../../../shared/widgets/app_badge.dart';
 import '../../../../shared/widgets/app_buttons.dart';
 import '../../../../shared/widgets/app_card.dart';
+import '../../../../shared/widgets/app_toast.dart';
 import '../../domain/run_trace.dart';
 import '../../providers/run_trace_provider.dart';
 import 'assistant_hint_card.dart';
@@ -74,16 +76,119 @@ class AiRunTraceDetailView extends ConsumerWidget {
                     ref.invalidate(runTraceDetailProvider(runId)),
               ),
             ),
-            data: (detail) => detail.steps.isEmpty
-                ? const AssistantHintCard(
-                    icon: LucideIcons.route,
-                    title: '这次运行没有留下步骤',
-                    body: '可能是运行刚发起还没落库，稍后回来看看。',
-                  )
-                : _TraceBody(detail: detail),
+            data: (detail) {
+              final isAdmin =
+                  ref.watch(currentUserProvider)?.role == 'admin';
+              final hasRedacted =
+                  detail.steps.any((s) => s.redacted);
+              if (detail.steps.isEmpty) {
+                return const AssistantHintCard(
+                  icon: LucideIcons.route,
+                  title: '这次运行没有留下步骤',
+                  body: '可能是运行刚发起还没落库，稍后回来看看。',
+                );
+              }
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // 破窗入口（ADR-0088 ticket 03）：仅管理员、且本次运行被脱敏时出现。
+                  // 教师作为 owner 看自家运行全文，不走破窗。
+                  if (isAdmin && hasRedacted)
+                    _BreakGlassBanner(
+                      onReveal: () => _requestReasonAndReveal(context, ref),
+                    ),
+                  // Expanded：_TraceBody 是 ListView，必须拿到有界高度，
+                  // 否则 Column 里会被判 unbounded（Vertical viewport was given
+                  // unbounded height）。
+                  Expanded(child: _TraceBody(detail: detail)),
+                ],
+              );
+            },
           ),
         ),
       ],
+    );
+  }
+
+  /// 破窗：弹理由框 → 调 reveal → 刷新详情（原文显现）。非 admin 后端会拒（403）。
+  Future<void> _requestReasonAndReveal(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
+    final reason = await showShadDialog<String>(
+      context: context,
+      builder: (ctx) {
+        final controller = TextEditingController();
+        return ShadDialog(
+          closeIcon: const SizedBox.shrink(),
+          title: const Text('破窗查看原文'),
+          description: const Text(
+            '将以管理员身份查看本次运行全文（含脱敏的 tool 参数/结果），'
+            '并写入审计留痕。请填写查看理由。',
+          ),
+          actions: [
+            ShadButton.outline(
+              onPressed: () => Navigator.of(ctx).pop(null),
+              child: const Text('取消'),
+            ),
+            ShadButton(
+              onPressed: () {
+                final r = controller.text.trim();
+                Navigator.of(ctx).pop(r.isEmpty ? null : r);
+              },
+              child: const Text('查看原文'),
+            ),
+          ],
+          child: ShadInput(
+            controller: controller,
+            placeholder: const Text('查看理由（必填）'),
+            maxLines: 1,
+          ),
+        );
+      },
+    );
+    if (reason == null || reason.isEmpty) return;
+    try {
+      await ref.read(runTraceRepositoryProvider).reveal(runId, reason);
+      ref.invalidate(runTraceDetailProvider(runId));
+    } catch (e) {
+      // 走 AppToast（ShadToaster），不用 Material 的 ScaffoldMessenger——
+      // 本仓库 ShadApp/CupertinoApp 无 Material 祖先。
+      if (context.mounted) AppToast.error(context, e);
+    }
+  }
+}
+
+/// 破窗入口横幅：提示当前运行被脱敏，并给出「查看原文」按钮（管理员专用）。
+class _BreakGlassBanner extends StatelessWidget {
+  final VoidCallback onReveal;
+
+  const _BreakGlassBanner({required this.onReveal});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = AppTheme.colorsOf(context);
+    final text = AppTheme.textOf(context);
+    return AppCard(
+      margin: const EdgeInsets.fromLTRB(
+          AppSpacing.md, AppSpacing.md, AppSpacing.md, 0),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              '本次运行已脱敏（合规红线）。查看原文将写入审计留痕。',
+              style: text.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.xs),
+          AppPrimaryButton(
+            label: '查看原文',
+            icon: LucideIcons.unlock,
+            fullWidth: false,
+            onPressed: onReveal,
+          ),
+        ],
+      ),
     );
   }
 }

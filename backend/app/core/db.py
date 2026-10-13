@@ -510,6 +510,21 @@ def run_migrations() -> None:
             )
         )
 
+        # —— 破窗访问留痕（ADR-0088 ticket 03）——
+        # 新表走 CREATE TABLE IF NOT EXISTS：既有库启动期自动补齐；新库由 create_all
+        # 已建好，no-op。原文始终留在业务 DB，此表只记「谁/何时/读了哪段/理由」。
+        conn.execute(
+            text(
+                "CREATE TABLE IF NOT EXISTS break_glass_access ("
+                " id VARCHAR(36) PRIMARY KEY,"
+                " actor_id VARCHAR(36),"
+                " conversation_id VARCHAR(36),"
+                " reason VARCHAR(512),"
+                " created_at TIMESTAMP WITH TIME ZONE"
+                ")"
+            )
+        )
+
 
 def _purge_orphan_wrong_questions(conn) -> None:
     """删除指向不存在 / 为 NULL 的源题目的孤儿错题（2026-10-08）。

@@ -25,4 +25,13 @@ class RunTraceRepositoryImpl implements RunTraceRepository {
     final data = await _network.get('/ai/debug/conversations/$runId');
     return RunTraceDetail.fromJson(decodeMap(data));
   }
+
+  @override
+  Future<RunTraceDetail> reveal(String runId, String reason) async {
+    final data = await _network.post(
+      '/ai/debug/conversations/$runId/reveal',
+      body: {'reason': reason},
+    );
+    return RunTraceDetail.fromJson(decodeMap(data));
+  }
 }

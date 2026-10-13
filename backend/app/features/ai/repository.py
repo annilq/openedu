@@ -11,7 +11,7 @@ import uuid
 
 from sqlmodel import Session, select
 
-from app.db.models import Conversation, Message
+from app.db.models import BreakGlassAccess, Conversation, Message
 
 
 def list_conversations(
@@ -48,4 +48,35 @@ def get_conversation_messages(
             .where(Message.conversation_id == conversation_id)
             .order_by(Message.turn)
         ).all()
+    )
+
+
+def create_break_glass(
+    *,
+    session: Session,
+    actor_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    reason: str,
+) -> BreakGlassAccess:
+    """写一条破窗访问留痕（ADR-0088 ticket 03）；返回落库行。"""
+    row = BreakGlassAccess(
+        actor_id=actor_id,
+        conversation_id=conversation_id,
+        reason=reason,
+    )
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return row
+
+
+def list_break_glass(
+    *, session: Session, conversation_id: uuid.UUID | None = None
+) -> list[BreakGlassAccess]:
+    """破窗访问留痕列表（admin 可查）；可按 conversation 过滤。"""
+    stmt = select(BreakGlassAccess)
+    if conversation_id is not None:
+        stmt = stmt.where(BreakGlassAccess.conversation_id == conversation_id)
+    return list(
+        session.exec(stmt.order_by(BreakGlassAccess.created_at.desc())).all()
     )

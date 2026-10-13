@@ -11,4 +11,8 @@ abstract class RunTraceRepository {
 
   /// 一次运行的全部步骤（按 turn 正序）。越权由服务端拒（403）。
   Future<RunTraceDetail> detail(String runId);
+
+  /// 破窗：管理员显式查看某次运行全文（含脱敏的 tool 参数/结果），留痕审计。
+  /// 非管理员（教师/学生）调用会被后端拒（403）——前端只在 admin 入口暴露此能力。
+  Future<RunTraceDetail> reveal(String runId, String reason);
 }

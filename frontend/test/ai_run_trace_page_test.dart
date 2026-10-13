@@ -126,6 +126,12 @@ class _FakeRunTraceRepo implements RunTraceRepository {
     if (fail) throw StateError('403 越权');
     return runId == 'r2' ? _bareDetail : _detail;
   }
+
+  @override
+  Future<RunTraceDetail> reveal(String runId, String reason) async {
+    opened.add(runId);
+    return runId == 'r2' ? _bareDetail : _detail;
+  }
 }
 
 void main() {

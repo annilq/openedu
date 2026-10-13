@@ -523,6 +523,11 @@ class _StubRunTraceRepo implements RunTraceRepository {
   @override
   Future<RunTraceDetail> detail(String runId) async =>
       throw UnimplementedError();
+
+  // ticket 03：破窗入口只对 admin 开放，本桩不涉及，抛未实现即可。
+  @override
+  Future<RunTraceDetail> reveal(String runId, String reason) async =>
+      throw UnimplementedError();
 }
 
 /// 用桩 repository 泵起教师端 HomeScreen，使「学生」入口能渲染并 drill 进详情。
