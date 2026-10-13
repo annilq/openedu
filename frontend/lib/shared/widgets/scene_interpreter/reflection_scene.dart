@@ -325,7 +325,7 @@ class _ReflectionSceneWidgetState extends State<ReflectionSceneWidget>
       return Container(
         padding: const EdgeInsets.all(AppSpacing.sm),
         decoration: BoxDecoration(
-          color: colors.surfaceContainer,
+          color: colors.surfaceSunken,
           borderRadius: BorderRadius.all(Radius.circular(AppRadius.card)),
         ),
         child: Text(
@@ -355,7 +355,7 @@ class _ReflectionSceneWidgetState extends State<ReflectionSceneWidget>
             ? colors.semanticPositive
             : bad
                 ? colors.semanticError
-                : colors.surfaceContainer,
+                : colors.surfaceSunken,
         borderRadius: BorderRadius.all(Radius.circular(AppRadius.card)),
       ),
       child: Text(text, style: t.labelMedium!.copyWith(color: fg)),

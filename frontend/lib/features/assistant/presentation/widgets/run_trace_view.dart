@@ -133,8 +133,8 @@ class _RunTraceRow extends StatelessWidget {
       'running' => const AppBadge(label: '进行中'),
       'error' => AppBadge(
           label: '失败',
-          background: scheme.errorContainer,
-          foreground: scheme.onErrorContainer,
+          background: scheme.semanticError,
+          foreground: scheme.semanticErrorFg,
         ),
       'blocked' => AppBadge(
           label: '已拦截',

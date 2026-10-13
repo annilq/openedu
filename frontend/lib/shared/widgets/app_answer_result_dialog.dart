@@ -26,7 +26,7 @@ class AppAnswerResultDialog {
       width: 36,
       height: 36,
       decoration: BoxDecoration(
-        color: correct ? scheme.tertiaryContainer : scheme.errorContainer,
+        color: correct ? scheme.semanticPositive : scheme.semanticError,
         borderRadius: BorderRadius.circular(AppRadius.card),
         // 语义容器底（浅绿 / 浅红）在纸底上对比不足 1.5，靠墨黑描边把语义块
         // 「钉」出来——与学科 chip、题号 chip 同一口径（ADR-0044）。
@@ -39,7 +39,7 @@ class AppAnswerResultDialog {
       child: Icon(
         correct ? LucideIcons.check : LucideIcons.refreshCw,
         size: 22,
-        color: correct ? scheme.onTertiaryContainer : scheme.onErrorContainer,
+        color: correct ? scheme.semanticPositiveFg : scheme.semanticErrorFg,
       ),
     );
     final titleRow = Row(
@@ -56,8 +56,8 @@ class AppAnswerResultDialog {
             title,
             style: text.titleMedium?.copyWith(
               color: correct
-                  ? scheme.onTertiaryContainer
-                  : scheme.onErrorContainer,
+                  ? scheme.semanticPositiveFg
+                  : scheme.semanticErrorFg,
             ),
           ),
         ),

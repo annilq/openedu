@@ -118,7 +118,7 @@ class _Bubble extends StatelessWidget {
                     horizontal: AppSpacing.md,
                     vertical: AppSpacing.sm,
                   ),
-                  color: isUser ? scheme.primary : scheme.surfaceContainerLow,
+                  color: isUser ? scheme.primary : scheme.surfaceRaised,
                   child:
                       _BubbleBody(message: message, scheme: scheme, text: text),
                 ),
@@ -244,7 +244,7 @@ class _BubbleBody extends StatelessWidget {
       );
     }
     // 用户消息是纯文本，气泡底色为 primary、文字 onPrimary，不走 Markdown；
-    // AI 消息（bubble 底色 surfaceContainerLow、文字 onSurface）走 Markdown 渲染。
+    // AI 消息（bubble 底色 surfaceRaised、文字 onSurface）走 Markdown 渲染。
     if (message.role == 'user') {
       return Text(
         message.text,

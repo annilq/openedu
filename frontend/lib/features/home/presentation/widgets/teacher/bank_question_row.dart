@@ -108,7 +108,7 @@ class BankQuestionRow extends StatelessWidget {
       padding:
           const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 2),
       decoration: BoxDecoration(
-        color: app.surfaceContainerHigh,
+        color: app.surfaceSunken,
         borderRadius: BorderRadius.circular(AppRadius.sm),
       ),
       child: Text(
@@ -134,18 +134,18 @@ class BankQuestionRow extends StatelessWidget {
         padding:
             const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 2),
         decoration: BoxDecoration(
-          color: app.secondaryContainer,
+          color: app.semanticWarning,
           borderRadius: BorderRadius.circular(AppRadius.sm),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(LucideIcons.link, size: 12, color: app.onSecondaryContainer),
+            Icon(LucideIcons.link, size: 12, color: app.semanticWarningFg),
             const SizedBox(width: 4),
             Text(
               '用过 ${q.usageCount} 次',
               style: AppTheme.textOf(context).labelSmall?.copyWith(
-                    color: app.onSecondaryContainer,
+                    color: app.semanticWarningFg,
                   ),
             ),
           ],

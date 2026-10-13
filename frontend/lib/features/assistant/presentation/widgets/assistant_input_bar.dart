@@ -237,7 +237,7 @@ class _AssistantInputBarState extends ConsumerState<AssistantInputBar> {
         ),
         decoration: ShadDecoration(
           disableSecondaryBorder: true,
-          color: scheme.surfaceContainerLow,
+          color: scheme.surfaceRaised,
           border: ShadBorder.all(
             color: scheme.outline,
             width: 1,

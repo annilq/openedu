@@ -58,7 +58,7 @@ class _ClassFormState extends State<_ClassForm> {
     final text = AppTheme.textOf(context);
     return Container(
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerLow,
+        color: scheme.surfaceRaised,
         borderRadius: BorderRadius.circular(AppRadius.card),
         border: Border.all(
           color: scheme.outline, width: AppElevation.borderWidth),

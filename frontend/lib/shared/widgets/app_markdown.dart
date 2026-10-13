@@ -42,12 +42,12 @@ class AppMarkdown extends StatelessWidget {
         ),
         inlineCode: InlineCodeStyle(
           color: scheme.onSurface,
-          backgroundColor: scheme.surfaceContainer,
+          backgroundColor: scheme.surfaceSunken,
           borderColor: scheme.outline,
           borderRadius: const Radius.circular(4),
         ),
         codeBlock: CodeBlockStyle(
-          backgroundColor: scheme.surfaceContainer,
+          backgroundColor: scheme.surfaceSunken,
           borderColor: scheme.outline,
           textColor: scheme.onSurface,
           borderRadius: Radius.circular(AppRadius.card),
@@ -55,7 +55,7 @@ class AppMarkdown extends StatelessWidget {
         ),
         blockQuote: BlockQuoteStyle(
           barColor: scheme.primary,
-          backgroundColor: scheme.surfaceContainer,
+          backgroundColor: scheme.surfaceSunken,
           barRadius: const Radius.circular(2),
           textStyle: text.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
         ),
@@ -66,7 +66,7 @@ class AppMarkdown extends StatelessWidget {
         list: ListStyle(bulletColor: scheme.onSurfaceVariant),
         table: TableStyle(
           borderColor: scheme.outline,
-          headerBackground: scheme.surfaceContainer,
+          headerBackground: scheme.surfaceSunken,
           borderRadius: Radius.circular(AppRadius.card),
         ),
       ),

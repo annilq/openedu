@@ -279,7 +279,7 @@ class _LockedField extends StatelessWidget {
           padding: const EdgeInsets.symmetric(
               horizontal: AppSpacing.md, vertical: AppSpacing.md),
           decoration: BoxDecoration(
-            color: app.surfaceContainerLow,
+            color: app.surfaceRaised,
             borderRadius: BorderRadius.circular(AppRadius.bubble),
             border: Border.all(
               color: AppBrutal.ink,

@@ -106,8 +106,8 @@ class ProfileScreen extends ConsumerWidget {
             child: ShadButton(
               // 退出登录是这一屏的主行动 → 走主行动档（48/56），不硬编码像素。
               size: ShadButtonSize.lg,
-              backgroundColor: app.errorContainer,
-              hoverBackgroundColor: app.errorContainer,
+              backgroundColor: app.semanticError,
+              hoverBackgroundColor: app.semanticError,
               pressedBackgroundColor: app.error,
               onPressed: () async {
                 final confirmed = await AppDialog.confirm(
@@ -124,7 +124,7 @@ class ProfileScreen extends ConsumerWidget {
               child: Text(
                 '退出登录',
                 style: text.bodyMedium?.copyWith(
-                  color: app.onErrorContainer,
+                  color: app.semanticErrorFg,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -212,7 +212,7 @@ class _ThemeModeSetting extends ConsumerWidget {
       padding: const EdgeInsets.all(AppSpacing.md),
       child: Container(
         decoration: BoxDecoration(
-          color: app.surfaceContainerHigh,
+          color: app.surfaceSunken,
           borderRadius: BorderRadius.circular(AppRadius.input),
         ),
         padding: const EdgeInsets.all(4),
@@ -243,16 +243,16 @@ class _ThemeModeSetting extends ConsumerWidget {
         // ghost 无描边 → 内容盒高即可见高，直接吃标准档（不能用 contentHeight 折算）。
         height: AppControl.heightOf(context),
         backgroundColor:
-            selected ? app.primaryContainer : const Color(0x00000000),
+            selected ? app.semanticInfo : const Color(0x00000000),
         hoverBackgroundColor:
-            selected ? app.primaryContainer : app.surfaceContainerHighest,
+            selected ? app.semanticInfo : app.surfaceActive,
         pressedBackgroundColor:
-            selected ? app.primary : app.surfaceContainerHighest,
+            selected ? app.primary : app.surfaceActive,
         onPressed: () => controller.setMode(value),
         child: Text(
           label,
           style: text.labelSmall?.copyWith(
-            color: selected ? app.onPrimaryContainer : app.onSurfaceVariant,
+            color: selected ? app.semanticInfoFg : app.onSurfaceVariant,
             fontWeight: FontWeight.w600,
             height: 1.3,
           ),
@@ -288,7 +288,7 @@ class _UserModeSetting extends ConsumerWidget {
           const SizedBox(height: AppSpacing.sm),
           Container(
             decoration: BoxDecoration(
-              color: app.surfaceContainerHigh,
+              color: app.surfaceSunken,
               borderRadius: BorderRadius.circular(AppRadius.input),
             ),
             padding: const EdgeInsets.all(4),
@@ -326,16 +326,16 @@ class _UserModeSetting extends ConsumerWidget {
         // ghost 无描边 → 内容盒高即可见高，直接吃标准档（不能用 contentHeight 折算）。
         height: AppControl.heightOf(context),
         backgroundColor:
-            selected ? app.primaryContainer : const Color(0x00000000),
+            selected ? app.semanticInfo : const Color(0x00000000),
         hoverBackgroundColor:
-            selected ? app.primaryContainer : app.surfaceContainerHighest,
+            selected ? app.semanticInfo : app.surfaceActive,
         pressedBackgroundColor:
-            selected ? app.primary : app.surfaceContainerHighest,
+            selected ? app.primary : app.surfaceActive,
         onPressed: () => controller.setMode(value),
         child: Text(
           label,
           style: text.labelSmall?.copyWith(
-            color: selected ? app.onPrimaryContainer : app.onSurfaceVariant,
+            color: selected ? app.semanticInfoFg : app.onSurfaceVariant,
             fontWeight: FontWeight.w600,
             height: 1.3,
           ),

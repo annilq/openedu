@@ -319,7 +319,7 @@ class _Tile extends StatelessWidget {
             child: Container(
               width: tileWidth,
               decoration: BoxDecoration(
-                color: app.surfaceContainerLow,
+                color: app.surfaceRaised,
                 borderRadius: BorderRadius.circular(AppRadius.card),
                 border: Border.all(color: borderColor, width: borderWidth),
               ),

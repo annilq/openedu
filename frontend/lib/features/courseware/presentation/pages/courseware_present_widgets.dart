@@ -54,7 +54,7 @@ class PresentStage extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
-        color: app.surfaceContainer,
+        color: app.surfaceSunken,
         borderRadius: BorderRadius.circular(AppRadius.card),
         border: Border.all(
           color: app.outline,

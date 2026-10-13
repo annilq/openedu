@@ -38,7 +38,7 @@ class ReviewEmptyView extends StatelessWidget {
                     width: 96,
                     height: 96,
                     decoration: BoxDecoration(
-                      color: scheme.tertiaryContainer,
+                      color: scheme.semanticPositive,
                       borderRadius: BorderRadius.circular(32),
                       // 色块 = 2px 墨黑描边 + 硬阴影（ADR-0044）。
                       border: Border.all(
@@ -47,7 +47,7 @@ class ReviewEmptyView extends StatelessWidget {
                     ),
                     alignment: Alignment.center,
                     child: Icon(LucideIcons.sparkles,
-                        size: 48, color: scheme.onTertiaryContainer),
+                        size: 48, color: scheme.semanticPositiveFg),
                   ),
                   const SizedBox(height: AppSpacing.xl2),
                   Text('今天没有要复习的题',

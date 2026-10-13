@@ -296,13 +296,13 @@ class _TeacherQuestionBankViewState
                       vertical: 2,
                     ),
                     decoration: BoxDecoration(
-                      color: app.secondaryContainer,
+                      color: app.semanticWarning,
                       borderRadius: BorderRadius.circular(AppRadius.sm),
                     ),
                     child: Text(
                       statusLabel(u.status),
                       style: AppTheme.textOf(context).labelSmall?.copyWith(
-                            color: app.onSecondaryContainer,
+                            color: app.semanticWarningFg,
                           ),
                     ),
                   ),

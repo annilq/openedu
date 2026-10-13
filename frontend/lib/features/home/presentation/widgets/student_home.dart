@@ -147,7 +147,7 @@ class _BrutalBanner extends StatelessWidget {
     final text = AppTheme.textOf(context);
     return Container(
       decoration: BoxDecoration(
-        color: app.surfaceContainerLow,
+        color: app.surfaceRaised,
         borderRadius: BorderRadius.circular(AppRadius.banner),
         border: Border.all(color: AppBrutal.ink, width: AppElevation.borderWidth),
         boxShadow: AppElevation.hard(),
@@ -232,7 +232,7 @@ class _SquareIconButton extends StatelessWidget {
         height: AppControl.heightOf(context),
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: app.surfaceContainerLow,
+          color: app.surfaceRaised,
           borderRadius:
               const BorderRadius.all(Radius.circular(AppRadius.button)),
           border: Border.all(

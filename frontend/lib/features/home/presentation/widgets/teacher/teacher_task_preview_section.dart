@@ -220,7 +220,7 @@ class _PreviewCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: AppSpacing.md),
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
-        color: app.surfaceContainerLow,
+        color: app.surfaceRaised,
         borderRadius: BorderRadius.circular(AppRadius.bubble),
         border: Border.all(
             color: AppBrutal.ink, width: AppElevation.borderWidth),

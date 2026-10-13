@@ -223,7 +223,7 @@ class _TeacherModelManagementScreenState
     return Container(
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: BoxDecoration(
-        color: app.surfaceContainerLow,
+        color: app.surfaceRaised,
         borderRadius: BorderRadius.circular(AppRadius.card),
         border: Border.all(
             color: AppBrutal.ink, width: AppElevation.borderWidth),

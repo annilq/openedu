@@ -45,18 +45,18 @@ class AppQuizResultCard extends StatelessWidget {
     };
     final (iconBg, iconFg, iconData) = switch (tone) {
       ResultTone.positive => (
-          scheme.tertiaryContainer,
-          scheme.onTertiaryContainer,
+          scheme.semanticPositive,
+          scheme.semanticPositiveFg,
           LucideIcons.award
         ),
       ResultTone.warm => (
-          scheme.secondaryContainer,
-          scheme.onSecondaryContainer,
+          scheme.semanticWarning,
+          scheme.semanticWarningFg,
           LucideIcons.thumbsUp
         ),
       ResultTone.alert => (
-          scheme.primaryContainer,
-          scheme.onPrimaryContainer,
+          scheme.semanticInfo,
+          scheme.semanticInfoFg,
           LucideIcons.barChart3
         ),
       ResultTone.neutral => (

@@ -85,7 +85,7 @@ class AppCard extends StatelessWidget {
 
     ShadCard buildCard(Color borderColor, List<BoxShadow> shadows) => ShadCard(
           padding: padding,
-          backgroundColor: color ?? app.surfaceContainerLow,
+          backgroundColor: color ?? app.surfaceRaised,
           radius: BorderRadius.circular(radius ?? AppRadius.card),
           border: border != null
               ? _convertBorder(border!)
