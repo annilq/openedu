@@ -4,16 +4,17 @@ import 'package:shadcn_ui/shadcn_ui.dart' show LucideIcons;
 
 import '../../../../shared/domain/figures.dart';
 import '../../../../shared/domain/providers/figure_library_provider.dart';
+import '../../../../shared/domain/scene_spec.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_actions.dart';
 import '../../../../shared/widgets/app_empty_state.dart';
-import '../../../../shared/widgets/scene_interpreter/reflection_scene_data.dart';
 import '../widgets/scene_figure_tile.dart';
 
 /// 「演示哪几个图形、按什么顺序」（ADR-0076 §2.1 / §2.2 · ticket 04）。
 ///
 /// 教师在本环节已关联的**轴对称**场景上勾选一组图形，结果写进
-/// `scene['optionGroup']`；讲课页的解释器据此摆出多张图（条目顺序 = 讲解顺序）。
+/// `scene['options']`（+ 顶层 `curated`，ADR-0091：原 `optionGroup` 那层嵌套没了，
+/// 选项组就是图形数组）；讲课页的解释器据此摆出多张图（条目顺序 = 讲解顺序）。
 ///
 /// 图形清单来自图库、**打开时按需拉取**（ADR-0083 决策 7）：内置预设与用户在画板上
 /// 自建的图形同表，故这里能挑到自己画的图形。这也意味着本组件是**创作 UI**，
@@ -65,8 +66,8 @@ class SectionSceneFiguresPicker extends ConsumerWidget {
           ),
         ],
       ),
-      // 图库到货后才立内部状态：勾选态的播种要靠图库把 spec 里的**内联顶点**
-      // 反查回库内图形（条目不带图库 key，ADR-0083 决策 6）。
+      // 图库到货后才立内部状态：播种直接读 spec 自带的身份键与几何（ADR-0091：
+      // 选项条目就是 `Figure`，不再靠顶点反查图库找回身份）。
       data: (library) => _Picker(
         scene: scene,
         library: library,
@@ -109,14 +110,14 @@ class _PickerState extends State<_Picker> {
   @override
   void initState() {
     super.initState();
-    _picked = _shapesFromScene(widget.scene, widget.library);
+    _picked = _shapesFromScene(widget.scene);
     _emitted = <String>[for (final f in _picked) f.key];
   }
 
   @override
   void didUpdateWidget(covariant _Picker oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final fromScene = _shapesFromScene(widget.scene, widget.library);
+    final fromScene = _shapesFromScene(widget.scene);
     final keys = <String>[for (final f in fromScene) f.key];
     if (!_sameKeys(keys, _emitted)) {
       setState(() {
@@ -126,28 +127,20 @@ class _PickerState extends State<_Picker> {
     }
   }
 
-  /// 场景里已编排的图形（按 items 数组顺序）。
+  /// 场景里已编排的图形（按 options 数组顺序）。
   ///
-  /// 条目只带**内联几何**（ADR-0083 决策 6：spec 不引用图库 key），所以这里拿顶点
-  /// 逐点反查图库找回身份。图库里找不到（教师挑完后又把那张图删了 / 顶点被改过）
-  /// 就跳过：留一张渲染不出来、也点不掉的空卡，比少一张更让人困惑。
-  static List<FigureShape> _shapesFromScene(
-    Map<String, dynamic> scene,
-    List<FigureShape> library,
-  ) {
-    final group = scene['optionGroup'];
-    if (group is! Map) return const <FigureShape>[];
-    final items = group['items'];
-    if (items is! List) return const <FigureShape>[];
+  /// ADR-0091 起条目自带图库身份键（`Figure.key`）：播种直接取 spec 里的图形，
+  /// 不再拿顶点反查图库——身份由键承担，展示名（`label`）只是快照里的名字。
+  /// 几何不足 3 个顶点的条目画不出多边形，跳过。
+  static List<FigureShape> _shapesFromScene(Map<String, dynamic> scene) {
+    final spec = SceneSpec.tryParse(scene);
+    if (spec == null) return const <FigureShape>[];
     final out = <FigureShape>[];
     final seen = <String>{};
-    for (final e in items) {
-      if (e is! Map) continue;
-      final points = ReflectionSceneData.parsePoints(e['points']);
-      if (points == null) continue;
-      final shape = figureMatchingVertices(library, points);
-      if (shape == null || !seen.add(shape.key)) continue;
-      out.add(shape);
+    for (final f in spec.options) {
+      if (f.vertices.length < 3) continue;
+      if (!seen.add(f.key)) continue;
+      out.add(f);
     }
     return out;
   }
@@ -179,23 +172,23 @@ class _PickerState extends State<_Picker> {
     _commit(next);
   }
 
-  /// 落到场景草稿上（ADR-0076 §2.3 数量闸门）：**<2 张就删掉 `optionGroup` 这个
-  /// 键**（不是把 scene 清空），让讲课页回落到「按 spec 渲染单场景」；≥2 张才写。
+  /// 落到场景草稿上（ADR-0076 §2.3 数量闸门）：**<2 张就删掉 `options` 这个键**
+  /// （连 `curated` 一起删，不是把 scene 清空），让讲课页回落到「按 spec 渲染单场景」；
+  /// ≥2 张才写。
   ///
   /// 只勾 1 张也走单场景路径——那张图本就是场景自带的，多包一层画廊只是多一次点击。
   void _commit(List<FigureShape> next) {
     final updated = Map<String, dynamic>.from(widget.scene);
     if (next.length < 2) {
-      updated.remove('optionGroup');
+      updated.remove('options');
+      updated.remove('curated');
     } else {
-      updated['optionGroup'] = <String, dynamic>{
-        // 必须是**显式开关**（§2.2）：题库 / 错题路径的 items 也非空（它们是选项），
-        // 靠条目有无区分两种语境会改变学生的观感。
-        'curated': true,
-        'items': <Map<String, dynamic>>[
-          for (final f in next) _item(f),
-        ],
-      };
+      updated['options'] = <Map<String, dynamic>>[
+        for (final f in next) _figure(f),
+      ];
+      // 必须是**显式开关**（§2.2）：题库 / 错题路径的 options 也非空（它们是选项），
+      // 靠条目有无区分两种语境会改变学生的观感。
+      updated['curated'] = true;
     }
     setState(() {
       _picked = next;
@@ -206,20 +199,20 @@ class _PickerState extends State<_Picker> {
     widget.onChanged(updated);
   }
 
-  /// 与后端 `extract_option_group` **同形状**，保证 `SceneOptionItem.fromJson` 直读。
+  /// 一个选项图形（与后端 `Figure` 同形：`key` / `label` / `points` / `edges`）。
   ///
-  /// 只写几何（`points` + `edges`），不写图库 `key`、不写任何 axis 属性（ADR-0083
-  /// 决策 6：SceneSpec 内联几何、不引用 key；决策 2：图库不存 axis）。
-  static Map<String, dynamic> _item(FigureShape f) => <String, dynamic>{
-        // 课件语境没有 A/B/C 选项 → 标号留空；caption 用中文名（卡片副标题）。
-        'label': '',
-        'caption': f.label,
+  /// 带**图库身份键**（ADR-0091 决策 2：身份回来了，教师改图形名不再让讲课页的
+  /// 角标映射与高亮错位）；不写任何 axis 属性（决策 2：图库不存 axis）。
+  static Map<String, dynamic> _figure(FigureShape f) => <String, dynamic>{
+        // 课件语境没有 A/B/C 选项 → 标号由解释器按下标推，spec 只存图形。
+        'key': f.key,
+        'label': f.label,
         // 顶点 + 边**保存时展开**（§4 红线 2）：不能只存 key 让渲染层运行时回查——
         // 课堂演示不能依赖一次查询，走廊网络不该成为「图形出不来」的理由。
         'points': <List<double>>[
           for (final v in f.vertices) <double>[v.x, v.y],
         ],
-        'edges': closedEdges(f.vertices.length),
+        'edges': f.edges ?? closedEdges(f.vertices.length),
       };
 
   @override

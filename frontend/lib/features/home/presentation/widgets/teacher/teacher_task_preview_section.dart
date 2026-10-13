@@ -2,6 +2,7 @@ import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../../shared/domain/models/models.dart';
+import '../../../../../shared/domain/scene_spec.dart';
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/utils/option_text.dart';
 import '../../../../../shared/utils/question_labels.dart';
@@ -211,9 +212,10 @@ class _PreviewCard extends StatelessWidget {
     final options = q.options;
     // 取到局部变量才谈得上类型提升：`q.sceneSpec` 是 getter，Dart 不会为它做 promotion。
     final sceneSpec = q.sceneSpec;
-    final hasFigureGroup = sceneSpec != null &&
-        sceneSpec['optionGroup'] is Map &&
-        ((sceneSpec['optionGroup']['items'] as List?)?.isNotEmpty ?? false);
+    // 场景规格经唯一解析入口（ADR-0091）；图形选项组 = 解析出的 options 非空。
+    final parsedSpec =
+        sceneSpec == null ? null : SceneSpec.tryParse(sceneSpec);
+    final hasFigureGroup = parsedSpec != null && parsedSpec.options.isNotEmpty;
     return Container(
       margin: const EdgeInsets.only(bottom: AppSpacing.md),
       padding: const EdgeInsets.all(AppSpacing.md),
@@ -275,10 +277,7 @@ class _PreviewCard extends StatelessWidget {
           if (hasFigureGroup)
             ...[
               const SizedBox(height: AppSpacing.sm),
-              SceneInterpreter(
-                kind: (sceneSpec['kind'] as String?) ?? 'reflection',
-                spec: sceneSpec,
-              ),
+              SceneInterpreter(spec: parsedSpec),
             ],
           if (options != null && options.isNotEmpty) ...[
             const SizedBox(height: AppSpacing.sm),

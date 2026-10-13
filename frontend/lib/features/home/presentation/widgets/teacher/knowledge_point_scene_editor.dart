@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../../shared/domain/figures.dart';
 import '../../../../../shared/domain/providers/figure_library_provider.dart';
+import '../../../../../shared/domain/scene_spec.dart';
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/widgets/app_actions.dart';
 import '../../../../../shared/widgets/app_buttons.dart';
@@ -73,9 +74,9 @@ class _KnowledgePointSceneEditorState
     extends ConsumerState<KnowledgePointSceneEditor> {
   /// 当前选中的模板图形。
   ///
-  /// 初值由 spec 的**内联顶点**构造（`key` 为空串——spec 不带图库 key，ADR-0083
-  /// 决策 6）；等图库拉回来后由 [build] 按顶点反查补上 key，画廊的「默认讲解」
-  /// 高亮因此能对上。儿童端拿到的 spec 里是顶点，不依赖这个图形是否还在库里。
+  /// 初值由模板 spec 的 `figure` 构造（ADR-0091：几何与身份键一起在 spec 里）；
+  /// 老快照没有 key，等图库拉回来后由 [_save] 按顶点反查补上。儿童端拿到的 spec
+  /// 里是顶点，不依赖这个图形是否还在库里。
   late FigureShape _shape;
   bool _saving = false;
 
@@ -94,13 +95,20 @@ class _KnowledgePointSceneEditorState
           orElse: () => <String, dynamic>{},
         ) ??
         const <String, dynamic>{};
-    final data = ReflectionSceneData.fromSpec(initialScene);
+    // ADR-0091：模板经唯一解析入口读；旧形（顶层 points/edges）解析不出图形 →
+    // 兜底图形起手，保存前按顶点反查图库补身份键（见 [_save]）。
+    final parsed = SceneSpec.tryParse(initialScene);
+    final data = ReflectionSceneData.fromSpec(
+      parsed ?? const SceneSpec(kind: 'reflection'),
+    );
     _shape = FigureShape(
-      key: '',
-      label: '',
+      key: parsed?.figure?.key ?? '',
+      label: parsed?.figure?.label ?? '',
       vertices: <({double x, double y})>[
         for (final p in data.points) (x: p.dx, y: p.dy),
       ],
+      // 连接关系随几何一起带回（缺省由 toJson 按顶点顺序闭合）。
+      edges: data.edges,
     );
   }
 
@@ -127,27 +135,36 @@ class _KnowledgePointSceneEditorState
 
   /// 由当前编辑态构造 SceneSpec（kind=reflection）。
   ///
-  /// ADR-0083 决策 5：产出**纯几何** `{kind, points, edges}`——轴参数 / controls /
-  /// 引导文案 / 标题由 kind 外壳提供，不再进 spec；「是否允许儿童拖轴」是渲染层的
-  /// 展示关切（[ReflectionSceneData.showAxisControls]），也不是 spec 字段。
-  Map<String, dynamic> _buildSpec() {
-    final points = _shape.vertices
-        .map((v) => <double>[v.x, v.y])
-        .toList(growable: false);
-    return buildReflectionSceneSpec(
-      kind: _pickedScene?.kind ?? 'reflection',
-      points: points,
-      edges: closedEdges(points.length),
-    );
-  }
+  /// ADR-0083 决策 5 + ADR-0091：spec 只存几何——`{kind, figure:{key,label,points,
+  /// edges}}`；轴参数 / controls / 引导文案 / 标题由 kind 外壳提供，不进 spec；
+  /// 「是否允许儿童拖轴」是渲染层的展示关切（[ReflectionSceneData.showAxisControls]），
+  /// 也不是 spec 字段。保存时 `toJson()` 出 Map（落库形状）。
+  SceneSpec _buildSpec() => SceneSpec(
+        kind: _pickedScene?.kind ?? 'reflection',
+        figure: _shape,
+      );
 
   Future<void> _save() async {
     if (_saving) return;
+    // 新形 spec 的图形必须带身份键（ADR-0091 决策 2）。老快照的几何没有 key：
+    // 按顶点反查图库补一个（与存量迁移脚本同口径）；补不到就请教师先点选——
+    // 没有身份的几何，后端校验入口不收，静默写出去只会更糟。
+    if (_shape.key.isEmpty) {
+      final matched = figureMatchingVertices(
+        ref.read(figureLibraryProvider).valueOrNull ?? const <FigureShape>[],
+        <Offset>[for (final v in _shape.vertices) Offset(v.x, v.y)],
+      );
+      if (matched == null) {
+        AppToast.show(context, '请先在上方点选一个图形再保存');
+        return;
+      }
+      setState(() => _shape = matched);
+    }
     setState(() => _saving = true);
     try {
       await ref
           .read(knowledgeManageProvider.notifier)
-          .saveScenes(widget.kpId, [_buildSpec()]);
+          .saveScenes(widget.kpId, [_buildSpec().toJson()]);
       if (mounted) _close();
     } catch (e) {
       if (mounted) {
@@ -161,9 +178,9 @@ class _KnowledgePointSceneEditorState
   Widget build(BuildContext context) {
     final text = AppTheme.textOf(context);
     final app = AppTheme.colorsOf(context);
-    // 画廊自己的选中态：spec 不带图库 key，故拿顶点去图库里反查（图库还没到货时为
-    // null → 不高亮，不臆造）。与 [FigureLibraryGallery] 读的是同一个 provider，
-    // 所以这里不会多发请求。
+    // 画廊自己的选中态：spec 现在**带**图库 key（ADR-0091），直接用；老快照没有
+    // key 时才拿顶点去图库里反查（图库还没到货时为 null → 不高亮，不臆造）。
+    // 与 [FigureLibraryGallery] 读的是同一个 provider，所以这里不会多发请求。
     final selectedKey = _shape.key.isNotEmpty
         ? _shape.key
         : figureMatchingVertices(
