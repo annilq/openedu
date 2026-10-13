@@ -18,7 +18,7 @@
 - **复合载荷（需包装类 / record 包一层）：4 个**
   - `models`：`(ModelListResp, List<ModelProviderPreset>)`
   - `student_management`：5 字段（classes/students/wrongCounts/classId/keyword）
-  - `analytics_summary`：`(WrongDistributionResp, AccuracyResp, MasteryResp)`
+  - `analytics_summary`：`(WrongDistributionResp, AccuracyResp, MasteryResp)`（done，commit ec9130e；纯只读、自定义 notifier `with ResourceLoader`，包 AnalyticsSummaryData）
   - `analytics`：8 字段（scope/dimension/classId/classes/students/wrong/accuracy/mastery）
 - **不迁（状态机，留手写）：3 个**
   - `question_bank`（`BankState`）：游标分页 + 动作态（BankActionLoading/Success/Error、BankDeleted、BankArchived）
@@ -39,5 +39,6 @@
 - [x] `class_management` 已迁（自定义 `ClassManagementNotifier with ResourceLoader<List<ClassModel>>`；analyze 全仓绿 + 全量 552 测试通过）。
 - [x] `due_review` 已迁（自定义 `DueReviewNotifier with ResourceLoader<List<ReviewItemModel>>`；`answer()` 在 ResourceLoaded 态直接替换 data，保留「答完不误清进度」语义；analyze 全仓绿 + 全量 552 测试通过）。
 - [x] `students` 已迁（自定义 `ChildrenNotifier with ResourceLoader<List<UserModel>>`，保留 createChild/updateChild 回传值；analyze 全仓绿 + 全量 552 测试通过）。
-- [ ] 其余 4 个（复合载荷）notifier 迁完；旧 sealed 加载态类引用全仓归零（grep `XxxInitial/XxxLoaded` 等）。
+- [x] `analytics_summary` 已迁（自定义 `AnalyticsSummaryNotifier with ResourceLoader<AnalyticsSummaryData>`；纯只读、三聚合包一层；analyze 全仓绿 + 全量 556 测试通过）。
+- [ ] 其余 3 个（复合载荷）notifier 迁完；旧 sealed 加载态类引用全仓归零（grep `XxxInitial/XxxLoaded` 等）。
 - [ ] `flutter analyze` 全仓绿；`flutter test` 全量通过。
