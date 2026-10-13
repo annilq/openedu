@@ -7,7 +7,7 @@
 ## 0. 一句话分层
 
 ```
-Flutter 平板 App（家长 / 儿童双模式）
+Flutter 平板 App（教师 / 学生双模式）
    │  HTTP/JSON（/api/v1）+ SSE 流式（/api/v1/assistant/chat）
    ▼
 FastAPI 后端（单 wheel 含两个包）
@@ -57,11 +57,11 @@ app/
 └── db/models/          # user · task · question · task_question · conversation · message · progress · tutor · model_config
 ```
 
-`app/api/main.py` 注册的 feature router（顺序即挂载顺序）：`auth → children → tasks → review → mastery → tutor → questions → model_management → ai → assistant → health`。全部挂在 `settings.API_V1_STR`（即 `/api/v1`）前缀下。
+`app/api/main.py` 注册的 feature router（顺序即挂载顺序）：`auth → tasks → review → mastery → tutor → questions → model_management → ai → assistant → health`。全部挂在 `settings.API_V1_STR`（即 `/api/v1`）前缀下。
 
 ### 2.2 `core/guard.py` — 归属与可见性单一真相源
 
-亲子家庭隔离、娃娃端可见性（仅 `assigned`/`done` 态任务）的判定**只经 `core.guard`**。任何取数代码不得自行判断归属——这是分层不变量测试强制的一条。
+师生归属隔离、学生端可见性（仅 `assigned`/`done` 态任务）的判定**只经 `core.guard`**。任何取数代码不得自行判断归属——这是分层不变量测试强制的一条。
 
 ### 2.3 `domain/` — 纯业务逻辑
 
@@ -94,7 +94,7 @@ app/
 frontend/lib/
 ├── main/            # 入口 + AdaptiveShell（三档断点响应式壳，AppUserMode 作用域）
 ├── configs/         # AppConfig：apiBase 经 --dart-define=API_BASE 注入，默认 127.0.0.1:8000
-├── features/        # assistant / authentication / children / home / model_management / practice / profile / review / tutor（Riverpod）
+├── features/        # assistant / authentication / home / model_management / practice / profile / review / tutor（Riverpod）
 ├── services/        # auth_session（token 持久化）
 ├── shared/          # data / domain / exceptions / presentation / theme / utils / widgets
 └── dev/             # theme_preview.dart（设计系统自检，CI 外本地跑）
@@ -103,7 +103,7 @@ frontend/lib/
 - **分层与依赖方向（ADR-0037）**：`main/ → features/* → shared/*` 单向。`shared/` 是跨 feature 基础层，**不得 import `features/`**；feature 之间不得横向互引，唯一豁免是 `features/home/presentation/`（展示层组合根，装配各 feature 页面）。feature 与后端 `app/features/*` 一一对应。`App*` 前缀保留给 `shared/widgets/` 的通用设计系统组件——组件一旦订阅某 feature 的 provider 就必须落回该 feature（如 `model_management` 的 `ModelSelector`）。
 
 - **状态/网络**：Riverpod + Dio。`AppConfig.apiBaseUrl` = `API_BASE + /api/v1`。
-- **双模式**：`AppUserMode`（家长/儿童）持久化于 `storage_service`，在根 `AdaptiveShell` 作用域生效（ADR-0002）。Child Mode 整体放大一档字号，文案第一人称切换，消费学科 accent 令牌。
+- **双模式**：`AppUserMode`（教师/学生）持久化于 `storage_service`，在根 `AdaptiveShell` 作用域生效（ADR-0002）。学生 Mode 整体放大一档字号，文案第一人称切换，消费学科 accent 令牌。
 - **设计系统单一事实源**：`AppColors` / `AppSpacing` / `AppText._typeScale` 推导所有颜色、间距、字号、转场时长；组件禁止硬编码 `Colors.*` 与魔法十六进制（`analysis_options.yaml` 已声明硬约束，待 `custom_lint` 启用静态强制）。
 - **AI 消费**：`features/assistant/` 按 SSE 事件帧即时 `setState`，`shared/widgets/stream_reasoning_panel.dart` 打字机揭示推理文本（ADR-0017；也是「生成任务闪现」缺陷的约束来源）。工具查到的数据以**类型化卡片**呈现（ADR-0042）：`DATA.data.type` 是种类判别键、`data.result` 是结构化载荷，由 `presentation/widgets/assistant_cards.dart` 分派渲染（题目卡 / 列表卡 / 指标卡 / 降级卡），卡片落在气泡外侧。
 
@@ -111,9 +111,9 @@ frontend/lib/
 
 ## 4. 数据模型要点（领域事实源 `CONTEXT.md`）
 
-- **题库即 `Question` 表**：题目跨 `Task` 复用，按 `parent_id` 做家庭隔离（ADR-0001）。
-- **派发快照 `TaskQuestion`**：题目派发到任务时落快照，作答/错题归集用 `TaskQuestion.id` + 源 `Question.id`；娃娃端 `answer` 恒为 null 防作弊。
-- **任务生命周期**：`draft → ready`（家长确认成卷）→ `assigned`（绑 child_id）→ `done`。
+- **题库即 `Question` 表**：题目跨 `Task` 复用，按 `teacher_id` 做归属隔离（ADR-0082）。
+- **派发快照 `TaskQuestion`**：题目派发到任务时落快照，作答/错题归集用 `TaskQuestion.id` + 源 `Question.id`；学生端 `answer` 恒为 null 防作弊。
+- **任务生命周期**：`draft → ready`（教师确认成卷）→ `assigned`（绑 student_id）→ `done`。
 - **会话持久化**：`Conversation` / `Message` 表（DB-backed 多用户），替代 CLI 式 JSONL 分支树（产品形态取舍，见评审文档 §5）。
 
 ---

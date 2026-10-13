@@ -44,7 +44,7 @@ class SceneDeveloperGuide extends StatelessWidget {
           const SizedBox(height: AppSpacing.xs),
           Text(
             '该知识点还没有可渲染的交互讲解模板。交互讲解模板是开发者实现的场景组件，'
-            '不是家长在前端手动配置的——本弹窗只能编辑已存在的 reflection（轴对称）类'
+            '不是教师在前端手动配置的——本弹窗只能编辑已存在的 reflection（轴对称）类'
             '模板，无法凭空造出「平移」等新类型。\n\n'
             '要为本知识点新增交互讲解，开发者以现有 reflection 组件为范本新建一个 kind：\n\n'
             '① 登记新 kind（前后端双登记）：前端 '

@@ -17,7 +17,7 @@ def run_migrations() -> None:
     """无 Alembic：启动期轻量迁移。
 
     - question 表补 teacher_id 列（owner 隔离，题库复用闭环）。
-    - 回填：通过 task_question -> task 找到原题归属家长；孤儿行保持 NULL
+    - 回填：通过 task_question -> task 找到原题归属教师；孤儿行保持 NULL
       （作用域查询会排除，dev 期可 rm app.db 重置）。
     """
     with engine.begin() as conn:
@@ -43,7 +43,7 @@ def run_migrations() -> None:
                 text("ALTER TABLE question ADD COLUMN IF NOT EXISTS teacher_id UUID")
             )
 
-        # —— question.origin（题目来源：ai / parent，ADR-0060）——
+        # —— question.origin（题目来源：ai 表示模型生成；教师从教辅录入的题不记 origin，ADR-0060）——
         # 存量行无 origin：默认 "ai"（历史题目皆为 AI 生成）。新增行由创建点显式赋值。
         if is_sqlite:
             q_cols = [
@@ -86,7 +86,7 @@ def run_migrations() -> None:
                     "multi BOOLEAN NOT NULL DEFAULT FALSE"
                 )
             )
-        # 回填：通过 task_question -> task 找到原题归属家长；孤儿行保持 NULL。
+        # 回填：通过 task_question -> task 找到原题归属教师；孤儿行保持 NULL。
         # 旧库若尚未建 task_question 表（偏序迁移），跳过回填（owner 隔离降级，dev 可重置）。
         try:
             conn.execute(
@@ -116,7 +116,7 @@ def run_migrations() -> None:
             )
 
         # —— 归档 / 毕业时间戳（ADR-0053 P2）——
-        # 三个模块共用一套 archived 字段的诱惑在这里被拒绝了：题库是「家长主动弃用」、
+        # 三个模块共用一套 archived 字段的诱惑在这里被拒绝了：题库是「教师主动弃用」、
         # 错题是「系统判定已掌握」，同名字段会让「这行为什么归档了」无法回答。
         for table, column in (
             ("question", "archived_at"),
@@ -149,9 +149,9 @@ def run_migrations() -> None:
         # 三个长列表都按 (owner, 时间戳倒序) 取页，缺复合索引时深翻会全表排序。
         # CREATE INDEX IF NOT EXISTS 在 SQLite / Postgres 下都幂等，旧库启动期自动补齐。
         for ddl in (
-            "CREATE INDEX IF NOT EXISTS ix_question_parent_created "
+            "CREATE INDEX IF NOT EXISTS ix_question_teacher_created "
             "ON question (teacher_id, created_at DESC)",
-            "CREATE INDEX IF NOT EXISTS ix_task_parent_created "
+            "CREATE INDEX IF NOT EXISTS ix_task_teacher_created "
             "ON task (teacher_id, created_at DESC)",
             "CREATE INDEX IF NOT EXISTS ix_wrongquestion_child_firstwrong "
             "ON wrongquestion (student_id, first_wrong_at DESC)",
@@ -416,7 +416,7 @@ def run_migrations() -> None:
             # 偏序迁移：表还没建（首次启动由 init_db 建表并带新列），跳过即可。
             pass
 
-        # —— modelconfig（家长自定义模型，ADR-0015）——
+        # —— modelconfig（教师自定义模型，ADR-0015）——
         # ⚠️ 表名必须用模型默认生成的 `modelconfig`（ModelConfig → 小写无下划线，
         # 与 materialfolder/wrongquestion/answerrecord 同款约定），不能用 `model_config`。
         # 旧迁移曾误建成带下划线的 `model_config` 孤儿空表，此处先清掉再建正确表名。
