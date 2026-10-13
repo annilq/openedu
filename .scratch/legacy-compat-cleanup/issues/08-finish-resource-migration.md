@@ -12,7 +12,7 @@
 
 - **单载荷（直接 `Resource<T>`，干净）：4 个**
   - `teacher_todo` → `Resource<TeacherTodoSummary>`（done，commit 295c3a0）
-  - `due_review` → `Resource<List<ReviewItemModel>>`
+  - `due_review` → `Resource<List<ReviewItemModel>>`（done，commit 0531455；本页 `answer()` 就地把已答题移出列表，故自定义 notifier `with ResourceLoader`，保留 `_repo`）
   - `students`（`ChildrenState`）→ `Resource<List<UserModel>>`（类名陈旧，迁移顺手正名）
   - `class_management` → `Resource<List<ClassModel>>`（done，本票次）
 - **复合载荷（需包装类 / record 包一层）：4 个**
@@ -37,5 +37,6 @@
 
 - [x] `teacher_todo` 已迁（analyze 绿 + 全量 552 测试通过）。
 - [x] `class_management` 已迁（自定义 `ClassManagementNotifier with ResourceLoader<List<ClassModel>>`；analyze 全仓绿 + 全量 552 测试通过）。
-- [ ] 其余 6 个 notifier 迁完；旧 sealed 加载态类引用全仓归零（grep `XxxInitial/XxxLoaded` 等）。
+- [x] `due_review` 已迁（自定义 `DueReviewNotifier with ResourceLoader<List<ReviewItemModel>>`；`answer()` 在 ResourceLoaded 态直接替换 data，保留「答完不误清进度」语义；analyze 全仓绿 + 全量 552 测试通过）。
+- [ ] 其余 5 个 notifier 迁完；旧 sealed 加载态类引用全仓归零（grep `XxxInitial/XxxLoaded` 等）。
 - [ ] `flutter analyze` 全仓绿；`flutter test` 全量通过。
