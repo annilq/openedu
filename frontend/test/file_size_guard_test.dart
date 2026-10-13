@@ -151,6 +151,9 @@ void main() {
 /// 2026-10-11 学生表单/列表补班级归属（ADR-0086 收口）：student_management_screen
 ///   885→941（新增行内「调整班级」动作与 _adjustClass，复用 batchReassign；另 class_picker
 ///   新增 pickSingleClass 单班级选择器，均属 B 类合理大件，基线随真实行数上调）。
+/// 2026-10-13 ADR-0088 ticket 02（运行轨迹页）：home_screen 592→602（`_go` switch
+///   接 RunTracePage / RunTraceDetailPage 两个分支 + 两个 import，属 B 类组合根
+///   真实增长——新页面必须经单一 `_go` 打开，ADR-0059 不容许把接线散到别处）。
 /// **只许下调（除 B 类已登记的合理大件外）。**
 ///
 /// 2026-10（ADR-0083 图库 DB 化 / SceneSpec 几何化）下调：
@@ -165,7 +168,7 @@ const Map<String, int> _baseline = <String, int>{
   'shared/widgets/adaptive_shell.dart': 503,
   'features/home/presentation/widgets/teacher/teacher_question_bank_view.dart': 759,
   'features/home/presentation/widgets/teacher/teacher_tasks_view.dart': 672,
-  'features/home/presentation/screens/home_screen.dart': 592,
+  'features/home/presentation/screens/home_screen.dart': 602,
   'features/assistant/presentation/screens/assistant_chat_page.dart': 570,
   'shared/widgets/scene_interpreter/reflection_scene.dart': 438,
   'features/home/presentation/widgets/teacher/teacher_question_card.dart': 511,

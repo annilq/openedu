@@ -76,6 +76,13 @@ class NavigationDestinations {
           label: '模型管理',
           active: active is ModelsPage,
           onTap: () => go(const ModelsPage())),
+      // ADR-0088 ticket 02：运行轨迹（审计 / 排障口径）独立入口——与助手页内的
+      // 「历史会话」（气泡口径）并列，不混入同一个页面。
+      AdaptiveNavDestination(
+          icon: LucideIcons.route,
+          label: '运行轨迹',
+          active: active is RunTracePage || active is RunTraceDetailPage,
+          onTap: () => go(const RunTracePage())),
       AdaptiveNavDestination(
           icon: LucideIcons.bookOpen,
           label: '课件',
