@@ -54,3 +54,8 @@
 ## 待确认（用户放行实现前回一句即可）
 - **Q-a**：`build_suggested_actions` 是**保留为薄封装**（零破坏既有单测）还是**直接改名 `build_actions`**（更干净、需同步改 4 处测试调用）？
 - **Q-b**：follow-up 帧**不落库**（我的建议：它是入口而非内容）——是否同意？若同意，历史回放里不会出现 follow-up chips（与现状一致）。
+
+## 代码现状核验（2026-10-13，ADR-0089 后订正）
+- **（b）`pending_quiz` 锁死：已不存在，从本票移除。** ADR-0089 将 `conversation.pending_quiz` **DROP COLUMN**（`core/db.py:480-496`），`service.py:232/436` 明确「服务端不再维护 `pending_quiz` 状态机」，出题/判定改由对话历史（题卡含答案）承载。原缺陷场景（答非「对/错」→ 永久卡死在判断题）随状态机删除而消失 → **不应再实现 `_is_quiz_reply` / `_is_quiz_abort` 死代码**。
+- **（a）follow-up chips：仍有效。** 现状：`build_suggested_actions`（`service.py:155`）存在，`GET /assistant/suggested-actions`（`router.py:61-80`）；前端 `AssistantSuggestedActions`（`assistant_suggested_actions.dart:25`）走 riverpod family 从后端拉目录，**仅在空态**渲染（`assistant_chat_page.dart:337 messages.isEmpty`）；SSE 帧**无** suggested_actions 下行。工单（a）设计（统一 `build_actions` 入口 + SSE 新帧 `suggested_actions` + 前端在最后一条 ai 消息下方渲染）**成立**。
+- **票 03 实际范围收窄为仅（a）**；(b) 作废。Q-a/Q-b 待确认不变。

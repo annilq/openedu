@@ -34,3 +34,10 @@
 - [ ] 分层不变量 9：capability 的 `run` 不触碰任何归属判定/ORM
 
 **决策锚点：** ADR-0079；`requires_tool_data` **不放宽**（安全优先）；优先级 16；能力卡 v1 复用 `list` 渲染器。
+
+## 代码现状核验（2026-10-13，实现前复核 · 设计可直接落地）
+- 后端 `app/ai/subagents/` 仅有 `guide/query/question/tasks/tutor`，**无 `capability` 目录** → 须新建（manifest + agent，`roles=["teacher","student"]`，不声明 tools，全程零 provider 调用）。
+- `tutor_system_prompt`（`domain/safety.py:46`）签名仍 `(grade, subject)`，仅 line 53 含「与学习无关请温和引导回学习主题」，**无能力清单** → 第 6 点「补一句」可加，签名不变。
+- `query` 的 `requires_tool_data=True`（`query/agent.py:56`）未变，注释 line 55 自认「你能查什么」类零工具回答会被拦 → 第 12 行「从根上把这类问题从 query 接走」仍成立。
+- 前端 `AssistantListCard`（`assistant_list_card.dart:13`）已存在 → 能力卡 v1 复用 list 渲染器、前端零改动成立。
+- **实现前唯一待确认**：manifest 路由优先级 16 当前未被新增意图占用（guide=20 / query=12 之间空闲），无冲突。
