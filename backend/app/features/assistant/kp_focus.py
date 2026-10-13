@@ -5,7 +5,7 @@
 一段**独立**的【知识点聚焦】段（与 ``tutor_system_prompt`` 安全锁物理分离）。
 
 越权 / 缺失 → ``None``（调用方据此不注入，无越权数据泄漏）。解析只经
-``core.guard.find_owned``（分层不变量 9），与 ``build_suggested_actions`` 同源但走软判定：
+``core.guard.find_owned``（分层不变量 9），与 ``build_actions`` 同源但走软判定：
 取不到就当没配（不抛错、不阻断主链路）。
 """
 from __future__ import annotations
