@@ -12,8 +12,8 @@ import '../../../../../shared/widgets/app_paging_footer.dart';
 import '../../../../../shared/widgets/app_select_strip.dart';
 import '../../../../../shared/domain/models/models.dart';
 import '../../../../../shared/presentation/paging.dart';
+import '../../../../../shared/presentation/resource.dart';
 import '../../../../students/providers/students_provider.dart';
-import '../../../../students/presentation/providers/students_notifier.dart';
 import '../../../../export/domain/export_repository.dart';
 import '../../../../export/presentation/export_confirm.dart';
 import '../../../../export/presentation/export_preview_page.dart';
@@ -651,10 +651,10 @@ class _TaskCard extends StatelessWidget {
 }
 
 /// 由 students 状态构造 studentId→昵称 解析器（无匹配返回 null）。
-String? Function(String?) _studentNameResolver(ChildrenState state) {
+String? Function(String?) _studentNameResolver(Resource<List<UserModel>> state) {
   final map = <String, String>{};
-  if (state is StudentsLoaded) {
-    for (final c in state.students) {
+  if (state is ResourceLoaded<List<UserModel>>) {
+    for (final c in state.data) {
       map[c.id] = c.displayName;
     }
   }
