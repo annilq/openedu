@@ -340,6 +340,10 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
                                   messages: messages,
                                   controller: _scroll,
                                   onCardAction: _handleCardAction,
+                                  onPrompt: (payload) => ref
+                                      .read(assistantNotifierProvider.notifier)
+                                      .send(payload, courseware: widget.coursewareContext),
+                                  onNavigate: _dispatchTarget,
                                 ),
                           _AssistantMode.history => AssistantHistoryView(
                               onOpen: _open,
@@ -358,6 +362,10 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
                                       AssistantMessage.fromBubble(b),
                                   ],
                                   controller: _replayScroll,
+                                  onPrompt: (payload) => ref
+                                      .read(assistantNotifierProvider.notifier)
+                                      .send(payload, courseware: widget.coursewareContext),
+                                  onNavigate: _dispatchTarget,
                                 ),
                         },
                     ),

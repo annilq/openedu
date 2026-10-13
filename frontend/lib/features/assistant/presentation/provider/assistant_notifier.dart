@@ -7,6 +7,7 @@ import '../../domain/ai_text_fold.dart';
 import '../../domain/assistant_card.dart';
 import '../../domain/assistant_event.dart';
 import '../../domain/assistant_source.dart';
+import '../../domain/assistant_suggested_action.dart';
 import '../../domain/conversation.dart';
 
 /// 一条助手对话气泡。
@@ -18,6 +19,7 @@ class AssistantMessage {
   final bool thinking; // 占位「思考中」气泡（尚无文本）
   final String stage; // thinking 时的阶段文案（路由/工具帧提取），空 = 默认「思考中…」
   final List<RagSource> sources; // 答疑引用落点（答案下方「参考来源」条）
+  final List<SuggestedAction>? followups; // 回复后 follow-up chips（SUGGESTED_ACTIONS 帧，票 03(a)）
 
   const AssistantMessage({
     required this.role,
@@ -27,6 +29,7 @@ class AssistantMessage {
     this.thinking = false,
     this.stage = '',
     this.sources = const <RagSource>[],
+    this.followups,
   });
 
   /// 从回放气泡重建一条消息（role 换算成 UI 侧口径：`assistant` → `ai`）。
@@ -223,6 +226,25 @@ class AssistantNotifier extends StateNotifier<AssistantState> {
           blocked: fold.blocked,
         ),
       );
+    }
+    // 回复后 follow-up chips（票 03(a)）：挂到本轮最后一条 ai 消息下方渲染。
+    if (fold.suggestedActions.isNotEmpty) {
+      for (var i = out.length - 1; i >= 0; i--) {
+        if (out[i].role == 'ai') {
+          final m = out[i];
+          out[i] = AssistantMessage(
+            role: m.role,
+            text: m.text,
+            blocked: m.blocked,
+            cards: m.cards,
+            thinking: m.thinking,
+            stage: m.stage,
+            sources: m.sources,
+            followups: fold.suggestedActions,
+          );
+          break;
+        }
+      }
     }
     return out;
   }

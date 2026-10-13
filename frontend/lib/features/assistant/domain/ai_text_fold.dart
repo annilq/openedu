@@ -1,6 +1,7 @@
 import 'assistant_card.dart';
 import 'assistant_event.dart';
 import 'assistant_source.dart';
+import 'assistant_suggested_action.dart';
 import 'stream_stage.dart';
 
 /// 把 AG-UI 事件流折成「AI 文本 + 结构化卡片 + 安全兜底标记」的纯模块。
@@ -39,6 +40,11 @@ class AiTextFold {
   /// 答疑引用落点（后端 `rag_sources` DATA 帧）：答案下方「参考来源」条的数据。
   final List<RagSource> sources;
 
+  /// 回复后 follow-up chips（后端 `SUGGESTED_ACTIONS` 帧，ADR-0072 修订 / 票 03(a)）。
+  ///
+  /// 服务端固定目录、非 LLM；仅入口、不落库。附在本轮最后一条 ai 消息下方渲染。
+  final List<SuggestedAction> suggestedActions;
+
   const AiTextFold({
     this.text = '',
     this.cards = const <AssistantCard>[],
@@ -46,6 +52,7 @@ class AiTextFold {
     this.stage = '',
     this.errorText,
     this.sources = const <RagSource>[],
+    this.suggestedActions = const <SuggestedAction>[],
   });
 
   static const _fallbackError = '出错了，请稍后重试';
@@ -70,6 +77,7 @@ class AiTextFold {
       // 运行时编排帧：用户消息回显（T07 起判断题闭环也走运行时，会下发 USER_MESSAGE，
       // 与本地已添加的用户气泡重复）——绝不当正文，否则用户那句话会被渲染两遍。
       AssistantEventType.userMessage => this,
+      AssistantEventType.suggestedActions => _withSuggestedActions(ev),
       _ => stage == null ? this : _copy(stage: stage),
     };
   }
@@ -107,6 +115,17 @@ class AiTextFold {
     );
   }
 
+  AiTextFold _withSuggestedActions(AssistantEvent ev) {
+    final data = ev.data;
+    if (data == null || data['actions'] is! List) return this;
+    final incoming = (data['actions'] as List)
+        .whereType<Map<String, dynamic>>()
+        .map(SuggestedAction.fromJson)
+        .toList();
+    if (incoming.isEmpty) return this;
+    return _copy(suggestedActions: <SuggestedAction>[...suggestedActions, ...incoming]);
+  }
+
   AiTextFold _copy({
     String? text,
     List<AssistantCard>? cards,
@@ -114,6 +133,7 @@ class AiTextFold {
     String? stage,
     Object? errorText = _unset,
     List<RagSource>? sources,
+    List<SuggestedAction>? suggestedActions,
   }) =>
       AiTextFold(
         text: text ?? this.text,
@@ -124,6 +144,7 @@ class AiTextFold {
             ? this.errorText
             : errorText as String?,
         sources: sources ?? this.sources,
+        suggestedActions: suggestedActions ?? this.suggestedActions,
       );
 
   static const _unset = Object();

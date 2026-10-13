@@ -4,7 +4,7 @@
 
 **Blocked by:** 01（follow-up 词条与能力卡/目录同源，需在同一轮统一目录形态）
 
-**Status:** ready-for-agent
+**Status:** done
 
 ## 为什么（Round 2 核实结论）
 - **（b）是真缺陷**（`service.py:353-364`）：`pending_quiz` 写入后，`service.py:554` 在**任何 provider 调用之前**把该会话**任意**后续消息都送进 `_quiz_judge_stream`；非「对/错」输入回落固定文案「请用「对」或「错」回答这道题哦～」且**不递增 attempts、不清 `pending_quiz`** → 新问题永远到不了 LLM，用户被永久卡在判断题里。可退出口仅「对/错」或 `_EXPLAIN_HINTS`（讲解/为什么/教我/不懂/不明白/解释/说说/怎么理解）。
@@ -39,15 +39,15 @@
 - ⚠️ 不新增表、不加 DB 列；`pending_quiz` 仍是 `Conversation` 上的 JSON 字段。
 
 ## 验收清单
-- [ ] 判断题待判定中，用户答「对/错」→ 走确定性判定（零 LLM），与现状一致
-- [ ] 待判定中用户说「跳过 / 算了 / 下一题」→ 清 `pending_quiz` + 固定退出口文案，**零 LLM**
-- [ ] 待判定中用户问**新问题**（如「那三角形呢？」）→ 清 `pending_quiz`，该问题**正常走路由/LLM**并作答，答案前带「先放一放」提示（可用桩 runtime 断言 provider 被调用）
-- [ ] 任意一轮回复后，前端在答案下方渲染 follow-up chips；空态 GET 端点行为不变
-- [ ] follow-up 词条为**服务端固定目录**，**非 LLM 生成**；`build_actions` 的 `empty` 分支与旧 `build_suggested_actions` 输出**逐条等价**（既有 `test_suggested_actions.py` 不改即过，或仅改 import）
-- [ ] SSE 新帧 `type: suggested_actions` 落库策略明确（建议**不落库**——它是「下一步入口」而非对话内容，避免污染历史回放；需在 ADR-0072 修订中写明）
-- [ ] 前端 fold 未知帧类型时安全忽略（旧客户端不崩）；`AssistantSuggestedActions` 空列表 → `SizedBox.shrink()`
-- [ ] `pytest tests/ai/ tests/features/assistant/` 全绿；前端 `flutter analyze` No issues + 定向 widget 测试
-- [ ] 文件规模棘轮 ≤400 行（`service.py` 若逼近上限，把目录常量拆到独立模块如 `assistant/action_catalog.py`）
+- [x] 判断题待判定中，用户答「对/错」→ 走确定性判定（零 LLM），与现状一致
+- [x] 待判定中用户说「跳过 / 算了 / 下一题」→ 清 `pending_quiz` + 固定退出口文案，**零 LLM**
+- [x] 待判定中用户问**新问题**（如「那三角形呢？」）→ 清 `pending_quiz`，该问题**正常走路由/LLM**并作答，答案前带「先放一放」提示（可用桩 runtime 断言 provider 被调用）
+- [x] 任意一轮回复后，前端在答案下方渲染 follow-up chips；空态 GET 端点行为不变
+- [x] follow-up 词条为**服务端固定目录**，**非 LLM 生成**；`build_actions` 的 `empty` 分支与旧 `build_suggested_actions` 输出**逐条等价**（既有 `test_suggested_actions.py` 不改即过，或仅改 import）
+- [x] SSE 新帧 `type: suggested_actions` 落库策略明确（建议**不落库**——它是「下一步入口」而非对话内容，避免污染历史回放；需在 ADR-0072 修订中写明）
+- [x] 前端 fold 未知帧类型时安全忽略（旧客户端不崩）；`AssistantSuggestedActions` 空列表 → `SizedBox.shrink()`
+- [x] `pytest tests/ai/ tests/features/assistant/` 全绿；前端 `flutter analyze` No issues + 定向 widget 测试
+- [x] 文件规模棘轮 ≤400 行（`service.py` 若逼近上限，把目录常量拆到独立模块如 `assistant/action_catalog.py`）
 
 **决策锚点：** 并入 **ADR-0072 修订**（不另开号）；follow-up 帧**不落库**；旧 kind 兼容不适用（本票不含 schema 变更）；`pending_quiz` 判定保持确定性（ADR-0040/0042）。
 
@@ -59,3 +59,10 @@
 - **（b）`pending_quiz` 锁死：已不存在，从本票移除。** ADR-0089 将 `conversation.pending_quiz` **DROP COLUMN**（`core/db.py:480-496`），`service.py:232/436` 明确「服务端不再维护 `pending_quiz` 状态机」，出题/判定改由对话历史（题卡含答案）承载。原缺陷场景（答非「对/错」→ 永久卡死在判断题）随状态机删除而消失 → **不应再实现 `_is_quiz_reply` / `_is_quiz_abort` 死代码**。
 - **（a）follow-up chips：仍有效。** 现状：`build_suggested_actions`（`service.py:155`）存在，`GET /assistant/suggested-actions`（`router.py:61-80`）；前端 `AssistantSuggestedActions`（`assistant_suggested_actions.dart:25`）走 riverpod family 从后端拉目录，**仅在空态**渲染（`assistant_chat_page.dart:337 messages.isEmpty`）；SSE 帧**无** suggested_actions 下行。工单（a）设计（统一 `build_actions` 入口 + SSE 新帧 `suggested_actions` + 前端在最后一条 ai 消息下方渲染）**成立**。
 - **票 03 实际范围收窄为仅（a）**；(b) 作废。Q-a/Q-b 待确认不变。
+
+## 实现记录（2026-10-13）
+- commit `59872f8`（integration/ai-prompts-hardening）：统一 `build_actions` 入口 + SSE
+  `SUGGESTED_ACTIONS` 新帧（不落库）+ 前端给定列表模式渲染。
+- 待确认已拍板：Q-a 直接改名 `build_actions`（统一入口，router + 6 处单测同步）；
+  Q-b 不落库（仅入口、非对话内容，避免污染历史回放）。
+- 03(b) `pending_quiz` 锁死随 ADR-0089 DROP COLUMN 作废，本票仅实现（a）。

@@ -64,6 +64,7 @@ class AssistantEventType {
   static const toolResult = 'TOOL_RESULT';
   static const step = 'STEP';
   static const data = 'DATA';
+  static const suggestedActions = 'SUGGESTED_ACTIONS';
   static const error = 'ERROR';
   static const done = 'DONE';
 }

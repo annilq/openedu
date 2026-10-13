@@ -11,8 +11,8 @@
 
 ```
 01 [B] 能力自述与超范围引导（capability 意图 + 服务端固定目录） ── done
-02 [A] 知识点聚焦注入会话系统提示（knowledge_point_id → ctx.extra） ── None
-03 [C] 回复后 follow-up chips + pending_quiz 锁死修复 ── 01
+02 [A] 知识点聚焦注入会话系统提示（knowledge_point_id → ctx.extra） ── done
+03 [C] 回复后 follow-up chips + pending_quiz 锁死修复 ── done
 ```
 
 **执行顺序 B → A → C 的理由（用户拍板）**：B 纯常量/提示词、可后端单测、用户立刻可感知；A 次之；C 最重（动 SSE 帧契约 + 前端渲染 + 判定分支准入）。

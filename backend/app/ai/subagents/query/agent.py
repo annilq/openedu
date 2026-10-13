@@ -25,6 +25,7 @@ from agent_core.protocol import data_event
 from agent_core.subagent import BaseSubAgent, SubAgentContext, run_with_tools
 from app.ai.subagents.query.render import render_cards
 from app.ai.subagents.query.tools.registry import QUERY_TOOLS
+from app.features.assistant.kp_focus import format_kp_focus
 
 _SYSTEM = """你是「学情查询」助手，只负责查询本家庭的学习数据，并用中文简洁作答。
 
@@ -64,6 +65,10 @@ class QuerySubAgent(BaseSubAgent):
     def initial_system(self, message: str, ctx: SubAgentContext) -> str:
         role = (ctx.role or "").strip().lower()
         parts = [_SYSTEM, _CHILD_HINT if role == "student" else _PARENT_HINT]
+        # ADR-0080：知识点聚焦段（query 额外强调须依托工具数据，维持 requires_tool_data 契约）。
+        focus_seg = format_kp_focus(ctx.extra.get("knowledge_point"), query_mode=True)
+        if focus_seg:
+            parts.append(focus_seg)
         if ctx.skills:
             parts.append(ctx.skills)
         return "\n\n".join(p for p in parts if p)

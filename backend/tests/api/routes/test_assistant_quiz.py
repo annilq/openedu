@@ -26,8 +26,9 @@ from app.db.models import Conversation, Message, User
 from app.db.models.material import KnowledgePoint
 from tests.utils.user import auth_headers, register_teacher
 
-# 运行时会话可能出现（并被前端识别）的全部帧类型。任何新帧类型都会让「无新帧类型」
-# 的断言失败——判断题闭环不得靠新协议帧做事。
+# 运行时会话可能出现（并被前端识别）的全部帧类型白名单。判断题闭环（ADR-0090）自身
+# 不引入新帧；但 03(a) 回复后 follow-up 引入了全局 SUGGESTED_ACTIONS 帧（每条回复后下发、
+# 不落库），须列入白名单。新增其它帧类型须显式评估后再放宽此处。
 _KNOWN_FRAME_TYPES = {
     "RUN_STARTED",
     "USER_MESSAGE",
@@ -36,6 +37,7 @@ _KNOWN_FRAME_TYPES = {
     "TOOL_CALL",
     "TOOL_RESULT",
     "STEP",
+    "SUGGESTED_ACTIONS",
     "DATA",
     "ERROR",
     "DONE",
@@ -167,7 +169,7 @@ def test_quiz_chat_runs_via_runtime_and_keeps_answer(client, db):
     ]
     assert len(routed) == 2
     assert any("出题助手" in e.get("text", "") for e in routed)
-    # 无新帧类型：判断题闭环不引入新协议帧。
+    # 帧白名单：判断题闭环自身不引入新帧；SUGGESTED_ACTIONS 为 03(a) 全局 follow-up 帧。
     assert set(types) <= _KNOWN_FRAME_TYPES
 
     questions = [

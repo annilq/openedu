@@ -24,59 +24,85 @@ final suggestedActionsProvider = FutureProvider.autoDispose
 
 class AssistantSuggestedActions extends ConsumerWidget {
   final AssistantCoursewareContext? coursewareContext;
+
+  /// 给定列表模式（票 03(a)）：非空时直接渲染这组 chips，不再走 provider 拉取空态目录。
+  /// 用于回复后 follow-up：服务端随 `SUGGESTED_ACTIONS` 帧下发、挂在末条 ai 消息下方。
+  final List<SuggestedAction>? givenActions;
+
   final void Function(String payload) onPrompt;
   final void Function(String target) onNavigate;
 
   const AssistantSuggestedActions({
     super.key,
     this.coursewareContext,
+    this.givenActions,
     required this.onPrompt,
     required this.onNavigate,
   });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final async =
-        ref.watch(suggestedActionsProvider(coursewareContext?.knowledgePointId));
     final scheme = AppTheme.colorsOf(context);
     final text = AppTheme.textOf(context);
 
-    return switch (async) {
-      AsyncData(:final value) when value.isEmpty => const SizedBox.shrink(),
-      AsyncData(:final value) => Padding(
-          padding: const EdgeInsets.fromLTRB(
-              AppSpacing.xl2, AppSpacing.lg, AppSpacing.xl2, 0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '试试这些：',
-                style: text.labelMedium?.copyWith(color: scheme.onSurfaceVariant),
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              Wrap(
-                spacing: AppSpacing.sm,
-                runSpacing: AppSpacing.sm,
-                children: [
-                  for (final a in value)
-                    _SuggestionChip(
-                      label: a.label,
-                      onTap: () {
-                        if (a.kind == 'navigate') {
-                          onNavigate(a.payload);
-                        } else {
-                          onPrompt(a.payload);
-                        }
-                      },
-                    ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      _ => const SizedBox.shrink(),
-    };
+    final List<SuggestedAction> actions;
+    if (givenActions != null) {
+      // 给定列表模式：直接渲染，不拉取空态目录。
+      actions = givenActions!;
+    } else {
+      final async =
+          ref.watch(suggestedActionsProvider(coursewareContext?.knowledgePointId));
+      switch (async) {
+        case AsyncData(:final value) when value.isEmpty:
+          return const SizedBox.shrink();
+        case AsyncData(:final value):
+          actions = value;
+        case _:
+          return const SizedBox.shrink();
+      }
+    }
+
+    if (actions.isEmpty) return const SizedBox.shrink();
+    return _chipsColumn(scheme, text, actions);
   }
+
+  /// 「试试这些：」标签 + 可点 chips（空态目录与回复后 follow-up 共用）。
+  Widget _chipsColumn(
+    AppColors scheme,
+    AppText text,
+    List<SuggestedAction> actions,
+  ) =>
+      Padding(
+        padding: const EdgeInsets.fromLTRB(
+            AppSpacing.xl2, AppSpacing.lg, AppSpacing.xl2, 0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '试试这些：',
+              style: text.labelMedium?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Wrap(
+              spacing: AppSpacing.sm,
+              runSpacing: AppSpacing.sm,
+              children: [
+                for (final a in actions)
+                  _SuggestionChip(
+                    label: a.label,
+                    onTap: () {
+                      if (a.kind == 'navigate') {
+                        onNavigate(a.payload);
+                      } else {
+                        onPrompt(a.payload);
+                      }
+                    },
+                  ),
+              ],
+            ),
+          ],
+        ),
+      );
 }
 
 /// 推荐操作 chip：新粗野描边药丸（墨黑 hairline 边 + raised 底），点击走焦点树。
