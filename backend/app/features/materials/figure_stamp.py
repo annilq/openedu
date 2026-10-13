@@ -22,16 +22,23 @@
 """
 from __future__ import annotations
 
+from typing import Any
+
 from sqlmodel import Session, SQLModel, select
 
 from app.db.models import FigureLibrary, KnowledgePoint
 from app.domain.figures import Figure
 from app.domain.scene_spec import SceneSpec, normalize_scene_spec
 from app.features.materials.scene_figures import figure_geometry
-from app.features.materials.scene_fusion import resolve_kp_scene, scene_spec_from_figure
+from app.features.materials.scene_fusion import (
+    find_knowledge_point,
+    resolve_kp_scene,
+    scene_spec_from_figure,
+)
 
 __all__ = [
     "FigureRef",
+    "allowed_keys_for_question",
     "available_figures",
     "render_figure_catalog",
     "stamp_figures",
@@ -76,17 +83,42 @@ def render_figure_catalog(figures: list[FigureRef]) -> str:
     return "\n".join(f"{f.key} — {f.label}" for f in figures)
 
 
+def allowed_keys_for_question(
+    session: Session,
+    *,
+    teacher_id: Any,
+    subject: str,
+    grade: int,
+    knowledge_point: str,
+    semester: str = "",
+) -> set[str]:
+    """给一道题算「本次可用图形目录」的键集合（投影 + 校验共用）。
+
+    走与场景解析**同一套**知识点匹配口径（:func:`find_knowledge_point`），
+    避免第二处各自实现「怎么算匹配上」。找不到知识点 → 目录回落图库全量。
+    """
+    kp = find_knowledge_point(
+        session,
+        teacher_id=teacher_id,
+        subject=subject,
+        grade=grade,
+        knowledge_point=knowledge_point,
+        semester=semester,
+    )
+    return {ref.key for ref in available_figures(session, kp=kp)}
+
+
 def stamp_figures(
     session: Session,
-    figures: list[Figure | None],
+    keys: list[str | None],
     *,
     allowed: set[str],
 ) -> list[Figure] | None:
-    """按 ``figure.key`` 从图库盖几何章：**全-or-无**，任一不合法即整组丢弃。
+    """按图形**身份键**从图库盖几何章：**全-or-无**，任一不合法即整组丢弃。
 
     规则（ADR-0089 决策 2 的校验层）：
 
-    - **全-or-无**：一组里只要**有一个条目没有图**（``None``）→ 整组返回 ``None``。
+    - **全-or-无**：一组里只要**有一个条目没有键**（``None``）→ 整组返回 ``None``。
       理由：半套图会把「这个选项本来没图」误导成「这个选项不是图形」。
     - 任一 ``key`` **不在目录内**（``allowed``）或**图库里没有这一行** → 返回 ``None``，
       且**不抛错**（未知键是模型幻觉，属正常输入）。
@@ -94,17 +126,17 @@ def stamp_figures(
 
     ``None`` 表示「这一组不给图」，由调用方整体退化（题面纯文字 / 不发射场景卡）。
     """
-    if not figures:
+    if not keys:
         return None
-    if any(f is None for f in figures):
+    if any(k is None for k in keys):
         # 全-or-无：部分有图 → 整组丢弃（含「全都无图」）。
         return None
     stamped: list[Figure] = []
-    for f in figures:
-        assert f is not None  # 上面已挡；仅为类型收窄
-        if f.key not in allowed:
+    for key in keys:
+        assert key is not None  # 上面已挡；仅为类型收窄
+        if key not in allowed:
             return None
-        geometry = figure_geometry(session, f.key)
+        geometry = figure_geometry(session, key)
         if geometry is None:
             return None
         stamped.append(geometry)

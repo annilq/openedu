@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlmodel import Field, SQLModel
 
 from app.domain.scene_spec import SceneSpec
+from app.domain.structured import OptionList
 
 
 class BankQuestionItem(SQLModel):
@@ -15,7 +16,9 @@ class BankQuestionItem(SQLModel):
     subject: str = ""
     grade: int = 0
     stem: str
-    options: list[str] | None = None
+    # 选项对象列表 {text, figure}（ADR-0089）：text 恒存在（判题依据），figure 为内联几何。
+    # OptionList 在读路径容错（存量 str → 对象，无 DDL 迁移）。
+    options: OptionList = None
     qtype: str
     knowledge_point: str
     difficulty: str | None = None

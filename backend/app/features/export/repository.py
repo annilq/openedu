@@ -14,13 +14,15 @@ from sqlmodel import Session, select
 from app.core.errors import ErrCode
 from app.core.guard import require_owned, require_owned_student
 from app.db.models import Question, Task, TaskQuestion, WrongQuestion
+from app.domain.structured import option_texts
 from app.features.export.document import QuestionGroup, RawQuestion
 
 
 def _to_raw(row: Question | TaskQuestion) -> RawQuestion:
     return RawQuestion(
         stem=row.stem,
-        options=list(row.options or []),
+        # 选项对象（ADR-0089）→ 纯文字：导出是文字卷面，图形不参与。
+        options=option_texts(row.options),
         qtype=row.qtype,
         subject=row.subject,
     )

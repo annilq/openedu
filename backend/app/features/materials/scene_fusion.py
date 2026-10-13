@@ -232,6 +232,34 @@ def _resolve_uncached(
     figure: Figure | None,
 ) -> SceneSpec | None:
     """按 (学期精确 → 整学年回落) 找模板，题面图形替换主图形后融合。"""
+    kp = find_knowledge_point(
+        session,
+        teacher_id=teacher_id,
+        subject=subject,
+        grade=grade,
+        knowledge_point=knowledge_point,
+        semester=semester,
+    )
+    return fuse_scene_spec(
+        kp.scenes if kp is not None else None,
+        figure=figure,
+    )
+
+
+def find_knowledge_point(
+    session: Session,
+    *,
+    teacher_id: Any,
+    subject: str,
+    grade: int,
+    knowledge_point: str,
+    semester: str = "",
+) -> KnowledgePoint | None:
+    """按 (学期精确 → 整学年回落) 找知识点，**唯一匹配口径**（ADR-0061）。
+
+    供目录投影（``figure_stamp.available_figures``）等调用方复用——避免第二处
+    各自实现「怎么算匹配上」，那正是「同一知识点换个地方就没图」的复生点。
+    """
 
     def _match(semester_filter: str) -> KnowledgePoint | None:
         return session.exec(
@@ -250,10 +278,7 @@ def _resolve_uncached(
     kp = _match(semester) if semester else None
     if kp is None:
         kp = _match("")
-    return fuse_scene_spec(
-        kp.scenes if kp is not None else None,
-        figure=figure,
-    )
+    return kp
 
 
 def build_scene_spec_for_question(

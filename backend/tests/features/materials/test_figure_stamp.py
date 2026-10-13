@@ -16,7 +16,6 @@ DB 交互用真实 ``db`` fixture（``init_db`` 已 seed 11 个内置图形）�
 import uuid
 
 from app.db.models import FigureLibrary, KnowledgePoint
-from app.domain.figures import Figure
 from app.features.materials.figure_stamp import (
     FigureRef,
     available_figures,
@@ -32,15 +31,6 @@ _KP_NAME = "图形的运动（轴对称）"
 # 教师自绘三角形（刻意不是内置预设）——证明「自绘图形能进目录」。
 _USER_POINTS = [[0.20, 0.80], [0.80, 0.80], [0.50, 0.30]]
 _USER_EDGES = [[0, 1], [1, 2], [2, 0]]
-
-
-def _square_figure() -> Figure:
-    """一个合法的正方图形对象（key 在目录内，几何从库取，points 只是身份占位）。"""
-    return Figure(key="square", label="正方形", points=[[0.0, 0.0]], edges=[[0, 0]])
-
-
-def _para_figure() -> Figure:
-    return Figure(key="para", label="平行四边形", points=[[0.0, 0.0]], edges=[[0, 0]])
 
 
 def _scene_with_figure(key: str, label: str) -> dict:
@@ -155,19 +145,18 @@ def test_render_catalog_only_key_and_label():
 
 
 def test_stamp_figures_all_valid_inlines_geometry_in_order(db):
-    """合法 key → 几何内联、顺序 == 传入顺序。"""
+    """合法身份键 → 几何内联、顺序 == 传入顺序。"""
     allowed = {"square", "para"}
-    out = stamp_figures(db, [_square_figure(), _para_figure()], allowed=allowed)
+    out = stamp_figures(db, ["square", "para"], allowed=allowed)
     assert out is not None
     assert [f.key for f in out] == ["square", "para"]
-    # 顶点来自图库（非传入的占位几何）。
-    assert len(out[0].points) == 4 and out[0].points != _square_figure().points
+    # 顶点来自图库（4 个点，正方形）。
+    assert len(out[0].points) == 4
 
 
 def test_stamp_figures_partial_none_returns_none(db):
     """全-or-无：一条有图、一条无图 → 整组丢弃。"""
-    allowed = {"square", "para"}
-    assert stamp_figures(db, [_square_figure(), None], allowed=allowed) is None
+    assert stamp_figures(db, ["square", None], allowed={"square", "para"}) is None
 
 
 def test_stamp_figures_all_none_returns_none(db):
@@ -176,13 +165,12 @@ def test_stamp_figures_all_none_returns_none(db):
 
 def test_stamp_figures_unknown_key_returns_none(db):
     """未知身份键（模型幻觉）→ 丢弃，不抛错。"""
-    ghost = Figure(key="不存在", label="x", points=[[0.0, 0.0]], edges=[[0, 0]])
-    assert stamp_figures(db, [ghost], allowed={"不存在"}) is None
+    assert stamp_figures(db, ["不存在"], allowed={"不存在"}) is None
 
 
 def test_stamp_figures_key_outside_catalog_returns_none(db):
     """key 在库里有，但不在本次目录内 → 丢弃（校验 key ∈ 目录）。"""
-    assert stamp_figures(db, [_square_figure()], allowed={"para"}) is None
+    assert stamp_figures(db, ["square"], allowed={"para"}) is None
 
 
 def test_stamp_figures_empty_returns_none(db):

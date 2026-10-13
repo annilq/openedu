@@ -4,7 +4,7 @@
 
 **Blocked by:** 01（目录投影 / 校验 / 盖章）、另一目录 `scene-spec-figure-unification` 的 06（集成验证）
 
-**Status:** ready-for-agent
+**Status:** done（后端侧；前端行内渲染归 ticket 04）
 
 ## 验收
 

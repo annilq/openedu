@@ -35,7 +35,7 @@ class Question(SQLModel, table=True):
     semester: str = Field(default="", max_length=8)
     qtype: str
     stem: str
-    options: list[str] | None = Field(default=None, sa_type=JSON(none_as_null=True))
+    options: list[dict] | None = Field(default=None, sa_type=JSON(none_as_null=True))
     # 是否多选题（ADR-0004 D5）：与 TaskQuestion.multi 同源，题库题复用闭环时一并拷贝。
     multi: bool = Field(default=False)
     answer: str | None = None

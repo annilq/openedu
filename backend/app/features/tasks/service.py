@@ -37,7 +37,11 @@ from app.db.models import (
     WrongQuestion,
 )
 from app.domain import Grader, build_retriever
-from app.domain.structured import normalize_options
+from app.domain.structured import normalize_options, option_texts
+from app.features.materials.figure_stamp import (
+    allowed_keys_for_question,
+    stamp_figures,
+)
 from app.features.materials.scene_fusion import (
     build_scene_spec_for_question,
     scene_spec_for_read,
@@ -168,7 +172,7 @@ def wrong_question_to_resp(
             knowledge_point=q.knowledge_point,
             semester=q.semester,
             stem=q.stem,
-            options=q.options,
+            options=option_texts(q.options),
             cache=scene_cache,
         ),
     )
@@ -180,11 +184,57 @@ def _valid_choice_options(options: object) -> bool:
     这是「选择题必须可选项」的硬约束：模型偶发会把 ``qtype`` 标成 ``choice`` 却
     不给 ``options``（或不给够），若照存，今日练习里就变成填空题输入框。在落库前
     拦掉，让教师重新生成，而不是存一份答不了的残缺题。
+
+    判「非空」只看**选项文字**（``option_texts``，ADR-0089）：图形不参与判定。
     """
     if not isinstance(options, list):
         return False
-    non_empty = [o for o in options if isinstance(o, str) and o.strip()]
+    non_empty = [t for t in option_texts(options) if t.strip()]
     return len(non_empty) >= 2
+
+
+def _stamp_option_figures(
+    session: Session,
+    options: list[dict] | None,
+    *,
+    teacher_id: UUID,
+    subject: str,
+    grade: int,
+    knowledge_point: str,
+    semester: str,
+) -> list[dict] | None:
+    """把选项的**图形身份键**盖章成内联几何（ADR-0089 决策 2）。
+
+    落库边界的关键一步：模型只引用身份键，顶点由后端从 ``figure_library``
+    （几何唯一权威）取——**模型绝不产出坐标**。产物选项形如
+    ``{"text": ..., "figure": {key,label,points,edges} | None}``。
+
+    规则：
+    - 本题**没有任何选项引用图形** → 不查目录、不盖章，直接回 ``figure: None``
+      （普通文字题的零成本路径）。
+    - 有引用则按**本次可用目录**（``allowed_keys_for_question``）校验；**全-or-无**：
+      任一键不合法 / 图库无此行 / 部分选项没图 → 整题退化纯文字，不半套出图。
+    """
+    if not options:
+        return options
+    keys = [o.get("figure_key") for o in options]
+    if not any(keys):
+        return [{"text": o["text"], "figure": None} for o in options]
+    allowed = allowed_keys_for_question(
+        session,
+        teacher_id=teacher_id,
+        subject=subject,
+        grade=grade,
+        knowledge_point=knowledge_point,
+        semester=semester,
+    )
+    figures = stamp_figures(session, keys, allowed=allowed)
+    if figures is None:
+        return [{"text": o["text"], "figure": None} for o in options]
+    return [
+        {"text": o["text"], "figure": fig.model_dump()}
+        for o, fig in zip(options, figures, strict=True)
+    ]
 
 
 # ───────────────────────── 只读用例 ─────────────────────────
@@ -543,7 +593,7 @@ def create_from_generated(
         stem = str(q.get("stem", ""))
         # 模型不守 output_schema 时可能把选项揉成一个字符串 / 一个列表元素；
         # 落库前切分成「每项一段」，否则学生端选项挤在一行无法选择。
-        options = normalize_options(q.get("options"))  # list[str] | None
+        options = normalize_options(q.get("options"))  # list[dict] | None
         qtype = str(q.get("qtype", "open"))
         # 多选题标记（ADR-0004 D5）：随题卡透传；非 choice / 无选项题恒 False。
         multi = bool(q.get("multi", False)) and qtype == "choice" and bool(_valid_choice_options(options))
@@ -554,6 +604,17 @@ def create_from_generated(
                 ErrCode.TASK_CHOICE_NO_OPTIONS,
                 "选择题缺少有效选项，无法保存，请重新生成任务",
             )
+        # 选项图形（ADR-0089）：模型只给身份键；落库前按本次可用目录**校验 + 盖几何章**
+        # （全-or-无：任一键不合法 / 部分选项没图 → 整题退化纯文字）。
+        options = _stamp_option_figures(
+            session,
+            options,
+            teacher_id=teacher_id,
+            subject=subject,
+            grade=grade,
+            knowledge_point=kp,
+            semester=semester,
+        )
         # 交互讲解快照（ADR-0061 §M）：优先用前端回传的（出题时已算好的），
         # 没有就地按「知识点模板 + 本题数值」融合一份。写null 也要归一化成
         # None——JSON `null` 存进JSON 列会让「非空」计数失真。
@@ -569,7 +630,7 @@ def create_from_generated(
                 knowledge_point=kp,
                 semester=semester,
                 stem=stem,
-                options=options,
+                options=option_texts(options),
             )
             # ADR-0091 ticket 02：生产端产有类型 SceneSpec，JSON 列只收 dict——
             # 落库边界序列化（响应侧 model_dump 归 ticket 03，此处是持久化侧）。
@@ -1045,7 +1106,7 @@ async def generate_task_stream(
                 "knowledge_point": q.knowledge_point,
                 "qtype": q.qtype,
                 "stem": q.stem,
-                "options": q.options,
+                "options": option_texts(q.options),
                 "answer": q.answer,
                 "difficulty": q.difficulty,
             }

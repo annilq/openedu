@@ -175,7 +175,8 @@ def test_judge_spec_card_keeps_answer_and_flags_judge():
     card = data[0].data["result"]
     assert card["judge"] is True
     assert card["answer"] == "错"
-    assert card["options"] == ["对", "错"]
+    # 选项是对象（ADR-0089）：text 恒存在（判题依据），figure_key 为图形身份键。
+    assert [o["text"] for o in card["options"]] == ["对", "错"]
     assert card["explanation"]
 
 
