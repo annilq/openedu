@@ -7,7 +7,7 @@ import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_focusable_action.dart';
 import '../../../../shared/widgets/app_toast.dart';
 import '../pages/courseware_present_page.dart';
-import '../providers/courseware_provider.dart';
+import '../../providers/courseware_provider.dart';
 
 /// 「最近课件」回执（ADR-0067 §3.8 强制补偿项）。
 ///
