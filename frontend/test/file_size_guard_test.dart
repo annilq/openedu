@@ -178,7 +178,7 @@ const Map<String, int> _baseline = <String, int>{
   'features/home/presentation/widgets/teacher/teacher_question_bank_view.dart': 757,
   'features/home/presentation/widgets/teacher/teacher_tasks_view.dart': 672,
   'features/home/presentation/screens/home_screen.dart': 606,
-  'features/assistant/presentation/screens/assistant_chat_page.dart': 570,
+  'features/assistant/presentation/screens/assistant_chat_page.dart': 578,
   'shared/widgets/scene_interpreter/reflection_scene.dart': 438,
   'features/home/presentation/widgets/teacher/teacher_question_card.dart': 477,
   'features/home/presentation/widgets/teacher/teacher_wrong_questions_view.dart': 440,
