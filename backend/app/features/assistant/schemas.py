@@ -65,6 +65,9 @@ class AssistantChatReq(SQLModel):
     action: str | None = None
     # ADR-0067：课件练习只把课堂语境透传给 SubAgent，不创建任务或作答记录。
     courseware: CoursewareContext | None = None
+    # ADR-0080：普通伴学的知识点聚焦（与 courseware 并存）。脱离课件页进入助手时（如从
+    # 知识点详情页点「问 AI」）走此显式 id；缺省回落 courseware 内的 id（见 service.chat）。
+    knowledge_point_id: UUID | None = None
 
 
 class AssistantConversationResp(SQLModel):

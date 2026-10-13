@@ -15,6 +15,7 @@ from app.ai.subagents.subject_personas import get_subject_persona
 from app.ai.subagents.tutor.scene_intent import resolve_interactive_scene
 from app.domain.subjects import SUBJECTS
 from app.domain.tutor import TutorService
+from app.features.assistant.kp_focus import format_kp_focus
 
 
 def detect_subject(text: str) -> str:
@@ -102,6 +103,12 @@ class TutorSubAgent(BaseSubAgent):
         base_context = ctx.extra.get("context")
         if is_courseware:
             base_context = _courseware_hint_context(courseware, base_context)
+        # ADR-0080：知识点聚焦段（与 tutor_system_prompt 安全锁物理分离），独立注入上下文。
+        focus_seg = format_kp_focus(ctx.extra.get("knowledge_point"))
+        if focus_seg:
+            base_context = (
+                f"{base_context}\n\n{focus_seg}".strip() if base_context else focus_seg
+            )
         tc = self._tool("tutor_explain", label="伴学答疑")
         yield tc.call
         # AI 答疑也能出示交互演示（ADR-0073 补齐的唯一缺口）：演示作为 DATA 帧

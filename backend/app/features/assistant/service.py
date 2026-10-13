@@ -39,6 +39,7 @@ from app.db.models import Class, Conversation, Message, Role, get_datetime_utc
 from app.db.models.material import KnowledgePoint
 from app.domain import build_provider, build_retriever
 from app.domain.safety import StudentSafety
+from app.features.assistant.kp_focus import resolve_kp_focus
 from app.features.assistant.repository import (
     conversation_meta,
     derive_title,
@@ -392,6 +393,15 @@ async def chat(
         # 无 session_id：兼容客户端自带历史（兜底）
         history = req.history
 
+    # ADR-0080：焦点知识点优先取显式参数，回落课件上下文内的 id；经归属校验解析四元组。
+    # 越权 / 缺失 → None（不注入聚焦段，无越权数据泄漏）。
+    kp_id = (
+        req.knowledge_point_id
+        if req.knowledge_point_id is not None
+        else (req.courseware.knowledge_point_id if req.courseware is not None else None)
+    )
+    focused_kp = resolve_kp_focus(session=session, owner_id=teacher_id, kp_id=kp_id)
+
     # 业务字段经 ctx.extra 透传（agent_core 不感知任何教育语义）。
     # 判断题出题与常规对话共用它——出题段在其上补 ``specs``（由 question 子代理驱动）。
     ctx = SubAgentContext(
@@ -411,11 +421,9 @@ async def chat(
             ),
             "courseware": courseware,
             # ADR-0072：显式下钻知识点 id，便于 SubAgent 精确聚焦（与 courseware 并存）。
-            "knowledge_point_id": (
-                req.courseware.knowledge_point_id
-                if req.courseware is not None
-                else None
-            ),
+            "knowledge_point_id": kp_id,
+            # ADR-0080：经归属校验的结构化四元组；subagent 各自渲染，避免再拼字符串。
+            "knowledge_point": focused_kp,
             "session_id": str(conv_id),
         },
     )

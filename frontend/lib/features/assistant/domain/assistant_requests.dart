@@ -8,6 +8,7 @@ class AssistantChatReq {
   final String? model;
   final List<Map<String, dynamic>>? history;
   final AssistantCoursewareContext? courseware;
+  final String? knowledgePointId;
 
   const AssistantChatReq({
     required this.message,
@@ -15,6 +16,7 @@ class AssistantChatReq {
     this.model,
     this.history,
     this.courseware,
+    this.knowledgePointId,
   });
 
   Map<String, dynamic> toJson() => {
@@ -23,6 +25,7 @@ class AssistantChatReq {
     if (model != null) 'model': model,
     if (history != null) 'history': history,
     if (courseware != null) 'courseware': courseware!.toJson(),
+    if (knowledgePointId != null) 'knowledge_point_id': knowledgePointId,
   };
 }
 
