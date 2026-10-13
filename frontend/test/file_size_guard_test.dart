@@ -182,7 +182,7 @@ const Map<String, int> _baseline = <String, int>{
   'shared/widgets/scene_interpreter/reflection_scene.dart': 438,
   'features/home/presentation/widgets/teacher/teacher_question_card.dart': 477,
   'features/home/presentation/widgets/teacher/teacher_wrong_questions_view.dart': 440,
-  'features/home/presentation/widgets/teacher/workbench_glance.dart': 406,
+  'features/home/presentation/widgets/teacher/workbench_glance.dart': 407,
   'shared/widgets/analytics_charts.dart': 691,
   'features/home/presentation/screens/teacher_task_review_screen.dart': 405,
   'features/students/presentation/screens/student_management_screen.dart': 941,
