@@ -267,11 +267,11 @@ _Avoid_: 儿童（本应用学习者即学生账户，勿另立「儿童」实�
 _Avoid_: 家长（旧定位用词）、监护人（泛）
 
 **管理员 (Admin)**
-角色为 admin 的用户，跨教师查看全部 AI 运行轨迹与排障的监管角色（ADR-0088）。默认账号由启动期幂等 seed 创建、密码强制改密；经 `core.guard.require_owned_or_admin` 短路跳过归属校验。与 teacher 是并列角色，不是「超级教师」布尔标记。
+角色为 admin 的用户，跨教师查看全部 AI 运行轨迹与排障的监管角色（ADR-0088）。默认账号由启动期幂等 seed 创建，用户名/口令取自环境变量（`ADMIN_SEED_USERNAME`/`ADMIN_SEED_PASSWORD`，两者皆配才创建，绝不写死）；经 `core.guard.require_owned_or_admin` 短路跳过归属校验。与 teacher 是并列角色，不是「超级教师」布尔标记。
 _Avoid_: 超级用户（那是实现细节，不是产品概念）、后台（泛）
 
 **破窗访问 (Break-glass Access)**
-为合规而设的「非常规、留痕」的敏感数据访问通道：运行轨迹默认只暴露元数据与脱敏步骤，**查看原始 tool 参数 / 结果 / 路由全文**须显式请求并写 access log（谁、何时、读了哪段对话全文），不默认展开（ADR-0088）。呼应 `include_content=False` 原则与儿童数据合规。
+为合规而设的「非常规、留痕」的敏感数据访问通道：运行轨迹默认只暴露元数据与脱敏步骤，**查看原始 tool 参数 / 结果 / 路由全文**须显式请求（`POST /ai/debug/conversations/{id}/reveal`，仅 admin）并写留痕（`break_glass_access` 表：谁、何时、读了哪段对话全文、理由），不默认展开（ADR-0088）。呼应 `include_content=False` 原则与儿童数据合规。
 _Avoid_: 提权（破窗是受控留痕，不是无差别提权）、查看原文（那是破窗的动作，不是概念）
 
 ### 后端活动

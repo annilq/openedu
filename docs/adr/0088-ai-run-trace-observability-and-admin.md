@@ -95,11 +95,23 @@
 
 ---
 
-## 7. 开放问题
+## 7. 开放问题（已关闭，2026-10-13）
 
-- admin 是否也需要看 `tutor_logs` 跨教师？当前方案 `tutor_logs` 保持教师域，admin 暂不含（如需再开）。
-- 破窗访问留痕落库位置：新建 `access_log` 表，还是复用 `TutorLog` 字段？
-- admin 在客户端的入口形态：复用运行轨迹页按角色切范围，还是独立管理区？（影响 ADR-0059 的 `sealed` 扩展方式）
+三项均已在 ticket 04 收口（结论 + 落地情况）：
+
+- **admin 是否跨教师看 `tutor_logs`？** —— **否，本 ADR 不含，记入 Backlog。**
+  `GET /tutor/logs` 走 `require_owned_student(owner_id=teacher.id)`，admin 名下无学生
+  → 403；伴学安全日志维持**教师域**。若要给 admin 开伴学审计，另立 ADR/票（涉及儿童
+  安全日志的跨教师读取口径，不宜混入本 ADR）。
+- **破窗留痕落库位置？** —— **已落地：新建独立表 `break_glass_access`**，不复用 `TutorLog`
+  （`TutorLog` 是儿童安全伴学日志，语义不同；混表会让两类审计互相污染）。
+  字段：`actor_id` / `conversation_id` / `reason` / `created_at`（均索引可用）。
+- **admin 客户端入口形态？** —— **已落地：复用既有「运行轨迹」页按角色切范围**，
+  不单开独立管理区。admin 与 teacher 走同一入口（`TeacherPage.RunTracePage`），
+  范围由后端按 `role==ADMIN` 决定（列表放开 `teacher_id` 过滤、详情默认脱敏），
+  无需扩展 ADR-0059 的 `sealed` 类型。
+
+> 遗留 Backlog：`admin` 跨教师查看 `tutor_logs` 伴学安全审计（见下 §9）。
 
 ---
 
@@ -121,3 +133,23 @@
   agent_core 业务无关、零 `app.*` 依赖，故 `assistant/service.py` 用 `_surface_of(role)`
   把账户角色折算成调用面（仅 student 走 student 面，teacher/admin 走 teacher 面）后再传入运行时。
 - **验证**：`pytest` 全量 791 passed / 2 skipped；`ruff check` 改动文件全绿。
+
+---
+
+## 9. 实施完成（2026-10-13）
+
+ticket 01/02/03/04 已全部落地，ADR-0088 实施闭环：
+
+- **01（步级落库）**：`Message` 步级 `usage`/`latency_ms`/`model`/`input_safe`/`output_safe`/`blocked`
+  在 assistant 编排路径写入（`features/assistant/service.py`）；会话级成本由步级 `GROUP BY` 上推，**不建汇总列**。
+- **02（运行轨迹页）**：前端独立「运行轨迹」页（`features/assistant/.../run_trace_*`），
+  投影「全步骤 + 每步 model/token/延迟/安全标记」，与历史会话气泡**并列而不混入**；
+  经 `TeacherPage.RunTracePage` 接入 ADR-0059 单一导航源。
+- **03（脱敏 + 破窗）**：默认视图掩码正文与 tool 载荷（`features/ai/masking.py`，`redacted=True`）；
+  `POST /ai/debug/conversations/{id}/reveal`（`CurrentAdmin` 独占，非 admin→403）显原文并写
+  `break_glass_access` 留痕；`GET /ai/debug/break-glass-logs`（仅 admin）可查。教师作为 owner
+  看自家全文，admin 默认脱敏——**合规红线针对「站着读所有孩子对话」**。
+- **04（回归 + 收口）**：后端 `ruff check` + `pytest` 全绿；前端 `flutter analyze`（`No issues found!`）
+  + `flutter test` 0 回归。归属隔离回归锁定：学生调 debug → 403、跨教师 → 403、admin 越界**只读**（200 且默认脱敏）。
+- **开放问题**：见 §7（三项已关闭；`tutor_logs` 跨教师读取维持 Backlog）。
+

@@ -2,7 +2,7 @@
 
 - **What to build**: 串联 ticket 01/02/03 做端到端回归（后端 `pytest` + 前端 `flutter analyze`/`flutter test`，0 回归）；并把 ADR-0088 §7 三个开放问题关闭或显式记入 Backlog：(a) admin 是否也跨教师看 `tutor_logs` 伴学安全审计；(b) 破窗留痕落库位置；(c) 前端运行轨迹入口形态（独立管理区 vs 历史详情展开）。如决定落地某项，拆子票；如延后，写入 Backlog。最后在 ADR-0088 追加「实施完成」状态段。
 - **Blocked by**: 01, 02, 03
-- **Status**: ready-for-agent
+- **Status**: done
 - **验收清单**:
   - 后端 `ruff check` + `pytest`（沙盒 `--basetemp` 新目录）全绿；前端 `flutter analyze`（认 `No issues found!`）+ `flutter test`（先关代理）0 回归。
   - 归属隔离回归：引入 admin 后教师仍只看自家、学生仍被拒、admin 越界只读不写。

@@ -4,7 +4,7 @@
 > 决策依据：[ADR-0088 AI 运行轨迹可观测与管理员](../adr/0088-ai-run-trace-observability-and-admin.md)。
 > 发布形式：本地 `.scratch` 文件（未建 GitHub issue；`gh` 未登录）。后续 `gh auth login` 后可一键转 issue 并打 `ready-for-agent`。
 > 术语以 `CONTEXT.md` 为准；每个 ticket 文件含 `What to build` / `Blocked by` / `Status: ready-for-agent` / 验收清单。
-> ⚠️ **ticket 00/01/02/03 本轮已 done**，04 待实施（端到端回归 + 文档收口）。
+> ⚠️ **全部 5 票（00–04）本轮已 done**：ADR-0088 实施闭环。
 
 ## Tickets（依赖序，blockers first）
 
@@ -14,7 +14,7 @@
 | 01 | `Message` 步级 usage/latency/model/safety 落库 | — | ✅ done |
 | 02 | 前端独立「运行轨迹」页（镜像双消费者：全步骤 + token/延迟，与历史会话分离） | 01 | ✅ done |
 | 03 | 内容默认脱敏 + 破窗访问留痕（admin 看全部时 PII 脱敏，全文走 break-glass 并记日志） | 00, 02 | ✅ done |
-| 04 | 端到端回归与文档收口（关闭 ADR-0088 §7 三个开放问题） | 01, 02, 03 | ready-for-agent |
+| 04 | 端到端回归与文档收口（关闭 ADR-0088 §7 三个开放问题） | 01, 02, 03 | ✅ done |
 
 > 并行分析：00 ‖ 01 文件集不相交（00=角色/auth/guard/debug 端点，01=assistant 落库），可并行；02 依赖 01（token/延迟列必须有值才展示）；03 依赖 02（脱敏与破窗作用在轨迹页渲染与端点）；04 收口待 01/02/03。
 
