@@ -27,3 +27,7 @@
 - 题型(ADR-0004 D5)：qtype `{choice,fill,calc,open}`；选择题≥2 选项(`TASK_CHOICE_NO_OPTIONS(422)`)；多选 `multi:bool` 仅 `choice`。判断题=`choice`+对/错(`isJudgeQuestion`)；`Conversation.pending_quiz` 已删(ADR-0090)，`chat()` 直接 `IntentSignal`；tutor `_read_history`→`_question_card_text`。
 - 班级管理(ADR-0068+0086)：后端 `Class`(`teacher_id,name,grade(1–9)`)+`User.class_id`；`/classes` CRUD+`/students?class_id=&keyword=`+导入导出；`POST /students`/`/students/import` 增 `class_id`；前端缺 `features/classes/presentation/`；ADR-0086 补「班级管理」(`TeacherPage.classManagement`)；年级由 `Class.grade` 承载，`user.grade` 全删。
 - **ADR 状态：0088/0089/0090/0091 全 done**（集成分支 `integration/adr-0088-0091`）。0091=`SceneSpec` 直接持 `Figure`、几何归一、前端 `FigureShape` 补 `edges`；0089-04=前端选项内联图形(`QuizOption{text,figure?}`+`AppOptionTile` 行内缩略图+`ReflectionSceneDialog`，`flutter test` 543 passed)；0090=判断题闭环子代理化+修三前端既存红；0088=角色枚举+admin+运行轨迹页+脱敏破窗。详见 `docs/adr/`。
+
+## 7. ai-prompts-hardening epic（集成分支 `integration/ai-prompts-hardening`）
+- 3 票：01 capability(ADR-0079)+02 知识点聚焦(ADR-0080) 已 done（commit `ec67a75`+`4e3eeff`，隔离 worktree `/tmp/oedu-aph`）。纪律：主树 `integration/legacy-compat-cleanup` 带在途改动，开发全在 `/tmp/oedu-aph`、零污染主树。
+- 03(b) pending_quiz 锁死随 ADR-0089 DROP COLUMN 作废，**不再实现**；03(a) follow-up chips 为唯一 frontier：统一 `build_actions` 入口（取代 `build_suggested_actions`）+ SSE `suggested_actions` 新帧 + 前端在末条 ai 消息下方渲染。并入 ADR-0072 修订，不另开号。
