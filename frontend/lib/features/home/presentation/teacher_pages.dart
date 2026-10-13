@@ -212,6 +212,26 @@ class ClassStudentsPage extends TeacherPage {
   const ClassStudentsPage(this.classId, this.className);
 }
 
+/// 运行轨迹列表（ADR-0088 ticket 02）：一次 AI 运行 = 一行，点开看全步骤。
+///
+/// 与助手页内的「历史会话」是**并列的两个消费者**：历史会话是气泡口径
+/// （使用者视角，剥离内部步骤），本页是全步骤 + 元数据口径（审计 / 排障视角）。
+/// 同一张后端 `Conversation`/`Message` 表、两种投影、两个入口——刻意不合成一个
+/// 「会话详情」，否则教师会在聊天的上下文里读到路由决策与工具载荷。
+class RunTracePage extends TeacherPage {
+  const RunTracePage();
+}
+
+/// 一次运行的全步骤详情：[RunTracePage] 的下钻。
+///
+/// [runId] 直传而非塞进全局选中态——同 [StudentDetailPage] 的做法（ADR-0059），
+/// 避免「看着 A 运行却展示 B 运行」这类漏清 bug。返回统一回列表页。
+class RunTraceDetailPage extends TeacherPage {
+  final String runId;
+
+  const RunTraceDetailPage(this.runId);
+}
+
 /// 侧栏高亮用的「基础页」：审核页沿用它进来的那一页的高亮。
 ///
 /// 审核不是一个侧栏入口（否则「任务」会在用户从概览进来时错位高亮），而是某一页
