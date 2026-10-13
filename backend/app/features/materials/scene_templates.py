@@ -7,7 +7,7 @@
 
 为什么要有这个模块（而不是继续让默认值散落）：reflection 的交互初值（轴 90°、
 位置 0.5、controls、narrative）此前**同时**硬编码在三处——后端
-``default_scene_from_figure``、前端 ``ReflectionSceneData`` 的默认值、以及编辑器
+``scene_spec_from_figure``、前端 ``ReflectionSceneData`` 的默认值、以及编辑器
 手工重建的结构。三份互为镜像，却没有一处被显式命名为「外壳」，于是任何一侧改动
 都要靠人肉同步。本模块把它们收拢成唯一一处可引用的定义。
 

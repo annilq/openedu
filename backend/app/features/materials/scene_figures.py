@@ -20,11 +20,12 @@
 """
 from __future__ import annotations
 
-from typing import Any, NamedTuple
+from typing import NamedTuple
 
 from sqlmodel import Session, select
 
 from app.db.models import FigureLibrary
+from app.domain.figures import Figure
 
 
 class SeedFigure(NamedTuple):
@@ -201,8 +202,11 @@ BUILTIN_FIGURE_SEED: tuple[SeedFigure, ...] = (
 )
 
 
-def figure_geometry(session: Session, key: str | None) -> dict[str, Any] | None:
-    """按 key 从 ``figure_library`` 表取几何（ADR-0083）：``{key,label,points,edges}``。
+def figure_geometry(session: Session, key: str | None) -> Figure | None:
+    """按 key 从 ``figure_library`` 表取几何（ADR-0083 / ADR-0091）：``Figure``。
+
+    ADR-0091 起几何唯一载体就是 :class:`~app.domain.figures.Figure`——本函数直接
+    产该类型，不再投影成平行 dict（那正是「同一种几何两套写法」的根因）。
 
     返回值是**纯几何**（无 axis 字段）；未命中返回 ``None``——调用方据此降级为
     「不给图」，绝不兜底到某个内置图形（那是编造，ADR-0061 §U 反臆造纪律）。
@@ -214,9 +218,9 @@ def figure_geometry(session: Session, key: str | None) -> dict[str, Any] | None:
     ).first()
     if row is None:
         return None
-    return {
-        "key": row.key,
-        "label": row.label,
-        "points": row.points or [],
-        "edges": row.edges or [],
-    }
+    return Figure(
+        key=row.key,
+        label=row.label,
+        points=[list(p) for p in row.points or []],
+        edges=[list(e) for e in row.edges or []],
+    )
