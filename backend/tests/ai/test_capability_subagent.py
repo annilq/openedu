@@ -17,7 +17,7 @@ from typing import Any
 
 from agent_core.ports import RuntimeDeps
 from agent_core.protocol import EVENT_ASSISTANT_MESSAGE
-from agent_core.registry import build_subagent, discover_subagent_manifests
+from agent_core.registry import discover_subagent_manifests
 from agent_core.runtime import AgentRuntime
 from agent_core.subagent import SubAgentContext
 from app.ai.subagents.capability import (

@@ -11,7 +11,6 @@
 import uuid
 
 from agent_core.protocol import EVENT_SUGGESTED_ACTIONS, AssistantEvent
-
 from app.db.models.material import KnowledgePoint
 from app.features.assistant.service import build_actions
 

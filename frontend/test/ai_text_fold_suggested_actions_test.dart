@@ -2,7 +2,6 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:kids_learn/features/assistant/domain/ai_text_fold.dart';
 import 'package:kids_learn/features/assistant/domain/assistant_event.dart';
-import 'package:kids_learn/features/assistant/domain/assistant_suggested_action.dart';
 
 AssistantEvent _sa(List<Map<String, dynamic>> actions) => AssistantEvent(
       eventType: AssistantEventType.suggestedActions,
