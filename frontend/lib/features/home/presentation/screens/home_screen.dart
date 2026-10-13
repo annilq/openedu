@@ -23,6 +23,7 @@ import '../providers/home_notifier.dart';
 import '../providers/teacher_tasks_notifier.dart';
 import '../../providers/knowledge_manage_provider.dart';
 import '../teacher_pages.dart';
+import '../child_pages.dart';
 import '../widgets/teacher/scene_library_detail_view.dart';
 import '../widgets/teacher/scene_library_view.dart';
 import '../widgets/teacher/knowledge_point_scene_editor.dart';
@@ -61,8 +62,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   /// 天然互斥，且 `switch` 穷尽性由编译器保证。
   TeacherPage _teacherPage = const OverviewPage();
 
-  int _childNavIndex = 0;
-  bool _showProfile = false;
+  /// 学生端当前页面——导航的**唯一**事实源（ADR-0059，LCC-09）。取代原先
+  /// 「页签索引 + [_showProfile] 布尔」的二选一：布尔与索引并存等于两个真源，需要
+  /// 「谁压谁」的裁决且裁决散落各回调，易漏（点了「我的」忘了清页签 → 两个同时亮）。
+  ChildPage _childPage = const ChildHomePage();
 
   @override
   void initState() {
@@ -127,15 +130,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   /// 「我的」入口——**两个角色共用**（侧栏底部用户区 / 紧凑档底栏）。
   ///
-  /// 必须按角色分派：教师端是 [TeacherPage] 的一个分支，学生端仍是「页签 +
-  /// [_showProfile] 布尔」的二选一（见 [_buildChildView]）。⚠️ 只写教师端那份，
-  /// 学生端点「我的」就毫无反应。守卫 `test/teacher_nav_single_source_test.dart`。
+  /// 必须按角色分派：教师端是 [TeacherPage] 的一个分支，学生端也已合成为 [ChildPage]
+  /// 单一状态（见 [_buildChildView]）。⚠️ 只写教师端那份，学生端点「我的」就毫无反应。
+  /// 守卫 `test/teacher_nav_single_source_test.dart`。
   void _onProfileTap() {
     if (widget.user.isTeacher) {
       _go(const ProfilePage());
       return;
     }
-    setState(() => _showProfile = true);
+    setState(() => _childPage = const ChildProfilePage());
   }
 
   /// 侧栏头部「添加学生」。[classId]/[className] 非空表示由班级下钻页发起
@@ -156,26 +159,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   /// 启动那一刻跑一次（此时还没做过题 → 数据为空的旧快照）。切回 Tab 只翻转 index、
   /// 不会重跑 initState，所以必须在这里显式触发对应 provider 的 load()。
   void _switchChildTab(int index) {
-    if (index == _childNavIndex) return; // 已在该页，避免重复加载
-    setState(() {
-      _showProfile = false;
-      _childNavIndex = index;
-    });
-    _refreshChildTab(index);
+    final page = childPageFromIndex(index);
+    if (_childPage == page) return; // 已在该页，避免重复加载
+    setState(() => _childPage = page);
+    _refreshChildTab(page);
   }
 
-  /// 按 Tab 索引派发对应 provider 的刷新（与屏幕 initState 中的首次加载保持一致）。
-  void _refreshChildTab(int index) {
-    switch (index) {
-      case 0: // 首页：今日任务 + 待复习
+  /// 按当前 [ChildPage] 派发对应 provider 的刷新（与屏幕 initState 中的首次加载保持一致）。
+  void _refreshChildTab(ChildPage page) {
+    switch (page) {
+      case ChildHomePage():
         ref.read(todayTasksNotifierProvider.notifier).load();
         ref.read(dueReviewNotifierProvider.notifier).load();
-      case 1: // 复习队列
+      case ChildReviewPage():
         ref.read(dueReviewNotifierProvider.notifier).load();
-      case 2: // 错题本
+      case ChildWrongQuestionsPage():
         ref.read(childWrongQuestionsProvider.notifier).load();
-      case 3: // 学科掌握度（原页签 4，移除 AI 页签后前移）
+      case ChildMasteryPage():
         ref.read(masteryNotifierProvider.notifier).load(widget.user.id);
+      case ChildProfilePage():
+        // 个人信息页无额外取数。
+        break;
     }
   }
 
@@ -410,11 +414,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       );
 
   Widget _buildChildView() {
-    if (_showProfile) {
+    if (_childPage is ChildProfilePage) {
       return ProfileScreen(user: widget.user, onLogout: widget.onLogout);
     }
     return IndexedStack(
-      index: _childNavIndex,
+      index: childPageIndex(_childPage),
       children: [
         StudentHome(
           user: widget.user,
@@ -520,8 +524,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return AdaptiveShell(
       mode: AppUserMode.student,
       // 显示个人信息时页签一律取消高亮：否则「复习」和「我的」会同时亮着。
-      destinations: _destinations.child(_showProfile ? -1 : _childNavIndex),
-      profileDestination: _destinations.profile(active: _showProfile),
+      destinations: _destinations.child(childPageIndex(_childPage)),
+      profileDestination: _destinations.profile(active: _childPage is ChildProfilePage),
       sidebarBottom: AdaptiveUserBlock(
         user: widget.user,
         onProfileTap: _onProfileTap,

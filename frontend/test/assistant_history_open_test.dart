@@ -10,7 +10,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:kids_learn/features/assistant/domain/conversation.dart';
-import 'package:kids_learn/features/assistant/domain/repositories/assistant_repository.dart';
 import 'package:kids_learn/features/assistant/presentation/screens/assistant_chat_page.dart';
 import 'package:kids_learn/features/assistant/providers/assistant_provider.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';

@@ -154,6 +154,15 @@ void main() {
 /// 2026-10-13 ADR-0088 ticket 02（运行轨迹页）：home_screen 592→602（`_go` switch
 ///   接 RunTracePage / RunTraceDetailPage 两个分支 + 两个 import，属 B 类组合根
 ///   真实增长——新页面必须经单一 `_go` 打开，ADR-0059 不容许把接线散到别处）。
+/// 2026-10-13 LCC-09（学生端导航单一事实源，ADR-0059）：home_screen 602→606。
+///   学生端「页签索引 + `_showProfile` 布尔」二选一合成为 `sealed ChildPage` 单一
+///   状态：[_refreshChildTab] 从 `switch(int)` 4 个匿名 case 改为 5 个具名
+///   `ChildPage` case（含 ProfilePage 空分支），外加状态字段注释与字段声明替换。
+///   属 B 类组合根真实增长（导航接线必须经单一 `_go`/`_childPage`，ADR-0059 不容许
+///   把状态散成多个并列字段），已在提交正文说明理由。
+/// 同日下调四处此前提交漏调的基线（均为 A 类净减 / 真实行数，棘轮只许下调）：
+///   teacher_question_bank_view 759→757、teacher_question_card 511→477、
+///   teacher_wrong_questions_view 442→440、teacher_task_review_screen 424→405。
 /// **只许下调（除 B 类已登记的合理大件外）。**
 ///
 /// 2026-10（ADR-0083 图库 DB 化 / SceneSpec 几何化）下调：
@@ -166,16 +175,16 @@ void main() {
 const Map<String, int> _baseline = <String, int>{
   'shared/theme/app_theme.dart': 1702,
   'shared/widgets/adaptive_shell.dart': 503,
-  'features/home/presentation/widgets/teacher/teacher_question_bank_view.dart': 759,
+  'features/home/presentation/widgets/teacher/teacher_question_bank_view.dart': 757,
   'features/home/presentation/widgets/teacher/teacher_tasks_view.dart': 672,
-  'features/home/presentation/screens/home_screen.dart': 602,
+  'features/home/presentation/screens/home_screen.dart': 606,
   'features/assistant/presentation/screens/assistant_chat_page.dart': 570,
   'shared/widgets/scene_interpreter/reflection_scene.dart': 438,
-  'features/home/presentation/widgets/teacher/teacher_question_card.dart': 511,
-  'features/home/presentation/widgets/teacher/teacher_wrong_questions_view.dart': 442,
+  'features/home/presentation/widgets/teacher/teacher_question_card.dart': 477,
+  'features/home/presentation/widgets/teacher/teacher_wrong_questions_view.dart': 440,
   'features/home/presentation/widgets/teacher/workbench_glance.dart': 406,
   'shared/widgets/analytics_charts.dart': 691,
-  'features/home/presentation/screens/teacher_task_review_screen.dart': 424,
+  'features/home/presentation/screens/teacher_task_review_screen.dart': 405,
   'features/students/presentation/screens/student_management_screen.dart': 941,
 };
 

@@ -5,6 +5,18 @@ import '../data/assistant_api_client.dart';
 import '../data/repositories/assistant_repository_impl.dart';
 import '../domain/repositories/assistant_repository.dart';
 
+// —— 任务生成的公共契约（LCC-03）——
+//
+// 其它特性（如 home 的 TaskGenNotifier）只应 import 本 provider 模块，不得穿透到
+// `domain/` 内部。这里统一把任务生成需要的公开类型从 assistant 的公共 API 暴露出去，
+// 避免 home 直接 import `features/assistant/domain/*`（ADR-0059 层纪律：特性间只认
+// 对方公共端口）。home 经由 [assistantRepositoryProvider] 取仓库实例，经下方类型
+// 构造请求与折叠事件流。
+export '../domain/assistant_requests.dart' show TaskGenerateReq;
+export '../domain/question_gen_fold.dart' show QuestionGenFold;
+export '../domain/repositories/assistant_repository.dart'
+    show AssistantRepository, ScheduledDeleteHandle;
+
 /// assistant feature 的**组合根**。选址理由见
 /// `features/authentication/providers/auth_provider.dart` 的同名注释。
 ///

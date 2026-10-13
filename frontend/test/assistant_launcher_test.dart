@@ -12,7 +12,6 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:kids_learn/features/assistant/domain/assistant_event.dart';
 import 'package:kids_learn/features/assistant/domain/assistant_requests.dart';
 import 'package:kids_learn/features/assistant/domain/conversation.dart';
-import 'package:kids_learn/features/assistant/domain/repositories/assistant_repository.dart';
 import 'package:kids_learn/features/assistant/presentation/screens/assistant_chat_page.dart';
 import 'package:kids_learn/features/assistant/presentation/widgets/floating_assistant.dart';
 import 'package:kids_learn/features/assistant/providers/assistant_provider.dart';

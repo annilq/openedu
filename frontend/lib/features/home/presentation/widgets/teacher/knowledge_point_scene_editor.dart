@@ -19,7 +19,7 @@ import '../../../providers/knowledge_manage_provider.dart';
 import 'scene_developer_guide.dart';
 import 'scene_library_picker.dart';
 
-/// 知识点交互讲解编辑器（ADR-0061）：家长为一个已落库知识点编写默认交互讲解模板。
+/// 知识点交互讲解编辑器（ADR-0061）：教师为一个已落库知识点编写默认交互讲解模板。
 ///
 /// 首版仅暴露 `reflection` 一种 kind（图形的运动·轴对称）——从**图库**选一个图形
 /// 作模板（几何内联进 spec），点开可试折，保存后写入 [KnowledgePoint.scenes]。
@@ -27,14 +27,14 @@ import 'scene_library_picker.dart';
 /// 多 kind 时此处扩展「kind 选择」即可，渲染仍走 [SceneInterpreter]。
 ///
 /// **未配置（[initialScenes] 为空）时本弹窗不渲染 reflection 编辑表单**：交互讲解
-/// 模板是开发者实现的场景组件、不是家长在前端手配的，所以改弹开发者指引——以现有
-/// `reflection` 组件为范本新建一个 kind（见 [SceneDeveloperGuide]），而非误导家长去把
+/// 模板是开发者实现的场景组件、不是教师在前端手配的，所以改弹开发者指引——以现有
+/// `reflection` 组件为范本新建一个 kind（见 [SceneDeveloperGuide]），而非误导教师去把
 /// 一个「平移」知识点配成轴对称模板。
 ///
 /// **学期维度是「显示」而非「选择」**（ADR-0061 §J）：模板挂在**某个具体知识点**上，
 /// 而知识点的学期在建行时就定了（唯一约束含 semester）。所以本弹窗不做学期切换
 /// （那等于移动知识点、且会撞唯一约束），只把该知识点的**作用范围**显式摆出来——
-/// 否则家长在「整学年」并集视图里点开一个上学期知识点，却完全看不出自己配的是
+/// 否则教师在「整学年」并集视图里点开一个上学期知识点，却完全看不出自己配的是
 /// 上学期，讲解时命中哪个学期也无从预期。
 class KnowledgePointSceneEditor extends ConsumerStatefulWidget {
   final String kpId;
@@ -191,8 +191,8 @@ class _KnowledgePointSceneEditorState
             ],
           )?.key;
     // 未配置（initialScenes 为空）时，本弹窗不渲染 reflection 编辑表单——交互讲解
-    // 模板是开发者实现的组件、不是家长在前端手配的，所以弹开发者指引（[SceneDeveloperGuide]），
-    // 告诉开发者怎样以 reflection 组件为范本新建本知识点所需 kind，而非误导家长把
+    // 模板是开发者实现的组件、不是教师在前端手配的，所以弹开发者指引（[SceneDeveloperGuide]），
+    // 告诉开发者怎样以 reflection 组件为范本新建本知识点所需 kind，而非误导教师把
     // 「平移」类知识点配成轴对称模板。
     final hasScenes =
         widget.initialScenes != null && widget.initialScenes!.isNotEmpty;
@@ -246,7 +246,7 @@ class _KnowledgePointSceneEditorState
           // 起点，不必手填结构。清单拉不到时该部件自行隐身，不打扰编辑。
           SceneLibraryPicker(onPick: _pickScene),
           const SizedBox(height: AppSpacing.md),
-          // 未配置 = 没有可渲染模板。交互讲解模板是开发者实现的组件，不是家长
+          // 未配置 = 没有可渲染模板。交互讲解模板是开发者实现的组件，不是教师
           // 在前端手配的，所以这里给开发者看「怎样以 reflection 为范本新建 kind」
           // 的指引，而非渲染一份误导性的轴对称编辑表单。
           const SceneDeveloperGuide(),
@@ -254,7 +254,7 @@ class _KnowledgePointSceneEditorState
         else ...[
           // 图形选择改为画廊（ADR-0061 §V，与题目选项同套组件）：平面图形铺成
           // 网格，点一个即设为模板图形并弹真正的对折演示，下方滑块再微调它的默认
-          // 对称轴。取代原下拉选择器——下拉里看不到图形长什么样，家长只能盲选。
+          // 对称轴。取代原下拉选择器——下拉里看不到图形长什么样，教师只能盲选。
           //
           // 图形来自图库、**打开时按需拉取**（ADR-0083 决策 7）：内置预设与用户在
           // 画板上自建的图形同表，故这里能看到并使用自己画的图形。
@@ -294,7 +294,7 @@ class _KnowledgePointSceneEditorState
   /// 作用范围条（ADR-0061 §J）：这个模板会作用在哪些题上。
   ///
   /// 之所以必须显式摆出来：模板的匹配规则是「先精确同学期 → 回落整学年」
-  /// （见后端 `resolve_scene_spec_for_question`），家长不知道当前配的是哪个学期
+  /// （见后端 `resolve_scene_spec_for_question`），教师不知道当前配的是哪个学期
   /// 的模板，就无法预期讲解时会不会命中。整学年模板额外说明它是**兜底**——
   /// 同学期有专属模板时轮不到它。
   Widget _scopeBanner(BuildContext context) {

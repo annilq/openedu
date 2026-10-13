@@ -19,7 +19,6 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:kids_learn/features/assistant/domain/assistant_event.dart';
 import 'package:kids_learn/features/assistant/domain/assistant_requests.dart';
-import 'package:kids_learn/features/assistant/domain/repositories/assistant_repository.dart';
 import 'package:kids_learn/features/assistant/providers/assistant_provider.dart';
 import 'package:kids_learn/features/courseware/domain/models/courseware.dart';
 import 'package:kids_learn/features/courseware/domain/models/courseware_asset.dart';

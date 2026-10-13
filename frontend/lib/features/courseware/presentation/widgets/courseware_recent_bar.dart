@@ -3,17 +3,20 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-import '../../../../../shared/theme/app_theme.dart';
-import '../../../../../shared/widgets/app_focusable_action.dart';
-import '../../../../../shared/widgets/app_toast.dart';
-import '../../../../courseware/presentation/pages/courseware_present_page.dart';
-import '../../../../courseware/providers/courseware_provider.dart';
+import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/app_focusable_action.dart';
+import '../../../../shared/widgets/app_toast.dart';
+import '../pages/courseware_present_page.dart';
+import '../../providers/courseware_provider.dart';
 
 /// 「最近课件」回执（ADR-0067 §3.8 强制补偿项）。
 ///
 /// 课件入口藏得深（资料库 → 知识点管理 → 三选范围 → 找知识点 → 点课件），课前最慌的
 /// 几分钟里 5 步会劝退人，所以顶部给一条直达演示态的捷径。无课件时不占位——不制造
 /// 「空档」噪音，也避免暗示「你本该有」。
+///
+/// 本控件原属 home 大盘，因 courseware 特性复用而搬入 courseware（消除 home↔courseware
+/// 依赖环的回边，LCC-01）。home 侧改为前向引用。
 class CoursewareRecentBar extends ConsumerWidget {
   const CoursewareRecentBar({super.key});
 
