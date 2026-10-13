@@ -60,8 +60,6 @@ def review_item_to_resp(
             grade=q.grade,
             knowledge_point=q.knowledge_point,
             semester=q.semester,
-            stem=q.stem,
-            options=q.options,
             cache=scene_cache,
         )
     return ReviewItemResp(

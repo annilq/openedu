@@ -1,9 +1,9 @@
-// 场景解释器的三态分派（ADR-0076 §2.2 / §2.3 / §2.6）。
+// 场景解释器的三态分派（ADR-0076 §2.2 / §2.3 / §2.6 · ADR-0091）。
 //
 // 守四件事：
-// 1. 无 optionGroup → 单场景，**是否可交互由 spec 的旧形 editable 或调用方显式开关
-//    决定**（存量口径不变；新代码走 [SceneInterpreter.showAxisControls]，不再塞 editable）；
-// 2. 有 optionGroup → **只摆条目里那几个图形**，且顺序 == 条目顺序（库里几个、怎么排
+// 1. 无 options → 单场景，**是否可交互由调用方显式开关决定**
+//    （[SceneInterpreter.showAxisControls]；新形 spec 只存几何，没有 editable）；
+// 2. 有 options → **只摆条目里那几个图形**，且顺序 == 条目顺序（库里几个、怎么排
 //    都是后端下发的，渲染不再查图库——ADR-0083 决策 7 的零图库依赖）；
 // 3. 条目自带几何 → 图库里没有的图形照样能渲染（渲染路径不认识图库）；
 // 4. 弹窗的初始轴取 **kind 外壳**的初值（reflection = 90°），不按图形走
@@ -19,6 +19,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:kids_learn/shared/domain/figures.dart';
+import 'package:kids_learn/shared/domain/scene_spec.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
 import 'package:kids_learn/shared/widgets/app_focusable_action.dart';
 import 'package:kids_learn/shared/widgets/app_slider.dart';
@@ -30,19 +31,10 @@ import 'package:kids_learn/shared/widgets/scene_interpreter/scene_shells.dart';
 
 import 'support/figure_fixtures.dart';
 
-/// 课件语境的条目：**非库序**（正方形 → 箭头 → 房子）。
-///
-/// 形状与后端 `extract_option_group` 一致（label / caption / points / edges），
-/// 课件语境没有 A/B/C，故 label 留空串。
-List<Map<String, dynamic>> _curatedItems() => [
-      _item(kSquareFixture),
-      _item(kArrowFixture),
-      _item(kHouseFixture),
-    ];
-
-Map<String, dynamic> _item(FigureShape f, {String label = ''}) => {
-      'label': label,
-      'caption': f.label,
+/// 一个新形 `Figure`（与后端 `Figure` 同形：key / label / points / edges）。
+Map<String, dynamic> _figure(FigureShape f) => <String, dynamic>{
+      'key': f.key,
+      'label': f.label,
       // 保存时展开写入（ADR-0076 红线 2）：渲染层不回查图形库。
       'points': [
         for (final v in f.vertices) <double>[v.x, v.y],
@@ -50,37 +42,30 @@ Map<String, dynamic> _item(FigureShape f, {String label = ''}) => {
       'edges': closedEdges(f.vertices.length),
     };
 
-/// 一份环节场景数据：模板轴是 90°（竖轴），用来验证弹窗**不套用**它。
+/// 课件语境的条目：**非库序**（正方形 → 箭头 → 房子）。
+List<Map<String, dynamic>> _curatedOptions() => [
+      _figure(kSquareFixture),
+      _figure(kArrowFixture),
+      _figure(kHouseFixture),
+    ];
+
+/// 一份环节场景数据（新形：主图形 + 可选选项组）。
 Map<String, dynamic> _sceneSpec({
-  Map<String, dynamic>? optionGroup,
-  bool editable = true,
+  List<Map<String, dynamic>>? options,
+  bool curated = false,
 }) =>
     {
       'kind': 'reflection',
-      'inputs': [
-        {'key': 'figure', 'value': 'house'},
-        {'key': 'axisAngle', 'value': 90.0},
-        {'key': 'axisX', 'value': 0.5},
-        {'key': 'axisY', 'value': 0.5},
-      ],
-      'controls': {'play': true, 'scrub': true},
-      'narrative': '拖动对称轴试试看能否完全重合',
-      'editable': editable,
-      if (optionGroup != null) 'optionGroup': optionGroup,
-    };
-
-Map<String, dynamic> _curatedGroup() => {
-      'curated': true,
-      'items': _curatedItems(),
+      'figure': _figure(kHouseFixture),
+      if (options != null) 'options': options,
+      if (curated) 'curated': true,
     };
 
 /// 题库语境的图形组：有条目、但**未声明** curated（区别只在「挂不挂 A/B/C 角标」）。
-Map<String, dynamic> _plainGroup() => {
-      'items': [
-        _item(kHouseFixture, label: 'A'),
-        _item(kArrowFixture, label: 'B'),
-      ],
-    };
+List<Map<String, dynamic>> _plainOptions() => [
+      _figure(kHouseFixture),
+      _figure(kArrowFixture),
+    ];
 
 Future<void> _pumpScene(
   WidgetTester tester,
@@ -96,8 +81,7 @@ Future<void> _pumpScene(
       appBuilder: (context) => CupertinoApp(
         home: SingleChildScrollView(
           child: SceneInterpreter(
-            kind: 'reflection',
-            spec: spec,
+            spec: SceneSpec.tryParse(spec)!,
             showAxisControls: showAxisControls,
           ),
         ),
@@ -124,7 +108,7 @@ ReflectionSceneData _dialogScene(WidgetTester tester) => tester
     .data;
 
 void main() {
-  testWidgets('无 optionGroup → 单场景，不渲染画廊', (tester) async {
+  testWidgets('无 options → 单场景，不渲染画廊', (tester) async {
     await _pumpScene(tester, _sceneSpec(), size: const Size(420, 1000));
 
     expect(find.byType(SceneOptionGroup), findsNothing);
@@ -133,23 +117,12 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('无 optionGroup 时是否可交互仍由 editable 决定（口径不变）',
+  testWidgets('轴控件由显式开关决定（新形 spec 不再有 editable 这一说）',
       (tester) async {
-    // editable=false：只有 1 个对折进度条，3 个轴控制整个不出现。
-    await _pumpScene(
-      tester,
-      _sceneSpec(editable: false),
-      size: const Size(420, 1000),
-    );
-    expect(find.byType(AppSlider), findsOneWidget);
-
+    // 不传开关（null）→ 默认展示：3 个轴控制 + 1 个对折进度条。
     await _pumpScene(tester, _sceneSpec(), size: const Size(420, 1000));
-    expect(find.byType(AppSlider), findsNWidgets(4),
-        reason: 'editable=true → 3 个轴控制 + 1 个对折进度条');
-  });
+    expect(find.byType(AppSlider), findsNWidgets(4));
 
-  testWidgets('showAxisControls 显式开关覆盖 spec（新代码不再塞旧形 editable）',
-      (tester) async {
     // 传 false 摘掉轴滑块：只留 1 个对折进度条——场景库详情页的静态缩略图正是这条路，
     // 它因此不必再往 spec 里写 `editable: false`/`controls`/`narrative`（ADR-0083 决策 5）。
     await _pumpScene(
@@ -160,27 +133,21 @@ void main() {
     );
     expect(find.byType(AppSlider), findsOneWidget);
 
-    // 反向也要成立：spec 里旧形 `editable: false` 被显式 true 盖掉——证明是开关说了算，
-    // 而不是「spec 恰好没写」。
+    // 反向：显式 true 也必须说了算（证明是开关、不是「spec 恰好没写」）。
     await _pumpScene(
       tester,
-      _sceneSpec(editable: false),
+      _sceneSpec(),
       size: const Size(420, 1000),
       showAxisControls: true,
     );
     expect(find.byType(AppSlider), findsNWidgets(4));
-
-    // 不给开关（null）时口径完全不变：仍按 spec 推断。
-    await _pumpScene(
-      tester,
-      _sceneSpec(editable: false),
-      size: const Size(420, 1000),
-    );
-    expect(find.byType(AppSlider), findsOneWidget);
   });
 
   testWidgets('curated: true → 只渲染条目指定的图形，且顺序 == 条目顺序', (tester) async {
-    await _pumpScene(tester, _sceneSpec(optionGroup: _curatedGroup()));
+    await _pumpScene(
+      tester,
+      _sceneSpec(options: _curatedOptions(), curated: true),
+    );
 
     expect(find.byType(ReflectionSceneWidget), findsNothing);
     expect(_cardLabels(tester), <String>[
@@ -192,16 +159,10 @@ void main() {
   });
 
   testWidgets('curated: true → 不渲染选项角标（课件语境没有 A/B/C）', (tester) async {
-    final group = {
-      'curated': true,
-      // 条目**故意**带 A/B/C：若实现照旧把它们传给画廊，这里就会出现角标。
-      'items': [
-        _item(kSquareFixture, label: 'A'),
-        _item(kArrowFixture, label: 'B'),
-        _item(kHouseFixture, label: 'C'),
-      ],
-    };
-    await _pumpScene(tester, _sceneSpec(optionGroup: group));
+    await _pumpScene(
+      tester,
+      _sceneSpec(options: _curatedOptions(), curated: true),
+    );
 
     expect(_cardLabels(tester), hasLength(3));
     for (final badge in ['A', 'B', 'C']) {
@@ -209,9 +170,9 @@ void main() {
     }
   });
 
-  testWidgets('有 optionGroup 但未声明 curated → 同样的条目 + 挂上选项角标',
+  testWidgets('有 options 但未声明 curated → 同样的条目 + 挂上选项角标',
       (tester) async {
-    await _pumpScene(tester, _sceneSpec(optionGroup: _plainGroup()));
+    await _pumpScene(tester, _sceneSpec(options: _plainOptions()));
 
     final labels = _cardLabels(tester);
     // 渲染路径零图库依赖（ADR-0083 决策 7）：摆的就是条目里这两个，不再铺「整库」。
@@ -224,28 +185,25 @@ void main() {
   });
 
   testWidgets('条目自带几何 → 图库里没有的图形照样渲染（渲染不查库）', (tester) async {
-    final group = {
-      'curated': true,
-      'items': [
-        _item(kHouseFixture),
-        {
-          'label': '',
-          'caption': '外星图形',
-          'points': [
-            [0.11, 0.23],
-            [0.91, 0.31],
-            [0.47, 0.88],
-          ],
-          'edges': [
-            [0, 1],
-            [1, 2],
-            [2, 0],
-          ],
-        },
-        _item(kArrowFixture),
+    // 一个库外图形：key 是自绘前缀、顶点与任何内置预设都对不上。
+    final alien = <String, dynamic>{
+      'key': 'user_alien',
+      'label': '外星图形',
+      'points': <List<double>>[
+        <double>[0.11, 0.23],
+        <double>[0.91, 0.31],
+        <double>[0.47, 0.88],
       ],
+      'edges': closedEdges(3),
     };
-    await _pumpScene(tester, _sceneSpec(optionGroup: group));
+    await _pumpScene(
+      tester,
+      _sceneSpec(options: <Map<String, dynamic>>[
+        _figure(kHouseFixture),
+        alien,
+        _figure(kArrowFixture),
+      ], curated: true),
+    );
 
     expect(tester.takeException(), isNull);
     expect(_cardLabels(tester), <String>[
@@ -256,7 +214,10 @@ void main() {
   });
 
   testWidgets('curated 点横向箭头 → 弹窗初始轴仍取 kind 外壳的 90°', (tester) async {
-    await _pumpScene(tester, _sceneSpec(optionGroup: _curatedGroup()));
+    await _pumpScene(
+      tester,
+      _sceneSpec(options: _curatedOptions(), curated: true),
+    );
 
     await tester.tap(find.text('箭头'));
     await tester.pumpAndSettle();
@@ -269,7 +230,10 @@ void main() {
   });
 
   testWidgets('curated 点正方形 → 弹窗内可旋转 / 平移对称轴，初始轴 90°', (tester) async {
-    await _pumpScene(tester, _sceneSpec(optionGroup: _curatedGroup()));
+    await _pumpScene(
+      tester,
+      _sceneSpec(options: _curatedOptions(), curated: true),
+    );
 
     await tester.tap(find.text('正方形'));
     await tester.pumpAndSettle();
@@ -286,7 +250,10 @@ void main() {
   });
 
   testWidgets('curated 只读卡上没有任何「是否轴对称」的判定标记', (tester) async {
-    await _pumpScene(tester, _sceneSpec(optionGroup: _curatedGroup()));
+    await _pumpScene(
+      tester,
+      _sceneSpec(options: _curatedOptions(), curated: true),
+    );
 
     final texts = tester
         .widgetList<Text>(find.byType(Text))

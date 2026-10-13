@@ -42,6 +42,17 @@ def qtype_label(qtype: str) -> str:
     }.get(qtype, "题目")
 
 
+class QuestionOptionOut(BaseModel):
+    """出题 output_schema 里的一个选项（ADR-0089）。
+
+    ``text`` 是选项文字（判题依据）；``figure_key`` 是**图形身份键**（只给键，
+    **不给顶点**）——顶点由后端落库前按图库盖章，模型绝不产出坐标。
+    """
+
+    text: str
+    figure_key: str | None = None
+
+
 class QuestionOut(BaseModel):
     """装配后的题卡（含推理）。``reasoning`` 仅用于流式预览态展示，不落库。"""
 
@@ -50,7 +61,8 @@ class QuestionOut(BaseModel):
     knowledge_point: str
     qtype: str
     stem: str
-    options: list[str] | None = None
+    # 选项对象列表 {text, figure_key}（ADR-0089）。
+    options: list[dict] | None = None
     answer: str
     explanation: str
     difficulty: str
@@ -70,7 +82,9 @@ class QuestionSchema(BaseModel):
     knowledge_point: str
     qtype: str
     stem: str
-    options: list[str] | None = None
+    # 选项对象：text 恒给；若本题选项可用图形表示，填 figure_key（只能取提示词
+    # 里给出的「可用图形清单」中的键）。模型绝不输出顶点（ADR-0089）。
+    options: list[QuestionOptionOut] | None = None
     answer: str = Field(
         description=(
             "标准答案。数学填空/计算题请填「纯数值」或「数值+标准单位」（如 12、12厘米、0.12米），"

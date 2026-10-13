@@ -188,7 +188,7 @@ class ReflectionFigureGallery extends StatelessWidget {
                   width: width,
                   height: width,
                   child: CustomPaint(
-                    painter: _FigureThumbPainter(
+                    painter: FigureThumbPainter(
                       points: figure.vertices
                           .map((v) => Offset(v.x, v.y))
                           .toList(growable: false),
@@ -306,14 +306,16 @@ class ReflectionFigureGallery extends StatelessWidget {
 ///
 /// **只画，不判**：这里如果出现「✓ 轴对称」之类的标记，学生扫一眼画廊就拿到了
 /// 答案，「点开亲手折」这个动作就废了（ADR-0061 §O 的教学意图）。
-class _FigureThumbPainter extends CustomPainter {
+///
+/// 公开供选项行内缩略图（[AppOptionTile]）等复用，避免第二处绘制多边形轮廓的逻辑。
+class FigureThumbPainter extends CustomPainter {
   /// 归一化顶点（x/y ∈ 0..1）。
   final List<Offset> points;
 
   /// 初始对称轴角度（度）。画廊取 kind 外壳的初值（reflection = 90°，竖轴）。
   final double axisAngle;
 
-  const _FigureThumbPainter({required this.points, required this.axisAngle});
+  const FigureThumbPainter({required this.points, required this.axisAngle});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -384,6 +386,6 @@ class _FigureThumbPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_FigureThumbPainter old) =>
+  bool shouldRepaint(FigureThumbPainter old) =>
       old.axisAngle != axisAngle || old.points != points;
 }

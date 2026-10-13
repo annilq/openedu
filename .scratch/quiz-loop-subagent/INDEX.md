@@ -9,10 +9,10 @@
 
 | ID | 标题 | Blocked by | Status |
 |----|------|-----------|--------|
-| 01 | 补判断题卡揭示行为的组件测试 | — | ready-for-agent |
-| 02 | 修 students → home 横向 import 违反 R2 | — | ready-for-agent |
-| 03 | 清理 stretch_row_guard 过期基线条目 | — | ready-for-agent |
-| 04 | 修 students_notifier 空字段校验测试的挂起计时器 | — | ready-for-agent |
+| 01 | 补判断题卡揭示行为的组件测试 | — | done |
+| 02 | 修 students → home 横向 import 违反 R2 | — | done |
+| 03 | 清理 stretch_row_guard 过期基线条目 | — | done |
+| 04 | 修 students_notifier 空字段校验测试的挂起计时器 | — | done |
 
 ## 决策锚点（写进每张 ticket）
 

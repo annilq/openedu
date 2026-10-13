@@ -102,6 +102,7 @@ def _build_question_prompt(
     weak_examples: list[dict] | None = None,
     multi: bool = False,
     judge: bool = False,
+    figure_catalog: str | None = None,
 ) -> str:
     """出题 prompt（流式与落库**同一份**，模型产出受 ``QuestionSchema`` 约束）。"""
     clause = _build_question_clause(
@@ -111,6 +112,16 @@ def _build_question_prompt(
     )
     if persona_hint:
         clause += f"\n\n{persona_hint}"
+    # 图形化选项（ADR-0089 §4.3）：把「可用图形清单」注入 prompt，模型只填**身份键**。
+    # 顶点绝不出现（模型编不出正确坐标，几何由后端从图库盖章）。
+    if figure_catalog:
+        clause += (
+            "\n\n如果本题的选项可以用平面图形表示（例如「下列图形哪些是轴对称图形」），"
+            "请为**每个**选项都填 `figure_key`，只能从下面的可用图形清单里选；"
+            "**不要输出任何顶点坐标**。若并非每个选项都有合适的图形，就整题都不填"
+            "（要么全有、要么全无）。可用图形清单（key — 中文名）：\n"
+            f"{figure_catalog}"
+        )
     # ADR-0021：RAG 命中内容作为教材口径参考，对齐知识点。
     if rag_context:
         clause += f"\n\n参考教材口径（仅作对齐参考，不照搬）：\n{rag_context}"
@@ -163,6 +174,7 @@ def build_question_prompts(
     weak_examples: list[dict] | None = None,
     multi: bool = False,
     judge: bool = False,
+    figure_catalog: str | None = None,
 ) -> tuple[str, str, QuestionSpec]:
     """组装出题 prompt（ADR-0030 收口 #4：prompt 组装从 provider 搬到调用方）。
 
@@ -179,7 +191,7 @@ def build_question_prompts(
         subject=subject, grade=grade, knowledge_point=knowledge_point, qtype=qtype,
         difficulty=difficulty, semester=semester, rag_context=rag_context,
         persona_hint=persona_hint, history=history, weak_examples=weak_examples,
-        multi=multi, judge=judge,
+        multi=multi, judge=judge, figure_catalog=figure_catalog,
     )
     spec = QuestionSpec(
         subject=subject,

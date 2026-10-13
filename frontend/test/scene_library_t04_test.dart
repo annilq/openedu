@@ -1,10 +1,10 @@
-// T04（ADR-0074 / ADR-0083）：场景库「关联知识点 / 解除关联 / 编辑器 seed」的回归。
+// T04（ADR-0074 / ADR-0083 / ADR-0091）：场景库「关联知识点 / 解除关联 / 编辑器 seed」的回归。
 //
 // 三件事钉在这里：
 // 1. 模型层 `SceneLibraryKpRef.kpMissing` 能从后端 `kp_missing` 解析（恒 false 的预留
 //    字段，但前端必须能消费，否则未来显式关联表接入时会整体解析失败）。
-// 2. 关联 / 编辑共用的 seed 构造 `buildReflectionSceneSpec` 产出**纯几何**
-//    `{kind, points, edges}`（ADR-0083 决策 5：title/inputs/controls 等已删）。
+// 2. 关联 / 编辑共用的 seed 结构是 [SceneSpec] 类型本身（ADR-0091：`{kind,
+//    figure:{key,label,points,edges}}`——title/inputs/controls 等已删，几何进 figure）。
 // 3. 详情页「解除关联」从 `kp.scenes` 移除本 kind、保留其它 kind，并真正打到
 //    `updateKnowledgePointScenes`（ADR-0073 快照不变、不级联删场景）。
 import 'package:flutter/cupertino.dart';
@@ -18,8 +18,9 @@ import 'package:kids_learn/features/home/presentation/widgets/teacher/knowledge_
 import 'package:kids_learn/features/home/presentation/widgets/teacher/scene_library_detail_view.dart';
 import 'package:kids_learn/features/home/providers/home_provider.dart';
 import 'package:kids_learn/features/home/providers/knowledge_manage_provider.dart';
+import 'package:kids_learn/shared/domain/figures.dart';
+import 'package:kids_learn/shared/domain/scene_spec.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
-import 'package:kids_learn/shared/widgets/scene_interpreter/reflection_scene_data.dart';
 
 /// 记录 saveScenes 收到的 spec（编辑器回归用）。
 class _RecordingManageNotifier extends KnowledgeManageNotifier {
@@ -50,24 +51,28 @@ class _RecordingRepo implements MaterialRepository {
   dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError();
 }
 
-/// 一份合法 reflection 模板（新形：图形=房子，纯几何）。
+/// 一份合法 reflection 模板（新形：图形=房子，几何与身份键都在 figure 里）。
 const List<Map<String, dynamic>> _configuredReflection = [
   {
     'kind': 'reflection',
-    'points': [
-      [0.30, 0.70],
-      [0.70, 0.70],
-      [0.70, 0.45],
-      [0.50, 0.25],
-      [0.30, 0.45],
-    ],
-    'edges': [
-      [0, 1],
-      [1, 2],
-      [2, 3],
-      [3, 4],
-      [4, 0],
-    ],
+    'figure': {
+      'key': 'house',
+      'label': '房子',
+      'points': [
+        [0.30, 0.70],
+        [0.70, 0.70],
+        [0.70, 0.45],
+        [0.50, 0.25],
+        [0.30, 0.45],
+      ],
+      'edges': [
+        [0, 1],
+        [1, 2],
+        [2, 3],
+        [3, 4],
+        [4, 0],
+      ],
+    },
   },
 ];
 
@@ -116,26 +121,42 @@ void main() {
     expect(e.associatedKnowledgePoints.first.kpMissing, isTrue);
   });
 
-  // ---- 2. 关联 / 编辑共用的 seed 构造（ADR-0083：纯几何） ----
-  test('buildReflectionSceneSpec 产出纯几何 {kind, points, edges}', () {
-    final spec = buildReflectionSceneSpec(
+  // ---- 2. 关联 / 编辑共用的 seed 结构（ADR-0091：SceneSpec 类型本身） ----
+  test('SceneSpec seed：{kind, figure:{key,label,points,edges}}，旧字段一概不出现', () {
+    final spec = SceneSpec(
       kind: 'reflection',
-      points: const [
-        [0.3, 0.7],
-        [0.7, 0.7],
-        [0.5, 0.3],
-      ],
-    );
+      figure: FigureShape(
+        key: 'house',
+        label: '房子',
+        vertices: const [
+          (x: 0.3, y: 0.7),
+          (x: 0.7, y: 0.7),
+          (x: 0.5, y: 0.3),
+        ],
+      ),
+    ).toJson();
     expect(spec['kind'], 'reflection');
-    expect(spec['points'], hasLength(3));
+    final figure = spec['figure'] as Map<String, dynamic>;
+    expect(figure['key'], 'house');
+    expect(figure['points'], hasLength(3));
     // 默认按顶点顺序闭合
-    expect(spec['edges'], [
+    expect(figure['edges'], [
       [0, 1],
       [1, 2],
       [2, 0],
     ]);
-    // 旧字段一概不再出现（ADR-0083 决策 5）
-    for (final banned in ['title', 'inputs', 'controls', 'narrative', 'outputs', 'editable']) {
+    // 旧字段一概不再出现（ADR-0083 决策 5 / ADR-0091）
+    for (final banned in [
+      'title',
+      'inputs',
+      'controls',
+      'narrative',
+      'outputs',
+      'editable',
+      'points',
+      'edges',
+      'optionGroup',
+    ]) {
       expect(spec.containsKey(banned), isFalse, reason: '不应再有 $banned');
     }
   });
@@ -203,16 +224,20 @@ void main() {
 
     final spec = notifier.saved!.first;
     expect(spec['kind'], 'reflection');
-    // 回显到房子（配置的图形），顶点逐点一致
-    expect(spec['points'], [
+    // 回显到房子（配置的图形）：身份键 + 顶点逐点一致，几何在 figure 里。
+    final figure = spec['figure'] as Map<String, dynamic>;
+    expect(figure['key'], 'house');
+    expect(figure['points'], [
       [0.30, 0.70],
       [0.70, 0.70],
       [0.70, 0.45],
       [0.50, 0.25],
       [0.30, 0.45],
     ]);
-    expect(spec['edges'], hasLength(5));
+    expect(figure['edges'], hasLength(5));
     expect(spec.containsKey('title'), isFalse);
+    expect(spec.containsKey('points'), isFalse,
+        reason: '几何只在 figure 里（ADR-0091：顶层不再摊平顶点）');
   });
 
   // ---- 4. 详情页「解除关联」：移除本 kind、保留其它 kind、打到 updateKnowledgePointScenes ----
@@ -272,10 +297,8 @@ void main() {
                 // 首个 = 本 kind（应被移除）。
                 Map<String, dynamic>.from(_configuredReflection.first),
                 // 第二个 = 其它 kind（应被保留）。
-                {
+                const {
                   'kind': 'rotate',
-                  'points': <List<double>>[],
-                  'edges': <List<int>>[],
                 },
               ],
             ),

@@ -76,6 +76,29 @@ def test_initial_system_carries_role_hint_and_sop():
     assert student.endswith("SOP-X") and teacher.endswith("SOP-X")
 
 
+def test_initial_system_injects_kp_focus_segment():
+    """ADR-0080：带焦点知识点时系统提示含【知识点聚焦】段，且 query 额外强调须依托工具数据。"""
+    agent = QuerySubAgent(provider=FakeLLMProvider())
+    focused = agent.initial_system(
+        "轴对称是什么意思",
+        SubAgentContext(
+            role="student",
+            extra={"knowledge_point": {"subject": "数学", "grade": 5, "semester": "上学期", "name": "轴对称"}},
+        ),
+    )
+    assert "【知识点聚焦】" in focused
+    assert "轴对称" in focused
+    assert "查询仍须依托工具数据" in focused
+
+
+def test_initial_system_no_kp_focus_without_extra():
+    """无焦点知识点时不注入该段（无回归，requires_tool_data 契约不变）。"""
+    agent = QuerySubAgent(provider=FakeLLMProvider())
+    plain = agent.initial_system("今天有什么作业", SubAgentContext(role="student"))
+    assert "【知识点聚焦】" not in plain
+    assert "查询仍须依托工具数据" not in plain
+
+
 # ───────────────────────── 2. 路由边界 ─────────────────────────
 
 

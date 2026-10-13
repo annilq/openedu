@@ -127,6 +127,39 @@ _Avoid_: 在生成期合并注册表（违背 scenes 为唯一事实源）
 题目/课件只**深拷贝 `scenes`**，绝不持有对注册表或 `kind` 的 live 引用：改 `BUILTIN_SCENES` 定义**不可能**影响已落库实例（ADR-0061 §U / ADR-0073 拍板①）。`kind` 仅作分类/分派标识，不作数据来源。
 _Avoid_: 模板修改实时回灌历史实例（会静默重写已印发内容，明确否决）
 
+**图形几何库 (Figure Library)**
+`figure_library` 表：归一化顶点（`points` / `edges`）的**唯一权威来源**（ADR-0083）。内置图形由启动期 seed；教师在画板自绘的图形同表写入（`is_builtin=False`，key 前缀 `user_`）。它是**几何权威源与创作 UI 数据源**，**不是**文本匹配目标——出题时由模型引用其 `key`、后端按 key 取几何盖章；渲染层只读 `SceneSpec` 内联的 `points/edges`，零图库依赖。**不存对称轴等 authored 属性**（对称判定改纯视觉：拖轴 + 翻转）。
+_Avoid_: 从题面文本反查它（那是已退役的抽取路径）、前端再内置一份手写副本（parity 双源已随 ADR-0083 退役）
+
+**图形 (Figure)**
+一个**可独立渲染的平面图形快照**：`{key, label, points, edges}`（后端 `app/domain/figures.py`；前端对应 `FigureShape`，`shared/domain/figures.dart`）。它是**图库行的几何投影**，与"挂在哪儿"无关——不是"选项的图形"，**只与渲染有关**。渲染只吃 `points/edges`；`key` 只作身份与全-or-无校验的输入；`label` 供标签与无障碍朗读（字段名对齐图库行与前端，不叫 caption）。挂载点：题目选项 `options[].figure`、答疑场景卡的几何部分（课件 `optionGroup` 待统一）。**ADR-0091 后 `SceneSpec` 直接持有它**：`SceneSpec = {kind, figure?, options?, curated}`（几何归一，`optionGroup` / `SceneOptionItem` 已废）；随之 ADR-0083 决策 6「spec 不含 key」收窄为「**渲染不消费 key**」——带 key 只为身份与溯源，运行时零图库依赖不变。
+选项形态 `options: [{text, figure?}]`：`text` 恒存在（判题与无障碍的依据，前缀保留）；**不带 `kind`**（演示 kind 取题目级 `scene_spec.kind`）；全-or-无在**校验层**：部分选项有图 → 全部丢弃。
+_Avoid_: 选项文字（文字是作答与评分的对象，图形只是它的渲染形态）、只存 key 再回查（把渲染绑回数据源）、叫它 OptionFigure（它不只属于选项）
+
+**场景规格 (SceneSpec)**
+一次演示的快照：`{kind, figure?, options?, curated}`（ADR-0091 几何归一后）。`kind` 是稳定契约，决定取哪个**交互外壳**（轴初值 / 控件 / 引导语归外壳，不进 spec）；`figure` 是主图形；`options` 非空时渲染成**图形画廊**（点卡片弹对折演示）；两者皆空 → 空态。几何内联在 `Figure` 里，快照自包含——改图库顶点不影响已落库内容。
+_Avoid_: 渲染期回查图库或注册表（live 绑定，ADR-0073）、把交互参数塞进 spec、只存 kind 引用（无几何）
+
+**结构化图形发射 (Structured Figure Emission)**
+产生图形几何的方式：后端把「可用图形清单」（只给 `key + 中文名`，**顶点不进 prompt**）注入 prompt，模型**引用**一个 key，后端校验后按 key 盖章取权威几何（ADR-0089）。**模型绝不输出顶点**。出题与答疑两侧共用。已取代并**删除** `extract_option_group` / `extract_scene_inputs` 的正则文本反猜。
+_Avoid_: 模型自由输出坐标（必然错且与图库冲突）、从自然语言猜图形（已删除整族）
+
+**几何盖章 (Geometry Stamping)**
+「按 `figure_library` 的 key 取权威几何，把 `points/edges` 内嵌进落库快照」这一步（`scene_spec_from_figure`，原 `default_scene_from_figure`）。几何只在**生成期**过一次，之后快照自包含；改图库顶点不影响已落库内容。
+_Avoid_: 渲染期再查图库（把渲染绑回数据源，且离线课堂不可用）
+
+**场景意图判定 (Scene Intent Resolution)**
+答疑时判定「**这一问**要不要出示交互演示、演示哪个图形」（ADR-0089）。粒度分工：**知识点级**（这一类配不配演示）由数据答（`kp.scenes` + 图库），**提问级**由模型答。三层：L0 确定性门控（能解析出知识点 **且** 能投影出非空图形目录才发起，**不用意图关键词**——那仍是猜，且 `kp.scenes` 是教师显式配置、更强且零成本的信号）→ L1 结构化微调用 `SceneIntent{should_show, figure_key, rationale}`（只注入 `key + label` 目录，prompt 必给反例）→ L2 后端校验盖章（`should_show` 与 `figure_key` 必须自洽、key ∈ 目录、图库有行，任一不过即不发射）。**模型有建议权，没有决定权。** 未命中 / 异常 → 不发射场景卡，讲解正文照常；连续重复同一 key 不重复发射。
+_Avoid_: 用关键词猜图形（那是已删除的 `extract_scene_inputs` 做法）、未命中也给默认图形（那是编）、让模型输出 `kind`（它是稳定契约，不是模型的判断）
+
+**场景感知出题 (Scene-aware Generation)**
+出题时先读所选知识点的 `kp.scenes`（经 `resolve_kp_scene`），把该知识点可渲染的图形纳入出题上下文，使产出题卡的选项自带图形（ADR-0089）。**只读 `kp.scenes`**，不回查 `SCENE_LIBRARY` 注册表。
+_Avoid_: 查场景库注册表（那是作者辅助库，ADR-0073 红线）
+
+**答疑知识点解析 (Question Knowledge Point Resolution)**
+学生提问时判定「这个问题关联哪个知识点」，是答疑出图的 L0 门控输入（ADR-0089）：优先取**上下文**（课件 `knowledge_point` / 题目 / 学生当前知识点）；都没有则走**资料片段检索 → 知识点名**。命中知识点**且**该知识点能投影出非空图形目录（`kp.scenes` curated 优先 → 回落图库全量）才发起意图判定；未命中一律纯文字、不臆造场景。
+_Avoid_: 未命中也给一个默认图形（那是编，ADR-0061 §U 反臆造纪律）
+
 ### 打印导出
 
 **打印导出 (Print Export)**
@@ -233,6 +266,14 @@ _Avoid_: 儿童（本应用学习者即学生账户，勿另立「儿童」实�
 角色为 teacher 的用户，对学生账户有监管与出题权限。
 _Avoid_: 家长（旧定位用词）、监护人（泛）
 
+**管理员 (Admin)**
+角色为 admin 的用户，跨教师查看全部 AI 运行轨迹与排障的监管角色（ADR-0088）。默认账号由启动期幂等 seed 创建，用户名/口令取自环境变量（`ADMIN_SEED_USERNAME`/`ADMIN_SEED_PASSWORD`，两者皆配才创建，绝不写死）；经 `core.guard.require_owned_or_admin` 短路跳过归属校验。与 teacher 是并列角色，不是「超级教师」布尔标记。
+_Avoid_: 超级用户（那是实现细节，不是产品概念）、后台（泛）
+
+**破窗访问 (Break-glass Access)**
+为合规而设的「非常规、留痕」的敏感数据访问通道：运行轨迹默认只暴露元数据与脱敏步骤，**查看原始 tool 参数 / 结果 / 路由全文**须显式请求（`POST /ai/debug/conversations/{id}/reveal`，仅 admin）并写留痕（`break_glass_access` 表：谁、何时、读了哪段对话全文、理由），不默认展开（ADR-0088）。呼应 `include_content=False` 原则与儿童数据合规。
+_Avoid_: 提权（破窗是受控留痕，不是无差别提权）、查看原文（那是破窗的动作，不是概念）
+
 ### 后端活动
 
 **出题 (Question Generation)**
@@ -282,8 +323,8 @@ _Avoid_: 对话, 聊天记录（口语，且与「交换」「运行轨迹」不
 _Avoid_: 轮（「轮」指提问次数，与交换不同）, 消息
 
 **运行轨迹 (Run Trace)**
-一次 AI 运行在库里留下的全部步骤：路由决策、工具调用与结果、输出，含只有排障才需要的原始载荷。与会话是**同一批行的两种读法**——会话是给使用者看的投影，运行轨迹是给审计与排障用的投影。
-_Avoid_: 会话（轨迹包含气泡之外的全部步骤）, 日志（日志指伴学的 TutorLog）
+一次 AI 运行在库里留下的全部步骤：路由决策、工具调用与结果、输出，含只有排障才需要的原始载荷。与会话是**同一批行的两种读法**——会话是给使用者看的投影，运行轨迹是给审计与排障用的投影。运行轨迹同时承担**可观测**职责：每步自带 `model`/`usage`(token)/`latency_ms`/`input_safe`/`output_safe`/`blocked` 等元数据（ADR-0088）。客户端有独立的「运行轨迹」页（与历史会话的气泡投影并列，不进气泡），**管理员 (Admin)** 可跨教师查看全部；默认只暴露元数据与脱敏后的步骤，**全文内容走破窗访问 (Break-glass Access)** 并留痕（ADR-0088）。
+_Avoid_: 会话（轨迹包含气泡之外的全部步骤）, 日志（日志指伴学的 TutorLog）, 可观测日志（那是运维侧汇总说法，轨迹是逐步骤的原始投影）
 
 **语音输入 (Voice Input)**
 助手输入框的一种**输入方式**：把说的话转成文本填进输入框草稿，由用户确认后发送（ADR-0063）。它是输入法而非 AI 能力——不依赖 `ModelConfig`、音频不出设备、零模型配置时仍可用。转写产物与手打文本同权，后续仍走 `POST /assistant/chat` 唯一链路。

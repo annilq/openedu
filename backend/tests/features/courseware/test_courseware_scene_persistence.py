@@ -1,14 +1,14 @@
-"""课件环节的场景数据持久化验证（ADR-0076 · ticket 01：证伪票）。
+"""课件环节的场景数据持久化验证（ADR-0076 · ticket 01：证伪票；ADR-0091 ticket 02 改形）。
 
 全案（02–05）建立在一条前提上：**环节的 ``scene`` 是裸 dict 透传，后端零改动**——
-教师在一个环节里编排的一组图形（``optionGroup``：``curated`` + 有序 ``items``，
-条目内 ``points`` 是展开好的二维顶点数组）能原样存进去、原样读回来。
+教师在一个环节里编排的一组图形（ADR-0091 起：顶层 ``options`` 图形数组 + ``curated``，
+条目即 ``{key,label,points,edges}`` 的 Figure）能原样存进去、原样读回来。
 
 这条结论此前只是读代码得出的，本文件把它钉成端到端断言，打在 REST 接缝上
 （ADR-0061 §U.1 教训：只测 service 会漏掉「响应里根本没有这个 key」）。
 
 验的三件事：
-1. **写 + 读**：``curated`` / ``items`` 顺序 / ``points`` 顶点都回来，没被剥 key、
+1. **写 + 读**：``curated`` / 图形顺序 / ``points`` 顶点都回来，没被剥 key、
    没被压平成字符串；
 2. **反向语义**：显式 ``scene: null`` 保存后回读确实是 null（哨兵语义没被 ``??`` 吞）；
 3. **不回写**：动的是环节副本，知识点上的场景快照前后一致（ADR-0073 零回写红线）。
@@ -32,25 +32,23 @@ KP_NAME = "图形的运动（轴对称）"
 
 # 一组有序图形（课件编排）：顺序即数组顺序，教学意图落在顺序里。
 # 刻意排成「非库序、非字母序」——若后端/模型层重排过，顺序断言就会红。
-_OPTION_ITEMS = [
+# ADR-0091 起条目即 Figure：{key, label, points, edges}（key 是图库身份键）。
+_OPTION_FIGURES = [
     {
-        "label": "",
-        "caption": "长方形",
-        "figureKey": "rectangle",
+        "key": "rectangle",
+        "label": "长方形",
         "points": [[-80.0, -50.0], [80.0, -50.0], [80.0, 50.0], [-80.0, 50.0]],
-        "defaultAxisAngle": 0,
+        "edges": [[0, 1], [1, 2], [2, 3], [3, 0]],
     },
     {
-        "label": "",
-        "caption": "正方形",
-        "figureKey": "square",
+        "key": "square",
+        "label": "正方形",
         "points": [[-60.0, -60.0], [60.0, -60.0], [60.0, 60.0], [-60.0, 60.0]],
-        "defaultAxisAngle": 90,
+        "edges": [[0, 1], [1, 2], [2, 3], [3, 0]],
     },
     {
-        "label": "",
-        "caption": "箭头",
-        "figureKey": "arrow",
+        "key": "arrow",
+        "label": "箭头",
         "points": [
             [-40.0, 0.0],
             [10.0, 0.0],
@@ -60,20 +58,25 @@ _OPTION_ITEMS = [
             [10.0, 80.0],
             [-40.0, 80.0],
         ],
-        "defaultAxisAngle": 45,
+        "edges": [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6, 0]],
     },
 ]
 
-_SCENE_WITH_GROUP = {
+_SCENE_WITH_OPTIONS = {
     "kind": "reflection",
-    "title": "哪些对折后能重合",
-    "optionGroup": {
-        "curated": True,
-        "items": _OPTION_ITEMS,
-    },
+    "options": _OPTION_FIGURES,
+    "curated": True,
 }
 
-_KP_SCENE = {"kind": "reflection", "title": "知识点默认讲解", "inputs": []}
+_KP_SCENE = {
+    "kind": "reflection",
+    "figure": {
+        "key": "house",
+        "label": "房子",
+        "points": [[0.30, 0.70], [0.70, 0.70], [0.70, 0.45], [0.50, 0.25], [0.30, 0.45]],
+        "edges": [[0, 1], [1, 2], [2, 3], [3, 4], [4, 0]],
+    },
+}
 
 
 def _seed_kp(teacher_id: uuid.UUID) -> uuid.UUID:
@@ -148,36 +151,34 @@ def _section_body(scene) -> dict:
 # ── 1. 写 + 读：整组图形原样回来 ──────────────────────────────────────────
 
 
-def test_option_group_survives_put_then_get(client, teacher):
-    """带 ``optionGroup`` 的环节：保存成功，回读后 curated / 条目顺序 / 顶点全在。"""
+def test_options_group_survives_put_then_get(client, teacher):
+    """带 ``options`` 图形组的环节：保存成功，回读后 curated / 图形顺序 / 顶点全在。"""
     cw = _create(client, teacher["token"], teacher["kp"])
 
     r = _put_sections(
-        client, teacher["token"], cw["id"], [_section_body(_SCENE_WITH_GROUP)]
+        client, teacher["token"], cw["id"], [_section_body(_SCENE_WITH_OPTIONS)]
     )
     assert r.status_code == 200, r.text
 
     saved = r.json()["sections"][0]["scene"]
-    assert saved["optionGroup"]["curated"] is True
-    assert len(saved["optionGroup"]["items"]) == len(_OPTION_ITEMS)
+    assert saved["curated"] is True
+    assert len(saved["options"]) == len(_OPTION_FIGURES)
 
     body = _get(client, teacher["token"], cw["id"])
     scene = body["sections"][0]["scene"]
     assert scene is not None, "回读时场景丢了"
 
-    group = scene["optionGroup"]
-    assert group["curated"] is True, "curated 开关被剥掉了"
+    assert scene["curated"] is True, "curated 开关被剥掉了"
 
-    items = group["items"]
-    assert [it["figureKey"] for it in items] == [
-        it["figureKey"] for it in _OPTION_ITEMS
-    ], "条目顺序被重排过（教学编排意图就落在顺序里）"
-    assert len(items) == len(_OPTION_ITEMS)
+    figures = scene["options"]
+    assert [it["key"] for it in figures] == [
+        it["key"] for it in _OPTION_FIGURES
+    ], "图形顺序被重排过（教学编排意图就落在顺序里）"
+    assert len(figures) == len(_OPTION_FIGURES)
 
-    for got, want in zip(items, _OPTION_ITEMS):
-        assert got["label"] == want["label"] == ""
-        assert got["caption"] == want["caption"]
-        assert got["defaultAxisAngle"] == want["defaultAxisAngle"]
+    for got, want in zip(figures, _OPTION_FIGURES):
+        assert got["key"] == want["key"]
+        assert got["label"] == want["label"]
         # points 必须是二维顶点数组：非空、没被压平成字符串、每个顶点仍是 [x, y]
         points = got["points"]
         assert isinstance(points, list), f"points 被改写成了 {type(points)}"
@@ -187,6 +188,7 @@ def test_option_group_survives_put_then_get(client, teacher):
             assert isinstance(vertex, list), f"顶点被压平了：{vertex!r}"
             assert len(vertex) == 2
         assert points == want["points"]
+        assert got["edges"] == want["edges"]
 
 
 # ── 2. 反向语义：显式清空不被吞 ──────────────────────────────────────────
@@ -200,10 +202,10 @@ def test_explicit_null_scene_is_not_swallowed(client, teacher):
     cw = _create(client, teacher["token"], teacher["kp"])
 
     r = _put_sections(
-        client, teacher["token"], cw["id"], [_section_body(_SCENE_WITH_GROUP)]
+        client, teacher["token"], cw["id"], [_section_body(_SCENE_WITH_OPTIONS)]
     )
     assert r.status_code == 200, r.text
-    assert r.json()["sections"][0]["scene"]["optionGroup"]["items"], "前置：先有图形组"
+    assert r.json()["sections"][0]["scene"]["options"], "前置：先有图形组"
 
     r = _put_sections(client, teacher["token"], cw["id"], [_section_body(None)])
     assert r.status_code == 200, r.text
@@ -223,7 +225,7 @@ def test_saving_section_scene_does_not_write_back_to_kp(client, teacher):
 
     cw = _create(client, teacher["token"], teacher["kp"])
     r = _put_sections(
-        client, teacher["token"], cw["id"], [_section_body(_SCENE_WITH_GROUP)]
+        client, teacher["token"], cw["id"], [_section_body(_SCENE_WITH_OPTIONS)]
     )
     assert r.status_code == 200, r.text
 

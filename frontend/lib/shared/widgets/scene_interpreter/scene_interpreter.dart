@@ -2,6 +2,8 @@ import 'package:shadcn_ui/shadcn_ui.dart' show LucideIcons;
 import 'package:flutter/widgets.dart';
 
 import '../../domain/figures.dart';
+import '../../domain/scene_spec.dart';
+import '../../utils/option_text.dart' show cleanOptionText;
 import '../app_empty_state.dart';
 import 'reflection_figure_gallery.dart';
 import 'reflection_scene.dart';
@@ -9,10 +11,15 @@ import 'reflection_scene_data.dart';
 import 'reflection_scene_dialog.dart';
 
 // =====================================================================
-// §场景解释器（ADR-0061 决策 7 / 8）
+// §场景解释器（ADR-0061 决策 7 / 8 · ADR-0091）
 //
 // 三处消费方（出题解析卡 / 错题本 / AI 伴学讲解卡）统一经此入口渲染交互讲解，
 // 复用同一套渲染器。kind 词汇表前后端双登记：新增 kind 必须在此 + 后端 _KIND 同步。
+//
+// ADR-0091 起 spec 是**类型**（[SceneSpec]）而不是裸 Map：几何只存在于
+// `figure` / `options[]` 里（`Figure{key,label,points,edges}`），解析只有
+// [SceneSpec.tryParse] 一处。渲染只吃顶点与连接关系，**不消费身份键**
+// ——`key` 只用于身份 / 溯源 / 校验（画廊角标、高亮、去重）。
 // =====================================================================
 
 /// 场景类型（前后端双登记，ADR-0061 决策 7）。
@@ -29,55 +36,52 @@ extension SceneKindX on SceneKind {
   }
 }
 
-/// 场景解释器：按 [kind] 将 SceneSpec（原始 JSON）分发到对应渲染器。
+/// 场景解释器：按 [SceneSpec.kind] 将场景规格分发到对应渲染器。
 ///
 /// 未识别的 kind 走降级空态（ADR-0051：空态讲清「为什么空 + 下一步」）。
 ///
-/// **选项组优先**（ADR-0061 §O / §V）：spec 带 `optionGroup` 时不渲染单个场景，而是
+/// **选项组优先**（ADR-0061 §O / §V）：spec 带 `options` 时不渲染单个场景，而是
 /// 展开成**图形画廊**——每个选项一张卡，点一个弹对折演示对话框，儿童逐个亲手旋转 /
 /// 平移对称轴去验证，而不是看程序报答案。
 class SceneInterpreter extends StatelessWidget {
-  final String kind;
-  final Map<String, dynamic> spec;
+  /// 一次演示的快照（类型化契约，ADR-0091）：kind + 图形。
+  final SceneSpec spec;
 
-  /// 画布下方**是否显示对称轴滑块**（仅 `kind == reflection` 生效）。
+  /// 画布下方**是否显示对称轴滑块**（仅 `kind == reflection` 的单场景路径生效）。
   ///
   /// 这是**展示关切**，不是 SceneSpec 字段——ADR-0083 决策 5 已把 `editable` 从新
   /// spec 删除，并明确「是否允许儿童拖轴」由调用方在构造时决定。故需要静态缩略图的
   /// 调用方（场景库详情页预览）直接传 `false`，**不再往 spec 里塞已废的 `editable`**。
   ///
-  /// null = 沿用 spec 推断（新形 spec 无此键 → 显示；**存量旧快照**的 `editable`
-  /// 仍被适配层采信，观感不变，见 [ReflectionSceneData.fromSpec]）。
+  /// null = 显示（新形 spec 不带该开关；ADR-0091 后连旧形 `editable` 也不再被读取
+  /// ——轴初值与控件一律归 kind 外壳 / 本开关）。
   ///
-  /// **只作用于单场景路径**：`optionGroup` 走图形画廊，交互发生在点开的弹窗里
+  /// **只作用于单场景路径**：`options` 走图形画廊，交互发生在点开的弹窗里
   /// （那里必须能拖轴），故该路径不消费本开关。
   final bool? showAxisControls;
 
   const SceneInterpreter({
     super.key,
-    required this.kind,
     required this.spec,
     this.showAxisControls,
   });
 
   @override
   Widget build(BuildContext context) {
-    final group = spec['optionGroup'];
-    if (group is Map && group['items'] is List && (group['items'] as List).isNotEmpty) {
-      return SceneOptionGroup(
-        spec: spec,
-        // 就地读取显式开关（ADR-0076 §2.2）：不给解释器加构造参数——它被多处调用，
-        // 加参会波及全部消费方。
-        curated: group['curated'] == true,
-        items: (group['items'] as List)
-            .whereType<Map>()
-            .map((e) => SceneOptionItem.fromJson(Map<String, dynamic>.from(e)))
-            .where((e) => e.points != null)
-            .toList(growable: false),
-      );
+    if (spec.options.isNotEmpty) {
+      return SceneOptionGroup(spec: spec);
     }
-    switch (SceneKindX.fromName(kind)) {
+    switch (SceneKindX.fromName(spec.kind)) {
       case SceneKind.reflection:
+        if (spec.figure == null) {
+          // 几何只存在于 figure / options（ADR-0091）：两者皆空（含被拒绝的旧形
+          // 快照）→ 空态讲清「为什么空 + 下一步」，**不臆造几何**（ADR-0051）。
+          return const AppEmptyState(
+            icon: LucideIcons.circleHelp,
+            title: '这个场景还没有配置图形',
+            message: '演示内容里没有可渲染的图形。请在编辑页重新选择图形，或先用文字讲解。',
+          );
+        }
         final data = ReflectionSceneData.fromSpec(spec);
         final override = showAxisControls;
         return ReflectionSceneWidget(
@@ -93,38 +97,6 @@ class SceneInterpreter extends StatelessWidget {
   }
 }
 
-/// 一个选项对应的场景实例（ADR-0061 §O）。
-///
-/// 与后端 `extract_option_group` 同形状（`label` / `caption` / `points` / `edges`）：
-/// 几何**内联**在条目里，渲染时不再回查图库（ADR-0083 决策 6/7）。
-class SceneOptionItem {
-  /// 选项标号（「A」「B」…），仅用于界面定位，不参与判定。
-  final String label;
-
-  /// 图形中文名（卡片副标题，如「房子」）。课件语境没有 A/B/C，卡片就靠它区分。
-  final String? caption;
-
-  /// 该选项的顶点（归一化）。null = 该项没有可渲染几何，应被过滤掉。
-  final List<Offset>? points;
-
-  /// 该选项的顶点连接关系（顶点索引对）。null/空 = 按顶点顺序闭合。
-  final List<List<int>>? edges;
-
-  const SceneOptionItem({
-    required this.label,
-    this.caption,
-    this.points,
-    this.edges,
-  });
-
-  factory SceneOptionItem.fromJson(Map<String, dynamic> json) => SceneOptionItem(
-        label: (json['label'] as String?) ?? '',
-        caption: json['caption'] as String?,
-        points: ReflectionSceneData.parsePoints(json['points']),
-        edges: ReflectionSceneData.parseEdges(json['edges']),
-      );
-}
-
 /// 选项组：图形画廊 + 点开进对折演示（ADR-0061 §V，取代 §O 的「N 个场景平铺」）。
 ///
 /// **为什么不把每个选项各渲染一个完整场景平铺在页面上**（§O 旧做法）：
@@ -136,28 +108,24 @@ class SceneOptionItem {
 /// [ReflectionSceneDialog]——里面是同一个 [ReflectionSceneWidget]，交互一件不少。
 /// 「先挑图形、再认真折」两步分开，正是对折这道题的操作顺序。
 ///
-/// **零图库依赖**（ADR-0083 决策 7）：渲染只吃 spec 内联的 `points`/`edges`，
-/// 不查图库、不缓存、不发起取数——旧实现在这里铺「整库」是靠前端常量（`kFigureShapes`），
-/// 那正是本轮退役掉的双源。图库只在画板 / 画廊这类**创作 UI** 打开时按需拉取。
+/// **身份由 `Figure.key` 承担**（ADR-0091 决策 2，修掉的身份缺陷）：此前条目不带
+/// 图库身份键，画廊只能拿**展示名**当身份——教师改一次图形名，角标映射与高亮就断；
+/// 同名图形还会被静默合并。现在角标映射 / 高亮 / 去重全部按 `key`，展示名回归显示。
 ///
-/// [curated] 为真（课件编排，ADR-0076 §2.2）时**不挂选项角标**——课件语境没有 A/B/C，
-/// 挂上空角标纯噪声；两种语境下卡片顺序都严格等于 `items` 顺序（顺序就是编排意图）。
+/// **零图库依赖**（ADR-0083 决策 7）：渲染只吃 spec 内联的 `points`/`edges`，
+/// 不查图库、不缓存、不发起取数。图库只在画板 / 画廊这类**创作 UI** 打开时按需拉取。
+///
+/// [SceneSpec.curated] 为真（课件编排，ADR-0076 §2.2）时**不挂选项角标**——课件语境
+/// 没有 A/B/C，挂上空角标纯噪声；两种语境下卡片顺序都严格等于 `options` 顺序
+/// （顺序就是编排意图）。
 class SceneOptionGroup extends StatelessWidget {
-  /// 原始 spec（提供该 kind 的几何与共享项）。
-  final Map<String, dynamic> spec;
-  final List<SceneOptionItem> items;
-
-  /// 是否按课件编排渲染（当前只影响「挂不挂选项角标」，见类文档）。
-  ///
-  /// **必须是显式开关**：题库 / 错题路径的 items 恰好也非空（它们就是选项），靠
-  /// 「有没有条目」区分两种语境会静默改变学生的观感。
-  final bool curated;
+  /// 本次演示的快照：`options` 是要摆开的图形，`curated` 决定挂不挂角标，
+  /// `figure`（若有）给弹窗提供基础几何与 kind 外壳参数。
+  final SceneSpec spec;
 
   const SceneOptionGroup({
     super.key,
     required this.spec,
-    required this.items,
-    this.curated = false,
   });
 
   @override
@@ -171,29 +139,31 @@ class SceneOptionGroup extends StatelessWidget {
       );
     }
     final base = ReflectionSceneData.fromSpec(spec);
-    // 选项标号（「A」…）挂到对应卡片上。curated 语境没有 A/B/C，故一律不挂（否则
-    // 每张卡挂一个空角标）。
-    final labels = curated
+    // 选项标号（「A」…）按**条目下标**推：新形 spec 只存图形（ADR-0091：旧条目里的
+    // A/B 标号不进 Figure，与存量迁移脚本同口径）。curated 语境没有 A/B/C，
+    // 故一律不挂（否则每张卡挂一个空角标）。
+    final labels = spec.curated
         ? const <String, String>{}
         : <String, String>{
-            for (final e in entries)
-              if (e.optionLabel.isNotEmpty) e.figure.key: e.optionLabel,
+            for (var i = 0; i < entries.length; i++)
+              entries[i].key: String.fromCharCode(65 + i),
           };
     return ReflectionFigureGallery(
-      figures: <FigureShape>[for (final e in entries) e.figure],
+      figures: entries,
       optionLabels: labels,
       // 条目顺序就是意图（题库的 A/B/C/D 序、课件的编排序），一律不重排。
       preserveOrder: true,
       hint: '点一个图形打开对折演示：拖对称轴、点播放，看到 180° 时两侧能否完全重合。',
       onOpen: (figure) {
-        final entry = entries.firstWhere((e) => e.figure.key == figure.key);
         ReflectionSceneDialog.show(
           context,
           data: base.copyWith(
             // 顶点 / 边优先用后端下发的（ADR-0061 §O：条目几何是权威）。
-            points: entry.points,
-            edges: entry.edges,
-            figureLabel: figure.label,
+            points: <Offset>[
+              for (final v in figure.vertices) Offset(v.x, v.y),
+            ],
+            edges: figure.edges,
+            figureLabel: cleanOptionText(figure.label),
             // 轴初值不按图形走：图库不存 axis 属性（ADR-0083 决策 2），初值统一归
             // kind 外壳——[base] 已带上它，这里刻意不覆盖。
           ),
@@ -203,43 +173,19 @@ class SceneOptionGroup extends StatelessWidget {
     );
   }
 
-  /// 条目 → 可直接渲染的图形 + 它的内联几何（**按 items 数组顺序**）。
+  /// 可直接渲染的图形（**按 options 数组顺序**，几何不足 3 顶点的丢掉）。
   ///
-  /// `key` 用图形名（caption / label）：条目**不带图库 key**（决策 6），而画廊要一个
-  /// 稳定标识来挂角标、判高亮，图形名是条目里唯一的稳定身份。同名条目只认第一个
-  /// ——重复的图形再挂一个角标没有教学意义。
-  List<_OptionEntry> _entries() {
-    final out = <_OptionEntry>[];
+  /// 去重按**身份键**（`Figure.key`），不按展示名：同一个图形挂两次角标没有教学
+  /// 意义；而**同名不同键**（教师自绘的与内置的同名）是两个图形，按名去重会把
+  /// 其中一个悄悄吃掉——那正是 ADR-0091 修掉的身份缺陷。
+  List<FigureShape> _entries() {
+    final out = <FigureShape>[];
     final seen = <String>{};
-    for (final item in items) {
-      final points = item.points;
-      if (points == null || points.length < 3) continue;
-      final name = item.caption ?? item.label;
-      if (name.isEmpty || !seen.add(name)) continue;
-      out.add((
-        figure: FigureShape(
-          key: name,
-          label: name,
-          vertices: <({double x, double y})>[
-            for (final p in points) (x: p.dx, y: p.dy),
-          ],
-        ),
-        optionLabel: item.label,
-        points: points,
-        edges: item.edges,
-      ));
+    for (final figure in spec.options) {
+      if (figure.vertices.length < 3) continue;
+      if (!seen.add(figure.key)) continue;
+      out.add(figure);
     }
     return out;
   }
 }
-
-/// 一条已就绪的选项条目：图形 + 选项标号 + 它自己的内联几何。
-///
-/// 用记录类型而非 Map：Map 会丢掉条目的数组顺序，而**顺序就是编排意图**
-/// （题库的 A/B/C/D 序、课件教师编排的序）。
-typedef _OptionEntry = ({
-  FigureShape figure,
-  String optionLabel,
-  List<Offset> points,
-  List<List<int>>? edges,
-});

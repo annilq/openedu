@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/domain/models/models.dart';
+import '../../../../shared/domain/scene_spec.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_inputs.dart';
 import '../../../../shared/widgets/app_motion.dart';
@@ -49,9 +50,10 @@ class PracticeQuestionView extends StatelessWidget {
   Widget build(BuildContext context) {
     final q = question;
     final scene = q.sceneSpec;
-    final hasFigureGroup = scene != null &&
-        scene['optionGroup'] is Map &&
-        ((scene['optionGroup']['items'] as List?)?.isNotEmpty ?? false);
+    // 几何选项组（ADR-0061 §O / ADR-0091）：场景规格经唯一解析入口，options
+    // 非空才渲染画廊。无选项组时整块跳过。
+    final spec = scene == null ? null : SceneSpec.tryParse(scene);
+    final hasFigureGroup = spec != null && spec.options.isNotEmpty;
     final total = task.questions.length;
     final currentIndex = task.questions.indexOf(q);
     final isLast = currentIndex < 0 || currentIndex >= total - 1;
@@ -116,10 +118,7 @@ class PracticeQuestionView extends StatelessWidget {
                 // 与下方可点选的 A/B/C/D 选项卡对应。无选项组时整块跳过。
                 if (hasFigureGroup)
                   ...[
-                    SceneInterpreter(
-                      kind: (scene['kind'] as String?) ?? 'reflection',
-                      spec: scene,
-                    ),
+                    SceneInterpreter(spec: spec),
                     const SizedBox(height: AppSpacing.xxl),
                   ],
                 // 选择题按 qtype 走选项卡片（ADR-0004：qtype ∈ {choice,fill,calc,open}）。
@@ -131,10 +130,11 @@ class PracticeQuestionView extends StatelessWidget {
                     q.options!.isNotEmpty)
                   ...q.options!.asMap().entries.map((e) => AppOptionTile(
                         index: e.key,
-                        text: cleanOptionText(e.value),
-                        selected: selectedOptions.contains(e.value),
+                        text: cleanOptionText(e.value.text),
+                        figure: e.value.figure,
+                        selected: selectedOptions.contains(e.value.text),
                         multi: q.multi,
-                        onTap: () => onOptionTap(e.value),
+                        onTap: () => onOptionTap(e.value.text),
                       ))
                 else
                   AppTextField(

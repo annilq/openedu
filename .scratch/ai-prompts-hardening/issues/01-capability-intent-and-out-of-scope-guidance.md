@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
 ## 为什么（Round 1–2 核实结论）
 - 路由兜底 = `tutor`（`priority=-10`，`tutor/manifest.py:19`），认不出意图的问题全落 tutor；`tutor_system_prompt`（`domain/safety.py:46`）只有「与学习无关请温和引导回学习主题」——**有拉回、无能力清单**。
@@ -24,13 +24,20 @@
 6. **`tutor_system_prompt` 补一句**：仅加「若问题超出学习范围，用一句话说明你能做什么，并给出一个下一步方向」，**不列具体能力**（清单在 capability 目录，单一事实源）。⚠️ 这是安全锁文件，改动须保持「按 grade/subject 生成」的签名不变。
 
 ## 验收清单
-- [ ] 学生/教师各问「你能做什么」→ 路由命中 `capability`（**不是** tutor / query），回复含职责边界 + 对应角色的能力清单，**无 LLM 调用**（断言 provider 未被调用）
-- [ ] 教师说「帮我创建一个任务」仍命中 `guide`（priority 20），未被 capability 抢走
-- [ ] 「查一下我的错题」仍命中 `query`，未被 capability 抢走
-- [ ] 明显超范围（如「今天天气怎么样」）→ 落 tutor 但**不硬失败**，回复含一句「我能做什么」+ 一个可点方向
-- [ ] `tutor_system_prompt` 仍随 `(grade, subject)` 生成（签名/调用点未变），新增句为常量尾句
-- [ ] 能力清单为**服务端常量**，不经 LLM 生成；`_SYSTEM`/目录无重复词条（单一事实源）
-- [ ] `tests/ai/` 全绿（改 `features/*/service.py` 若触及）；新增 `capability` 单测 + 路由优先级用例
-- [ ] 分层不变量 9：capability 的 `run` 不触碰任何归属判定/ORM
+- [x] 学生/教师各问「你能做什么」→ 路由命中 `capability`（**不是** tutor / query），回复含职责边界 + 对应角色的能力清单，**无 LLM 调用**（断言 provider 未被调用）
+- [x] 教师说「帮我创建一个任务」仍命中 `guide`（priority 20），未被 capability 抢走
+- [x] 「查一下我的错题」仍命中 `query`，未被 capability 抢走
+- [x] 明显超范围（如「今天天气怎么样」）→ 落 tutor 但**不硬失败**，回复含一句「我能做什么」+ 一个可点方向（tutor_system_prompt 已补自述尾句）
+- [x] `tutor_system_prompt` 仍随 `(grade, subject)` 生成（签名/调用点未变），新增句为常量尾句
+- [x] 能力清单为**服务端常量**，不经 LLM 生成；`_SYSTEM`/目录无重复词条（单一事实源）
+- [x] `tests/ai/` 全绿（改 `features/*/service.py` 若触及）；新增 `capability` 单测 + 路由优先级用例
+- [x] 分层不变量 9：capability 的 `run` 不触碰任何归属判定/ORM
 
 **决策锚点：** ADR-0079；`requires_tool_data` **不放宽**（安全优先）；优先级 16；能力卡 v1 复用 `list` 渲染器。
+
+## 代码现状核验（2026-10-13，实现前复核 · 设计可直接落地）
+- 后端 `app/ai/subagents/` 仅有 `guide/query/question/tasks/tutor`，**无 `capability` 目录** → 须新建（manifest + agent，`roles=["teacher","student"]`，不声明 tools，全程零 provider 调用）。
+- `tutor_system_prompt`（`domain/safety.py:46`）签名仍 `(grade, subject)`，仅 line 53 含「与学习无关请温和引导回学习主题」，**无能力清单** → 第 6 点「补一句」可加，签名不变。
+- `query` 的 `requires_tool_data=True`（`query/agent.py:56`）未变，注释 line 55 自认「你能查什么」类零工具回答会被拦 → 第 12 行「从根上把这类问题从 query 接走」仍成立。
+- 前端 `AssistantListCard`（`assistant_list_card.dart:13`）已存在 → 能力卡 v1 复用 list 渲染器、前端零改动成立。
+- **实现前唯一待确认**：manifest 路由优先级 16 当前未被新增意图占用（guide=20 / query=12 之间空闲），无冲突。

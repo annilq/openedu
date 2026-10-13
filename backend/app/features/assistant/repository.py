@@ -154,6 +154,34 @@ def _cards_of(m: Message) -> list[dict]:
     return [c for c in cards if isinstance(c, dict)]
 
 
+def last_scene_figure_key(session: Session, conv_id: Any) -> str | None:
+    """本会话**最近一次**已发射的交互场景图形身份键（ADR-0089 §4 去重护栏）。
+
+    读取口径与 prompt 历史 / 用户面回放**共用**同一套「可见轮次」判定
+    （``_visible_rows`` + ``_cards_of``）：场景卡整帧落库在 assistant 输出行的
+    ``payload["cards"]``（``{type, result}``），按 ``turn`` 倒序找第一条
+    ``type == "interactive_scene"`` 的卡片，取其中 ``result.figure.key``。
+
+    返回 ``None`` 的三种情形一视同仁：会话 id 畸形 / 本会话从未发射过场景卡 /
+    最近一条场景卡没有身份键——调用方据此**照常发射**（去重只在「键相同」时生效）。
+    """
+    if session is None or conv_id is None:
+        return None
+    try:
+        cid = conv_id if isinstance(conv_id, UUID) else UUID(str(conv_id))
+    except (ValueError, TypeError, AttributeError):
+        return None
+    for m in reversed(_visible_rows(session, cid)):
+        for card in _cards_of(m):
+            if card.get("type") != "interactive_scene":
+                continue
+            result = card.get("result")
+            figure = result.get("figure") if isinstance(result, dict) else None
+            key = figure.get("key") if isinstance(figure, dict) else None
+            return key if isinstance(key, str) and key else None
+    return None
+
+
 def _split_compaction(
     history: list[dict], *, limit: int, max_tokens: int
 ) -> tuple[list[dict], list[dict]]:

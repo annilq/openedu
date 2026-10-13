@@ -25,6 +25,43 @@ from app.ai.subagents.question.pipeline import (
 from app.ai.subagents.question.translate import translate_stream
 from app.ai.subagents.subject_personas import get_subject_persona
 from app.domain.subjects import SUBJECTS
+from app.features.materials.figure_stamp import (
+    available_figures,
+    render_figure_catalog,
+)
+from app.features.materials.scene_fusion import find_knowledge_point
+
+
+def figure_catalog_for_question(
+    session,
+    *,
+    teacher_id,
+    subject: str,
+    grade: int,
+    knowledge_point: str,
+    semester: str = "",
+) -> str | None:
+    """本题「可用图形清单」渲染成 prompt 文本（ADR-0089 §4.3）；取不到 → ``None``。
+
+    目录 = ``kp.scenes`` curated 图形优先 → 回落图库全量（``available_figures``）。
+    只给 key + 中文名，**顶点绝不进 prompt**。无 session / 查询失败 → 不注入清单，
+    出题照常（清单是增强，绝不阻断出题主链路）。
+    """
+    if session is None or teacher_id is None:
+        return None
+    try:
+        kp = find_knowledge_point(
+            session,
+            teacher_id=teacher_id,
+            subject=subject,
+            grade=grade,
+            knowledge_point=knowledge_point,
+            semester=semester,
+        )
+        catalog = render_figure_catalog(available_figures(session, kp=kp))
+    except Exception:  # noqa: BLE001 — 目录是增强，任何异常都不阻断出题
+        return None
+    return catalog or None
 
 
 def expand_specs(specs) -> list[dict]:
@@ -400,6 +437,15 @@ class QuestionSubAgent(BaseSubAgent):
                 multi=item.get("multi", False),
                 # 判断题（ADR-0072 闭环）：题面强制「陈述句 + 对/错两个选项」。
                 judge=item.get("judge", False),
+                # 图形化选项（ADR-0089）：注入可用图形清单，模型只填身份键。
+                figure_catalog=figure_catalog_for_question(
+                    session,
+                    teacher_id=ctx.extra.get("teacher_id"),
+                    subject=item["subject"],
+                    grade=item["grade"],
+                    knowledge_point=item["knowledge_point"],
+                    semester=item.get("semester", ""),
+                ),
             )
             yield step(
                 step_label(

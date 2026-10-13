@@ -1,5 +1,7 @@
 import 'dart:typed_data';
 
+import '../../../shared/domain/models/quiz_option.dart';
+
 /// 打印导出的请求契约（ADR-0052 · CONTEXT.md §打印导出）。
 ///
 /// **装配在服务端**：客户端只声明「从哪个来源选了哪些东西」，题号、分节、
@@ -50,9 +52,12 @@ bool looksLikeRichText(String? text) {
 }
 
 /// 统计一组题面里会降级的题数：一道题的题干或任一选项命中即算一道。
+///
+/// [optionLists] 直接吃选项模型（[QuizOption]），正文提取在此内部完成，调用方
+/// 不必逐条 `.text`（ADR-0089-04：选项模型持图形，[QuizOption] 替换裸 `String`）。
 int countDowngradedQuestions({
   required Iterable<String> stems,
-  Iterable<List<String>?> optionLists = const [],
+  Iterable<List<QuizOption>?> optionLists = const [],
 }) {
   final stemList = stems.toList();
   final optionList = optionLists.toList();
@@ -60,7 +65,7 @@ int countDowngradedQuestions({
   for (var i = 0; i < stemList.length; i++) {
     final degraded = looksLikeRichText(stemList[i]) ||
         (i < optionList.length &&
-            (optionList[i] ?? const []).any(looksLikeRichText));
+            (optionList[i] ?? const []).any((o) => looksLikeRichText(o.text)));
     if (degraded) count++;
   }
   return count;

@@ -15,7 +15,7 @@ from sqlmodel import Session
 from app.core.config import settings
 from app.core.errors import ErrCode
 from app.core.guard import require_owned, require_owned_student
-from app.db.models import Class, User
+from app.db.models import Class, Role, User
 from app.features.auth.repository import create_user, get_user_by_username
 from app.features.auth.schemas import UserCreate
 from app.features.students.schemas import (
@@ -138,7 +138,7 @@ def import_students_from_xlsx(
                 password=settings.STUDENT_DEFAULT_PASSWORD,
                 class_id=class_id,
             ),
-            role="student",
+            role=Role.STUDENT,
             teacher_id=teacher_id,
         )
         result.created += 1

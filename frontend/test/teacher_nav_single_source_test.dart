@@ -9,6 +9,9 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:kids_learn/features/home/presentation/screens/home_screen.dart';
 import 'package:kids_learn/features/home/presentation/screens/teacher_destinations.dart';
 import 'package:kids_learn/features/home/presentation/teacher_pages.dart';
+import 'package:kids_learn/features/assistant/domain/repositories/run_trace_repository.dart';
+import 'package:kids_learn/features/assistant/domain/run_trace.dart';
+import 'package:kids_learn/features/assistant/providers/run_trace_provider.dart';
 import 'package:kids_learn/features/home/presentation/providers/home_notifier.dart';
 import 'package:kids_learn/shared/data/local/storage_service.dart';
 import 'package:kids_learn/shared/domain/models/models.dart';
@@ -356,6 +359,28 @@ void main() {
     });
   });
 
+  group('ADR-0088 ticket 02：运行轨迹入口（全步骤口径，与历史会话分离）', () {
+    // ⚠️ 运行轨迹页（RunTracePage）是 ADR-0088 新增的 `TeacherPage` 分支：
+    // 与助手页内的「历史会话」（气泡口径）并列的第二个消费者。sealed 穷尽性只能
+    // 保证「编译过」，UI 层若没真构建过仍可能漏接侧栏入口——必须真点。
+    testWidgets('教师端：点「运行轨迹」高亮唯一且渲染轨迹页', (tester) async {
+      await _pumpTeacherHome(tester, extra: [
+        runTraceRepositoryProvider.overrideWithValue(_StubRunTraceRepo()),
+      ]);
+      expect(_activeLabels(tester), ['概览']);
+
+      await tester.tap(find.text('运行轨迹'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(_activeLabels(tester), ['运行轨迹'],
+          reason: '同一时刻侧栏只能有一个高亮项（单一导航状态）');
+      expect(find.textContaining('还没有 AI 运行记录'), findsOneWidget,
+          reason: 'RunTracePage 应真正渲染（桩返回空列表 → 空态）');
+      expect(tester.takeException(), isNull);
+    });
+  });
+
   group('T02：场景编辑器收编为 sealed 导航状态（ADR-0074）', () {
     // ⚠️ 编辑器原来由知识点行 `showDialog(KnowledgePointSceneEditor)` 直接开——把
     // 「当前该看哪个页面」偷变成并列状态，漏清就弹根栈（白屏）。现在它是
@@ -488,6 +513,21 @@ class _FakeClassesRepo implements ClassesRepository {
 
   @override
   Future<List<ClassModel>> getClasses() async => _classes;
+}
+
+/// 运行轨迹取数桩（ADR-0088 ticket 02）：空列表 → 轨迹页渲染空态。
+class _StubRunTraceRepo implements RunTraceRepository {
+  @override
+  Future<List<RunTraceRun>> runs() async => const [];
+
+  @override
+  Future<RunTraceDetail> detail(String runId) async =>
+      throw UnimplementedError();
+
+  // ticket 03：破窗入口只对 admin 开放，本桩不涉及，抛未实现即可。
+  @override
+  Future<RunTraceDetail> reveal(String runId, String reason) async =>
+      throw UnimplementedError();
 }
 
 /// 用桩 repository 泵起教师端 HomeScreen，使「学生」入口能渲染并 drill 进详情。

@@ -10,12 +10,13 @@ import '../../../../../shared/widgets/app_inputs.dart';
 import '../../../../../shared/widgets/app_scroll_page.dart';
 import '../../../../../shared/widgets/app_section_title.dart';
 import '../../../../../shared/widgets/app_toast.dart';
+import '../../../../../shared/widgets/class_picker.dart';
+import 'package:kids_learn/features/classes/providers/classes_provider.dart';
 import '../../../../model_management/presentation/providers/models_notifier.dart';
 import '../../../../model_management/presentation/widgets/model_selector.dart';
 import '../../providers/home_notifier.dart';
 import '../../providers/task_form_prefill.dart';
 import 'student_picker.dart';
-import 'class_picker.dart';
 import 'dispatch_targets_row.dart';
 import '../../../domain/repositories/material_repository.dart'
     show KnowledgePointOption;
@@ -126,7 +127,7 @@ class _TeacherTaskFormViewState extends ConsumerState<TeacherTaskFormView> {
   Future<void> _pickClasses() async {
     final picked = await pickClasses(
       context,
-      ref,
+      classes: ref.read(classesRepositoryProvider).getClasses(),
       initialSelectedIds: _selectedClasses.map((c) => c.id).toList(),
     );
     if (picked.isNotEmpty) setState(() => _selectedClasses = picked);

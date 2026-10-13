@@ -21,7 +21,7 @@ from app.core import security
 from app.core.config import settings
 from app.core.db import engine
 from app.core.errors import AppErrorException, ErrCode
-from app.db.models import User
+from app.db.models import Role, User
 from app.features.auth.schemas import TokenPayload
 
 reusable_oauth2 = OAuth2PasswordBearer(
@@ -70,7 +70,8 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
 def require_teacher(current_user: CurrentUser) -> User:
-    if current_user.role != "teacher":
+    # admin 是「超级教师」（ADR-0088）：复用教师级能力，故教师专属端点对 admin 放行。
+    if current_user.role not in (Role.TEACHER, Role.ADMIN):
         raise AppErrorException(
             ErrCode.AUTH_TEACHER_ONLY, "该接口仅教师账号可用"
         )
@@ -80,8 +81,19 @@ def require_teacher(current_user: CurrentUser) -> User:
 CurrentTeacher = Annotated[User, Depends(require_teacher)]
 
 
+def require_admin(current_user: CurrentUser) -> User:
+    if current_user.role != Role.ADMIN:
+        raise AppErrorException(
+            ErrCode.AUTH_TEACHER_ONLY, "该接口仅管理员账号可用"
+        )
+    return current_user
+
+
+CurrentAdmin = Annotated[User, Depends(require_admin)]
+
+
 def require_student(current_user: CurrentUser) -> User:
-    if current_user.role != "student":
+    if current_user.role != Role.STUDENT:
         raise AppErrorException(
             ErrCode.AUTH_STUDENT_ONLY, "该接口仅学生账号可用"
         )
@@ -96,9 +108,11 @@ class Caller:
     """统一调用者（悬浮助手双端通用）：role + 用户实体。
 
     教师端 teacher_id=用户自身；学生端 student_id=用户自身、teacher_id=其教师（配额/owner 用）。
+    ``role`` 是账户角色（Role 枚举）；落到 agent_core 前由 ``_surface_of`` 折算成
+    调用面（仅 teacher/student 两种，admin 复用 teacher 面）。
     """
 
-    role: str
+    role: Role
     user: User
 
 

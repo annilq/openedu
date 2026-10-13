@@ -65,6 +65,9 @@ class AssistantChatReq(SQLModel):
     action: str | None = None
     # ADR-0067：课件练习只把课堂语境透传给 SubAgent，不创建任务或作答记录。
     courseware: CoursewareContext | None = None
+    # ADR-0080：普通伴学的知识点聚焦（与 courseware 并存）。脱离课件页进入助手时（如从
+    # 知识点详情页点「问 AI」）走此显式 id；缺省回落 courseware 内的 id（见 service.chat）。
+    knowledge_point_id: UUID | None = None
 
 
 class AssistantConversationResp(SQLModel):
@@ -94,9 +97,10 @@ class AssistantBubbleResp(SQLModel):
     ``cards`` 是落库的 DATA **整帧**列表（``{type, result}``），原样透传给前端按种类
     分派渲染器——服务端不在这里拼展示串（ADR-0042）。
 
-    **没有 ``blocked``**：``Message`` 上那组安全标记列从未被写入，被拦记录只存在于
-    ``TutorLog``（即 F-305 的「已拦截」徽标）。回放因此渲染不出「已拦截」，
-    这是有意的不对称，别用「顺带补一个字段」把它掩盖成看起来能用的空值。
+    **没有 ``blocked``**：``Message`` 上那组安全标记列自 ADR-0088 起会在落库时写实
+    （运行轨迹投影据此排障），但气泡投影仍刻意不暴露它——用户面的「已拦截」由
+    ``TutorLog``（F-305 的徽标）承载。这是有意的不对称，别用「顺带补一个字段」
+    把它掩盖成看起来能用的空值。
     """
 
     role: str

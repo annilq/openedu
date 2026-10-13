@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.core.deps import CurrentUser, SessionDep
 from app.core.errors import AppErrorException, ErrCode
+from app.db.models import Role
 from app.features.auth.repository import authenticate, create_user, get_user_by_username
 from app.features.auth.schemas import LoginRequest, Token, UserCreate, UserPublic
 from app.features.auth.service import create_token_for
@@ -13,7 +14,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 def register(*, session: SessionDep, user_in: UserCreate) -> Token:
     if get_user_by_username(session=session, username=user_in.username):
         raise AppErrorException(ErrCode.AUTH_USERNAME_TAKEN, "用户名已注册")
-    user = create_user(session=session, user_create=user_in, role="teacher")
+    user = create_user(session=session, user_create=user_in, role=Role.TEACHER)
     return create_token_for(user)
 
 

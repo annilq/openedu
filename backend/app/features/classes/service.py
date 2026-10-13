@@ -13,7 +13,7 @@ from sqlmodel import Session, func, select
 
 from app.core.errors import AppErrorException, ErrCode
 from app.core.guard import require_owned
-from app.db.models import Class, User
+from app.db.models import Class, Role, User
 
 
 def _check_grade(grade: int) -> None:
@@ -73,7 +73,7 @@ def student_counts(
         select(User.class_id, func.count())
         .where(
             User.teacher_id == teacher_id,
-            User.role == "student",
+            User.role == Role.STUDENT,
             User.class_id.is_not(None),  # type: ignore[union-attr]
             User.class_id.in_(class_ids),  # type: ignore[union-attr]
         )

@@ -1,4 +1,4 @@
-// 教师端「查看解析」的交互讲解（ADR-0061 §Q）。
+// 教师端「查看解析」的交互讲解（ADR-0061 §Q · ADR-0091 改形）。
 //
 // 回归背景：教师端「查看解析」原本只有一行 `解析：{文字}`，与学生端错题卡
 // （早就渲染 scene_spec）行为分叉——教师看不到图形，就理解不了「为什么选 C」。
@@ -16,17 +16,22 @@ import 'package:kids_learn/shared/theme/app_theme.dart';
 import 'package:kids_learn/shared/widgets/scene_interpreter/reflection_scene.dart';
 
 /// 正方形 + 4 条对称轴（决策 A：轴对齐）。题干「正方形有几条对称轴」的形态。
+///
+/// 新形 SceneSpec（ADR-0091）：几何与身份键在 `figure` 里；轴初值 / 控件 /
+/// 文案归 kind 外壳，不再进 spec。
 Map<String, dynamic> _squareSpec() => {
       'kind': 'reflection',
-      'inputs': [
-        {'key': 'points', 'value': _squarePoints},
-        {'key': 'axisAngle', 'value': 90.0},
-        {'key': 'axisX', 'value': 0.5},
-        {'key': 'axisY', 'value': 0.5},
-      ],
-      'controls': {'play': true, 'scrub': true},
-      'narrative': '拖动对称轴，试出正方形的几条对称轴',
-      'editable': true,
+      'figure': {
+        'key': 'square',
+        'label': '正方形',
+        'points': _squarePoints,
+        'edges': [
+          [0, 1],
+          [1, 2],
+          [2, 3],
+          [3, 0],
+        ],
+      },
     };
 
 const List<List<double>> _squarePoints = [

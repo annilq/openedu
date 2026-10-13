@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/domain/models/models.dart';
+import '../../../../shared/domain/scene_spec.dart';
 import '../../../../shared/presentation/paging.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/widgets/app_card_list.dart';
@@ -212,6 +213,9 @@ class _WrongQuestionCard extends StatelessWidget {
     final scheme = AppTheme.colorsOf(context);
     final subjectKey = SubjectAccent.fromName(item.subject);
     final subjectColor = SubjectAccent.forContext(subjectKey, context).accent;
+    // 场景规格经唯一解析入口（ADR-0091）：旧形 / 畸形 → 无图形区（不猜字段）。
+    final spec =
+        item.sceneSpec == null ? null : SceneSpec.tryParse(item.sceneSpec!);
     // 左侧 4px 学科色条的表达方式变迁（ADR-0061 §V / ADR-0044）：
     // 1) 最早用 Row(stretch)+IntrinsicHeight 给色条撑满行高，但 IntrinsicHeight
     //    会向子树取 intrinsic 高度，而卡片内 SceneInterpreter 的 LayoutBuilder
@@ -296,15 +300,11 @@ class _WrongQuestionCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  if (item.sceneSpec != null &&
-                      item.sceneSpec!['kind'] is String) ...[
+                  if (spec != null) ...[
                     const SizedBox(height: AppSpacing.md),
                     AppTags.info('交互讲解'),
                     const SizedBox(height: AppSpacing.sm),
-                    SceneInterpreter(
-                      kind: item.sceneSpec!['kind'] as String,
-                      spec: item.sceneSpec!,
-                    ),
+                    SceneInterpreter(spec: spec),
                   ],
                 ],
               ),

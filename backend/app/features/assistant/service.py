@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncIterator
+from time import perf_counter
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -23,6 +24,7 @@ from agent_core.protocol import (
     EVENT_ASSISTANT_MESSAGE,
     EVENT_DATA,
     EVENT_ERROR,
+    EVENT_SUGGESTED_ACTIONS,
     EVENT_TOOL_CALL,
     EVENT_TOOL_RESULT,
     AssistantEvent,
@@ -38,6 +40,7 @@ from app.db.models import Class, Conversation, Message, Role, get_datetime_utc
 from app.db.models.material import KnowledgePoint
 from app.domain import build_provider, build_retriever
 from app.domain.safety import StudentSafety
+from app.features.assistant.kp_focus import resolve_kp_focus
 from app.features.assistant.repository import (
     conversation_meta,
     derive_title,
@@ -59,9 +62,13 @@ from app.features.assistant.schemas import (
     AssistantConversationResp,
     SuggestedAction,
 )
+from app.features.assistant.trace import elapsed_ms, json_text, usage_of
 from app.features.tutor.repository import create_tutor_log
 
 log = logging.getLogger(__name__)
+
+# 输入被拒但闸门未给出原因时的兜底文案（``INPUT_UNSAFE`` 帧只带 code 不带 reason）。
+_BLOCK_REASON_GATE = "输入被安全闸门拦截"
 
 
 def _student_grade(session, user) -> int:
@@ -119,6 +126,23 @@ async def _summarize_dropped(provider, dropped: list[dict]) -> str | None:
 # knowledge_point_id / courseware 字段自行解析），service 不再持有出题侧的 KP 解析。
 
 
+def _pair_call(
+    pending: list[tuple[str | None, Message]], tool: str | None
+) -> Message | None:
+    """取出与 ``ev.tool`` 配对的 tool_call 行（ADR-0088 步级 usage）。
+
+    runtime 把一次工具调用的 ``TOOL_CALL`` / ``TOOL_RESULT`` 紧邻 yield，故按名精确
+    匹配即可；同名缺失（label 覆盖 / 帧序非常规）时回落最早未配对的一条，宁可配对
+    错位也不丢整条成本。
+    """
+    if not pending:
+        return None
+    for i, (name, msg) in enumerate(pending):
+        if name == tool:
+            return pending.pop(i)[1]
+    return pending.pop(0)[1]
+
+
 def _surface_of(role: Role) -> str:
     """账户角色 → agent_core 调用面（ADR-0088）。
 
@@ -130,15 +154,91 @@ def _surface_of(role: Role) -> str:
     return "student" if role == Role.STUDENT else "teacher"
 
 
-def build_suggested_actions(
+# 共享词条常量（单一事实源，ADR-0072 / 票 03(a)）。
+# follow-up 按本轮 business 选一组 chips；带知识点焦点时叠加知识点向 chips。
+_FOLLOWUP_BY_BUSINESS: dict[str, list[SuggestedAction]] = {
+    "tutor": [
+        SuggestedAction(label="再举一个例子", kind="prompt",
+                        payload="请再举一个贴近生活的例子帮我理解。"),
+        SuggestedAction(label="出一道类似的题", kind="prompt",
+                        payload="请就刚才讲的内容出一道类似的练习题让我试试。"),
+        SuggestedAction(label="换个角度讲", kind="prompt",
+                        payload="能不能换个角度或比喻再讲一遍？"),
+    ],
+    "query": [
+        SuggestedAction(label="看看相关错题", kind="navigate", payload="teacher_task_list"),
+        SuggestedAction(label="整理成可导出要点", kind="prompt",
+                        payload="请把刚才的分析整理成可以导出的要点。"),
+        SuggestedAction(label="换个范围再查", kind="prompt",
+                        payload="我想换个范围或角度再查一下学习情况。"),
+    ],
+    "question": [
+        SuggestedAction(label="再出几道", kind="prompt",
+                        payload="请再给我出几道同类型的练习题。"),
+        SuggestedAction(label="降低难度", kind="prompt",
+                        payload="这些题有点难，请降低难度再出几道。"),
+        SuggestedAction(label="讲解这道题", kind="prompt",
+                        payload="请讲解一下刚才出的题该怎么思考。"),
+    ],
+    "guide": [
+        SuggestedAction(label="查看学习进度", kind="prompt",
+                        payload="请帮我分析一下最近的学习进度和掌握情况。"),
+        SuggestedAction(label="回到首页", kind="navigate", payload="home"),
+    ],
+    "capability": [
+        SuggestedAction(label="我要问个问题", kind="prompt",
+                        payload="我有学习上的疑问，请帮我解答。"),
+        SuggestedAction(label="出几道题练练", kind="prompt",
+                        payload="请给我出几道练习题，巩固一下最近学的知识。"),
+    ],
+}
+
+# 知识点焦点向 follow-up（越权/缺失不叠加）：深入讲解 + 出判断题考一考。
+_KP_FOLLOWUP: list[SuggestedAction] = [
+    SuggestedAction(label="深入这个知识点", kind="prompt",
+                    payload="请围绕这个知识点再深入讲讲。"),
+    SuggestedAction(label="出一道判断题", kind="prompt",
+                    payload="请就这个知识点出一道判断题考考我。"),
+]
+
+
+def build_actions(
+    *,
+    situation: str,
+    business: str | None = None,
+    knowledge_point_id: UUID | None,
+    role: Role,
+    teacher_id: UUID,
+    session: Any,
+) -> list[SuggestedAction]:
+    """ADR-0072 / 票 03(a)：从服务端固定目录装配推荐操作（非 LLM 生成）。
+
+    - ``situation="empty"``：复现原 ``build_suggested_actions`` 行为（全局能力；
+      带知识点 id 时叠加知识点目录）。供 ``GET /suggested-actions`` 空态调用，
+      输出逐条等价于旧实现。
+    - ``situation="followup"``：按本轮 ``business``（query/tutor/question/guide/
+      capability）选一组回复后 chips；带知识点焦点时叠加知识点向 chips。
+    """
+    if situation == "empty":
+        return _build_empty_suggested_actions(
+            knowledge_point_id=knowledge_point_id, role=role,
+            teacher_id=teacher_id, session=session,
+        )
+    # follow-up：按 business 选 chips，叠加知识点向（越权/缺失不叠加）。
+    chips = list(_FOLLOWUP_BY_BUSINESS.get(business or "", []))
+    if knowledge_point_id is not None:
+        focused = resolve_kp_focus(
+            session=session, owner_id=teacher_id, kp_id=knowledge_point_id,
+        )
+        if focused is not None:
+            chips = chips + list(_KP_FOLLOWUP)
+    return chips
+
+
+def _build_empty_suggested_actions(
     *, knowledge_point_id: UUID | None, role: Role, teacher_id: UUID, session: Any
 ) -> list[SuggestedAction]:
-    """ADR-0072：按上下文从固定目录装配推荐操作。
-
-    - 全局目录：问答 / 出几道题练练 / 看错题（角色分叉）/ 查学习进度。
-    - 知识点目录（带 id）：举例 / 出一道判断题 / 讲解，并叠加全局能力。
-    越权或 id 缺失 → 回落全局目录。
-    """
+    """空态目录（与原 ``build_suggested_actions`` 逐条等价，供回归测试锁定）。"""
     global_actions: list[SuggestedAction] = [
         SuggestedAction(
             label="我要问个问题", kind="prompt",
@@ -270,6 +370,18 @@ async def chat(
     safety = StudentSafety() if role == Role.STUDENT else None
     deps = RuntimeDeps(provider=provider, retriever=retriever, safety=safety)
 
+    # 安全判定（ADR-0088）：学生面走 StudentSafety，教师面 ``safety`` 为 None → 一律放行。
+    # 与 agent_core 路由里的输入闸门是同一个确定性扫描，重复调用无副作用。
+    verdict = safety.check_input(message) if safety is not None else None
+    input_safe = verdict.safe if verdict is not None else True
+    input_reason = None if verdict is None or verdict.safe else verdict.reason
+    # 输入侧标记同一轮内每步共用一份：排障时要能定位「哪一步属于被拦的这次运行」。
+    input_flags = {
+        "input_safe": input_safe,
+        "blocked": not input_safe,
+        "block_reason": input_reason,
+    }
+
     # ── 会话定位（先于路由） ──
     # 待判定态定向要在信号归一化阶段知道「这个会话是否在待判定」，故先把既有会话解析
     # 出来（只读归属校验）。**新建**会话仍留在路由之后——它的 ``kind`` 取自路由决策。
@@ -293,7 +405,9 @@ async def chat(
     # 归属由 SubAgent 清单声明，``decide`` 一次裁决即为最终结果，不再「路由算完再改判业务」。
     # 动作命中但当前角色不可见 → 显式 action_not_visible，见下方转 403。
     signal = IntentSignal(text=message, action=req.action)
+    _routing_started = perf_counter()
     decision = await rt.decide(signal, role=_surface_of(role), deps=deps)
+    routing_ms = elapsed_ms(_routing_started)
     # 动作不可见（如学生打教师专属动作）：**显式 403**（spec 硬约束），**不要**静默回落成
     # 另一个业务的答非所问，也不要退化成 HTTP 200 + 错误帧。``chat`` 是普通 async 函数
     # （返回迭代器），端点先 ``await`` 它再包 ``StreamingResponse``，故此处抛出会在建流前
@@ -324,6 +438,7 @@ async def chat(
                 role="user",
                 step="input",
                 content=message,
+                **input_flags,
             )
         )
         session.commit()
@@ -342,11 +457,27 @@ async def chat(
         )
         session.add(conversation)
         session.add(
-            Message(conversation_id=conv_id, turn=0, role="user", step="input", content=message)
+            Message(
+                conversation_id=conv_id,
+                turn=0,
+                role="user",
+                step="input",
+                content=message,
+                **input_flags,
+            )
         )
         session.commit()
         # 无 session_id：兼容客户端自带历史（兜底）
         history = req.history
+
+    # ADR-0080：焦点知识点优先取显式参数，回落课件上下文内的 id；经归属校验解析四元组。
+    # 越权 / 缺失 → None（不注入聚焦段，无越权数据泄漏）。
+    kp_id = (
+        req.knowledge_point_id
+        if req.knowledge_point_id is not None
+        else (req.courseware.knowledge_point_id if req.courseware is not None else None)
+    )
+    focused_kp = resolve_kp_focus(session=session, owner_id=teacher_id, kp_id=kp_id)
 
     # 业务字段经 ctx.extra 透传（agent_core 不感知任何教育语义）。
     # 判断题出题与常规对话共用它——出题段在其上补 ``specs``（由 question 子代理驱动）。
@@ -367,13 +498,20 @@ async def chat(
             ),
             "courseware": courseware,
             # ADR-0072：显式下钻知识点 id，便于 SubAgent 精确聚焦（与 courseware 并存）。
-            "knowledge_point_id": (
-                req.courseware.knowledge_point_id
-                if req.courseware is not None
-                else None
-            ),
+            "knowledge_point_id": kp_id,
+            # ADR-0080：经归属校验的结构化四元组；subagent 各自渲染，避免再拼字符串。
+            "knowledge_point": focused_kp,
             "session_id": str(conv_id),
         },
+    )
+
+    # ── 可观测取值（ADR-0088 §2.5）：步级 model / usage 的口径在此定一次 ──
+    # model 记**解析后**的引擎模型（真正被调的那个），未配置模型时回退请求显式值。
+    model_id = engine.model if engine is not None else req.model
+    # 生成步 prompt 侧的 token 估算来源：本轮提问 + 拼入的可见历史。
+    # SOP / 工具 schema 不在本层组装，故不计入——估算只保证量级可用，不冒充模型方回传。
+    prompt_text = message + "".join(
+        (h.get("content") or "") for h in (history or []) if isinstance(h, dict)
     )
 
     # ── 出题 / 判定闭环（ADR-0089，子代理化） ──
@@ -393,6 +531,12 @@ async def chat(
         # 排到第二轮的提问之前，模型拿到的是倒置的上下文。
         turn = next_turn(session, conv_id)
         blocked_flag = False
+        # 步级计时（ADR-0088）：``boundary`` 是上一个步边界，``gen_started`` 是首个
+        # 正文/卡片的到达时刻——生成步的耗时从它起算，而不是从收尾时刻（那样恒为 0）。
+        boundary = perf_counter()
+        gen_started: float | None = None
+        # 已落库但尚未配到结果帧的 tool_call 行（工具名 → 行）。
+        pending_calls: list[tuple[str | None, Message]] = []
 
         # 复用预航班决策（decision），避免重复路由；run 返回事件流。
         stream: AsyncIterator[AssistantEvent] = rt.run(
@@ -413,6 +557,8 @@ async def chat(
                     role="system",
                     step="routing",
                     content=decision.name or decision.business,
+                    latency_ms=routing_ms,
+                    **input_flags,
                 )
             )
             turn += 1
@@ -421,18 +567,30 @@ async def chat(
             async for ev in stream:
                 # 持久化（边流边记）
                 if ev.eventType == EVENT_TOOL_CALL:
-                    tool_msgs.append(
-                        Message(
-                            conversation_id=conv_id,
-                            turn=turn,
-                            role="tool",
-                            step="tool_call",
-                            content=ev.label or ev.tool or "",
-                            payload=ev.args,
-                        )
+                    call = Message(
+                        conversation_id=conv_id,
+                        turn=turn,
+                        role="tool",
+                        step="tool_call",
+                        content=ev.label or ev.tool or "",
+                        payload=ev.args,
+                        model=model_id,
+                        latency_ms=elapsed_ms(boundary),
+                        **input_flags,
                     )
+                    tool_msgs.append(call)
+                    pending_calls.append((ev.tool, call))
+                    boundary = perf_counter()
                     turn += 1
                 elif ev.eventType == EVENT_TOOL_RESULT:
+                    # 一次工具调用 = 一条可计费行：token 记在**调用**步（结果步只是
+                    # 结果回灌，重复记账会让会话总成本翻倍）。
+                    paired = _pair_call(pending_calls, ev.tool)
+                    if paired is not None:
+                        paired.usage = usage_of(
+                            prompt=json_text(paired.payload),
+                            completion=json_text(ev.result),
+                        )
                     tool_msgs.append(
                         Message(
                             conversation_id=conv_id,
@@ -441,16 +599,24 @@ async def chat(
                             step="tool_result",
                             content=ev.tool or "",
                             payload={"result": ev.result},
+                            model=model_id,
+                            latency_ms=elapsed_ms(boundary),
+                            **input_flags,
                         )
                     )
+                    boundary = perf_counter()
                     turn += 1
                 elif ev.eventType == EVENT_ASSISTANT_MESSAGE and ev.text:
+                    if gen_started is None:
+                        gen_started = perf_counter()
                     final_text += ev.text
                 elif ev.eventType == EVENT_DATA and ev.data:
                     # DATA 帧整帧落库：`{type(判别键), result(载荷)}` 一起存。
                     # 只存 result 会丢掉种类——与前端 fold 丢弃 `data.type` 是同一类
                     # 缺陷（ADR-0042）：落库的 payload 必须自描述，否则将来做历史回放
                     # 时无法把卡片分派回正确的渲染器。
+                    if gen_started is None:
+                        gen_started = perf_counter()
                     cards.append(ev.data)
                 elif ev.eventType == EVENT_ERROR:
                     conv_status = "error"
@@ -460,11 +626,35 @@ async def chat(
                         final_text = ev.message
 
                 yield ev.to_sse()
+            # 回复后 follow-up chips（ADR-0072 修订 / 票 03(a)）：每轮回复后随 SSE 下发一组
+            # 推荐操作，走服务端固定目录、非 LLM，**不落库**（仅入口、非对话内容，避免污染
+            # 历史回放）。错误收尾或无正文时不发。
+            if conv_status != "error" and (final_text or cards):
+                followups = build_actions(
+                    situation="followup",
+                    business=decision.business,
+                    knowledge_point_id=kp_id,
+                    role=role,
+                    teacher_id=teacher_id,
+                    session=session,
+                )
+                if followups:
+                    yield AssistantEvent(
+                        eventType=EVENT_SUGGESTED_ACTIONS,
+                        data={"actions": [a.model_dump(mode="json") for a in followups]},
+                    ).to_sse()
         finally:
             # 收尾落库：工具步骤 + 助手输出 + 会话状态
             for m in tool_msgs:
                 session.add(m)
             if final_text or cards:
+                # 输出闸门（学生面）：ADR-0088 要求 ``output_safe`` 写实，故过一遍
+                # ``check_output``；教师面 ``safety`` 为 None → 一律放行。
+                out_verdict = (
+                    safety.check_output(final_text) if safety is not None else None
+                )
+                output_safe = out_verdict.safe if out_verdict is not None else True
+                output_reason = None if output_safe else out_verdict.reason
                 session.add(
                     Message(
                         conversation_id=conv_id,
@@ -473,6 +663,22 @@ async def chat(
                         step="output",
                         content=final_text,
                         payload={"cards": cards} if cards else None,
+                        model=model_id,
+                        usage=usage_of(
+                            prompt=prompt_text,
+                            completion=final_text + json_text(cards),
+                        ),
+                        latency_ms=elapsed_ms(
+                            gen_started if gen_started is not None else boundary
+                        ),
+                        input_safe=input_safe,
+                        output_safe=output_safe,
+                        blocked=bool(blocked_flag) or not input_safe or not output_safe,
+                        block_reason=(
+                            input_reason
+                            or output_reason
+                            or (_BLOCK_REASON_GATE if blocked_flag else None)
+                        ),
                     )
                 )
             conversation.status = conv_status

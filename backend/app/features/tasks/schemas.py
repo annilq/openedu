@@ -6,6 +6,8 @@ from datetime import date, datetime
 from pydantic import field_validator
 from sqlmodel import Field, SQLModel
 
+from app.domain.scene_spec import SceneSpec
+from app.domain.structured import OptionList
 from app.domain.subjects import is_supported_subject, qtypes_for
 
 
@@ -105,7 +107,9 @@ class QuestionResp(SQLModel):
     subject: str = ""
     grade: int = 0
     stem: str
-    options: list[str] | None = None
+    # 选项对象列表 {text, figure}（ADR-0089）：text 恒存在（判题依据），figure 为内联几何。
+    # OptionList 在读路径容错（存量 str → 对象，无 DDL 迁移）。
+    options: OptionList = None
     qtype: str
     knowledge_point: str
     explanation: str = ""
@@ -239,7 +243,9 @@ class WrongQuestionResp(SQLModel):
     knowledge_point: str
     qtype: str
     stem: str
-    options: list[str] | None = None
+    # 选项对象列表 {text, figure}（ADR-0089）：text 恒存在（判题依据），figure 为内联几何。
+    # OptionList 在读路径容错（存量 str → 对象，无 DDL 迁移）。
+    options: OptionList = None
     answer: str | None = None
     explanation: str = ""
     wrong_count: int
@@ -252,7 +258,7 @@ class WrongQuestionResp(SQLModel):
     graduated_at: datetime | None = None
     # 交互式讲解实例（ADR-0061）：题目知识点命中教师私有知识点模板时附上，
     # 前端在错题卡内联渲染。可空 = 该知识点暂无图形化讲解（维持原纯文本行为）。
-    scene_spec: dict | None = None
+    scene_spec: SceneSpec | None = None
 
 
 class WrongQuestionListResp(SQLModel):
@@ -280,7 +286,9 @@ class TaskQuestionEdit(SQLModel):
     """
 
     stem: str | None = None
-    options: list[str] | None = None
+    # 选项对象列表 {text, figure}（ADR-0089）：text 恒存在（判题依据），figure 为内联几何。
+    # OptionList 在读路径容错（存量 str → 对象，无 DDL 迁移）。
+    options: OptionList = None
     answer: str | None = None
     explanation: str | None = None
 

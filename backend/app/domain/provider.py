@@ -44,7 +44,9 @@ class GeneratedQuestion:
     knowledge_point: str
     qtype: str  # choice | fill | calc | open
     stem: str
-    options: list[str] | None
+    # 选项对象列表 {text, figure_key}（ADR-0089）：text 恒存在（判题依据），
+    # figure_key 是图形身份键（落库前由后端盖章成内联几何）。非选择题为 None。
+    options: list[dict] | None
     answer: str
     explanation: str
     difficulty: str

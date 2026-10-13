@@ -74,7 +74,11 @@ Widget _host(List<AssistantMessage> messages, {bool reduceMotion = false}) =>
             // ListView 需要确定高度，否则在无界约束下直接抛。
             child: SizedBox(
               height: 400,
-              child: AssistantMessageList(messages: messages),
+              child: AssistantMessageList(
+                messages: messages,
+                onPrompt: (_) {},
+                onNavigate: (_) {},
+              ),
             ),
           ),
         ),

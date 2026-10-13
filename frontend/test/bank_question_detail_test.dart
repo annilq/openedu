@@ -15,13 +15,19 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:kids_learn/features/home/presentation/widgets/teacher/bank_question_detail.dart';
 import 'package:kids_learn/shared/domain/models/question.dart';
+import 'package:kids_learn/shared/domain/models/quiz_option.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
 import 'package:kids_learn/shared/widgets/scene_interpreter/reflection_scene.dart';
 
 BankQuestionItem _item({
   String semester = '下学期',
   Map<String, dynamic>? sceneSpec,
-  List<String>? options = const ['房子', '风筝', '箭头', '平行四边形'],
+  List<QuizOption>? options = const [
+    QuizOption(text: '房子'),
+    QuizOption(text: '风筝'),
+    QuizOption(text: '箭头'),
+    QuizOption(text: '平行四边形'),
+  ],
   int usageCount = 3,
   String explanation = '正方形有 4 条对称轴：两条中线 + 两条对角线。',
 }) =>
@@ -42,23 +48,25 @@ BankQuestionItem _item({
     );
 
 Map<String, dynamic> _squareSpec() => {
+      // ADR-0091 改形：inputs[]/controls/editable 已删，几何统一走 figure；
+      // 轴初始值/控件/叙述词由 kind shell 提供，spec 不再携带。
       'kind': 'reflection',
-      'inputs': [
-        {
-          'key': 'points',
-          'value': [
-            [0.28, 0.28],
-            [0.72, 0.28],
-            [0.72, 0.72],
-            [0.28, 0.72],
-          ],
-        },
-        {'key': 'axisAngle', 'value': 90.0},
-        {'key': 'axisX', 'value': 0.5},
-        {'key': 'axisY', 'value': 0.5},
-      ],
-      'controls': {'play': true, 'scrub': true},
-      'editable': true,
+      'figure': {
+        'key': 'square',
+        'label': '正方形',
+        'points': [
+          [0.28, 0.28],
+          [0.72, 0.28],
+          [0.72, 0.72],
+          [0.28, 0.72],
+        ],
+        'edges': [
+          [0, 1],
+          [1, 2],
+          [2, 3],
+          [3, 0],
+        ],
+      },
     };
 
 Future<void> _pump(WidgetTester tester, BankQuestionItem item) async {

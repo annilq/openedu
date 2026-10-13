@@ -19,6 +19,17 @@ from app.features.questions.repository import list_bank_questions as _repo_list
 _BANK_QUERY_LIMIT = 200
 
 
+def _scene_spec_json(spec: object) -> dict | None:
+    """``SceneSpec`` → 普通 dict（ADR-0091）：助手工具结果走 JSON 信封，必须可序列化。
+
+    ``scene_spec_for_read`` 现返回有类型 ``SceneSpec``；直接塞进 dict 会令 ``json.dumps``
+    抛 ``TypeError``。``None`` 原样透传。
+    """
+    if spec is None:
+        return None
+    return spec.model_dump()  # type: ignore[attr-defined]
+
+
 def list_bank_questions(
     *,
     session: Session,
@@ -74,17 +85,19 @@ def list_bank_questions(
             "semester": q.semester or "",
             # 交互讲解（ADR-0061 §U）：与题库 REST 端点共用一个函数
             # （``scene_spec_for_read``），避免两条读路径各写一份而漂移。
-            "scene_spec": scene_spec_for_read(
-                session,
-                snapshot=q.scene_spec,
-                teacher_id=q.teacher_id,
-                subject=q.subject,
-                grade=q.grade,
-                knowledge_point=q.knowledge_point,
-                semester=q.semester,
-                stem=q.stem,
-                options=q.options,
-                cache=scene_cache,
+            # ADR-0091：落库/读取已统一为 ``SceneSpec`` 有类型对象，这里要下发给
+            # LLM 工具结果（JSON 信封），必须 dump 成普通 dict 才能序列化。
+            "scene_spec": _scene_spec_json(
+                scene_spec_for_read(
+                    session,
+                    snapshot=q.scene_spec,
+                    teacher_id=q.teacher_id,
+                    subject=q.subject,
+                    grade=q.grade,
+                    knowledge_point=q.knowledge_point,
+                    semester=q.semester,
+                    cache=scene_cache,
+                )
             ),
         }
         for q in items

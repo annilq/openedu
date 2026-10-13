@@ -46,7 +46,7 @@ class TaskQuestion(SQLModel, table=True):
     knowledge_point: str
     qtype: str
     stem: str
-    options: list[str] | None = Field(default=None, sa_type=JSON(none_as_null=True))
+    options: list[dict] | None = Field(default=None, sa_type=JSON(none_as_null=True))
     # 是否多选题（ADR-0004 D5）：choice 题可多选；渲染为复选卡片、批改按集合比对。
     # 非 choice 或无选项题恒为 False，避免前端误判多选。
     multi: bool = Field(default=False)

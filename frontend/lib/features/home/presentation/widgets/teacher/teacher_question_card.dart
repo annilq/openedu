@@ -75,9 +75,9 @@ class TeacherQuestionCardState extends ConsumerState<TeacherQuestionCard> {
     _optionCtrls
       ..forEach((c) => c.dispose())
       ..clear();
-    final opts = q.options ?? const <String>[];
+    final opts = q.options ?? const <QuizOption>[];
     for (final o in opts) {
-      _optionCtrls.add(TextEditingController(text: o));
+      _optionCtrls.add(TextEditingController(text: o.text));
     }
   }
 
@@ -195,7 +195,7 @@ class TeacherQuestionCardState extends ConsumerState<TeacherQuestionCard> {
                       ),
                       const SizedBox(width: AppSpacing.sm),
                       Expanded(
-                          child: Text(cleanOptionText(e.value),
+                          child: Text(cleanOptionText(e.value.text),
                               style: AppTheme.textOf(context)
                                   .bodyMedium
                                   ?.copyWith(height: 1.4))),
@@ -382,7 +382,7 @@ class TeacherQuestionCardState extends ConsumerState<TeacherQuestionCard> {
 
   Future<void> _submitEdits() async {
     final opts = widget.question.options != null
-        ? _optionCtrls.map((c) => c.text).toList()
+        ? _optionCtrls.map((c) => QuizOption(text: c.text)).toList()
         : null;
     final edits = widget.question.editablePatch(
       stem: _stemCtrl.text.trim(),

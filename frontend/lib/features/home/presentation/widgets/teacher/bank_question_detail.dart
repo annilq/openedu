@@ -2,6 +2,7 @@ import 'package:flutter/material.dart' show Dialog, Icons, showDialog;
 import 'package:flutter/widgets.dart';
 
 import '../../../../../shared/domain/models/models.dart';
+import '../../../../../shared/domain/scene_spec.dart';
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/utils/option_text.dart';
 import '../../../../../shared/utils/question_labels.dart';
@@ -46,8 +47,11 @@ class BankQuestionDetail extends StatelessWidget {
   Widget build(BuildContext context) {
     final text = AppTheme.textOf(context);
     final app = AppTheme.colorsOf(context);
-    final spec = item.sceneSpec;
-    final hasScene = spec != null && spec['kind'] is String;
+    // 落库快照经唯一解析入口（ADR-0091）：旧形 / 畸形 → 无场景区（不猜字段）。
+    final spec = item.sceneSpec == null
+        ? null
+        : SceneSpec.tryParse(item.sceneSpec!);
+    final hasScene = spec != null;
     final hasOptions = item.options != null && item.options!.isNotEmpty;
 
     // 内容可能比屏高（题干长 + 有图形）→ 套滚动兜底，任何屏高都不溢出。
@@ -95,7 +99,7 @@ class BankQuestionDetail extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.only(bottom: 2),
                   child: Text(
-                    '${chr(i)}. ${cleanOptionText(item.options![i])}',
+                    '${chr(i)}. ${cleanOptionText(item.options![i].text)}',
                     style: text.bodyMedium,
                   ),
                 ),
@@ -129,10 +133,7 @@ class BankQuestionDetail extends StatelessWidget {
               Center(
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: _sceneMaxWidth),
-                  child: SceneInterpreter(
-                    kind: spec['kind'] as String,
-                    spec: spec,
-                  ),
+                  child: SceneInterpreter(spec: spec),
                 ),
               ),
             ],

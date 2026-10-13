@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../../../shared/domain/scene_spec.dart';
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/widgets/app_actions.dart';
 import '../../../../../shared/widgets/app_tags.dart';
@@ -17,7 +18,7 @@ class WrongQuestionExplanation extends StatefulWidget {
   /// 解析文字（可为空——有图形时图形本身就是讲解）。
   final String explanation;
 
-  /// 交互讲解场景（ADR-0061）；null / 无 kind → 只显示文字解析。
+  /// 交互讲解场景（ADR-0061）；null / 解析不出（旧形，ADR-0091）→ 只显示文字解析。
   final Map<String, dynamic>? sceneSpec;
 
   const WrongQuestionExplanation({
@@ -39,9 +40,12 @@ class _WrongQuestionExplanationState extends State<WrongQuestionExplanation> {
   Widget build(BuildContext context) {
     final text = AppTheme.textOf(context);
     final hasExplanation = widget.explanation.trim().isNotEmpty;
-    final spec = widget.sceneSpec;
-    // 判定与学生端（wrong_questions_screen）一致，避免两端行为分叉。
-    final hasScene = spec != null && spec['kind'] is String;
+    // 场景规格经唯一解析入口（ADR-0091）；判定与学生端（wrong_questions_screen）
+    // 一致，避免两端行为分叉。
+    final spec = widget.sceneSpec == null
+        ? null
+        : SceneSpec.tryParse(widget.sceneSpec!);
+    final hasScene = spec != null;
     // 有场景时也允许展开：即使解析文字为空，图形本身就是讲解。
     if (!hasExplanation && !hasScene) return const SizedBox.shrink();
     return Column(
@@ -62,7 +66,7 @@ class _WrongQuestionExplanationState extends State<WrongQuestionExplanation> {
           if (hasScene) ...[
             AppTags.info('交互讲解'),
             const SizedBox(height: AppSpacing.sm),
-            SceneInterpreter(kind: spec['kind'] as String, spec: spec),
+            SceneInterpreter(spec: spec),
             const SizedBox(height: AppSpacing.xs),
           ],
         ],

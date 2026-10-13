@@ -12,7 +12,7 @@ from sqlmodel import Session
 
 from app.core.errors import AppErrorException, ErrCode
 from app.core.guard import require_owned_student
-from app.db.models import User
+from app.db.models import Role, User
 from app.domain.mastery import compute_mastery_score, mastery_level
 from app.features.mastery.repository import get_knowledge_point_mastery
 from app.features.mastery.schemas import KnowledgeMasteryResp, MasteryResp
@@ -66,10 +66,10 @@ def get_mastery_for_user(
 
     错误码/文案与 ADR-0033 之前的路由实现逐字一致（避免 REST 响应体变化）。
     """
-    if user.role == "student":
+    if user.role == Role.STUDENT:
         if student_id != user.id:
             raise AppErrorException(ErrCode.TASK_NOT_OWNED, "这不是你的掌握度")
-    else:  # teacher
+    else:  # teacher | admin
         require_owned_student(
             session=session,
             owner_id=user.id,

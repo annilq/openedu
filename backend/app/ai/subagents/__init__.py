@@ -10,6 +10,7 @@ from agent_core.registry import (
     get_subagent_class,
 )
 from agent_core.subagent import BaseSubAgent, SubAgentContext, ToolCallPair
+from app.ai.subagents.capability import CapabilitySubAgent
 from app.ai.subagents.guide import GuideSubAgent
 from app.ai.subagents.query import QuerySubAgent
 from app.ai.subagents.question import QuestionSubAgent
@@ -34,5 +35,6 @@ __all__ = [
     "TutorSubAgent",
     "QuerySubAgent",
     "GuideSubAgent",
+    "CapabilitySubAgent",
     "detect_subject",
 ]

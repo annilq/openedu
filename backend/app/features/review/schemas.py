@@ -5,6 +5,9 @@ from datetime import datetime
 
 from sqlmodel import SQLModel
 
+from app.domain.scene_spec import SceneSpec
+from app.domain.structured import OptionList
+
 
 class ReviewAnswerSubmit(SQLModel):
     wrong_question_id: uuid.UUID
@@ -21,7 +24,9 @@ class ReviewItemResp(SQLModel):
     knowledge_point: str
     qtype: str
     stem: str
-    options: list[str] | None = None
+    # 选项对象列表 {text, figure}（ADR-0089）：text 恒存在（判题依据），figure 为内联几何。
+    # OptionList 在读路径容错（存量 str → 对象，无 DDL 迁移）。
+    options: OptionList = None
     explanation: str = ""
     wrong_count: int
     review_stage: int
@@ -31,4 +36,4 @@ class ReviewItemResp(SQLModel):
     multi: bool = False
     # 几何选项组（ADR-0061 §O）：选择题每个选项本身是图形时下发，前端渲染成每个图形
     # 一个可交互场景；无则 None。复用 Question.scene_spec 快照，前端只消费不解释。
-    scene_spec: dict | None = None
+    scene_spec: SceneSpec | None = None

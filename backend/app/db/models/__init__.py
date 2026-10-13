@@ -12,6 +12,7 @@ from app.db.models.base import (
     get_review_due_utc,
     get_usage_date_utc,
 )
+from app.db.models.break_glass import BreakGlassAccess
 from app.db.models.class_entity import Class
 from app.db.models.conversation import Conversation, Message
 from app.db.models.courseware import (
@@ -36,11 +37,12 @@ from app.db.models.question import Question
 from app.db.models.task import Task, TaskBase, TaskQuestion
 from app.db.models.task_assignment import TaskAssignment
 from app.db.models.tutor import TutorLog
-from app.db.models.user import User, UserBase
+from app.db.models.user import Role, User, UserBase
 
 __all__ = [
     "User",
     "UserBase",
+    "Role",
     "Class",
     "Task",
     "TaskBase",
@@ -54,6 +56,7 @@ __all__ = [
     "TutorLog",
     "Conversation",
     "Message",
+    "BreakGlassAccess",
     "Material",
     "MaterialChunk",
     "MaterialFolder",

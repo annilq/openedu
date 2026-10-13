@@ -3,6 +3,7 @@
 
 import 'date_parse.dart';
 import 'paging.dart';
+import 'quiz_option.dart';
 
 class QuestionModel {
   /// 题目（学生端读 TaskQuestion 快照）。`id` = TaskQuestion.id，
@@ -13,7 +14,7 @@ class QuestionModel {
   final String subject;
   final int grade;
   final String stem;
-  final List<String>? options;
+  final List<QuizOption>? options;
   final String qtype;
   final String knowledgePoint;
   final String explanation;
@@ -54,13 +55,13 @@ class QuestionModel {
   /// 草稿审核仅允许的编辑字段（R-Q4）。
   Map<String, dynamic> editablePatch({
     String? stem,
-    List<String>? options,
+    List<QuizOption>? options,
     String? answer,
     String? explanation,
   }) {
     final patch = <String, dynamic>{};
     if (stem != null) patch['stem'] = stem;
-    if (options != null) patch['options'] = options;
+    if (options != null) patch['options'] = options.map((o) => o.toJson()).toList();
     if (answer != null) patch['answer'] = answer;
     if (explanation != null) patch['explanation'] = explanation;
     return patch;
@@ -72,7 +73,7 @@ class QuestionModel {
     String? subject,
     int? grade,
     String? stem,
-    List<String>? options,
+    List<QuizOption>? options,
     String? qtype,
     String? knowledgePoint,
     String? explanation,
@@ -103,7 +104,7 @@ class QuestionModel {
       subject: json['subject'] as String? ?? '',
       grade: json['grade'] as int? ?? 0,
       stem: json['stem'] as String,
-      options: (json['options'] as List?)?.map((e) => e.toString()).toList(),
+      options: QuizOption.parseList(json['options']),
       qtype: json['qtype'] as String,
       knowledgePoint: json['knowledge_point'] as String,
       explanation: json['explanation'] as String? ?? '',
@@ -123,7 +124,7 @@ class QuestionPreview {
   final String subject;
   final int grade;
   final String stem;
-  final List<String>? options;
+  final List<QuizOption>? options;
   final String qtype;
   final String knowledgePoint;
   final String explanation;
@@ -162,7 +163,7 @@ class QuestionPreview {
         subject: json['subject'] as String? ?? '',
         grade: json['grade'] as int? ?? 0,
         stem: json['stem'] as String? ?? '',
-        options: (json['options'] as List?)?.map((e) => e.toString()).toList(),
+        options: QuizOption.parseList(json['options']),
         qtype: json['qtype'] as String? ?? 'open',
         knowledgePoint: json['knowledge_point'] as String? ?? '',
         explanation: json['explanation'] as String? ?? '',
@@ -182,7 +183,7 @@ class QuestionPreview {
         'subject': subject,
         'grade': grade,
         'stem': stem,
-        'options': options,
+        'options': options?.map((o) => o.toJson()).toList(),
         'qtype': qtype,
         'knowledge_point': knowledgePoint,
         'explanation': explanation,
@@ -204,7 +205,7 @@ class BankQuestionItem {
   final String subject;
   final int grade;
   final String stem;
-  final List<String>? options;
+  final List<QuizOption>? options;
   final String qtype;
   final String knowledgePoint;
   final String? difficulty;
@@ -245,7 +246,7 @@ class BankQuestionItem {
         subject: json['subject'] as String? ?? '',
         grade: json['grade'] as int? ?? 0,
         stem: json['stem'] as String,
-        options: (json['options'] as List?)?.map((e) => e.toString()).toList(),
+        options: QuizOption.parseList(json['options']),
         qtype: json['qtype'] as String,
         knowledgePoint: json['knowledge_point'] as String,
         difficulty: json['difficulty'] as String?,

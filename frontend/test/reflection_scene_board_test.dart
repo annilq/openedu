@@ -18,6 +18,7 @@ import 'package:kids_learn/features/home/domain/repositories/material_repository
 import 'package:kids_learn/features/home/presentation/widgets/teacher/scene_library_view.dart';
 import 'package:kids_learn/features/home/providers/home_provider.dart';
 import 'package:kids_learn/features/home/providers/knowledge_manage_provider.dart';
+import 'package:kids_learn/shared/domain/figures.dart';
 import 'package:kids_learn/shared/domain/providers/figure_library_provider.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
 import 'package:kids_learn/shared/widgets/app_actions.dart';

@@ -37,6 +37,8 @@ import '../widgets/teacher/teacher_tasks_view.dart';
 import '../widgets/teacher/material_library_view.dart';
 import '../../../../features/courseware/presentation/screens/courseware_center_screen.dart';
 import '../../../../features/courseware/presentation/screens/asset_library_screen.dart';
+import '../../../../features/assistant/presentation/widgets/run_trace_detail_view.dart';
+import '../../../../features/assistant/presentation/widgets/run_trace_view.dart';
 import 'student_mastery_screen.dart';
 import '../../../../shared/widgets/app_actions.dart';
 
@@ -303,6 +305,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           },
         ),
       ProfilePage() => ProfileScreen(user: widget.user, onLogout: widget.onLogout),
+      // ADR-0088 ticket 02：运行轨迹（全步骤 + 元数据口径）与助手页内的历史会话
+      // （气泡口径）并列，入口分离；详情是列表的下钻，返回统一回列表。
+      RunTracePage() => AiRunTraceView(
+          onOpenRun: (run) => _go(RunTraceDetailPage(run.id)),
+        ),
+      RunTraceDetailPage(runId: final runId) => AiRunTraceDetailView(
+          runId: runId,
+          onBack: () => _go(const RunTracePage()),
+        ),
       StudentDetailPage(studentId: final id, initialTab: final tab, back: final back) =>
         StudentDetailScreen(
           studentId: id,

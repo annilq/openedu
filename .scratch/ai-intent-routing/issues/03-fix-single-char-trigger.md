@@ -6,7 +6,7 @@
 并把实测出来的路由结果钉进回归，让这张表从此可断言。
 
 **Blocked by:** 无（可立即开工，与 T01 并行）
-**Status:** ready-for-agent
+**Status:** done
 
 ## 决策锚点
 

@@ -1,4 +1,4 @@
-"""GET /questions 必须下发 `semester` 与 `scene_spec`（ADR-0061 §U）。
+"""GET /questions 必须下发 `semester` 与 `scene_spec`（ADR-0061 §U / ADR-0091）。
 
 为什么是**接口级**测试而不是只测 service：此前 `scene_spec` 只加在了助手查询
 工具的 service 投影里，**REST 端点的 schema / router 整段漏写**——前端题库详情
@@ -6,15 +6,19 @@
 只有打到端点才能钉住这条链路。
 
 两条断言：
-1. 未配模板、题面点名图形 → 图库兜底出图（新形态 `{kind,points,edges}`，命中的是正方形）；
-2. 纯计算题（题面无图形）→ `scene_spec` 为 null，不臆造。
+1. 教师为知识点配了 reflection 模板（含图形）→ 题库详情下发该模板图形
+   （ADR-0089 契约：主图形**只来自知识点模板**，后端不再扫题面/选项文字反猜）；
+2. 纯计算题（该知识点无模板）→ `scene_spec` 为 null，不臆造。
+
+（「选项文字不反猜图形」由 ``tests/features/materials/test_scene_fusion.py``
+在生产端单测钉住，此处不重复。）
 """
 import uuid
 
 from sqlmodel import Session as DBSession
 
 from app.core.db import engine
-from app.db.models import Question
+from app.db.models import KnowledgePoint, Question
 from tests.utils.user import auth_headers, register_teacher
 
 
@@ -28,6 +32,40 @@ def _list(client, token: str) -> list[dict]:
     r = client.get("/api/v1/questions", headers=auth_headers(token))
     assert r.status_code == 200, r.text
     return r.json()["items"]
+
+
+def _configure_axis_kp(session: DBSession, teacher_id: uuid.UUID) -> None:
+    """为「图形的运动（轴对称）」配一个 reflection 模板（含正方形主图形）。
+
+    ADR-0089 契约：主图形**只来自知识点模板**——后端不再扫题面/选项文字反猜。
+    """
+    session.add(
+        KnowledgePoint(
+            id=uuid.uuid4(),
+            teacher_id=teacher_id,
+            subject="数学",
+            grade=4,
+            semester="",
+            name="图形的运动（轴对称）",
+            scenes=[
+                {
+                    "kind": "reflection",
+                    "figure": {
+                        "key": "square",
+                        "label": "正方形",
+                        "points": [
+                            [0.2, 0.2],
+                            [0.8, 0.2],
+                            [0.8, 0.8],
+                            [0.2, 0.8],
+                        ],
+                        "edges": [[0, 1], [1, 2], [2, 3], [3, 0]],
+                    },
+                }
+            ],
+        )
+    )
+    session.commit()
 
 
 def test_bank_list_returns_semester(client):
@@ -55,12 +93,13 @@ def test_bank_list_returns_semester(client):
     assert item["semester"] == "下学期"
 
 
-def test_bank_list_scene_spec_falls_back_to_figure_library(client):
-    """没配任何知识点模板时，「正方形有几条对称轴」也必须出图。"""
+def test_bank_list_scene_spec_uses_kp_template(client):
+    """教师配了 reflection 模板 → 题库详情下发该模板图形（ADR-0089：不扫题面反猜）。"""
     r = register_teacher(client, username="bank_scene_teacher2")
     token = r.json()["access_token"]
     pid = _teacher_id(client, token)
     with DBSession(engine) as s:
+        _configure_axis_kp(s, pid)
         s.add(
             Question(
                 id=uuid.uuid4(),
@@ -77,13 +116,16 @@ def test_bank_list_scene_spec_falls_back_to_figure_library(client):
         s.commit()
     item = next(i for i in _list(client, token) if "正方形" in i["stem"])
     spec = item["scene_spec"]
-    assert spec is not None, "题库详情 no 图形：scene_spec 不应为 null"
+    assert spec is not None, "题库详情 no 图形：配了模板应有 scene_spec"
     assert spec["kind"] == "reflection"
-    # ADR-0083：新形态是纯几何 {kind, points, edges}，不再有 inputs
-    assert set(spec) == {"kind", "points", "edges", "derivedFrom"}
-    assert spec["derivedFrom"] == "figure_library"
+    # ADR-0091：顶点收进主图形，带图库身份键；顶层不再摊平 points/edges，
+    # 也没有 derivedFrom（来源标记字段已从生产端移除）
+    assert set(spec) == {"kind", "figure", "options", "curated"}
+    # 主图形来自知识点模板（本测试配置的 square），不是扫题面猜出来的
+    assert spec["figure"]["key"] == "square"
+    assert "derivedFrom" not in spec
     # 顶点必须随 spec 下发（只发 kind 的话前端会画回兜底房子）
-    assert len(spec["points"]) == 4
+    assert len(spec["figure"]["points"]) == 4
 
 
 def test_bank_list_no_figure_word_has_no_scene(client):

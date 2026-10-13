@@ -12,14 +12,10 @@ from __future__ import annotations
 from agent_core.protocol import assistant_message, data_event
 from agent_core.subagent import BaseSubAgent, SubAgentContext
 from app.ai.subagents.subject_personas import get_subject_persona
+from app.ai.subagents.tutor.scene_intent import resolve_interactive_scene
 from app.domain.subjects import SUBJECTS
 from app.domain.tutor import TutorService
-
-# 与 query 系列工具同款写法：subagent 直接取用 features 的 service / 纯函数
-# （先例见 app/ai/subagents/query/tools/*）。抽取是**无副作用的纯函数**（只认题面
-# 文本），几何则由 `default_scene_from_figure` 按 key 查图库 DB（ADR-0083）。
-from app.features.materials.scene_extract import extract_scene_inputs
-from app.features.materials.scene_fusion import default_scene_from_figure
+from app.features.assistant.kp_focus import format_kp_focus
 
 
 def detect_subject(text: str) -> str:
@@ -48,24 +44,6 @@ def _courseware_hint_context(
     return f"{base_context}\n\n{classroom}" if base_context else classroom
 
 
-def _interactive_scene_for(message: str, session) -> dict | None:
-    """学生提问点到图库图形 → 给该图形的默认交互演示；否则 ``None``。
-
-    与出题共用同一条**反臆造纪律**：只有提问确实命中图库（``figure_library`` 表）
-    里存在的图形才给图。问「今天的作业是什么」不该凭空弹出一个房子——那不是讲解，是编。
-
-    这里的容错是**有意且必要**的：场景卡是答疑的增强，任何岔子都不能吞掉正文。
-    抽不到、图库没命中、乃至函数本身抛错，一律退化成「没有演示、照常讲」。
-    """
-    if not message or session is None:
-        return None
-    try:
-        overrides = extract_scene_inputs(stem=message)
-        return default_scene_from_figure(session, overrides.get("figure"))
-    except Exception:
-        return None
-
-
 class TutorSubAgent(BaseSubAgent):
     business = "tutor"
 
@@ -85,6 +63,33 @@ class TutorSubAgent(BaseSubAgent):
             return f"{base_context}\n\n{persona}".strip()
         return persona
 
+    def _interactive_scene_for(self, message: str, ctx: SubAgentContext, *, session=None) -> dict | None:
+        """答疑「要不要出图」的三层识别入口（ADR-0089 §4）。
+
+        把本次提问的归属 / 上下文从 ``ctx.extra`` 收齐，转交
+        :func:`resolve_interactive_scene` 做 L0 门控 → L1 模型判定 → L2 校验盖章。
+
+        **不猜图形**（ADR-0089 的核心立场）：任何岔子（没配模型 / 微调用失败 / 门控
+        未放行 / 校验不过 / 去重命中）都返回 ``None``，调用方据此**不发射**——场景卡是
+        答疑的增强，绝不许吞掉讲解正文；且后端从此不从自然语言猜任何图形。
+        """
+        extra = ctx.extra or {}
+        courseware = extra.get("courseware") or {}
+        semester = courseware.get("semester") if isinstance(courseware, dict) else ""
+        return resolve_interactive_scene(
+            provider=self.provider,
+            session=session,
+            conv_id=extra.get("session_id"),
+            message=message,
+            knowledge_point=str((courseware.get("knowledge_point") if isinstance(courseware, dict) else "") or ""),
+            knowledge_point_id=extra.get("knowledge_point_id"),
+            subject=str(extra.get("subject") or ""),
+            grade=int(extra.get("grade") or 0),
+            semester=str(semester or ""),
+            teacher_id=extra.get("teacher_id"),
+            context=extra.get("context"),
+        )
+
     async def run(self, message: str, ctx: SubAgentContext, *, session=None):
         """悬浮助手入口：自由文本 → 适龄讲解（流式 ASSISTANT_MESSAGE）。"""
         courseware = ctx.extra.get("courseware")
@@ -98,12 +103,18 @@ class TutorSubAgent(BaseSubAgent):
         base_context = ctx.extra.get("context")
         if is_courseware:
             base_context = _courseware_hint_context(courseware, base_context)
+        # ADR-0080：知识点聚焦段（与 tutor_system_prompt 安全锁物理分离），独立注入上下文。
+        focus_seg = format_kp_focus(ctx.extra.get("knowledge_point"))
+        if focus_seg:
+            base_context = (
+                f"{base_context}\n\n{focus_seg}".strip() if base_context else focus_seg
+            )
         tc = self._tool("tutor_explain", label="伴学答疑")
         yield tc.call
         # AI 答疑也能出示交互演示（ADR-0073 补齐的唯一缺口）：演示作为 DATA 帧
         # **先于正文**下发——学生先看到图形再读讲解，比纯文字描述「沿对称轴对折」
         # 直观得多。前端 AssistantInteractiveSceneCard 早已就位，这里只需发货。
-        scene = _interactive_scene_for(message, session)
+        scene = await self._interactive_scene_for(message, ctx, session=session)
         if scene is not None:
             yield data_event(scene, extra={"type": "interactive_scene"})
         # 流式讲解：溯源（rag_sources）先于正文下发，正文逐 token 下推，

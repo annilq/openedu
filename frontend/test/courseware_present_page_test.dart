@@ -76,16 +76,24 @@ CoursewareSectionModel _sceneSection() => CoursewareSectionModel(
       script: '拖对称轴，看两侧能不能完全重合',
       scene: {
         'kind': 'reflection',
-        'points': [
-          [0.30, 0.70],
-          [0.70, 0.70],
-          [0.70, 0.45],
-          [0.50, 0.25],
-          [0.30, 0.45],
-        ],
-        'controls': {'play': true, 'scrub': true},
-        'editable': true,
-        'narrative': '拖动对称轴试试看能否完全重合',
+        'figure': {
+          'key': 'house',
+          'label': '房子',
+          'points': [
+            [0.30, 0.70],
+            [0.70, 0.70],
+            [0.70, 0.45],
+            [0.50, 0.25],
+            [0.30, 0.45],
+          ],
+          'edges': [
+            [0, 1],
+            [1, 2],
+            [2, 3],
+            [3, 4],
+            [4, 0],
+          ],
+        },
       },
     );
 
@@ -328,15 +336,17 @@ void main() {
     expect(find.byType(Image), findsNothing);
   });
 
-  testWidgets('interactive_scene → scene 原样喂 SceneInterpreter', (tester) async {
+  testWidgets('interactive_scene → scene 经唯一解析入口喂 SceneInterpreter', (tester) async {
     final section = _sceneSection();
     await _pumpPresent(tester, courseware: _courseware([section]));
 
-    // 切片 6「零渲染器改动」的执行点：本页不做任何字段翻译，spec 就是顶层 scene 本身。
+    // 切片 6「零渲染器改动」的执行点：本页不做任何字段翻译。ADR-0091 起「解析」
+    // 由类型化的 SceneSpec 承担（不再是裸 Map 猜字段），但「不重组」纪律不变。
     final interpreter =
         tester.widget<SceneInterpreter>(find.byType(SceneInterpreter));
-    expect(interpreter.kind, 'reflection');
-    expect(interpreter.spec, same(section.scene));
+    expect(interpreter.spec.kind, 'reflection');
+    expect(interpreter.spec.figure!.key, 'house');
+    expect(interpreter.spec.figure!.vertices.length, 5);
     expect(tester.takeException(), isNull);
   });
 

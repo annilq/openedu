@@ -2,12 +2,12 @@
 
 - **What to build**: 学生管理页横向 import 了 home，违反分层单向规则（`main/ → features/* → shared/*`；跨 feature 复用应下沉 `shared/` 或经 home 装配）。本票消除该 import，让 feature_boundaries R2 守卫恢复绿，学生管理功能行为不变。
 - **Blocked by**: —（无，可立即开始）
-- **Status**: ready-for-agent
+- **Status**: done
 - **验收清单**:
-  - [ ] 学生管理页对 home 的 import 消除；消除方式（下沉 `shared/` 或经 home 装配注入）在提交正文说明选择理由
-  - [ ] `feature_boundaries_test.dart` R2 守卫恢复绿（干净树上当前实际:`students -> home` 1 处）
-  - [ ] 学生管理页既有 widget / provider 测试 0 回归
-  - [ ] 不把 home 的无关内容倒灌进 `shared/`——只搬被复用能力，搬完在 shared 侧不产生对 features 的反向依赖
+  - [x] 学生管理页对 home 的 import 消除；消除方式（下沉 `shared/` 或经 home 装配注入）在提交正文说明选择理由
+  - [x] `feature_boundaries_test.dart` R2 守卫恢复绿（干净树上当前实际:`students -> home` 1 处）
+  - [x] 学生管理页既有 widget / provider 测试 0 回归
+  - [x] 不把 home 的无关内容倒灌进 `shared/`——只搬被复用能力，搬完在 shared 侧不产生对 features 的反向依赖
 
 ## 决策锚点
 
