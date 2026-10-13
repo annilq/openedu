@@ -4,6 +4,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../../shared/domain/models/models.dart';
 import '../../../../../shared/presentation/paging.dart';
+import '../../../../../shared/presentation/resource.dart';
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/utils/load_once.dart';
 import '../../../../../shared/widgets/app_scroll_page.dart';
@@ -71,7 +72,7 @@ class TeacherOverviewView extends ConsumerWidget {
     final todoState = ref.watch(teacherTodoProvider);
     ref.loadWhenIdle(
       teacherTodoProvider,
-      (s) => s is TeacherTodoInitial,
+      (s) => s is ResourceIdle,
       () => ref.read(teacherTodoProvider.notifier).load(),
     );
 
