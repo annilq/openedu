@@ -4,7 +4,7 @@
 
 **Blocked by:** 02（后端生产端改形）
 
-**Status:** ready-for-agent
+**Status:** done（集成分支已合：三处响应 schema 改 SceneSpec，助手工具 dump dict，补端点级测试；旧形已知红已转绿）
 
 ## 验收
 

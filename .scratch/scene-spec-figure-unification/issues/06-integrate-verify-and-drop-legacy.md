@@ -4,7 +4,7 @@
 
 **Blocked by:** 03（消费端与端点）、04（前端类型化）、05（迁移脚本）
 
-**Status:** ready-for-agent
+**Status:** done（2026-10-13 真跑迁移：开发库 10 份旧 spec 皆为「无几何的交互控件形」——无 figure/options，无法构造新形，按纪律跳过不改写；幂等复跑结果一致。生产代码已无旧形读/写分支；全量后端 825 passed/2 skipped、前端 543 passed、flutter analyze No issues 全绿）
 
 ## 验收
 
