@@ -42,23 +42,25 @@ BankQuestionItem _item({
     );
 
 Map<String, dynamic> _squareSpec() => {
+      // ADR-0091 改形：inputs[]/controls/editable 已删，几何统一走 figure；
+      // 轴初始值/控件/叙述词由 kind shell 提供，spec 不再携带。
       'kind': 'reflection',
-      'inputs': [
-        {
-          'key': 'points',
-          'value': [
-            [0.28, 0.28],
-            [0.72, 0.28],
-            [0.72, 0.72],
-            [0.28, 0.72],
-          ],
-        },
-        {'key': 'axisAngle', 'value': 90.0},
-        {'key': 'axisX', 'value': 0.5},
-        {'key': 'axisY', 'value': 0.5},
-      ],
-      'controls': {'play': true, 'scrub': true},
-      'editable': true,
+      'figure': {
+        'key': 'square',
+        'label': '正方形',
+        'points': [
+          [0.28, 0.28],
+          [0.72, 0.28],
+          [0.72, 0.72],
+          [0.28, 0.72],
+        ],
+        'edges': [
+          [0, 1],
+          [1, 2],
+          [2, 3],
+          [3, 0],
+        ],
+      },
     };
 
 Future<void> _pump(WidgetTester tester, BankQuestionItem item) async {

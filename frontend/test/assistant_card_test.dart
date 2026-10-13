@@ -66,9 +66,25 @@ void main() {
         'result': {
           'kind': 'reflection',
           'title': '图形的运动（轴对称）',
-          'inputs': [
-            {'key': 'axisAngle', 'value': 90},
-          ],
+          // 新形 SceneSpec（ADR-0091）：几何在 figure 里，带身份键。
+          'figure': {
+            'key': 'house',
+            'label': '房子',
+            'points': [
+              [0.30, 0.70],
+              [0.70, 0.70],
+              [0.70, 0.45],
+              [0.50, 0.25],
+              [0.30, 0.45],
+            ],
+            'edges': [
+              [0, 1],
+              [1, 2],
+              [2, 3],
+              [3, 4],
+              [4, 0],
+            ],
+          },
         },
       })!;
 
@@ -103,9 +119,25 @@ void main() {
           'scene_spec': {
             'kind': 'reflection',
             'title': '图形的运动（轴对称）',
-            'inputs': [
-              {'key': 'axisAngle', 'value': 90},
-            ],
+            // 新形 SceneSpec（ADR-0091）：几何在 figure 里，带身份键。
+            'figure': {
+              'key': 'house',
+              'label': '房子',
+              'points': [
+                [0.30, 0.70],
+                [0.70, 0.70],
+                [0.70, 0.45],
+                [0.50, 0.25],
+                [0.30, 0.45],
+              ],
+              'edges': [
+                [0, 1],
+                [1, 2],
+                [2, 3],
+                [3, 4],
+                [4, 0],
+              ],
+            },
           },
         },
       })!;
