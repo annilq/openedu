@@ -17,11 +17,11 @@
 | 05 | 迁移遗留 M3 视觉令牌（42 文件） | P1 宽重构·migrate | — | done |
 | 06 | 删除 app_theme 兼容令牌块 | P1 宽重构·contract | 05 | done |
 | 07 | 移除 crypto 双密钥回退 | P1 后端 | — | done |
-| 08 | 完成 Resource<T> 加载态迁移 | P2 宽重构 | — | in_progress |
+| 08 | 完成 Resource<T> 加载态迁移 | P2 宽重构 | — | done |
 | 09 | 折叠 home 导航三元组为 sealed 单源 | P2 前端 | — | ready-for-agent |
 | 10 | 停止 scene_intent 直连 assistant.repository | P2 后端 | — | ready-for-agent |
 
-**Frontier（无 blocker，可立即抓）：** 08, 09, 10（01–07 已 done）。
+**Frontier（无 blocker，可立即抓）：** 09, 10（01–08 已 done）。
 **被阻塞：** 无（04、06 已 done）。
 
 ## 决策锚点（写进每张 ticket）

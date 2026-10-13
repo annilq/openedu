@@ -4,7 +4,7 @@
 
 **Blocked by:** None（可立即抓；frontier）
 
-**Status:** in_progress
+**Status:** done
 
 ## 范围（实测复核，非原 spec 的「~14」）
 
@@ -19,7 +19,7 @@
   - `models`：`(ModelListResp, List<ModelProviderPreset>)`（done，commit 5cd5c85；自定义 notifier `with ResourceLoader`，保留 create/update/delete/setDefault/testConnection）
   - `student_management`：5 字段（classes/students/wrongCounts/classId/keyword）（done，commit b390515；自定义 notifier `with ResourceLoader`，保留 batchReassign/importStudents）
   - `analytics_summary`：`(WrongDistributionResp, AccuracyResp, MasteryResp)`（done，commit ec9130e；纯只读、自定义 notifier `with ResourceLoader`，包 AnalyticsSummaryData）
-  - `analytics`：8 字段（scope/dimension/classId/classes/students/wrong/accuracy/mastery）
+  - `analytics`：8 字段（scope/dimension/classId/classes/students/wrong/accuracy/mastery）（done，commit da80302；自定义 notifier `with ResourceLoader`，保留 _classesCache/_studentsCache 与 setScope/setDimension/setClass 下钻动作）
 - **不迁（状态机，留手写）：3 个**
   - `question_bank`（`BankState`）：游标分页 + 动作态（BankActionLoading/Success/Error、BankDeleted、BankArchived）
   - `task_review`（`ReviewState`）：草稿审核，busyTqId 在途动作 + 题卡原地增删改
@@ -42,5 +42,7 @@
 - [x] `analytics_summary` 已迁（自定义 `AnalyticsSummaryNotifier with ResourceLoader<AnalyticsSummaryData>`；纯只读、三聚合包一层；analyze 全仓绿 + 全量 556 测试通过）。
 - [x] `models` 已迁（自定义 `ModelsNotifier with ResourceLoader<ModelsData>`，保留 create/update/delete/setDefault/testConnection；analyze 全仓绿 + 全量 556 测试通过）。
 - [x] `student_management` 已迁（自定义 `StudentManagementNotifier with ResourceLoader<StudentManagementData>`，保留 batchReassign/importStudents；analyze 全仓绿 + 全量 556 测试通过）。
-- [ ] 其余 1 个（复合载荷）notifier 迁完；旧 sealed 加载态类引用全仓归零（grep `XxxInitial/XxxLoaded` 等）。
-- [ ] `flutter analyze` 全仓绿；`flutter test` 全量通过。
+- [x] `analytics` 已迁（自定义 `AnalyticsNotifier with ResourceLoader<AnalyticsData>`；保留下钻动作 + 缓存；analyze 全仓绿 + 全量 556 测试通过）。
+- [x] 8 个 notifier 全部迁完（4 单载荷 + 4 复合载荷）；旧 sealed 加载态类引用全仓归零（实测 grep 8 个状态名零命中）。
+- [x] `flutter analyze` 全仓绿；`flutter test` 全量通过（556/556）。
+- [x] 3 个状态机（question_bank / task_review / knowledge_manage）按 `resource.dart` 文档（"带动作的状态机…不是资源，别硬套"）明确不迁，保留手写四态。
