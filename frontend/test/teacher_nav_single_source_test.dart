@@ -62,6 +62,8 @@ void main() {
         '_teacherNavIndex',
         '_reviewingTask',
         '_editingChild',
+        '_showProfile',
+        '_childNavIndex',
       ]) {
         // 只查代码，不查注释——本文件的文档注释里正写着这些名字作为反面教材。
         final inCode = src
@@ -84,9 +86,9 @@ void main() {
 
   group('行为：「我的」对两个角色都要真的打开个人信息', () {
     // ⚠️ 这组用例的存在理由：`_onProfileTap()` 是**两个角色共用**的回调，而两端
-    // 「当前页面」的载体不同（教师端 = `TeacherPage` 的一个分支，学生端 =
-    // 「页签 + `_showProfile` 布尔」的二选一）。只写教师端那一份，学生端点「我的」
-    // 就毫无反应——而 `flutter analyze` 完全照不出来。
+    // 「当前页面」的载体不同（教师端 = `TeacherPage` 的一个分支，学生端 = [ChildPage]
+    // 单一状态）。只写教师端那一份，学生端点「我的」就毫无反应——而 `flutter analyze`
+    // 完全照不出来。
     testWidgets('学生端：点「我的」渲染个人信息页，且页签不再高亮', (tester) async {
       await tester.binding.setSurfaceSize(const Size(1000, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
