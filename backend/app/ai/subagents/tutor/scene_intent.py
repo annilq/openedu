@@ -34,12 +34,12 @@ from agent_core.ports import StructuredDone
 from app.core.errors import AppErrorException
 from app.core.guard import require_owned
 from app.db.models import KnowledgePoint
-from app.features.assistant.repository import last_scene_figure_key
 from app.features.materials.figure_stamp import (
     available_figures,
     render_figure_catalog,
     stamp_scene_spec,
 )
+from app.features.materials.scene_figure_key import last_scene_figure_key
 from app.features.materials.scene_fusion import find_knowledge_point
 
 __all__ = [

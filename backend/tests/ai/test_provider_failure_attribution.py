@@ -232,14 +232,16 @@ def _fernet_for(secret: str) -> Fernet:
 
 
 def test_decrypt_failure_returns_none_never_ciphertext(monkeypatch) -> None:
-    """事故回归：密钥轮换后旧密文解不开 → 返回 None，**绝不**把密文当密钥返回。"""
-    monkeypatch.setattr(crypto.settings, "MODEL_APIKEY_SECRET", "", raising=False)
-    monkeypatch.setattr(crypto.settings, "SECRET_KEY", "dev-secret-change-me", raising=False)
+    """事故回归：密钥轮换后旧密文解不开 → 返回 None，**绝不**把密文当密钥返回。
+
+    单一密钥来源（MODEL_APIKEY_SECRET）：加密用 A，轮换成 B 后旧密文解不动。
+    """
+    monkeypatch.setattr(crypto.settings, "MODEL_APIKEY_SECRET", "dev-secret-change-me", raising=False)
     cipher = crypto.encrypt("sk-real-key")
     assert cipher is not None and cipher != "sk-real-key"
 
-    # 模拟 .env 被改名 / SECRET_KEY 漂移
-    monkeypatch.setattr(crypto.settings, "SECRET_KEY", "changeme", raising=False)
+    # 模拟 MODEL_APIKEY_SECRET 轮换（.env 被改名 / 密钥漂移）
+    monkeypatch.setattr(crypto.settings, "MODEL_APIKEY_SECRET", "changeme", raising=False)
     out = crypto.decrypt(cipher)
 
     assert out is None, "解不开必须视为未配置密钥"
@@ -247,8 +249,7 @@ def test_decrypt_failure_returns_none_never_ciphertext(monkeypatch) -> None:
 
 
 def test_decrypt_roundtrip_with_same_secret(monkeypatch) -> None:
-    monkeypatch.setattr(crypto.settings, "MODEL_APIKEY_SECRET", "", raising=False)
-    monkeypatch.setattr(crypto.settings, "SECRET_KEY", "s1", raising=False)
+    monkeypatch.setattr(crypto.settings, "MODEL_APIKEY_SECRET", "s1", raising=False)
 
     assert crypto.decrypt(crypto.encrypt("sk-abc")) == "sk-abc"
 
@@ -256,7 +257,6 @@ def test_decrypt_roundtrip_with_same_secret(monkeypatch) -> None:
 def test_decrypt_without_any_secret_is_plaintext_passthrough(monkeypatch) -> None:
     """完全未配置密钥时保持明文兜底（与 encrypt 对称）——开发期行为不破坏。"""
     monkeypatch.setattr(crypto.settings, "MODEL_APIKEY_SECRET", "", raising=False)
-    monkeypatch.setattr(crypto.settings, "SECRET_KEY", "", raising=False)
 
     assert crypto.encrypt("sk-plain") == "sk-plain"
     assert crypto.decrypt("sk-plain") == "sk-plain"
@@ -283,8 +283,7 @@ def test_resolve_engine_rejects_undecryptable_key_without_building_engine(
     密文没有任何机会落到 provider——比「构造引擎但传 None」更彻底地杜绝密文外泄
     （ADR-0038：密钥轮换后旧密文解不开 → 视为未配置，而非把密文当凭据发厂商）。
     """
-    monkeypatch.setattr(crypto.settings, "MODEL_APIKEY_SECRET", "", raising=False)
-    monkeypatch.setattr(crypto.settings, "SECRET_KEY", "changeme", raising=False)
+    monkeypatch.setattr(crypto.settings, "MODEL_APIKEY_SECRET", "changeme", raising=False)
     captured = _capture_engine_kwargs(monkeypatch)
 
     teacher = User(
@@ -316,8 +315,7 @@ def test_resolve_engine_passes_decrypted_key_when_secret_matches(
     db: Session, monkeypatch
 ) -> None:
     """密钥匹配时必须真的把明文密钥交出去（别把「安全」修成「一直没密钥」）。"""
-    monkeypatch.setattr(crypto.settings, "MODEL_APIKEY_SECRET", "", raising=False)
-    monkeypatch.setattr(crypto.settings, "SECRET_KEY", "s-match", raising=False)
+    monkeypatch.setattr(crypto.settings, "MODEL_APIKEY_SECRET", "s-match", raising=False)
     captured = _capture_engine_kwargs(monkeypatch)
 
     teacher = User(

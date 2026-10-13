@@ -55,7 +55,9 @@ def test_list_provider_presets(client):
     assert "deepseek-v4-flash" in ds["models"]
 
 
-def test_create_with_provider_preset(client, db: Session):
+def test_create_with_provider_preset(client, db: Session, monkeypatch):
+    # 单一密钥来源（MODEL_APIKEY_SECRET）：加密测试必须显式配置专用密钥
+    monkeypatch.setattr("app.core.config.settings.MODEL_APIKEY_SECRET", "test-secret", raising=False)
     h = _teacher(client, "preset")
     # 只选服务商预设 + 模型名 + key，不手写 provider/base_url
     r = client.post(
@@ -113,7 +115,9 @@ def test_create_requires_api_key(client):
     assert client.get("/api/v1/models", headers=h).json()["custom"] == []
 
 
-def test_create_and_encryption(client, db: Session):
+def test_create_and_encryption(client, db: Session, monkeypatch):
+    # 单一密钥来源（MODEL_APIKEY_SECRET）：加密测试必须显式配置专用密钥
+    monkeypatch.setattr("app.core.config.settings.MODEL_APIKEY_SECRET", "test-secret", raising=False)
     h = _teacher(client, "enc")
     payload = {
         "label": "我家 Ollama",
