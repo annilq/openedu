@@ -4,7 +4,7 @@
 
 **Blocked by:** 02（出题侧：选项内嵌图形）
 
-**Status:** ready-for-agent
+**Status:** done（提交 1ccb6d3；删 scene_extract.py 整族文本抽取，改三层识别）
 
 ## 验收
 

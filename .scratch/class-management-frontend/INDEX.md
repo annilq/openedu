@@ -4,19 +4,19 @@
 > 决策依据：ADR-0086（班级管理前端，含 2026-10-11 年级语义反转）；上游 ADR-0068（班级实体与后端，已落地）。
 > 发布形式：本地 `.scratch` 文件（未建 GitHub issue；`gh` 未登录）。后续 `gh auth login` 后可一键转 issue 并打 `ready-for-agent`。
 > 术语以 `CONTEXT.md` 为准；每个 ticket 文件含 `What to build` / `Blocked by` / `Status: ready-for-agent` / 验收清单。
-> ⚠️ **ticket 01（年级反转）本轮已落地并测过**，其余为待实施。
+> ⚠️ **全部 7 票已随 ADR-0086 落地并测过**（60e9896 班级管理前端导航/列表/下钻/班内建生导入；aec3ac6 后端 `POST /students` 与 `/import` 的 class_id+归属校验），本轮已闭合。
 
 ## Tickets（依赖序，blockers first）
 
 | ID | 标题 | Blocked by | Status |
 |----|------|-----------|--------|
 | 01 | 年级语义反转（删除 `user.grade`，年级改由班级承载） | — | ✅ done |
-| 02 | 一级导航「班级管理」落地（扩展 `sealed TeacherPage` + 单源测试） | — | ready-for-agent |
-| 03 | 班级管理列表页（建/改/删班级 + 空态） | 02 | ready-for-agent |
-| 04 | 班级下钻页（参数化 `StudentManagementScreen`：查看/筛选/返回 + 班内查看/移班/删除） | 03 | ready-for-agent |
-| 05 | 后端 `class_id` 扩展（`POST /students` 与 `/import` 归属校验） | — | ready-for-agent |
-| 06 | 班内添加与导入学生（默认归属本班） | 04, 05 | ready-for-agent |
-| 07 | 端到端回归与全量测试（analyze/test + 年级回归） | 03, 04, 05, 06 | ready-for-agent |
+| 02 | 一级导航「班级管理」落地（扩展 `sealed TeacherPage` + 单源测试） | — | done |
+| 03 | 班级管理列表页（建/改/删班级 + 空态） | 02 | done |
+| 04 | 班级下钻页（参数化 `StudentManagementScreen`：查看/筛选/返回 + 班内查看/移班/删除） | 03 | done |
+| 05 | 后端 `class_id` 扩展（`POST /students` 与 `/import` 归属校验） | — | done |
+| 06 | 班内添加与导入学生（默认归属本班） | 04, 05 | done |
+| 07 | 端到端回归与全量测试（analyze/test + 年级回归） | 03, 04, 05, 06 | done |
 
 > 并行分析：02 ‖ 05 文件集不相交（02=`features/home`+导航测试，05=`features/students` 后端），可并行；03 → 04 串行（04 复用 03 的列表页下钻入口）；**04 ‖ 05 可并行**（04 的下钻查看/筛选/返回/批量移班/删除全用既有端点，不依赖 05 的 class_id 持久化）；06 须等 04+05 两者都落地（前端入口 + 后端落库）；07 收口待 03/04/05/06。
 

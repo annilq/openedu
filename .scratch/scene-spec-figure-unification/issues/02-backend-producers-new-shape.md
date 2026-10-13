@@ -4,7 +4,7 @@
 
 **Blocked by:** 01（图形类型与校验入口）
 
-**Status:** ready-for-agent
+**Status:** done
 
 ## 验收
 

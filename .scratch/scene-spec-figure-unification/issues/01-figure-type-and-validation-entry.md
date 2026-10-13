@@ -4,7 +4,7 @@
 
 **Blocked by:** 无（可立即开工；整条链的 expand 基础）
 
-**Status:** ready-for-agent
+**Status:** done
 
 ## 验收
 
