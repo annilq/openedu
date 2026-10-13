@@ -17,7 +17,7 @@
   - `class_management` → `Resource<List<ClassModel>>`（done，本票次）
 - **复合载荷（需包装类 / record 包一层）：4 个**
   - `models`：`(ModelListResp, List<ModelProviderPreset>)`（done，commit 5cd5c85；自定义 notifier `with ResourceLoader`，保留 create/update/delete/setDefault/testConnection）
-  - `student_management`：5 字段（classes/students/wrongCounts/classId/keyword）
+  - `student_management`：5 字段（classes/students/wrongCounts/classId/keyword）（done，commit b390515；自定义 notifier `with ResourceLoader`，保留 batchReassign/importStudents）
   - `analytics_summary`：`(WrongDistributionResp, AccuracyResp, MasteryResp)`（done，commit ec9130e；纯只读、自定义 notifier `with ResourceLoader`，包 AnalyticsSummaryData）
   - `analytics`：8 字段（scope/dimension/classId/classes/students/wrong/accuracy/mastery）
 - **不迁（状态机，留手写）：3 个**
@@ -41,5 +41,6 @@
 - [x] `students` 已迁（自定义 `ChildrenNotifier with ResourceLoader<List<UserModel>>`，保留 createChild/updateChild 回传值；analyze 全仓绿 + 全量 552 测试通过）。
 - [x] `analytics_summary` 已迁（自定义 `AnalyticsSummaryNotifier with ResourceLoader<AnalyticsSummaryData>`；纯只读、三聚合包一层；analyze 全仓绿 + 全量 556 测试通过）。
 - [x] `models` 已迁（自定义 `ModelsNotifier with ResourceLoader<ModelsData>`，保留 create/update/delete/setDefault/testConnection；analyze 全仓绿 + 全量 556 测试通过）。
-- [ ] 其余 2 个（复合载荷）notifier 迁完；旧 sealed 加载态类引用全仓归零（grep `XxxInitial/XxxLoaded` 等）。
+- [x] `student_management` 已迁（自定义 `StudentManagementNotifier with ResourceLoader<StudentManagementData>`，保留 batchReassign/importStudents；analyze 全仓绿 + 全量 556 测试通过）。
+- [ ] 其余 1 个（复合载荷）notifier 迁完；旧 sealed 加载态类引用全仓归零（grep `XxxInitial/XxxLoaded` 等）。
 - [ ] `flutter analyze` 全仓绿；`flutter test` 全量通过。
