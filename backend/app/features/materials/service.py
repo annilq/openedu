@@ -30,6 +30,7 @@ from app.db.models.material import (
     SceneTemplateConfig,
 )
 from app.domain.safety import check_input
+from app.domain.scene_spec import normalize_scene_spec
 from app.domain.subjects import SUBJECTS
 from app.features.materials import indexing
 from app.features.materials import repository as repo
@@ -942,10 +943,17 @@ def update_knowledge_point_scenes(
     kp_id: uuid.UUID,
     scenes: list[dict],
 ) -> KnowledgePoint:
-    """教师为知识点编写 / 覆盖默认交互讲解模板（ADR-0061）。
+    """教师为知识点编写 / 覆盖默认交互讲解模板（ADR-0061 / ADR-0091）。
 
     owner 隔离：``kp_id`` 必须属于当前教师，否则视作不存在（``require_owned``）。
     空数组 = 清空模板。
+
+    **只收新形**（ADR-0091 不做双读）：每条 scene 经
+    :func:`~app.domain.scene_spec.normalize_scene_spec` 校验——``kind`` + 一个主
+    图形（或一组选项图形），顶点在 ``figure`` 里；旧形（顶层 points/edges、
+    optionGroup、derivedFrom、inputs）一律 422 拒绝，不静默适配。校验通过的产物
+    **按规范化形状落库**（``model_dump``）：知识点场景配置是唯一事实源，存进去的
+    就必须是读路径认得的形状。
     """
     kp = require_owned(
         session=session,
@@ -955,7 +963,19 @@ def update_knowledge_point_scenes(
         code=ErrCode.NOT_FOUND,
         message="知识点不存在",
     )
-    kp.scenes = scenes or None
+    normalized: list[dict] | None = None
+    if scenes:
+        normalized = []
+        for scene in scenes:
+            spec = normalize_scene_spec(scene)
+            if spec is None:
+                raise AppErrorException(
+                    ErrCode.VALIDATION,
+                    "场景配置只支持新形状：kind + 一个主图形（figure）或一组选项图形"
+                    "（options）；顶点不能再摊在场景规格顶层（ADR-0091）",
+                )
+            normalized.append(spec.model_dump())
+    kp.scenes = normalized
     session.add(kp)
     session.commit()
     session.refresh(kp)
