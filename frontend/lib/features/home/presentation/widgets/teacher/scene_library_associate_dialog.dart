@@ -6,8 +6,9 @@
 /// 不必退回列表再走另一条路径。
 ///
 /// seed 图形取自库默认（`default_figure_key`，空则回落空占位），轴参数取注册表
-/// 中性种子——与知识点编辑器保存走同一份结构（[buildReflectionSceneSpec]），不在此
-/// 另造一份。切换为即时写回 + 本地勾选态翻转，对话框保持打开以支持连续多选。
+/// 中性种子——与知识点编辑器保存走同一份结构（[SceneSpec] 类型本身，ADR-0091：
+/// 「一处结构」由类型保证，不再另造一个产 Map 的函数），不在此另造一份。切换为即时
+/// 写回 + 本地勾选态翻转，对话框保持打开以支持连续多选。
 /// 前端按范围列全部项（零后端改动）：默认选中第一个 (学科, 年级, 学期) 范围并立即
 /// 列出该范围下所有知识点（避免弹窗空态），用户也可点选其它范围切换。
 library;
@@ -18,10 +19,10 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../../shared/domain/figures.dart';
 import '../../../../../shared/domain/providers/figure_library_provider.dart';
+import '../../../../../shared/domain/scene_spec.dart';
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/widgets/app_focusable_action.dart';
 import '../../../../../shared/widgets/app_toast.dart';
-import '../../../../../shared/widgets/scene_interpreter/reflection_scene_data.dart';
 import '../../../domain/repositories/material_repository.dart';
 import '../../../providers/home_provider.dart';
 
@@ -157,26 +158,22 @@ class _AssociateKpDialogState extends ConsumerState<_AssociateKpDialog> {
     if (_busy || kp.id == null) return;
     setState(() => _busy = true);
     try {
-      // seed 场景：图形取库默认（空则回落空占位）。ADR-0083：spec 是纯几何
-      // `{kind, points, edges}`——轴初值/控件/文案由 kind 外壳提供，不进 spec。
+      // seed 场景：图形取库默认（空则回落空占位）。ADR-0083 + ADR-0091：spec 是
+      // `{kind, figure:{key,label,points,edges}}`——轴初值/控件/文案由 kind 外壳
+      // 提供，不进 spec；几何取到就内联进 figure（带图库身份键）。
       //
-      // 几何只能来自图库（ADR-0083 决策 1/6：「默认图形」存的是 key，几何在表里）。
-      // 这里按需把图库拉一次；拉不到就退回空顶点（渲染端会兜到中性图形），**不**因此
+      // 几何只能来自图库（ADR-0083 决策 1：「默认图形」存的是 key，几何在表里）。
+      // 这里按需把图库拉一次；拉不到就只留 kind（渲染端兜到中性图形），**不**因此
       // 让整次关联失败——关联本身与图库可用性是两件事。
       final figureKey = widget.entry.defaultFigureKey;
-      var points = const <List<double>>[];
+      FigureShape? shape;
       if (figureKey != null && figureKey.isNotEmpty) {
-        final shape = await _defaultFigure(figureKey);
-        points = <List<double>>[
-          for (final v in shape?.vertices ?? const <({double x, double y})>[])
-            <double>[v.x, v.y],
-        ];
+        shape = await _defaultFigure(figureKey);
       }
-      final seed = buildReflectionSceneSpec(
+      final seed = SceneSpec(
         kind: widget.entry.kind,
-        points: points,
-        edges: closedEdges(points.length),
-      );
+        figure: shape,
+      ).toJson();
       // 保留该 KP 既有其它 kind 的场景，仅追加本 kind 的 seed（ADR-0073 快照不变）。
       final newScenes = <Map<String, dynamic>>[...(kp.scenes ?? []), seed];
       await ref.read(materialRepositoryProvider).updateKnowledgePointScenes(

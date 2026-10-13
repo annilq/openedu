@@ -1,14 +1,16 @@
-// 课件环节编辑器的「演示哪几个图形、按什么顺序」入口（ADR-0076 §2.1 / §2.2 · ticket 04）。
+// 课件环节编辑器的「演示哪几个图形、按什么顺序」入口（ADR-0076 §2.1 / §2.2 · ticket 04 ·
+// ADR-0091 改形）。
 //
 // **输入侧接缝**：真编辑器页 + 假仓库，断言**保存出去的那份数据**（`repo.lastUpdated`
-// → `section.scene`）。02 / 03 票的画廊与解释器消费的就是这份数据，因此把契约钉在
-// 写入侧等于给它们定输入。
+// → `section.scene`）。讲课页的解释器消费的就是这份数据，因此把契约钉在写入侧等于
+// 给渲染定输入。
 //
 // 守六件事（每条对应票上一项验收）：
-// 1. 勾选顺序 == `items` 顺序——刻意用**非库序**的勾选序列（先正方形后房子），
+// 1. 勾选顺序 == `options` 顺序——刻意用**非库序**的勾选序列（先正方形后房子），
 //    库序断言在「按库序重排」的坏实现下也照样过，测不出问题；
 // 2. 保存 → 重开编辑器 → 回读一致（教师下次打开看到的还是自己排的那份）；
-// 3. 勾 ≤1 张 → `optionGroup` 这个键被**删掉**（不是把 scene 清空），回落单场景；
+// 3. 勾 ≤1 张 → `options` 这个键被**删掉**（连 curated 一起，不是把 scene 清空），
+//    回落单场景；
 // 4. 未关联场景 / kind ≠ reflection → 选择器不出现（其它场景没有平面图形语义）；
 // 5. `points` 保存时已展开（断网也能渲染，不能只留 key 让渲染层回查）；
 // 6. 知识点场景零回写（ADR-0073 红线）。
@@ -213,23 +215,19 @@ Future<void> _save(WidgetTester tester, _FakeRepo repo) async {
   expect(repo.updateSectionsCalls, 1, reason: '保存没有落到仓库');
 }
 
-/// 保存出去的那份 `optionGroup`（断言前先确认它确实在）。
-Map<String, dynamic> _savedGroup(_FakeRepo repo) {
+/// 保存出去的那份 `options`（断言前先确认它确实在）。
+List<dynamic> _savedOptions(_FakeRepo repo) {
   final scene = repo.lastUpdated!.first.scene;
   expect(scene, isNotNull);
-  expect(scene!.containsKey('optionGroup'), isTrue);
-  return scene['optionGroup'] as Map<String, dynamic>;
+  expect(scene!.containsKey('options'), isTrue);
+  return scene['options'] as List<dynamic>;
 }
 
 /// 条目里的图形名序列——顺序就是教学编排意图。
 ///
-/// 条目**不带图库 key**（ADR-0083 决策 6：spec 内联几何、不引用 key），
-/// 所以用 caption（图形中文名）当身份看顺序。
-List<String> _captionsOf(Map<String, dynamic> group) =>
-    (group['items'] as List<dynamic>)
-        .cast<Map<String, dynamic>>()
-        .map((e) => e['caption'] as String)
-        .toList();
+/// 条目就是 `Figure`（ADR-0091）：`label` 是展示名，`key` 是身份键。
+List<String> _labelsOf(List<dynamic> options) =>
+    options.cast<Map<String, dynamic>>().map((e) => e['label'] as String).toList();
 
 void main() {
   testWidgets('勾 2 张：顺序 == 勾选顺序（非库序），保存后落库，重开回读一致',
@@ -243,9 +241,10 @@ void main() {
 
     await _save(tester, repo);
 
-    final group = _savedGroup(repo);
-    expect(group['curated'], isTrue);
-    expect(_captionsOf(group), <String>['正方形', '房子']);
+    final options = _savedOptions(repo);
+    // curated 是显式开关（课件编排语境，ADR-0076 §2.2）。
+    expect(repo.lastUpdated!.first.scene!['curated'], isTrue);
+    expect(_labelsOf(options), <String>['正方形', '房子']);
 
     // 重开编辑器（保存后页面已换成新环节），回读应一致。
     await tester.tap(find.text('动手画对称图形'));
@@ -271,11 +270,11 @@ void main() {
     expect(find.text('2. 正方形'), findsOneWidget);
 
     await _save(tester, repo);
-    expect(_captionsOf(_savedGroup(repo)), <String>['房子', '正方形']);
+    expect(_labelsOf(_savedOptions(repo)), <String>['房子', '正方形']);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('勾 1 张：optionGroup 被移除，scene 本身还在', (tester) async {
+  testWidgets('勾 1 张：options 被移除，scene 本身还在', (tester) async {
     final repo = _FakeRepo(_coursewareWith([_section(_reflectionSpec())]));
     await _openDialog(tester, repo);
 
@@ -283,15 +282,16 @@ void main() {
     await _save(tester, repo);
 
     final scene = repo.lastUpdated!.first.scene;
-    expect(scene, isNotNull, reason: 'scene 被整个清空了（只应删 optionGroup 键）');
-    expect(scene!.containsKey('optionGroup'), isFalse);
+    expect(scene, isNotNull, reason: 'scene 被整个清空了（只应删 options 键）');
+    expect(scene!.containsKey('options'), isFalse);
+    expect(scene.containsKey('curated'), isFalse);
     // 回落到单场景路径：场景自己的字段一个不少。
     expect(scene['kind'], 'reflection');
     expect(scene['title'], '图形的运动（轴对称）');
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('勾 0 张（勾了又取消）：optionGroup 被移除', (tester) async {
+  testWidgets('勾 0 张（勾了又取消）：options 被移除', (tester) async {
     final repo = _FakeRepo(_coursewareWith([_section(_reflectionSpec())]));
     await _openDialog(tester, repo);
 
@@ -303,7 +303,7 @@ void main() {
 
     final scene = repo.lastUpdated!.first.scene;
     expect(scene, isNotNull);
-    expect(scene!.containsKey('optionGroup'), isFalse);
+    expect(scene!.containsKey('options'), isFalse);
     expect(tester.takeException(), isNull);
   });
 
@@ -329,7 +329,8 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('条目只写几何（points + edges），与图形库顶点一致', (tester) async {
+  testWidgets('条目就是 Figure（key + label + points + edges），顶点与图库一致',
+      (tester) async {
     final repo = _FakeRepo(_coursewareWith([_section(_reflectionSpec())]));
     await _openDialog(tester, repo);
 
@@ -337,17 +338,16 @@ void main() {
     await _toggle(tester, '房子');
     await _save(tester, repo);
 
-    final items = (_savedGroup(repo)['items'] as List<dynamic>)
-        .cast<Map<String, dynamic>>();
+    final items = _savedOptions(repo).cast<Map<String, dynamic>>();
     expect(items.length, 2);
-    // 条目形状 == 后端 `extract_option_group` 的产物：只有 label/caption/points/edges。
-    // **没有** figureKey、**没有**任何 axis 字段（ADR-0083 决策 2/6）。
-    const allowed = {'label', 'caption', 'points', 'edges'};
+    // 条目形状 == 后端 `Figure`：key / label / points / edges。
+    // **没有**任何 axis 字段（ADR-0083 决策 2）；身份键随几何一起落库（ADR-0091）。
+    const allowed = {'key', 'label', 'points', 'edges'};
     for (final item in items) {
       expect(item.keys.toSet(), allowed,
-          reason: '条目只该带几何：多出来的键要么是对图库的引用、要么是 axis 残留');
-      final shape = kTestLibrary.firstWhere((f) => f.label == item['caption']);
-      expect(item['caption'], shape.label);
+          reason: '条目只该带几何与身份：多出来的键要么是 axis 残留');
+      final shape = kTestLibrary.firstWhere((f) => f.key == item['key']);
+      expect(item['label'], shape.label);
 
       final points = item['points'];
       expect(points, isA<List>(), reason: 'points 被写成了 ${points.runtimeType}');
@@ -381,7 +381,7 @@ void main() {
     expect(jsonEncode(repo.kpScenes), before,
         reason: '知识点上的场景被回写了（ADR-0073：只写本环节的副本）');
     // 本环节确实写上了——否则这条断言会因为「什么都没做」而假通过。
-    expect(_captionsOf(_savedGroup(repo)), <String>['正方形', '房子']);
+    expect(_labelsOf(_savedOptions(repo)), <String>['正方形', '房子']);
     expect(tester.takeException(), isNull);
   });
 

@@ -1,15 +1,21 @@
-// 选项组渲染（ADR-0061 §V）：同一模板 → 图形画廊，点一个图形弹对折演示。
+// 选项组渲染（ADR-0061 §V · ADR-0091）：同一模板 → 图形画廊，点一个图形弹对折演示。
 //
 // 守三件事：
-// 1. spec 带 optionGroup 时**不再**平铺 N 个场景（§O 旧做法），而是渲染图形画廊；
+// 1. spec 带 `options` 时**不再**平铺 N 个场景（§O 旧做法），而是渲染图形画廊；
 // 2. 点一个图形弹 ReflectionSceneDialog，框里是**该条目自己的**完整场景
 //    （拖 A 的轴不影响 B，每次只演示一个）；
 // 3. 轴初值取 kind 外壳的（ADR-0083 决策 6），不按图形走——图库不存 axis 属性。
+//
+// ADR-0091 起条目就是 `Figure{key,label,points,edges}`（不再有 label/caption 旧投影、
+// 也不再要 `optionGroup` 那层嵌套）；选项标号（A/B）由解释器按条目下标推。
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+import 'package:kids_learn/shared/domain/figures.dart';
+import 'package:kids_learn/shared/domain/scene_spec.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
+import 'package:kids_learn/shared/widgets/app_empty_state.dart';
 import 'package:kids_learn/shared/widgets/app_focusable_action.dart';
 import 'package:kids_learn/shared/widgets/app_slider.dart';
 import 'package:kids_learn/shared/widgets/scene_interpreter/reflection_figure_gallery.dart';
@@ -17,62 +23,48 @@ import 'package:kids_learn/shared/widgets/scene_interpreter/reflection_scene.dar
 import 'package:kids_learn/shared/widgets/scene_interpreter/scene_interpreter.dart';
 import 'package:kids_learn/shared/widgets/scene_interpreter/scene_shells.dart';
 
+/// 一个新形 `Figure`（与后端 `Figure` 同形：key / label / points / edges）。
+Map<String, dynamic> _figure(
+  String key,
+  String label,
+  List<List<double>> points,
+) =>
+    <String, dynamic>{
+      'key': key,
+      'label': label,
+      'points': points,
+      'edges': closedEdges(points.length),
+    };
+
 Map<String, dynamic> _specWithGroup() => {
       'kind': 'reflection',
-      // 模板默认：房子 + 竖轴（kind 外壳的初值）
-      'inputs': [
-        {'key': 'figure', 'value': 'house'},
-        {'key': 'axisAngle', 'value': 90.0},
-        {'key': 'axisX', 'value': 0.5},
-        {'key': 'axisY', 'value': 0.5},
+      // 模板默认：房子（演示对象），轴初值归 kind 外壳。
+      'figure': _figure('house', '房子', const [
+        [0.30, 0.70],
+        [0.70, 0.70],
+        [0.70, 0.45],
+        [0.50, 0.25],
+        [0.30, 0.45],
+      ]),
+      // 选项组：两个图形（题库语境，curated 缺省 = false → 挂 A/B 角标）。
+      'options': [
+        _figure('house', '房子', const [
+          [0.30, 0.70],
+          [0.70, 0.70],
+          [0.70, 0.45],
+          [0.50, 0.25],
+          [0.30, 0.45],
+        ]),
+        _figure('arrow', '箭头', const [
+          [0.20, 0.42],
+          [0.62, 0.42],
+          [0.62, 0.30],
+          [0.82, 0.50],
+          [0.62, 0.70],
+          [0.62, 0.58],
+          [0.20, 0.58],
+        ]),
       ],
-      'controls': {'play': true, 'scrub': true},
-      'narrative': '拖动对称轴试试看能否完全重合',
-      'editable': true,
-      'optionGroup': {
-        'items': [
-          {
-            'label': 'A',
-            'caption': '房子',
-            'points': [
-              [0.30, 0.70],
-              [0.70, 0.70],
-              [0.70, 0.45],
-              [0.50, 0.25],
-              [0.30, 0.45],
-            ],
-            'edges': [
-              [0, 1],
-              [1, 2],
-              [2, 3],
-              [3, 4],
-              [4, 0],
-            ],
-          },
-          {
-            'label': 'B',
-            'caption': '箭头',
-            'points': [
-              [0.20, 0.42],
-              [0.62, 0.42],
-              [0.62, 0.30],
-              [0.82, 0.50],
-              [0.62, 0.70],
-              [0.62, 0.58],
-              [0.20, 0.58],
-            ],
-            'edges': [
-              [0, 1],
-              [1, 2],
-              [2, 3],
-              [3, 4],
-              [4, 5],
-              [5, 6],
-              [6, 0],
-            ],
-          },
-        ],
-      },
     };
 
 /// 按给定**表面尺寸**挂载场景。
@@ -91,7 +83,9 @@ Future<void> _pumpScene(
     ShadApp.custom(
       theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
       appBuilder: (context) => MaterialApp(
-        home: Scaffold(body: SceneInterpreter(kind: 'reflection', spec: spec)),
+        home: Scaffold(
+          body: SceneInterpreter(spec: SceneSpec.tryParse(spec)!),
+        ),
       ),
     ),
   );
@@ -103,7 +97,7 @@ Finder _galleryCard(String figureLabel) =>
     find.ancestor(of: find.text(figureLabel), matching: find.byType(AppFocusableAction));
 
 void main() {
-  testWidgets('optionGroup → 渲染图形画廊（不平铺 N 个场景）', (tester) async {
+  testWidgets('options → 渲染图形画廊（不平铺 N 个场景）', (tester) async {
     await _pumpScene(tester, _specWithGroup());
 
     // §V：列表页铺画廊，每个图形一个卡片；场景只在弹窗里，不在这里平铺。
@@ -179,8 +173,8 @@ void main() {
     expect(find.text('箭头'), findsOneWidget);
   });
 
-  testWidgets('无 optionGroup 时仍渲染单场景（旧数据零回归）', (tester) async {
-    final spec = _specWithGroup()..remove('optionGroup');
+  testWidgets('无 options 时仍渲染单场景', (tester) async {
+    final spec = _specWithGroup()..remove('options');
     // 用**贴近真实的卡片宽度**：单场景的画布是「边长 = 宽度」的正方形
     // （ReflectionSceneWidget 的既有行为，本次未改），全屏宽会让它高得离谱。
     await _pumpScene(tester, spec, size: const Size(420, 1000));
@@ -189,16 +183,23 @@ void main() {
     expect(find.byType(ReflectionSceneWidget), findsOneWidget);
   });
 
-  testWidgets('optionGroup 存在但无有效 points → 走空态而非崩溃', (tester) async {
-    final spec = _specWithGroup();
-    (spec['optionGroup'] as Map)['items'] = [
-      {'label': 'A', 'caption': '房子'}, // 没有 points
-    ];
+  testWidgets('options 里没有可渲染几何 → 走空态而非崩溃', (tester) async {
+    // 顶点不足 3 个的图形入不了列（解析入口不臆造几何），figure 也没有 →
+    // 空态（讲清「为什么空」），不崩、不画兜底房子。
+    final spec = <String, dynamic>{
+      'kind': 'reflection',
+      'options': [
+        _figure('degenerate', '房子', const [
+          [0.1, 0.1],
+          [0.2, 0.2],
+        ]),
+      ],
+    };
     await _pumpScene(tester, spec);
 
-    // 不崩；无有效项 → 空态
     expect(tester.takeException(), isNull);
     expect(find.byType(ReflectionSceneWidget), findsNothing);
+    expect(find.byType(AppEmptyState), findsOneWidget);
   });
 
   testWidgets('点播放能跑完对折动画（回归：控制器漏设 duration 直接抛）',
@@ -227,7 +228,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('editable=true 时弹窗内显示 3 个轴控制 + 1 个对折进度（共 4 AppSlider）',
+  testWidgets('弹窗内显示 3 个轴控制 + 1 个对折进度（共 4 AppSlider）',
       (tester) async {
     await _pumpScene(tester, _specWithGroup());
 
@@ -235,8 +236,8 @@ void main() {
     await tester.pumpAndSettle();
 
     // 弹窗内：3 个轴滑块（角度 0..180、水平 0.3..0.7、垂直 0.3..0.7）+ 1 个对折
-    // 进度条（未显式设 max → null）。轴参数那 3 个正是 ①A 要的——editable=false
-    // 时它们会整个消失，学生就只能看不能试。
+    // 进度条（未显式设 max → null）。轴参数那 3 个正是学生要的——没有它们，
+    // 学生就只能看不能试。
     final all = tester.widgetList<AppSlider>(find.byType(AppSlider)).toList();
     expect(all, hasLength(4), reason: '弹窗内：3 个轴控制 + 1 个对折进度条');
     final axisSliders = all.where((s) => s.max != null).toList();

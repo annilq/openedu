@@ -5,11 +5,12 @@
 // 「边长 = 宽度」的正方形，536 宽的弹窗直接溢出 306px（黄黑条）。
 //
 // §V 之后：面板用图形画廊选图形（不再在面板里挂轴滑块），轴滑块只在「点图形弹出的
-// 对折演示弹窗」里出现。ADR-0083 后 spec 瘦成纯几何 `{kind, points, edges}`——轴初值
-// / controls / 文案统一由 kind 外壳提供，故这里钉：
+// 对折演示弹窗」里出现。ADR-0083 后 spec 只剩几何，ADR-0091 起几何收进
+// `{kind, figure:{key,label,points,edges}}`——轴初值 / controls / 文案统一由 kind
+// 外壳提供，故这里钉：
 // 1. 弹窗内容**不溢出**（套了 SingleChildScrollView + 画廊替代下拉，预选图形不撑爆）；
 // 2. **面板不渲染轴滑块**（它们在弹窗里）——否则白占地方还撑爆弹窗；
-// 3. **保存进库的那份是纯几何**（`{kind, points, edges}`，无 editable/title/inputs）。
+// 3. **保存进库的那份只有几何**（figure 带身份键，无 editable/title/inputs）。
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -77,7 +78,7 @@ class _StubRepo implements MaterialRepository {
   dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError();
 }
 
-/// 一份合法的「已配置」reflection 模板（新形：图形=房子，纯几何）。
+/// 一份合法的「已配置」reflection 模板（新形：图形=房子，几何与身份键在 figure 里）。
 ///
 /// `pumpEditor` 默认就传它：编辑器仅在「已配置」（`initialScenes` 非空）时才渲染
 /// 完整表单（图形画廊 + 保存按钮）；`unconfigured` 时只显示开发者指引（ADR-0061：
@@ -85,20 +86,24 @@ class _StubRepo implements MaterialRepository {
 const List<Map<String, dynamic>> _configuredScenes = [
   {
     'kind': 'reflection',
-    'points': [
-      [0.30, 0.70],
-      [0.70, 0.70],
-      [0.70, 0.45],
-      [0.50, 0.25],
-      [0.30, 0.45],
-    ],
-    'edges': [
-      [0, 1],
-      [1, 2],
-      [2, 3],
-      [3, 4],
-      [4, 0],
-    ],
+    'figure': {
+      'key': 'house',
+      'label': '房子',
+      'points': [
+        [0.30, 0.70],
+        [0.70, 0.70],
+        [0.70, 0.45],
+        [0.50, 0.25],
+        [0.30, 0.45],
+      ],
+      'edges': [
+        [0, 1],
+        [1, 2],
+        [2, 3],
+        [3, 4],
+        [4, 0],
+      ],
+    },
   },
 ];
 
@@ -206,9 +211,12 @@ void main() {
     for (final banned in ['editable', 'title', 'inputs', 'controls', 'narrative', 'outputs']) {
       expect(spec.containsKey(banned), isFalse, reason: '不应再有 $banned');
     }
+    // ADR-0091：几何只进 figure，顶层不再摊平顶点。
+    expect(spec.containsKey('points'), isFalse);
+    expect(spec.containsKey('edges'), isFalse);
   });
 
-  testWidgets('保存的 spec 带顶层 points + edges（顶点权威，ADR-0061 §O / ADR-0083）',
+  testWidgets('保存的 spec 几何在 figure 里（顶点权威，带身份键）',
       (tester) async {
     await pumpEditor(tester);
     final notifier = ProviderScope.containerOf(
@@ -222,11 +230,13 @@ void main() {
     await tester.tap(saveBtn);
     await tester.pumpAndSettle();
 
-    final spec = notifier.saved!.first;
-    expect(spec['points'], isA<List>());
-    expect((spec['points'] as List).length, greaterThanOrEqualTo(3));
-    expect(spec['edges'], isA<List>());
-    expect((spec['edges'] as List).length, greaterThanOrEqualTo(3));
+    final figure = notifier.saved!.first['figure'] as Map<String, dynamic>;
+    // 身份键随几何一起落库（ADR-0091 决策 2：画廊角标 / 高亮靠它）。
+    expect(figure['key'], 'house');
+    expect(figure['points'], isA<List>());
+    expect((figure['points'] as List).length, greaterThanOrEqualTo(3));
+    expect(figure['edges'], isA<List>());
+    expect((figure['edges'] as List).length, greaterThanOrEqualTo(3));
   });
 
   testWidgets('短屏下也不溢出（弹窗高度受限的极端情况）', (tester) async {

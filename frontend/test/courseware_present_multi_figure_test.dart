@@ -1,7 +1,7 @@
-// 讲课页端到端贯通（ADR-0076 §2.3 · ticket 05）。
+// 讲课页端到端贯通（ADR-0076 §2.3 · ticket 05 · ADR-0091 改形）。
 //
 // 02 / 03 票各自在画廊 / 解释器接缝上自证，本票从**课件数据**出发：一份带
-// `optionGroup` 的 `section.scene` 经真讲课页（CoursewarePresentPage → PresentStage
+// `options` 的 `section.scene` 经真讲课页（CoursewarePresentPage → PresentStage
 // → SectionInteractiveScene → SceneInterpreter）走到屏幕上，断言教师在投影上真正
 // 看到的那一屏。这条链路上一行业务代码都没改——「零改造」本身就是本票的断言。
 //
@@ -36,10 +36,10 @@ import 'package:kids_learn/shared/widgets/scene_interpreter/scene_shells.dart';
 
 import 'support/figure_fixtures.dart';
 
-/// 课件语境的条目（形状与后端 `extract_option_group` 一致：只有几何，无 key、无 axis）。
-Map<String, dynamic> _item(FigureShape f, {String label = ''}) => {
-      'label': label,
-      'caption': f.label,
+/// 一个新形 `Figure`（与后端 `Figure` 同形：key / label / points / edges）。
+Map<String, dynamic> _figure(FigureShape f) => {
+      'key': f.key,
+      'label': f.label,
       // 保存时展开写入（红线 2）：渲染层不回查图形库，断网也能摆出来。
       'points': [
         for (final v in f.vertices) <double>[v.x, v.y],
@@ -50,37 +50,28 @@ Map<String, dynamic> _item(FigureShape f, {String label = ''}) => {
 /// 教师编排好的一组：**非库序**（正方形 → 箭头 → 房子）。
 ///
 /// 按库序排的子集在「被重排」与「未被重排」两种实现下渲染结果一样，断言没有牙齿。
-Map<String, dynamic> _curatedGroup() => {
-      'curated': true,
-      'items': [
-        _item(kSquareFixture),
-        _item(kArrowFixture),
-        _item(kHouseFixture),
-      ],
-    };
+List<Map<String, dynamic>> _curatedOptions() => [
+      _figure(kSquareFixture),
+      _figure(kArrowFixture),
+      _figure(kHouseFixture),
+    ];
 
 /// 题库语境的图形组：有条目但**未声明** curated（差别只在「挂不挂 A/B/C 角标」）。
-Map<String, dynamic> _plainGroup() => {
-      'items': [
-        _item(kHouseFixture, label: 'A'),
-        _item(kArrowFixture, label: 'B'),
-      ],
-    };
+List<Map<String, dynamic>> _plainOptions() => [
+      _figure(kHouseFixture),
+      _figure(kArrowFixture),
+    ];
 
-/// 一份环节场景：模板轴是 90°（竖轴），用来验证弹窗**不套用**它。
-Map<String, dynamic> _spec({Map<String, dynamic>? optionGroup}) => {
+/// 一份环节场景（新形：主图形 + 可选选项组）。
+Map<String, dynamic> _spec({
+  List<Map<String, dynamic>>? options,
+  bool curated = false,
+}) =>
+    {
       'kind': 'reflection',
-      'points': [
-        <double>[0.30, 0.70],
-        <double>[0.70, 0.70],
-        <double>[0.70, 0.45],
-        <double>[0.50, 0.25],
-        <double>[0.30, 0.45],
-      ],
-      'controls': {'play': true, 'scrub': true},
-      'editable': true,
-      'narrative': '拖动对称轴试试看能否完全重合',
-      if (optionGroup != null) 'optionGroup': optionGroup,
+      'figure': _figure(kHouseFixture),
+      if (options != null) 'options': options,
+      if (curated) 'curated': true,
     };
 
 CoursewareSectionModel _section(
@@ -172,7 +163,9 @@ void main() {
   testWidgets('curated 图形组 → 摆出 N 张只读卡，顺序 == 教师编排顺序', (tester) async {
     await _pumpPresent(
       tester,
-      courseware: _courseware(_section(_spec(optionGroup: _curatedGroup()))),
+      courseware: _courseware(
+        _section(_spec(options: _curatedOptions(), curated: true)),
+      ),
     );
 
     expect(find.byType(ReflectionFigureGallery), findsOneWidget);
@@ -191,7 +184,9 @@ void main() {
       (tester) async {
     await _pumpPresent(
       tester,
-      courseware: _courseware(_section(_spec(optionGroup: _curatedGroup()))),
+      courseware: _courseware(
+        _section(_spec(options: _curatedOptions(), curated: true)),
+      ),
     );
 
     // 每张卡一个 play 角标（可见性提示，不是唯一命中区）。
@@ -214,7 +209,7 @@ void main() {
       (tester) async {
     await _pumpPresent(
       tester,
-      courseware: _courseware(_section(_spec(optionGroup: _plainGroup()))),
+      courseware: _courseware(_section(_spec(options: _plainOptions()))),
       size: const Size(1366, 1400),
     );
 
@@ -232,7 +227,9 @@ void main() {
       (tester) async {
     await _pumpPresent(
       tester,
-      courseware: _courseware(_section(_spec(optionGroup: _curatedGroup()))),
+      courseware: _courseware(
+        _section(_spec(options: _curatedOptions(), curated: true)),
+      ),
     );
 
     final arrow = kArrowFixture;

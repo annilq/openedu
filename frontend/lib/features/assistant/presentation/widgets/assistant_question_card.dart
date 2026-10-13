@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+import '../../../../shared/domain/scene_spec.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/utils/option_text.dart';
 import '../../../../shared/utils/question_labels.dart';
@@ -129,7 +130,11 @@ class _QuestionBodyState extends State<_QuestionBody> {
   Widget build(BuildContext context) {
     final scheme = AppTheme.colorsOf(context);
     final text = AppTheme.textOf(context);
-    final hasScene = widget.sceneSpec != null && widget.sceneSpec!['kind'] is String;
+    // 场景规格经唯一解析入口（ADR-0091）：能解析出类型才渲染交互讲解。
+    final spec = widget.sceneSpec == null
+        ? null
+        : SceneSpec.tryParse(widget.sceneSpec!);
+    final hasScene = spec != null;
     // 判断题未揭示前收起答案/解析/出题思路；已揭示或非判断题 → 全量展示。
     final showAnswer = _revealed || !widget.isJudge;
     return Column(
@@ -192,10 +197,7 @@ class _QuestionBodyState extends State<_QuestionBody> {
           const SizedBox(height: AppSpacing.md),
           AppTags.info('交互讲解'),
           const SizedBox(height: AppSpacing.sm),
-          SceneInterpreter(
-            kind: widget.sceneSpec!['kind'] as String,
-            spec: widget.sceneSpec!,
-          ),
+          SceneInterpreter(spec: spec),
         ],
       ],
     );

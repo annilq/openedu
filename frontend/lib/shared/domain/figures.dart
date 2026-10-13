@@ -19,7 +19,15 @@ library;
 
 import 'dart:ui' show Offset;
 
-/// 一个轴对称教学图形：归一化顶点 + 中文名。**无 axis 属性**（ADR-0083 决策 2）。
+/// 一个轴对称教学图形：身份键 + 中文名 + 归一化顶点 + 连接关系。
+///
+/// 与后端 `Figure`（`app/domain/figures.py`）**同构**：`{key, label, points, edges}`
+/// （ADR-0091 决策 3——补 `edges` 就是为消灭「前端只有顶点、按序闭合」这个差异）。
+/// **无 axis 属性**（ADR-0083 决策 2）。
+///
+/// 身份与渲染的分工（ADR-0083 决策 6 收窄）：`key` **只**用于身份 / 溯源 / 校验
+/// （画廊角标映射、选中高亮、去重），**渲染只吃 [vertices] / [edges]**：不按 key
+/// 回查图库，运行时零图库依赖（决策 7 不动）。
 class FigureShape {
   /// 图形标识（后端下发的稳定 key，不是给用户看的名字）。
   final String key;
@@ -27,15 +35,26 @@ class FigureShape {
   /// 图形中文名（仅用于界面标签与题面识别，不参与渲染判定）。
   final String label;
 
-  /// 归一化顶点（x, y∈0..1，y 向下）。多边形按序连线。
+  /// 归一化顶点（x, y∈0..1，y 向下）。
   final List<({double x, double y})> vertices;
+
+  /// 顶点连接关系（顶点索引对）。null / 空 = 按顶点顺序闭合（简单多边形默认）。
+  final List<List<int>>? edges;
 
   const FigureShape({
     required this.key,
     required this.label,
     required this.vertices,
+    this.edges,
   });
 }
+
+/// 顶点顺序闭合的边集（简单多边形的默认连接）。
+///
+/// 放在 domain 而不是渲染层：图形模型自己要能给出「缺省连接关系」，否则每个解析
+/// 入口（场景规格 / 图库行）都得各写一份闭合逻辑。
+List<List<int>> closedEdges(int n) =>
+    [for (var i = 0; i < n; i++) [i, (i + 1) % n]];
 
 /// 最后兜底图形（房子）——**只在场景没有任何几何可用时**才画它。
 ///
@@ -52,6 +71,13 @@ const FigureShape kFallbackFigure = FigureShape(
     (x: 0.50, y: 0.25),
     (x: 0.30, y: 0.45),
   ],
+  edges: <List<int>>[
+    <int>[0, 1],
+    <int>[1, 2],
+    <int>[2, 3],
+    <int>[3, 4],
+    <int>[4, 0],
+  ],
 );
 
 /// 顶点逐点比对的容差（归一化 0..1 坐标；1e-6 远小于一个像素）。
@@ -59,9 +85,10 @@ const double kVertexEpsilon = 1e-6;
 
 /// 在 [library] 里按顶点逐点找回「同一个图形」；找不到返回 null。
 ///
-/// 为什么需要它：`SceneSpec` 内联几何、**不带图库 key**（ADR-0083 决策 6），
-/// 而图库行只有 key/label/几何。要回显「教师现在配的是哪一张卡」（编辑器选中态、
-/// 课件挑图形回读已编排项）就只能拿顶点反查图库。
+/// 为什么还需要它：`SceneSpec` 现在**带** `figure.key`（ADR-0091 决策 2 把 ADR-0083
+/// 决策 6 从「不含 key」收窄为「渲染不消费 key」），但**存量 / 手写的 spec 仍可能没有
+/// key**，而图库行只有 key/label/几何。要回显「教师现在配的是哪一张卡」（编辑器选中态）
+/// 就还得拿顶点反查图库。有 key 的场合一律**优先用 key**，别再走顶点。
 ///
 /// 找不到是**正常情况**，不是错误：教师可能在画板里画了库外图形，或图库还没拉回来
 /// （运行时零图库依赖，图库只在创作 UI 按需取）。调用方据此当作「未知图形」处理，

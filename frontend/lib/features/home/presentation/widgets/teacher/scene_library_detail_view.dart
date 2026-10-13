@@ -14,6 +14,7 @@ import 'package:flutter/material.dart' show Icons;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../../shared/domain/scene_spec.dart';
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/widgets/app_actions.dart';
 import '../../../../../shared/widgets/app_toast.dart';
@@ -270,9 +271,11 @@ class _InstanceCard extends StatelessWidget {
               SizedBox(
                 width: 140,
                 child: SceneInterpreter(
-                  kind: (scene['kind'] as String?) ?? fallbackKind,
-                  // 直接把知识点自己的场景喂进去（几何是唯一权威），不再改写 spec。
-                  spec: scene,
+                  // 知识点自己的场景经唯一解析入口（ADR-0091）喂进去；解析不出
+                  // （旧形 / 畸形）就落到「无图形」空态，不猜字段。
+                  spec: SceneSpec.tryParse(scene) ??
+                      SceneSpec(
+                          kind: (scene['kind'] as String?) ?? fallbackKind),
                   showAxisControls: false,
                 ),
               ),
