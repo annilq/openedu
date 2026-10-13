@@ -15,13 +15,19 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:kids_learn/features/home/presentation/widgets/teacher/bank_question_detail.dart';
 import 'package:kids_learn/shared/domain/models/question.dart';
+import 'package:kids_learn/shared/domain/models/quiz_option.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
 import 'package:kids_learn/shared/widgets/scene_interpreter/reflection_scene.dart';
 
 BankQuestionItem _item({
   String semester = '下学期',
   Map<String, dynamic>? sceneSpec,
-  List<String>? options = const ['房子', '风筝', '箭头', '平行四边形'],
+  List<QuizOption>? options = const [
+    QuizOption(text: '房子'),
+    QuizOption(text: '风筝'),
+    QuizOption(text: '箭头'),
+    QuizOption(text: '平行四边形'),
+  ],
   int usageCount = 3,
   String explanation = '正方形有 4 条对称轴：两条中线 + 两条对角线。',
 }) =>

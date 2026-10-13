@@ -12,6 +12,8 @@
 /// 不要顺手统一成长短一致。
 library;
 
+import '../domain/models/quiz_option.dart';
+
 /// 题型短标签：`calc` → 「计算」。用于筛选条、紧凑标签这类横向空间紧张的位置。
 String qtypeLabel(String qtype) => switch (qtype) {
       'calc' => '计算',
@@ -67,14 +69,14 @@ const _judgeOptionWords = {
   '否',
 };
 
-bool isJudgeQuestion(String qtype, List<String>? options) {
+bool isJudgeQuestion(String qtype, List<QuizOption>? options) {
   if (qtype != 'choice' || options == null || options.length != 2) return false;
-  final norm = options.map((o) => o.trim().toLowerCase()).toSet();
+  final norm = options.map((o) => o.text.trim().toLowerCase()).toSet();
   return norm.length == 2 && norm.every(_judgeOptionWords.contains);
 }
 
 /// 题型长标签（带判断题识别）：判断题返回「判断题」，其余走 [qtypeLabelFull]。
-String qtypeLabelWithJudge(String qtype, List<String>? options) =>
+String qtypeLabelWithJudge(String qtype, List<QuizOption>? options) =>
     isJudgeQuestion(qtype, options) ? '判断题' : qtypeLabelFull(qtype);
 
 /// 任务状态 → 中文：`draft` → 「草稿」。

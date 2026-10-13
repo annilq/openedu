@@ -99,7 +99,7 @@ class BankQuestionDetail extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.only(bottom: 2),
                   child: Text(
-                    '${chr(i)}. ${cleanOptionText(item.options![i])}',
+                    '${chr(i)}. ${cleanOptionText(item.options![i].text)}',
                     style: text.bodyMedium,
                   ),
                 ),

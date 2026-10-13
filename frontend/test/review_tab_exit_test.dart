@@ -58,7 +58,11 @@ ReviewItemModel _item() => ReviewItemModel(
       knowledgePoint: '加法',
       qtype: 'choice',
       stem: '1 + 1 = ?',
-      options: const ['甲', '乙', '丙'],
+      options: const [
+        QuizOption(text: '甲'),
+        QuizOption(text: '乙'),
+        QuizOption(text: '丙'),
+      ],
       wrongCount: 1,
       reviewStage: 0,
       nextIntervalDays: 2,

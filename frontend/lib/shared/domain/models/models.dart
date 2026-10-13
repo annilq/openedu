@@ -15,6 +15,7 @@ export 'date_parse.dart';
 export 'mastery.dart';
 export 'paging.dart';
 export 'question.dart';
+export 'quiz_option.dart';
 export 'student_import_result.dart';
 export 'task.dart';
 export 'user.dart';

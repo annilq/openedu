@@ -55,13 +55,13 @@ class SceneSpec {
     final options = <FigureShape>[];
     if (rawOptions is List) {
       for (final e in rawOptions) {
-        final f = _parseFigure(e);
+        final f = parseFigure(e);
         if (f != null) options.add(f);
       }
     }
     return SceneSpec(
       kind: kind,
-      figure: _parseFigure(raw['figure']),
+      figure: parseFigure(raw['figure']),
       options: options,
       curated: raw['curated'] == true,
     );
@@ -70,10 +70,10 @@ class SceneSpec {
   /// 回写形状（课件草稿 / 知识点保存）：与后端 `SceneSpec` 同形。
   Map<String, dynamic> toJson() => <String, dynamic>{
         'kind': kind,
-        if (figure != null) 'figure': _figureJson(figure!),
+        if (figure != null) 'figure': figureToJson(figure!),
         if (options.isNotEmpty)
           'options': <Map<String, dynamic>>[
-            for (final f in options) _figureJson(f),
+            for (final f in options) figureToJson(f),
           ],
         if (curated) 'curated': true,
       };
@@ -81,7 +81,8 @@ class SceneSpec {
   /// `Figure`（后端 `app/domain/figures.py`）→ [FigureShape]。
   ///
   /// `key` 为空或顶点不足 3 个 → null（画不出多边形，也不该占一个身份）。
-  static FigureShape? _parseFigure(Object? raw) {
+  /// 公开供选项图形（[QuizOption]）等复用，避免第二处解析。
+  static FigureShape? parseFigure(Object? raw) {
     if (raw is! Map) return null;
     final key = raw['key'];
     if (key is! String || key.isEmpty) return null;
@@ -119,7 +120,8 @@ class SceneSpec {
     return out.isEmpty ? null : out;
   }
 
-  static Map<String, dynamic> _figureJson(FigureShape f) => <String, dynamic>{
+  /// [FigureShape] → 后端 `Figure` 同形（供选项图形回写）。
+  static Map<String, dynamic> figureToJson(FigureShape f) => <String, dynamic>{
         'key': f.key,
         'label': f.label,
         'points': <List<double>>[

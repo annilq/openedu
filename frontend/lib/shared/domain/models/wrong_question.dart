@@ -3,6 +3,7 @@
 
 import 'date_parse.dart';
 import 'paging.dart';
+import 'quiz_option.dart';
 
 class WrongQuestionPage extends CursorPage<WrongQuestionModel> {
   /// 该学生已毕业（已掌握）的错题总数；只在「只看未毕业」时由服务端下发。
@@ -47,7 +48,7 @@ class WrongQuestionModel {
   final String knowledgePoint;
   final String qtype;
   final String stem;
-  final List<String>? options;
+  final List<QuizOption>? options;
   final String? answer;
   final String explanation;
   final int wrongCount;
@@ -90,7 +91,7 @@ class WrongQuestionModel {
       knowledgePoint: json['knowledge_point'] as String,
       qtype: json['qtype'] as String,
       stem: json['stem'] as String,
-      options: (json['options'] as List?)?.map((e) => e.toString()).toList(),
+      options: QuizOption.parseList(json['options']),
       answer: json['answer'] as String?,
       explanation: json['explanation'] as String? ?? '',
       wrongCount: json['wrong_count'] as int? ?? 1,
@@ -112,7 +113,7 @@ class ReviewItemModel {
   final String knowledgePoint;
   final String qtype;
   final String stem;
-  final List<String>? options;
+  final List<QuizOption>? options;
   final String explanation;
   final int wrongCount;
   final int reviewStage;
@@ -153,7 +154,7 @@ class ReviewItemModel {
       knowledgePoint: json['knowledge_point'] as String,
       qtype: json['qtype'] as String,
       stem: json['stem'] as String,
-      options: (json['options'] as List?)?.map((e) => e.toString()).toList(),
+      options: QuizOption.parseList(json['options']),
       explanation: json['explanation'] as String? ?? '',
       wrongCount: json['wrong_count'] as int? ?? 1,
       reviewStage: json['review_stage'] as int? ?? 0,

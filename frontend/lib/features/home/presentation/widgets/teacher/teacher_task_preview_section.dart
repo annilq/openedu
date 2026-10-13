@@ -285,7 +285,7 @@ class _PreviewCard extends StatelessWidget {
                   (e) => Padding(
                     padding: const EdgeInsets.only(bottom: 4),
                     child: Text(
-                      '${String.fromCharCode(65 + e.key)}. ${cleanOptionText(e.value)}',
+                      '${String.fromCharCode(65 + e.key)}. ${cleanOptionText(e.value.text)}',
                       style: text.bodySmall,
                     ),
                   ),

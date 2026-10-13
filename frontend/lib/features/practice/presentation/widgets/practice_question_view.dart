@@ -130,10 +130,11 @@ class PracticeQuestionView extends StatelessWidget {
                     q.options!.isNotEmpty)
                   ...q.options!.asMap().entries.map((e) => AppOptionTile(
                         index: e.key,
-                        text: cleanOptionText(e.value),
-                        selected: selectedOptions.contains(e.value),
+                        text: cleanOptionText(e.value.text),
+                        figure: e.value.figure,
+                        selected: selectedOptions.contains(e.value.text),
                         multi: q.multi,
-                        onTap: () => onOptionTap(e.value),
+                        onTap: () => onOptionTap(e.value.text),
                       ))
                 else
                   AppTextField(

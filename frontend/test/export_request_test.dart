@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kids_learn/features/export/domain/export_repository.dart';
+import 'package:kids_learn/shared/domain/models/quiz_option.dart';
 
 void main() {
   group('ExportSheetRequest', () {
@@ -46,9 +47,9 @@ void main() {
       final count = countDowngradedQuestions(
         stems: ['纯文本', r'含公式 $x^2$', '也是纯文本'],
         optionLists: [
-          ['A', 'B'],
+          [QuizOption(text: 'A'), QuizOption(text: 'B')],
           null,
-          ['C', r'$\frac{1}{2}$'],
+          [QuizOption(text: 'C'), QuizOption(text: r'$\frac{1}{2}$')],
         ],
       );
       expect(count, 2);
