@@ -17,9 +17,9 @@ from app.domain.tutor import TutorService
 
 # 与 query 系列工具同款写法：subagent 直接取用 features 的 service / 纯函数
 # （先例见 app/ai/subagents/query/tools/*）。抽取是**无副作用的纯函数**（只认题面
-# 文本），几何则由 `default_scene_from_figure` 按 key 查图库 DB（ADR-0083）。
+# 文本），几何则由 `scene_spec_from_figure` 按 key 查图库 DB 盖章（ADR-0083/0091）。
 from app.features.materials.scene_extract import extract_scene_inputs
-from app.features.materials.scene_fusion import default_scene_from_figure
+from app.features.materials.scene_fusion import scene_spec_from_figure
 
 
 def detect_subject(text: str) -> str:
@@ -56,12 +56,16 @@ def _interactive_scene_for(message: str, session) -> dict | None:
 
     这里的容错是**有意且必要**的：场景卡是答疑的增强，任何岔子都不能吞掉正文。
     抽不到、图库没命中、乃至函数本身抛错，一律退化成「没有演示、照常讲」。
+
+    SSE 载荷要 JSON 友好：SceneSpec（ADR-0091 起生产端产的是有类型契约）在此
+    边界 ``model_dump`` 成裸 dict——前端 ``SceneInterpreter`` 吃的就是裸 Map。
     """
     if not message or session is None:
         return None
     try:
-        overrides = extract_scene_inputs(stem=message)
-        return default_scene_from_figure(session, overrides.get("figure"))
+        figure_key = extract_scene_inputs(stem=message).get("figure")
+        spec = scene_spec_from_figure(session, figure_key)
+        return spec.model_dump() if spec is not None else None
     except Exception:
         return None
 

@@ -561,7 +561,7 @@ def create_from_generated(
         if isinstance(raw_scene, dict) and raw_scene:
             scene_spec: dict | None = raw_scene
         else:
-            scene_spec = build_scene_spec_for_question(
+            built = build_scene_spec_for_question(
                 session,
                 teacher_id=teacher_id,
                 subject=subject,
@@ -571,6 +571,9 @@ def create_from_generated(
                 stem=stem,
                 options=options,
             )
+            # ADR-0091 ticket 02：生产端产有类型 SceneSpec，JSON 列只收 dict——
+            # 落库边界序列化（响应侧 model_dump 归 ticket 03，此处是持久化侧）。
+            scene_spec = built.model_dump() if built is not None else None
         draft_questions.append(
             TaskQuestion(
                 task_id=None,  # 由 batch_generate_task 回填
