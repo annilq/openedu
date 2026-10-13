@@ -14,15 +14,15 @@
 | 02 | 把 KnowledgePointSceneEditor 搬进 shared 中性层 | P0 环·半 | — | done |
 | 03 | home_notifier 改经 assistant provider 层 | P0 层违规 | — | done |
 | 04 | 验证 P0 依赖环已消失 | P0 收口 | 01, 02, 03 | done |
-| 05 | 迁移遗留 M3 视觉令牌（23 文件） | P1 宽重构·migrate | — | ready-for-agent |
+| 05 | 迁移遗留 M3 视觉令牌（42 文件） | P1 宽重构·migrate | — | done |
 | 06 | 删除 app_theme 兼容令牌块 | P1 宽重构·contract | 05 | ready-for-agent |
 | 07 | 移除 crypto 双密钥回退 | P1 后端 | — | ready-for-agent |
 | 08 | 完成 Resource<T> 加载态迁移 | P2 宽重构 | — | ready-for-agent |
 | 09 | 折叠 home 导航三元组为 sealed 单源 | P2 前端 | — | ready-for-agent |
 | 10 | 停止 scene_intent 直连 assistant.repository | P2 后端 | — | ready-for-agent |
 
-**Frontier（无 blocker，可立即抓）：** 01, 02, 03, 05, 07, 08, 09, 10。
-**被阻塞：** 04（等 01/02/03）、06（等 05）。
+**Frontier（无 blocker，可立即抓）：** 01, 02, 03, 06, 07, 08, 09, 10（05 已 done，06 同步解锁）。
+**被阻塞：** 04（done）、06（已解锁，原等 05）。
 
 ## 决策锚点（写进每张 ticket）
 
