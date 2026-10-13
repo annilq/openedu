@@ -24,6 +24,7 @@ from agent_core.protocol import (
     EVENT_ASSISTANT_MESSAGE,
     EVENT_DATA,
     EVENT_ERROR,
+    EVENT_SUGGESTED_ACTIONS,
     EVENT_TOOL_CALL,
     EVENT_TOOL_RESULT,
     AssistantEvent,
@@ -153,15 +154,91 @@ def _surface_of(role: Role) -> str:
     return "student" if role == Role.STUDENT else "teacher"
 
 
-def build_suggested_actions(
+# 共享词条常量（单一事实源，ADR-0072 / 票 03(a)）。
+# follow-up 按本轮 business 选一组 chips；带知识点焦点时叠加知识点向 chips。
+_FOLLOWUP_BY_BUSINESS: dict[str, list[SuggestedAction]] = {
+    "tutor": [
+        SuggestedAction(label="再举一个例子", kind="prompt",
+                        payload="请再举一个贴近生活的例子帮我理解。"),
+        SuggestedAction(label="出一道类似的题", kind="prompt",
+                        payload="请就刚才讲的内容出一道类似的练习题让我试试。"),
+        SuggestedAction(label="换个角度讲", kind="prompt",
+                        payload="能不能换个角度或比喻再讲一遍？"),
+    ],
+    "query": [
+        SuggestedAction(label="看看相关错题", kind="navigate", payload="teacher_task_list"),
+        SuggestedAction(label="整理成可导出要点", kind="prompt",
+                        payload="请把刚才的分析整理成可以导出的要点。"),
+        SuggestedAction(label="换个范围再查", kind="prompt",
+                        payload="我想换个范围或角度再查一下学习情况。"),
+    ],
+    "question": [
+        SuggestedAction(label="再出几道", kind="prompt",
+                        payload="请再给我出几道同类型的练习题。"),
+        SuggestedAction(label="降低难度", kind="prompt",
+                        payload="这些题有点难，请降低难度再出几道。"),
+        SuggestedAction(label="讲解这道题", kind="prompt",
+                        payload="请讲解一下刚才出的题该怎么思考。"),
+    ],
+    "guide": [
+        SuggestedAction(label="查看学习进度", kind="prompt",
+                        payload="请帮我分析一下最近的学习进度和掌握情况。"),
+        SuggestedAction(label="回到首页", kind="navigate", payload="home"),
+    ],
+    "capability": [
+        SuggestedAction(label="我要问个问题", kind="prompt",
+                        payload="我有学习上的疑问，请帮我解答。"),
+        SuggestedAction(label="出几道题练练", kind="prompt",
+                        payload="请给我出几道练习题，巩固一下最近学的知识。"),
+    ],
+}
+
+# 知识点焦点向 follow-up（越权/缺失不叠加）：深入讲解 + 出判断题考一考。
+_KP_FOLLOWUP: list[SuggestedAction] = [
+    SuggestedAction(label="深入这个知识点", kind="prompt",
+                    payload="请围绕这个知识点再深入讲讲。"),
+    SuggestedAction(label="出一道判断题", kind="prompt",
+                    payload="请就这个知识点出一道判断题考考我。"),
+]
+
+
+def build_actions(
+    *,
+    situation: str,
+    business: str | None = None,
+    knowledge_point_id: UUID | None,
+    role: Role,
+    teacher_id: UUID,
+    session: Any,
+) -> list[SuggestedAction]:
+    """ADR-0072 / 票 03(a)：从服务端固定目录装配推荐操作（非 LLM 生成）。
+
+    - ``situation="empty"``：复现原 ``build_suggested_actions`` 行为（全局能力；
+      带知识点 id 时叠加知识点目录）。供 ``GET /suggested-actions`` 空态调用，
+      输出逐条等价于旧实现。
+    - ``situation="followup"``：按本轮 ``business``（query/tutor/question/guide/
+      capability）选一组回复后 chips；带知识点焦点时叠加知识点向 chips。
+    """
+    if situation == "empty":
+        return _build_empty_suggested_actions(
+            knowledge_point_id=knowledge_point_id, role=role,
+            teacher_id=teacher_id, session=session,
+        )
+    # follow-up：按 business 选 chips，叠加知识点向（越权/缺失不叠加）。
+    chips = list(_FOLLOWUP_BY_BUSINESS.get(business or "", []))
+    if knowledge_point_id is not None:
+        focused = resolve_kp_focus(
+            session=session, owner_id=teacher_id, kp_id=knowledge_point_id,
+        )
+        if focused is not None:
+            chips = chips + list(_KP_FOLLOWUP)
+    return chips
+
+
+def _build_empty_suggested_actions(
     *, knowledge_point_id: UUID | None, role: Role, teacher_id: UUID, session: Any
 ) -> list[SuggestedAction]:
-    """ADR-0072：按上下文从固定目录装配推荐操作。
-
-    - 全局目录：问答 / 出几道题练练 / 看错题（角色分叉）/ 查学习进度。
-    - 知识点目录（带 id）：举例 / 出一道判断题 / 讲解，并叠加全局能力。
-    越权或 id 缺失 → 回落全局目录。
-    """
+    """空态目录（与原 ``build_suggested_actions`` 逐条等价，供回归测试锁定）。"""
     global_actions: list[SuggestedAction] = [
         SuggestedAction(
             label="我要问个问题", kind="prompt",
@@ -549,6 +626,23 @@ async def chat(
                         final_text = ev.message
 
                 yield ev.to_sse()
+            # 回复后 follow-up chips（ADR-0072 修订 / 票 03(a)）：每轮回复后随 SSE 下发一组
+            # 推荐操作，走服务端固定目录、非 LLM，**不落库**（仅入口、非对话内容，避免污染
+            # 历史回放）。错误收尾或无正文时不发。
+            if conv_status != "error" and (final_text or cards):
+                followups = build_actions(
+                    situation="followup",
+                    business=decision.business,
+                    knowledge_point_id=kp_id,
+                    role=role,
+                    teacher_id=teacher_id,
+                    session=session,
+                )
+                if followups:
+                    yield AssistantEvent(
+                        eventType=EVENT_SUGGESTED_ACTIONS,
+                        data={"actions": [a.model_dump(mode="json") for a in followups]},
+                    ).to_sse()
         finally:
             # 收尾落库：工具步骤 + 助手输出 + 会话状态
             for m in tool_msgs:

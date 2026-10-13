@@ -14,6 +14,8 @@ import '../provider/assistant_notifier.dart';
 import 'assistant_card_plain_text.dart';
 import 'assistant_cards.dart';
 import 'assistant_sources_bar.dart';
+import 'assistant_suggested_actions.dart';
+import '../../domain/assistant_suggested_action.dart';
 import '../../../../shared/widgets/app_actions.dart';
 import '../../../../shared/widgets/app_card.dart';
 
@@ -39,6 +41,10 @@ class AssistantMessageList extends StatelessWidget {
   /// 「动作之后怎么走」只有宿主知道（见 `assistant_chat_page.dart`）。
   final void Function(AssistantCardAction action)? onCardAction;
 
+  /// 回复后 follow-up chips 出口（票 03(a）：挂在 ai 消息下方，点击即 send/navigate）。
+  final void Function(String payload) onPrompt;
+  final void Function(String target) onNavigate;
+
   static const double _maxBubbleWidthPx = 760;
 
   const AssistantMessageList({
@@ -47,6 +53,8 @@ class AssistantMessageList extends StatelessWidget {
     this.controller,
     this.maxBubbleWidthFactor = 0.7,
     this.onCardAction,
+    required this.onPrompt,
+    required this.onNavigate,
   });
 
   @override
@@ -60,6 +68,8 @@ class AssistantMessageList extends StatelessWidget {
         message: messages[i],
         maxWidthFactor: maxBubbleWidthFactor,
         onCardAction: onCardAction,
+        onPrompt: onPrompt,
+        onNavigate: onNavigate,
       ),
     );
   }
@@ -69,11 +79,15 @@ class _Bubble extends StatelessWidget {
   final AssistantMessage message;
   final double maxWidthFactor;
   final void Function(AssistantCardAction action)? onCardAction;
+  final void Function(String payload) onPrompt;
+  final void Function(String target) onNavigate;
 
   const _Bubble({
     required this.message,
     required this.maxWidthFactor,
     this.onCardAction,
+    required this.onPrompt,
+    required this.onNavigate,
   });
 
   /// 气泡与卡片共用的宽度上限：可用宽度 × [maxWidthFactor]，再夹一个像素上限，
@@ -169,6 +183,13 @@ class _Bubble extends StatelessWidget {
                   '内容安全限制',
                   style: text.labelSmall?.copyWith(color: scheme.error),
                 ),
+              ),
+            // 回复后 follow-up chips（票 03(a)）：挂在末条 ai 消息下方；空列表/用户消息不渲染。
+            if (!isUser && (message.followups ?? const <SuggestedAction>[]).isNotEmpty)
+              AssistantSuggestedActions(
+                givenActions: message.followups,
+                onPrompt: onPrompt,
+                onNavigate: onNavigate,
               ),
           ],
         );

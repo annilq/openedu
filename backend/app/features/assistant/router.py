@@ -74,8 +74,8 @@ def suggested_actions(
         if caller.role in (Role.TEACHER, Role.ADMIN)
         else caller.user.teacher_id
     )
-    return assistant_service.build_suggested_actions(
-        knowledge_point_id=knowledge_point_id, role=caller.role,
+    return assistant_service.build_actions(
+        situation="empty", knowledge_point_id=knowledge_point_id, role=caller.role,
         teacher_id=teacher_id, session=session,
     )
 
