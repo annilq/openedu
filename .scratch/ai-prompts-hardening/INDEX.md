@@ -10,7 +10,7 @@
 ## Tickets 状态（共 3 票，执行序 B → A → C）
 
 ```
-01 [B] 能力自述与超范围引导（capability 意图 + 服务端固定目录） ── None
+01 [B] 能力自述与超范围引导（capability 意图 + 服务端固定目录） ── done
 02 [A] 知识点聚焦注入会话系统提示（knowledge_point_id → ctx.extra） ── None
 03 [C] 回复后 follow-up chips + pending_quiz 锁死修复 ── 01
 ```
