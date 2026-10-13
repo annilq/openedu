@@ -11,7 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-import 'package:kids_learn/features/home/domain/repositories/material_repository.dart';
+import 'package:kids_learn/shared/features/materials/domain/repositories/material_repository.dart';
 import 'package:kids_learn/features/home/presentation/widgets/teacher/teacher_task_spec_row.dart';
 import 'package:kids_learn/features/home/providers/home_provider.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';

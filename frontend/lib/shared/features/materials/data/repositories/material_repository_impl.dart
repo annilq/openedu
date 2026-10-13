@@ -1,5 +1,5 @@
-import '../../../../shared/data/remote/network_service.dart';
-import '../../../../shared/utils/json_decode.dart';
+import '../../../../data/remote/network_service.dart';
+import '../../../../utils/json_decode.dart';
 import '../../domain/repositories/material_repository.dart';
 
 /// 资料库仓库实现：端点拼装与 JSON 解析在此，业务契约（接口 + 选项模型）

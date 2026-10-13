@@ -16,7 +16,7 @@ import 'package:kids_learn/features/courseware/domain/repositories/courseware_re
 import 'package:kids_learn/features/courseware/presentation/pages/courseware_editor_page.dart';
 import 'package:kids_learn/features/courseware/presentation/screens/courseware_center_screen.dart';
 import 'package:kids_learn/features/courseware/providers/courseware_provider.dart';
-import 'package:kids_learn/features/home/domain/repositories/material_repository.dart';
+import 'package:kids_learn/shared/features/materials/domain/repositories/material_repository.dart';
 import 'package:kids_learn/shared/widgets/app_actions.dart';
 import 'package:kids_learn/shared/widgets/app_buttons.dart';
 import 'package:kids_learn/shared/data/local/storage_service.dart';

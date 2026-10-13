@@ -17,10 +17,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-import 'package:kids_learn/features/home/domain/repositories/material_repository.dart';
-import 'package:kids_learn/features/home/presentation/widgets/teacher/knowledge_point_scene_editor.dart';
+import 'package:kids_learn/shared/features/materials/domain/repositories/material_repository.dart';
+import 'package:kids_learn/shared/features/materials/presentation/widgets/teacher/knowledge_point_scene_editor.dart';
 import 'package:kids_learn/features/home/providers/home_provider.dart';
-import 'package:kids_learn/features/home/providers/knowledge_manage_provider.dart';
 import 'package:kids_learn/shared/domain/figure_library.dart';
 import 'package:kids_learn/shared/domain/figures.dart';
 import 'package:kids_learn/shared/domain/providers/figure_library_provider.dart';
@@ -59,21 +58,21 @@ final List<FigureShape> _libraryFixture = parseFigureLibrary(<String, dynamic>{
   ],
 });
 
-/// 记录 saveScenes 收到的 spec，用来断言「保存的那份是纯几何」。
-class _RecordingManageNotifier extends KnowledgeManageNotifier {
-  _RecordingManageNotifier(super.repo);
-  List<Map<String, dynamic>>? saved;
+/// 记录 updateKnowledgePointScenes 收到的 spec，用来断言「保存的那份是纯几何」。
+///
+/// 编辑器（已迁到 `shared/features/materials`）直接经 `materialRepositoryProvider`
+/// 落库，不再经过 home 的 `KnowledgeManageNotifier.saveScenes`——故这里在仓库层抓取。
+class _StubRepo implements MaterialRepository {
+  List<Map<String, dynamic>>? savedScenes;
 
   @override
-  Future<void> saveScenes(
-    String kpId,
-    List<Map<String, dynamic>> scenes,
-  ) async {
-    saved = scenes;
+  Future<void> updateKnowledgePointScenes({
+    required String kpId,
+    required List<Map<String, dynamic>> scenes,
+  }) async {
+    savedScenes = scenes;
   }
-}
 
-class _StubRepo implements MaterialRepository {
   @override
   dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError();
 }
@@ -121,8 +120,6 @@ void main() {
           materialRepositoryProvider.overrideWithValue(_StubRepo()),
           // 画廊打开的取数（ADR-0083 决策 7）在测试里直接用夹具顶掉。
           figureLibraryProvider.overrideWith((ref) async => _libraryFixture),
-          knowledgeManageProvider
-              .overrideWith((ref) => _RecordingManageNotifier(_StubRepo())),
         ],
         child: ShadApp.custom(
           theme:
@@ -194,9 +191,9 @@ void main() {
 
   testWidgets('保存的是纯几何 spec（无 editable / title / inputs）', (tester) async {
     await pumpEditor(tester);
-    final notifier = ProviderScope.containerOf(
+    final repo = ProviderScope.containerOf(
       tester.element(find.byType(KnowledgePointSceneEditor)),
-    ).read(knowledgeManageProvider.notifier) as _RecordingManageNotifier;
+    ).read(materialRepositoryProvider) as _StubRepo;
 
     // 保存按钮在滚动区下方（弹窗内容比屏高），先滚进视口再点。
     final saveBtn = find.text('保存讲解');
@@ -205,7 +202,7 @@ void main() {
     await tester.tap(saveBtn);
     await tester.pumpAndSettle();
 
-    final spec = notifier.saved!.first;
+    final spec = repo.savedScenes!.first;
     expect(spec['kind'], 'reflection');
     // ADR-0083 决策 5：旧字段一概不再出现
     for (final banned in ['editable', 'title', 'inputs', 'controls', 'narrative', 'outputs']) {
@@ -219,9 +216,9 @@ void main() {
   testWidgets('保存的 spec 几何在 figure 里（顶点权威，带身份键）',
       (tester) async {
     await pumpEditor(tester);
-    final notifier = ProviderScope.containerOf(
+    final repo = ProviderScope.containerOf(
       tester.element(find.byType(KnowledgePointSceneEditor)),
-    ).read(knowledgeManageProvider.notifier) as _RecordingManageNotifier;
+    ).read(materialRepositoryProvider) as _StubRepo;
 
     // 保存按钮在滚动区下方（弹窗内容比屏高），先滚进视口再点。
     final saveBtn = find.text('保存讲解');
@@ -230,7 +227,7 @@ void main() {
     await tester.tap(saveBtn);
     await tester.pumpAndSettle();
 
-    final figure = notifier.saved!.first['figure'] as Map<String, dynamic>;
+    final figure = repo.savedScenes!.first['figure'] as Map<String, dynamic>;
     // 身份键随几何一起落库（ADR-0091 决策 2：画廊角标 / 高亮靠它）。
     expect(figure['key'], 'house');
     expect(figure['points'], isA<List>());

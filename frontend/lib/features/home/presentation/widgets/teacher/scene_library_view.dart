@@ -19,7 +19,7 @@ import '../../../../../shared/widgets/app_dialog.dart';
 import '../../../../../shared/widgets/app_focusable_action.dart';
 import '../../../../../shared/widgets/app_toast.dart';
 import '../../../../../shared/widgets/scene_interpreter/reflection_scene_board.dart';
-import '../../../domain/repositories/material_repository.dart';
+import 'package:kids_learn/shared/features/materials/domain/repositories/material_repository.dart';
 import '../../../providers/home_provider.dart';
 import '../../../providers/knowledge_manage_provider.dart';
 

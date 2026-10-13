@@ -23,7 +23,7 @@ import '../../../../../shared/widgets/scene_interpreter/figure_library_gallery.d
 import '../../../../../shared/widgets/scene_interpreter/reflection_figure_gallery.dart';
 import '../../../../../shared/widgets/scene_interpreter/scene_interpreter.dart';
 import '../../../providers/home_provider.dart';
-import '../../../domain/repositories/material_repository.dart';
+import 'package:kids_learn/shared/features/materials/domain/repositories/material_repository.dart';
 import '../../../providers/knowledge_manage_provider.dart';
 import 'scene_library_associate_dialog.dart';
 part 'scene_library_default_figure_section.dart';

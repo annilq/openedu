@@ -1,7 +1,13 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../domain/repositories/material_repository.dart';
+import 'package:kids_learn/shared/features/materials/domain/repositories/material_repository.dart';
 import 'home_provider.dart';
+
+/// `sceneLibraryProvider` 已迁到中性层 `shared/features/materials`（破 home↔courseware
+/// 循环依赖）；这里再导出以维持既有调用方（场景库浏览 / 编辑器 / 详情）的 import
+/// 路径不变。
+export 'package:kids_learn/shared/features/materials/providers/material_providers.dart'
+    show sceneLibraryProvider;
 
 /// 知识点管理状态（ADR-0055 §4 确认页）：先按「传过教材的范围」选择范围，
 /// 再列出该范围内的知识点、勾选待审 / 批量确认转正。
@@ -304,14 +310,3 @@ final knowledgeManageProvider =
     StateNotifierProvider<KnowledgeManageNotifier, KnowledgeManageState>(
   (ref) => KnowledgeManageNotifier(ref.watch(materialRepositoryProvider)),
 );
-
-/// 内置交互讲解场景库（ADR-0073）：后端登记了哪些 kind + 本教师的关联知识点。
-///
-/// 场景是**代码内置**（无 DB 表），清单内容只随发版变，一次拉取即可，不必做成
-/// 带状态的管理器。
-///
-/// 重要边界：渲染与出题**从不读这里**——它们读的是 `KnowledgePoint.scenes`
-/// （唯一事实源）。本 provider 只服务于编辑器下拉（选 kind → 拿 `defaults` 预填）
-/// 与场景库浏览页枚举；拉失败也不影响任何既有行为。
-final sceneLibraryProvider = FutureProvider<SceneLibrary>((ref) async =>
-    ref.watch(materialRepositoryProvider).fetchSceneLibrary());

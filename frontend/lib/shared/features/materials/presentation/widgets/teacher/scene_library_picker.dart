@@ -14,10 +14,10 @@ import 'package:flutter/material.dart' show Icons;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../../shared/theme/app_theme.dart';
-import '../../../../../shared/widgets/app_focusable_action.dart';
+import '../../../../../theme/app_theme.dart';
+import '../../../../../widgets/app_focusable_action.dart';
 import '../../../domain/repositories/material_repository.dart';
-import '../../../providers/knowledge_manage_provider.dart';
+import '../../../providers/material_providers.dart';
 
 class SceneLibraryPicker extends ConsumerWidget {
   final ValueChanged<SceneLibraryEntry> onPick;

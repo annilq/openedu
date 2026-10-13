@@ -6,7 +6,8 @@
 /// 就是倒挂依赖。选项模型与接口属「业务契约」放domain，实现在 data。
 ///
 /// 教师端资料库的完整管理（上传 / 目录 / 向量化）属 materials feature（B6）；
-/// 这里只暴露表单需要的最小面，避免 home 反向依赖一个还没落地的 feature。
+/// 本接口正是该中性层的契约面——场景库编辑器 / 画板是跨 feature 复用的素材能力，
+/// home 与 courseware 都只依赖这一层，不再互相穿透（破 home↔courseware 循环依赖）。
 library;
 
 /// `KnowledgePointOption` 已下沉到 `shared/domain/models/`（跨 feature 的业务契约：
@@ -14,9 +15,9 @@ library;
 /// 这里**只做转出**，保持历史 import 路径可用；新代码请直接引 shared 那份。
 ///
 /// `export` 不会让名字在本文件内可见（只作用于 import 本库的人），故同时 `import`。
-import '../../../../shared/domain/models/knowledge_point_option.dart';
+import '../../../../domain/models/knowledge_point_option.dart';
 
-export '../../../../shared/domain/models/knowledge_point_option.dart';
+export '../../../../domain/models/knowledge_point_option.dart';
 
 /// 知识点目录响应：条目 + **空目录的原因**。
 ///

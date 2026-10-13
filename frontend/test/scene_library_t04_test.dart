@@ -13,27 +13,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-import 'package:kids_learn/features/home/domain/repositories/material_repository.dart';
-import 'package:kids_learn/features/home/presentation/widgets/teacher/knowledge_point_scene_editor.dart';
+import 'package:kids_learn/shared/features/materials/domain/repositories/material_repository.dart';
+import 'package:kids_learn/shared/features/materials/presentation/widgets/teacher/knowledge_point_scene_editor.dart';
 import 'package:kids_learn/features/home/presentation/widgets/teacher/scene_library_detail_view.dart';
-import 'package:kids_learn/features/home/providers/home_provider.dart';
-import 'package:kids_learn/features/home/providers/knowledge_manage_provider.dart';
+import 'package:kids_learn/shared/features/materials/providers/material_providers.dart';
 import 'package:kids_learn/shared/domain/figures.dart';
 import 'package:kids_learn/shared/domain/scene_spec.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
 
-/// 记录 saveScenes 收到的 spec（编辑器回归用）。
-class _RecordingManageNotifier extends KnowledgeManageNotifier {
-  _RecordingManageNotifier(super.repo);
-  List<Map<String, dynamic>>? saved;
-
-  @override
-  Future<void> saveScenes(String kpId, List<Map<String, dynamic>> scenes) async {
-    saved = scenes;
-  }
-}
-
-/// 记录 updateKnowledgePointScenes 实参（解除关联测试用）。
+/// 记录 updateKnowledgePointScenes 实参（解除关联测试 + 编辑器回归用）。
 class _RecordingRepo implements MaterialRepository {
   String? lastKpId;
   List<Map<String, dynamic>>? lastScenes;
@@ -169,13 +157,11 @@ void main() {
   }) async {
     await tester.binding.setSurfaceSize(size);
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    final repo = _StubRepo();
+    final repo = _RecordingRepo();
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           materialRepositoryProvider.overrideWithValue(repo),
-          knowledgeManageProvider
-              .overrideWith((ref) => _RecordingManageNotifier(repo)),
         ],
         child: ShadApp.custom(
           theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
@@ -212,9 +198,9 @@ void main() {
 
   testWidgets('编辑器保存产出纯几何 spec（kind + 配置图形的顶点）', (tester) async {
     await pumpEditor(tester);
-    final notifier = ProviderScope.containerOf(
+    final repo = ProviderScope.containerOf(
       tester.element(find.byType(KnowledgePointSceneEditor)),
-    ).read(knowledgeManageProvider.notifier) as _RecordingManageNotifier;
+    ).read(materialRepositoryProvider) as _RecordingRepo;
 
     final saveBtn = find.text('保存讲解');
     await tester.ensureVisible(saveBtn);
@@ -222,7 +208,7 @@ void main() {
     await tester.tap(saveBtn);
     await tester.pumpAndSettle();
 
-    final spec = notifier.saved!.first;
+    final spec = repo.lastScenes!.first;
     expect(spec['kind'], 'reflection');
     // 回显到房子（配置的图形）：身份键 + 顶点逐点一致，几何在 figure 里。
     final figure = spec['figure'] as Map<String, dynamic>;
@@ -324,10 +310,4 @@ void main() {
     expect(repo.lastScenes!.first['kind'], 'rotate',
         reason: '本 kind 条目被移除，其它 kind 不受影响（ADR-0073 快照不变）');
   });
-}
-
-/// 与 scene_editor_dialog_test 同样的 stub：仅 override 需要的端点，其余抛未实现。
-class _StubRepo implements MaterialRepository {
-  @override
-  dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError();
 }

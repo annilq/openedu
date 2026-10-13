@@ -15,7 +15,7 @@ library;
 import 'package:flutter/material.dart' show Icons;
 import 'package:flutter/widgets.dart';
 
-import '../../../../../shared/theme/app_theme.dart';
+import '../../../../../theme/app_theme.dart';
 
 class SceneDeveloperGuide extends StatelessWidget {
   const SceneDeveloperGuide({super.key});
