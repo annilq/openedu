@@ -180,7 +180,7 @@
       <tbody>
         <tr><td><span class="verdict v-bad">死包</span> <code>app/api/routes/</code></td><td>后端</td><td>整包仅 <code>__pycache__</code>，0 个 <code>.py</code> 源，未被任何代码引用</td><td>删除残留字节码</td></tr>
         <tr><td><span class="verdict v-bad">死特性</span> <code>app/features/children/</code></td><td>后端</td><td>整特性仅 <code>__pycache__</code>，0 个 <code>.py</code> 源，未注册</td><td>删除残留字节码</td></tr>
-        <tr><td><span class="verdict v-legacy">遗留</span> 旧 Linear 令牌块</td><td><code>frontend/lib/shared/theme/app_theme.dart:522-536</code></td><td>旧角色名令牌（primaryContainer 等）与新语义令牌并存，标注「兼容，新代码勿用」</td><td>移除旧块 + 迁移 ~20 个文件到语义令牌</td></tr>
+        <tr><td><span class="verdict v-ok">已清理</span> 旧 Linear 令牌块</td><td><code>frontend/lib/shared/theme/app_theme.dart</code></td><td>旧角色名令牌（primaryContainer 等）与新语义令牌曾并存 → 已移除旧块并将 42 个文件迁移到语义令牌（LCC-05/06）</td><td>已执行</td></tr>
         <tr><td><span class="verdict v-legacy">遗留</span> 双密钥回退</td><td><code>backend/app/core/crypto.py:28</code></td><td><code>MODEL_APIKEY_SECRET or SECRET_KEY</code> 双常数回退</td><td>统一为单一密钥源</td></tr>
         <tr><td><span class="verdict v-legacy">半迁移</span> <code>Resource&lt;T&gt;</code></td><td><code>frontend/lib/shared/presentation/resource.dart</code></td><td>新统一加载态封装仅 3 处使用，~30 处仍手写 <code>AppLoading</code></td><td>全站铺开或回退其一</td></tr>
         <tr><td><span class="verdict v-warn">文档漂移</span> parent/child 措辞</td><td>architecture.md + 14 处注释/索引名</td><td>产品已定位 teacher/student，文档与注释仍写家长/child</td><td>批量改为教师/学生</td></tr>

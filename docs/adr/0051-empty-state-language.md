@@ -28,7 +28,7 @@
     周围由 `AppCard` 给出边界。88 大色块在这些位置会抢走重量。
 
 - **色块语义由 [tone] 决定：**
-  - `null` = 安静态（`surfaceContainerLow` + 墨黑边 + `onSurfaceVariant` 图标），不投影；
+  - `null` = 安静态（`surfaceRaised` + 墨黑边 + `onSurfaceVariant` 图标），不投影；
   - 传 `AppBrutal` 撞色 = 强调态（撞色底 + 墨黑边 + `AppBrutal.onColor` 图标），带硬阴影，
     用于娃娃端等需要情绪价值的场景。
 

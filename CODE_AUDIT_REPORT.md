@@ -168,7 +168,7 @@
 
 ## 6. 冗余逻辑 / 设计
 
-1. 双视觉令牌（ADR-0044 进行中）：旧 Linear 角色名令牌块 `app_theme.dart:522-536`（标注「兼容，新代码勿用」）与新 neo-brutalism 语义令牌并存；约 20 个文件仍直接用旧角色名（如 `surfaceContainerHigh`、`primaryContainer`）。
+1. 双视觉令牌（ADR-0044）：旧 Linear 角色名令牌块 `app_theme.dart:522-536` 曾与新 neo-brutalism 语义令牌并存；已移除旧块并将 42 个文件迁移到语义令牌（LCC-05/06），现仅保留语义令牌（`surfaceXxx` / `semanticXxx`）。
 2. 双密钥回退：`core/crypto.py:28` `secret = settings.MODEL_APIKEY_SECRET or settings.SECRET_KEY`，两常数回退。
 3. `Resource<T>` 半迁移：新统一加载态封装仅 3 处 notifier 使用，`AppLoading` 手写 spinner 被约 30 个文件直接使用。
 4. parent/child 文档与注释漂移：产品已重定位 teacher/student，但 `architecture.md` 与多处注释/索引名仍写家长/child（本次已清理代码侧与 architecture.md 侧，见第 8 节）。
@@ -181,7 +181,7 @@
 |---|---|---|---|
 | P0 | 打破 `home`↔`courseware` 循环依赖 | `home_screen.dart` / `courseware_*.dart` | 将 `knowledge_point_scene_editor`、`courseware_recent_bar` 上提至 `shared`；home 只依赖 provider 层 |
 | P0 | 删除死代码 | `app/api/routes/`、`app/features/children/` | 已执行（删残留字节码） |
-| P1 | 移除旧令牌块 | `app_theme.dart:522-536` + ~20 文件 | 删旧块，迁移到语义令牌 `surfaceXxx` / `semanticXxx` |
+| P1 | 移除旧令牌块 | `app_theme.dart:522-536` + 42 文件 | 已执行（LCC-05 迁移 42 文件 + LCC-06 删旧块） |
 | P1 | 统一双密钥 | `crypto.py:28` | 收敛到单一密钥源 |
 | P2 | `Resource<T>` 二选一 | `resource.dart` + 30 处 `AppLoading` | 全站铺开或回退其一 |
 | P2 | 学生端 / Profile 导航收敛 | `home_screen.dart:58-65,413-434` | 统一到 `sealed` 单态（ADR-0059） |
