@@ -14,7 +14,7 @@ import '../../../../../shared/widgets/app_loading.dart';
 import '../../../../../shared/widgets/app_toast.dart';
 import '../../../providers/knowledge_manage_provider.dart';
 import '../../../../courseware/presentation/pages/courseware_editor_page.dart';
-import 'courseware_recent_bar.dart';
+import 'package:kids_learn/features/courseware/presentation/widgets/courseware_recent_bar.dart';
 import 'knowledge_point_row.dart';
 
 /// 知识点管理视图（ADR-0055 §4 确认页 / ADR-0066 范围来自教材）：
