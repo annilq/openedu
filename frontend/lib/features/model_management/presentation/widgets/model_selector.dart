@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/widgets/app_inputs.dart';
+import '../../../../shared/presentation/resource.dart';
 import '../providers/models_notifier.dart';
 
 /// AI 模型选择器（归属模型管理 feature，非通用设计系统组件）。
@@ -33,7 +34,7 @@ class ModelSelector extends ConsumerWidget {
     final state = ref.watch(modelsNotifierProvider);
 
     // 未加载过则自动拉取一次（POST/GET 拦截器已注入鉴权）。
-    if (state is ModelsInitial) {
+    if (state is ResourceIdle) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         ref.read(modelsNotifierProvider.notifier).load();
       });
@@ -46,8 +47,9 @@ class ModelSelector extends ConsumerWidget {
       values.add('');
       labels.add('默认（后端自动）');
     }
-    if (state is ModelsLoaded) {
-      for (final m in state.resp.custom) {
+    final loaded = state.dataOrNull;
+    if (loaded != null) {
+      for (final m in loaded.resp.custom) {
         values.add(m.id);
         labels.add(m.isDefault ? '${m.label}（默认）' : m.label);
       }

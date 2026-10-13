@@ -15,6 +15,7 @@ import '../../../../shared/widgets/app_actions.dart';
 import '../../../../shared/widgets/app_buttons.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/app_section_title.dart';
+import '../../../../shared/presentation/resource.dart';
 
 /// 教师端 AI 模型管理页：列出、增删改本教师录入的模型，并支持设默认。
 ///
@@ -41,7 +42,7 @@ class _TeacherModelManagementScreenState
   void _openForm(BuildContext context, ModelInfo? initial) {
     final s = ref.read(modelsNotifierProvider);
     final providers =
-        s is ModelsLoaded ? s.providers : const <ModelProviderPreset>[];
+        s.dataOrNull?.providers ?? const <ModelProviderPreset>[];
     showShadDialog(
       context: context,
       barrierColor: AppTheme.colorsOf(context).scrim,
@@ -78,6 +79,31 @@ class _TeacherModelManagementScreenState
     final app = AppTheme.colorsOf(context);
     final text = AppTheme.textOf(context);
 
+    final List<Widget> modelBody;
+    if (state.errorOrNull != null) {
+      modelBody = [_emptyHint('加载失败：${state.errorOrNull}')];
+    } else {
+      final data = state.dataOrNull;
+      if (data != null) {
+        modelBody = data.resp.custom.isEmpty
+            ? [
+                _emptyHint(
+                  '还没有模型，点「添加模型」接入 DeepSeek、本地 Ollama 或其他 OpenAI 兼容服务',
+                )
+              ]
+            : data.resp.custom
+                .map(
+                  (m) => PopIn(
+                    key: ValueKey<String>(m.id),
+                    child: _modelCard(context, m),
+                  ),
+                )
+                .toList();
+      } else {
+        modelBody = const [AppLoading()];
+      }
+    }
+
     return AppScrollPage(
       children: [
         const SectionTitle('AI 模型管理'),
@@ -98,23 +124,7 @@ class _TeacherModelManagementScreenState
           ),
         ),
         const SizedBox(height: AppSpacing.md),
-        if (state is ModelsLoaded) ...[
-          if (state.resp.custom.isEmpty)
-            _emptyHint('还没有模型，点「添加模型」接入 DeepSeek、本地 Ollama 或其他 OpenAI 兼容服务')
-          else
-            ...state.resp.custom.map(
-              (m) => PopIn(
-                key: ValueKey<String>(m.id),
-                child: _modelCard(context, m),
-              ),
-            ),
-        ] else if (state is ModelsLoading) ...[
-          const AppLoading(),
-        ] else if (state is ModelsError) ...[
-          _emptyHint('加载失败：${(state).message}'),
-        ] else ...[
-          _emptyHint('加载中…'),
-        ],
+        ...modelBody,
       ],
     );
   }

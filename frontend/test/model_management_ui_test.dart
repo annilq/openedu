@@ -12,6 +12,7 @@ import 'package:kids_learn/features/model_management/domain/models.dart';
 import 'package:kids_learn/features/model_management/domain/repositories/models_repository.dart';
 import 'package:kids_learn/features/model_management/domain/model_requests.dart';
 import 'package:kids_learn/features/model_management/presentation/providers/models_notifier.dart';
+import 'package:kids_learn/shared/presentation/resource.dart';
 import 'package:kids_learn/features/model_management/presentation/screens/model_form_dialog.dart';
 import 'package:kids_learn/features/model_management/presentation/screens/teacher_model_management_screen.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
@@ -24,7 +25,7 @@ class _StubRepo implements ModelsRepository {
 class _SeededNotifier extends ModelsNotifier {
   _SeededNotifier(List<ModelInfo> custom, List<ModelProviderPreset> providers)
       : super(_StubRepo()) {
-    state = ModelsLoaded(ModelListResp(custom: custom), providers);
+    state = ResourceLoaded<ModelsData>(ModelsData(ModelListResp(custom: custom), providers));
   }
   @override
   Future<void> load() async {}
