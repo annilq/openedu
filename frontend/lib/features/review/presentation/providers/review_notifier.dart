@@ -2,70 +2,51 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/presentation/paging.dart';
+import '../../../../shared/presentation/resource.dart';
 import '../../domain/repositories/review_repository.dart';
 import '../../providers/review_provider.dart';
 
 /// 复习作答：与练习一致的批改结果（错题调度更新由后端完成）。
 typedef ReviewAnswerResult = AnswerResultModel;
 
-// —— 学生端：待复习队列 ——
-sealed class DueReviewState {
-  const DueReviewState();
-}
-
-class DueReviewInitial extends DueReviewState {
-  const DueReviewInitial();
-}
-
-class DueReviewLoading extends DueReviewState {
-  const DueReviewLoading();
-}
-
-class DueReviewLoaded extends DueReviewState {
-  final List<ReviewItemModel> items;
-  const DueReviewLoaded(this.items);
-}
-
-class DueReviewError extends DueReviewState {
-  final String message;
-  const DueReviewError(this.message);
-}
-
-class DueReviewNotifier extends StateNotifier<DueReviewState> {
+// —— 学生端：待复习队列（LCC-08）——
+//
+// 取一次就显示，但 `answer()` 会就地把已答题从当前列表移除（不重新拉取）。
+// 故用自定义 notifier `with ResourceLoader`：load 走共享四态落法，answer 在
+// ResourceLoaded 态直接替换 data，保持「答完最后一题不误清进度」的既有语义
+// （load 经过 ResourceLoading 才清进度；answer 直达 ResourceLoaded 不触发清）。
+class DueReviewNotifier
+    extends StateNotifier<Resource<List<ReviewItemModel>>>
+    with ResourceLoader<List<ReviewItemModel>> {
   final ReviewRepository _repo;
-  DueReviewNotifier(this._repo) : super(const DueReviewInitial());
+  DueReviewNotifier(this._repo) : super(const ResourceIdle());
 
-  Future<void> load() async {
-    state = const DueReviewLoading();
-    try {
-      state = DueReviewLoaded(await _repo.dueReview());
-    } catch (e) {
-      state = DueReviewError(e.toString());
-    }
-  }
+  Future<void> load() => runLoad(_repo.dueReview);
 
   /// 提交一道复习作答；成功后从当前队列移除该题（无论对错，下一轮到期重新进入）。
-  Future<ReviewAnswerResult?> answer(String wrongQuestionId, String studentAnswer) async {
+  Future<ReviewAnswerResult?> answer(
+      String wrongQuestionId, String studentAnswer) async {
     final current = state;
-    if (current is! DueReviewLoaded) return null;
+    if (current is! ResourceLoaded<List<ReviewItemModel>>) return null;
     try {
       final result = await _repo.answer(wrongQuestionId, studentAnswer);
-      final remaining = current.items
+      final remaining = current.data
           .where((i) => i.wrongQuestionId != wrongQuestionId)
           .toList();
-      state = DueReviewLoaded(remaining);
+      state = ResourceLoaded<List<ReviewItemModel>>(remaining);
       return result;
     } catch (e) {
-      state = DueReviewError(e.toString());
+      state = ResourceError<List<ReviewItemModel>>(e.toString());
       return null;
     }
   }
 }
 
-final dueReviewNotifierProvider =
-    StateNotifierProvider<DueReviewNotifier, DueReviewState>((ref) {
-  return DueReviewNotifier(ref.watch(reviewRepositoryProvider));
-});
+final dueReviewNotifierProvider = StateNotifierProvider<
+    DueReviewNotifier,
+    Resource<List<ReviewItemModel>>>(
+  (ref) => DueReviewNotifier(ref.watch(reviewRepositoryProvider)),
+);
 
 // —— 错题本：学生自查 / 教师查看（游标分页，ADR-0053）——
 //

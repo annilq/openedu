@@ -37,8 +37,7 @@ class StudentHome extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(todayTasksNotifierProvider);
     final reviewState = ref.watch(dueReviewNotifierProvider);
-    final dueCount =
-        reviewState is DueReviewLoaded ? reviewState.items.length : 0;
+    final dueCount = reviewState.dataOrNull?.length ?? 0;
 
     return CustomScrollView(
       slivers: [

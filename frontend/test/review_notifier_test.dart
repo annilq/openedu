@@ -8,6 +8,7 @@ import 'package:kids_learn/features/review/presentation/providers/review_notifie
 import 'package:kids_learn/shared/data/remote/network_service.dart';
 import 'package:kids_learn/shared/domain/models/models.dart';
 import 'package:kids_learn/shared/presentation/paging.dart';
+import 'package:kids_learn/shared/presentation/resource.dart';
 
 /// 内存版 NetworkService：按 path 返回预置响应，记录 POST body。
 class FakeNetwork implements NetworkService {
@@ -93,12 +94,12 @@ void main() {
       await notifier.load();
 
       final state = notifier.state;
-      expect(state, isA<DueReviewLoaded>());
-      final loaded = state as DueReviewLoaded;
-      expect(loaded.items.length, 2);
-      expect(loaded.items.first.wrongQuestionId, 'w1');
-      expect(loaded.items.first.knowledgePoint, '两位数加减法');
-      expect(loaded.items.first.nextIntervalDays, 4);
+      expect(state, isA<ResourceLoaded<List<ReviewItemModel>>>());
+      final loaded = state as ResourceLoaded<List<ReviewItemModel>>;
+      expect(loaded.data.length, 2);
+      expect(loaded.data.first.wrongQuestionId, 'w1');
+      expect(loaded.data.first.knowledgePoint, '两位数加减法');
+      expect(loaded.data.first.nextIntervalDays, 4);
     });
 
     test('load 异常进入 Error 状态', () async {
@@ -109,7 +110,7 @@ void main() {
 
       await notifier.load();
 
-      expect(notifier.state, isA<DueReviewError>());
+      expect(notifier.state, isA<ResourceError<List<ReviewItemModel>>>());
     });
 
     test('answer 答对：发送对应 body 并从队列移除该题', () async {
@@ -127,8 +128,8 @@ void main() {
         'wrong_question_id': 'w1',
         'student_answer': '68',
       });
-      final state = notifier.state as DueReviewLoaded;
-      expect(state.items.map((i) => i.wrongQuestionId), ['w2']);
+      final state = notifier.state as ResourceLoaded<List<ReviewItemModel>>;
+      expect(state.data.map((i) => i.wrongQuestionId), ['w2']);
     });
 
     test('answer 答错也移除该题（后端重置计时，下一轮到期再进队列）', () async {
@@ -140,8 +141,8 @@ void main() {
 
       expect(result, isNotNull);
       expect(result!.correct, isFalse);
-      expect(n2.state, isA<DueReviewLoaded>());
-      expect((n2.state as DueReviewLoaded).items, isEmpty);
+      expect(n2.state, isA<ResourceLoaded<List<ReviewItemModel>>>());
+      expect((n2.state as ResourceLoaded<List<ReviewItemModel>>).data, isEmpty);
     });
 
     test('未加载时 answer 不请求且返回 null', () async {
