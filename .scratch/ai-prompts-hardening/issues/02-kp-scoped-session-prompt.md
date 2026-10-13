@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
 ## 为什么（ADR-0072 §2 未落地）
 - `ctx.extra["knowledge_point_id"]` 已在 `service.py:579` 下发，但 **tutor / query 两个 subagent 都不读它**（`tutor/agent.py:97` 的 `knowledge_point` 只从 `courseware` 取）→ 无课件上下文的普通伴学里「所属知识点：」**恒为空串**。
@@ -24,13 +24,13 @@
 4. **越权/缺失回落**：`_resolve_kp_context` 已做——越权或查不到 → 回落 courseware 的 name 口径，再缺则 None（不注入），与现状一致。
 
 ## 验收清单
-- [ ] 有课件上下文（带 `knowledge_point_id`）时，tutor 与 query 的 system prompt 均含【知识点聚焦】段，且内容 = 该 KP 的 `name/subject/grade/semester`（非空）
-- [ ] 无课件上下文时，system prompt **不含**【知识点聚焦】段，行为与本轮之前一致（无回归）
-- [ ] 越权 `knowledge_point_id`（他人 KP）→ 不注入该 KP，回落 courseware name 或 None（无越权数据泄漏）
-- [ ] `tutor_system_prompt` 本体**未被修改**（diff 为空），仅新增独立注入段
-- [ ] `query.requires_tool_data=True` 契约不变（注入段不引入新的「不查就答」路径）
-- [ ] 后端 `pytest tests/ai/` 全绿；新增/更新 `test_tutor_subagent` / `test_query_subagent` 断言注入段
-- [ ] 分层不变量 9：解析仍只经 `_resolve_kp_context`（内部走 `core.guard.require_owned`）
+- [x] 有课件上下文（带 `knowledge_point_id`）时，tutor 与 query 的 system prompt 均含【知识点聚焦】段，且内容 = 该 KP 的 `name/subject/grade/semester`（非空）
+- [x] 无课件上下文时，system prompt **不含**【知识点聚焦】段，行为与本轮之前一致（无回归）
+- [x] 越权 `knowledge_point_id`（他人 KP）→ 不注入该 KP，回落 courseware name 或 None（无越权数据泄漏）
+- [x] `tutor_system_prompt` 本体**未被修改**（diff 为空），仅新增独立注入段
+- [x] `query.requires_tool_data=True` 契约不变（注入段不引入新的「不查就答」路径）
+- [x] 后端 `pytest tests/ai/` 全绿；新增/更新 `test_tutor_subagent` / `test_query_subagent` 断言注入段
+- [x] 分层不变量 9：解析经 `app/features/assistant/kp_focus.py:resolve_kp_focus`（内部走 `core.guard.find_owned`，与 `require_owned` 同族；原 `_resolve_kp_context` 已在 ADR-0091 删除，由本模块替代）
 
 **决策锚点：** ADR-0080；`knowledge_point_id` 精确口径（无同名漂移）；普通伴学**不**自动带学员进度/薄弱点（留后续单独议，涉及取数与越权风险）。
 
