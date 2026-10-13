@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 
 import '../../domain/figures.dart';
 import '../../domain/scene_spec.dart';
+import '../../utils/option_text.dart' show cleanOptionText;
 import '../app_empty_state.dart';
 import 'reflection_figure_gallery.dart';
 import 'reflection_scene.dart';
@@ -162,7 +163,7 @@ class SceneOptionGroup extends StatelessWidget {
               for (final v in figure.vertices) Offset(v.x, v.y),
             ],
             edges: figure.edges,
-            figureLabel: figure.label,
+            figureLabel: cleanOptionText(figure.label),
             // 轴初值不按图形走：图库不存 axis 属性（ADR-0083 决策 2），初值统一归
             // kind 外壳——[base] 已带上它，这里刻意不覆盖。
           ),

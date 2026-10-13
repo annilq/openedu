@@ -5,6 +5,8 @@ from datetime import datetime
 
 from sqlmodel import SQLModel
 
+from app.domain.scene_spec import SceneSpec
+
 
 class ReviewAnswerSubmit(SQLModel):
     wrong_question_id: uuid.UUID
@@ -31,4 +33,4 @@ class ReviewItemResp(SQLModel):
     multi: bool = False
     # 几何选项组（ADR-0061 §O）：选择题每个选项本身是图形时下发，前端渲染成每个图形
     # 一个可交互场景；无则 None。复用 Question.scene_spec 快照，前端只消费不解释。
-    scene_spec: dict | None = None
+    scene_spec: SceneSpec | None = None

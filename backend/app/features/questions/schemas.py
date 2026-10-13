@@ -1,10 +1,11 @@
 """Pydantic schemas for the questions (bank) feature."""
 
 from datetime import datetime
-from typing import Any
 from uuid import UUID
 
 from sqlmodel import Field, SQLModel
+
+from app.domain.scene_spec import SceneSpec
 
 
 class BankQuestionItem(SQLModel):
@@ -30,7 +31,7 @@ class BankQuestionItem(SQLModel):
     semester: str = ""
     # 交互讲解实例（ADR-0061 §U）：快照优先、缺失则实时解析、再无则图库兜底。
     # 此前本 schema 漏了它，题库详情**永远**没有图形（前端拿到 null 就不渲染）。
-    scene_spec: dict[str, Any] | None = None
+    scene_spec: SceneSpec | None = None
 
 
 class BankListResp(SQLModel):

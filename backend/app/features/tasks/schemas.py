@@ -6,6 +6,7 @@ from datetime import date, datetime
 from pydantic import field_validator
 from sqlmodel import Field, SQLModel
 
+from app.domain.scene_spec import SceneSpec
 from app.domain.subjects import is_supported_subject, qtypes_for
 
 
@@ -252,7 +253,7 @@ class WrongQuestionResp(SQLModel):
     graduated_at: datetime | None = None
     # 交互式讲解实例（ADR-0061）：题目知识点命中教师私有知识点模板时附上，
     # 前端在错题卡内联渲染。可空 = 该知识点暂无图形化讲解（维持原纯文本行为）。
-    scene_spec: dict | None = None
+    scene_spec: SceneSpec | None = None
 
 
 class WrongQuestionListResp(SQLModel):
