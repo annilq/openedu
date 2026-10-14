@@ -59,6 +59,10 @@ class MaterialItemModel {
   final String? indexError;
   final int textLength;
 
+  /// 解析校验告警（ADR-0092）：上传时 parser 产出，例如「已清理 516 个乱码字符」
+  /// 「检测到 1 页为扫描页，已自动 OCR」「未解析出文字」。空 = 解析干净无告警。
+  final List<String> parseWarnings;
+
   const MaterialItemModel({
     required this.id,
     this.folderId,
@@ -72,6 +76,7 @@ class MaterialItemModel {
     this.embedModel,
     this.indexError,
     this.textLength = 0,
+    this.parseWarnings = const [],
   });
 
   factory MaterialItemModel.fromJson(Map<String, dynamic> json) =>
@@ -91,6 +96,10 @@ class MaterialItemModel {
         embedModel: json['embed_model'] as String?,
         indexError: json['index_error'] as String?,
         textLength: json['text_length'] as int? ?? 0,
+        parseWarnings: (json['parse_warnings'] as List?)
+                ?.map((e) => e.toString())
+                .toList() ??
+            const [],
       );
 }
 

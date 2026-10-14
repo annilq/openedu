@@ -25,6 +25,13 @@ dependencies = [
     "pypdf>=6.19.0",
     "python-docx>=1.2.0",
     "openpyxl>=3.1.0,<4.0.0",
+    # OCR 兜底（ADR-0092）：仅真·扫描页触发。rapidocr 自带 PP-OCRv6 模型（wheel
+    # 内含，纯 Python 可装）；onnxruntime 为其 CPU 推理后端；pymupdf 负责把扫描页
+    # 光栅化为图片（cp310-abi3 wheel 兼容 Python 3.14）。三者均懒加载，缺任一组件
+    # 时扫描页退化为告警而非崩溃。
+    "rapidocr>=3.10.0,<4.0.0",
+    "onnxruntime>=1.20.0",
+    "pymupdf>=1.28.0",
 ]
 
 [dependency-groups]

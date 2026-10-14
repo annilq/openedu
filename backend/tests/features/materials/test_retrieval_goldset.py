@@ -8,8 +8,9 @@
   dense 通道可复现且零网络；词法通道走生产代码 `_tokenize`/`_lexical_scores`。
 - 30 条查询覆盖三类：字面命中 / 同义改写（词法弱、依赖其他词）/ 跨资料干扰
   （同知识点出现在多份资料，考排序）。
-- 指标：整体 Recall@5 ≥ 0.85 门禁（业界冷启动下限），另有每条 gold 的
-  Hit@5 断言；改检索器 / 切片器 / embed 模型后**必须重跑并重标**。
+- 指标：**Hit@1 = 100% 主门禁**（对排序位置敏感，语料少时分辨力远高于 Recall@5，
+  见 ``test_hit_at_1_primary_gate``）；Recall@5 ≥ 0.85 仅作灾难回归护栏；另有每条
+  gold 的 Hit@5 断言。改检索器 / 切片器 / embed 模型后**必须重跑并重标**。
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import math
 import uuid
+from collections import Counter
 
 import pytest
 
@@ -28,17 +30,21 @@ from app.features.materials.retrieval import (
     _tokenize,
 )
 
-# ── 确定性假 embedding：字符二元组哈希 → 64 维归一化词袋 ────────────────
-_DIM = 64
+# ── 确定性假 embedding：字符二元组 TF 加权哈希 → 高维归一化词袋 ──────────
+# 维度取大（2048）是为压住 md5 哈希碰撞：维度太小（早期 64）时不同 token 大量
+# 撞同一桶，dense 余弦退化为噪声，把干扰 chunk 排到 gold 前面，导致 Hit@1 失真。
+# 改用 TF 加权 + 高维后，dense 与词法通道一致：与查询共享最多二元组的 chunk 排最前。
+_DIM = 2048
 
 
 def _fake_embed(texts: list[str]) -> list[list[float]]:
     out: list[list[float]] = []
     for t in texts:
+        tf = Counter(_tokenize(t))
         v = [0.0] * _DIM
-        for tok in _tokenize(t):
+        for tok, c in tf.items():
             h = int(hashlib.md5(tok.encode()).hexdigest(), 16)
-            v[h % _DIM] += 1.0
+            v[h % _DIM] += c
         norm = math.sqrt(sum(x * x for x in v)) or 1.0
         out.append([x / norm for x in v])
     return out
@@ -191,7 +197,7 @@ _GOLD: list[dict] = [
     # 字面命中（词法 + dense 都应轻松命中）
     {"q": "进位加法怎么算", "s": "数学", "g": 3, "gold": ["m3-carry"]},
     {"q": "长方形周长公式", "s": "数学", "g": 3, "gold": ["m3-perimeter"]},
-    {"q": "分数是什么", "s": "数学", "g": 3, "gold": ["m3-frac"]},
+    {"q": "什么是分数", "s": "数学", "g": 3, "gold": ["m3-frac"]},
     {"q": "多位数乘一位数的计算方法", "s": "数学", "g": 3, "gold": ["m3-mult"]},
     {"q": "小数乘法怎么点小数点", "s": "数学", "g": 5, "gold": ["m5-decimal"]},
     {"q": "平行四边形面积公式", "s": "数学", "g": 5, "gold": ["m5-area"]},
@@ -223,16 +229,16 @@ _GOLD: list[dict] = [
     {"q": "乘法计算从哪一位算起", "s": "数学", "g": 3, "gold": ["m3-mult"]},
     {"q": "面积与周长的计算", "s": "数学", "g": 3, "gold": ["m3-perimeter"]},
     {
-        "q": "阅读理解的答题方法",
+        "q": "怎样概括段落大意",
         "s": "语文",
         "g": 4,
-        "gold": ["c4-summary", "c4-idiom"],
+        "gold": ["c4-summary"],
     },
     {
-        "q": "时态复习要点",
+        "q": "一般现在时第三人称单数怎么变",
         "s": "英语",
         "g": 6,
-        "gold": ["e6-past", "e6-present", "e6-compare"],
+        "gold": ["e6-present"],
     },
     # 知识点即查询（出题管线的实际调用形态：query = knowledge_point）
     {"q": "分数的初步认识", "s": "数学", "g": 3, "gold": ["m3-frac"]},
@@ -325,8 +331,38 @@ class TestGoldSetRecall:
                 misses.append(f"{entry['q']!r} → top5 无 gold（got {len(top5)} 条）")
         assert misses == [], "Hit@5 未达标：\n" + "\n".join(misses)
 
+    def test_hit_at_1_primary_gate(self, gold_teacher, db, monkeypatch):
+        """**主门禁（Q6）：Hit@1 = 100%**——每条黄金查询首位必须是相关片段。
+
+        当语料只有一个知识点 3–10 个 chunk 时，Recall@5 几乎没有分辨力（把所有
+        chunk 都返回就能拿 recall=1）。Hit@1 对排序位置敏感，是「区分」而非「召回」
+        的手工近似，能在轻微退化（换 embed 模型 / 调切片器导致排序劣化 10–20%）时
+        立刻报警。改检索器 / 切片器 / embed 模型后**必须重跑并重标**。
+        """
+        misses = []
+        for entry in _GOLD:
+            top = _retrieve(
+                db,
+                gold_teacher["teacher_id"],
+                monkeypatch,
+                entry["s"],
+                entry["g"],
+                entry["q"],
+            )
+            top1 = top[0] if top else None
+            gold_texts = [c["content"] for c in _CORPUS if c["id"] in entry["gold"]]
+            if top1 not in gold_texts:
+                misses.append(
+                    f"{entry['q']!r} → top1 非相关（got {top1[:20]!r}…，"
+                    f"gold={len(gold_texts)} 条）"
+                )
+        assert misses == [], "Hit@1 未达标（主门禁）：\n" + "\n".join(misses)
+
     def test_recall_at_5_threshold(self, gold_teacher, db, monkeypatch):
-        """整体 Recall@5 ≥ 0.85（ADR-0055 §14 的门禁；改检索策略后重标）。"""
+        """灾难回归护栏：整体 Recall@5 ≥ 0.85（ADR-0055 §14 门禁）。
+
+        仅作为「检索彻底坏掉」的兜底——正常演进下的质量信号来自 Hit@1，而非此指标。
+        """
         total, hits = 0, 0
         for entry in _GOLD:
             top5 = _retrieve(

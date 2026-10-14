@@ -34,7 +34,7 @@ from app.domain.scene_spec import normalize_scene_spec
 from app.domain.subjects import SUBJECTS
 from app.features.materials import indexing
 from app.features.materials import repository as repo
-from app.features.materials.parser import ParseError, extract_text
+from app.features.materials.parser import ParseError, parse_material
 from app.features.materials.scene_templates import (
     SCENE_LIBRARY,
     list_builtin_scenes,
@@ -82,6 +82,8 @@ def material_resp(material: Material) -> MaterialResp:
         chunker_ver=material.chunker_ver,
         index_error=material.index_error,
         text_length=len(material.text or ""),
+        parse_warnings=(material.parse_meta or {}).get("warnings", []) if material.parse_meta else [],
+        parse_meta=material.parse_meta,
         created_at=material.created_at,
         indexed_at=material.indexed_at,
     )
@@ -274,9 +276,10 @@ async def upload_material(
     if folder_id is not None:
         repo.get_owned_folder(session, teacher_id=teacher_id, folder_id=folder_id)
     try:
-        text = extract_text(filename=filename, data=data)
+        report = parse_material(filename=filename, data=data)
     except ParseError as e:
         raise AppErrorException(ErrCode.MATERIAL_PARSE_FAILED, str(e)) from e
+    text = report.text
 
     inherited_subject, inherited_grade, inherited_semester = _resolve_inherited(
         session, folder_id
@@ -293,6 +296,8 @@ async def upload_material(
         mime="",
         size_bytes=len(data),
         text=text,
+        # 解析校验元数据（ADR-0092）：乱码清理 / 扫描页 / OCR 等告警，供 UI 呈现。
+        parse_meta=report.to_meta(),
         # 覆盖优先级：显式指定 > 目录继承 > 文件名推断（AI 只补空白，见模块 docstring）
         subject=subject or inherited_subject,
         grade=grade or inherited_grade,
