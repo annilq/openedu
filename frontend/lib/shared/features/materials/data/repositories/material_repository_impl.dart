@@ -64,6 +64,19 @@ class MaterialRepositoryImpl implements MaterialRepository {
   }
 
   @override
+  Future<KnowledgePointSources> getKnowledgePointSources({
+    required String subject,
+    required int grade,
+    required String name,
+  }) async {
+    final data = await _network.get(
+      '/materials/knowledge-points/sources',
+      query: {'subject': subject, 'grade': grade, 'name': name},
+    );
+    return KnowledgePointSources.fromJson(decodeMap(data));
+  }
+
+  @override
   Future<SceneLibrary> fetchSceneLibrary() async {
     final data = await _network.get('/materials/scene-library');
     return SceneLibrary.fromJson(decodeMap(data));

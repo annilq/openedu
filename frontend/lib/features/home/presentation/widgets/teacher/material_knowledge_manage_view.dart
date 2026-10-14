@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/material.dart' show MaterialPageRoute;
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+import 'package:kids_learn/shared/features/materials/providers/material_providers.dart';
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/widgets/app_buttons.dart';
 import '../../../../../shared/widgets/app_actions.dart';
@@ -16,6 +17,7 @@ import '../../../providers/knowledge_manage_provider.dart';
 import '../../../../courseware/presentation/pages/courseware_editor_page.dart';
 import 'package:kids_learn/features/courseware/presentation/widgets/courseware_recent_bar.dart';
 import 'knowledge_point_row.dart';
+import 'knowledge_point_source_view.dart';
 
 /// 知识点管理视图（ADR-0055 §4 确认页 / ADR-0066 范围来自教材）：
 /// 按 (学科, 年级, 学期) 列出知识点目录，
@@ -92,6 +94,19 @@ class _MaterialKnowledgeManageViewState
                 style: text.bodySmall?.copyWith(color: app.secondary),
               ),
             ),
+          // 审核覆盖度（ADR-0093）：已确认 / 总数，进度条直观展示审核进度。
+          // 定义见 spec：覆盖度 = curated / total（审核口径），教材章节级覆盖度
+          // 需解析教材目录，超出本次范围。
+          if (km.items.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+              child: _CoverageMeter(
+                total: km.items.length,
+                curated: km.items
+                    .where((e) => e.status == 'curated')
+                    .length,
+              ),
+            ),
           if (km.error != null)
             Padding(
               padding: const EdgeInsets.only(bottom: AppSpacing.sm),
@@ -118,6 +133,7 @@ class _MaterialKnowledgeManageViewState
               kp: kp,
               km: km,
               onOpenCourseware: _openCourseware,
+              onOpenSource: (k) => _openSource(context, ref, k),
             )),
             const SizedBox(height: AppSpacing.md),
             // 同一份勾选服务于两个动作：**确认转正**（把候选变成可统计的知识点）
@@ -194,6 +210,36 @@ class _MaterialKnowledgeManageViewState
       ),
     );
   }
+
+  /// 溯源（ADR-0093）：拉取该名字在 (学科, 年级) 内命中的源资料 + 片段，弹窗核对出处。
+  Future<void> _openSource(
+    BuildContext context,
+    WidgetRef ref,
+    dynamic kp,
+  ) async {
+    final scope = ref.read(knowledgeManageProvider);
+    final sources = await ref
+        .read(materialRepositoryProvider)
+        .getKnowledgePointSources(
+          subject: scope.subject,
+          grade: scope.grade,
+          name: kp.name as String,
+        );
+    if (!context.mounted) return;
+    await AppDialog.alert(
+      context,
+      title: Text('「${kp.name}」的来源'),
+      content: SizedBox(
+        height: 440,
+        child: SingleChildScrollView(
+          child: KnowledgePointSourceView(
+            kpName: kp.name as String,
+            sources: sources.sources,
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// 范围选择条：**只列出真的传过教材的**学科 / 年级 / 学期（ADR-0065）。
@@ -213,6 +259,12 @@ class _ScopeBar extends ConsumerWidget {
             .read(knowledgeManageProvider.notifier)
             .setScope(subject, grade, semester);
 
+    // ADR-0093：学期必须具体，切学科/年级时回落到该范围首个具体学期（不再有「整学年」）。
+    String firstSemester(String subject, int grade) {
+      final sems = km.semestersOf(subject, grade);
+      return sems.isNotEmpty ? sems.first : '上学期';
+    }
+
     return Row(
       children: [
         Expanded(
@@ -221,7 +273,11 @@ class _ScopeBar extends ConsumerWidget {
             values: km.subjects,
             labels: km.subjects,
             value: km.subject,
-            onChanged: (v) => setScope(v, km.gradesOf(v).first, ''),
+            onChanged: (v) => setScope(
+              v,
+              km.gradesOf(v).first,
+              firstSemester(v, km.gradesOf(v).first),
+            ),
           ),
         ),
         const SizedBox(width: AppSpacing.md),
@@ -231,8 +287,12 @@ class _ScopeBar extends ConsumerWidget {
             values: km.grades,
             labels: [for (final g in km.grades) '$g年级'],
             value: km.grade,
-            // 换年级后旧学期可能不再存在（如只有上册）→ 退回「整学年」并集。
-            onChanged: (v) => setScope(km.subject, v, ''),
+            // 换年级后旧学期可能不再存在（如只有上册）→ 落到该范围首个具体学期。
+            onChanged: (v) => setScope(
+              km.subject,
+              v,
+              firstSemester(km.subject, v),
+            ),
           ),
         ),
         const SizedBox(width: AppSpacing.md),
@@ -240,12 +300,46 @@ class _ScopeBar extends ConsumerWidget {
           child: AppPickerField<String>(
             label: '学期',
             values: km.semesters,
-            labels: [
-              for (final s in km.semesters)
-                s.isEmpty ? '整学年' : s,
-            ],
+            labels: km.semesters,
             value: km.semester,
             onChanged: (v) => setScope(km.subject, km.grade, v),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 审核覆盖度进度条（ADR-0093）：curated / total，扁平无阴影，配色走主题令牌。
+class _CoverageMeter extends StatelessWidget {
+  const _CoverageMeter({required this.total, required this.curated});
+
+  final int total;
+  final int curated;
+
+  @override
+  Widget build(BuildContext context) {
+    final app = AppTheme.colorsOf(context);
+    final text = AppTheme.textOf(context);
+    final ratio = total == 0 ? 0.0 : curated / total;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '审核覆盖度 ${((ratio * 100).round())}%（已确认 $curated / 共 $total）',
+          style: text.bodySmall?.copyWith(color: app.onSurfaceVariant),
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: Container(
+            height: 6,
+            color: app.secondary.withValues(alpha: 0.18),
+            child: FractionallySizedBox(
+              alignment: Alignment.centerLeft,
+              widthFactor: ratio,
+              child: Container(color: app.primary),
+            ),
           ),
         ),
       ],

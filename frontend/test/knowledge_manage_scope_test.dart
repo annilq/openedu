@@ -45,13 +45,13 @@ void main() {
 
       expect(notifier.state.subject, '数学');
       expect(notifier.state.grade, 4);
-      // 默认给「整学年」并集：只传了上册时切到「下学期」会看到空列表，
-      // 教师的第一反应是「联动坏了」，所以默认必须是并集。
-      expect(notifier.state.semester, '');
+      // ADR-0093：学期必须具体，默认落到第一个真实范围的第一个具体学期，
+      // 不再给「整学年」空并集（避免教师点进空列表误以为联动坏了）。
+      expect(notifier.state.semester, '上学期');
       verify(() => repo.getKnowledgePointDirectory(
             subject: '数学',
             grade: 4,
-            semester: '',
+            semester: '上学期',
           )).called(1);
     });
 
@@ -78,9 +78,10 @@ void main() {
       expect(km.subjects, ['数学', '语文'], reason: '没传过的学科不该出现在下拉里');
       expect(km.gradesOf('数学'), [4]);
       expect(km.gradesOf('语文'), [2]);
-      expect(km.semestersOf('数学', 4), ['', '上学期', '下学期']);
+      // ADR-0093：学期下拉不再含「整学年」空选项，只列真实出现过的学期
+      expect(km.semestersOf('数学', 4), ['上学期', '下学期']);
       // 语文只有上册，下拉不该凭空补一个「下学期」的空门
-      expect(km.semestersOf('语文', 2), ['', '上学期']);
+      expect(km.semestersOf('语文', 2), ['上学期']);
       expect(km.materialCountInScope, 2, reason: '范围内的教材份数用于佐证来源');
     });
 
@@ -99,21 +100,23 @@ void main() {
 
       expect(notifier.state.subject, '数学');
       expect(notifier.state.grade, 4);
-      expect(notifier.state.semester, '');
+      // ADR-0093：校正后学期落到仍存在的第一个具体学期，而非空
+      expect(notifier.state.semester, '上学期');
     });
 
-    test('切学科时级联到该学科第一个年级，学期退回整学年', () async {
+    test('切学科时级联到该学科第一个年级与首个具体学期', () async {
       await notifier.loadScopes();
       // 模拟下拉回调：教师在学科下拉里选了「语文」
       final firstGrade = notifier.state.gradesOf('语文').first;
-      notifier.setScope('语文', firstGrade, '');
+      final firstSem = notifier.state.semestersOf('语文', firstGrade).first;
+      notifier.setScope('语文', firstGrade, firstSem);
 
       expect(notifier.state.subject, '语文');
       expect(notifier.state.grade, 2);
       verify(() => repo.getKnowledgePointDirectory(
             subject: '语文',
             grade: 2,
-            semester: '',
+            semester: firstSem,
           )).called(1);
     });
 

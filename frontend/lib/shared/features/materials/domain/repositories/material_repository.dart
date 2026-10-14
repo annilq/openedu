@@ -204,6 +204,58 @@ class SceneLibrary {
       );
 }
 
+/// 溯源：源资料里的一个片段（按 seq 排序）。
+class KnowledgePointSourceChunk {
+  final int seq;
+  final String content;
+
+  const KnowledgePointSourceChunk({required this.seq, required this.content});
+
+  factory KnowledgePointSourceChunk.fromJson(Map<String, dynamic> json) =>
+      KnowledgePointSourceChunk(
+        seq: json['seq'] as int? ?? 0,
+        content: json['content'] as String? ?? '',
+      );
+}
+
+/// 溯源：某个知识点来源的一份资料及其全部片段（ADR-0093）。
+class KnowledgePointSourceMaterial {
+  final String materialId;
+  final String materialName;
+  final List<KnowledgePointSourceChunk> chunks;
+
+  const KnowledgePointSourceMaterial({
+    required this.materialId,
+    required this.materialName,
+    this.chunks = const [],
+  });
+
+  factory KnowledgePointSourceMaterial.fromJson(Map<String, dynamic> json) =>
+      KnowledgePointSourceMaterial(
+        materialId: json['material_id'] as String? ?? '',
+        materialName: json['material_name'] as String? ?? '',
+        chunks: (json['chunks'] as List? ?? const [])
+            .map((e) => KnowledgePointSourceChunk.fromJson(
+                Map<String, dynamic>.from(e as Map)))
+            .toList(),
+      );
+}
+
+/// 知识点溯源响应：该名字在 (学科, 年级) 内命中的源资料列表。
+class KnowledgePointSources {
+  final List<KnowledgePointSourceMaterial> sources;
+
+  const KnowledgePointSources({this.sources = const []});
+
+  factory KnowledgePointSources.fromJson(Map<String, dynamic> json) =>
+      KnowledgePointSources(
+        sources: (json['sources'] as List? ?? const [])
+            .map((e) => KnowledgePointSourceMaterial.fromJson(
+                Map<String, dynamic>.from(e as Map)))
+            .toList(),
+      );
+}
+
 abstract class MaterialRepository {
   /// 教师实际上传过教材的知识点范围（ADR-0065）：下拉据此构造，不做全量 9×3 枚举。
   Future<KnowledgePointScopeList> getKnowledgePointScopes();
@@ -235,6 +287,14 @@ abstract class MaterialRepository {
   /// 删除只影响目录本身：知识点到题目是快照式引用（题中存的是名字串），所以已出的
   /// 题与掌握度统计不会被破坏——只是这个范围的下拉里不再有它。
   Future<int> deleteKnowledgePoints(List<String> ids);
+
+  /// 知识点溯源（ADR-0093）：该名字在 (学科, 年级) 内命中的源资料 + 片段，
+  /// 供教师核对「这个点确实出自教材哪一段」。
+  Future<KnowledgePointSources> getKnowledgePointSources({
+    required String subject,
+    required int grade,
+    required String name,
+  });
 
   /// 内置交互讲解场景库（ADR-0073）：注册表条目 + 本教师的关联知识点聚合。
   ///

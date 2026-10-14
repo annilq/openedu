@@ -20,8 +20,9 @@ export 'package:kids_learn/shared/features/materials/providers/material_provider
 class KnowledgeManageState {
   final String subject;
   final int grade;
-  /// 学期范围维度（ADR-0055 §4 补）：'' = 整学年/不限；'上学期' / '下学期'。
-  /// 知识点与教师私有、锁死 (学科, 年级) 同一口径，再加学期避免把上下学期混在一起。
+  /// 学期范围维度（ADR-0055 §4 补，2026-10-05 决策：学期必须为具体值，不再允许空）：
+  /// '上学期' / '下学期'。'整学年' 仅为前端聚合视图（UNION），不存空行——
+  /// ADR-0093 起前端**不再提供**「整学年」选项，范围选择强制落到具体学期。
   final String semester;
 
   /// 可选范围——后端按教师名下教材聚合而来；空 = 一份教材都还没传。
@@ -42,7 +43,7 @@ class KnowledgeManageState {
   const KnowledgeManageState({
     this.subject = '数学',
     this.grade = 1,
-    this.semester = '',
+    this.semester = '上学期',
     this.scopes = const [],
     this.unscopedCount = 0,
     this.items = const [],
@@ -105,10 +106,10 @@ class KnowledgeManageState {
   /// 当前学科下的年级。
   List<int> get grades => gradesOf(subject);
 
-  /// 某 (学科, 年级) 下可选的学期；首个恒为「整学年」——并集两张学期表，教材跨
-  /// 上下册时不必来回切。
+  /// 某 (学科, 年级) 下可选的学期（ADR-0093：不再含「整学年」空选项，强制具体学期）。
+  /// 返回该 (学科, 年级) 实际出现过的学期列表（如仅上册教材则只有 ['上学期']）。
   List<String> semestersOf(String subject, int grade) {
-    final out = <String>[''];
+    final out = <String>[];
     for (final s in scopes) {
       if (s.subject == subject &&
           s.grade == grade &&
@@ -175,6 +176,8 @@ class KnowledgeManageNotifier extends StateNotifier<KnowledgeManageState> {
   }
 
   /// 当前范围失效时落到哪：仍有效就原样返回，否则取第一个可选范围。
+  ///
+  /// ADR-0093：学期必须具体，失效回落到首个具体学期，绝不回退到空（整学年）。
   (String, int, String) _fallbackScope(List<KnowledgePointScope> scopes) {
     final stillValid = scopes.any(
       (s) => s.subject == state.subject && s.grade == state.grade,
@@ -184,15 +187,15 @@ class KnowledgeManageNotifier extends StateNotifier<KnowledgeManageState> {
         for (final s in scopes)
           if (s.subject == state.subject && s.grade == state.grade) s.semester,
       ];
-      return (
-        state.subject,
-        state.grade,
-        semesters.contains(state.semester) ? state.semester : '',
-      );
+      final concrete = semesters.where((s) => s.isNotEmpty).toList();
+      final fallback = concrete.contains(state.semester)
+          ? state.semester
+          : (concrete.isNotEmpty ? concrete.first : '上学期');
+      return (state.subject, state.grade, fallback);
     }
     if (scopes.isEmpty) return (state.subject, state.grade, state.semester);
     final first = scopes.first;
-    return (first.subject, first.grade, '');
+    return (first.subject, first.grade, first.semester);
   }
 
   /// 只拉当前范围的知识点目录（范围清单不变）。

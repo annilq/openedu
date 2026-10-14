@@ -7,20 +7,21 @@ import '../../../../../shared/widgets/app_checkbox.dart';
 import '../../../../../shared/widgets/app_tags.dart';
 import '../../../providers/knowledge_manage_provider.dart';
 
-/// 知识点目录里的一行：勾选 + 名称 + 状态 + 「课件」行内入口。
+/// 知识点目录里的一行：勾选 + 名称 + 学期 + 状态 + 「课件」/「溯源」行内入口。
 ///
 /// 从 [MaterialKnowledgeManageView] 拆出来是为守 ADR-0058 的 400 行上限——主视图把每行
-/// 渲染内联会把文件推过线。行内的「课件」入口把整行对应的知识点抛给父级，由父级负责
-/// push 课件编辑器（导航归一处，避免散落多处写 push）。
+/// 渲染内联会把文件推过线。行内的「课件」「溯源」入口把整行对应的知识点抛给父级，由
+/// 父级负责 push 编辑器 / 弹溯源窗（导航归一处，避免散落多处写 push）。
 ///
 /// 讲解入口已不再出现在本行：经 ADR-0074 v4，知识点与场景的关联、标题编辑都收拢到
-/// 场景库详情页（关联知识点 → 点开即编辑），本行只保留「课件」这一导航动作。
+/// 场景库详情页（关联知识点 → 点开即编辑），本行只保留「课件」「溯源」两个导航动作。
 class KnowledgePointRow extends ConsumerWidget {
   const KnowledgePointRow({
     super.key,
     required this.kp,
     required this.km,
     required this.onOpenCourseware,
+    required this.onOpenSource,
   });
 
   /// 元素的静态类型由 [knowledgeManageProvider] 暴露的 [KnowledgeManageState] 决定，
@@ -28,6 +29,7 @@ class KnowledgePointRow extends ConsumerWidget {
   final dynamic kp;
   final dynamic km;
   final void Function(dynamic kp) onOpenCourseware;
+  final void Function(dynamic kp) onOpenSource;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -53,9 +55,9 @@ class KnowledgePointRow extends ConsumerWidget {
           const SizedBox(width: AppSpacing.sm),
           Expanded(child: Text(kp.name)),
           const SizedBox(width: AppSpacing.sm),
-          // 「整学年」并集视图下同屏混着上/下学期的点，光看名字分不出归属——
-          // 学期徽标让教师点开前就知道这份讲解配给哪个学期。限定了学期时不画（冗余）。
-          if (km.semester.isEmpty && kp.semester.isNotEmpty)
+          // 学期徽标（ADR-0093：范围恒为具体学期，故始终展示该点的归属学期，
+          // 教师点开前即知讲解配给上学期还是下学期）。
+          if (kp.semester.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(right: AppSpacing.sm),
               child: AppTags.normal(kp.semester),
@@ -84,6 +86,12 @@ class KnowledgePointRow extends ConsumerWidget {
             AppTextAction(
               label: '课件',
               onPressed: () => onOpenCourseware(kp),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            // 「溯源」入口（ADR-0093）：打开源资料 + 片段弹窗，核对知识点出处。
+            AppTextAction(
+              label: '溯源',
+              onPressed: () => onOpenSource(kp),
             ),
           ],
         ],
