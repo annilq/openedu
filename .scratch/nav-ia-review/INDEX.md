@@ -66,7 +66,7 @@
 | 07 | 侧栏改名与分组 | 01 | done |
 | 08 | 系统项收进「我的」 | 07 | done |
 | 09 | 侧栏徽标与紧凑档当前页标题 | 01, 07 | done |
-| 10 | 学生与班级管理合并 | 03 | ready-for-agent |
+| 10 | 学生与班级管理合并 | 03 | done |
 | 11 | 场景编辑器归位为弹窗 + 立编辑形态规则 | 03 | ready-for-agent |
 | 12 | 页面路径序列化与重启恢复 | 03 | ready-for-agent |
 | 13 | 统一刷新策略 stale-while-revalidate | 04 | ready-for-agent |
