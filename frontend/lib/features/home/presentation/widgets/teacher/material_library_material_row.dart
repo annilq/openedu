@@ -167,6 +167,31 @@ class _MaterialLibraryMaterialRowState
               ],
             ),
           ),
+        // 解析校验提示（ADR-0092）：上传后 parser 产出的告警，常驻展示在行下，
+        // 让教师一眼看到「已清理乱码 / 已 OCR 扫描页 / 未解析出文字」等解析健康度。
+        if (mat.parseWarnings.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(
+              left: 26,
+              top: AppSpacing.xs,
+              bottom: AppSpacing.xs,
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(LucideIcons.alertTriangle,
+                    size: 13, color: app.secondary),
+                const SizedBox(width: AppSpacing.xs),
+                Expanded(
+                  child: Text(
+                    mat.parseWarnings.join('；'),
+                    style: text.bodySmall
+                        ?.copyWith(color: app.onSurfaceVariant),
+                  ),
+                ),
+              ],
+            ),
+          ),
       ],
     );
   }

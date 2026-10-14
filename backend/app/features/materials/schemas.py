@@ -59,6 +59,10 @@ class MaterialResp(SQLModel):
     chunker_ver: str | None = None
     index_error: str | None = None
     text_length: int = 0  # 已解析出的字符数（0 = 解析失败或空文件）
+    # 解析校验（ADR-0092）：上传时 parser 产出的告警，前端「解析校验」面板展示。
+    # 例如「已清理 516 个乱码字符」「检测到 1 页为扫描页，已自动 OCR」「未解析出文字」。
+    parse_warnings: list[str] = Field(default_factory=list)
+    parse_meta: dict | None = None
     created_at: datetime | None = None
     indexed_at: datetime | None = None
 

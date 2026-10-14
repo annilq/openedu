@@ -108,6 +108,13 @@ class Material(SQLModel, table=True):
         default=None,
         sa_type=DateTime(timezone=True),  # type: ignore
     )
+    # 解析校验元数据（ADR-0092）：上传时 parser 产出的 ParseReport 摘要——
+    # {original_chars, cleaned_chars, scan_pages, ocr_pages, pages, warnings}。
+    # 前端「解析校验」面板据此展示乱码清理 / OCR / 未解析文字等告警。
+    # ``none_as_null=True``：未解析时落 SQL NULL 而非文本 'null'（见 KnowledgePoint.scenes 同款坑）。
+    parse_meta: dict | None = Field(
+        default=None, sa_type=JSON(none_as_null=True)
+    )
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore
