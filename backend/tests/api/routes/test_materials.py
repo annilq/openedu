@@ -10,6 +10,9 @@ from pathlib import Path
 
 import pytest
 
+from agent_core.ports import StructuredDone
+from app.db.models import Material
+from app.domain.provider import EducationLLMProvider
 from app.features.materials.embedder import EmbeddingUnavailableError
 from tests.utils.user import auth_headers, login, register_teacher
 
@@ -113,6 +116,108 @@ class TestUploadAndParse:
         kid = login(client, "mat_kid", "kid123456").json()["access_token"]
         r = client.get("/api/v1/materials", headers=auth_headers(kid))
         assert r.status_code == 403
+
+
+class _MetaStubProvider(EducationLLMProvider):
+    """按预定 meta 产出结构化提取结果的替身（测试不接真实模型）。"""
+
+    def __init__(self, meta: dict):
+        self._meta = meta
+
+    async def stream(self, system, prompt, *, schema=None, tools=None, history=None):
+        yield StructuredDone(data=dict(self._meta))
+
+    async def tutor(
+        self,
+        *,
+        grade,
+        subject,
+        knowledge_point,
+        context,
+        question,
+        history=None,
+    ):
+        return None
+
+    async def grade_open(self, *, question, student_answer):
+        return {"correct": True, "score": 1.0, "explanation": "x"}
+
+
+class TestExtractRejectsEmptyKnowledgePoints:
+    """模型返回空知识点清单 = 提取失败，不是「提取成功但没知识点」。
+
+    溯源（ADR-0093）按 ``Material.knowledge_points`` 的名字串反查出处。旧行为把
+    空列表写进该字段并跳过知识点对齐：资料从此在溯源里永远查不到片段，而目录里
+    仍留着以往提取出来的知识点行——两边静默漂移，上传响应还显示 extracted。
+    失败必须响在提取当时，且不写半提取状态。
+    """
+
+    def _stub(self, monkeypatch, meta_holder: dict):
+        monkeypatch.setattr(
+            "app.features.materials.service.build_ai_provider",
+            lambda *a, **k: _MetaStubProvider(meta_holder["meta"]),
+        )
+
+    def test_empty_kp_list_is_failed_extraction(
+        self, client, ptoken, upload_root, monkeypatch, db
+    ):
+        self._stub(
+            monkeypatch,
+            {"meta": {"subject": "数学", "grade": 3, "knowledge_points": []}},
+        )
+        r = _upload(
+            client,
+            ptoken,
+            filename="数学教材.txt",
+            content="两位数乘法练习：12×3=？ 整十数乘两位数。".encode(),
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["extraction"] == "failed"
+        assert "知识点" in body["extraction_error"]
+        mat = body["material"]
+        assert mat["knowledge_points"] == []
+        assert mat["subject"] is None, "空知识点即整次提取未履约，不写半提取状态"
+        row = db.get(Material, uuid.UUID(mat["id"]))
+        assert row is not None
+        assert not row.knowledge_points
+        assert row.subject is None
+
+    def test_reextract_empty_keeps_previous_knowledge_points(
+        self, client, ptoken, upload_root, monkeypatch
+    ):
+        """重新提取拿到空清单时，必须保留原链接而不是清空。
+
+        重新提取是「全量刷新」语义，但模型一次不履约就抹掉既有出处，等于用一次
+        坏响应摧毁可恢复的数据——溯源会连同旧知识点一起查不到。
+        """
+        holder = {
+            "meta": {
+                "subject": "数学",
+                "grade": 3,
+                "knowledge_points": ["两位数乘法"],
+            }
+        }
+        self._stub(monkeypatch, holder)
+        r = _upload(
+            client,
+            ptoken,
+            filename="数学教材.txt",
+            content="两位数乘法练习：12×3=？ 整十数乘两位数。".encode(),
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["extraction"] == "extracted"
+        mat_id = r.json()["material"]["id"]
+        assert r.json()["material"]["knowledge_points"] == ["两位数乘法"]
+
+        holder["meta"] = {"subject": "数学", "grade": 3, "knowledge_points": []}
+        r2 = client.post(
+            f"/api/v1/materials/{mat_id}/extract", headers=auth_headers(ptoken)
+        )
+        assert r2.status_code == 200, r2.text
+        body2 = r2.json()
+        assert body2["extraction"] == "failed"
+        assert body2["material"]["knowledge_points"] == ["两位数乘法"]
 
 
 class TestFolders:
