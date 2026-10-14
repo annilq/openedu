@@ -15,7 +15,7 @@ import 'package:kids_learn/shared/features/materials/domain/repositories/materia
 /// TextEditingController，生命周期必须和表单一致）。
 ///
 /// 纯展示 + 回调，故**不** `ref.watch`：年级的兜底值由调用方解析好再传进来
-/// （未手动指定时继承选中学生年级），否则这个 widget 就得认识 `selectedStudentProvider`。
+/// （未手动指定时继承派发班级年级），否则这个 widget 就得认识 `classesRepositoryProvider`。
 ///
 /// **排列 = 填写顺序**（2026-10-05调整）：`年级 → 学期 → 学科` 三个范围项排在第一行、
 /// `知识点 → 题型 → 题数` 排在第二行。前三者决定知识点的可选集（改任一项都会让
@@ -25,7 +25,8 @@ import 'package:kids_learn/shared/features/materials/domain/repositories/materia
 ///仍用**两行**而非一行：6 个字段挤在紧凑档（<700）里每格仅 ~60px，选项文字被截断到
 /// 无法辨认。两行下每格都有可用宽度，行高由同一批 label 决定、两行仍然齐平。
 class TaskSpecRowEditor extends StatelessWidget {
-  final String subject;
+  /// null = 未选择，下拉显示占位。
+  final String? subject;
   final ValueChanged<String> onSubjectChanged;
 
   /// 知识点选择器（ADR-0055 §4）：控制器仍由表单持有（要跟着行一起 dispose），
@@ -34,14 +35,15 @@ class TaskSpecRowEditor extends StatelessWidget {
   /// 选项（掌握度看板 CTA 预填的知识点不在骨架里，也不能凭空消失）。
   final TextEditingController knowledgePoint;
 
-  final String qtype;
+  /// null = 未选择；学科选定后由表单按白名单派生。
+  final String? qtype;
   final ValueChanged<String> onQtypeChanged;
 
   /// 题数输入框：同上。
   final TextEditingController count;
 
-  /// 已解析的年级：`row.grade ?? 学生年级 ?? 2`。
-  final int grade;
+  /// null = 未定——未选派发班级且教师未手动选，下拉显示占位。
+  final int? grade;
   final ValueChanged<int> onGradeChanged;
 
   /// 学期（ADR-0061 发布任务对接资料库）：'' = 不限/整学年；'上学期' / '下学期'。
@@ -108,6 +110,9 @@ class TaskSpecRowEditor extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 学科取本地副本：题型白名单按它给，而公共字段不做非空提升，副本才能让
+    // else 分支里的 qtypesForSubject(subject) 通过非空检查。
+    final subject = this.subject;
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.md),
       child: Column(
@@ -125,6 +130,7 @@ class TaskSpecRowEditor extends StatelessWidget {
                   values: List.generate(9, (j) => j + 1),
                   labels: List.generate(9, (j) => '${j + 1}年级'),
                   value: grade,
+                  placeholder: '请选择年级',
                   onChanged: onGradeChanged,
                 ),
               ),
@@ -147,6 +153,7 @@ class TaskSpecRowEditor extends StatelessWidget {
                   values: kTaskSubjects,
                   labels: kTaskSubjects,
                   value: subject,
+                  placeholder: '请选择学科',
                   onChanged: onSubjectChanged,
                 ),
               ),
@@ -176,12 +183,18 @@ class TaskSpecRowEditor extends StatelessWidget {
                 child: AppPickerField<String>(
                   label: '题型',
                   // 题型白名单按学科给（ADR-0055 §12）：英语没有计算题。
-                  values: qtypesForSubject(subject),
-                  labels: [
-                    for (final q in qtypesForSubject(subject))
-                      kQtypeLabels[q] ?? q
-                  ],
+                  // 学科未选时给空选项——没有范围就没有可选题型。
+                  values: subject == null
+                      ? const <String>[]
+                      : qtypesForSubject(subject),
+                  labels: subject == null
+                      ? const <String>[]
+                      : [
+                          for (final q in qtypesForSubject(subject))
+                            kQtypeLabels[q] ?? q
+                        ],
                   value: qtype,
+                  placeholder: subject == null ? '请先选择学科' : '请选择题型',
                   onChanged: onQtypeChanged,
                 ),
               ),

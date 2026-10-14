@@ -25,6 +25,7 @@ import 'teacher_task_preview_section.dart';
 import 'teacher_task_spec_row.dart';
 import 'directory_notice_bar.dart';
 import 'task_spec_row_data.dart';
+import 'task_form_defaults.dart';
 import 'teacher_task_form_actions.dart';
 import '../../../providers/home_provider.dart';
 
@@ -49,12 +50,18 @@ class TeacherTaskFormView extends ConsumerStatefulWidget {
 }
 
 class _TeacherTaskFormViewState extends ConsumerState<TeacherTaskFormView> {
+  /// 初始行留空——学科/知识点/题型/题数的初始值没有数据通路，由教师选填
+  /// （CTA 预填除外，见 initState）；曾用硬编码常量（数学/两位数加减法/calc/4）
+  /// 冒充默认值，只选班级就点生成会得到一份来历不明的二年级数学卷。
   final List<TaskSpecRow> _rows = [TaskSpecRow()];
   /// 派发目标：班级多选 + 学生多选（替代原单学生选择器，ticket 18）。
   List<ClassModel> _selectedClasses = [];
   List<UserModel> _selectedStudents = [];
-  final _totalCtrl = TextEditingController(text: '4');
-  final _titleCtrl = TextEditingController(text: '今日练习');
+  /// 总题数只服务「一键均分」，留空；均分前必须显式填写（曾硬编码 4）。
+  final _totalCtrl = TextEditingController();
+  /// 标题默认值按挂载日期生成，不是冻结的「今日练习」。
+  final _titleCtrl =
+      TextEditingController(text: defaultTaskTitle(DateTime.now()));
 
   // 多模型（票据 08）：出题时自选模型；null = 后端自动（默认/全局）。
   String? _modelId;
@@ -64,10 +71,10 @@ class _TeacherTaskFormViewState extends ConsumerState<TeacherTaskFormView> {
   List<String>? _weakExampleIds;
 
   /// 出题年级锚点（ADR-0086 修正）：学生不再持有独立年级，年级完全由所选班级承载。
-  /// 优先首个已选班级年级，否则兜底 2。
-  int get _primaryGrade {
+  /// 未选派发班级时为 null——兜底 2 会让没选班的教师静默拿到二年级的卷子。
+  int? get _primaryGrade {
     if (_selectedClasses.isNotEmpty) return _selectedClasses.first.grade;
-    return 2;
+    return null;
   }
 
   /// 出题参考学生锚点（后端仅作 prompt 上下文）：首个已选学生，无则 null。
@@ -77,10 +84,18 @@ class _TeacherTaskFormViewState extends ConsumerState<TeacherTaskFormView> {
   void initState() {
     super.initState();
     // 反馈边预填：掌握度看板 CTA 写入 taskFormPrefillProvider 后请求跳转，
-    // 本页挂载时读取、套用到首行知识点、消费后清空，避免残留到下次手动出题。
+    // 本页挂载时读取、套用到首行（学科/知识点/年级）、消费后清空，避免残留到
+    // 下次手动出题。
     final prefill = ref.read(taskFormPrefillProvider);
     if (prefill != null) {
-      _rows[0].knowledgePoint.text = prefill.knowledgePoint;
+      final row = _rows[0];
+      // 学科经 onSubjectChanged 落入，题型随学科白名单派生（ADR-0055 §12），
+      // 与教师手动选学科同一条路。
+      final s = prefill.subject;
+      if (s != null) row.onSubjectChanged(s);
+      row.knowledgePoint.text = prefill.knowledgePoint;
+      final g = prefill.grade;
+      if (g != null) row.grade = g;
       _weakExampleIds =
           prefill.weakExampleIds.isNotEmpty ? prefill.weakExampleIds : null;
       // 消费后清空，避免残留到下次手动出题。Riverpod 禁止在 initState 构建期改
@@ -120,9 +135,9 @@ class _TeacherTaskFormViewState extends ConsumerState<TeacherTaskFormView> {
     super.dispose();
   }
 
-  void _addRow() => setState(
-    () => _rows.add(TaskSpecRow(subject: '语文', knowledgePoint: '字词积累')),
-  );
+  /// 加一行学科规格（多学科组卷的入口）：新行全空——「语文/字词积累」曾是硬编码，
+  /// 点一下就凭空多出两样没选过的东西。
+  void _addRow() => setState(() => _rows.add(TaskSpecRow()));
 
   /// 表单内选择派发班级：返回完整选中集合（含已选），直接覆盖。
   Future<void> _pickClasses() async {
@@ -152,10 +167,19 @@ class _TeacherTaskFormViewState extends ConsumerState<TeacherTaskFormView> {
   });
 
   /// 一键均分（ADR-0004 D5）：总题数按当前行数等分，余数给前几行。
+  /// 总题数留空即未填写——曾经回落硬编码 4，点一下均分就把每行刷成来历不明的数字。
   void _evenSplit() {
-    final total = int.tryParse(_totalCtrl.text) ?? 4;
+    final total = int.tryParse(_totalCtrl.text);
+    if (total == null || total < 1) {
+      AppToast.show(context, '请先填写总题数');
+      return;
+    }
     final n = _rows.length;
     if (n == 0) return;
+    if (total < n) {
+      AppToast.show(context, '总题数不能少于行数（每行至少 1 题）');
+      return;
+    }
     final base = total ~/ n;
     final extra = total % n;
     setState(() {
@@ -165,23 +189,30 @@ class _TeacherTaskFormViewState extends ConsumerState<TeacherTaskFormView> {
     });
   }
 
-  List<TaskSpecModel> _currentSpecs(int grade) =>
-      _rows.map((r) => r.toSpec(grade)).toList();
+  /// 各行 → 出题规格；年级未定的行转不出规格（toSpec 返 null），由 _generate
+  /// 的行级校验先行拦截，null 规格不会流进请求。
+  List<TaskSpecModel> _currentSpecs() => _rows
+      .map((r) => r.toSpec(_primaryGrade))
+      .whereType<TaskSpecModel>()
+      .toList();
 
   void _generate() {
     if (_selectedClasses.isEmpty && _selectedStudents.isEmpty) {
       AppToast.show(context, '请先选择要布置的班级或学生');
       return;
     }
-    final specs = _currentSpecs(_primaryGrade);
-    if (specs.any((s) => s.subject.isEmpty || s.knowledgePoint.isEmpty)) {
-      AppToast.show(context, '学科与知识点不能为空');
+    if (_titleCtrl.text.trim().isEmpty) {
+      AppToast.show(context, '请填写试卷标题');
       return;
     }
-    if (specs.any((s) => s.count < 1)) {
-      AppToast.show(context, '每行题数至少为 1');
-      return;
+    for (final r in _rows) {
+      final err = specRowError(r, inheritedGrade: _primaryGrade);
+      if (err != null) {
+        AppToast.show(context, err);
+        return;
+      }
     }
+    final specs = _currentSpecs();
     // 生成任务：先流式逐题渲染题卡（消除真实模型超时），流结束后再落库为草稿。
     ref
         .read(taskGenNotifierProvider.notifier)
@@ -228,6 +259,7 @@ class _TeacherTaskFormViewState extends ConsumerState<TeacherTaskFormView> {
                       label: '总题数',
                       controller: _totalCtrl,
                       keyboardType: TextInputType.number,
+                      hintText: '如 10',
                     ),
                   ),
                   const SizedBox(width: AppSpacing.md),
@@ -274,10 +306,11 @@ class _TeacherTaskFormViewState extends ConsumerState<TeacherTaskFormView> {
     );
   }
 
-  /// 学科规格行。年级的兜底（未指定 → 继承学生年级 → 2）在此解析好再传给编辑器：
-  /// 编辑器是纯展示的，不该为了取兜底值去认识 `selectedStudentProvider`。
-  /// 知识点目录按 (学科, 年级, 学期) 联动加载（ADR-0055 §4 / ADR-0061），加载失败
-  /// 按空目录兜底——选项里仍保留当前文本，教师不至于被一次网络抖动卡死在表单上。
+  /// 学科规格行。年级的兜底（未指定 → 继承派发班级年级，未选班则留空由教师在
+  /// 行内选）在此解析好再传给编辑器：编辑器是纯展示的，不该为了取兜底值去认识
+  /// `classesRepositoryProvider`。知识点目录按 (学科, 年级, 学期) 联动加载（ADR-0055 §4 /
+  /// ADR-0061），加载失败按空目录兜底——选项里仍保留当前文本，教师不至于被一次
+  /// 网络抖动卡死在表单上。
   List<Widget> _buildSpecRows() {
     return [
       for (var i = 0; i < _rows.length; i++)
@@ -306,10 +339,12 @@ class _TeacherTaskFormViewState extends ConsumerState<TeacherTaskFormView> {
 
   /// 某行 (学科, 年级, 学期) 的知识点目录；未加载 / 失败返回 null（编辑器按空处理）。
   List<KnowledgePointOption>? _knowledgePointOptions(
-    String subject,
-    int grade,
+    String? subject,
+    int? grade,
     String semester,
   ) {
+    // provider family key 不接受 null，没定范围就不发请求；编辑器按空目录显示占位。
+    if (subject == null || grade == null) return null;
     final async = ref.watch(
       knowledgePointsProvider((subject, grade, semester)),
     );
@@ -322,12 +357,13 @@ class _TeacherTaskFormViewState extends ConsumerState<TeacherTaskFormView> {
   /// 联动坏了——实际只是该学期还没上传资料。只在第一行提示，避免多行时刷屏。
   String? get _directoryNotice {
     if (_rows.isEmpty) return null;
+    final first = _rows.first;
+    final subject = first.subject;
+    final grade = first.grade ?? _primaryGrade;
+    // 范围未定（学科/年级至少缺一）时没有目录可解释，不刷说明条。
+    if (subject == null || grade == null) return null;
     final async = ref.watch(
-      knowledgePointsProvider((
-        _rows.first.subject,
-        _rows.first.grade ?? _primaryGrade,
-        _rows.first.semester,
-      )),
+      knowledgePointsProvider((subject, grade, first.semester)),
     );
     final notice = async.valueOrNull?.notice ?? '';
     return notice.isEmpty ? null : notice;

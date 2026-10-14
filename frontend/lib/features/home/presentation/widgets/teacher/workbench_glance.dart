@@ -267,8 +267,8 @@ class _WeakPointRow extends StatelessWidget {
                 label: '就这个出题',
                 semanticLabel: '就${item.knowledgePoint}出题',
                 onPressed: () {
-                  ref.read(taskFormPrefillProvider.notifier).state =
-                      TaskFormPrefill(knowledgePoint: item.knowledgePoint);
+                  ref.read(taskFormPrefillProvider.notifier).state = TaskFormPrefill(subject: item.subject,
+                      knowledgePoint: item.knowledgePoint, grade: item.grade > 0 ? item.grade : null);
                   ref
                       .read(shellNavigationProvider.notifier)
                       .request(ShellDestination.teacherCreateTask);

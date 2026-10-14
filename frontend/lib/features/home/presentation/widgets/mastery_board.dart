@@ -91,6 +91,8 @@ class MasteryBoard extends ConsumerWidget {
                                       .read(taskFormPrefillProvider.notifier)
                                       .state = TaskFormPrefill(
                                     knowledgePoint: m.knowledgePoint,
+                                    subject: m.subject,
+                                    grade: m.grade,
                                     weakExampleIds:
                                         m.representativeWrongQuestionIds,
                                   );
