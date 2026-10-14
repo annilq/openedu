@@ -11,14 +11,18 @@ import '../providers/home_notifier.dart';
 /// `HomeScreen` 的状态，壳层状态机（ADR-0059）仍只活在组合根里。
 class NavigationDestinations {
   const NavigationDestinations({
-    required this.go,
+    required this.goEntry,
     required this.goChildTab,
     required this.goProfile,
     required this.genTrailing,
   });
 
-  /// 教师端统一导航出口（`HomeScreen._go`）。
-  final void Function(TeacherPage page) go;
+  /// 教师端**切换一级入口**的出口（`HomeScreen._goEntry`）。
+  ///
+  /// 叫 `goEntry` 而不叫 `go` 是有意的：侧栏每一项都是一级入口，点它是**换入口**——
+  /// 清空历史；而壳内下钻（班级 → 班内学生 → 学生详情）是另一条出口（`_go`，入栈）。
+  /// 两者混用会让「切到题库后按返回先弹回上一次的班内学生页」。
+  final void Function(TeacherPage page) goEntry;
 
   /// 学生端页签切换（`HomeScreen._switchChildTab`）。
   final void Function(int index) goChildTab;
@@ -32,14 +36,21 @@ class NavigationDestinations {
   /// 教师端侧栏目的地：与旧 TeacherSidebar 同序（概览/任务/布置/错题/答疑/
   /// 题库/资料库/模型）。审核页高亮「进来时的那一页」——审核是任务的延续，
   /// 不是一个新的侧栏入口，故 active 取 `highlightFor(page)`。
-  List<AdaptiveNavDestination> teacher(TeacherPage page, TaskGenState gen) {
-    final active = highlightFor(page);
+  ///
+  /// [parent] 是历史栈里当前页的上一层，只用于草稿审核页的高亮（审核不是一个侧栏
+  /// 入口，高亮它进来时的那一页）；其余页面忽略它。
+  List<AdaptiveNavDestination> teacher(
+    TeacherPage page,
+    TaskGenState gen, {
+    TeacherPage? parent,
+  }) {
+    final active = highlightFor(page, parent: parent);
     return [
       AdaptiveNavDestination(
           icon: LucideIcons.layoutDashboard,
           label: '概览',
           active: active is OverviewPage,
-          onTap: () => go(const OverviewPage())),
+          onTap: () => goEntry(const OverviewPage())),
       AdaptiveNavDestination(
           icon: LucideIcons.listTodo,
           label: '任务',
@@ -47,59 +58,59 @@ class NavigationDestinations {
           // 故它高亮时「任务」也亮；出题中点按即回生成页（ADR-0057 P1）。
           active: active is TaskListPage || active is CreateTaskPage,
           onTap: () => gen is TaskGenPreview && gen.streaming
-              ? go(const CreateTaskPage())
-              : go(const TaskListPage()),
+              ? goEntry(const CreateTaskPage())
+              : goEntry(const TaskListPage()),
           // ADR-0057 P1：出题进度徽标从「布置任务」迁到「任务」项。
           trailing: genTrailing(gen)),
       AdaptiveNavDestination(
           icon: LucideIcons.users,
           label: '学生',
           active: active is StudentManagementPage,
-          onTap: () => go(const StudentManagementPage())),
+          onTap: () => goEntry(const StudentManagementPage())),
       AdaptiveNavDestination(
           icon: LucideIcons.school,
           label: '班级管理',
           active: active is ClassManagementPage,
-          onTap: () => go(const ClassManagementPage())),
+          onTap: () => goEntry(const ClassManagementPage())),
       AdaptiveNavDestination(
           icon: LucideIcons.library,
           label: '题库',
           active: active is QuestionBankPage,
-          onTap: () => go(const QuestionBankPage())),
+          onTap: () => goEntry(const QuestionBankPage())),
       AdaptiveNavDestination(
           icon: LucideIcons.folderOpen,
           label: '资料库',
           active: active is MaterialLibraryPage,
-          onTap: () => go(const MaterialLibraryPage())),
+          onTap: () => goEntry(const MaterialLibraryPage())),
       AdaptiveNavDestination(
           icon: LucideIcons.cpu,
           label: '模型管理',
           active: active is ModelsPage,
-          onTap: () => go(const ModelsPage())),
+          onTap: () => goEntry(const ModelsPage())),
       // ADR-0088 ticket 02：运行轨迹（审计 / 排障口径）独立入口——与助手页内的
       // 「历史会话」（气泡口径）并列，不混入同一个页面。
       AdaptiveNavDestination(
           icon: LucideIcons.route,
           label: '运行轨迹',
           active: active is RunTracePage || active is RunTraceDetailPage,
-          onTap: () => go(const RunTracePage())),
+          onTap: () => goEntry(const RunTracePage())),
       AdaptiveNavDestination(
           icon: LucideIcons.bookOpen,
           label: '课件',
           active: active is CoursewarePage,
-          onTap: () => go(const CoursewarePage())),
+          onTap: () => goEntry(const CoursewarePage())),
       AdaptiveNavDestination(
           icon: LucideIcons.component,
           label: '场景库',
           // 详情页高亮列表页：详情是列表的下钻，不是一个独立入口，否则点了某个
           // 场景后侧栏会「谁都不亮」，教师以为自己离开了导航。
           active: active is SceneLibraryPage || active is SceneLibraryDetailPage,
-          onTap: () => go(const SceneLibraryPage())),
+          onTap: () => goEntry(const SceneLibraryPage())),
       AdaptiveNavDestination(
           icon: LucideIcons.images,
           label: '素材库',
           active: active is AssetLibraryPage,
-          onTap: () => go(const AssetLibraryPage())),
+          onTap: () => goEntry(const AssetLibraryPage())),
     ];
   }
 
