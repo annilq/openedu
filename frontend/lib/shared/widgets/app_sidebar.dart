@@ -233,6 +233,36 @@ class _CollapseToggle extends StatelessWidget {
   }
 }
 
+/// 侧栏分组标题（ticket 07）。展开态显示静音色小标题；收起态（仅图标）退化为间距，
+/// 不挤压图标——与 [AppSidebarDivider] 同款退化思路。
+///
+/// 抽屉（全宽面板，无收缩 scope）读不到 scope → 按展开态处理，始终显示标题。
+class AppSidebarGroupTitle extends StatelessWidget {
+  final String title;
+  const AppSidebarGroupTitle({super.key, required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    final scope = SidebarCollapseScope.maybeOf(context);
+    if (scope != null && scope.collapsed) {
+      return const SizedBox(height: AppSpacing.md);
+    }
+    final scheme = AppTheme.colorsOf(context);
+    final text = AppTheme.textOf(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.md, AppSpacing.md, AppSpacing.md, AppSpacing.xs),
+      child: Text(
+        title,
+        style: text.labelSmall?.copyWith(
+          color: scheme.onSurfaceVariant,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
 /// 侧栏分隔线（细线 + padding）。收缩态退化为纯间距。
 class AppSidebarDivider extends StatelessWidget {
   const AppSidebarDivider({super.key});

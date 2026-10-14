@@ -11,6 +11,8 @@ class StorageService {
   static const _keyUserMode = 'user_mode';
   static const _keyDensity = 'ui_density';
   static const _keySidebarCollapsed = 'sidebar_collapsed';
+  static const _keyTeacherPagePath = 'teacher_last_page_path';
+  static const _keyChildTab = 'child_last_tab';
 
   late SharedPreferences _prefs;
 
@@ -58,8 +60,24 @@ class StorageService {
   Future<void> saveSidebarCollapsed(bool v) =>
       _prefs.setBool(_keySidebarCollapsed, v);
 
+  /// 教师端上次所在页面路径（ticket 12）：重启后由壳恢复落点。
+  String? getLastTeacherPagePath() => _prefs.getString(_keyTeacherPagePath);
+  Future<void> saveLastTeacherPagePath(String path) =>
+      _prefs.setString(_keyTeacherPagePath, path);
+  Future<void> clearLastTeacherPagePath() =>
+      _prefs.remove(_keyTeacherPagePath);
+
+  /// 学生端上次所在页签下标（ticket 12）：重启后由壳恢复页签。
+  int? getLastChildTab() => _prefs.getInt(_keyChildTab);
+  Future<void> saveLastChildTab(int index) =>
+      _prefs.setInt(_keyChildTab, index);
+  Future<void> clearLastChildTab() => _prefs.remove(_keyChildTab);
+
   Future<void> clearAll() async {
     await _prefs.remove(_keyToken);
     await _prefs.remove(_keyUser);
+    // ticket 12：登出同时清空已存的落点，避免把上个账号的页面带进下个账号。
+    await _prefs.remove(_keyTeacherPagePath);
+    await _prefs.remove(_keyChildTab);
   }
 }

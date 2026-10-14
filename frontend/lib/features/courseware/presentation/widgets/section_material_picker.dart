@@ -90,7 +90,7 @@ class _SectionMaterialPickerState
     if (widget.materials.isEmpty) {
       return Padding(
         padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-        child: Text('还没有关联素材，点上方「添加素材」从素材库挑图。',
+        child: Text('还没有关联素材，点上方「添加素材」从图片素材挑图。',
             style: text.bodySmall?.copyWith(color: app.onSurfaceVariant)),
       );
     }

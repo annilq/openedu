@@ -49,9 +49,10 @@ class KnowledgePointSceneEditor extends ConsumerStatefulWidget {
 
   final List<Map<String, dynamic>>? initialScenes;
 
-  /// 关闭/保存后的出口：经 [HomeScreen] 的单一 `_go(back)` 回落，而非裸
-  /// `Navigator.pop`（弹窗态下 pop 只是关弹窗，页面态下 pop 会弹根栈 → 白屏，
-  /// ADR-0059）。null = 仍当弹窗用（知识点行旧路径），回落 `Navigator.pop` 关弹窗。
+  /// 关闭/保存后的出口。非 null 时由调用方决定回落动作（来源页打开弹窗时负责：作废
+  /// 场景库清单缓存 + 关弹窗）；null = 自身回落 `Navigator.pop` 关弹窗。绝不裸
+  /// `Navigator.pop` 弹根栈（历史整页态下 pop 会弹根栈 → 白屏，ADR-0059），故来源页
+  /// 以弹窗打开时务必传入 [onBack]。
   final VoidCallback? onBack;
 
   const KnowledgePointSceneEditor({

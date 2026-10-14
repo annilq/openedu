@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../domain/models/models.dart';
+import 'resource.dart';
 
 /// 分页资源的四态：**Idle / Loading / Loaded / Error**（ADR-0053）。
 ///
@@ -36,16 +37,29 @@ class PagingLoaded<T> extends PagingState<T> {
   /// 追加失败的原因；null = 无失败。列表数据仍在。
   final String? moreError;
 
+  /// 首屏最近一次成功取数的时刻；null = 从未成功取过（视为已过期）。
+  final DateTime? fetchedAt;
+
+  /// 后台静默刷新（首屏）失败的原因；null = 无。
+  ///
+  /// 失败时**保留 [page] 继续渲染**，不进错误态、不丢列表，只在此留痕（不静默吞掉）。
+  /// 与 [moreError] 区分：后者是「追加下一页」失败，前者是「整页静默刷新」失败。
+  final String? error;
+
   const PagingLoaded(
     this.page, {
     this.isLoadingMore = false,
     this.moreError,
+    this.fetchedAt,
+    this.error,
   });
 
   PagingLoaded<T> copyWith({
     CursorPage<T>? page,
     bool? isLoadingMore,
     Object? moreError = _sentinel,
+    DateTime? fetchedAt,
+    Object? error = _sentinel,
   }) {
     return PagingLoaded<T>(
       page ?? this.page,
@@ -53,6 +67,8 @@ class PagingLoaded<T> extends PagingState<T> {
       moreError: identical(moreError, _sentinel)
           ? this.moreError
           : moreError as String?,
+      fetchedAt: fetchedAt ?? this.fetchedAt,
+      error: identical(error, _sentinel) ? this.error : error as String?,
     );
   }
 }
@@ -144,6 +160,11 @@ mixin _PagingLoader<T> on StateNotifier<PagingState<T>> {
   /// 所以作废判据必须是「取页时记下的世代号 vs 现在的世代号」，而不是状态类型。
   int _generation = 0;
 
+  DateTime Function() _now = DateTime.now;
+
+  /// 测试可注入假时钟，使过期判定可预测（不依赖真实时间流逝）。
+  void debugSetClock(DateTime Function() clock) => _now = clock;
+
   bool get inFlight => _inFlight;
 
   Future<void> runFirstPage(Future<CursorPage<T>> Function() fetch) async {
@@ -151,7 +172,7 @@ mixin _PagingLoader<T> on StateNotifier<PagingState<T>> {
     _inFlight = true;
     state = const PagingLoading();
     try {
-      state = PagingLoaded<T>(await fetch());
+      state = PagingLoaded<T>(await fetch(), fetchedAt: _now());
     } catch (e) {
       state = PagingError<T>(e.toString());
     } finally {
@@ -178,12 +199,51 @@ mixin _PagingLoader<T> on StateNotifier<PagingState<T>> {
       if (current is! PagingLoaded<T>) return;
       // 期间换过查询条件（切 Tab / 改筛选 / 换学生）→ 这一页已经不属于当前结果。
       if (generation != _generation) return;
-      state = PagingLoaded<T>(current.page.append(next));
+      // 追加成功：保留首屏时间戳（fetchedAt），不把整列表重新判为「陈旧」。
+      state = current.copyWith(page: current.page.append(next), isLoadingMore: false);
     } catch (e) {
       final current = state;
       if (current is! PagingLoaded<T>) return;
       if (generation != _generation) return;
       state = current.copyWith(isLoadingMore: false, moreError: e.toString());
+    } finally {
+      _inFlight = false;
+    }
+  }
+
+  /// 过期则静默刷新首屏：保留已加载列表，不进 [PagingLoading] 整页骨架（ticket 13）。
+  ///
+  /// 统一的「切回页面刷新」内部实现，教师端与学生端共用同一套状态机，不写两份：
+  /// - 正在首屏（[PagingLoading]）→ 不重启，避免 build 期反复推迟触发造成的
+  ///   重复请求循环。
+  /// - 非 [PagingLoaded]（首次 / 错误态）→ [runFirstPage]（首填或重试，进加载态）。
+  /// - 已加载但未过期 → **不发请求**。
+  /// - 已加载且已过期 → 后台重取首屏，期间停在 [PagingLoaded]（列表照常渲染）；
+  ///   成功替换整页 + 更新时间戳；失败保留列表并在 [PagingLoaded.error] 留痕。
+  /// 复用 [_inFlight] 挡掉「上一个刷新没回来又触发一次」；[生成世代] 作废期间
+  /// 发生的切 Tab / 换筛选，使这次刷新结果作废。
+  ///
+  /// 命名带 `Fetch` 后缀以区别于 notifier 对外暴露的 `refreshIfStale()`——
+  /// Dart 不允许子类用同名但不同签名的方法覆盖 mixin 方法，故内部实现与对外入口分开。
+  Future<void> refreshIfStaleFetch(Future<CursorPage<T>> Function() fetch) async {
+    final current = state;
+    if (current is PagingLoading<T>) return; // 首屏进行中，不重启。
+    if (current is! PagingLoaded<T>) {
+      return runFirstPage(fetch); // Idle → 首填；Error → 重试。
+    }
+    if (_inFlight) return;
+    if (!isResourceStale(current.fetchedAt, _now())) return; // 未过期，不发请求。
+    final generation = ++_generation;
+    _inFlight = true;
+    try {
+      final page = await fetch();
+      if (generation != _generation) return; // 期间换条件，作废本次结果。
+      state = PagingLoaded<T>(page, fetchedAt: _now());
+    } catch (e) {
+      final cur = state;
+      if (cur is! PagingLoaded<T>) return;
+      if (generation != _generation) return;
+      state = cur.copyWith(error: e.toString());
     } finally {
       _inFlight = false;
     }
@@ -201,6 +261,9 @@ class PagingNotifier<T> extends StateNotifier<PagingState<T>>
 
   Future<void> loadMore() =>
       runNextPage((cursor) => _fetch(cursor: cursor));
+
+  /// 过期则静默刷新首屏（见 [_PagingLoader.refreshIfStaleFetch]）。
+  Future<void> refreshIfStale() => refreshIfStaleFetch(() => _fetch(cursor: null));
 }
 
 /// 取数依赖入参的分页资源（如「按 studentId 取错题本」）。
@@ -222,6 +285,12 @@ class ParamPagingNotifier<T, A> extends StateNotifier<PagingState<T>>
     final arg = _arg;
     if (arg == null) return Future.value();
     return runNextPage((cursor) => _fetch(arg, cursor: cursor));
+  }
+
+  /// 过期则静默刷新首屏（见 [_PagingLoader.refreshIfStaleFetch]）。
+  Future<void> refreshIfStale(A arg) {
+    _arg = arg;
+    return refreshIfStaleFetch(() => _fetch(arg, cursor: null));
   }
 }
 

@@ -209,7 +209,7 @@ class _RemovedAssetTile extends StatelessWidget {
       child: const AppEmptyState.inline(
         icon: LucideIcons.trash2,
         title: '素材已移除',
-        message: '这张图已不在素材库里，环节还留着对它的引用。'
+        message: '这张图已不在图片素材里，环节还留着对它的引用。'
             '回到课件编辑页换一张图，或删掉这一项。',
       ),
     );

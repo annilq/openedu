@@ -26,8 +26,9 @@ import 'package:kids_learn/shared/data/local/storage_service.dart';
 import 'package:kids_learn/shared/domain/models/models.dart';
 import 'package:kids_learn/shared/domain/providers/core_providers.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
-import 'package:kids_learn/shared/widgets/adaptive_shell.dart'
-    show AdaptiveShell, AdaptiveNavDestination;
+import 'package:kids_learn/shared/widgets/adaptive_shell.dart' show AdaptiveShell;
+import 'package:kids_learn/shared/widgets/nav_section.dart'
+    show AdaptiveNavDestination, SidebarSection;
 import 'package:kids_learn/shared/widgets/app_sidebar.dart' show AppSidebar;
 
 /// 真实设备逻辑像素宽度（含手机横屏与桌面两档），命名里带机型便于失败时定位。
@@ -91,7 +92,7 @@ void main() {
             child: _host(
               AdaptiveShell(
                 mode: mode,
-                destinations: _childDestinations(),
+                destinations: [SidebarSection(items: _childDestinations())],
                 body: const SizedBox(
                   height: 2000,
                   child: ColoredBox(color: Color(0xFFEEDDCC)),
@@ -157,7 +158,7 @@ void main() {
         child: _host(
           AdaptiveShell(
             mode: AppUserMode.student,
-            destinations: _childDestinations(),
+            destinations: [SidebarSection(items: _childDestinations())],
             body: const ColoredBox(color: Color(0xFFEEDDCC)),
           ),
           AppUserMode.student,

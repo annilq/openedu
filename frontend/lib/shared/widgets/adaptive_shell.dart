@@ -5,10 +5,13 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../shared/domain/models/models.dart';
 import '../../shared/theme/app_theme.dart';
 import '../../shared/widgets/app_sidebar.dart';
+import '../../shared/widgets/nav_section.dart';
 import '../domain/providers/core_providers.dart';
+import 'adaptive_bottom_nav.dart';
 import 'app_content_frame.dart';
 import 'app_avatar.dart';
 import 'app_focusable_action.dart';
+import 'shell_body_transition.dart';
 
 /// 底部用户区在展开态需要的最小可用宽度：低于此值按 collapsed（仅头像）渲染，
 /// 复用与导航项同样的兜底逻辑，规避折叠/展开动画途中展开行（头像 + 间距 +
@@ -16,23 +19,11 @@ import 'app_focusable_action.dart';
 /// 箭头 16 的余量；低于此宽必然放不下展开行。
 const double _kUserBlockExpandedMinWidth = 100;
 
-/// 导航目的地（数据驱动）：同一份定义同时喂给侧栏 / 底栏 / 抽屉三种形态，
-/// 避免三种布局各写一套 item，保证选中态与回调唯一来源。
-class AdaptiveNavDestination {
-  final IconData icon;
-  final String label;
-  final bool active;
-  final VoidCallback? onTap;
-  final Widget? trailing;
-
-  const AdaptiveNavDestination({
-    required this.icon,
-    required this.label,
-    required this.active,
-    this.onTap,
-    this.trailing,
-  });
-}
+/// 抽屉左滑关闭的位移阈值：抽屉宽度的四分之一。
+///
+/// 从 [AppLayout.sidebarExpanded] 推导而不是写裸数字——抽屉宽度改了阈值自动跟随，
+/// 不会出现「抽屉变窄了却仍要滑 60px 才关」。
+const double _drawerDismissDragThreshold = AppLayout.sidebarExpanded / 4;
 
 /// 响应式导航壳（ADR-0014 / ADR-0045）：按 [LayoutBuilder] 的**可用宽度**分三档。
 ///
@@ -49,7 +40,7 @@ class AdaptiveNavDestination {
 /// 侧栏/轨态复用 [AppSidebar] + [AppSidebarItem]；紧凑态自绘（不使用 Material 的
 /// BottomNavigationBar / Drawer / Scaffold，因应用根基于 ShadApp 无 Material 祖先）。
 class AdaptiveShell extends ConsumerStatefulWidget {
-  final List<AdaptiveNavDestination> destinations;
+  final List<SidebarSection> destinations;
   final Widget body;
 
   /// [body] 是唯一的页面宿主：曾经还有个 [detail] 覆盖层（master-detail，
@@ -62,6 +53,20 @@ class AdaptiveShell extends ConsumerStatefulWidget {
   final Widget? sidebarBottom;
   final AdaptiveNavDestination? profileDestination;
 
+  /// 紧凑档顶栏标题（09）：取代固定的应用名，显示**当前页面名**。
+  ///
+  /// 取值必须来自 01 的 `teacherPageFace` / `childPageFace` 映射（home 组合根负责换算后
+  /// 传入），本壳不再手写任何页面文案，也严禁写死应用名（修复遗留的「学生学习」——
+  /// 那串字对教师端是错的）。为 null 时退回中性占位。
+  final String? currentTitle;
+
+  /// 壳内 body 的当前页面身份（05）：用于驱动换页淡入转场。
+  ///
+  /// 取 [TeacherPage] / [ChildPage] 这类「当前页面」单一事实源——它本就是 sealed +
+  /// const 构造的规范实例，身份即等价，无需壳再理解页面类型。为 null 时（既有测试 /
+  /// 降级路径）不施加任何转场，零行为变化。
+  final Object? bodyKey;
+
   const AdaptiveShell({
     super.key,
     required this.destinations,
@@ -70,6 +75,8 @@ class AdaptiveShell extends ConsumerStatefulWidget {
     this.sidebarTop,
     this.sidebarBottom,
     this.profileDestination,
+    this.currentTitle,
+    this.bodyKey,
   });
 
   @override
@@ -136,15 +143,16 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
                 child: ClipRect(
                   child: AppSidebar(
                     top: widget.sidebarTop,
-                    items: widget.destinations
-                        .map((d) => AppSidebarItem(
-                              icon: d.icon,
-                              label: d.label,
-                              active: d.active,
-                              onTap: d.onTap,
-                              trailing: d.trailing,
-                            ))
-                        .toList(),
+                    items: buildNavSectionWidgets(
+                      widget.destinations,
+                      itemBuilder: (d) => AppSidebarItem(
+                        icon: d.icon,
+                        label: d.label,
+                        active: d.active,
+                        onTap: d.onTap,
+                        trailing: d.trailing,
+                      ),
+                    ),
                     bottom: widget.sidebarBottom,
                   ),
                 ),
@@ -152,7 +160,7 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
               Expanded(
                 child: Container(
                   color: scheme.surface,
-                  child: _cappedWidth(widget.body),
+                  child: _cappedWidth(context, widget.body),
                 ),
               ),
             ],
@@ -173,40 +181,33 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
   /// 仍会取满 `contentWide`，与 `Center` 等效。
   ///
   /// 紧凑宽度下 1080 不生效，等价于无包裹（不改变手机 / 小平板的现有排布）。
-  Widget _cappedWidth(Widget child) => AppContentFrame(
-        child: child,
+  ///
+  /// body 在此套上壳内换页淡入转场（05）：以学生 / 教师端的当前页面身份 [widget.bodyKey]
+  /// 驱动；未声明（既有测试 / 降级）则 [ShellBodyTransition] 直接透传，零行为变化。
+  Widget _cappedWidth(BuildContext context, Widget child) => AppContentFrame(
+        child: ShellBodyTransition(
+          pageKey: widget.bodyKey,
+          mode: widget.mode,
+          child: child,
+        ),
       );
 
   // ---- 紧凑·学生端：底部导航 ----
   Widget _buildCompactBottomNav(BuildContext context) {
     final scheme = AppTheme.colorsOf(context);
-    final items = [...widget.destinations];
+    final items = flattenNavSections(widget.destinations);
     if (widget.profileDestination != null) items.add(widget.profileDestination!);
     return Column(
       children: [
         Expanded(
           child: Container(
             color: scheme.surface,
-            child: _cappedWidth(widget.body),
+            child: _cappedWidth(context, widget.body),
           ),
         ),
-        Container(
-          decoration: BoxDecoration(
-            color: scheme.surfaceSunken,
-            border: Border(top: BorderSide(color: scheme.outline, width: AppElevation.borderWidthHairline)),
-          ),
-          child: SafeArea(
-            top: false,
-            child: SizedBox(
-              height: 60,
-              child: Row(
-                children: items
-                    .map((d) => _BottomNavItem(destination: d))
-                    .toList(),
-              ),
-            ),
-          ),
-        ),
+        // 底栏自带的窄屏降级（等分 → 自然分布 → 只留图标）与壳无关，抽到
+        // AdaptiveBottomNav：壳只负责「紧凑档学生端用底栏」这一个决策。
+        AdaptiveBottomNav(items: items),
       ],
     );
   }
@@ -214,17 +215,19 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
   // ---- 紧凑·教师端：顶部汉堡 + 左抽屉 ----
   Widget _buildCompactDrawer(BuildContext context) {
     final scheme = AppTheme.colorsOf(context);
-    final items = [...widget.destinations];
-    if (widget.profileDestination != null) items.add(widget.profileDestination!);
+    final profile = widget.profileDestination;
     return Stack(
       children: [
         Column(
           children: [
-            _CompactTopBar(onMenu: () => _setDrawer(true)),
+            _CompactTopBar(
+          onMenu: () => _setDrawer(true),
+          title: widget.currentTitle ?? '工作台',
+        ),
             Expanded(
               child: Container(
                 color: scheme.surface,
-                child: _cappedWidth(widget.body),
+                child: _cappedWidth(context, widget.body),
               ),
             ),
           ],
@@ -246,12 +249,18 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
           top: 0,
           bottom: 0,
           width: AppLayout.sidebarExpanded,
-          child: Container(
-            decoration: BoxDecoration(
-              color: scheme.surfaceSunken,
-              border: Border(right: BorderSide(color: scheme.outline, width: AppElevation.borderWidthHairline)),
-            ),
-            child: Column(
+          child: _DrawerSwipeToDismiss(
+            enabled: _drawerOpen,
+            onDismiss: () => _setDrawer(false),
+            child: Container(
+              decoration: BoxDecoration(
+                color: scheme.surfaceSunken,
+                border: Border(
+                    right: BorderSide(
+                        color: scheme.outline,
+                        width: AppElevation.borderWidthHairline)),
+              ),
+              child: Column(
               children: [
                 // 抽屉无收缩按钮，但仍要给同一份头部内边距——否则 sidebarTop
                 // 会贴边，与下面缩进 8px 的抽屉项对不上（左右两条边缘）。
@@ -264,13 +273,33 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
                   child: ListView(
                     padding: const EdgeInsets.symmetric(
                         vertical: AppSpacing.sm),
-                    children: items
-                        .map((d) => _DrawerItem(destination: d))
-                        .toList(),
+                    children: [
+                      ...buildNavSectionWidgets(
+                        widget.destinations,
+                        itemBuilder: (d) => _DrawerItem(
+                          destination: d,
+                          // 关闭必须发生在导航**之后**：先让目标页进渲染树，
+                          // 再收抽屉，避免动画途中抽屉与内容同时重排。
+                          onTap: () {
+                            d.onTap?.call();
+                            _setDrawer(false);
+                          },
+                        ),
+                      ),
+                      if (profile != null)
+                        _DrawerItem(
+                          destination: profile,
+                          onTap: () {
+                            profile.onTap?.call();
+                            _setDrawer(false);
+                          },
+                        ),
+                    ],
                   ),
                 ),
                 if (widget.sidebarBottom != null) widget.sidebarBottom!,
               ],
+              ),
             ),
           ),
         ),
@@ -279,37 +308,52 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
   }
 }
 
-/// 底部导航项（紧凑·学生端）。等宽分布，选中态用 accent。
-class _BottomNavItem extends StatelessWidget {
-  final AdaptiveNavDestination destination;
-  const _BottomNavItem({required this.destination});
+/// 抽屉面板的左滑关闭手势。
+///
+/// 纯手势补充：抽屉项仍然是 [AppFocusableAction]，桌面端 Tab 依旧跳得过去
+/// （ADR-0046）——手势只多给移动端一条出路，不接替可点区域。
+///
+/// 位移阈值取抽屉宽度的四分之一（[_drawerDismissDragThreshold]）：比手指的一次
+/// 拖拽短（好关），比列表竖向滚动的横向抖动长（不误触）。收起动画沿用
+/// [AnimatedPositioned] 的同一档时长，因此也一并尊重 reduce-motion。
+class _DrawerSwipeToDismiss extends StatefulWidget {
+  final bool enabled;
+  final VoidCallback onDismiss;
+  final Widget child;
+
+  const _DrawerSwipeToDismiss({
+    required this.enabled,
+    required this.onDismiss,
+    required this.child,
+  });
+
+  @override
+  State<_DrawerSwipeToDismiss> createState() => _DrawerSwipeToDismissState();
+}
+
+class _DrawerSwipeToDismissState extends State<_DrawerSwipeToDismiss> {
+  /// 本次拖拽累计的横向位移（左为负）。必须是 State：拖拽途中 `onDismiss`
+  /// 会触发壳的 setState 重建本组件，Stateless 会让位移在重建时清零。
+  double _drag = 0;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = AppTheme.colorsOf(context);
-    final color = destination.active ? scheme.accent : scheme.onSurfaceVariant;
-    return Expanded(
-      child: AppFocusableAction(
-        onTap: destination.onTap,
-        semanticLabel: destination.label,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(destination.icon, size: 22, color: color),
-            const SizedBox(height: 4),
-            Text(
-              destination.label,
-              style: AppTheme.textOf(context).labelSmall?.copyWith(
-                    color: color,
-                    fontWeight:
-                        destination.active ? FontWeight.w600 : FontWeight.w500,
-                  ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ),
-      ),
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onHorizontalDragUpdate: widget.enabled
+          ? (details) {
+              // 只累加左滑：向右拽是把抽屉拽回来，而它已经在最左端。
+              if (details.delta.dx < 0) _drag += details.delta.dx;
+            }
+          : null,
+      onHorizontalDragEnd: widget.enabled
+          ? (_) {
+              final dismissed = _drag <= -_drawerDismissDragThreshold;
+              _drag = 0;
+              if (dismissed) widget.onDismiss();
+            }
+          : null,
+      child: widget.child,
     );
   }
 }
@@ -317,7 +361,12 @@ class _BottomNavItem extends StatelessWidget {
 /// 抽屉导航项（紧凑·教师端）。图标 + 文字 + 选中药丸。
 class _DrawerItem extends StatelessWidget {
   final AdaptiveNavDestination destination;
-  const _DrawerItem({required this.destination});
+
+  /// 抽屉项的完整动作：导航（[AdaptiveNavDestination.onTap]）+ 收起抽屉。
+  /// 由壳注入，因为「当前抽屉是否打开」是壳的状态。
+  final VoidCallback onTap;
+
+  const _DrawerItem({required this.destination, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -328,7 +377,7 @@ class _DrawerItem extends StatelessWidget {
       padding:
           const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 2),
       child: AppFocusableAction(
-        onTap: destination.onTap,
+        onTap: onTap,
         semanticLabel: destination.label,
         borderRadius: BorderRadius.circular(AppRadius.chip),
         hoverHighlight: true,
@@ -369,10 +418,11 @@ class _DrawerItem extends StatelessWidget {
   }
 }
 
-/// 紧凑·教师端顶部条：汉堡按钮 + 应用名。
+/// 紧凑·教师端顶部条：汉堡按钮 + 当前页面名。
 class _CompactTopBar extends StatelessWidget {
   final VoidCallback onMenu;
-  const _CompactTopBar({required this.onMenu});
+  final String title;
+  const _CompactTopBar({required this.onMenu, required this.title});
 
   @override
   Widget build(BuildContext context) {
@@ -398,10 +448,17 @@ class _CompactTopBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: AppSpacing.sm),
-          Text('学生学习',
-              style: AppTheme.textOf(context).titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  )),
+          // 当前页面名（09）：Flexible + 省略号，长名截断而非溢出。
+          // Key 供测试稳定定位紧凑档顶栏标题，不污染其它文案断言。
+          Flexible(
+            child: Text(title,
+                key: const Key('compact-current-title'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTheme.textOf(context).titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    )),
+          ),
         ],
       ),
     );
