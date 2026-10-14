@@ -321,7 +321,11 @@ async def upload_material(
 async def reextract_metadata(
     session: Session, *, teacher_id: uuid.UUID, material_id: uuid.UUID
 ) -> ExtractResult:
-    """手动重新提取：知识点**全量刷新**；学科 / 年级只补空白（不覆盖教师意图）。"""
+    """手动重新提取：知识点**全量刷新**；学科 / 年级只补空白（不覆盖教师意图）。
+
+    模型未履约（如返回空知识点清单）时整次不落库，原值保留——用一次坏响应
+    刷新掉既有出处，溯源会连同旧知识点一起查不到。
+    """
     material = repo.get_owned_material(
         session, teacher_id=teacher_id, material_id=material_id
     )
