@@ -25,6 +25,8 @@ import 'package:kids_learn/shared/domain/models/models.dart';
 const String _labelsFile = 'lib/features/home/presentation/page_labels.dart';
 const String _teacherPagesFile = 'lib/features/home/presentation/teacher_pages.dart';
 const String _childPagesFile = 'lib/features/home/presentation/child_pages.dart';
+const String _destinationsFile =
+    'lib/features/home/presentation/screens/teacher_destinations.dart';
 
 void main() {
   group('登记完整性：每个页面都有一份门面', () {
@@ -50,6 +52,29 @@ void main() {
         expect(face.title.trim(), isNotEmpty,
             reason: '${page.runtimeType} 没有标题');
       }
+    });
+  });
+
+  group('单一映射：菜单不再自带标题字面量', () {
+    test('目的地构造器里不再出现任何硬编码的中文标题', () {
+      final src = File(_destinationsFile).readAsStringSync();
+      const banned = [
+        ..._teacherSidebarLabels,
+        '我的',
+        '首页',
+        '复习',
+        '错题本',
+        '掌握度',
+      ];
+      // 只认「带引号的字面量」：本文件保留了大量中文**注释**（纪律要求的为什么），
+      // 它们用「」而非引号书写，故这条断言不会因为注释而误报。
+      final leftover = banned.where((l) => src.contains("'$l'")).toList();
+      expect(
+        leftover,
+        isEmpty,
+        reason: '标题必须只存在于 $_labelsFile 一处，$leftover 还在这里写着第二份。'
+            '两处并存时改名票（07）改一处漏一处，界面就会显示两个不同的名字。',
+      );
     });
   });
 
