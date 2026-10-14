@@ -51,6 +51,9 @@ from app.features.materials.schemas import (
     KnowledgePointResp,
     KnowledgePointScopeListResp,
     KnowledgePointScopeResp,
+    KnowledgePointSourceChunk,
+    KnowledgePointSourceMaterial,
+    KnowledgePointSourcesResp,
     MaterialMeta,
     MaterialResp,
     SceneLibraryItem,
@@ -715,6 +718,36 @@ def list_knowledge_point_scopes(
         for (subject, grade, semester), count in sorted(counts.items())
     ]
     return KnowledgePointScopeListResp(scopes=scopes, unscoped_count=unscoped)
+
+
+def get_knowledge_point_sources(
+    session: Session,
+    *,
+    teacher_id: uuid.UUID,
+    subject: str,
+    grade: int,
+    name: str,
+) -> KnowledgePointSourcesResp:
+    """知识点溯源（ADR-0093）：返回该名字在 (学科, 年级) 内命中的源资料 + 片段。
+
+    知识点与资料无外键，唯一真实链接是 ``Material.knowledge_points``（名字串）。
+    ``MaterialChunk.knowledge_point``（就近匹配）当前全为空、未实际赋值，故不依赖它。
+    """
+    raw = repo.list_knowledge_point_sources(
+        session, teacher_id=teacher_id, subject=subject, grade=grade, name=name
+    )
+    sources = [
+        KnowledgePointSourceMaterial(
+            material_id=material_id,
+            material_name=material_name,
+            chunks=[
+                KnowledgePointSourceChunk(seq=seq, content=content)
+                for seq, content in chunks
+            ],
+        )
+        for material_id, material_name, chunks in raw
+    ]
+    return KnowledgePointSourcesResp(sources=sources)
 
 
 def list_scene_library(

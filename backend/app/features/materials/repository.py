@@ -336,6 +336,40 @@ def find_knowledge_point(
     return session.exec(stmt).first()
 
 
+def list_knowledge_point_sources(
+    session: Session,
+    *,
+    teacher_id: uuid.UUID,
+    subject: str,
+    grade: int,
+    name: str,
+) -> list[tuple[uuid.UUID, str, list[tuple[int, str]]]]:
+    """溯源：反查 (学科, 年级) 内**哪些资料**的知识清单含该名字，并返回其片段。
+
+    知识点与资料无外键，唯一真实链接是 ``Material.knowledge_points``（JSON 名字
+    列表）。``MaterialChunk.knowledge_point`` 字段（就近匹配）当前全为空、未实际
+    赋值，故不能走它。这里直接按名字在资料范围里反查，片段按 ``seq`` 升序返回。
+    """
+    materials = session.exec(
+        select(Material).where(
+            Material.teacher_id == teacher_id,
+            Material.subject == subject,
+            Material.grade == grade,
+        )
+    ).all()
+    out: list[tuple[uuid.UUID, str, list[tuple[int, str]]]] = []
+    for material in materials:
+        if name not in (material.knowledge_points or []):
+            continue
+        chunk_rows = session.exec(
+            select(MaterialChunk.seq, MaterialChunk.content)
+            .where(MaterialChunk.material_id == material.id)
+            .order_by(MaterialChunk.seq)
+        ).all()
+        out.append((material.id, material.name, list(chunk_rows)))
+    return out
+
+
 def upsert_pending_knowledge_point(
     session: Session,
     *,

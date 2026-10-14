@@ -27,6 +27,7 @@ from app.features.materials.schemas import (
     KnowledgePointResp,
     KnowledgePointScenesUpdate,
     KnowledgePointScopeListResp,
+    KnowledgePointSourcesResp,
     MaterialDelete,
     MaterialMove,
     MaterialResp,
@@ -219,6 +220,25 @@ def list_knowledge_point_scopes(
     个点进去全是空的，还得自己记哪个年级传过教材。
     """
     return service.list_knowledge_point_scopes(session, teacher_id=user.id)
+
+
+@router.get("/knowledge-points/sources", response_model=KnowledgePointSourcesResp)
+def list_knowledge_point_sources(
+    session: SessionDep,
+    user: CurrentTeacher,
+    subject: str,
+    grade: int,
+    name: str,
+) -> KnowledgePointSourcesResp:
+    """知识点溯源（ADR-0093）：该名字在 (学科, 年级) 范围内命中的源资料 + 片段。
+
+    知识点与资料无外键，按 ``Material.knowledge_points`` 名字串反查；供教师核对
+    「这个点确实出自教材哪一段」。``MaterialChunk.knowledge_point`` 字段当前未赋值，
+    故不依赖它。
+    """
+    return service.get_knowledge_point_sources(
+        session, teacher_id=user.id, subject=subject, grade=grade, name=name
+    )
 
 
 @router.post("/knowledge-points/confirm")

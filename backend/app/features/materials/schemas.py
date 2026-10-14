@@ -174,6 +174,37 @@ class KnowledgePointScopeListResp(SQLModel):
     unscoped_count: int = 0
 
 
+class KnowledgePointSourceChunk(SQLModel):
+    """溯源用：源资料里的一个片段（按 seq 排序）。"""
+
+    seq: int
+    content: str
+
+
+class KnowledgePointSourceMaterial(SQLModel):
+    """溯源用：某个知识点来源的一份资料及其全部片段（ADR-0093）。
+
+    知识点与资料之间**没有外键**，唯一的真实链接是 ``Material.knowledge_points``
+    里存的名字字符串（资料涌现该点时记下的名字）。所以溯源 = 反查「哪些资料的
+    知识清单里含这个名字」，再把那些资料的片段原文交给教师核对。
+    """
+
+    material_id: UUID
+    material_name: str
+    chunks: list[KnowledgePointSourceChunk] = Field(default_factory=list)
+
+
+class KnowledgePointSourcesResp(SQLModel):
+    """知识点溯源响应：该名字在 (学科, 年级) 范围内命中的源资料列表。
+
+    一个知识点可能跨多份资料涌现（同年级不同册 / 不同练习册），全部列出供教师
+    逐份核对「这个点确实出自教材哪一段」。空列表 = 没有资料引用该名字（理论上
+    不该发生，因为该点本身由资料涌现而来）。
+    """
+
+    sources: list[KnowledgePointSourceMaterial] = Field(default_factory=list)
+
+
 class KnowledgePointListResp(SQLModel):
     items: list[KnowledgePointResp]
     pending_count: int = 0
