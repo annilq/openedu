@@ -34,4 +34,22 @@ extension WidgetRefLoadOnce on WidgetRef {
       if (isIdle(read(provider))) load();
     });
   }
+
+  /// build 期间安全地「过期则静默刷新 / 未加载则首填」一站式触发（ticket 13）。
+  ///
+  /// 推迟到本帧绘制后触发（绝不在 build 期改 provider 状态）；是否真发请求由
+  /// 状态机内部的 [ResourceLoader.refreshIfStale] / [_PagingLoader.refreshIfStale]
+  /// 裁决：Idle/Error→首填、Loading→不重启（防 build 期反复推迟触发的重复请求）、
+  /// 已加载未过期→不发请求、已加载已过期→后台静默刷新（保留旧数据渲染）。
+  ///
+  /// 用法：
+  /// ```dart
+  /// ref.refreshWhenStale(() {
+  ///   ref.read(teacherTasksNotifierProvider.notifier)
+  ///       .refreshIfStale(kAllTaskStatuses);
+  /// });
+  /// ```
+  void refreshWhenStale(void Function() trigger) {
+    WidgetsBinding.instance.addPostFrameCallback((_) => trigger());
+  }
 }
