@@ -452,11 +452,12 @@ void main() {
         goProfile: () {},
         genTrailing: (_) => null,
       ).teacher(const CreateTaskPage(), const TaskGenIdle());
-      final labels = dests.map((d) => d.label).toList();
+      final labels = dests.expand((s) => s.items).map((d) => d.label).toList();
       expect(labels, isNot(contains('布置任务')),
           reason: '「布置任务」已收进「任务」页，不应再作为独立侧栏入口');
       expect(labels, contains('任务'));
-      final task = dests.firstWhere((d) => d.label == '任务');
+      final task =
+          dests.expand((s) => s.items).firstWhere((d) => d.label == '任务');
       expect(task.active, isTrue,
           reason: '在生成页（CreateTaskPage）时「任务」应高亮，生成进度徽标也挂这一项');
     });
@@ -563,6 +564,11 @@ Future<void> _pumpTeacherHome(
   WidgetTester tester, {
   List<Override> extra = const [],
 }) async {
+  // ticket 07：侧栏是 lazy ListView，分组后「运行轨迹」落在「系统」组末位（第 14 行），
+  // 默认 800×600 视口渲染不到它，find.text('运行轨迹') 直接落空。抬高 surface 让
+  // 14 行侧栏完整渲染；tearDown 还原，避免污染同文件其它测试的默认视口。
+  await tester.binding.setSurfaceSize(const Size(1000, 900));
+  addTearDown(() => tester.binding.setSurfaceSize(null));
   SharedPreferences.setMockInitialValues({});
   final storage = StorageService();
   await storage.init();

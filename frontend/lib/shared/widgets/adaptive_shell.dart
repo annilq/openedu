@@ -5,6 +5,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../shared/domain/models/models.dart';
 import '../../shared/theme/app_theme.dart';
 import '../../shared/widgets/app_sidebar.dart';
+import '../../shared/widgets/nav_section.dart';
 import '../domain/providers/core_providers.dart';
 import 'adaptive_bottom_nav.dart';
 import 'app_content_frame.dart';
@@ -23,24 +24,6 @@ const double _kUserBlockExpandedMinWidth = 100;
 /// 不会出现「抽屉变窄了却仍要滑 60px 才关」。
 const double _drawerDismissDragThreshold = AppLayout.sidebarExpanded / 4;
 
-/// 导航目的地（数据驱动）：同一份定义同时喂给侧栏 / 底栏 / 抽屉三种形态，
-/// 避免三种布局各写一套 item，保证选中态与回调唯一来源。
-class AdaptiveNavDestination {
-  final IconData icon;
-  final String label;
-  final bool active;
-  final VoidCallback? onTap;
-  final Widget? trailing;
-
-  const AdaptiveNavDestination({
-    required this.icon,
-    required this.label,
-    required this.active,
-    this.onTap,
-    this.trailing,
-  });
-}
-
 /// 响应式导航壳（ADR-0014 / ADR-0045）：按 [LayoutBuilder] 的**可用宽度**分三档。
 ///
 /// | 可用宽度 | 布局 |
@@ -56,7 +39,7 @@ class AdaptiveNavDestination {
 /// 侧栏/轨态复用 [AppSidebar] + [AppSidebarItem]；紧凑态自绘（不使用 Material 的
 /// BottomNavigationBar / Drawer / Scaffold，因应用根基于 ShadApp 无 Material 祖先）。
 class AdaptiveShell extends ConsumerStatefulWidget {
-  final List<AdaptiveNavDestination> destinations;
+  final List<SidebarSection> destinations;
   final Widget body;
 
   /// [body] 是唯一的页面宿主：曾经还有个 [detail] 覆盖层（master-detail，
@@ -143,15 +126,16 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
                 child: ClipRect(
                   child: AppSidebar(
                     top: widget.sidebarTop,
-                    items: widget.destinations
-                        .map((d) => AppSidebarItem(
-                              icon: d.icon,
-                              label: d.label,
-                              active: d.active,
-                              onTap: d.onTap,
-                              trailing: d.trailing,
-                            ))
-                        .toList(),
+                    items: buildNavSectionWidgets(
+                      widget.destinations,
+                      itemBuilder: (d) => AppSidebarItem(
+                        icon: d.icon,
+                        label: d.label,
+                        active: d.active,
+                        onTap: d.onTap,
+                        trailing: d.trailing,
+                      ),
+                    ),
                     bottom: widget.sidebarBottom,
                   ),
                 ),
@@ -187,7 +171,7 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
   // ---- 紧凑·学生端：底部导航 ----
   Widget _buildCompactBottomNav(BuildContext context) {
     final scheme = AppTheme.colorsOf(context);
-    final items = [...widget.destinations];
+    final items = flattenNavSections(widget.destinations);
     if (widget.profileDestination != null) items.add(widget.profileDestination!);
     return Column(
       children: [
@@ -207,8 +191,7 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
   // ---- 紧凑·教师端：顶部汉堡 + 左抽屉 ----
   Widget _buildCompactDrawer(BuildContext context) {
     final scheme = AppTheme.colorsOf(context);
-    final items = [...widget.destinations];
-    if (widget.profileDestination != null) items.add(widget.profileDestination!);
+    final profile = widget.profileDestination;
     return Stack(
       children: [
         Column(
@@ -263,17 +246,28 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
                   child: ListView(
                     padding: const EdgeInsets.symmetric(
                         vertical: AppSpacing.sm),
-                    children: items
-                        .map((d) => _DrawerItem(
-                              destination: d,
-                              // 关闭必须发生在导航**之后**：先让目标页进渲染树，
-                              // 再收抽屉，避免动画途中抽屉与内容同时重排。
-                              onTap: () {
-                                d.onTap?.call();
-                                _setDrawer(false);
-                              },
-                            ))
-                        .toList(),
+                    children: [
+                      ...buildNavSectionWidgets(
+                        widget.destinations,
+                        itemBuilder: (d) => _DrawerItem(
+                          destination: d,
+                          // 关闭必须发生在导航**之后**：先让目标页进渲染树，
+                          // 再收抽屉，避免动画途中抽屉与内容同时重排。
+                          onTap: () {
+                            d.onTap?.call();
+                            _setDrawer(false);
+                          },
+                        ),
+                      ),
+                      if (profile != null)
+                        _DrawerItem(
+                          destination: profile,
+                          onTap: () {
+                            profile.onTap?.call();
+                            _setDrawer(false);
+                          },
+                        ),
+                    ],
                   ),
                 ),
                 if (widget.sidebarBottom != null) widget.sidebarBottom!,

@@ -82,9 +82,11 @@ void main() {
     test('教师端侧栏 11 项：顺序、标题、图标都不变', () {
       final dests = _destinations().teacher(const OverviewPage(), const TaskGenIdle());
 
-      expect(dests.map((d) => d.label).toList(), _teacherSidebarLabels,
+      expect(dests.expand((s) => s.items).map((d) => d.label).toList(),
+          _teacherSidebarLabels,
           reason: '侧栏标题必须逐字保持搬移前的字面量（改名留给 07）');
-      expect(dests.map((d) => d.icon).toList(), _teacherSidebarIcons,
+      expect(dests.expand((s) => s.items).map((d) => d.icon).toList(),
+          _teacherSidebarIcons,
           reason: '侧栏图标必须保持搬移前的 Lucide 图标');
     });
 
@@ -93,26 +95,30 @@ void main() {
         const CreateTaskPage(),
         const TaskGenPreview([], streaming: true),
       );
-      final labels = dests.map((d) => d.label).toList();
+      final labels = dests.expand((s) => s.items).map((d) => d.label).toList();
 
       expect(labels, _teacherSidebarLabels,
           reason: '生成页不是侧栏入口，它只把「任务」点亮；标题不能随它的落点变化');
-      expect(dests.firstWhere((d) => d.label == '任务').active, isTrue);
+      expect(
+          dests.expand((s) => s.items).firstWhere((d) => d.label == '任务').active,
+          isTrue);
     });
 
     test('学生端 4 个页签：顺序、标题、图标都不变', () {
       final dests = _destinations().child(0);
 
-      expect(dests.map((d) => d.label).toList(), ['首页', '复习', '错题本', '掌握度']);
-      expect(dests.map((d) => d.icon).toList(), [
+      expect(dests.expand((s) => s.items).map((d) => d.label).toList(),
+          ['首页', '复习', '错题本', '掌握度']);
+      expect(dests.expand((s) => s.items).map((d) => d.icon).toList(), [
         LucideIcons.house,
         LucideIcons.refreshCw,
         LucideIcons.bookOpen,
         LucideIcons.target,
       ]);
       // 高亮仍按下标判定，只亮当前页签一个。
-      expect(dests.map((d) => d.active).toList(), [true, false, false, false]);
-      expect(_destinations().child(2).map((d) => d.active).toList(),
+      expect(dests.expand((s) => s.items).map((d) => d.active).toList(),
+          [true, false, false, false]);
+      expect(_destinations().child(2).expand((s) => s.items).map((d) => d.active).toList(),
           [false, false, true, false]);
     });
 
@@ -155,12 +161,12 @@ const List<String> _teacherSidebarLabels = [
   '学生',
   '班级管理',
   '题库',
-  '资料库',
-  '模型管理',
-  '运行轨迹',
   '课件',
   '场景库',
-  '素材库',
+  '备课资料',
+  '图片素材',
+  '模型管理',
+  '运行轨迹',
 ];
 
 const List<IconData> _teacherSidebarIcons = [
@@ -169,12 +175,12 @@ const List<IconData> _teacherSidebarIcons = [
   LucideIcons.users,
   LucideIcons.school,
   LucideIcons.library,
-  LucideIcons.folderOpen,
-  LucideIcons.cpu,
-  LucideIcons.route,
   LucideIcons.bookOpen,
   LucideIcons.component,
+  LucideIcons.folderOpen,
   LucideIcons.images,
+  LucideIcons.cpu,
+  LucideIcons.route,
 ];
 
 NavigationDestinations _destinations() => NavigationDestinations(

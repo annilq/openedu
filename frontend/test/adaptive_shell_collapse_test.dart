@@ -9,8 +9,9 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:kids_learn/shared/data/local/storage_service.dart';
 import 'package:kids_learn/shared/domain/providers/core_providers.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
-import 'package:kids_learn/shared/widgets/adaptive_shell.dart'
-    show AdaptiveShell, AdaptiveNavDestination;
+import 'package:kids_learn/shared/widgets/adaptive_shell.dart' show AdaptiveShell;
+import 'package:kids_learn/shared/widgets/nav_section.dart'
+    show AdaptiveNavDestination, SidebarSection;
 import 'package:kids_learn/shared/widgets/app_sidebar.dart'
     show SidebarCollapseScope;
 
@@ -34,9 +35,13 @@ void main() {
             height: 800,
             child: AdaptiveShell(
               mode: AppUserMode.teacher,
-              destinations: const [
-                AdaptiveNavDestination(
-                    icon: LucideIcons.house, label: '首页', active: true),
+              destinations: [
+                SidebarSection(
+                  items: [
+                    AdaptiveNavDestination(
+                        icon: LucideIcons.house, label: '首页', active: true),
+                  ],
+                ),
               ],
               body: const Placeholder(),
             ),

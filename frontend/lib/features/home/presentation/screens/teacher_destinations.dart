@@ -1,6 +1,6 @@
 import 'package:flutter/widgets.dart';
 
-import '../../../../shared/widgets/adaptive_shell.dart';
+import '../../../../shared/widgets/nav_section.dart';
 import '../page_labels.dart';
 import '../teacher_pages.dart';
 import '../child_pages.dart';
@@ -34,58 +34,71 @@ class NavigationDestinations {
   /// 出题进度徽标（依赖 context 的渲染留在组合根）。
   final Widget? Function(TaskGenState gen) genTrailing;
 
-  /// 教师端侧栏目的地：与旧 TeacherSidebar 同序（概览/任务/布置/错题/答疑/
-  /// 题库/资料库/模型）。审核页高亮「进来时的那一页」——审核是任务的延续，
-  /// 不是一个新的侧栏入口，故 active 取 `highlightFor(page)`。
+  /// 教师端侧栏目的地，按教学动线分三组（ticket 07）。
   ///
-  /// [parent] 是历史栈里当前页的上一层，只用于草稿审核页的高亮（审核不是一个侧栏
-  /// 入口，高亮它进来时的那一页）；其余页面忽略它。
-  List<AdaptiveNavDestination> teacher(
+  /// 「教学」= 日常授课循环：概览 / 任务 / 学生 / 班级 / 题库；
+  /// 「备课资源」= 课前构建的内容：课件 / 场景库 / 备课资料 / 图片素材；
+  /// 「系统」= 运维与排障：模型管理 / 运行轨迹（ticket 08 将收进「我的」）。
+  ///
+  /// 分组只改变视觉排布，不改单项的 active 判定——审核页高亮「进来时的那一页」
+  /// （审核是任务的延续，不是独立侧栏入口），[parent] 为此存在；其余页面忽略它。
+  List<SidebarSection> teacher(
     TeacherPage page,
     TaskGenState gen, {
     TeacherPage? parent,
   }) {
     final active = highlightFor(page, parent: parent);
     return [
-      _item(const OverviewPage(), active: active is OverviewPage),
-      // 发布任务已收进任务页（方案 A）：生成页是任务页的一个动作态，不再单列侧栏。
-      // 故它高亮时「任务」也亮；出题中点按即回生成页（ADR-0057 P1）。
-      _item(
-        const TaskListPage(),
-        active: active is TaskListPage || active is CreateTaskPage,
-        to: gen is TaskGenPreview && gen.streaming
-            ? const CreateTaskPage()
-            : const TaskListPage(),
-        // ADR-0057 P1：出题进度徽标从「布置任务」迁到「任务」项。
-        trailing: genTrailing(gen),
-      ),
-      _item(const StudentManagementPage(),
-          active: active is StudentManagementPage),
-      _item(const ClassManagementPage(), active: active is ClassManagementPage),
-      _item(const QuestionBankPage(), active: active is QuestionBankPage),
-      _item(const MaterialLibraryPage(), active: active is MaterialLibraryPage),
-      _item(const ModelsPage(), active: active is ModelsPage),
-      // ADR-0088 ticket 02：运行轨迹（审计 / 排障口径）独立入口——与助手页内的
-      // 「历史会话」（气泡口径）并列，不混入同一个页面。
-      _item(const RunTracePage(),
-          active: active is RunTracePage || active is RunTraceDetailPage),
-      _item(const CoursewarePage(), active: active is CoursewarePage),
-      _item(
-        const SceneLibraryPage(),
+      SidebarSection(title: '教学', items: [
+        _item(const OverviewPage(), active: active is OverviewPage),
+        // 发布任务已收进任务页（方案 A）：生成页是任务页的一个动作态，不再单列侧栏。
+        // 故它高亮时「任务」也亮；出题中点按即回生成页（ADR-0057 P1）。
+        _item(
+          const TaskListPage(),
+          active: active is TaskListPage || active is CreateTaskPage,
+          to: gen is TaskGenPreview && gen.streaming
+              ? const CreateTaskPage()
+              : const TaskListPage(),
+          // ADR-0057 P1：出题进度徽标从「布置任务」迁到「任务」项。
+          trailing: genTrailing(gen),
+        ),
+        _item(const StudentManagementPage(),
+            active: active is StudentManagementPage),
+        _item(const ClassManagementPage(), active: active is ClassManagementPage),
+        _item(const QuestionBankPage(), active: active is QuestionBankPage),
+      ]),
+      SidebarSection(title: '备课资源', items: [
+        _item(const CoursewarePage(), active: active is CoursewarePage),
         // 详情页高亮列表页：详情是列表的下钻，不是一个独立入口，否则点了某个
         // 场景后侧栏会「谁都不亮」，教师以为自己离开了导航。
-        active: active is SceneLibraryPage || active is SceneLibraryDetailPage,
-      ),
-      _item(const AssetLibraryPage(), active: active is AssetLibraryPage),
+        _item(
+          const SceneLibraryPage(),
+          active: active is SceneLibraryPage || active is SceneLibraryDetailPage,
+        ),
+        // 备课资料（原「资料库」）：教学文档 + 知识点备课（ADR-0055）；
+        // 图片素材（原「素材库」）：教师自传图片（ADR-0077）。两者概念不同，改名见 07。
+        _item(const MaterialLibraryPage(), active: active is MaterialLibraryPage),
+        _item(const AssetLibraryPage(), active: active is AssetLibraryPage),
+      ]),
+      SidebarSection(title: '系统', items: [
+        // ADR-0088 ticket 02：运行轨迹（审计 / 排障口径）独立入口——与助手页内的
+        // 「历史会话」（气泡口径）并列，不混入同一个页面。
+        _item(const ModelsPage(), active: active is ModelsPage),
+        _item(const RunTracePage(),
+            active: active is RunTracePage || active is RunTraceDetailPage),
+      ]),
     ];
   }
 
   /// 学生端页签目的地。AI 入口统一走右下角浮球（ADR-0036 / 0047），不再单列页签。
-  List<AdaptiveNavDestination> child(int activeIndex) => [
-        _tab(const ChildHomePage(), activeIndex),
-        _tab(const ChildReviewPage(), activeIndex),
-        _tab(const ChildWrongQuestionsPage(), activeIndex),
-        _tab(const ChildMasteryPage(), activeIndex),
+  /// 学生端只有四个页签、不分组的单段，故用无名分组直接承载。
+  List<SidebarSection> child(int activeIndex) => [
+        SidebarSection(items: [
+          _tab(const ChildHomePage(), activeIndex),
+          _tab(const ChildReviewPage(), activeIndex),
+          _tab(const ChildWrongQuestionsPage(), activeIndex),
+          _tab(const ChildMasteryPage(), activeIndex),
+        ]),
       ];
 
   /// 「我的」目的地。教师端与页面共用同一个状态；学生端在显示个人信息时

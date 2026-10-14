@@ -15,8 +15,9 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:kids_learn/shared/data/local/storage_service.dart';
 import 'package:kids_learn/shared/domain/providers/core_providers.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
-import 'package:kids_learn/shared/widgets/adaptive_shell.dart'
-    show AdaptiveShell, AdaptiveNavDestination;
+import 'package:kids_learn/shared/widgets/adaptive_shell.dart' show AdaptiveShell;
+import 'package:kids_learn/shared/widgets/nav_section.dart'
+    show AdaptiveNavDestination, SidebarSection;
 import 'package:kids_learn/shared/widgets/app_sidebar.dart' show AppSidebar;
 
 void main() {
@@ -45,9 +46,13 @@ void main() {
           textDirection: TextDirection.ltr,
           child: AdaptiveShell(
             mode: AppUserMode.teacher,
-            destinations: const [
-              AdaptiveNavDestination(
-                  icon: LucideIcons.house, label: '首页', active: true),
+            destinations: [
+              SidebarSection(
+                items: [
+                  AdaptiveNavDestination(
+                      icon: LucideIcons.house, label: '首页', active: true),
+                ],
+              ),
             ],
             body: const Placeholder(key: bodyKey),
           ),
@@ -92,9 +97,13 @@ void main() {
           textDirection: TextDirection.ltr,
           child: AdaptiveShell(
             mode: AppUserMode.teacher,
-            destinations: const [
-              AdaptiveNavDestination(
-                  icon: LucideIcons.house, label: '首页', active: true),
+            destinations: [
+              SidebarSection(
+                items: [
+                  AdaptiveNavDestination(
+                      icon: LucideIcons.house, label: '首页', active: true),
+                ],
+              ),
             ],
             // 定高 50、非贪心：竖向若被居中，dy 会变成接近 375，而不是 0。
             body: const SizedBox(

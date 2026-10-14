@@ -145,7 +145,7 @@ class _MaterialLibraryViewState extends ConsumerState<MaterialLibraryView> {
 
     return AppScrollPage(
       children: [
-        SectionTitle('资料库'),
+        SectionTitle('备课资料'),
         _segmented(),
         const SizedBox(height: AppSpacing.md),
         if (_tabIndex == 0)
