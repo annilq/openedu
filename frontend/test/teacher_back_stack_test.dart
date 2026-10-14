@@ -37,7 +37,10 @@ void main() {
       await _pumpTeacherHome(tester);
       expect(_activeLabels(tester), ['概览']);
 
-      await tester.tap(find.text('班级管理'));
+      await tester.tap(find.text('班级'));
+      await _settle(tester);
+      // 容器默认「全部学生」视图，班级卡片在「按班级」视图下才可点；先切视图。
+      await tester.tap(find.text('按班级'));
       await _settle(tester);
       await tester.tap(find.text('三(1)班'));
       await _settle(tester);
@@ -59,8 +62,8 @@ void main() {
           reason: '第二次返回：回到班内学生页');
 
       await _popRoute(tester);
-      expect(_activeLabels(tester), ['班级管理'],
-          reason: '第三次返回：回到班级管理列表并高亮');
+      expect(_activeLabels(tester), ['班级'],
+          reason: '第三次返回：回到班级列表并高亮');
 
       await _popRoute(tester);
       expect(_activeLabels(tester), ['概览'],
@@ -93,7 +96,10 @@ void main() {
       final system = _recordSystemNavigator();
       await _pumpTeacherHome(tester);
 
-      await tester.tap(find.text('班级管理'));
+      await tester.tap(find.text('班级'));
+      await _settle(tester);
+      // 容器默认「全部学生」视图，班级卡片在「按班级」视图下才可点；先切视图。
+      await tester.tap(find.text('按班级'));
       await _settle(tester);
       await tester.tap(find.text('三(1)班'));
       await _settle(tester);

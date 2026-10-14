@@ -120,19 +120,15 @@ void main() {
 
   group('紧凑档顶栏：显示当前页面名并跟随切页（含下钻页）', () {
     // 紧凑宽度（< AppLayout.compactMax = 700）走教师端汉堡 + 抽屉；顶栏显示当前页名。
-    testWidgets('默认显示概览；切到「学生」「班级管理」跟随更新', (tester) async {
+    testWidgets('默认显示概览；切到「班级」跟随更新', (tester) async {
       await _pumpTeacherCompact(tester);
 
       expect(_compactTitle(tester), '概览',
           reason: '紧凑档顶栏默认应显示当前页「概览」，而非固定的应用名');
 
-      await _openDrawerAndTap(tester, '学生');
-      expect(_compactTitle(tester), '学生',
-          reason: '切到「学生」后顶栏应跟随显示「学生」');
-
-      await _openDrawerAndTap(tester, '班级管理');
-      expect(_compactTitle(tester), '班级管理',
-          reason: '切到「班级管理」后顶栏应跟随显示「班级管理」');
+      await _openDrawerAndTap(tester, '班级');
+      expect(_compactTitle(tester), '班级',
+          reason: '切到「班级」后顶栏应跟随显示「班级」');
       expect(tester.takeException(), isNull);
     });
 
@@ -140,8 +136,13 @@ void main() {
         (tester) async {
       await _pumpTeacherCompact(tester);
 
-      await _openDrawerAndTap(tester, '班级管理');
-      expect(_compactTitle(tester), '班级管理');
+      await _openDrawerAndTap(tester, '班级');
+      expect(_compactTitle(tester), '班级');
+
+      // 容器默认「全部学生」视图，班级卡片在「按班级」视图下才可点；先切视图。
+      await tester.tap(find.text('按班级'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
 
       // 班级卡片下钻（桩返回「三(1)班」）。
       await tester.tap(find.text('三(1)班'));
@@ -160,7 +161,7 @@ void main() {
       // 应走省略号而不溢出。用一个超长 class 名走同一渲染路径。
       await _pumpTeacherCompact(tester);
 
-      await _openDrawerAndTap(tester, '班级管理');
+      await _openDrawerAndTap(tester, '班级');
       // 找一个超长名的班级卡会落进现有桩之外，这里改用断言：窄视口下顶栏标题组件
       // 用 Flexible + ellipsis，pump 后不应产生溢出异常。
       await tester.pump();
