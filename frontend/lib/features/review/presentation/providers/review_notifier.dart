@@ -23,6 +23,9 @@ class DueReviewNotifier
 
   Future<void> load() => runLoad(_repo.dueReview);
 
+  /// 过期则静默刷新（见 [ResourceLoader.refreshIfStaleFetch]）。
+  Future<void> refreshIfStale() => refreshIfStaleFetch(_repo.dueReview);
+
   /// 提交一道复习作答；成功后从当前队列移除该题（无论对错，下一轮到期重新进入）。
   Future<ReviewAnswerResult?> answer(
       String wrongQuestionId, String studentAnswer) async {

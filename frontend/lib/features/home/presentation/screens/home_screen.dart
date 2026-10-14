@@ -26,6 +26,7 @@ import '../../../review/presentation/screens/wrong_questions_screen.dart';
 import '../../../model_management/presentation/screens/teacher_model_management_screen.dart';
 import '../providers/home_notifier.dart';
 import '../providers/teacher_tasks_notifier.dart';
+import '../providers/teacher_todo_provider.dart';
 import '../teacher_pages.dart';
 import '../teacher_nav_stack.dart';
 import '../page_labels.dart';
@@ -127,11 +128,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  /// 切回概览时静默刷新教师端任务与待办（ticket 13）：过期则后台刷新、保留旧数据渲染、
+  /// 不闪骨架屏；未过期则不动。只在「落到概览」时经单一导航出口调用（**非 build**），
+  /// 避免 build 期改 provider。首屏首填由 [TeacherOverviewView] 的 `loadWhenIdle` 负责，
+  /// 这里只补「切换/返回回来」的过期刷新。
+  void _refreshOverviewOnReturn() {
+    if (_teacherNav.current is! OverviewPage) return;
+    ref
+        .read(teacherTasksNotifierProvider.notifier)
+        .refreshIfStale(kAllTaskStatuses);
+    ref.read(teacherTodoProvider.notifier).refreshIfStale();
+  }
+
   /// **下钻**出口：入栈。新增下钻页**零义务**——不需要声明回落目标，退回哪儿由
   /// 历史决定（ticket 03：返回从「每个页面自己记得声明」变成结构默认）。
   void _go(TeacherPage page) {
     setState(() => _teacherNav.push(page));
     _persistTeacherPath();
+    _refreshOverviewOnReturn();
   }
 
   /// **切换一级入口**出口：替换当前页面并清空历史。
@@ -142,6 +156,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void _goEntry(TeacherPage page) {
     setState(() => _teacherNav.reset(page));
     _persistTeacherPath();
+    _refreshOverviewOnReturn();
   }
 
   /// 回退一步：出栈。已在根页面（概览）时不动——[build] 里的 [PopScope] 据此把
@@ -149,6 +164,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void _back() {
     setState(() => _teacherNav.pop());
     _persistTeacherPath();
+    _refreshOverviewOnReturn();
   }
 
   /// 教师端切页即持久化当前路径（ticket 12）：重启后由 [initState] 还原。
@@ -246,17 +262,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   /// 按当前 [ChildPage] 派发对应 provider 的刷新（与屏幕 initState 中的首次加载保持一致）。
+  ///
+  /// ticket 13：改用 `refreshIfStale`——首次（Idle）正常首填；已加载则按过期阈值
+  /// 决定是否后台静默刷新，**不再无条件强制重载**（切页签不再闪一下加载态）。
   void _refreshChildTab(ChildPage page) {
     switch (page) {
       case ChildHomePage():
-        ref.read(todayTasksNotifierProvider.notifier).load();
-        ref.read(dueReviewNotifierProvider.notifier).load();
+        ref.read(todayTasksNotifierProvider.notifier).refreshIfStale();
+        ref.read(dueReviewNotifierProvider.notifier).refreshIfStale();
       case ChildReviewPage():
-        ref.read(dueReviewNotifierProvider.notifier).load();
+        ref.read(dueReviewNotifierProvider.notifier).refreshIfStale();
       case ChildWrongQuestionsPage():
-        ref.read(childWrongQuestionsProvider.notifier).load();
+        ref.read(childWrongQuestionsProvider.notifier).refreshIfStale();
       case ChildMasteryPage():
-        ref.read(masteryNotifierProvider.notifier).load(widget.user.id);
+        ref.read(masteryNotifierProvider.notifier).refreshIfStale(widget.user.id);
       case ChildProfilePage():
         // 个人信息页无额外取数。
         break;
