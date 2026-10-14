@@ -225,11 +225,12 @@ void main() {
       await tester.pump(const Duration(milliseconds: 50));
 
       // ticket 08：模型管理已不是侧栏项（搬进「我的」系统分区），改用仍留在侧栏的
-      // 「学生」验证「侧栏页签 ↔ 我的」之间的单一高亮状态切换。
-      await tester.tap(find.text('学生'));
+      // 「班级」验证「侧栏页签 ↔ 我的」之间的单一高亮状态切换（ticket 10 合并入口后
+      // 承载学生的侧栏项改名为「班级」）。
+      await tester.tap(find.text('班级'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
-      expect(_activeLabels(tester), ['学生']);
+      expect(_activeLabels(tester), ['班级']);
 
       await tester.tap(find.byWidgetPredicate(
         (w) => w is AppFocusableAction && w.semanticLabel == '妈妈 · 教师账号',
@@ -239,44 +240,44 @@ void main() {
       expect(_activeLabels(tester), isEmpty,
           reason: '进入「我的」后侧栏不应残留高亮页签');
 
-      // 切回侧栏页签：高亮应唯一且跟随回到「学生」。
-      await tester.tap(find.text('学生'));
+      // 切回侧栏页签：高亮应唯一且跟随回到「班级」。
+      await tester.tap(find.text('班级'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
-      expect(_activeLabels(tester), ['学生'],
+      expect(_activeLabels(tester), ['班级'],
           reason: '从「我的」切回侧栏页签，高亮唯一且跟随');
       expect(tester.takeException(), isNull);
     });
   });
 
-  group('行为：ticket 16 新增页面状态可达（学生管理 / 学生详情）', () {
-    // ⚠️ 这两个页面态（StudentManagementPage / StudentDetailPage）是 16 收尾新增的
-    // `TeacherPage` 分支；只靠 sealed 穷尽性只能保证「编译过」，UI 层若没真构建过
-    // 仍可能漏接 `onOpenStudent` 之类的跳转回调。`flutter analyze` 照不出来，必须真点。
-    testWidgets('教师端：点「学生」高亮唯一且渲染学生管理页', (tester) async {
+  group('行为：ticket 10 合并入口「班级」状态可达（全部学生视图 / 学生详情）', () {
+    // ⚠️ 这两个页面态（StudentsPage / StudentDetailPage）是合并入口的承载页；只靠
+    // sealed 穷尽性只能保证「编译过」，UI 层若没真构建过仍可能漏接 `onOpenStudent`
+    // 之类的跳转回调。`flutter analyze` 照不出来，必须真点。
+    testWidgets('教师端：点「班级」高亮唯一且默认渲染「全部学生」视图', (tester) async {
       await _pumpTeacherHome(tester);
       expect(_activeLabels(tester), ['概览']);
 
-      await tester.tap(find.text('学生'));
+      await tester.tap(find.text('班级'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
 
-      expect(_activeLabels(tester), ['学生'],
+      expect(_activeLabels(tester), ['班级'],
           reason: '同一时刻侧栏只能有一个高亮项（单一导航状态）');
       expect(find.text('学生管理'), findsOneWidget,
-          reason: 'StudentManagementPage 应真正渲染');
+          reason: 'StudentsScreen 默认「全部学生」视图应真正渲染学生管理页');
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('教师端：从「学生」drill 进学生详情，侧栏零高亮且详情页渲染',
+    testWidgets('教师端：从「全部学生」drill 进学生详情，侧栏零高亮且详情页渲染',
         (tester) async {
       await _pumpTeacherHome(tester);
       expect(_activeLabels(tester), ['概览']);
 
-      await tester.tap(find.text('学生'));
+      await tester.tap(find.text('班级'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 200));
-      expect(_activeLabels(tester), ['学生']);
+      expect(_activeLabels(tester), ['班级']);
       expect(find.text('学生管理'), findsOneWidget);
 
       // 在管理页点学生行 → 经 HomeScreen 接好的 `onOpenStudent` 进入 StudentDetailPage。
@@ -291,15 +292,15 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('教师端：学生详情点返回回到「学生」管理页，而非工作台概览',
+    testWidgets('教师端：学生详情点返回回到「班级」的全部学生视图，而非工作台概览',
         (tester) async {
       await _pumpTeacherHome(tester);
       expect(_activeLabels(tester), ['概览']);
 
-      await tester.tap(find.text('学生'));
+      await tester.tap(find.text('班级'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 200));
-      expect(_activeLabels(tester), ['学生']);
+      expect(_activeLabels(tester), ['班级']);
 
       // 进入学生详情。
       await tester.tap(find.text('小明'));
@@ -310,7 +311,7 @@ void main() {
       expect(_activeLabels(tester), isEmpty,
           reason: '详情页是 drill-down，不应高亮任何顶级侧栏项');
 
-      // 点返回：应回落到「学生」管理页并高亮，而不是工作台概览。
+      // 点返回：应回落到「班级」的全部学生视图并高亮，而不是工作台概览。
       await tester.tap(find.byWidgetPredicate(
         (w) => w is AppIconAction && w.semanticLabel == '返回',
       ));
@@ -319,38 +320,46 @@ void main() {
       // ticket 05：壳内换页有 150ms 交叉淡入，旧页（学生详情）在淡出期间仍挂载，
       // 其树里可能含与管理页同名的「学生管理」文本。等转场结束再断言管理页唯一渲染。
       await tester.pump(const Duration(milliseconds: 200));
-      expect(_activeLabels(tester), ['学生'],
-          reason: '学生详情返回应回到学生管理页并高亮，而非工作台概览');
+      expect(_activeLabels(tester), ['班级'],
+          reason: '学生详情返回应回到班级入口并高亮，而非工作台概览');
       expect(find.text('学生管理'), findsOneWidget,
-          reason: '返回后应再次渲染学生管理页');
+          reason: '返回后应再次渲染全部学生视图');
       expect(tester.takeException(), isNull);
     });
   });
 
-  group('ticket 02/04：班级管理导航与下钻（ADR-0086）', () {
-    // ⚠️ 这两个页面态（ClassManagementPage / ClassStudentsPage）是班级管理前端收尾
-    // 新增的 `TeacherPage` 分支；只靠 sealed 穷尽性只能保证「编译过」，UI 层若没真
-    // 构建过仍可能漏接 `onOpenClass` / `onBack` 跳转。`flutter analyze` 照不出来，必须真点。
-    testWidgets('教师端：点「班级管理」高亮唯一且渲染班级管理页', (tester) async {
+  group('ticket 02/04/10：合并入口「班级」的「按班级」视图与下钻（ADR-0086）', () {
+    // ⚠️ 班级管理前端的下钻页 `ClassStudentsPage` 仍是独立的 `TeacherPage` 分支；合并后
+    // 进入它的入口从独立侧栏项「班级管理」变成合并入口「班级」的「按班级」视图。只靠
+    // sealed 穷尽性只能保证「编译过」，UI 层若没真构建过仍可能漏接 `onOpenClass` /
+    // `onBack` 跳转。`flutter analyze` 照不出来，必须真点。
+    testWidgets('教师端：点「班级」切到「按班级」视图，高亮唯一且渲染班级卡片', (tester) async {
       await _pumpTeacherHome(tester);
       expect(_activeLabels(tester), ['概览']);
 
-      await tester.tap(find.text('班级管理'));
+      await tester.tap(find.text('班级'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
-
-      expect(_activeLabels(tester), ['班级管理'],
+      expect(_activeLabels(tester), ['班级'],
           reason: '同一时刻侧栏只能有一个高亮项（单一导航状态）');
+
+      // 默认是「全部学生」视图；切到「按班级」才渲染班级卡片。
+      await tester.tap(find.text('按班级'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
       // 班级卡片（桩返回「三(1)班」）应真实渲染。
       expect(find.text('三(1)班'), findsOneWidget,
           reason: 'ClassManagementScreen 应真正渲染班级卡片');
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('教师端：从班级卡片下钻进班级，标题含班级名、无筛选 chip、返回回到列表',
+    testWidgets('教师端：从「按班级」下钻进班级，返回回到「按班级」视图（落点唯一）',
         (tester) async {
       await _pumpTeacherHome(tester);
-      await tester.tap(find.text('班级管理'));
+      await tester.tap(find.text('班级'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.tap(find.text('按班级'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
       expect(find.text('三(1)班'), findsOneWidget);
@@ -367,14 +376,15 @@ void main() {
           reason: '下钻页不应出现全量视图的筛选 chip');
       expect(tester.takeException(), isNull);
 
-      // 返回回落到班级管理列表（单一出口，不裸 Navigator.pop）。
+      // 返回回落到「按班级」视图（单一出口，不裸 Navigator.pop）；落点由历史栈决定，
+      // 且视图经 `studentsEntryViewProvider` 还原为进入前的「按班级」。
       await tester.tap(find.byWidgetPredicate(
         (w) => w is AppFocusableAction && w.semanticLabel == '返回',
       ));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
-      expect(_activeLabels(tester), ['班级管理'],
-          reason: '从班级下钻返回应回到班级管理列表并高亮');
+      expect(_activeLabels(tester), ['班级'],
+          reason: '从班级下钻返回应回到「班级」入口并高亮');
       expect(tester.takeException(), isNull);
     });
   });
@@ -385,7 +395,10 @@ void main() {
     // 前端入口。`flutter analyze` 照不出来，必须真点。
     testWidgets('教师端：班级下钻页「添加学生」打开创建态表单', (tester) async {
       await _pumpTeacherHome(tester);
-      await tester.tap(find.text('班级管理'));
+      await tester.tap(find.text('班级'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.tap(find.text('按班级'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
       await tester.tap(find.text('三(1)班'));

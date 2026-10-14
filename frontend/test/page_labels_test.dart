@@ -79,7 +79,7 @@ void main() {
   });
 
   group('纯搬移：菜单的门面与搬移前逐字一致', () {
-    test('教师端侧栏 9 项：顺序、标题、图标都不变', () {
+    test('教师端侧栏 8 项：顺序、标题、图标都不变', () {
       final dests = _destinations().teacher(const OverviewPage(), const TaskGenIdle());
 
       expect(dests.expand((s) => s.items).map((d) => d.label).toList(),
@@ -158,8 +158,7 @@ void main() {
 const List<String> _teacherSidebarLabels = [
   '概览',
   '任务',
-  '学生',
-  '班级管理',
+  '班级',
   '题库',
   '课件',
   '场景库',
@@ -170,7 +169,6 @@ const List<String> _teacherSidebarLabels = [
 const List<IconData> _teacherSidebarIcons = [
   LucideIcons.layoutDashboard,
   LucideIcons.listTodo,
-  LucideIcons.users,
   LucideIcons.school,
   LucideIcons.library,
   LucideIcons.bookOpen,
@@ -199,14 +197,13 @@ final List<TeacherPage> _everyTeacherPage = [
   const ModelsPage(),
   _review,
   const ProfilePage(),
-  const StudentManagementPage(),
+  const StudentsPage(),
   const StudentDetailPage('s1'),
   const CoursewarePage(),
   const SceneLibraryPage(),
   const SceneLibraryDetailPage('graph'),
   _sceneEditor,
   const AssetLibraryPage(),
-  const ClassManagementPage(),
   const ClassStudentsPage('c1', '三(1)班'),
   const RunTracePage(),
   const RunTraceDetailPage('r1'),
