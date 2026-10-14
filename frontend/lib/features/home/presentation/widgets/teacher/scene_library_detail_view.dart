@@ -180,7 +180,7 @@ class TeacherSceneLibraryDetailView extends ConsumerWidget {
       builder: (dialogCtx) => ShadDialog(
         closeIcon: const SizedBox.shrink(),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 560),
+          constraints: const BoxConstraints(maxWidth: AppLayout.dialogForm),
           child: Padding(
             padding: const EdgeInsets.all(AppSpacing.md),
             child: KnowledgePointSceneEditor(
