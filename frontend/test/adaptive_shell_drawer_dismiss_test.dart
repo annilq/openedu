@@ -19,8 +19,9 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:kids_learn/shared/data/local/storage_service.dart';
 import 'package:kids_learn/shared/domain/providers/core_providers.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart' show AppUserMode;
-import 'package:kids_learn/shared/widgets/adaptive_shell.dart'
-    show AdaptiveNavDestination, AdaptiveShell;
+import 'package:kids_learn/shared/widgets/adaptive_shell.dart' show AdaptiveShell;
+import 'package:kids_learn/shared/widgets/nav_section.dart'
+    show AdaptiveNavDestination, SidebarSection;
 
 const _viewport = Size(600, 800);
 
@@ -56,7 +57,7 @@ Future<void> _pumpShell(
         appBuilder: (context) => CupertinoApp(
           home: AdaptiveShell(
             mode: AppUserMode.teacher,
-            destinations: destinations,
+            destinations: [SidebarSection(items: destinations)],
             profileDestination: profile,
             body: body,
           ),

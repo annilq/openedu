@@ -2,7 +2,7 @@ import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter/widgets.dart';
 
 import '../theme/app_theme.dart';
-import 'adaptive_shell.dart' show AdaptiveNavDestination;
+import 'nav_section.dart' show AdaptiveNavDestination;
 import 'app_focusable_action.dart';
 
 /// 学生端紧凑档底部导航（ADR-0045 紧凑档的学生侧形态）。

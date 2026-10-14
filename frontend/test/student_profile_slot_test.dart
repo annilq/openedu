@@ -58,9 +58,11 @@ void main() {
         genTrailing: (_) => null,
       ).child(childPageIndex(const ChildProfilePage()));
 
-      expect(dests.map((d) => d.label), ['首页', '复习', '错题本', '掌握度'],
+      expect(dests.expand((s) => s.items).map((d) => d.label),
+          ['首页', '复习', '错题本', '掌握度'],
           reason: '「我的」不是页签，不应混进页签目的地列表');
-      expect(dests.map((d) => d.active), everyElement(isFalse),
+      expect(dests.expand((s) => s.items).map((d) => d.active),
+          everyElement(isFalse),
           reason: '显示「我的」时四个页签必须全部取消高亮，否则两个入口同时亮');
     });
 
@@ -74,6 +76,7 @@ void main() {
       for (var index = 0; index < 4; index++) {
         final active = dests
             .child(index)
+            .expand((s) => s.items)
             .where((d) => d.active)
             .map((d) => d.label)
             .toList();

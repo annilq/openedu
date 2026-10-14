@@ -16,8 +16,9 @@ import 'package:kids_learn/shared/data/local/storage_service.dart';
 import 'package:kids_learn/shared/domain/providers/core_providers.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
 import 'package:kids_learn/shared/widgets/adaptive_bottom_nav.dart';
-import 'package:kids_learn/shared/widgets/adaptive_shell.dart'
-    show AdaptiveShell, AdaptiveNavDestination;
+import 'package:kids_learn/shared/widgets/adaptive_shell.dart' show AdaptiveShell;
+import 'package:kids_learn/shared/widgets/nav_section.dart'
+    show AdaptiveNavDestination, SidebarSection;
 import 'package:kids_learn/shared/widgets/app_focusable_action.dart';
 
 void main() {
@@ -162,7 +163,7 @@ void main() {
             mode: AppUserMode.student,
             child: AdaptiveShell(
               mode: AppUserMode.student,
-              destinations: items().take(4).toList(),
+              destinations: [SidebarSection(items: items().take(4).toList())],
               profileDestination: items().last,
               body: const SizedBox(),
             ),
