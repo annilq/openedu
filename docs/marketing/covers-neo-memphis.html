@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>小红书封面卡片 · 新孟菲斯</title>
+<style>
+  :root{
+    --ink:#2E2A2A;
+    --ink-soft:#6B6560;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:#FBFAF7;
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    color:var(--ink);
+    padding:48px 24px 64px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1040px;margin:0 auto}
+  header{margin-bottom:40px}
+  h1{font-size:24px;font-weight:700;letter-spacing:-.01em;margin-bottom:10px}
+  .lede{font-size:14px;line-height:1.7;color:var(--ink-soft);max-width:640px}
+  .grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fill,300px);
+    gap:28px;
+    justify-content:center;
+    margin-bottom:56px;
+  }
+  .card{
+    position:relative;
+    width:300px;
+    aspect-ratio:3/4;
+    border-radius:22px;
+    overflow:hidden;
+    padding:26px 26px 30px;
+    display:flex;
+    flex-direction:column;
+    justify-content:space-between;
+  }
+  .deco{position:absolute;pointer-events:none}
+  .tag{
+    position:relative;
+    font-size:11px;
+    font-weight:500;
+    letter-spacing:.08em;
+    color:var(--ink-soft);
+    text-transform:uppercase;
+  }
+  .foot{position:relative}
+  .title{
+    font-size:32px;
+    font-weight:700;
+    line-height:1.28;
+    letter-spacing:-.02em;
+    margin-bottom:12px;
+  }
+  .sub{
+    font-size:14px;
+    line-height:1.6;
+    font-weight:400;
+    color:var(--ink-soft);
+  }
+  .rule{
+    width:36px;height:4px;border-radius:2px;
+    margin-bottom:14px;
+  }
+  section.notes{
+    border-top:1px solid #E8E4DC;
+    padding-top:28px;
+    font-size:13px;
+    line-height:1.85;
+    color:var(--ink-soft);
+    max-width:720px;
+  }
+  section.notes h2{font-size:15px;font-weight:700;color:var(--ink);margin-bottom:12px}
+  section.notes ul{margin:0 0 18px 18px}
+  section.notes code{
+    background:#F1EEE7;padding:2px 6px;border-radius:4px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--ink);
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>小红书封面卡片 · 新孟菲斯</h1>
+  <p class="lede">九张，对应 Week 1 与 Week 2 的九篇笔记。明亮底 + 几何点缀 + 大留白，刻意不用重描边——要的是轻快，不是分量。（产品 UI 的新粗野是另一套语言，不适用于封面。）</p>
+</header>
+
+<div class="grid">
+
+  <!-- 1 -->
+  <div class="card" style="background:#FFD84D">
+    <svg class="deco" style="top:-30px;right:-40px" width="180" height="180" viewBox="0 0 180 180"><circle cx="90" cy="90" r="90" fill="#FFB3BA"/></svg>
+    <svg class="deco" style="bottom:-10px;left:-20px" width="150" height="150" viewBox="0 0 150 150"><path d="M0 150 A150 150 0 0 1 150 0 L150 150 Z" fill="#AEDFF7"/></svg>
+    <svg class="deco" style="top:120px;right:34px" width="46" height="46" viewBox="0 0 46 46"><circle cx="23" cy="23" r="20" fill="none" stroke="#2E2A2A" stroke-width="3"/></svg>
+    <div class="tag">week 1 · day 1</div>
+    <div class="foot">
+      <div class="rule" style="background:#2E2A2A"></div>
+      <div class="title">40 → 3<br>分钟</div>
+      <div class="sub">出题这事，我摸到门道了</div>
+    </div>
+  </div>
+
+  <!-- 2 -->
+  <div class="card" style="background:#A8E6CF">
+    <div class="deco" style="top:0;left:0;right:0;height:70px;background:repeating-linear-gradient(45deg,#FFD84D 0 12px,transparent 12px 24px);opacity:.85"></div>
+    <svg class="deco" style="bottom:-26px;right:-26px" width="150" height="150" viewBox="0 0 150 150"><circle cx="75" cy="75" r="75" fill="#FFC4B8"/></svg>
+    <svg class="deco" style="top:150px;left:30px" width="60" height="20" viewBox="0 0 60 20"><path d="M0 10 Q15 0 30 10 T60 10" fill="none" stroke="#2E2A2A" stroke-width="3.5" stroke-linecap="round"/></svg>
+    <div class="tag">week 1 · day 3</div>
+    <div class="foot">
+      <div class="rule" style="background:#2E2A2A"></div>
+      <div class="title">改作业<br>这半年</div>
+      <div class="sub">说 3 个真话</div>
+    </div>
+  </div>
+
+  <!-- 3 -->
+  <div class="card" style="background:#FFB3BA">
+    <svg class="deco" style="top:40px;left:-30px" width="140" height="140" viewBox="0 0 140 140"><circle cx="70" cy="70" r="70" fill="#AEDFF7"/></svg>
+    <svg class="deco" style="top:-20px;right:-20px" width="130" height="130" viewBox="0 0 130 130"><rect x="0" y="0" width="130" height="130" rx="65" fill="#FFD84D"/></svg>
+    <svg class="deco" style="bottom:130px;right:40px" width="34" height="30" viewBox="0 0 34 30"><polygon points="17,0 34,30 0,30" fill="#A8E6CF" stroke="#2E2A2A" stroke-width="2.5"/></svg>
+    <div class="tag">week 1 · day 5</div>
+    <div class="foot">
+      <div class="rule" style="background:#2E2A2A"></div>
+      <div class="title">AI 出的题</div>
+      <div class="sub">我还是一道道看</div>
+    </div>
+  </div>
+
+  <!-- 4 -->
+  <div class="card" style="background:#AEDFF7">
+    <svg class="deco" style="top:60px;right:-40px" width="170" height="170" viewBox="0 0 170 170"><circle cx="85" cy="85" r="85" fill="#D8C4F0"/></svg>
+    <svg class="deco" style="bottom:0;left:0" width="300" height="90" viewBox="0 0 300 90"><path d="M0 50 Q37 10 75 50 T150 50 T225 50 T300 50" fill="none" stroke="#FFD84D" stroke-width="9" stroke-linecap="round"/></svg>
+    <svg class="deco" style="top:150px;left:36px" width="30" height="30" viewBox="0 0 30 30"><rect width="30" height="30" rx="4" fill="#FFB3BA" stroke="#2E2A2A" stroke-width="2.5"/></svg>
+    <div class="tag">week 1 · day 6</div>
+    <div class="foot">
+      <div class="rule" style="background:#2E2A2A"></div>
+      <div class="title">学情报告</div>
+      <div class="sub">10 分钟够吗</div>
+    </div>
+  </div>
+
+  <!-- 5 -->
+  <div class="card" style="background:#D8C4F0">
+    <svg class="deco" style="top:-24px;left:-24px" width="140" height="140" viewBox="0 0 140 140"><circle cx="70" cy="70" r="70" fill="#FFD84D"/></svg>
+    <svg class="deco" style="bottom:-30px;right:-10px" width="160" height="160" viewBox="0 0 160 160"><polygon points="80,0 160,160 0,160" fill="#A8E6CF"/></svg>
+    <svg class="deco" style="top:130px;right:44px" width="52" height="52" viewBox="0 0 52 52"><circle cx="26" cy="26" r="22" fill="none" stroke="#2E2A2A" stroke-width="3"/></svg>
+    <div class="tag">week 1 · day 7</div>
+    <div class="foot">
+      <div class="rule" style="background:#2E2A2A"></div>
+      <div class="title">AI 再聪明</div>
+      <div class="sub">这三件我不交</div>
+    </div>
+  </div>
+
+  <!-- 6 -->
+  <div class="card" style="background:#FFF1D0">
+    <svg class="deco" style="top:30px;right:20px" width="200" height="80" viewBox="0 0 200 80"><path d="M0 40 Q25 8 50 40 T100 40 T150 40 T200 40" fill="none" stroke="#FFC4B8" stroke-width="10" stroke-linecap="round"/></svg>
+    <svg class="deco" style="bottom:-30px;left:-30px" width="160" height="160" viewBox="0 0 160 160"><circle cx="80" cy="80" r="80" fill="#A8E6CF"/></svg>
+    <div class="deco" style="top:150px;right:30px;width:70px;height:70px;border-radius:50%;background:radial-gradient(#FFD84D 30%,transparent 32%);background-size:14px 14px"></div>
+    <div class="tag">week 2 · day 8</div>
+    <div class="foot">
+      <div class="rule" style="background:#2E2A2A"></div>
+      <div class="title">这 3 类题</div>
+      <div class="sub">它真的看不懂</div>
+    </div>
+  </div>
+
+  <!-- 7 -->
+  <div class="card" style="background:#FFC4B8">
+    <svg class="deco" style="top:-30px;right:-30px" width="150" height="150" viewBox="0 0 150 150"><circle cx="75" cy="75" r="75" fill="#FFD84D"/></svg>
+    <div class="deco" style="bottom:20px;left:-10px;right:-10px;height:56px;background:repeating-linear-gradient(-45deg,#D8C4F0 0 10px,transparent 10px 20px)"></div>
+    <svg class="deco" style="top:140px;left:34px" width="40" height="40" viewBox="0 0 40 40"><rect width="40" height="40" rx="20" fill="none" stroke="#2E2A2A" stroke-width="3.5"/></svg>
+    <div class="tag">week 2 · day 10</div>
+    <div class="foot">
+      <div class="rule" style="background:#2E2A2A"></div>
+      <div class="title">AI 助教<br>里面</div>
+      <div class="sub">到底分了几层</div>
+    </div>
+  </div>
+
+  <!-- 8 -->
+  <div class="card" style="background:#C7EFCF">
+    <svg class="deco" style="top:-20px;left:30px" width="120" height="120" viewBox="0 0 120 120"><rect width="120" height="120" rx="60" fill="#FFB3BA"/></svg>
+    <svg class="deco" style="top:110px;right:-20px" width="130" height="130" viewBox="0 0 130 130"><circle cx="65" cy="65" r="65" fill="#FFD84D"/></svg>
+    <svg class="deco" style="bottom:120px;left:36px" width="36" height="36" viewBox="0 0 36 36"><polygon points="18,0 36,36 0,36" fill="#AEDFF7" stroke="#2E2A2A" stroke-width="2.5"/></svg>
+    <div class="tag">week 2 · day 12</div>
+    <div class="foot">
+      <div class="rule" style="background:#2E2A2A"></div>
+      <div class="title">三年的<br>卷子</div>
+      <div class="sub">喂进去就出知识点</div>
+    </div>
+  </div>
+
+  <!-- 9 -->
+  <div class="card" style="background:#FDF3C7">
+    <div class="deco" style="top:0;left:0;bottom:0;width:90px;background:repeating-linear-gradient(0deg,#A8E6CF 0 14px,transparent 14px 28px);opacity:.7"></div>
+    <svg class="deco" style="top:44px;right:-16px" width="150" height="150" viewBox="0 0 150 150"><circle cx="75" cy="75" r="75" fill="#FFC4B8"/></svg>
+    <svg class="deco" style="bottom:140px;right:44px" width="44" height="44" viewBox="0 0 44 44"><circle cx="22" cy="22" r="18" fill="none" stroke="#2E2A2A" stroke-width="3"/></svg>
+    <div class="tag">week 2 · day 14</div>
+    <div class="foot">
+      <div class="rule" style="background:#2E2A2A"></div>
+      <div class="title">一天里</div>
+      <div class="sub">哪些能交给 AI</div>
+    </div>
+  </div>
+
+</div>
+
+<section class="notes">
+  <h2>怎么用</h2>
+  <ul>
+    <li>正面卡片是 3:4，小红书封面标准比例。导出时用浏览器缩放或直接截到 <code>1080 × 1440</code>。</li>
+    <li>底色是可以换的。九张刻意用了八种底色，是为了让主页九宫格看起来有节奏；如果你想要更统一的调性，可以只留三四种循环。</li>
+    <li>主标控制在 4–6 个字一行，最多两行。超过两行在信息流缩略图里会糊。</li>
+    <li>副标是全篇的「钩子」，不要写成标题的复述——它负责让人点进来，不是解释标题。</li>
+  </ul>
+
+  <h2>和产品的关系</h2>
+  <ul>
+    <li>这套封面是<b>内容物料</b>，用的是新孟菲斯：明亮、几何、轻盈、无重描边。</li>
+    <li>产品 UI 用的是新粗野（ADR-0044）：高饱和撞色 + 2px 墨黑描边 + 硬阴影，有分量感。</li>
+    <li>两者不冲突，也不需要统一——一个是让人放松地点进来，一个是让人专注地用工具。但<b>不要在封面上直接截产品界面</b>，两套语言撞在一起会都变弱；产品截图放在笔记内页即可。</li>
+  </ul>
+</section>
+
+</div>
+</body>
+</html>
