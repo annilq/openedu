@@ -316,6 +316,9 @@ void main() {
       ));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
+      // ticket 05：壳内换页有 150ms 交叉淡入，旧页（学生详情）在淡出期间仍挂载，
+      // 其树里可能含与管理页同名的「学生管理」文本。等转场结束再断言管理页唯一渲染。
+      await tester.pump(const Duration(milliseconds: 200));
       expect(_activeLabels(tester), ['学生'],
           reason: '学生详情返回应回到学生管理页并高亮，而非工作台概览');
       expect(find.text('学生管理'), findsOneWidget,

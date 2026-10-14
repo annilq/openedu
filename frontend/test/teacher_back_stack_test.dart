@@ -48,6 +48,9 @@ void main() {
       expect(find.text('编辑学生资料'), findsOneWidget, reason: '已进入第四级');
 
       await _popRoute(tester);
+      // ticket 05：壳内换页有 150ms 交叉淡入，旧页在淡出期间仍挂载。等转场结束
+      // 再断言旧页文本已卸载，否则会命中淡出中的「编辑学生资料」标题。
+      await tester.pump(const Duration(milliseconds: 200));
       expect(_editEntry(), findsOneWidget, reason: '第一次返回：回到学生详情页');
       expect(find.text('编辑学生资料'), findsNothing);
 
