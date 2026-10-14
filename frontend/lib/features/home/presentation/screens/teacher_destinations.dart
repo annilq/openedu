@@ -1,5 +1,7 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../../shared/theme/app_theme.dart';
+import '../../../../shared/widgets/app_badge.dart';
 import '../../../../shared/widgets/nav_section.dart';
 import '../page_labels.dart';
 import '../teacher_pages.dart';
@@ -48,6 +50,7 @@ class NavigationDestinations {
     TeacherPage page,
     TaskGenState gen, {
     TeacherPage? parent,
+    int draftCount = 0,
   }) {
     final active = highlightFor(page, parent: parent);
     return [
@@ -61,8 +64,9 @@ class NavigationDestinations {
           to: gen is TaskGenPreview && gen.streaming
               ? const CreateTaskPage()
               : const TaskListPage(),
-          // ADR-0057 P1：出题进度徽标从「布置任务」迁到「任务」项。
-          trailing: genTrailing(gen),
+          // 组合尾部：出题进度徽标（瞬时动作态）+ 待审核草稿计数徽标（堆积信号）。
+          // 两者**显式分成两个语义**（见 [_taskTrailing]），不叠在同一槽位抢优先级。
+          trailing: _taskTrailing(gen, draftCount),
         ),
         _item(const StudentManagementPage(),
             active: active is StudentManagementPage),
@@ -83,6 +87,37 @@ class NavigationDestinations {
         _item(const AssetLibraryPage(), active: active is AssetLibraryPage),
       ]),
     ];
+  }
+
+  /// 「任务」项尾部的组合徽标。
+  ///
+  /// 两个语义**显式分槽**，不叠在同一优先级上抢位置（acceptance：徽标与既有的出题
+  /// 进度徽标不打架）：
+  /// - 待审核草稿计数（[AppBadge]，outlined 语义）：「不处理就会堆积」的待办信号，
+  ///   离屏也可见；为 0 时不显示。
+  /// - 出题进度（[genTrailing]，accent 实色）：仅在生成进行中出现的瞬时动作态。
+  ///
+  /// 两者都来自既有组件与色彩语义（AppBadge / surfaceSunken / accent），不引入第四种
+  /// 强调色。任一为 0/null 时只显示另一个；都为空时整项无 trailing。
+  Widget? _taskTrailing(TaskGenState gen, int draftCount) {
+    final genBadge = genTrailing(gen);
+    final badges = <Widget>[];
+    if (draftCount > 0) {
+      badges.add(AppBadge(label: '$draftCount'));
+    }
+    if (genBadge != null) badges.add(genBadge);
+    if (badges.isEmpty) return null;
+    // 只用一个徽标时直接返回该徽标，不套多余的 Row（保持与 gen 单独显隐时一致的节点）。
+    if (badges.length == 1) return badges.single;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 0; i < badges.length; i++) ...[
+          if (i > 0) const SizedBox(width: AppSpacing.xs),
+          badges[i],
+        ],
+      ],
+    );
   }
 
   /// 学生端页签目的地。AI 入口统一走右下角浮球（ADR-0036 / 0047），不再单列页签。

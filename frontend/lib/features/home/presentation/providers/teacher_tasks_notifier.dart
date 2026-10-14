@@ -40,3 +40,17 @@ TaskCounts taskCountsOf(PagingState<TaskModel> state) => switch (state) {
         p is TaskPage ? p.counts : const TaskCounts(),
       _ => const TaskCounts(),
     };
+
+/// 侧栏「任务」项的待审核草稿徽标计数（draft + ready，即「草稿箱」Tab 的数量）。
+///
+/// 由 [teacherTasksNotifierProvider] 的分页状态派生——服务端随每次 `GET /tasks`
+/// 响应下发**全量**计数（不只是当前 Tab），所以无论教师当前停在哪条 Tab，
+/// 这个计数都反映真实的待办堆积，离开任务页后也仍然准确。
+///
+/// 数据尚未加载（[PagingIdle] / [PagingLoading] / [PagingError]）时退回 0——
+/// 计数只来自服务端快照，本地不擅自统计已加载页（否则「草稿 128」会显示成「草稿 20」）。
+/// 教师一旦打开过任务页，计数就驻留在 provider 里（非 autoDispose），跨页常驻。
+final teacherDraftCountProvider = Provider<int>((ref) {
+  final state = ref.watch(teacherTasksNotifierProvider);
+  return taskCountsOf(state).draftTab;
+});
