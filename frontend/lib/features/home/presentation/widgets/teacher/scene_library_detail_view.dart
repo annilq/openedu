@@ -13,6 +13,7 @@ library;
 import 'package:flutter/material.dart' show Icons;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../../shared/domain/scene_spec.dart';
 import '../../../../../shared/theme/app_theme.dart';
@@ -24,6 +25,7 @@ import '../../../../../shared/widgets/scene_interpreter/reflection_figure_galler
 import '../../../../../shared/widgets/scene_interpreter/scene_interpreter.dart';
 import '../../../providers/home_provider.dart';
 import 'package:kids_learn/shared/features/materials/domain/repositories/material_repository.dart';
+import 'package:kids_learn/shared/features/materials/presentation/widgets/teacher/knowledge_point_scene_editor.dart';
 import '../../../providers/knowledge_manage_provider.dart';
 import 'scene_library_associate_dialog.dart';
 part 'scene_library_default_figure_section.dart';
@@ -32,15 +34,10 @@ class TeacherSceneLibraryDetailView extends ConsumerWidget {
   final String kind;
   final VoidCallback onBack;
 
-  /// 点某个关联知识点时打开编辑器（走 sealed 导航，T02）：home_screen 在此把
-  /// 该知识点翻成 `SceneLibraryEditorPage`，关闭统一回本详情页。
-  final void Function(SceneLibraryKpRef kp) onOpenKp;
-
   const TeacherSceneLibraryDetailView({
     super.key,
     required this.kind,
     required this.onBack,
-    required this.onOpenKp,
   });
 
   @override
@@ -123,7 +120,7 @@ class TeacherSceneLibraryDetailView extends ConsumerWidget {
                       _InstanceCard(
                         kp: kp,
                         fallbackKind: kind,
-                        onOpen: () => onOpenKp(kp),
+                        onOpen: (k) => _openEditor(context, ref, k),
                         onUnlink: () => _unlink(ref, context, kp),
                       ),
                 ],
@@ -169,12 +166,46 @@ class TeacherSceneLibraryDetailView extends ConsumerWidget {
       },
     );
   }
+
+  /// 打开知识点讲解编辑器（ticket 11）：**浮层弹窗**而非整页——编辑器本就按弹窗尺寸
+  /// （560 宽）设计，夹成整页只会让画廊/预览溢出。编辑器是覆盖层、不是 `TeacherPage`
+  /// 分支，故不污染 ADR-0059 单一导航状态（来源页仍是栈顶，`pop` 弹窗即回落来源页）。
+  ///
+  /// 关闭出口：先作废场景库清单缓存（`kp.scenes` 与 `sceneLibraryProvider` 是两份数据，
+  /// 不失效的话回详情页仍显旧标题/图形，ADR-0073），再关弹窗——既有行为不得丢。
+  void _openEditor(BuildContext context, WidgetRef ref, SceneLibraryKpRef kp) {
+    showShadDialog(
+      context: context,
+      barrierColor: AppTheme.colorsOf(context).scrim,
+      builder: (dialogCtx) => ShadDialog(
+        closeIcon: const SizedBox.shrink(),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560),
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            child: KnowledgePointSceneEditor(
+              kpId: kp.id,
+              kpName: kp.name,
+              subject: kp.subject,
+              grade: kp.grade,
+              semester: kp.semester,
+              initialScenes: kp.scenes,
+              onBack: () {
+                ref.invalidate(sceneLibraryProvider);
+                Navigator.of(dialogCtx).pop();
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _InstanceCard extends StatelessWidget {
   final SceneLibraryKpRef kp;
   final String fallbackKind;
-  final VoidCallback onOpen;
+  final void Function(SceneLibraryKpRef kp) onOpen;
   final VoidCallback? onUnlink;
 
   const _InstanceCard({
@@ -284,10 +315,10 @@ class _InstanceCard extends StatelessWidget {
         ),
       ),
     );
-    // 整卡可点：打开该知识点的讲解编辑器（走 sealed 导航）。内层「解除关联」
+    // 整卡可点：打开该知识点的讲解编辑器（弹窗，ticket 11）。内层「解除关联」
     // 自身也是可聚焦动作，点击它只会触发自身、不会冒泡到整卡（ADR-0046）。
     return AppFocusableAction(
-      onTap: onOpen,
+      onTap: () => onOpen(kp),
       semanticLabel: '编辑 ${kp.name} 的讲解',
       child: card,
     );

@@ -158,32 +158,6 @@ class SceneLibraryDetailPage extends TeacherPage {
   const SceneLibraryDetailPage(this.kind);
 }
 
-/// 场景编辑器页（ADR-0074 T02）：在场景库详情里点某个关联知识点，经单一 sealed
-/// 状态打开，而非 `showDialog` / `Navigator.push` 直接开编辑器（ADR-0059 单一导航状态）。
-///
-/// 取代知识点行的 `showDialog(KnowledgePointSceneEditor)`：那写法把「当前该看哪个
-/// 页面」偷偷变成并列状态，漏清就弹根栈（白屏）。这里编辑器只是 `TeacherPage` 的
-/// 一个分支，关闭统一走 [KnowledgePointSceneEditor.onBack]，不裸 `Navigator.pop`。
-///
-/// 不带回落目标：关闭后回哪儿由壳的历史栈决定，编辑器自己不猜来源。
-class SceneLibraryEditorPage extends TeacherPage {
-  final String kpId;
-  final String kpName;
-  final String subject;
-  final int grade;
-  final String semester;
-  final List<Map<String, dynamic>>? initialScenes;
-
-  const SceneLibraryEditorPage({
-    required this.kpId,
-    required this.kpName,
-    required this.subject,
-    required this.grade,
-    required this.semester,
-    this.initialScenes,
-  });
-}
-
 /// 素材库（ADR-0076）：教师自传图片的集中管理入口。多选上传 / grid 陈列 /
 /// 点缩略图放大 / 逐张删除；课件环节「添加素材」复用的 [showAssetLibraryPicker]
 /// 与这里共用同一份素材库数据。
@@ -229,7 +203,7 @@ class RunTraceDetailPage extends TeacherPage {
 /// 延续。以前这个关系由调用方在创建审核页时手工填 `back` 字段（ticket 03 已移除），
 /// 现在由壳把 [parent]（历史栈的上一层）传进来——来源只有一个，不会填错。
 ///
-/// 其余页面高亮自身：下钻页（班级学生 / 学生详情 / 场景编辑器…）匹配不到任何侧栏
+/// 其余页面高亮自身：下钻页（班级学生 / 学生详情）匹配不到任何侧栏
 /// 项 → 侧栏零高亮，这正是「drill-down 不是一级入口」的界面表达。
 TeacherPage highlightFor(TeacherPage page, {TeacherPage? parent}) {
   // 「发布任务」已收进「任务」页（方案 A）：生成页是任务页的一个动作态，不是独立侧栏

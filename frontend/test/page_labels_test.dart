@@ -137,7 +137,6 @@ void main() {
       expect(teacherPageFace(EditStudentPage(_student)).title, '编辑学生');
       expect(teacherPageFace(const StudentDetailPage('s1')).title, '学生详情');
       expect(teacherPageFace(const SceneLibraryDetailPage('graph')).title, '场景库详情');
-      expect(teacherPageFace(_sceneEditor).title, '场景编辑器');
       expect(teacherPageFace(const RunTraceDetailPage('r1')).title, '运行轨迹详情');
     });
 
@@ -202,7 +201,6 @@ final List<TeacherPage> _everyTeacherPage = [
   const CoursewarePage(),
   const SceneLibraryPage(),
   const SceneLibraryDetailPage('graph'),
-  _sceneEditor,
   const AssetLibraryPage(),
   const ClassStudentsPage('c1', '三(1)班'),
   const RunTracePage(),
@@ -226,14 +224,6 @@ final UserModel _student = UserModel(
 
 final TaskReviewPage _review = TaskReviewPage(
   TaskModel(id: 't1', title: '练习', status: 'draft', questions: const []),
-);
-
-final SceneLibraryEditorPage _sceneEditor = SceneLibraryEditorPage(
-  kpId: 'k1',
-  kpName: '轴对称',
-  subject: '数学',
-  grade: 4,
-  semester: '上学期',
 );
 
 /// 扫描 [pagesFile] 里 `class X extends <sealed>` 的子类名，逐个确认它们出现在

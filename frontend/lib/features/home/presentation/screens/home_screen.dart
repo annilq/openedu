@@ -25,14 +25,12 @@ import '../../../review/presentation/screens/wrong_questions_screen.dart';
 import '../../../model_management/presentation/screens/teacher_model_management_screen.dart';
 import '../providers/home_notifier.dart';
 import '../providers/teacher_tasks_notifier.dart';
-import '../../providers/knowledge_manage_provider.dart';
 import '../teacher_pages.dart';
 import '../teacher_nav_stack.dart';
 import '../page_labels.dart';
 import '../child_pages.dart';
 import '../widgets/teacher/scene_library_detail_view.dart';
 import '../widgets/teacher/scene_library_view.dart';
-import 'package:kids_learn/shared/features/materials/presentation/widgets/teacher/knowledge_point_scene_editor.dart';
 import '../screens/student_detail_screen.dart';
 import '../screens/teacher_task_review_screen.dart';
 import 'teacher_destinations.dart';
@@ -267,50 +265,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       SceneLibraryDetailPage(kind: final kind) => TeacherSceneLibraryDetailView(
           kind: kind,
           onBack: _back,
-          onOpenKp: (kp) => _go(SceneLibraryEditorPage(
-            kpId: kp.id,
-            kpName: kp.name,
-            subject: kp.subject,
-            grade: kp.grade,
-            semester: kp.semester,
-            initialScenes: kp.scenes,
-          )),
-        ),
-      SceneLibraryEditorPage(
-        kpId: final kpId,
-        kpName: final kpName,
-        subject: final subject,
-        grade: final grade,
-        semester: final semester,
-        initialScenes: final initialScenes,
-      ) =>
-        // 内容兜底走 Align(topCenter)+ConstrainedBox，不可 Center（ADR-003 内容兜底纪律）；
-        // 编辑器原本为 560 宽弹窗设计，作为页仍夹到 560 以保持既定排版。关闭走
-        // `onBack`，不裸 Navigator.pop 弹根栈。
-        //
-        // 关闭时顺手作废场景库清单缓存：编辑器经 `knowledgeManageProvider` 改的是
-        // `kp.scenes`，与 `sceneLibraryProvider` 是两份数据，不失效的话回到详情页
-        // 仍显示旧标题/图形（ADR-0073 来源仍是 kp.scenes，只是缓存未刷新）。
-        Align(
-          alignment: Alignment.topCenter,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 560),
-            child: Padding(
-              padding: const EdgeInsets.all(AppSpacing.md),
-              child: KnowledgePointSceneEditor(
-                kpId: kpId,
-                kpName: kpName,
-                subject: subject,
-                grade: grade,
-                semester: semester,
-                initialScenes: initialScenes,
-                onBack: () {
-                  ref.invalidate(sceneLibraryProvider);
-                  _back();
-                },
-              ),
-            ),
-          ),
         ),
       // ticket 08：模型管理 / 运行轨迹已不再是一级侧栏入口，改由「我的」页内系统分区
       // 入栈进入。它们本无返回按钮（原是侧栏根页），这里统一套一个返回头，使「返回」
