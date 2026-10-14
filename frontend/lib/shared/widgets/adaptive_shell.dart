@@ -11,6 +11,7 @@ import 'adaptive_bottom_nav.dart';
 import 'app_content_frame.dart';
 import 'app_avatar.dart';
 import 'app_focusable_action.dart';
+import 'shell_body_transition.dart';
 
 /// 底部用户区在展开态需要的最小可用宽度：低于此值按 collapsed（仅头像）渲染，
 /// 复用与导航项同样的兜底逻辑，规避折叠/展开动画途中展开行（头像 + 间距 +
@@ -59,6 +60,13 @@ class AdaptiveShell extends ConsumerStatefulWidget {
   /// 那串字对教师端是错的）。为 null 时退回中性占位。
   final String? currentTitle;
 
+  /// 壳内 body 的当前页面身份（05）：用于驱动换页淡入转场。
+  ///
+  /// 取 [TeacherPage] / [ChildPage] 这类「当前页面」单一事实源——它本就是 sealed +
+  /// const 构造的规范实例，身份即等价，无需壳再理解页面类型。为 null 时（既有测试 /
+  /// 降级路径）不施加任何转场，零行为变化。
+  final Object? bodyKey;
+
   const AdaptiveShell({
     super.key,
     required this.destinations,
@@ -68,6 +76,7 @@ class AdaptiveShell extends ConsumerStatefulWidget {
     this.sidebarBottom,
     this.profileDestination,
     this.currentTitle,
+    this.bodyKey,
   });
 
   @override
@@ -151,7 +160,7 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
               Expanded(
                 child: Container(
                   color: scheme.surface,
-                  child: _cappedWidth(widget.body),
+                  child: _cappedWidth(context, widget.body),
                 ),
               ),
             ],
@@ -172,8 +181,15 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
   /// 仍会取满 `contentWide`，与 `Center` 等效。
   ///
   /// 紧凑宽度下 1080 不生效，等价于无包裹（不改变手机 / 小平板的现有排布）。
-  Widget _cappedWidth(Widget child) => AppContentFrame(
-        child: child,
+  ///
+  /// body 在此套上壳内换页淡入转场（05）：以学生 / 教师端的当前页面身份 [widget.bodyKey]
+  /// 驱动；未声明（既有测试 / 降级）则 [ShellBodyTransition] 直接透传，零行为变化。
+  Widget _cappedWidth(BuildContext context, Widget child) => AppContentFrame(
+        child: ShellBodyTransition(
+          pageKey: widget.bodyKey,
+          mode: widget.mode,
+          child: child,
+        ),
       );
 
   // ---- 紧凑·学生端：底部导航 ----
@@ -186,7 +202,7 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
         Expanded(
           child: Container(
             color: scheme.surface,
-            child: _cappedWidth(widget.body),
+            child: _cappedWidth(context, widget.body),
           ),
         ),
         // 底栏自带的窄屏降级（等分 → 自然分布 → 只留图标）与壳无关，抽到
@@ -211,7 +227,7 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
             Expanded(
               child: Container(
                 color: scheme.surface,
-                child: _cappedWidth(widget.body),
+                child: _cappedWidth(context, widget.body),
               ),
             ),
           ],

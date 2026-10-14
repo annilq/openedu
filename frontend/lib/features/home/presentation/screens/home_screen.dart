@@ -8,6 +8,7 @@ import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/presentation/resource.dart';
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/widgets/adaptive_shell.dart';
+import '../../../../shared/widgets/app_content_frame.dart';
 import '../../../../shared/widgets/app_actions.dart';
 import '../../../../shared/widgets/app_toast.dart';
 import '../../../students/providers/students_provider.dart';
@@ -239,21 +240,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           onNavigateToList: (tab) => _go(TaskListPage(initialTab: tab)),
         ),
       // ADR-0057：生成页不再接跳转回调——收尾（含进草稿页）由本页的监听统一负责。
-      CreateTaskPage() => const TeacherTaskFormView(),
-      AddStudentPage() => StudentFormScreen(
+      // 05：表单类页面用窄宽度（contentNarrow）居中，两侧不再大片留白。
+      CreateTaskPage() => _narrow(const TeacherTaskFormView()),
+      AddStudentPage() => _narrow(StudentFormScreen(
           mode: ChildFormMode.create,
           classId: page.classId,
           // 新建是下钻进去的，收尾统一出栈——不再需要「按 classId 猜回落页」的
           // 三元（旧 `_addStudentReturnPage`）：从哪个页面发起就回哪个页面。
           onSaved: (_) => _back(),
           onBack: _back,
-        ),
-      EditStudentPage(child: final child) => StudentFormScreen(
+        )),
+      EditStudentPage(child: final child) => _narrow(StudentFormScreen(
           mode: ChildFormMode.edit,
           child: child,
           onSaved: (_) => _back(),
           onBack: _back,
-        ),
+        )),
       QuestionBankPage() => TeacherQuestionBankView(
           onNavigateToReview: _navigateToReview,
         ),
@@ -352,14 +354,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             _navigateToPractice(t, preview: true);
           },
         ),
-      ProfilePage() => ProfileScreen(
+      ProfilePage() => _narrow(ProfileScreen(
           user: widget.user,
           onLogout: widget.onLogout,
           // ticket 08：系统项（模型管理 / 运行轨迹）从侧栏搬进「我的」页内分区。
           // 走 _go（入栈）而非 _goEntry，返回落点仍是「我的」。
           onNavigateToModels: () => _go(const ModelsPage()),
           onNavigateToRunTrace: () => _go(const RunTracePage()),
-        ),
+        )),
+      // 05：窄宽度居中（contentNarrow）——「我的」是设置型页，宽屏下不必拉满。
+      // 模型管理 / 运行轨迹等系统子页保持默认宽度（其表格 / 列表需要更宽）。
       // ADR-0088 ticket 02：运行轨迹（全步骤 + 元数据口径）与助手页内的历史会话
       // （气泡口径）并列，入口分离；详情是列表的下钻，返回统一回列表。
       // ticket 08：列表页经由「我的」入栈进入，套返回头使返回落回「我的」。
@@ -424,6 +428,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           Expanded(child: page),
         ],
       );
+
+  /// 05：把页面内容收进窄宽度框（contentNarrow），两侧不再大片留白。
+  ///
+  /// 只声明「这个页想要更窄」，实际生效由壳的 [AppContentFrame]（默认 contentWide）
+  /// 让内层更紧者生效——页面本身不感知宽窄，也不改动任何内部排版。未包裹的页面沿用
+  /// 壳的默认宽度。应用：表单类页面（出题 / 新建·编辑学生）与「我的」。
+  Widget _narrow(Widget child) =>
+      AppContentFrame(maxWidth: AppLayout.contentNarrow, child: child);
 
   /// 出题进行中的常驻指示条（跨 Tab），带停止按钮。
   Widget? _genTrailing(TaskGenState gen) {
@@ -506,7 +518,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
           const WrongQuestionsScreen(showBack: false),
           StudentMasteryScreen(user: widget.user),
-          ProfileScreen(user: widget.user, onLogout: widget.onLogout),
+          // 05：学生端「我的」同样用窄宽度居中（contentNarrow）。IndexedStack 始终
+          // 挂载全部槽位（保活），该窄框作为槽位内容常驻、仅当前页签可见。
+          _narrow(ProfileScreen(user: widget.user, onLogout: widget.onLogout)),
         ],
       );
 
@@ -586,6 +600,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       final gen = ref.watch(taskGenNotifierProvider);
       shell = AdaptiveShell(
         mode: AppUserMode.teacher,
+        // 05：壳内换页淡入转场以「当前页面」单一事实源驱动；09：紧凑档顶栏显示当前页面名。
+        bodyKey: _teacherPage,
         // 09：紧凑档顶栏显示当前页面名（取 01 的单一映射），取代固定的应用名；
         // 下钻页自然显示它自己的名字（_teacherPage 已是栈顶派生）。
         currentTitle: teacherPageFace(_teacherPage).title,
@@ -609,6 +625,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     } else {
       shell = AdaptiveShell(
         mode: AppUserMode.student,
+        // 05：壳内换页淡入转场以「当前页签」单一事实源驱动（IndexedStack 保活，不重播）。
+        bodyKey: _childPage,
         // 09：紧凑档顶栏显示当前页名（学生端未来若启用顶栏亦遵循 01 映射）。
         currentTitle: childPageFace(_childPage).title,
         // 显示个人信息时页签一律取消高亮（槽位 4 不落在任何页签下标上）——否则两个同时亮。
