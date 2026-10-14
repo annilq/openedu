@@ -11,15 +11,26 @@ import '../../../../shared/widgets/app_avatar.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/app_section_title.dart';
 import '../../../../shared/widgets/app_tags.dart';
+import '../widgets/system_nav_row.dart';
 
 class ProfileScreen extends ConsumerWidget {
   final UserModel user;
   final VoidCallback onLogout;
 
+  /// 「我的」页内系统分区的两个入口（ticket 08）：模型管理 / 运行轨迹。
+  ///
+  /// 它们从侧栏搬到这里——教师日常导航只剩教学与备课两类，排障视图不再占用每
+  /// 天都要扫过的那片区域。仅教师可见；学生端不传（保持 null，分区不渲染）。
+  /// 回调走 `_go`（入栈）而非 `_goEntry`，所以从这些页面返回时落点仍是「我的」。
+  final VoidCallback? onNavigateToModels;
+  final VoidCallback? onNavigateToRunTrace;
+
   const ProfileScreen({
     super.key,
     required this.user,
     required this.onLogout,
+    this.onNavigateToModels,
+    this.onNavigateToRunTrace,
   });
 
   @override
@@ -96,6 +107,31 @@ class ProfileScreen extends ConsumerWidget {
             ),
           ),
         ),
+
+        if (user.isTeacher) ...[
+          const SizedBox(height: AppSpacing.xl2),
+          const SectionTitle('系统'),
+          PopIn(
+            child: AppCard(
+              child: Column(
+                children: [
+                  SystemNavRow(
+                    icon: LucideIcons.cpu,
+                    label: '模型管理',
+                    onTap: onNavigateToModels,
+                  ),
+                  _Divider(),
+                  SystemNavRow(
+                    icon: LucideIcons.route,
+                    label: '运行轨迹',
+                    onTap: onNavigateToRunTrace,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: AppSpacing.lg),
+        ],
 
         SizedBox(height: AppSpacing.lg),
 
