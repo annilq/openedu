@@ -33,6 +33,7 @@ import 'package:kids_learn/shared/domain/repositories/classes_repository.dart';
 import 'package:kids_learn/shared/domain/repositories/students_repository.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
 import 'package:kids_learn/shared/widgets/app_actions.dart' show AppIconAction;
+import 'package:kids_learn/shared/widgets/app_focusable_action.dart';
 import 'package:kids_learn/shared/widgets/app_sidebar.dart' show AppSidebarItem;
 
 const _run = RunTraceRun(
@@ -259,18 +260,31 @@ void main() {
   });
 
   group('入口分离 + 导航单源（ADR-0059）', () {
-    testWidgets('侧栏「运行轨迹」高亮唯一并渲染轨迹列表，点开一条进详情',
+    testWidgets('「我的」系统分区进入运行轨迹：渲染轨迹列表，点开一条进详情',
         (tester) async {
       await _pumpTeacherHome(tester, repo: _FakeRunTraceRepo());
 
       expect(_activeLabels(tester), ['概览']);
 
+      // ticket 08：运行轨迹改由「我的」页内系统分区进入。
+      // 「我的」不在侧栏项里，它住在侧栏底部的用户区（AdaptiveUserBlock）。
+      // 直接按它在教师端的语义标签点开——不要找字面「我的」文本（不存在）。
+      await tester.tap(find
+          .byWidgetPredicate((w) =>
+              w is AppFocusableAction && w.semanticLabel == '妈妈 · 教师账号')
+          .first);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.ensureVisible(find.text('运行轨迹'));
+      await tester.pump();
+
       await tester.tap(find.text('运行轨迹'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
-      expect(_activeLabels(tester), ['运行轨迹'],
-          reason: '同一时刻侧栏只能有一个高亮项（单一导航状态）');
+      // 运行轨迹入栈自「我的」，不再是侧栏项 → 侧栏无高亮。
+      expect(_activeLabels(tester), isEmpty,
+          reason: '运行轨迹入栈自「我的」，侧栏不残留高亮');
       expect(find.textContaining('查询题库中的题目'), findsWidgets,
           reason: '轨迹列表应渲染一次运行');
 
@@ -280,13 +294,21 @@ void main() {
 
       expect(find.text('tool_result'), findsWidgets,
           reason: '点开一次运行应进轨迹详情并渲染全步骤');
-      expect(_activeLabels(tester), ['运行轨迹'],
-          reason: '详情是列表的下钻，高亮仍落在「运行轨迹」');
       expect(tester.takeException(), isNull);
     });
 
     testWidgets('详情页返回回落到轨迹列表（单一出口，不裸 pop）', (tester) async {
       await _pumpTeacherHome(tester, repo: _FakeRunTraceRepo());
+      // 「我的」不在侧栏项里，它住在侧栏底部的用户区（AdaptiveUserBlock）。
+      // 直接按它在教师端的语义标签点开——不要找字面「我的」文本（不存在）。
+      await tester.tap(find
+          .byWidgetPredicate((w) =>
+              w is AppFocusableAction && w.semanticLabel == '妈妈 · 教师账号')
+          .first);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.ensureVisible(find.text('运行轨迹'));
+      await tester.pump();
       await tester.tap(find.text('运行轨迹'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
@@ -300,7 +322,9 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
-      expect(_activeLabels(tester), ['运行轨迹']);
+      // 返回落点是「我的」系统分区后的轨迹列表页；运行轨迹不再是侧栏高亮项。
+      expect(_activeLabels(tester), isEmpty,
+          reason: '返回后落回轨迹列表，运行轨迹不再是侧栏高亮项');
       expect(find.textContaining('查询题库中的题目'), findsWidgets);
       expect(tester.takeException(), isNull);
     });

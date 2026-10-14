@@ -79,7 +79,7 @@ void main() {
   });
 
   group('纯搬移：菜单的门面与搬移前逐字一致', () {
-    test('教师端侧栏 11 项：顺序、标题、图标都不变', () {
+    test('教师端侧栏 9 项：顺序、标题、图标都不变', () {
       final dests = _destinations().teacher(const OverviewPage(), const TaskGenIdle());
 
       expect(dests.expand((s) => s.items).map((d) => d.label).toList(),
@@ -165,8 +165,6 @@ const List<String> _teacherSidebarLabels = [
   '场景库',
   '备课资料',
   '图片素材',
-  '模型管理',
-  '运行轨迹',
 ];
 
 const List<IconData> _teacherSidebarIcons = [
@@ -179,8 +177,6 @@ const List<IconData> _teacherSidebarIcons = [
   LucideIcons.component,
   LucideIcons.folderOpen,
   LucideIcons.images,
-  LucideIcons.cpu,
-  LucideIcons.route,
 ];
 
 NavigationDestinations _destinations() => NavigationDestinations(
