@@ -27,6 +27,7 @@ import '../providers/teacher_tasks_notifier.dart';
 import '../../providers/knowledge_manage_provider.dart';
 import '../teacher_pages.dart';
 import '../teacher_nav_stack.dart';
+import '../page_labels.dart';
 import '../child_pages.dart';
 import '../widgets/teacher/scene_library_detail_view.dart';
 import '../widgets/teacher/scene_library_view.dart';
@@ -577,15 +578,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     _listenTaskGen();
 
     late final Widget shell;
+    // 09：侧栏「任务」项的待审核草稿计数（draft + ready）。watch 在壳这一层、跨页常驻，
+    // 离开任务页后徽标仍准确——计数来自服务端随任务响应下发的全量快照。
+    final draftCount = ref.watch(teacherDraftCountProvider);
     if (widget.user.isTeacher) {
       // ADR-0057 P1：出题在壳这一层 watch，跨 Tab 常驻可见。
       final gen = ref.watch(taskGenNotifierProvider);
       shell = AdaptiveShell(
         mode: AppUserMode.teacher,
+        // 09：紧凑档顶栏显示当前页面名（取 01 的单一映射），取代固定的应用名；
+        // 下钻页自然显示它自己的名字（_teacherPage 已是栈顶派生）。
+        currentTitle: teacherPageFace(_teacherPage).title,
         destinations: _destinations.teacher(
           _teacherPage,
           gen,
           parent: _teacherNav.parent,
+          draftCount: draftCount,
         ),
         profileDestination: _destinations.profile(active: _teacherPage is ProfilePage),
         // ADR-0070：顶部学生选择器菜单已移除，当前学生改由导航进入学生时写入
@@ -601,6 +609,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     } else {
       shell = AdaptiveShell(
         mode: AppUserMode.student,
+        // 09：紧凑档顶栏显示当前页名（学生端未来若启用顶栏亦遵循 01 映射）。
+        currentTitle: childPageFace(_childPage).title,
         // 显示个人信息时页签一律取消高亮（槽位 4 不落在任何页签下标上）——否则两个同时亮。
         destinations: _destinations.child(childPageIndex(_childPage)),
         profileDestination:

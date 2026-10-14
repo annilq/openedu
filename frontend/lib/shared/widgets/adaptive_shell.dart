@@ -52,6 +52,13 @@ class AdaptiveShell extends ConsumerStatefulWidget {
   final Widget? sidebarBottom;
   final AdaptiveNavDestination? profileDestination;
 
+  /// 紧凑档顶栏标题（09）：取代固定的应用名，显示**当前页面名**。
+  ///
+  /// 取值必须来自 01 的 `teacherPageFace` / `childPageFace` 映射（home 组合根负责换算后
+  /// 传入），本壳不再手写任何页面文案，也严禁写死应用名（修复遗留的「学生学习」——
+  /// 那串字对教师端是错的）。为 null 时退回中性占位。
+  final String? currentTitle;
+
   const AdaptiveShell({
     super.key,
     required this.destinations,
@@ -60,6 +67,7 @@ class AdaptiveShell extends ConsumerStatefulWidget {
     this.sidebarTop,
     this.sidebarBottom,
     this.profileDestination,
+    this.currentTitle,
   });
 
   @override
@@ -196,7 +204,10 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
       children: [
         Column(
           children: [
-            _CompactTopBar(onMenu: () => _setDrawer(true)),
+            _CompactTopBar(
+          onMenu: () => _setDrawer(true),
+          title: widget.currentTitle ?? '工作台',
+        ),
             Expanded(
               child: Container(
                 color: scheme.surface,
@@ -391,10 +402,11 @@ class _DrawerItem extends StatelessWidget {
   }
 }
 
-/// 紧凑·教师端顶部条：汉堡按钮 + 应用名。
+/// 紧凑·教师端顶部条：汉堡按钮 + 当前页面名。
 class _CompactTopBar extends StatelessWidget {
   final VoidCallback onMenu;
-  const _CompactTopBar({required this.onMenu});
+  final String title;
+  const _CompactTopBar({required this.onMenu, required this.title});
 
   @override
   Widget build(BuildContext context) {
@@ -420,10 +432,17 @@ class _CompactTopBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: AppSpacing.sm),
-          Text('学生学习',
-              style: AppTheme.textOf(context).titleMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  )),
+          // 当前页面名（09）：Flexible + 省略号，长名截断而非溢出。
+          // Key 供测试稳定定位紧凑档顶栏标题，不污染其它文案断言。
+          Flexible(
+            child: Text(title,
+                key: const Key('compact-current-title'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTheme.textOf(context).titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    )),
+          ),
         ],
       ),
     );

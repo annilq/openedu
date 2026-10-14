@@ -183,6 +183,10 @@ void main() {
 ///   switch 分支 + `_withBackHeader` 返回头方法，导航接线必须经单一 `_go`/`_back`，
 ///   ADR-0059 不容许把接线散到别处；同期 profile_screen 把 `_SystemNavRow` 拆到
 ///   system_nav_row.dart，主文件 431→383 回到 400 内、未登记）。
+/// 2026-10-14 ticket 09（侧栏徽标与紧凑档当前页标题）：home_screen 628→638、
+///   adaptive_shell 531→544（均属 B 类组合根 / 壳真实增长——`currentTitle` 入参让
+///   紧凑档顶栏显示当前页名、取代写死的「学生学习」；home_screen 新增 watch 草稿计数
+///   + 经 01 映射换算顶栏标题，导航接线必须经单一 `_go`/`_back`，ADR-0059 不容许散到别处）。
 /// **只许下调（除 B 类已登记的合理大件外）。**
 ///
 /// 2026-10（ADR-0083 图库 DB 化 / SceneSpec 几何化）下调：
@@ -194,10 +198,10 @@ void main() {
 /// 拆分批次见 `docs/refactor/2026-09-21-flutter-ui-decomposition.md`（P0–P4）。
 const Map<String, int> _baseline = <String, int>{
   'shared/theme/app_theme.dart': 1702,
-  'shared/widgets/adaptive_shell.dart': 531,
+  'shared/widgets/adaptive_shell.dart': 544,
   'features/home/presentation/widgets/teacher/teacher_question_bank_view.dart': 757,
   'features/home/presentation/widgets/teacher/teacher_tasks_view.dart': 672,
-  'features/home/presentation/screens/home_screen.dart': 628,
+  'features/home/presentation/screens/home_screen.dart': 638,
   'features/assistant/presentation/screens/assistant_chat_page.dart': 578,
   'shared/widgets/scene_interpreter/reflection_scene.dart': 438,
   'features/home/presentation/widgets/teacher/teacher_question_card.dart': 477,
