@@ -191,6 +191,10 @@ void main() {
 ///   638→656（均属 B 类组合根 / 壳真实增长——`bodyKey` 入参驱动壳内换页淡入转场、
 ///   home_screen 接 `bodyKey` + 新增 `_narrow` 窄宽度包；导航接线必须经单一 `_go`/`_back`，
 ///   ADR-0059 不容许散到别处；转场与宽度收口均为壳层职责，不应散到各页面）。
+/// 2026-10-15 ticket 13（统一刷新策略 stale-while-revalidate）：home_screen 656→665
+///   （B 类组合根真实增长——新增 `_refreshOverviewOnReturn` 出口，切回概览时经单一导航
+///   源静默刷新教师端任务与待办；刷新接线必须经单一 `_go`/`_goEntry`/`_back`，ADR-0059
+///   不容许散到页面；阈值常量与状态机改造在共享层 `resource.dart`/`paging.dart`，均 ≤400）。
 /// **只许下调（除 B 类已登记的合理大件外）。**
 ///
 /// 2026-10（ADR-0083 图库 DB 化 / SceneSpec 几何化）下调：
@@ -205,7 +209,7 @@ const Map<String, int> _baseline = <String, int>{
   'shared/widgets/adaptive_shell.dart': 560,
   'features/home/presentation/widgets/teacher/teacher_question_bank_view.dart': 757,
   'features/home/presentation/widgets/teacher/teacher_tasks_view.dart': 672,
-  'features/home/presentation/screens/home_screen.dart': 656,
+  'features/home/presentation/screens/home_screen.dart': 665,
   'features/assistant/presentation/screens/assistant_chat_page.dart': 578,
   'shared/widgets/scene_interpreter/reflection_scene.dart': 438,
   'features/home/presentation/widgets/teacher/teacher_question_card.dart': 477,
