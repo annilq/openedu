@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/presentation/shell_navigation.dart';
+import '../../../../shared/domain/providers/core_providers.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/presentation/resource.dart';
 import '../../../../shared/domain/models/models.dart';
@@ -80,12 +81,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    final storage = ref.read(storageServiceProvider);
+    if (widget.user.isTeacher) {
+      // ticket 12：重启恢复上次所在教师页。还原是「换一级入口」语义（reset 清历史），
+      // 返回恒落概览——不会跳到从未访问过的页，与侧栏高亮 / 当前页三者一致。
+      // 仅动本地栈，不碰 provider（initState 内禁止 mutate provider）。
+      final path = storage.getLastTeacherPagePath();
+      if (path != null) {
+        _teacherNav.reset(teacherPageFromPath(path));
+      }
+    } else {
+      // ticket 12：学生端重启恢复上次页签。越界下标由 childPageFromIndex 回落首页。
+      final tab = storage.getLastChildTab();
+      if (tab != null) {
+        _childPage = childPageFromIndex(tab);
+      }
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (widget.user.isTeacher) {
         ref.read(studentsNotifierProvider.notifier).loadChildren();
       } else {
-        ref.read(todayTasksNotifierProvider.notifier).load();
-        ref.read(dueReviewNotifierProvider.notifier).load();
+        // 取数（mutate provider）必须推迟到 build 之后，沿用原写法。
+        _refreshChildTab(_childPage);
       }
     });
   }
@@ -112,18 +129,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   /// **下钻**出口：入栈。新增下钻页**零义务**——不需要声明回落目标，退回哪儿由
   /// 历史决定（ticket 03：返回从「每个页面自己记得声明」变成结构默认）。
-  void _go(TeacherPage page) => setState(() => _teacherNav.push(page));
+  void _go(TeacherPage page) {
+    setState(() => _teacherNav.push(page));
+    _persistTeacherPath();
+  }
 
   /// **切换一级入口**出口：替换当前页面并清空历史。
   ///
   /// 侧栏每一项、底部「我的」、助手卡片跳转都走这条。与 [_go] 分开是因为它们不是
   /// 「从当前页往下钻」而是「换一个入口」：不清历史的话，切到「题库」后按返回会
   /// 跨入口弹回上一次的班内学生页。
-  void _goEntry(TeacherPage page) => setState(() => _teacherNav.reset(page));
+  void _goEntry(TeacherPage page) {
+    setState(() => _teacherNav.reset(page));
+    _persistTeacherPath();
+  }
 
   /// 回退一步：出栈。已在根页面（概览）时不动——[build] 里的 [PopScope] 据此把
   /// 返回键交回系统。
-  void _back() => setState(() => _teacherNav.pop());
+  void _back() {
+    setState(() => _teacherNav.pop());
+    _persistTeacherPath();
+  }
+
+  /// 教师端切页即持久化当前路径（ticket 12）：重启后由 [initState] 还原。
+  ///
+  /// `saveLastTeacherPagePath` 是 fire-and-forget（shared_preferences 异步落盘），
+  /// 不阻塞渲染；持久化的是 `_teacherNav.current` 的路径，与渲染树同源。
+  void _persistTeacherPath() {
+    ref
+        .read(storageServiceProvider)
+        .saveLastTeacherPagePath(_teacherNav.current.toPath());
+  }
 
   /// R3：生成草稿后进审核页。审核是从当前页下钻进去的，退出时由 [_back] 回到来源页。
   void _navigateToReview(TaskModel draft) {
@@ -205,6 +241,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (_childPage == page) return; // 已在该页，避免重复加载
     setState(() => _childPage = page);
     _refreshChildTab(page);
+    // ticket 12：学生端切页签即持久化下标，重启后由 initState 恢复。
+    ref.read(storageServiceProvider).saveLastChildTab(childPageIndex(page));
   }
 
   /// 按当前 [ChildPage] 派发对应 provider 的刷新（与屏幕 initState 中的首次加载保持一致）。
