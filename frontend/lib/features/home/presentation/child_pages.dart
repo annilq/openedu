@@ -29,20 +29,25 @@ class ChildProfilePage extends ChildPage {
   const ChildProfilePage();
 }
 
-/// [ChildPage] → IndexedStack 下标；[ChildProfilePage] 返回 -1（不进 IndexedStack）。
+/// [ChildPage] → IndexedStack 下标：五个槽位一一对应，「我的」是**第五个槽位**。
+///
+/// ⚠️ [ChildProfilePage] 不能再返回 -1（「不进 IndexedStack」）了：那等于「槽位不
+/// 存在」，切到「我的」只能把整个 IndexedStack 移出渲染树，四个页签的 State 全部
+/// 销毁，切回首页要重建，滚动位置与已加载数据全丢（nav-ia-review P1-2）。
 int childPageIndex(ChildPage page) => switch (page) {
-      ChildProfilePage() => -1,
       ChildHomePage() => 0,
       ChildReviewPage() => 1,
       ChildWrongQuestionsPage() => 2,
       ChildMasteryPage() => 3,
+      ChildProfilePage() => 4,
     };
 
-/// 页签下标 → [ChildPage]（越界回落首页）。
+/// 槽位下标 → [ChildPage]（越界回落首页）。
 ChildPage childPageFromIndex(int index) => switch (index) {
       0 => const ChildHomePage(),
       1 => const ChildReviewPage(),
       2 => const ChildWrongQuestionsPage(),
       3 => const ChildMasteryPage(),
+      4 => const ChildProfilePage(),
       _ => const ChildHomePage(),
     };

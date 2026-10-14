@@ -16,6 +16,12 @@ import 'app_focusable_action.dart';
 /// 箭头 16 的余量；低于此宽必然放不下展开行。
 const double _kUserBlockExpandedMinWidth = 100;
 
+/// 抽屉左滑关闭的位移阈值：抽屉宽度的四分之一。
+///
+/// 从 [AppLayout.sidebarExpanded] 推导而不是写裸数字——抽屉宽度改了阈值自动跟随，
+/// 不会出现「抽屉变窄了却仍要滑 60px 才关」。
+const double _drawerDismissDragThreshold = AppLayout.sidebarExpanded / 4;
+
 /// 导航目的地（数据驱动）：同一份定义同时喂给侧栏 / 底栏 / 抽屉三种形态，
 /// 避免三种布局各写一套 item，保证选中态与回调唯一来源。
 class AdaptiveNavDestination {
@@ -246,12 +252,18 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
           top: 0,
           bottom: 0,
           width: AppLayout.sidebarExpanded,
-          child: Container(
-            decoration: BoxDecoration(
-              color: scheme.surfaceSunken,
-              border: Border(right: BorderSide(color: scheme.outline, width: AppElevation.borderWidthHairline)),
-            ),
-            child: Column(
+          child: _DrawerSwipeToDismiss(
+            enabled: _drawerOpen,
+            onDismiss: () => _setDrawer(false),
+            child: Container(
+              decoration: BoxDecoration(
+                color: scheme.surfaceSunken,
+                border: Border(
+                    right: BorderSide(
+                        color: scheme.outline,
+                        width: AppElevation.borderWidthHairline)),
+              ),
+              child: Column(
               children: [
                 // 抽屉无收缩按钮，但仍要给同一份头部内边距——否则 sidebarTop
                 // 会贴边，与下面缩进 8px 的抽屉项对不上（左右两条边缘）。
@@ -265,16 +277,75 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
                     padding: const EdgeInsets.symmetric(
                         vertical: AppSpacing.sm),
                     children: items
-                        .map((d) => _DrawerItem(destination: d))
+                        .map((d) => _DrawerItem(
+                              destination: d,
+                              // 关闭必须发生在导航**之后**：先让目标页进渲染树，
+                              // 再收抽屉，避免动画途中抽屉与内容同时重排。
+                              onTap: () {
+                                d.onTap?.call();
+                                _setDrawer(false);
+                              },
+                            ))
                         .toList(),
                   ),
                 ),
                 if (widget.sidebarBottom != null) widget.sidebarBottom!,
               ],
+              ),
             ),
           ),
         ),
       ],
+    );
+  }
+}
+
+/// 抽屉面板的左滑关闭手势。
+///
+/// 纯手势补充：抽屉项仍然是 [AppFocusableAction]，桌面端 Tab 依旧跳得过去
+/// （ADR-0046）——手势只多给移动端一条出路，不接替可点区域。
+///
+/// 位移阈值取抽屉宽度的四分之一（[_drawerDismissDragThreshold]）：比手指的一次
+/// 拖拽短（好关），比列表竖向滚动的横向抖动长（不误触）。收起动画沿用
+/// [AnimatedPositioned] 的同一档时长，因此也一并尊重 reduce-motion。
+class _DrawerSwipeToDismiss extends StatefulWidget {
+  final bool enabled;
+  final VoidCallback onDismiss;
+  final Widget child;
+
+  const _DrawerSwipeToDismiss({
+    required this.enabled,
+    required this.onDismiss,
+    required this.child,
+  });
+
+  @override
+  State<_DrawerSwipeToDismiss> createState() => _DrawerSwipeToDismissState();
+}
+
+class _DrawerSwipeToDismissState extends State<_DrawerSwipeToDismiss> {
+  /// 本次拖拽累计的横向位移（左为负）。必须是 State：拖拽途中 `onDismiss`
+  /// 会触发壳的 setState 重建本组件，Stateless 会让位移在重建时清零。
+  double _drag = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onHorizontalDragUpdate: widget.enabled
+          ? (details) {
+              // 只累加左滑：向右拽是把抽屉拽回来，而它已经在最左端。
+              if (details.delta.dx < 0) _drag += details.delta.dx;
+            }
+          : null,
+      onHorizontalDragEnd: widget.enabled
+          ? (_) {
+              final dismissed = _drag <= -_drawerDismissDragThreshold;
+              _drag = 0;
+              if (dismissed) widget.onDismiss();
+            }
+          : null,
+      child: widget.child,
     );
   }
 }
@@ -317,7 +388,12 @@ class _BottomNavItem extends StatelessWidget {
 /// 抽屉导航项（紧凑·教师端）。图标 + 文字 + 选中药丸。
 class _DrawerItem extends StatelessWidget {
   final AdaptiveNavDestination destination;
-  const _DrawerItem({required this.destination});
+
+  /// 抽屉项的完整动作：导航（[AdaptiveNavDestination.onTap]）+ 收起抽屉。
+  /// 由壳注入，因为「当前抽屉是否打开」是壳的状态。
+  final VoidCallback onTap;
+
+  const _DrawerItem({required this.destination, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -328,7 +404,7 @@ class _DrawerItem extends StatelessWidget {
       padding:
           const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 2),
       child: AppFocusableAction(
-        onTap: destination.onTap,
+        onTap: onTap,
         semanticLabel: destination.label,
         borderRadius: BorderRadius.circular(AppRadius.chip),
         hoverHighlight: true,

@@ -1,8 +1,9 @@
 import 'package:flutter/widgets.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/widgets/adaptive_shell.dart';
+import '../page_labels.dart';
 import '../teacher_pages.dart';
+import '../child_pages.dart';
 import '../providers/home_notifier.dart';
 
 /// 导航目的地构造器（从 `home_screen.dart` 抽出，ADR-0058 棘轮）。
@@ -46,105 +47,93 @@ class NavigationDestinations {
   }) {
     final active = highlightFor(page, parent: parent);
     return [
-      AdaptiveNavDestination(
-          icon: LucideIcons.layoutDashboard,
-          label: '概览',
-          active: active is OverviewPage,
-          onTap: () => goEntry(const OverviewPage())),
-      AdaptiveNavDestination(
-          icon: LucideIcons.listTodo,
-          label: '任务',
-          // 发布任务已收进任务页（方案 A）：生成页是任务页的一个动作态，不再单列侧栏。
-          // 故它高亮时「任务」也亮；出题中点按即回生成页（ADR-0057 P1）。
-          active: active is TaskListPage || active is CreateTaskPage,
-          onTap: () => gen is TaskGenPreview && gen.streaming
-              ? goEntry(const CreateTaskPage())
-              : goEntry(const TaskListPage()),
-          // ADR-0057 P1：出题进度徽标从「布置任务」迁到「任务」项。
-          trailing: genTrailing(gen)),
-      AdaptiveNavDestination(
-          icon: LucideIcons.users,
-          label: '学生',
-          active: active is StudentManagementPage,
-          onTap: () => goEntry(const StudentManagementPage())),
-      AdaptiveNavDestination(
-          icon: LucideIcons.school,
-          label: '班级管理',
-          active: active is ClassManagementPage,
-          onTap: () => goEntry(const ClassManagementPage())),
-      AdaptiveNavDestination(
-          icon: LucideIcons.library,
-          label: '题库',
-          active: active is QuestionBankPage,
-          onTap: () => goEntry(const QuestionBankPage())),
-      AdaptiveNavDestination(
-          icon: LucideIcons.folderOpen,
-          label: '资料库',
-          active: active is MaterialLibraryPage,
-          onTap: () => goEntry(const MaterialLibraryPage())),
-      AdaptiveNavDestination(
-          icon: LucideIcons.cpu,
-          label: '模型管理',
-          active: active is ModelsPage,
-          onTap: () => goEntry(const ModelsPage())),
+      _item(const OverviewPage(), active: active is OverviewPage),
+      // 发布任务已收进任务页（方案 A）：生成页是任务页的一个动作态，不再单列侧栏。
+      // 故它高亮时「任务」也亮；出题中点按即回生成页（ADR-0057 P1）。
+      _item(
+        const TaskListPage(),
+        active: active is TaskListPage || active is CreateTaskPage,
+        to: gen is TaskGenPreview && gen.streaming
+            ? const CreateTaskPage()
+            : const TaskListPage(),
+        // ADR-0057 P1：出题进度徽标从「布置任务」迁到「任务」项。
+        trailing: genTrailing(gen),
+      ),
+      _item(const StudentManagementPage(),
+          active: active is StudentManagementPage),
+      _item(const ClassManagementPage(), active: active is ClassManagementPage),
+      _item(const QuestionBankPage(), active: active is QuestionBankPage),
+      _item(const MaterialLibraryPage(), active: active is MaterialLibraryPage),
+      _item(const ModelsPage(), active: active is ModelsPage),
       // ADR-0088 ticket 02：运行轨迹（审计 / 排障口径）独立入口——与助手页内的
       // 「历史会话」（气泡口径）并列，不混入同一个页面。
-      AdaptiveNavDestination(
-          icon: LucideIcons.route,
-          label: '运行轨迹',
-          active: active is RunTracePage || active is RunTraceDetailPage,
-          onTap: () => goEntry(const RunTracePage())),
-      AdaptiveNavDestination(
-          icon: LucideIcons.bookOpen,
-          label: '课件',
-          active: active is CoursewarePage,
-          onTap: () => goEntry(const CoursewarePage())),
-      AdaptiveNavDestination(
-          icon: LucideIcons.component,
-          label: '场景库',
-          // 详情页高亮列表页：详情是列表的下钻，不是一个独立入口，否则点了某个
-          // 场景后侧栏会「谁都不亮」，教师以为自己离开了导航。
-          active: active is SceneLibraryPage || active is SceneLibraryDetailPage,
-          onTap: () => goEntry(const SceneLibraryPage())),
-      AdaptiveNavDestination(
-          icon: LucideIcons.images,
-          label: '素材库',
-          active: active is AssetLibraryPage,
-          onTap: () => goEntry(const AssetLibraryPage())),
+      _item(const RunTracePage(),
+          active: active is RunTracePage || active is RunTraceDetailPage),
+      _item(const CoursewarePage(), active: active is CoursewarePage),
+      _item(
+        const SceneLibraryPage(),
+        // 详情页高亮列表页：详情是列表的下钻，不是一个独立入口，否则点了某个
+        // 场景后侧栏会「谁都不亮」，教师以为自己离开了导航。
+        active: active is SceneLibraryPage || active is SceneLibraryDetailPage,
+      ),
+      _item(const AssetLibraryPage(), active: active is AssetLibraryPage),
     ];
   }
 
   /// 学生端页签目的地。AI 入口统一走右下角浮球（ADR-0036 / 0047），不再单列页签。
   List<AdaptiveNavDestination> child(int activeIndex) => [
-        AdaptiveNavDestination(
-            icon: LucideIcons.house,
-            label: '首页',
-            active: activeIndex == 0,
-            onTap: () => goChildTab(0)),
-        AdaptiveNavDestination(
-            icon: LucideIcons.refreshCw,
-            label: '复习',
-            active: activeIndex == 1,
-            onTap: () => goChildTab(1)),
-        AdaptiveNavDestination(
-            icon: LucideIcons.bookOpen,
-            label: '错题本',
-            active: activeIndex == 2,
-            onTap: () => goChildTab(2)),
-        AdaptiveNavDestination(
-            icon: LucideIcons.target,
-            label: '掌握度',
-            active: activeIndex == 3,
-            onTap: () => goChildTab(3)),
+        _tab(const ChildHomePage(), activeIndex),
+        _tab(const ChildReviewPage(), activeIndex),
+        _tab(const ChildWrongQuestionsPage(), activeIndex),
+        _tab(const ChildMasteryPage(), activeIndex),
       ];
 
   /// 「我的」目的地。教师端与页面共用同一个状态；学生端在显示个人信息时
   /// 由调用方传 active=false，避免页签与「我的」同时高亮。
-  AdaptiveNavDestination profile({required bool active}) =>
-      AdaptiveNavDestination(
-        icon: LucideIcons.userRound,
-        label: '我的',
-        active: active,
-        onTap: goProfile,
-      );
+  AdaptiveNavDestination profile({required bool active}) {
+    // 「我的」对两个角色是同一个入口、同一份文案，映射表里也刻意只有一个常量
+    // （ticket 01）——这里取教师端分支作为它的出口。
+    final face = teacherPageFace(const ProfilePage());
+    return AdaptiveNavDestination(
+      icon: face.icon,
+      label: face.title,
+      active: active,
+      onTap: goProfile,
+    );
+  }
+
+  /// 目的地 = 目标页 + 是否高亮；标题与图标一律从 `page_labels.dart` 的单一映射取
+  /// （ticket 01），本文件不再存第二份文案——两处并存时改名票（07）改一处漏一处，
+  /// 界面会同时冒出两个名字。
+  ///
+  /// [to] 用于「点了这一项却落在别的页面」的唯一情形：出题中点「任务」回生成页
+  /// （ADR-0057 P1），此时侧栏显示的仍是「任务」，不是生成页自己的标题。
+  AdaptiveNavDestination _item(
+    TeacherPage page, {
+    required bool active,
+    TeacherPage? to,
+    Widget? trailing,
+  }) {
+    final face = teacherPageFace(page);
+    return AdaptiveNavDestination(
+      icon: face.icon,
+      label: face.title,
+      active: active,
+      onTap: () => goEntry(to ?? page),
+      trailing: trailing,
+    );
+  }
+
+  /// 学生端页签：下标走 [childPageIndex] 而不是在这里重排一份序号——「页签下标」
+  /// 与「页面类型」是同一个事实的两面（ADR-0059），排两份就会不同步。
+  AdaptiveNavDestination _tab(ChildPage page, int activeIndex) {
+    final face = childPageFace(page);
+    final index = childPageIndex(page);
+    return AdaptiveNavDestination(
+      icon: face.icon,
+      label: face.title,
+      active: activeIndex == index,
+      onTap: () => goChildTab(index),
+    );
+  }
 }

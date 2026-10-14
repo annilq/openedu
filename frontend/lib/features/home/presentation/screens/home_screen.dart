@@ -448,30 +448,30 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         genTrailing: _genTrailing,
       );
 
-  Widget _buildChildView() {
-    if (_childPage is ChildProfilePage) {
-      return ProfileScreen(user: widget.user, onLogout: widget.onLogout);
-    }
-    return IndexedStack(
-      index: childPageIndex(_childPage),
-      children: [
-        StudentHome(
-          user: widget.user,
-          onNavigateToPractice: _navigateToPractice,
-          onNavigateToReview: () => _switchChildTab(1),
-          onNavigateToWrongQuestions: () => _switchChildTab(2),
-        ),
-        ReviewScreen(
-          showBack: false,
-          // 复习页是页签、不是 push 出来的路由，「返回」只能由壳翻译成切页签。
-          onExit: () => _switchChildTab(0),
-          onExportDue: _exportDueReviews,
-        ),
-        const WrongQuestionsScreen(showBack: false),
-        StudentMasteryScreen(user: widget.user),
-      ],
-    );
-  }
+  /// 学生端主栏：五个槽位常驻在 [IndexedStack] 里，「我的」是第五个槽位。
+  ///
+  /// ⚠️ 以前 [ChildProfilePage] 走独立分支、把整个 IndexedStack 换掉：看一眼个人信息，四个
+  /// 页签的 State 就全部销毁，切回首页要重建、滚动位置全丢。槽位化后只翻转 index，State 全程活着。
+  Widget _buildChildView() => IndexedStack(
+        index: childPageIndex(_childPage),
+        children: [
+          StudentHome(
+            user: widget.user,
+            onNavigateToPractice: _navigateToPractice,
+            onNavigateToReview: () => _switchChildTab(1),
+            onNavigateToWrongQuestions: () => _switchChildTab(2),
+          ),
+          ReviewScreen(
+            showBack: false,
+            // 复习页是页签、不是 push 出来的路由，「返回」只能由壳翻译成切页签。
+            onExit: () => _switchChildTab(0),
+            onExportDue: _exportDueReviews,
+          ),
+          const WrongQuestionsScreen(showBack: false),
+          StudentMasteryScreen(user: widget.user),
+          ProfileScreen(user: widget.user, onLogout: widget.onLogout),
+        ],
+      );
 
   /// 壳目的地 → 教师端页面；学生端没有这些目的地（返回 null，意图被丢弃）。
   ///
@@ -565,7 +565,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     } else {
       shell = AdaptiveShell(
         mode: AppUserMode.student,
-        // 显示个人信息时页签一律取消高亮：否则「复习」和「我的」会同时亮着。
+        // 显示个人信息时页签一律取消高亮（槽位 4 不落在任何页签下标上）——否则两个同时亮。
         destinations: _destinations.child(childPageIndex(_childPage)),
         profileDestination:
             _destinations.profile(active: _childPage is ChildProfilePage),
