@@ -265,7 +265,15 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
                     padding: const EdgeInsets.symmetric(
                         vertical: AppSpacing.sm),
                     children: items
-                        .map((d) => _DrawerItem(destination: d))
+                        .map((d) => _DrawerItem(
+                              destination: d,
+                              // 关闭必须发生在导航**之后**：先让目标页进渲染树，
+                              // 再收抽屉，避免动画途中抽屉与内容同时重排。
+                              onTap: () {
+                                d.onTap?.call();
+                                _setDrawer(false);
+                              },
+                            ))
                         .toList(),
                   ),
                 ),
@@ -317,7 +325,12 @@ class _BottomNavItem extends StatelessWidget {
 /// 抽屉导航项（紧凑·教师端）。图标 + 文字 + 选中药丸。
 class _DrawerItem extends StatelessWidget {
   final AdaptiveNavDestination destination;
-  const _DrawerItem({required this.destination});
+
+  /// 抽屉项的完整动作：导航（[AdaptiveNavDestination.onTap]）+ 收起抽屉。
+  /// 由壳注入，因为「当前抽屉是否打开」是壳的状态。
+  final VoidCallback onTap;
+
+  const _DrawerItem({required this.destination, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
