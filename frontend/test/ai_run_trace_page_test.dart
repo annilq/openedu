@@ -314,13 +314,16 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
       await tester.tap(find.textContaining('查询题库中的题目'));
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 100));
+      // ticket 05：壳内换页 150ms 交叉淡入，旧页（轨迹列表）在淡出期间仍挂载，
+      // 它与进入中的详情页各带一个「返回」按钮。等转场结束再点返回，避免 tap
+      // 命中两个「返回」而报 ambiguous。
+      await tester.pump(const Duration(milliseconds: 200));
 
       await tester.tap(find.byWidgetPredicate(
         (w) => w is AppIconAction && w.semanticLabel == '返回',
       ));
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 200));
 
       // 返回落点是「我的」系统分区后的轨迹列表页；运行轨迹不再是侧栏高亮项。
       expect(_activeLabels(tester), isEmpty,
