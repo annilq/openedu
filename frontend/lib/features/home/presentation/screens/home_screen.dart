@@ -1,12 +1,14 @@
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/presentation/shell_navigation.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/presentation/resource.dart';
 import '../../../../shared/domain/models/models.dart';
 import '../../../../shared/widgets/adaptive_shell.dart';
+import '../../../../shared/widgets/app_actions.dart';
 import '../../../../shared/widgets/app_toast.dart';
 import '../../../students/providers/students_provider.dart';
 import '../../../students/presentation/screens/student_form_screen.dart';
@@ -307,7 +309,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
           ),
         ),
-      ModelsPage() => const TeacherModelManagementScreen(),
+      // ticket 08：模型管理 / 运行轨迹已不再是一级侧栏入口，改由「我的」页内系统分区
+      // 入栈进入。它们本无返回按钮（原是侧栏根页），这里统一套一个返回头，使「返回」
+      // 落回「我的」——单一出口，不裸 Navigator.pop 弹根栈。
+      ModelsPage() => _withBackHeader(const TeacherModelManagementScreen()),
       AssetLibraryPage() => const AssetLibraryScreen(),
       StudentManagementPage() => StudentManagementScreen(
           onOpenStudent: (id) {
@@ -346,12 +351,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             _navigateToPractice(t, preview: true);
           },
         ),
-      ProfilePage() => ProfileScreen(user: widget.user, onLogout: widget.onLogout),
+      ProfilePage() => ProfileScreen(
+          user: widget.user,
+          onLogout: widget.onLogout,
+          // ticket 08：系统项（模型管理 / 运行轨迹）从侧栏搬进「我的」页内分区。
+          // 走 _go（入栈）而非 _goEntry，返回落点仍是「我的」。
+          onNavigateToModels: () => _go(const ModelsPage()),
+          onNavigateToRunTrace: () => _go(const RunTracePage()),
+        ),
       // ADR-0088 ticket 02：运行轨迹（全步骤 + 元数据口径）与助手页内的历史会话
       // （气泡口径）并列，入口分离；详情是列表的下钻，返回统一回列表。
-      RunTracePage() => AiRunTraceView(
+      // ticket 08：列表页经由「我的」入栈进入，套返回头使返回落回「我的」。
+      RunTracePage() => _withBackHeader(AiRunTraceView(
           onOpenRun: (run) => _go(RunTraceDetailPage(run.id)),
-        ),
+        )),
       RunTraceDetailPage(runId: final runId) => AiRunTraceDetailView(
           runId: runId,
           onBack: _back,
@@ -387,6 +400,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ],
     );
   }
+
+  /// 「我的」页内系统分区入栈进入的页面（模型管理 / 运行轨迹）统一套一个返回头：
+  /// 左上角「返回」[AppIconAction]，点它走 [_back]（出栈）落回「我的」。
+  ///
+  /// 这两个页面原本是侧栏根页、自身不带返回按钮；搬进「我的」后必须经此头提供返回，
+  /// 否则用户进入后只能靠系统返回键——单一出口原则也要求返回动作集中在组合根。
+  Widget _withBackHeader(Widget page) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(AppSpacing.sm),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: AppIconAction(
+                icon: LucideIcons.arrowLeft,
+                semanticLabel: '返回',
+                onPressed: _back,
+              ),
+            ),
+          ),
+          Expanded(child: page),
+        ],
+      );
 
   /// 出题进行中的常驻指示条（跨 Tab），带停止按钮。
   Widget? _genTrailing(TaskGenState gen) {

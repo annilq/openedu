@@ -154,7 +154,9 @@ void main() {
     });
 
     testWidgets('教师端：进入「我的」后，侧栏不留任何高亮页签', (tester) async {
-      await tester.binding.setSurfaceSize(const Size(1000, 800));
+      // ticket 08：教师端「我的」新增系统分区，内容变长，抬高 surface 让整屏
+      // 个人信息（含退出登录）都在首屏构建出来（ListView 懒构建，落出视口即不在树）。
+      await tester.binding.setSurfaceSize(const Size(1000, 1200));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
       SharedPreferences.setMockInitialValues({});
@@ -190,13 +192,18 @@ void main() {
       expect(_activeLabels(tester), isEmpty,
           reason: '显示个人信息时侧栏不应再有高亮页签：两个入口同时亮说明导航状态'
               '又变回了并列的两份');
+      // ticket 08：教师端「我的」新增系统分区，内容变长，「退出登录」可能落在首屏之外；
+      // ListView 懒构建，未滚入视口的子项不在渲染树里，需先 ensureVisible 再断言。
+      await tester.ensureVisible(find.text('退出登录'));
+      await tester.pump();
       expect(find.text('退出登录'), findsOneWidget,
           reason: '个人信息页必须真的渲染出来（不是被更高优先级的面板顶替）');
       expect(tester.takeException(), isNull);
     });
 
     testWidgets('从「我的」切回侧栏页签，高亮唯一且跟随', (tester) async {
-      await tester.binding.setSurfaceSize(const Size(1000, 800));
+      // ticket 08：教师端「我的」新增系统分区，内容变长，抬高 surface 让整屏构建。
+      await tester.binding.setSurfaceSize(const Size(1000, 1200));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
       SharedPreferences.setMockInitialValues({});
@@ -217,17 +224,27 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
 
-      await tester.tap(find.text('模型管理'));
+      // ticket 08：模型管理已不是侧栏项（搬进「我的」系统分区），改用仍留在侧栏的
+      // 「学生」验证「侧栏页签 ↔ 我的」之间的单一高亮状态切换。
+      await tester.tap(find.text('学生'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
-      expect(_activeLabels(tester), ['模型管理']);
+      expect(_activeLabels(tester), ['学生']);
 
       await tester.tap(find.byWidgetPredicate(
         (w) => w is AppFocusableAction && w.semanticLabel == '妈妈 · 教师账号',
       ));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
-      expect(_activeLabels(tester), isEmpty);
+      expect(_activeLabels(tester), isEmpty,
+          reason: '进入「我的」后侧栏不应残留高亮页签');
+
+      // 切回侧栏页签：高亮应唯一且跟随回到「学生」。
+      await tester.tap(find.text('学生'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(_activeLabels(tester), ['学生'],
+          reason: '从「我的」切回侧栏页签，高亮唯一且跟随');
       expect(tester.takeException(), isNull);
     });
   });
@@ -389,23 +406,99 @@ void main() {
   });
 
   group('ADR-0088 ticket 02：运行轨迹入口（全步骤口径，与历史会话分离）', () {
-    // ⚠️ 运行轨迹页（RunTracePage）是 ADR-0088 新增的 `TeacherPage` 分支：
-    // 与助手页内的「历史会话」（气泡口径）并列的第二个消费者。sealed 穷尽性只能
-    // 保证「编译过」，UI 层若没真构建过仍可能漏接侧栏入口——必须真点。
-    testWidgets('教师端：点「运行轨迹」高亮唯一且渲染轨迹页', (tester) async {
+    // ⚠️ ticket 08：运行轨迹页已不在侧栏，改由「我的」页内系统分区进入。sealed 穷尽性
+    // 只能保证「编译过」，UI 层若没真构建过仍可能漏接入口——必须真点。
+    testWidgets('教师端：从「我的」系统分区点「运行轨迹」渲染轨迹页', (tester) async {
       await _pumpTeacherHome(tester, extra: [
         runTraceRepositoryProvider.overrideWithValue(_StubRunTraceRepo()),
       ]);
       expect(_activeLabels(tester), ['概览']);
 
+      // ticket 08：运行轨迹已不在侧栏，改由「我的」页内系统分区进入。
+      // 「我的」不在侧栏项里，它住在侧栏底部的用户区（AdaptiveUserBlock）。
+      // 直接按它在教师端的语义标签点开——不要找字面「我的」文本（不存在）。
+      await tester.tap(find
+          .byWidgetPredicate((w) =>
+              w is AppFocusableAction && w.semanticLabel == '妈妈 · 教师账号')
+          .first);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.ensureVisible(find.text('运行轨迹'));
+      await tester.pump();
+
+      expect(find.text('系统'), findsOneWidget,
+          reason: '「我的」页内应有系统分区');
+      expect(find.text('运行轨迹'), findsOneWidget,
+          reason: '系统分区含运行轨迹入口');
+
       await tester.tap(find.text('运行轨迹'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
-      expect(_activeLabels(tester), ['运行轨迹'],
-          reason: '同一时刻侧栏只能有一个高亮项（单一导航状态）');
+      // 运行轨迹由「我的」入栈进入，不再是侧栏项 → 侧栏无高亮。
+      expect(_activeLabels(tester), isEmpty,
+          reason: '运行轨迹入栈自「我的」，侧栏不残留高亮');
       expect(find.textContaining('还没有 AI 运行记录'), findsOneWidget,
           reason: 'RunTracePage 应真正渲染（桩返回空列表 → 空态）');
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('「我的」系统分区：模型管理 / 运行轨迹可从「我的」到达并返回',
+        (tester) async {
+      await _pumpTeacherHome(tester, extra: [
+        runTraceRepositoryProvider.overrideWithValue(_StubRunTraceRepo()),
+      ]);
+      // 「我的」不在侧栏项里，它住在侧栏底部的用户区（AdaptiveUserBlock）。
+      // 直接按它在教师端的语义标签点开——不要找字面「我的」文本（不存在）。
+      await tester.tap(find
+          .byWidgetPredicate((w) =>
+              w is AppFocusableAction && w.semanticLabel == '妈妈 · 教师账号')
+          .first);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.ensureVisible(find.text('运行轨迹'));
+      await tester.pump();
+
+      // 两个系统入口都应可达。
+      expect(find.text('模型管理'), findsOneWidget);
+      expect(find.text('运行轨迹'), findsOneWidget);
+
+      // 模型管理：到达（出现返回头）后即可返回「我的」系统分区。
+      await tester.ensureVisible(find.text('模型管理'));
+      await tester.pump();
+      await tester.tap(find.text('模型管理'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(
+          find.byWidgetPredicate(
+              (w) => w is AppIconAction && w.semanticLabel == '返回'),
+          findsWidgets,
+          reason: '从「我的」入栈进入的页面应带返回头');
+      await tester.tap(find.byWidgetPredicate(
+          (w) => w is AppIconAction && w.semanticLabel == '返回'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.ensureVisible(find.text('系统'));
+      await tester.pump();
+      expect(find.text('系统'), findsOneWidget,
+          reason: '从模型管理返回应落回「我的」系统分区');
+
+      // 运行轨迹：到达后返回「我的」。
+      await tester.ensureVisible(find.text('运行轨迹'));
+      await tester.pump();
+      await tester.tap(find.text('运行轨迹'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.textContaining('还没有 AI 运行记录'), findsOneWidget,
+          reason: 'RunTracePage 应真正渲染');
+      await tester.tap(find.byWidgetPredicate(
+          (w) => w is AppIconAction && w.semanticLabel == '返回'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.ensureVisible(find.text('系统'));
+      await tester.pump();
+      expect(find.text('系统'), findsOneWidget,
+          reason: '从运行轨迹返回应落回「我的」系统分区');
       expect(tester.takeException(), isNull);
     });
   });

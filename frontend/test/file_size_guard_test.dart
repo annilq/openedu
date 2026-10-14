@@ -178,6 +178,11 @@ void main() {
 ///   **A 类净减**——底栏（含窄屏降级：等分 → 自然分布 → 只留图标）抽出为
 ///   adaptive_bottom_nav.dart（125 行，≤400 不登记），壳只保留「紧凑档学生端用
 ///   底栏」这一个决策。底栏的窄屏档位与侧栏 / 抽屉无关，属真实职责分离。
+/// 2026-10-14 ticket 08（系统项收进「我的」）：home_screen 592→628（B 类组合根真实增长——
+///   模型管理 / 运行轨迹从侧栏搬进「我的」页内分区，需新增 2 个 import + 3 个 `_go`
+///   switch 分支 + `_withBackHeader` 返回头方法，导航接线必须经单一 `_go`/`_back`，
+///   ADR-0059 不容许把接线散到别处；同期 profile_screen 把 `_SystemNavRow` 拆到
+///   system_nav_row.dart，主文件 431→383 回到 400 内、未登记）。
 /// **只许下调（除 B 类已登记的合理大件外）。**
 ///
 /// 2026-10（ADR-0083 图库 DB 化 / SceneSpec 几何化）下调：
@@ -192,7 +197,7 @@ const Map<String, int> _baseline = <String, int>{
   'shared/widgets/adaptive_shell.dart': 531,
   'features/home/presentation/widgets/teacher/teacher_question_bank_view.dart': 757,
   'features/home/presentation/widgets/teacher/teacher_tasks_view.dart': 672,
-  'features/home/presentation/screens/home_screen.dart': 592,
+  'features/home/presentation/screens/home_screen.dart': 628,
   'features/assistant/presentation/screens/assistant_chat_page.dart': 578,
   'shared/widgets/scene_interpreter/reflection_scene.dart': 438,
   'features/home/presentation/widgets/teacher/teacher_question_card.dart': 477,
