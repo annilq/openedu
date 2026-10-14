@@ -5,6 +5,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../analytics/domain/models/analytics_models.dart';
 import '../../../../analytics/presentation/providers/analytics_summary_provider.dart';
+import '../../../../../shared/presentation/resource.dart';
 import '../../../../../shared/presentation/shell_navigation.dart';
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/utils/load_once.dart';
@@ -35,20 +36,20 @@ class WorkbenchGlance extends ConsumerWidget {
     final state = ref.watch(analyticsSummaryProvider);
     ref.loadWhenIdle(
       analyticsSummaryProvider,
-      (s) => s is AnalyticsSummaryInitial,
+      (s) => s is ResourceIdle,
       () => ref.read(analyticsSummaryProvider.notifier).load(),
     );
 
-    if (state is AnalyticsSummaryLoading || state is AnalyticsSummaryInitial) {
-      return const AppLoading.skeletonInline(skeletonLines: 4);
-    }
-    if (state is AnalyticsSummaryError) {
+    if (state.errorOrNull != null) {
       return AppError(
-        message: state.message,
+        message: state.errorOrNull!,
         onRetry: () => ref.read(analyticsSummaryProvider.notifier).load(),
       );
     }
-    final loaded = state as AnalyticsSummaryLoaded;
+    final loaded = state.dataOrNull;
+    if (loaded == null) {
+      return const AppLoading.skeletonInline(skeletonLines: 4);
+    }
     return AppResponsiveGrid(
       colsWide: 2,
       children: [

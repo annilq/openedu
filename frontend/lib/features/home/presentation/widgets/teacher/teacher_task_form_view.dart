@@ -14,6 +14,7 @@ import '../../../../../shared/widgets/class_picker.dart';
 import 'package:kids_learn/features/classes/providers/classes_provider.dart';
 import '../../../../model_management/presentation/providers/models_notifier.dart';
 import '../../../../model_management/presentation/widgets/model_selector.dart';
+import '../../../../../shared/presentation/resource.dart';
 import '../../providers/home_notifier.dart';
 import '../../providers/task_form_prefill.dart';
 import 'student_picker.dart';
@@ -94,8 +95,8 @@ class _TeacherTaskFormViewState extends ConsumerState<TeacherTaskFormView> {
     // 隐藏「默认」选项后必须显式选模型：模型列表加载完成后，若尚未选择则回落到
     // 教师设为默认的模型（否则取列表首项），保证出题请求带有效 model 而非 null。
     ref.listenManual(modelsNotifierProvider, (prev, next) {
-      if (next is! ModelsLoaded || _modelId != null) return;
-      final all = next.resp.custom;
+      if (next.dataOrNull == null || _modelId != null) return;
+      final all = next.dataOrNull!.resp.custom;
       if (all.isEmpty) return;
       String? defaultId;
       for (final m in all) {

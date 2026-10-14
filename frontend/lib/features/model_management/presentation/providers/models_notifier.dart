@@ -5,44 +5,27 @@ import '../../../../shared/exceptions/app_exception.dart';
 import '../../domain/model_requests.dart';
 import '../../domain/repositories/models_repository.dart';
 import '../../providers/models_provider.dart';
+import '../../../../shared/presentation/resource.dart';
 
-sealed class ModelsState {
-  const ModelsState();
-}
-
-class ModelsInitial extends ModelsState {
-  const ModelsInitial();
-}
-
-class ModelsLoading extends ModelsState {
-  const ModelsLoading();
-}
-
-class ModelsLoaded extends ModelsState {
+/// 模型管理页聚合载荷（LCC-08）：自定义模型列表 + 供应商预设，包成 [Resource] 的 `T`。
+class ModelsData {
   final ModelListResp resp;
   final List<ModelProviderPreset> providers;
-  const ModelsLoaded(this.resp, this.providers);
+  const ModelsData(this.resp, this.providers);
 }
 
-class ModelsError extends ModelsState {
-  final String message;
-  const ModelsError(this.message);
-}
-
-class ModelsNotifier extends StateNotifier<ModelsState> {
+/// 模型管理加载态统一为 [Resource]：带写动作（增/改/删/设默认后重载），故
+/// `with ResourceLoader` 复用四态落法（LCC-08）。
+class ModelsNotifier extends StateNotifier<Resource<ModelsData>>
+    with ResourceLoader<ModelsData> {
   final ModelsRepository _repo;
-  ModelsNotifier(this._repo) : super(const ModelsInitial());
+  ModelsNotifier(this._repo) : super(const ResourceIdle());
 
-  Future<void> load() async {
-    if (state is! ModelsLoading) state = const ModelsLoading();
-    try {
-      final resp = await _repo.list();
-      final providers = await _repo.providers();
-      state = ModelsLoaded(resp, providers);
-    } catch (e) {
-      state = ModelsError(e.toString());
-    }
-  }
+  Future<void> load() => runLoad(() async {
+        final resp = await _repo.list();
+        final providers = await _repo.providers();
+        return ModelsData(resp, providers);
+      });
 
   /// 新增自定义模型；成功后刷新列表。返回 null 表示成功。
   Future<String?> create(ModelCreateReq req) async {
@@ -117,6 +100,6 @@ class ModelsNotifier extends StateNotifier<ModelsState> {
 }
 
 final modelsNotifierProvider =
-    StateNotifierProvider<ModelsNotifier, ModelsState>((ref) {
+    StateNotifierProvider<ModelsNotifier, Resource<ModelsData>>((ref) {
   return ModelsNotifier(ref.watch(modelsRepositoryProvider));
 });

@@ -6,6 +6,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../analytics/domain/models/analytics_models.dart';
 import '../../../../analytics/presentation/providers/analytics_notifier.dart';
 import '../../../../analytics/presentation/providers/analytics_notifier_provider.dart';
+import '../../../../../shared/presentation/resource.dart';
 import '../../../../../shared/theme/app_theme.dart';
 import '../../../../../shared/utils/load_once.dart';
 import '../../../../../shared/widgets/analytics_charts.dart';
@@ -39,27 +40,20 @@ class WorkbenchAnalysis extends ConsumerWidget {
     final state = ref.watch(analyticsNotifierProvider);
     ref.loadWhenIdle(
       analyticsNotifierProvider,
-      (s) => s is AnalyticsInitial,
+      (s) => s is ResourceIdle,
       () => ref.read(analyticsNotifierProvider.notifier).init(),
     );
 
-    if (state is AnalyticsInitial || state is AnalyticsLoading) {
-      return const AppLoading();
-    }
-    if (state is AnalyticsError) {
+    if (state.errorOrNull != null) {
       return AppError(
-        message: state.message,
+        message: state.errorOrNull!,
         onRetry: () => ref.read(analyticsNotifierProvider.notifier).init(),
       );
     }
-    if (state is! AnalyticsLoaded) {
-      return const AppEmptyState(
-        icon: LucideIcons.barChart3,
-        title: '暂无数据',
-        message: '派发并作答任务后，这里会汇总学情分析。',
-      );
+    final loaded = state.dataOrNull;
+    if (loaded == null) {
+      return const AppLoading();
     }
-    final loaded = state;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -88,7 +82,7 @@ class WorkbenchAnalysis extends ConsumerWidget {
 
 /// 控制条：作用域两态 + 班级选择器 + 四维切换。
 class _AnalysisControls extends StatelessWidget {
-  final AnalyticsLoaded state;
+  final AnalyticsData state;
   final void Function(String) onScope;
   final void Function(String) onDimension;
   final void Function(String?) onClass;
