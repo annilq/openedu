@@ -5,7 +5,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kids_learn/shared/domain/models/paging.dart';
 import 'package:kids_learn/shared/presentation/paging.dart';
 import 'package:kids_learn/shared/presentation/resource.dart';
-import 'package:kids_learn/shared/utils/load_once.dart';
 
 /// 过期则静默刷新（ticket 13，nav-ia-review）。
 ///
@@ -269,6 +268,9 @@ void main() {
 
   // ─────────────────────── widget 层 ───────────────────────
   // 验证「未过期不请求 / 已过期不进加载态」在真实组件树上成立。
+  // 触发沿用 ticket 13 的真实接线约定：build 期经 addPostFrameCallback 推迟，
+  // 绝不在 build 期改 provider 状态（原 refreshWhenStale 扩展已从生产代码移除，
+  // 因零生产调用方——本测试内联该推迟语义）。
 
   group('widget 层 refreshWhenStale 接线', () {
     testWidgets('已加载未过期不发起请求、不闪加载态', (tester) async {
@@ -339,7 +341,7 @@ void main() {
   });
 }
 
-/// 受测组件：watch 一个 ResourceNotifier，build 期经 [refreshWhenStale] 推迟触发刷新，
+/// 受测组件：watch 一个 ResourceNotifier，build 期经 addPostFrameCallback 推迟触发刷新，
 /// 并用文字区分四态，便于断言「是否出现过加载态」。
 class _RefreshHarness extends ConsumerStatefulWidget {
   const _RefreshHarness({
@@ -356,9 +358,9 @@ class _RefreshHarnessState extends ConsumerState<_RefreshHarness> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(widget.provider);
-    // 模拟真实接线：build 期经 refreshWhenStale 推迟触发（首填 + 切回过期刷新）。
-    ref.refreshWhenStale(
-        () => ref.read(widget.provider.notifier).refreshIfStale());
+    // 模拟真实接线：build 期推迟触发（首填 + 切回过期刷新），绝不在 build 期改状态。
+    WidgetsBinding.instance.addPostFrameCallback(
+        (_) => ref.read(widget.provider.notifier).refreshIfStale());
     return Scaffold(
       body: Column(
         children: [
