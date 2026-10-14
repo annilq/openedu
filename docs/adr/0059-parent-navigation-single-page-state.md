@@ -77,6 +77,26 @@ Widget get _singleColumn => widget.detail ?? widget.body;
 - **ADR-0042 / ADR-0054（助手卡片跳转）**：`_parentPageFor(ShellDestination)` 直接产出页面，
   与侧栏点击走同一个 `_go`，不再需要「翻成索引再清层」这一步。
 
+## 编辑形态决策规则（ticket 11 补充）
+
+ticker 11 把「知识点讲解编辑器」从 `TeacherPage` 整页分支**归位为浮层弹窗**（`showShadDialog` + `ShadDialog`）。
+据此沉淀一条编辑形态决策规则，避免后续编辑器再次在「整页」与「弹窗」之间反复横跳：
+
+- **优先弹窗（dialog）**：编辑器本就按弹窗尺寸设计（如 560 宽，走 `AppLayout.dialogForm` 令牌，
+  禁止写裸数字 `const BoxConstraints(maxWidth: 560)`）、且**不需要独立导航栈**时，归位为弹窗。
+  弹窗是覆盖层，**不污染 ADR-0059 单一导航状态**——来源页仍是栈顶，`pop` 弹窗即回落来源页。
+  例：知识点讲解编辑器（`scene_library_detail_view.dart` 的 `_openEditor`）。
+- **整页（TeacherPage）**：编辑流程跨多步、需要完整返回栈/下钻语义（如创建任务、编辑学生），
+  才作为 `TeacherPage` 分支进入 `_buildTeacherPage`，由 `_go` 单一出口驱动。
+- **壳内换页（shell inner-page cross-fade）**：非编辑类的壳内内容切换（如概览 ↔ 题库），
+  走既有 150ms cross-fade（ADR-0045 / ticket 05），不在此规则讨论范围。
+
+**弹窗关闭纪律**（来源：`_openEditor` 的既有行为，不得丢）：弹窗关闭出口必须**先作废来源页相关缓存**
+（`kp.scenes` 与 `sceneLibraryProvider` 是两份数据，不 `ref.invalidate` 的话回详情页仍显旧标题/图形，ADR-0073），
+再 `Navigator.pop`。当弹窗用 `closeIcon: const SizedBox.shrink()` **关闭了 ShadDialog 自带关闭图标**时，
+唯一逃生通道是编辑器内部「关闭」回调 `onBack`——它必须同时承担 `ref.invalidate` + `pop`，否则弹窗可能
+无法关闭（教师壳 `PopScope` 接管的是导航而非弹窗）。新增弹窗编辑器时照搬此契约。
+
 ## 守卫
 
 - `frontend/test/parent_nav_single_source_test.dart`（新增）：
