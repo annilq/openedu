@@ -163,6 +163,10 @@ void main() {
 /// 同日下调四处此前提交漏调的基线（均为 A 类净减 / 真实行数，棘轮只许下调）：
 ///   teacher_question_bank_view 759→757、teacher_question_card 511→477、
 ///   teacher_wrong_questions_view 442→440、teacher_task_review_screen 424→405。
+/// 2026-10-14 ticket 06（学生端底栏窄屏适配，ADR-0045）：adaptive_shell 503→455，
+///   **A 类净减**——底栏（含窄屏降级：等分 → 自然分布 → 只留图标）抽出为
+///   adaptive_bottom_nav.dart（125 行，≤400 不登记），壳只保留「紧凑档学生端用
+///   底栏」这一个决策。底栏的窄屏档位与侧栏 / 抽屉无关，属真实职责分离。
 /// **只许下调（除 B 类已登记的合理大件外）。**
 ///
 /// 2026-10（ADR-0083 图库 DB 化 / SceneSpec 几何化）下调：
@@ -174,7 +178,7 @@ void main() {
 /// 拆分批次见 `docs/refactor/2026-09-21-flutter-ui-decomposition.md`（P0–P4）。
 const Map<String, int> _baseline = <String, int>{
   'shared/theme/app_theme.dart': 1702,
-  'shared/widgets/adaptive_shell.dart': 503,
+  'shared/widgets/adaptive_shell.dart': 455,
   'features/home/presentation/widgets/teacher/teacher_question_bank_view.dart': 757,
   'features/home/presentation/widgets/teacher/teacher_tasks_view.dart': 672,
   'features/home/presentation/screens/home_screen.dart': 607,
