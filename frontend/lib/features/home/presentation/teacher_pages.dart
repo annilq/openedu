@@ -197,6 +197,163 @@ class RunTraceDetailPage extends TeacherPage {
   const RunTraceDetailPage(this.runId);
 }
 
+// ---------------------------------------------------------------------------
+// 页面路径序列化（ticket 12，ADR-0059）
+// ---------------------------------------------------------------------------
+//
+// 把「当前在哪个教师页」序列化成一条稳定字符串，用于进程被回收 / 应用重启后回到同一页
+// （审核草稿审到一半被打断，回来还在那一页）。路径**只**用于持久化与恢复，不是跨页
+// 通信通道（那有既有的意图通道）。只恢复「在哪一页」，不恢复页内临时输入态。
+//
+// 还原纪律（见 issue 12）：
+// - 认不出的类型或参数缺失 → 一律回落 [OverviewPage]（不崩、不停空白页、不静默半截）。
+// - [EditStudentPage] 持有复杂 [UserModel]，不持久化对象本身；以 studentId 落点还原到
+//   [StudentDetailPage]（详情页按 id 自取数，安全）。
+// - [TaskReviewPage] 是近提交态，刻意不复活（避免陈旧草稿 / 半提交态）；以 taskId 标记，
+//   还原时回落 [TaskListPage]。
+
+String _pathWithQuery(String name, Map<String, String> params) {
+  if (params.isEmpty) return name;
+  final query = params.entries
+      .map((e) =>
+          '${Uri.encodeComponent(e.key)}=${Uri.encodeComponent(e.value)}')
+      .join('&');
+  return '$name?$query';
+}
+
+/// 教师页 → 稳定路径字符串。
+extension TeacherPagePath on TeacherPage {
+  String toPath() {
+    final p = this;
+    if (p is OverviewPage) return 'overview';
+    if (p is CreateTaskPage) return 'create';
+    if (p is TaskListPage) return 'tasks?tab=${p.initialTab}';
+    if (p is AddStudentPage) {
+      return _pathWithQuery('add-student', {
+        if (p.classId != null) 'classId': p.classId!,
+        if (p.className != null) 'className': p.className!,
+      });
+    }
+    if (p is EditStudentPage) {
+      // 编辑页持有复杂对象，不持久化对象本身；见 fromPath 以 studentId 落点还原。
+      return _pathWithQuery('edit-student', {'studentId': p.child.id});
+    }
+    if (p is QuestionBankPage) return 'question-bank';
+    if (p is MaterialLibraryPage) return 'material-library';
+    if (p is ModelsPage) return 'models';
+    if (p is TaskReviewPage) {
+      // 近提交态不予复活；见 fromPath 还原到任务列表。
+      return _pathWithQuery('review', {'taskId': p.task.id});
+    }
+    if (p is ProfilePage) return 'profile';
+    if (p is StudentsPage) return 'students';
+    if (p is StudentDetailPage) {
+      return _pathWithQuery('student-detail', {
+        'studentId': p.studentId,
+        'tab': p.initialTab.name,
+      });
+    }
+    if (p is CoursewarePage) return 'courseware';
+    if (p is SceneLibraryPage) return 'scene-library';
+    if (p is SceneLibraryDetailPage) {
+      return _pathWithQuery('scene-detail', {'kind': p.kind});
+    }
+    if (p is AssetLibraryPage) return 'asset-library';
+    if (p is ClassStudentsPage) {
+      return _pathWithQuery('class-students', {
+        'classId': p.classId,
+        'className': p.className,
+      });
+    }
+    if (p is RunTracePage) return 'run-trace';
+    if (p is RunTraceDetailPage) {
+      return _pathWithQuery('run-trace-detail', {'runId': p.runId});
+    }
+    // sealed 穷尽：编译器保证不会漏；兜底概览路径（理论上不可达）。
+    return 'overview';
+  }
+}
+
+/// 路径字符串 → 教师页；认不出 / 参数缺失一律回落 [OverviewPage]。
+TeacherPage teacherPageFromPath(String path) {
+  final sep = path.indexOf('?');
+  final name = sep < 0 ? path : path.substring(0, sep);
+  final query = sep < 0
+      ? const <String, String>{}
+      : Uri.splitQueryString(path.substring(sep + 1));
+
+  TeacherPage decoded = const OverviewPage();
+  switch (name) {
+    case 'overview':
+      decoded = const OverviewPage();
+    case 'create':
+      decoded = const CreateTaskPage();
+    case 'tasks':
+      final tab = int.tryParse(query['tab'] ?? '0') ?? 0;
+      decoded = TaskListPage(initialTab: tab);
+    case 'add-student':
+      decoded = AddStudentPage(
+        classId: query['classId'],
+        className: query['className'],
+      );
+    case 'edit-student':
+      // 还原到详情页（按 id 自取数），而非复活编辑表单。
+      final id = query['studentId'];
+      decoded = id != null
+          ? StudentDetailPage(id, initialTab: StudentDetailTab.overview)
+          : const OverviewPage();
+    case 'question-bank':
+      decoded = const QuestionBankPage();
+    case 'material-library':
+      decoded = const MaterialLibraryPage();
+    case 'models':
+      decoded = const ModelsPage();
+    case 'review':
+      // 近提交态不予复活；回落任务列表（见 toPath 注释）。
+      decoded = const TaskListPage();
+    case 'profile':
+      decoded = const ProfilePage();
+    case 'students':
+      decoded = const StudentsPage();
+    case 'student-detail':
+      final id = query['studentId'];
+      if (id == null) {
+        decoded = const OverviewPage();
+        break;
+      }
+      final tab = StudentDetailTab.values.asNameMap()[query['tab']] ??
+          StudentDetailTab.overview;
+      decoded = StudentDetailPage(id, initialTab: tab);
+    case 'courseware':
+      decoded = const CoursewarePage();
+    case 'scene-library':
+      decoded = const SceneLibraryPage();
+    case 'scene-detail':
+      final kind = query['kind'];
+      decoded = kind != null && kind.isNotEmpty
+          ? SceneLibraryDetailPage(kind)
+          : const OverviewPage();
+    case 'asset-library':
+      decoded = const AssetLibraryPage();
+    case 'class-students':
+      final id = query['classId'];
+      final cname = query['className'];
+      decoded = id != null && cname != null
+          ? ClassStudentsPage(id, cname)
+          : const OverviewPage();
+    case 'run-trace':
+      decoded = const RunTracePage();
+    case 'run-trace-detail':
+      final runId = query['runId'];
+      decoded = runId != null && runId.isNotEmpty
+          ? RunTraceDetailPage(runId)
+          : const OverviewPage();
+    default:
+      decoded = const OverviewPage();
+  }
+  return decoded;
+}
+
 /// 侧栏高亮用的「基础页」：审核页沿用**它在栈里的上一层**的高亮。
 ///
 /// 审核不是一个侧栏入口（否则「任务」会在教师从概览进来时错位高亮），而是某一页的
