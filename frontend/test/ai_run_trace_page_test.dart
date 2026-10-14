@@ -405,6 +405,11 @@ Future<void> _pumpTeacherHome(
   WidgetTester tester, {
   required RunTraceRepository repo,
 }) async {
+  // ticket 07：侧栏是 lazy ListView，分组后「运行轨迹」落在「系统」组末位（第 14 行），
+  // 默认 800×600 视口渲染不到它，find.text('运行轨迹') 直接落空。抬高 surface 让
+  // 14 行侧栏完整渲染；tearDown 还原，避免污染同文件其它测试的默认视口。
+  await tester.binding.setSurfaceSize(const Size(1000, 900));
+  addTearDown(() => tester.binding.setSurfaceSize(null));
   SharedPreferences.setMockInitialValues({});
   final storage = StorageService();
   await storage.init();
