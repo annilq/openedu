@@ -19,6 +19,7 @@ void main() {
       id: 'm1',
       name: '数学教材.txt',
       knowledgePoints: ['两位数乘法'],
+      textLength: 42000,
     );
 
     setUp(() {
