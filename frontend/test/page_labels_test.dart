@@ -178,7 +178,7 @@ const List<IconData> _teacherSidebarIcons = [
 ];
 
 NavigationDestinations _destinations() => NavigationDestinations(
-      go: (_) {},
+      goEntry: (_) {},
       goChildTab: (_) {},
       goProfile: () {},
       genTrailing: (_) => null,
@@ -227,7 +227,6 @@ final UserModel _student = UserModel(
 
 final TaskReviewPage _review = TaskReviewPage(
   TaskModel(id: 't1', title: '练习', status: 'draft', questions: const []),
-  back: const OverviewPage(),
 );
 
 final SceneLibraryEditorPage _sceneEditor = SceneLibraryEditorPage(
@@ -236,7 +235,6 @@ final SceneLibraryEditorPage _sceneEditor = SceneLibraryEditorPage(
   subject: '数学',
   grade: 4,
   semester: '上学期',
-  back: const SceneLibraryPage(),
 );
 
 /// 扫描 [pagesFile] 里 `class X extends <sealed>` 的子类名，逐个确认它们出现在

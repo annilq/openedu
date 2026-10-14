@@ -1,6 +1,6 @@
 import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/presentation/shell_navigation.dart';
 import '../../../../shared/theme/app_theme.dart';
@@ -24,6 +24,7 @@ import '../providers/home_notifier.dart';
 import '../providers/teacher_tasks_notifier.dart';
 import '../../providers/knowledge_manage_provider.dart';
 import '../teacher_pages.dart';
+import '../teacher_nav_stack.dart';
 import '../child_pages.dart';
 import '../widgets/teacher/scene_library_detail_view.dart';
 import '../widgets/teacher/scene_library_view.dart';
@@ -34,6 +35,7 @@ import 'teacher_destinations.dart';
 import '../widgets/student_home.dart';
 import '../widgets/teacher/teacher_overview_view.dart';
 import '../widgets/teacher/teacher_task_form_view.dart';
+import '../widgets/teacher/generation_banner.dart';
 import '../widgets/teacher/teacher_question_bank_view.dart';
 import '../widgets/teacher/teacher_tasks_view.dart';
 import '../widgets/teacher/material_library_view.dart';
@@ -42,7 +44,6 @@ import '../../../../features/courseware/presentation/screens/asset_library_scree
 import '../../../../features/assistant/presentation/widgets/run_trace_detail_view.dart';
 import '../../../../features/assistant/presentation/widgets/run_trace_view.dart';
 import 'student_mastery_screen.dart';
-import '../../../../shared/widgets/app_actions.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   final UserModel user;
@@ -55,13 +56,19 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
-  /// 教师端当前页面——导航的**唯一**事实源（ADR-0059）。
+  /// 教师端导航历史——**唯一**的事实源（ADR-0059）。
   ///
   /// 以前是三个并列状态：侧栏索引 + 审核 / 编辑覆盖层 + `_showProfile` 布尔。三者并存
   /// 就需要「谁压谁」的裁决，而裁决散在各回调里（侧栏点击记得清覆盖层、底部「我的」
   /// 忘了清 → 审核中看到的是审核页，个人信息压根没进渲染树）。合成 `sealed` 后各入口
   /// 天然互斥，且 `switch` 穷尽性由编译器保证。
-  TeacherPage _teacherPage = const OverviewPage();
+  ///
+  /// 引入返回栈（ticket 03）之后不变式**没有放松，反而更紧**：`_teacherPage` 不是
+  /// 第二个字段，它是 [TeacherNavStack.current]（栈顶）的只读投影。栈只是历史——
+  /// 不存在「栈顶说 A、当前页面字段说 B」这种需要裁决的状态。
+  final TeacherNavStack _teacherNav = TeacherNavStack();
+
+  TeacherPage get _teacherPage => _teacherNav.current;
 
   /// 学生端当前页面——导航的**唯一**事实源（ADR-0059，LCC-09）。取代原先
   /// 「页签索引 + [_showProfile] 布尔」的二选一：布尔与索引并存等于两个真源，需要
@@ -101,18 +108,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  /// 统一的导航出口：所有入口（侧栏 / 底部「我的」/ 侧栏头部 / 助手卡片跳转）都只
-  /// 做这一件事——替换当前页面。没有第二个状态需要顺带清理。
-  void _go(TeacherPage page) => setState(() => _teacherPage = page);
+  /// **下钻**出口：入栈。新增下钻页**零义务**——不需要声明回落目标，退回哪儿由
+  /// 历史决定（ticket 03：返回从「每个页面自己记得声明」变成结构默认）。
+  void _go(TeacherPage page) => setState(() => _teacherNav.push(page));
 
-  /// R3：生成草稿后进审核页。[back] 记下从哪儿进来，退出时回来源页而非一律回概览。
+  /// **切换一级入口**出口：替换当前页面并清空历史。
+  ///
+  /// 侧栏每一项、底部「我的」、助手卡片跳转都走这条。与 [_go] 分开是因为它们不是
+  /// 「从当前页往下钻」而是「换一个入口」：不清历史的话，切到「题库」后按返回会
+  /// 跨入口弹回上一次的班内学生页。
+  void _goEntry(TeacherPage page) => setState(() => _teacherNav.reset(page));
+
+  /// 回退一步：出栈。已在根页面（概览）时不动——[build] 里的 [PopScope] 据此把
+  /// 返回键交回系统。
+  void _back() => setState(() => _teacherNav.pop());
+
+  /// R3：生成草稿后进审核页。审核是从当前页下钻进去的，退出时由 [_back] 回到来源页。
   void _navigateToReview(TaskModel draft) {
     final gen = ref.read(taskGenNotifierProvider.notifier);
     _go(TaskReviewPage(
       draft,
       classIds: gen.pendingClassIds,
       studentIds: gen.pendingStudentIds,
-      back: highlightFor(_teacherPage),
     ));
   }
 
@@ -122,11 +139,40 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     ref
         .read(teacherTasksNotifierProvider.notifier)
         .load(kAllTaskStatuses);
-    _go(highlightFor(_teacherPage));
+    _back();
   }
 
-  void _onNavigateToEditStudent(UserModel child, TeacherPage back) {
-    _go(EditStudentPage(child, back: back));
+  void _onNavigateToEditStudent(UserModel child) =>
+      _go(EditStudentPage(child));
+
+  /// 系统返回键 / 外接键盘 Esc / 系统侧滑手势——三者在框架内共用这一个入口。
+  ///
+  /// 全 App 只有一个 route（ADR-0059），返回键原本**直接退出应用**：教师在
+  /// 「班级 → 班内学生 → 学生详情 → 编辑学生」四级链上按一下，四级全丢（P0-2）。
+  /// 这里把它翻译成壳内的一次回退。
+  ///
+  /// 返回「壳是否消费了这一次返回」：根页面返回 false，由 [_onSystemBack] 交回系统
+  /// ——否则用户按返回键退出应用的能力被白白拿走。
+  bool _handleSystemBack() {
+    if (widget.user.isTeacher) {
+      if (!_teacherNav.canPop) return false;
+      _back();
+      return true;
+    }
+    // 学生端：页签不是下钻链，非首页一律回首页；已在首页则同样交回系统。
+    if (_childPage is ChildHomePage) return false;
+    _switchChildTab(0);
+    return true;
+  }
+
+  /// [PopScope] 的回调：决定这一下系统返回是壳内回退还是交回系统。
+  void _onSystemBack(bool didPop, Object? result) {
+    if (didPop) return;
+    if (_handleSystemBack()) return;
+    // 根页面：交回系统退出应用。这里**不能**用 `Navigator.pop`——根导航栈只有一条
+    // 路由，弹掉它等于把整棵渲染树拆了（下一次重建撞 `_history.isNotEmpty` 断言，
+    // 守卫见 `test/tab_screen_no_root_pop_test.dart`）。
+    SystemNavigator.pop();
   }
 
   /// 「我的」入口——**两个角色共用**（侧栏底部用户区 / 紧凑档底栏）。
@@ -136,23 +182,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   /// 守卫 `test/teacher_nav_single_source_test.dart`。
   void _onProfileTap() {
     if (widget.user.isTeacher) {
-      _go(const ProfilePage());
+      _goEntry(const ProfilePage());
       return;
     }
     setState(() => _childPage = const ChildProfilePage());
   }
 
   /// 侧栏头部「添加学生」。[classId]/[className] 非空表示由班级下钻页发起
-  /// （ADR-0086 ticket 06）：新建学生直接归入该班，保存后回该班下钻页。
+  /// （ADR-0086 ticket 06）：新建学生直接归入该班，保存后经 [_back] 回该班下钻页。
   void _onNavigateToAddStudent([String? classId, String? className]) =>
       _go(AddStudentPage(classId: classId, className: className));
-
-  /// 班内新建学生后的回落页：由班级下钻页发起时回该班下钻页，否则回概览。
-  /// 单一出口，避免 [AddStudentPage] 的 onSaved / onBack 各自重复三元。
-  TeacherPage _addStudentReturnPage(AddStudentPage page) =>
-      page.classId != null && page.className != null
-          ? ClassStudentsPage(page.classId!, page.className!)
-          : const OverviewPage();
 
   /// 切换学生端 Tab：改变 IndexedStack 索引，并在该页「变为可见」时重新拉取最新数据。
   ///
@@ -201,14 +240,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       AddStudentPage() => StudentFormScreen(
           mode: ChildFormMode.create,
           classId: page.classId,
-          onSaved: (_) => _go(_addStudentReturnPage(page)),
-          onBack: () => _go(_addStudentReturnPage(page)),
+          // 新建是下钻进去的，收尾统一出栈——不再需要「按 classId 猜回落页」的
+          // 三元（旧 `_addStudentReturnPage`）：从哪个页面发起就回哪个页面。
+          onSaved: (_) => _back(),
+          onBack: _back,
         ),
-      EditStudentPage(child: final child, back: final back) => StudentFormScreen(
+      EditStudentPage(child: final child) => StudentFormScreen(
           mode: ChildFormMode.edit,
           child: child,
-          onSaved: (_) => _go(back),
-          onBack: () => _go(back),
+          onSaved: (_) => _back(),
+          onBack: _back,
         ),
       QuestionBankPage() => TeacherQuestionBankView(
           onNavigateToReview: _navigateToReview,
@@ -220,7 +261,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ),
       SceneLibraryDetailPage(kind: final kind) => TeacherSceneLibraryDetailView(
           kind: kind,
-          onBack: () => _go(const SceneLibraryPage()),
+          onBack: _back,
           onOpenKp: (kp) => _go(SceneLibraryEditorPage(
             kpId: kp.id,
             kpName: kp.name,
@@ -228,7 +269,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             grade: kp.grade,
             semester: kp.semester,
             initialScenes: kp.scenes,
-            back: SceneLibraryDetailPage(kind),
           )),
         ),
       SceneLibraryEditorPage(
@@ -238,11 +278,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         grade: final grade,
         semester: final semester,
         initialScenes: final initialScenes,
-        back: final back,
       ) =>
         // 内容兜底走 Align(topCenter)+ConstrainedBox，不可 Center（ADR-003 内容兜底纪律）；
         // 编辑器原本为 560 宽弹窗设计，作为页仍夹到 560 以保持既定排版。关闭走
-        // `onBack`（统一回 [back]），不裸 Navigator.pop 弹根栈。
+        // `onBack`，不裸 Navigator.pop 弹根栈。
         //
         // 关闭时顺手作废场景库清单缓存：编辑器经 `knowledgeManageProvider` 改的是
         // `kp.scenes`，与 `sceneLibraryProvider` 是两份数据，不失效的话回到详情页
@@ -262,7 +301,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 initialScenes: initialScenes,
                 onBack: () {
                   ref.invalidate(sceneLibraryProvider);
-                  _go(back);
+                  _back();
                 },
               ),
             ),
@@ -273,8 +312,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       StudentManagementPage() => StudentManagementScreen(
           onOpenStudent: (id) {
             _go(StudentDetailPage(id,
-                initialTab: StudentDetailTab.wrongQuestions,
-                back: const StudentManagementPage()));
+                initialTab: StudentDetailTab.wrongQuestions));
           },
           onAddStudent: _onNavigateToAddStudent),
       ClassManagementPage() => ClassManagementScreen(
@@ -284,12 +322,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         StudentManagementScreen(
           classId: cid,
           className: cname,
-          // 下钻页的返回回落到班级管理列表（单一出口，不裸 Navigator.pop）。
-          onBack: () => _go(const ClassManagementPage()),
+          // 下钻页的返回统一出栈（单一出口，不裸 Navigator.pop）。
+          onBack: _back,
           onOpenStudent: (id) {
             _go(StudentDetailPage(id,
-                initialTab: StudentDetailTab.wrongQuestions,
-                back: ClassStudentsPage(cid, cname)));
+                initialTab: StudentDetailTab.wrongQuestions));
           },
           onAddStudent: () => _onNavigateToAddStudent(cid, cname),
         ),
@@ -305,7 +342,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           onNavigateToPractice: (t) {
             // 仅教师显式点「查看练习」时进入。默认进只读预览，
             // 不直接进入可作答态，避免误代答/代打卡污染学生数据。
-            _go(page.back);
+            _back();
             _navigateToPractice(t, preview: true);
           },
         ),
@@ -317,17 +354,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ),
       RunTraceDetailPage(runId: final runId) => AiRunTraceDetailView(
           runId: runId,
-          onBack: () => _go(const RunTracePage()),
+          onBack: _back,
         ),
-      StudentDetailPage(studentId: final id, initialTab: final tab, back: final back) =>
+      StudentDetailPage(studentId: final id, initialTab: final tab) =>
         StudentDetailScreen(
           studentId: id,
           initialTab: tab,
-          onBack: () => _go(back),
-          onEditStudent: (child) => _onNavigateToEditStudent(
-            child,
-            StudentDetailPage(id, initialTab: tab, back: back),
-          ),
+          onBack: _back,
+          onEditStudent: _onNavigateToEditStudent,
         ),
     };
   }
@@ -344,7 +378,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (preview != null)
-          _GenerationBanner(
+          GenerationBanner(
             state: preview,
             onStop: () =>
                 ref.read(taskGenNotifierProvider.notifier).stop(),
@@ -408,7 +442,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   // 导航目的地构造器（`teacher_destinations.dart`）：方法体抽出后本文件回到
   // ADR-0058 基线内，新增「资料库」入口不再顶破棘轮。
   NavigationDestinations get _destinations => NavigationDestinations(
-        go: _go,
+        goEntry: _goEntry,
         goChildTab: _switchChildTab,
         goProfile: _onProfileTap,
         genTrailing: _genTrailing,
@@ -452,8 +486,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     };
   }
 
-  /// 壳外页面（push 出来的助手整页）请求的跳转：翻成页面后走 [_go]，与点侧栏
-  /// 是同一条路径（同一个状态，没有需要额外清理的覆盖层）。
+  /// 壳外页面（push 出来的助手整页）请求的跳转：翻成页面后按**换一级入口**处理。
+  ///
+  /// 助手在壳的页面树之外，一次跳转与教师当前的下钻链没有上下级关系，所以它等同
+  /// 于点侧栏：换入口 + 清历史——否则从助手跳到「题库」后按返回会弹回跳转前那一条
+  /// 与本题无关的下钻链。
   ///
   /// 无条件注册（不放进 `isTeacher` 分支）：ref.listen 的调用次数在多次 build
   /// 之间必须一致，条件注册会让「角色分支变化」时的订阅数量对不上。
@@ -463,7 +500,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       // 先消费再执行：不清空的话下一次 rebuild 会重复触发同一次跳转。
       ref.read(shellNavigationProvider.notifier).consume();
       final page = _teacherPageFor(next);
-      if (page != null) _go(page);
+      if (page != null) _goEntry(page);
     });
   }
 
@@ -503,12 +540,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     _listenShellNavigation();
     _listenTaskGen();
 
+    late final Widget shell;
     if (widget.user.isTeacher) {
       // ADR-0057 P1：出题在壳这一层 watch，跨 Tab 常驻可见。
       final gen = ref.watch(taskGenNotifierProvider);
-      return AdaptiveShell(
+      shell = AdaptiveShell(
         mode: AppUserMode.teacher,
-        destinations: _destinations.teacher(_teacherPage, gen),
+        destinations: _destinations.teacher(
+          _teacherPage,
+          gen,
+          parent: _teacherNav.parent,
+        ),
         profileDestination: _destinations.profile(active: _teacherPage is ProfilePage),
         // ADR-0070：顶部学生选择器菜单已移除，当前学生改由导航进入学生时写入
         // （见 _setCurrentStudent），不再有常驻切换/添加菜单。
@@ -520,88 +562,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ),
         body: _buildTeacherBody(),
       );
+    } else {
+      shell = AdaptiveShell(
+        mode: AppUserMode.student,
+        // 显示个人信息时页签一律取消高亮（槽位 4 不落在任何页签下标上）——否则两个同时亮。
+        destinations: _destinations.child(childPageIndex(_childPage)),
+        profileDestination:
+            _destinations.profile(active: _childPage is ChildProfilePage),
+        sidebarBottom: AdaptiveUserBlock(
+          user: widget.user,
+          onProfileTap: _onProfileTap,
+          // 学生年级已改由所属班级承载（ADR-0086 修正）：此处以「分班状态」替代原年级展示。
+          subtitle: widget.user.classId != null ? '已分班' : '未分班',
+        ),
+        body: _buildChildView(),
+      );
     }
 
-    return AdaptiveShell(
-      mode: AppUserMode.student,
-      // 显示个人信息时页签一律取消高亮（槽位 4 不落在任何页签下标上）——否则两个同时亮。
-      destinations: _destinations.child(childPageIndex(_childPage)),
-      profileDestination: _destinations.profile(active: _childPage is ChildProfilePage),
-      sidebarBottom: AdaptiveUserBlock(
-        user: widget.user,
-        onProfileTap: _onProfileTap,
-        // 学生年级已改由所属班级承载（ADR-0086 修正）：此处以「分班状态」替代原年级展示。
-        subtitle: widget.user.classId != null ? '已分班' : '未分班',
-      ),
-      body: _buildChildView(),
+    // 系统返回键接管（P0-2）：**canPop 恒为 false** —— 全 App 只有一个 route，把
+    // 系统返回直接放行等于弹掉根路由（整棵渲染树没了，下一次重建撞 Navigator 的
+    // `_history.isNotEmpty` 断言）。每一次系统返回都先落到 [_onSystemBack]：
+    // 非根页面 → 壳内回退一步；根页面 → 交回系统退出应用。
+    return PopScope<Object?>(
+      canPop: false,
+      onPopInvokedWithResult: _onSystemBack,
+      child: shell,
     );
   }
 }
-
-/// 出题进行中的常驻指示条（跨 Tab），带停止按钮。
-///
-/// 进度文案优先级：首题 STEP 前的阶段帧 > 当前题进度标签 > 兜底「生成中…」。
-/// 停止 = [TaskGenNotifier.stop]：在当前题边界中断、保留已出题（ADR-0057 Q1=B）。
-class _GenerationBanner extends StatelessWidget {
-  final TaskGenPreview state;
-  final VoidCallback onStop;
-
-  const _GenerationBanner({required this.state, required this.onStop});
-
-  @override
-  Widget build(BuildContext context) {
-    final app = AppTheme.colorsOf(context);
-    final text = AppTheme.textOf(context);
-    final label = state.stage.isNotEmpty
-        ? state.stage
-        : state.liveLabel.isNotEmpty
-            ? state.liveLabel
-            : '生成中…';
-    final count = state.expected > 0
-        ? '已出 ${state.questions.length}/${state.expected} 题'
-        : '已出 ${state.questions.length} 题';
-    return Container(
-      decoration: BoxDecoration(
-        color: app.surfaceActive,
-        border: Border(
-          bottom: BorderSide(
-            color: app.outline,
-            width: AppElevation.borderWidthHairline,
-          ),
-        ),
-      ),
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.md,
-        vertical: AppSpacing.sm,
-      ),
-      child: Row(
-        children: [
-          Icon(LucideIcons.loaderCircle, size: 16, color: app.accent),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label,
-                    style: text.labelMedium
-                        ?.copyWith(fontWeight: FontWeight.w600)),
-                Text(count,
-                    style: text.labelSmall
-                        ?.copyWith(color: app.onSurfaceVariant)),
-              ],
-            ),
-          ),
-          AppIconAction(
-            icon: LucideIcons.x,
-            semanticLabel: '停止生成',
-            onPressed: onStop,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// 教师端导航状态（ADR-0059）
-// ---------------------------------------------------------------------------

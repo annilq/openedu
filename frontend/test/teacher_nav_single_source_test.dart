@@ -39,6 +39,7 @@ import 'package:kids_learn/shared/widgets/app_actions.dart' show AppIconAction;
 ///      ——这正是「状态不唯一」在界面上唯一能被观测到的痕迹。
 const _shellFile = 'lib/shared/widgets/adaptive_shell.dart';
 const _homeFile = 'lib/features/home/presentation/screens/home_screen.dart';
+const _pagesFile = 'lib/features/home/presentation/teacher_pages.dart';
 
 void main() {
   group('静态：master-detail 与并列导航状态不许回来', () {
@@ -78,9 +79,35 @@ void main() {
         );
       }
       // P4 后页面层级迁到 `teacher_pages.dart` 并改为公开（`TeacherPage`），
-      // 私有名不能跨 library——这里断言的是「仍由单一字段承载」，不绑私有名。
-      expect(src.contains('TeacherPage _teacherPage'), isTrue,
-          reason: '教师端当前页面应由 `TeacherPage _teacherPage` 单独承载');
+      // 私有名不能跨 library——这里断言的是「仍由单一状态承载」，不绑私有名。
+      //
+      // ticket 03 引入返回栈之后，不变式**更严了**：当前页面不许是栈之外的另一个
+      // 字段，只能是栈顶的只读派生（getter）。「栈 + 当前页字段」正是 ADR-0059 要
+      // 防的并列真源——栈顶说 A、字段说 B 的时候无从裁决，与当年「索引 + 覆盖层 +
+      // 布尔」是同一个坑换了个壳。
+      expect(RegExp(r'TeacherPage\s+_teacherPage\b').hasMatch(src), isFalse,
+          reason: '教师端不许存在「栈之外的当前页面字段」：栈外再存一份当前页就是'
+              '两个真源（ADR-0059）。当前页只能是栈顶的只读派生。');
+      expect(RegExp(r'TeacherPage\s+get\s+_teacherPage\b').hasMatch(src), isTrue,
+          reason: '教师端「当前页面」应由 `TeacherPage get _teacherPage` 从导航栈派生');
+    });
+
+    test('TeacherPage 子类不再携带回落目标字段（返回由壳的历史栈负责）', () {
+      // ⚠️ ticket 03 之前四个页面各带一个 `back` 字段（TaskReviewPage / EditStudentPage /
+      // StudentDetailPage / SceneLibraryEditorPage）。那是「每个新增下钻页都要记得
+      // 声明回落目标」，漏声明就静默回落概览——而 `flutter analyze` 照不出来。
+      // 现在回落由 `TeacherNavStack` 记录，页面类零义务；这条断言把「零义务」钉住。
+      final src = File(_pagesFile).readAsStringSync();
+      final inCode = src
+          .split('\n')
+          .where((l) => l.contains('back') && !l.trimLeft().startsWith('//'))
+          .toList();
+      expect(
+        inCode,
+        isEmpty,
+        reason: '$_pagesFile 的代码里不应再出现回落目标字段：返回落点由壳的历史栈'
+            '决定，新增下钻页不该有任何义务（ticket 03）。\n${inCode.join('\n')}',
+      );
     });
   });
 
@@ -408,7 +435,6 @@ void main() {
         subject: '数学',
         grade: 4,
         semester: '上学期',
-        back: const SceneLibraryPage(),
       );
       expect(highlightFor(page), same(page),
           reason: '新页面态不应引入并列高亮逻辑，否则又回到 ADR-0059 前的漏清坑');
@@ -421,7 +447,7 @@ void main() {
     // 「发布任务」按钮 + 空态 CTA），侧栏只剩「任务」。
     test('侧栏目的地：已无「布置任务」，且「任务」覆盖生成页高亮', () {
       final dests = NavigationDestinations(
-        go: (_) {},
+        goEntry: (_) {},
         goChildTab: (_) {},
         goProfile: () {},
         genTrailing: (_) => null,

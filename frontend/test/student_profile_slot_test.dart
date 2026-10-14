@@ -52,7 +52,7 @@ void main() {
   group('目的地：显示「我的」时四个页签一律取消高亮', () {
     test('「我的」的槽位下标传给页签目的地 → 零高亮', () {
       final dests = NavigationDestinations(
-        go: (_) {},
+        goEntry: (_) {},
         goChildTab: (_) {},
         goProfile: () {},
         genTrailing: (_) => null,
@@ -66,7 +66,7 @@ void main() {
 
     test('四个页签各自只亮自己', () {
       final dests = NavigationDestinations(
-        go: (_) {},
+        goEntry: (_) {},
         goChildTab: (_) {},
         goProfile: () {},
         genTrailing: (_) => null,
