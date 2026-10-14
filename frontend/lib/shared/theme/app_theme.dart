@@ -1252,6 +1252,23 @@ class AppLayout {
   /// 可点区域，因此也收口到令牌，不写裸数字。
   static const double tapTargetLg = 52;
 
+  /// 底部导航条高度（紧凑·学生端，[AdaptiveBottomNav] 的唯一消费方）。
+  ///
+  /// 取 60：图标 22 + 间距 4 + 一行标签（学生端 labelSmall 13px × 1.35 ≈ 18）+
+  /// 上下呼吸。它是底栏唯一的竖向常量，历来写死在壳里，收口为令牌后改高只需改一处。
+  static const double bottomNavHeight = 60;
+
+  /// 底栏图标边长（图标下方还有一行标签，图标本身不必再放大）。
+  static const double bottomNavIconSize = 22;
+
+  /// 底栏「等分」档的下界：可用宽度 **低于** 此值时不再把若干入口等分。
+  ///
+  /// 取 360（ticket 06 的窄屏口径），而非实测截断点——实测等分项宽要掉到 40
+  /// 以下才会触发省略号，而那早已低于 [tapTarget]，属于「先挤压命中区、再截断
+  /// 文字」。所以阈值定在常见的窄机宽度上，把「每项至少 [tapTarget] 宽」前置为
+  /// 硬约束（见 [AdaptiveBottomNav]），截断因此根本不会发生。
+  static const double bottomNavNarrowMax = 360;
+
   /// 侧栏头部（[AdaptiveShell.sidebarTop]）四向内边距。
   ///
   /// 左侧必须等于导航项的左缘（[AppSpacing.sm]）——否则侧栏内会出现「头部贴边、

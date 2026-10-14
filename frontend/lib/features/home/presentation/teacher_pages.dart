@@ -48,14 +48,12 @@ class AddStudentPage extends TeacherPage {
 }
 
 /// 编辑学生资料（StudentFormScreen 编辑态）。
+///
+/// 不带回落目标：退出编辑回到哪儿由壳的历史栈决定（`teacher_nav_stack.dart`）。
 class EditStudentPage extends TeacherPage {
   final UserModel child;
 
-  /// 退出编辑后回到的页面——保留「从哪儿进来就回哪儿」。从学生详情（任意来源）进，
-  /// 回落该学生详情页（其 [StudentDetailPage.back] 继续指向最初来源）；缺省回概览。
-  final TeacherPage back;
-
-  const EditStudentPage(this.child, {this.back = const OverviewPage()});
+  const EditStudentPage(this.child);
 }
 
 /// 题库。
@@ -77,17 +75,12 @@ class ModelsPage extends TeacherPage {
 class TaskReviewPage extends TeacherPage {
   final TaskModel task;
 
-  /// 退出审核后回到的页面——保留「从哪儿进来就回哪儿」的既有行为
-  /// （从概览点进来回概览，从任务列表点进来回列表）。
-  final TeacherPage back;
-
   /// 表单布置时带过来的派发目标（ticket 18）：班级 / 学生多选；空 = 回落单学生派发。
   final List<String> classIds;
   final List<String> studentIds;
 
   const TaskReviewPage(
     this.task, {
-    required this.back,
     this.classIds = const [],
     this.studentIds = const [],
   });
@@ -117,19 +110,15 @@ class StudentManagementPage extends TeacherPage {
 ///
 /// 与 14 协同：侧栏旧入口（顶部学生选择器菜单）已移除（ADR-0070），进入学生改由
 /// 学生管理页点学生触发，并把 studentId 作为入参直传（不再写入任何全局选中态）。
+///
+/// 不带回落目标：返回落点由壳的历史栈决定，详情页自身不猜来源。
 class StudentDetailPage extends TeacherPage {
   final String studentId;
   final StudentDetailTab initialTab;
 
-  /// 返回落点：由打开方在 `_go` 时填好（同 [TaskReviewPage.back] /
-  /// [SceneLibraryEditorPage.back]），详情页自身不猜来源。从学生管理页进则回学生管理，
-  /// 从班级下钻页进则回该班下钻页；缺省回概览兜底。
-  final TeacherPage back;
-
   const StudentDetailPage(
     this.studentId, {
     this.initialTab = StudentDetailTab.overview,
-    this.back = const OverviewPage(),
   });
 }
 
@@ -164,8 +153,7 @@ class SceneLibraryDetailPage extends TeacherPage {
 /// 页面」偷偷变成并列状态，漏清就弹根栈（白屏）。这里编辑器只是 `TeacherPage` 的
 /// 一个分支，关闭统一走 [KnowledgePointSceneEditor.onBack]，不裸 `Navigator.pop`。
 ///
-/// [back] 记录从哪儿进来——场景库详情点进来回落 [SceneLibraryDetailPage]，知识点
-/// 管理行点进来回落资料库页；由调用方在 `_go` 时填好，编辑器自己不猜来源。
+/// 不带回落目标：关闭后回哪儿由壳的历史栈决定，编辑器自己不猜来源。
 class SceneLibraryEditorPage extends TeacherPage {
   final String kpId;
   final String kpName;
@@ -173,7 +161,6 @@ class SceneLibraryEditorPage extends TeacherPage {
   final int grade;
   final String semester;
   final List<Map<String, dynamic>>? initialScenes;
-  final TeacherPage back;
 
   const SceneLibraryEditorPage({
     required this.kpId,
@@ -182,7 +169,6 @@ class SceneLibraryEditorPage extends TeacherPage {
     required this.grade,
     required this.semester,
     this.initialScenes,
-    required this.back,
   });
 }
 
@@ -232,15 +218,18 @@ class RunTraceDetailPage extends TeacherPage {
   const RunTraceDetailPage(this.runId);
 }
 
-/// 侧栏高亮用的「基础页」：审核页沿用它进来的那一页的高亮。
+/// 侧栏高亮用的「基础页」：审核页沿用**它在栈里的上一层**的高亮。
 ///
-/// 审核不是一个侧栏入口（否则「任务」会在用户从概览进来时错位高亮），而是某一页
-/// 的延续，所以高亮取 [back]。
-TeacherPage highlightFor(TeacherPage page) {
+/// 审核不是一个侧栏入口（否则「任务」会在教师从概览进来时错位高亮），而是某一页的
+/// 延续。以前这个关系由调用方在创建审核页时手工填 `back` 字段（ticket 03 已移除），
+/// 现在由壳把 [parent]（历史栈的上一层）传进来——来源只有一个，不会填错。
+///
+/// 其余页面高亮自身：下钻页（班级学生 / 学生详情 / 场景编辑器…）匹配不到任何侧栏
+/// 项 → 侧栏零高亮，这正是「drill-down 不是一级入口」的界面表达。
+TeacherPage highlightFor(TeacherPage page, {TeacherPage? parent}) {
   // 「发布任务」已收进「任务」页（方案 A）：生成页是任务页的一个动作态，不是独立侧栏
-  // 入口。故它自身、以及由它派生的审核页，都归入「任务」高亮；审核返回也落回任务列表，
-  // 而不是回到一个已不存在的「布置任务」概念页。
-  if (page is TaskReviewPage) return page.back;
+  // 入口，故它归入「任务」高亮。
   if (page is CreateTaskPage) return const TaskListPage();
+  if (page is TaskReviewPage) return parent ?? page;
   return page;
 }

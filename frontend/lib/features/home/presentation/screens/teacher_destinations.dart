@@ -12,14 +12,18 @@ import '../providers/home_notifier.dart';
 /// `HomeScreen` 的状态，壳层状态机（ADR-0059）仍只活在组合根里。
 class NavigationDestinations {
   const NavigationDestinations({
-    required this.go,
+    required this.goEntry,
     required this.goChildTab,
     required this.goProfile,
     required this.genTrailing,
   });
 
-  /// 教师端统一导航出口（`HomeScreen._go`）。
-  final void Function(TeacherPage page) go;
+  /// 教师端**切换一级入口**的出口（`HomeScreen._goEntry`）。
+  ///
+  /// 叫 `goEntry` 而不叫 `go` 是有意的：侧栏每一项都是一级入口，点它是**换入口**——
+  /// 清空历史；而壳内下钻（班级 → 班内学生 → 学生详情）是另一条出口（`_go`，入栈）。
+  /// 两者混用会让「切到题库后按返回先弹回上一次的班内学生页」。
+  final void Function(TeacherPage page) goEntry;
 
   /// 学生端页签切换（`HomeScreen._switchChildTab`）。
   final void Function(int index) goChildTab;
@@ -33,8 +37,15 @@ class NavigationDestinations {
   /// 教师端侧栏目的地：与旧 TeacherSidebar 同序（概览/任务/布置/错题/答疑/
   /// 题库/资料库/模型）。审核页高亮「进来时的那一页」——审核是任务的延续，
   /// 不是一个新的侧栏入口，故 active 取 `highlightFor(page)`。
-  List<AdaptiveNavDestination> teacher(TeacherPage page, TaskGenState gen) {
-    final active = highlightFor(page);
+  ///
+  /// [parent] 是历史栈里当前页的上一层，只用于草稿审核页的高亮（审核不是一个侧栏
+  /// 入口，高亮它进来时的那一页）；其余页面忽略它。
+  List<AdaptiveNavDestination> teacher(
+    TeacherPage page,
+    TaskGenState gen, {
+    TeacherPage? parent,
+  }) {
+    final active = highlightFor(page, parent: parent);
     return [
       _item(const OverviewPage(), active: active is OverviewPage),
       // 发布任务已收进任务页（方案 A）：生成页是任务页的一个动作态，不再单列侧栏。
@@ -108,7 +119,7 @@ class NavigationDestinations {
       icon: face.icon,
       label: face.title,
       active: active,
-      onTap: () => go(to ?? page),
+      onTap: () => goEntry(to ?? page),
       trailing: trailing,
     );
   }

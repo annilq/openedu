@@ -154,6 +154,13 @@ void main() {
 /// 2026-10-13 ADR-0088 ticket 02（运行轨迹页）：home_screen 592→602（`_go` switch
 ///   接 RunTracePage / RunTraceDetailPage 两个分支 + 两个 import，属 B 类组合根
 ///   真实增长——新页面必须经单一 `_go` 打开，ADR-0059 不容许把接线散到别处）。
+/// 2026-10-14 ticket 03（教师端返回栈 + 系统返回键接管）：home_screen 607→**592**。
+///   返回的机制（历史栈 / 系统返回翻译 / 侧栏清栈）没有一行落在组合根里——
+///   `TeacherNavStack` 单独成文件（`teacher_nav_stack.dart`），页面类上的四个 `back`
+///   字段连带各自的「按来源猜回落页」三元（`_addStudentReturnPage`）一并删除；组合根
+///   只多出 `_go` / `_goEntry` / `_back` 三个薄出口与 `PopScope` 包裹。同时把与导航
+///   无关的纯渲染件 `_GenerationBanner` 抽到 `widgets/teacher/generation_banner.dart`，
+///   组合根净减 15 行（A 类真实净减，基线随之下调）。
 /// 2026-10-13 LCC-09（学生端导航单一事实源，ADR-0059）：home_screen 602→606。
 ///   学生端「页签索引 + `_showProfile` 布尔」二选一合成为 `sealed ChildPage` 单一
 ///   状态：[_refreshChildTab] 从 `switch(int)` 4 个匿名 case 改为 5 个具名
@@ -167,6 +174,10 @@ void main() {
 ///   （抽屉项改为携带「导航 + 收起抽屉」的组合动作、新增 `_DrawerSwipeToDismiss`
 ///   左滑关闭子件与位移阈值常量，属 B 类组合根真实增长——抽屉开合状态只此一份，
 ///   关闭动作必须落在持有它的壳里，不容许把接线散到别处）。
+/// 2026-10-14 ticket 06（学生端底栏窄屏适配，ADR-0045）：adaptive_shell 579→531，
+///   **A 类净减**——底栏（含窄屏降级：等分 → 自然分布 → 只留图标）抽出为
+///   adaptive_bottom_nav.dart（125 行，≤400 不登记），壳只保留「紧凑档学生端用
+///   底栏」这一个决策。底栏的窄屏档位与侧栏 / 抽屉无关，属真实职责分离。
 /// **只许下调（除 B 类已登记的合理大件外）。**
 ///
 /// 2026-10（ADR-0083 图库 DB 化 / SceneSpec 几何化）下调：
@@ -178,10 +189,10 @@ void main() {
 /// 拆分批次见 `docs/refactor/2026-09-21-flutter-ui-decomposition.md`（P0–P4）。
 const Map<String, int> _baseline = <String, int>{
   'shared/theme/app_theme.dart': 1702,
-  'shared/widgets/adaptive_shell.dart': 579,
+  'shared/widgets/adaptive_shell.dart': 531,
   'features/home/presentation/widgets/teacher/teacher_question_bank_view.dart': 757,
   'features/home/presentation/widgets/teacher/teacher_tasks_view.dart': 672,
-  'features/home/presentation/screens/home_screen.dart': 607,
+  'features/home/presentation/screens/home_screen.dart': 592,
   'features/assistant/presentation/screens/assistant_chat_page.dart': 578,
   'shared/widgets/scene_interpreter/reflection_scene.dart': 438,
   'features/home/presentation/widgets/teacher/teacher_question_card.dart': 477,

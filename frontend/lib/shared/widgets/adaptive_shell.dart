@@ -6,6 +6,7 @@ import '../../shared/domain/models/models.dart';
 import '../../shared/theme/app_theme.dart';
 import '../../shared/widgets/app_sidebar.dart';
 import '../domain/providers/core_providers.dart';
+import 'adaptive_bottom_nav.dart';
 import 'app_content_frame.dart';
 import 'app_avatar.dart';
 import 'app_focusable_action.dart';
@@ -196,23 +197,9 @@ class _AdaptiveShellState extends ConsumerState<AdaptiveShell> {
             child: _cappedWidth(widget.body),
           ),
         ),
-        Container(
-          decoration: BoxDecoration(
-            color: scheme.surfaceSunken,
-            border: Border(top: BorderSide(color: scheme.outline, width: AppElevation.borderWidthHairline)),
-          ),
-          child: SafeArea(
-            top: false,
-            child: SizedBox(
-              height: 60,
-              child: Row(
-                children: items
-                    .map((d) => _BottomNavItem(destination: d))
-                    .toList(),
-              ),
-            ),
-          ),
-        ),
+        // 底栏自带的窄屏降级（等分 → 自然分布 → 只留图标）与壳无关，抽到
+        // AdaptiveBottomNav：壳只负责「紧凑档学生端用底栏」这一个决策。
+        AdaptiveBottomNav(items: items),
       ],
     );
   }
@@ -346,41 +333,6 @@ class _DrawerSwipeToDismissState extends State<_DrawerSwipeToDismiss> {
             }
           : null,
       child: widget.child,
-    );
-  }
-}
-
-/// 底部导航项（紧凑·学生端）。等宽分布，选中态用 accent。
-class _BottomNavItem extends StatelessWidget {
-  final AdaptiveNavDestination destination;
-  const _BottomNavItem({required this.destination});
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = AppTheme.colorsOf(context);
-    final color = destination.active ? scheme.accent : scheme.onSurfaceVariant;
-    return Expanded(
-      child: AppFocusableAction(
-        onTap: destination.onTap,
-        semanticLabel: destination.label,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(destination.icon, size: 22, color: color),
-            const SizedBox(height: 4),
-            Text(
-              destination.label,
-              style: AppTheme.textOf(context).labelSmall?.copyWith(
-                    color: color,
-                    fontWeight:
-                        destination.active ? FontWeight.w600 : FontWeight.w500,
-                  ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
