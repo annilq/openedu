@@ -148,7 +148,7 @@ class _CoursewareCreateSheetState extends ConsumerState<_CoursewareCreateSheet> 
                         : _kps.isEmpty
                             ? Center(
                                 child: Text(
-                                  '还没有任何知识点。先到「资料库」上传教材并完成提取，'
+                                  '还没有任何知识点。先到「备课资料」上传教材并完成提取，'
                                   '知识点会自动出现。',
                                   style: text.bodySmall
                                       ?.copyWith(color: app.onSurfaceVariant),

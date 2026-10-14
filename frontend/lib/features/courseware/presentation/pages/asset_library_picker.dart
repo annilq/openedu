@@ -128,7 +128,7 @@ class _AssetLibraryPickerState extends ConsumerState<_AssetLibraryPicker> {
                 key: const Key('asset-picker-search'),
                 label: '检索',
                 controller: _queryCtl,
-                hintText: '按文件名检索素材库',
+                hintText: '按文件名检索图片素材',
                 onChanged: (v) => setState(() => _query = v.trim()),
               ),
               const SizedBox(height: AppSpacing.sm),
@@ -137,7 +137,7 @@ class _AssetLibraryPickerState extends ConsumerState<_AssetLibraryPicker> {
                   loading: () => const Center(child: AppLoading()),
                   error: (e, _) => Center(
                     child: Text(
-                      '素材库加载失败：$e',
+                      '图片素材加载失败：$e',
                       style:
                           text.bodyMedium?.copyWith(color: app.onSurfaceVariant),
                     ),

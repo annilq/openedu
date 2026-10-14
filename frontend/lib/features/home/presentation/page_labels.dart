@@ -36,7 +36,7 @@ const _profileFace = (title: '我的', icon: LucideIcons.userRound);
       AddStudentPage() => (title: '添加学生', icon: LucideIcons.userPlus),
       EditStudentPage() => (title: '编辑学生', icon: LucideIcons.userRoundPen),
       QuestionBankPage() => (title: '题库', icon: LucideIcons.library),
-      MaterialLibraryPage() => (title: '资料库', icon: LucideIcons.folderOpen),
+      MaterialLibraryPage() => (title: '备课资料', icon: LucideIcons.folderOpen),
       ModelsPage() => (title: '模型管理', icon: LucideIcons.cpu),
       TaskReviewPage() => (title: '草稿审核', icon: LucideIcons.clipboardCheck),
       ProfilePage() => _profileFace,
@@ -46,7 +46,7 @@ const _profileFace = (title: '我的', icon: LucideIcons.userRound);
       SceneLibraryPage() => (title: '场景库', icon: LucideIcons.component),
       SceneLibraryDetailPage() => (title: '场景库详情', icon: LucideIcons.puzzle),
       SceneLibraryEditorPage() => (title: '场景编辑器', icon: LucideIcons.penTool),
-      AssetLibraryPage() => (title: '素材库', icon: LucideIcons.images),
+      AssetLibraryPage() => (title: '图片素材', icon: LucideIcons.images),
       ClassManagementPage() => (title: '班级管理', icon: LucideIcons.school),
       // 下钻页的标题就是它自己的班级名——由入参直传（ADR-0086，避免看着 A 班却显示
       // B 班），页面上显示什么这里就跟着显示什么，不写死通用名。

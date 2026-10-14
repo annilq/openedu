@@ -162,7 +162,7 @@ class _AssetLibraryScreenState extends ConsumerState<AssetLibraryScreen> {
         children: [
           // 页头：标题 + 说明，给页面明确的入口身份与留白。
           Text(
-            '素材库',
+            '图片素材',
             style: text.titleLarge?.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: AppSpacing.xs),
@@ -204,7 +204,7 @@ class _AssetLibraryScreenState extends ConsumerState<AssetLibraryScreen> {
                     key: const Key('asset-library-search'),
                     label: '检索',
                     controller: _queryCtl,
-                    hintText: '按文件名检索素材库',
+                    hintText: '按文件名检索图片素材',
                     onChanged: (v) => setState(() => _query = v.trim()),
                   ),
                 ),
@@ -218,7 +218,7 @@ class _AssetLibraryScreenState extends ConsumerState<AssetLibraryScreen> {
               error: (e, _) => Center(
                 child: AppEmptyState(
                   icon: LucideIcons.imageOff,
-                  title: '素材库加载失败',
+                  title: '图片素材加载失败',
                   message: '$e',
                 ),
               ),
@@ -227,7 +227,7 @@ class _AssetLibraryScreenState extends ConsumerState<AssetLibraryScreen> {
                   return Center(
                     child: AppEmptyState(
                       icon: LucideIcons.imagePlus,
-                      title: _query.isEmpty ? '素材库还是空的' : '没有匹配的素材',
+                      title: _query.isEmpty ? '图片素材还是空的' : '没有匹配的素材',
                       message: _query.isEmpty
                           ? '点上方「上传图片」，从本地挑一张图传上来。'
                               '素材只收录你自己上传的图片，不做任何平台预置。'

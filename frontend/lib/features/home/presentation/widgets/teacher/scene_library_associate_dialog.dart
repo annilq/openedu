@@ -256,7 +256,7 @@ class _AssociateKpDialogState extends ConsumerState<_AssociateKpDialog> {
             style: text.labelMedium?.copyWith(color: app.onSurfaceVariant)),
         const SizedBox(height: AppSpacing.xs),
         if (_scopes.isEmpty && !_loading)
-          Text('还没有可关联的知识点（先去资料库上传教材并提取知识点）。',
+          Text('还没有可关联的知识点（先去备课资料上传教材并提取知识点）。',
               style: text.bodySmall?.copyWith(color: app.onSurfaceVariant))
         else
           Wrap(

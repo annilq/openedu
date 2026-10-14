@@ -68,7 +68,7 @@ class _MaterialKnowledgeManageViewState
             AppEmptyState(
               icon: LucideIcons.tags,
               title: '还没有知识点来源',
-              message: '知识点来自你上传的教材：到「资料库」上传并完成提取后，'
+              message: '知识点来自你上传的教材：到「备课资料」上传并完成提取后，'
                   '这里会按教材所在的范围列出知识点。',
             )
           else ...[
@@ -79,7 +79,7 @@ class _MaterialKnowledgeManageViewState
                 padding: const EdgeInsets.only(top: AppSpacing.sm),
                 child: Text(
                   '有 ${km.unscopedCount} 份教材没识别出学科或年级，暂时归不到上面的范围；'
-                  '到「资料库」对它们点「重新提取」即可。',
+                  '到「备课资料」对它们点「重新提取」即可。',
                   style: text.bodySmall?.copyWith(color: app.secondary),
                 ),
               ),
