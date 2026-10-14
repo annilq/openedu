@@ -163,6 +163,10 @@ void main() {
 /// 同日下调四处此前提交漏调的基线（均为 A 类净减 / 真实行数，棘轮只许下调）：
 ///   teacher_question_bank_view 759→757、teacher_question_card 511→477、
 ///   teacher_wrong_questions_view 442→440、teacher_task_review_screen 424→405。
+/// 2026-10-14 导航评审 ticket 02（紧凑档导航可关闭性）：adaptive_shell 503→579
+///   （抽屉项改为携带「导航 + 收起抽屉」的组合动作、新增 `_DrawerSwipeToDismiss`
+///   左滑关闭子件与位移阈值常量，属 B 类组合根真实增长——抽屉开合状态只此一份，
+///   关闭动作必须落在持有它的壳里，不容许把接线散到别处）。
 /// **只许下调（除 B 类已登记的合理大件外）。**
 ///
 /// 2026-10（ADR-0083 图库 DB 化 / SceneSpec 几何化）下调：
@@ -174,7 +178,7 @@ void main() {
 /// 拆分批次见 `docs/refactor/2026-09-21-flutter-ui-decomposition.md`（P0–P4）。
 const Map<String, int> _baseline = <String, int>{
   'shared/theme/app_theme.dart': 1702,
-  'shared/widgets/adaptive_shell.dart': 503,
+  'shared/widgets/adaptive_shell.dart': 579,
   'features/home/presentation/widgets/teacher/teacher_question_bank_view.dart': 757,
   'features/home/presentation/widgets/teacher/teacher_tasks_view.dart': 672,
   'features/home/presentation/screens/home_screen.dart': 607,
