@@ -27,28 +27,28 @@ void main() {
 
     test('下钻入栈：当前页是新页、上一层是来源页', () {
       final nav = TeacherNavStack()
-        ..reset(const ClassManagementPage())
+        ..reset(const StudentsPage())
         ..push(const ClassStudentsPage('c1', '三(1)班'));
 
       expect(nav.current, isA<ClassStudentsPage>());
-      expect(nav.parent, isA<ClassManagementPage>(),
+      expect(nav.parent, isA<StudentsPage>(),
           reason: '来源页由历史决定，不需要下钻页自己声明回落目标');
       expect(nav.canPop, isTrue);
     });
 
     test('出栈逐级回到来源页（四级下钻链）', () {
       final nav = TeacherNavStack()
-        ..reset(const ClassManagementPage())
+        ..reset(const StudentsPage())
         ..push(const ClassStudentsPage('c1', '三(1)班'))
         ..push(const StudentDetailPage('s1'))
         ..push(EditStudentPage(_student));
 
-      // 四级下钻：班级管理 → 班内学生 → 学生详情 → 编辑学生。
+      // 四级下钻：班级 → 班内学生 → 学生详情 → 编辑学生。
       expect(nav.current, isA<EditStudentPage>());
 
       expect(nav.pop(), isA<StudentDetailPage>());
       expect(nav.pop(), isA<ClassStudentsPage>());
-      expect(nav.pop(), isA<ClassManagementPage>());
+      expect(nav.pop(), isA<StudentsPage>());
       expect(nav.pop(), isA<OverviewPage>(),
           reason: '栈底恒为概览：回退到最后必须落在根页面，而不是把栈弹空');
 
@@ -65,7 +65,7 @@ void main() {
   group('TeacherNavStack：换一级入口清空历史', () {
     test('切入口后回退落到概览，不弹回上一次的下钻页', () {
       final nav = TeacherNavStack()
-        ..reset(const ClassManagementPage())
+        ..reset(const StudentsPage())
         ..push(const ClassStudentsPage('c1', '三(1)班'));
 
       expect(nav.current, isA<ClassStudentsPage>());
@@ -80,7 +80,7 @@ void main() {
 
     test('切回概览：栈里只剩根页面', () {
       final nav = TeacherNavStack()
-        ..reset(const ClassManagementPage())
+        ..reset(const StudentsPage())
         ..push(const ClassStudentsPage('c1', '三(1)班'))
         ..reset(const OverviewPage());
 

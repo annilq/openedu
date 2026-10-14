@@ -68,9 +68,7 @@ class NavigationDestinations {
           // 两者**显式分成两个语义**（见 [_taskTrailing]），不叠在同一槽位抢优先级。
           trailing: _taskTrailing(gen, draftCount),
         ),
-        _item(const StudentManagementPage(),
-            active: active is StudentManagementPage),
-        _item(const ClassManagementPage(), active: active is ClassManagementPage),
+        _item(const StudentsPage(), active: active is StudentsPage),
         _item(const QuestionBankPage(), active: active is QuestionBankPage),
       ]),
       SidebarSection(title: '备课资源', items: [
