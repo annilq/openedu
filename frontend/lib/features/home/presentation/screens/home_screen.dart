@@ -1,4 +1,5 @@
 import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/presentation/shell_navigation.dart';
@@ -143,6 +144,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   void _onNavigateToEditStudent(UserModel child) =>
       _go(EditStudentPage(child));
+
+  /// 系统返回键 / 外接键盘 Esc / 系统侧滑手势——三者在框架内共用这一个入口。
+  ///
+  /// 全 App 只有一个 route（ADR-0059），返回键原本**直接退出应用**：教师在
+  /// 「班级 → 班内学生 → 学生详情 → 编辑学生」四级链上按一下，四级全丢（P0-2）。
+  /// 这里把它翻译成壳内的一次回退。
+  ///
+  /// 返回「壳是否消费了这一次返回」：根页面返回 false，由 [_onSystemBack] 交回系统
+  /// ——否则用户按返回键退出应用的能力被白白拿走。
+  bool _handleSystemBack() {
+    if (widget.user.isTeacher) {
+      if (!_teacherNav.canPop) return false;
+      _back();
+      return true;
+    }
+    // 学生端：页签不是下钻链，非首页一律回首页；已在首页则同样交回系统。
+    if (_childPage is ChildHomePage) return false;
+    _switchChildTab(0);
+    return true;
+  }
+
+  /// [PopScope] 的回调：决定这一下系统返回是壳内回退还是交回系统。
+  void _onSystemBack(bool didPop, Object? result) {
+    if (didPop) return;
+    if (_handleSystemBack()) return;
+    // 根页面：交回系统退出应用。这里**不能**用 `Navigator.pop`——根导航栈只有一条
+    // 路由，弹掉它等于把整棵渲染树拆了（下一次重建撞 `_history.isNotEmpty` 断言，
+    // 守卫见 `test/tab_screen_no_root_pop_test.dart`）。
+    SystemNavigator.pop();
+  }
 
   /// 「我的」入口——**两个角色共用**（侧栏底部用户区 / 紧凑档底栏）。
   ///
@@ -509,10 +540,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     _listenShellNavigation();
     _listenTaskGen();
 
+    late final Widget shell;
     if (widget.user.isTeacher) {
       // ADR-0057 P1：出题在壳这一层 watch，跨 Tab 常驻可见。
       final gen = ref.watch(taskGenNotifierProvider);
-      return AdaptiveShell(
+      shell = AdaptiveShell(
         mode: AppUserMode.teacher,
         destinations: _destinations.teacher(
           _teacherPage,
@@ -530,20 +562,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ),
         body: _buildTeacherBody(),
       );
+    } else {
+      shell = AdaptiveShell(
+        mode: AppUserMode.student,
+        // 显示个人信息时页签一律取消高亮：否则「复习」和「我的」会同时亮着。
+        destinations: _destinations.child(childPageIndex(_childPage)),
+        profileDestination:
+            _destinations.profile(active: _childPage is ChildProfilePage),
+        sidebarBottom: AdaptiveUserBlock(
+          user: widget.user,
+          onProfileTap: _onProfileTap,
+          // 学生年级已改由所属班级承载（ADR-0086 修正）：此处以「分班状态」替代原年级展示。
+          subtitle: widget.user.classId != null ? '已分班' : '未分班',
+        ),
+        body: _buildChildView(),
+      );
     }
 
-    return AdaptiveShell(
-      mode: AppUserMode.student,
-      // 显示个人信息时页签一律取消高亮：否则「复习」和「我的」会同时亮着。
-      destinations: _destinations.child(childPageIndex(_childPage)),
-      profileDestination: _destinations.profile(active: _childPage is ChildProfilePage),
-      sidebarBottom: AdaptiveUserBlock(
-        user: widget.user,
-        onProfileTap: _onProfileTap,
-        // 学生年级已改由所属班级承载（ADR-0086 修正）：此处以「分班状态」替代原年级展示。
-        subtitle: widget.user.classId != null ? '已分班' : '未分班',
-      ),
-      body: _buildChildView(),
+    // 系统返回键接管（P0-2）：**canPop 恒为 false** —— 全 App 只有一个 route，把
+    // 系统返回直接放行等于弹掉根路由（整棵渲染树没了，下一次重建撞 Navigator 的
+    // `_history.isNotEmpty` 断言）。每一次系统返回都先落到 [_onSystemBack]：
+    // 非根页面 → 壳内回退一步；根页面 → 交回系统退出应用。
+    return PopScope<Object?>(
+      canPop: false,
+      onPopInvokedWithResult: _onSystemBack,
+      child: shell,
     );
   }
 }
