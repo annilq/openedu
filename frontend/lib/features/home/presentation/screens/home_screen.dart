@@ -14,7 +14,7 @@ import '../../../../shared/widgets/app_toast.dart';
 import '../../../students/providers/students_provider.dart';
 import '../../../students/presentation/screens/student_form_screen.dart';
 import '../../../students/presentation/screens/student_management_screen.dart';
-import '../../../classes/presentation/screens/class_management_screen.dart';
+import 'students_container_screen.dart';
 import '../../../export/domain/export_repository.dart';
 import '../../../export/presentation/export_preview_page.dart';
 import '../../../practice/presentation/screens/practice_screen.dart';
@@ -317,15 +317,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       // 落回「我的」——单一出口，不裸 Navigator.pop 弹根栈。
       ModelsPage() => _withBackHeader(const TeacherModelManagementScreen()),
       AssetLibraryPage() => const AssetLibraryScreen(),
-      StudentManagementPage() => StudentManagementScreen(
+      StudentsPage() => StudentsScreen(
+          onOpenClass: (id, name) => _go(ClassStudentsPage(id, name)),
           onOpenStudent: (id) {
             _go(StudentDetailPage(id,
                 initialTab: StudentDetailTab.wrongQuestions));
           },
           onAddStudent: _onNavigateToAddStudent),
-      ClassManagementPage() => ClassManagementScreen(
-          onOpenClass: (id, name) => _go(ClassStudentsPage(id, name)),
-        ),
       ClassStudentsPage(classId: final cid, className: final cname) =>
         StudentManagementScreen(
           classId: cid,

@@ -94,12 +94,24 @@ class ProfilePage extends TeacherPage {
 /// 学生详情页页签（局部状态，不提升为全局）。
 enum StudentDetailTab { overview, wrongQuestions, tutorLogs }
 
-/// 学生管理页（按班级分组 + 筛选 + 活跃错题数，ADR-0068 §2.3 / ticket 02）。
+/// 学生与班级合并入口（ticket 10）：侧栏只保留一个承载学生的入口「班级」，页内
+/// 分「按班级 / 全部学生」两种视图。视图态由 `studentsEntryViewProvider` 持有
+/// （见 `students_container_screen.dart`），**不在导航页面对象上**——切页内 tab
+/// 不触发壳内换页转场（ticket 05）、下钻返回也能还原，且不污染 ADR-0059 单一状态。
+enum StudentsView {
+  /// 按班级：班级卡片列表（容器视角）。
+  byClass,
+  /// 全部学生：跨班扁平列表（内容视角）。
+  all,
+}
+
+/// 合并后的学生入口（原「学生」+「班级管理」）。
 ///
-/// 与 [StudentDetailPage] 并列：前者是「全班总览」，后者是「单个学生深耕」。
-/// 侧栏「学生」项进入本页（ticket 16 将其与「统计」一同收进八项侧栏）。
-class StudentManagementPage extends TeacherPage {
-  const StudentManagementPage();
+/// 它只是壳内一个页；页内两种视图由 [StudentsScreen] 经 `studentsEntryViewProvider`
+/// 切换，下钻（班级卡片 → 班内学生 / 列表 → 学生详情）仍走 `_go` 入栈，返回落点由
+/// 历史栈决定（ticket 03），本页零义务。
+class StudentsPage extends TeacherPage {
+  const StudentsPage();
 }
 
 /// 学生详情页（带学生 ID，不依赖全局选中态）。
@@ -179,18 +191,11 @@ class AssetLibraryPage extends TeacherPage {
   const AssetLibraryPage();
 }
 
-/// 班级管理（ADR-0086 容器）：班级卡片列表（建 / 改 / 删），点卡片下钻到该班
-/// 学生管理页（[ClassStudentsPage]）。与 [StudentManagementPage]（全部学生扁平视图）
-/// 并列，不取代它。
-class ClassManagementPage extends TeacherPage {
-  const ClassManagementPage();
-}
-
-/// 班级下钻页（ADR-0086）：从 [ClassManagementPage] 点某班级卡片进入，复用既有
-/// [StudentManagementScreen]（以 `classId` 参数化），展示只属于该班的学生。
+/// 班级下钻页（ADR-0086 / ticket 10）：从合并入口「班级」的「按班级」视图点某班级卡片
+/// 进入，复用既有 [StudentManagementScreen]（以 `classId` 参数化），展示只属于该班的学生。
 ///
-/// [className] 由下钻发起方（班级卡片）直传，作为页标题，不写入任何全局选中态
-/// （同 [StudentDetailPage] 的做法，避免「看着 A 班却显示 B 班」这类漏清 bug）。
+/// 与 [StudentDetailPage] 同构：classId / className 直传，不写入任何全局选中态
+/// （避免「看着 A 班却显示 B 班」这类漏清 bug）。返回统一回「按班级」列表视图。
 class ClassStudentsPage extends TeacherPage {
   final String classId;
   final String className;
