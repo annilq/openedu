@@ -519,34 +519,37 @@ void main() {
     });
   });
 
-  group('T02：场景编辑器收编为 sealed 导航状态（ADR-0074）', () {
-    // ⚠️ 编辑器原来由知识点行 `showDialog(KnowledgePointSceneEditor)` 直接开——把
-    // 「当前该看哪个页面」偷变成并列状态，漏清就弹根栈（白屏）。现在它是
-    // `SceneLibraryEditorPage` 这一个分支，必须经 HomeScreen 的单一 `_go` switch 打开。
-    test('home_screen 经单一 switch 处理 SceneLibraryEditorPage（不散落 showDialog/push）',
-        () {
-      final src = File(_homeFile).readAsStringSync();
-      final inCode = src
+  group('T02→11：场景编辑器归位为弹窗（ADR-0074 + nav-ia-review 11）', () {
+    // ⚠️ 编辑器历史上：知识点行 `showDialog` 直接开 → T02 收编为 `SceneLibraryEditorPage`
+    // 整页（修白屏）→ nav-ia-review 11 回归为**浮层弹窗**（它本就按 560 宽弹窗设计，夹成
+    // 整页会让画廊/预览溢出）。弹窗是覆盖层、不是 `TeacherPage` 分支，故不污染 ADR-0059
+    // 单一导航状态；来源页（场景库详情）仍在栈顶，`pop` 弹窗即回落来源页。
+    const detailViewFile =
+        'lib/features/home/presentation/widgets/teacher/scene_library_detail_view.dart';
+
+    test('场景编辑器不再是 TeacherPage（不进 sealed 导航枚举）', () {
+      final pagesSrc = File(_pagesFile).readAsStringSync();
+      expect(pagesSrc.contains('class SceneLibraryEditorPage'), isFalse,
+          reason: '编辑器已归位为弹窗，不得再作为 TeacherPage 分支（ADR-0059 单状态）');
+      final inHome = File(_homeFile)
+          .readAsStringSync()
           .split('\n')
           .where((l) =>
-              l.contains('SceneLibraryEditorPage(') &&
+              l.contains('SceneLibraryEditorPage') &&
               !l.trimLeft().startsWith('//'))
           .toList();
-      expect(inCode, isNotEmpty,
-          reason: 'SceneLibraryEditorPage 必须经 HomeScreen 的 `_go` switch 打开，'
-              '不能由知识点行 showDialog / Navigator.push 直接开编辑器（ADR-0059）');
+      expect(inHome, isEmpty,
+          reason: 'home_screen 不得再以 `_go(SceneLibraryEditorPage(...))` 整页打开编辑器');
     });
 
-    test('highlightFor 对新页面态无并列高亮处理（单一导航状态）', () {
-      final page = SceneLibraryEditorPage(
-        kpId: 'k1',
-        kpName: '轴对称',
-        subject: '数学',
-        grade: 4,
-        semester: '上学期',
-      );
-      expect(highlightFor(page), same(page),
-          reason: '新页面态不应引入并列高亮逻辑，否则又回到 ADR-0059 前的漏清坑');
+    test('编辑器经 showShadDialog + ShadDialog 打开，且关闭作废场景库缓存', () {
+      final src = File(detailViewFile).readAsStringSync();
+      expect(src.contains('showShadDialog'), isTrue,
+          reason: '编辑器必须作为浮层弹窗打开（showShadDialog），不是整页');
+      expect(src.contains('ShadDialog'), isTrue,
+          reason: '弹窗用 ShadDialog（与既有弹窗同口径）');
+      expect(src.contains('ref.invalidate(sceneLibraryProvider)'), isTrue,
+          reason: '关闭编辑器必须作废场景库清单缓存，否则回详情页仍显旧标题/图形（ADR-0073）');
     });
   });
 

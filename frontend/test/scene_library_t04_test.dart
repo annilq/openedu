@@ -20,6 +20,8 @@ import 'package:kids_learn/shared/features/materials/providers/material_provider
 import 'package:kids_learn/shared/domain/figures.dart';
 import 'package:kids_learn/shared/domain/scene_spec.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
+import 'package:kids_learn/shared/widgets/app_actions.dart';
+import 'package:kids_learn/shared/widgets/app_focusable_action.dart';
 
 /// 记录 updateKnowledgePointScenes 实参（解除关联测试 + 编辑器回归用）。
 class _RecordingRepo implements MaterialRepository {
@@ -251,7 +253,6 @@ void main() {
                       child: TeacherSceneLibraryDetailView(
                         kind: 'reflection',
                         onBack: () {},
-                        onOpenKp: (_) {},
                       ),
                     ),
                   ),
@@ -309,5 +310,87 @@ void main() {
         reason: '只保留非 reflection 的场景');
     expect(repo.lastScenes!.first['kind'], 'rotate',
         reason: '本 kind 条目被移除，其它 kind 不受影响（ADR-0073 快照不变）');
+  });
+
+  // ---- 5. 编辑器以弹窗打开、关闭回来源页（nav-ia-review 11） ----
+  testWidgets('点关联知识点卡片以 ShadDialog 浮层打开编辑器，关闭回落详情页',
+      (tester) async {
+    // 详情页：一个场景，关联一个已配置知识点（scenes 非空 → 编辑器渲染讲解表单）。
+    final library = SceneLibrary(
+      scenes: [
+        SceneLibraryEntry(
+          kind: 'reflection',
+          title: '轴对称',
+          defaults: const <String, dynamic>{},
+          associatedKnowledgePoints: [
+            SceneLibraryKpRef(
+              id: 'kp1',
+              name: '轴对称测试',
+              subject: '数学',
+              grade: 4,
+              semester: '下学期',
+              scenes: _configuredReflection,
+            ),
+          ],
+        ),
+      ],
+    );
+    final repo = _RecordingRepo();
+    await tester.binding.setSurfaceSize(const Size(1200, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          materialRepositoryProvider.overrideWithValue(repo),
+          sceneLibraryProvider.overrideWith((ref) => library),
+        ],
+        child: ShadApp.custom(
+          theme: AppTheme.shadFor(false, AppUserMode.teacher, AppDensity.compact),
+          appBuilder: (context) => MaterialApp(
+            home: ShadToaster(
+              child: CupertinoTheme(
+                data: const CupertinoThemeData(brightness: Brightness.light),
+                child: Scaffold(
+                  // 与编辑器弹窗同宽（560）：画廊/预览在此宽度下不溢出。
+                  body: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 560),
+                      child: TeacherSceneLibraryDetailView(
+                        kind: 'reflection',
+                        onBack: () {},
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull, reason: '详情页构建不应抛异常');
+
+    // 点关联知识点卡片 → 编辑器以 ShadDialog 浮层打开（不是整页）。
+    await tester.tap(find.byWidgetPredicate(
+      (w) => w is AppFocusableAction &&
+          w.semanticLabel == '编辑 轴对称测试 的讲解',
+    ));
+    await tester.pumpAndSettle();
+    expect(find.byType(ShadDialog), findsOneWidget,
+        reason: '编辑器应以 ShadDialog 浮层打开（nav-ia-review 11：归位为弹窗）');
+    expect(find.textContaining('交互讲解'), findsWidgets,
+        reason: '已配置知识点应渲染讲解编辑表单');
+
+    // 关闭弹窗 → 回落来源页（详情页仍在，且仍显示关联区）。
+    await tester.tap(find.byWidgetPredicate(
+      (w) => w is AppIconAction && w.semanticLabel == '关闭',
+    ));
+    await tester.pumpAndSettle();
+    expect(find.byType(ShadDialog), findsNothing,
+        reason: '关闭后弹窗应消失');
+    expect(find.text('关联的知识点'), findsOneWidget,
+        reason: '关闭后应回落到来源详情页（关联区仍在）');
+    expect(tester.takeException(), isNull);
   });
 }
