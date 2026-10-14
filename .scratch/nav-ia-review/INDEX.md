@@ -69,7 +69,7 @@
 | 10 | 学生与班级管理合并 | 03 | done |
 | 11 | 场景编辑器归位为弹窗 + 立编辑形态规则 | 03 | done |
 | 12 | 页面路径序列化与重启恢复 | 03 | done |
-| 13 | 统一刷新策略 stale-while-revalidate | 04 | ready-for-agent |
+| 13 | 统一刷新策略 stale-while-revalidate | 04 | done |
 
 ---
 
