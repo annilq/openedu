@@ -377,6 +377,18 @@ async def _extract_and_align(
         meta = MaterialMeta.model_validate(data)
     except Exception as e:  # noqa: BLE001
         return "failed", f"模型输出不符合元数据格式：{e}"
+    names: list[str] = []
+    for raw in meta.knowledge_points:
+        name = raw.strip()[:128]
+        if name and name not in names:
+            names.append(name)
+    names = names[:20]
+    if not names:
+        # 空知识点清单不是「提取成功」：prompt 要求 5-20 个，返回 0 个即模型未履约。
+        # 旧行为把空列表写进 material.knowledge_points 并跳过对齐——资料从此在
+        # 「溯源」里永远查不到出处（ADR-0093 按名字反查该字段），而目录里仍留着
+        # 以往提取的知识点行，两边静默漂移。在任何写库之前返回，保留旧链接。
+        return "failed", "模型未提取到任何知识点，请重试或更换模型"
     subject = meta.subject.strip() if meta.subject.strip() in SUBJECTS else None
     grade = meta.grade if 1 <= meta.grade <= 9 else None
     if subject and not material.subject:
@@ -389,12 +401,6 @@ async def _extract_and_align(
         inferred = _semester_from_name(material.name)
         if inferred:
             material.semester = inferred
-    names: list[str] = []
-    for raw in meta.knowledge_points:
-        name = raw.strip()[:128]
-        if name and name not in names:
-            names.append(name)
-    names = names[:20]
     material.knowledge_points = names
     session.add(material)
     session.commit()
