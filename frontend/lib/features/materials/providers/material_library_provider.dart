@@ -171,14 +171,19 @@ class MaterialLibraryNotifier extends StateNotifier<MaterialLibraryState> {
   }) async {
     state = state.copyWith(loading: true, clearError: true, clearNotice: true);
     try {
-      final mat = await _repo.upload(
+      final result = await _repo.upload(
         filename: filename,
         bytes: bytes,
         folderId: state.currentFolderId,
       );
       await load(keepFolder: true);
+      final mat = result.material;
       final hint = switch (mat.indexState) {
         _ when mat.textLength == 0 => '「${mat.name}」上传成功，但未解析出文字',
+        // 提取失败不阻塞入库（ADR-0055），但必须说出来：否则知识点目录空着、
+        // 「溯源」查不到出处，教师还以为是功能坏了。
+        _ when !result.extracted =>
+          '「${mat.name}」已上传，但元数据提取未完成：${result.error ?? '未知原因'}',
         _ => '「${mat.name}」已上传，向量化后参与出题',
       };
       state = state.copyWith(loading: false, notice: hint);
@@ -206,9 +211,18 @@ class MaterialLibraryNotifier extends StateNotifier<MaterialLibraryState> {
   Future<void> reextract(String materialId) async {
     state = state.copyWith(loading: true, clearError: true, clearNotice: true);
     try {
-      final mat = await _repo.reextract(materialId);
+      final result = await _repo.reextract(materialId);
       await load(keepFolder: true);
-      state = state.copyWith(loading: false, notice: '「${mat.name}」元数据已更新');
+      // 提取四态必须分开说：失败时旧值是「没动」而不是「已更新」——把失败显示成
+      // 成功，教师下次点「溯源」依旧查不到出处，还以为是功能坏了。
+      state = state.copyWith(
+        loading: false,
+        notice: result.extracted
+            ? '「${result.material.name}」元数据已更新'
+                '（${result.material.knowledgePoints.length} 个知识点）'
+            : '「${result.material.name}」重新提取未完成：'
+                '${result.error ?? '未知原因'}',
+      );
     } catch (e) {
       state = state.copyWith(loading: false, error: '重新提取失败：$e');
     }

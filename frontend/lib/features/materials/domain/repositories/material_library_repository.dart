@@ -103,6 +103,38 @@ class MaterialItemModel {
       );
 }
 
+/// 重新提取的结果：资料本体 + 提取四态（extracted / skipped_unsafe /
+/// skipped_no_engine / failed）+ 失败原因。
+///
+/// 单返 [MaterialItemModel] 会把失败显示成成功——调用方看到的永远是上传 /
+/// 重提后的库内状态，而「这次提取到底成没成」只存在于响应顶层的 extraction 字段。
+class MaterialExtractResult {
+  const MaterialExtractResult({
+    required this.material,
+    this.extraction = 'extracted',
+    this.error,
+  });
+
+  final MaterialItemModel material;
+
+  /// 与后端 ExtractResult.extraction 同口径的四态字符串。
+  final String extraction;
+
+  /// failed 时的人话原因；成功为 null。
+  final String? error;
+
+  bool get extracted => extraction == 'extracted';
+
+  factory MaterialExtractResult.fromJson(Map<String, dynamic> json) =>
+      MaterialExtractResult(
+        material: MaterialItemModel.fromJson(
+          Map<String, dynamic>.from(json['material'] as Map),
+        ),
+        extraction: json['extraction'] as String? ?? 'extracted',
+        error: json['extraction_error'] as String?,
+      );
+}
+
 /// 教师端资料库仓库：目录 + 文件 + 向量化动作。
 abstract class MaterialLibraryRepository {
   Future<List<MaterialFolderModel>> getFolders();
@@ -121,7 +153,7 @@ abstract class MaterialLibraryRepository {
 
   /// 上传一份资料（multipart）。返回提取状态四态之一（extracted /
   /// skipped_unsafe / skipped_no_engine / failed）——失败不阻塞入库。
-  Future<MaterialItemModel> upload({
+  Future<MaterialExtractResult> upload({
     required String filename,
     required List<int> bytes,
     String? folderId,
@@ -130,8 +162,9 @@ abstract class MaterialLibraryRepository {
   /// 手动向量化 / 重新向量化。
   Future<MaterialItemModel> vectorize(String materialId);
 
-  /// 手动重新提取元数据。
-  Future<MaterialItemModel> reextract(String materialId);
+  /// 手动重新提取元数据。返回提取四态 + 失败原因（失败不阻塞入库，
+  /// 资料保留原值——调用方须把失败显示成失败）。
+  Future<MaterialExtractResult> reextract(String materialId);
 
   /// 批量删除资料（多选）。[cascadeKnowledgePoints] 为真时顺带清理孤儿知识点
   /// ——只收回「仅由这批资料涌现、已无其它资料引用、且从未被确认过」的待审条目，

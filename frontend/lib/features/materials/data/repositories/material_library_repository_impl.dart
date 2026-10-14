@@ -50,7 +50,7 @@ class MaterialLibraryRepositoryImpl implements MaterialLibraryRepository {
   }
 
   @override
-  Future<MaterialItemModel> upload({
+  Future<MaterialExtractResult> upload({
     required String filename,
     required List<int> bytes,
     String? folderId,
@@ -60,8 +60,9 @@ class MaterialLibraryRepositoryImpl implements MaterialLibraryRepository {
       if (folderId != null) 'folder_id': folderId,
     });
     final data = await _network.postForm('/materials/upload', form);
-    return MaterialItemModel.fromJson(
-        Map<String, dynamic>.from((data as Map)['material'] as Map));
+    return MaterialExtractResult.fromJson(
+      Map<String, dynamic>.from(data as Map),
+    );
   }
 
   @override
@@ -71,10 +72,11 @@ class MaterialLibraryRepositoryImpl implements MaterialLibraryRepository {
   }
 
   @override
-  Future<MaterialItemModel> reextract(String materialId) async {
+  Future<MaterialExtractResult> reextract(String materialId) async {
     final data = await _network.post('/materials/$materialId/extract');
-    return MaterialItemModel.fromJson(
-        Map<String, dynamic>.from((data as Map)['material'] as Map));
+    return MaterialExtractResult.fromJson(
+      Map<String, dynamic>.from(data as Map),
+    );
   }
 
   @override
