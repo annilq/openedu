@@ -1,6 +1,5 @@
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/presentation/shell_navigation.dart';
 import '../../../../shared/theme/app_theme.dart';
@@ -34,6 +33,7 @@ import 'teacher_destinations.dart';
 import '../widgets/student_home.dart';
 import '../widgets/teacher/teacher_overview_view.dart';
 import '../widgets/teacher/teacher_task_form_view.dart';
+import '../widgets/teacher/generation_banner.dart';
 import '../widgets/teacher/teacher_question_bank_view.dart';
 import '../widgets/teacher/teacher_tasks_view.dart';
 import '../widgets/teacher/material_library_view.dart';
@@ -42,7 +42,6 @@ import '../../../../features/courseware/presentation/screens/asset_library_scree
 import '../../../../features/assistant/presentation/widgets/run_trace_detail_view.dart';
 import '../../../../features/assistant/presentation/widgets/run_trace_view.dart';
 import 'student_mastery_screen.dart';
-import '../../../../shared/widgets/app_actions.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   final UserModel user;
@@ -344,7 +343,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (preview != null)
-          _GenerationBanner(
+          GenerationBanner(
             state: preview,
             onStop: () =>
                 ref.read(taskGenNotifierProvider.notifier).stop(),
@@ -537,71 +536,3 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 }
-
-/// 出题进行中的常驻指示条（跨 Tab），带停止按钮。
-///
-/// 进度文案优先级：首题 STEP 前的阶段帧 > 当前题进度标签 > 兜底「生成中…」。
-/// 停止 = [TaskGenNotifier.stop]：在当前题边界中断、保留已出题（ADR-0057 Q1=B）。
-class _GenerationBanner extends StatelessWidget {
-  final TaskGenPreview state;
-  final VoidCallback onStop;
-
-  const _GenerationBanner({required this.state, required this.onStop});
-
-  @override
-  Widget build(BuildContext context) {
-    final app = AppTheme.colorsOf(context);
-    final text = AppTheme.textOf(context);
-    final label = state.stage.isNotEmpty
-        ? state.stage
-        : state.liveLabel.isNotEmpty
-            ? state.liveLabel
-            : '生成中…';
-    final count = state.expected > 0
-        ? '已出 ${state.questions.length}/${state.expected} 题'
-        : '已出 ${state.questions.length} 题';
-    return Container(
-      decoration: BoxDecoration(
-        color: app.surfaceActive,
-        border: Border(
-          bottom: BorderSide(
-            color: app.outline,
-            width: AppElevation.borderWidthHairline,
-          ),
-        ),
-      ),
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.md,
-        vertical: AppSpacing.sm,
-      ),
-      child: Row(
-        children: [
-          Icon(LucideIcons.loaderCircle, size: 16, color: app.accent),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label,
-                    style: text.labelMedium
-                        ?.copyWith(fontWeight: FontWeight.w600)),
-                Text(count,
-                    style: text.labelSmall
-                        ?.copyWith(color: app.onSurfaceVariant)),
-              ],
-            ),
-          ),
-          AppIconAction(
-            icon: LucideIcons.x,
-            semanticLabel: '停止生成',
-            onPressed: onStop,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// 教师端导航状态（ADR-0059）
-// ---------------------------------------------------------------------------
