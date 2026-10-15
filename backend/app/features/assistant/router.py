@@ -24,10 +24,10 @@ from uuid import UUID
 from fastapi import APIRouter, Query
 from fastapi.responses import StreamingResponse
 
-from app.core.deps import CallerDep, CurrentTeacher, SessionDep
+from app.core.deps import CallerDep, SessionDep
 from app.core.errors import AppErrorException, ErrCode
-from app.core.guard import require_owned
-from app.db.models import Conversation, Role
+from app.core.guard import require_owned_conversation
+from app.db.models import Role
 from app.features.assistant import service as assistant_service
 from app.features.assistant.schemas import (
     AssistantChatReq,
@@ -84,35 +84,33 @@ def suggested_actions(
 def list_conversations(
     *,
     session: SessionDep,
-    teacher: CurrentTeacher,
+    caller: CallerDep,
     limit: int = Query(default=50, ge=1, le=200),
 ) -> list[AssistantConversationResp]:
-    """教师的历史会话列表（含名下学生的），最近活动倒序（ADR-0048）。
+    """**我的**历史会话列表，最近活动倒序（ADR-0048，归属口径 ADR-0096）。
 
-    **教师专属**（``CurrentTeacher``）：学生端的会话列表被有意留空——学生看到自己
-    「被拦过」的记录是负面强化，而「找回我问过的那道题」对学生是次要需求。
-    这是不对称，不是遗漏。故本轮也没有 student-scoped 的等价路由。
+    教师与学生走同一条路径（``CallerDep``）：每人只看**自己**的会话——教师不再看到
+    名下学生的（ADR-0048 §3 的反转，见 ADR-0096），学生则第一次有了自己的列表。
+    列表里每一条都可续接，因此响应不含「只读」判别字段。
     """
     return assistant_service.list_conversations(
-        session=session, teacher_id=teacher.id, limit=limit
+        session=session, user=caller.user, limit=limit
     )
 
 
 @router.get("/conversations/{conv_id}", response_model=AssistantConversationDetailResp)
 def get_conversation(
-    *, session: SessionDep, teacher: CurrentTeacher, conv_id: UUID
+    *, session: SessionDep, caller: CallerDep, conv_id: UUID
 ) -> AssistantConversationDetailResp:
-    """一次会话的概要 + 全部气泡（回放 / 恢复续接）。越权（非本教师）→ 403。
+    """一次会话的概要 + 全部气泡（恢复续接）。不属于本人 → 403。
 
-    归属走 ``core.guard`` 单一实现；学生的会话也归教师所有（``teacher_id`` 是教师），
-    所以学生那条会话其教师能读到——这正是「教师可查看学生在问什么」的实现方式，
-    读到的内容与学生当时看到的一致（工具出参在落库前就按角色剥过答案，ADR-0033）。
+    归属走 ``core.guard`` 的会话判据：教师只开自己聊的（学生的会话他看不到），
+    学生只开自己聊的。不存在与不属于抛同一个错（403），不把越权降级成 404。
     """
-    conv = require_owned(
+    conv = require_owned_conversation(
         session=session,
-        owner_id=teacher.id,
-        model=Conversation,
-        obj_id=conv_id,
+        user=caller.user,
+        conv_id=conv_id,
         code=ErrCode.FORBIDDEN,
         message="Not your conversation",
     )
@@ -121,17 +119,16 @@ def get_conversation(
 
 @router.delete("/conversations", response_model=int)
 def delete_conversations(
-    *, session: SessionDep, teacher: CurrentTeacher, body: AssistantConversationsDeleteReq
+    *, session: SessionDep, caller: CallerDep, body: AssistantConversationsDeleteReq
 ) -> int:
-    """批量删除本教师名下的会话及其关联消息（多选删除，ADR-0048 补充）。
+    """批量删除**本人**名下的会话及其关联消息（多选删除，ADR-0048 补充）。
 
-    **教师专属**（``CurrentTeacher``，与列表 / 回放同一口径）。``ids`` 只认
-    ``teacher_id`` 匹配的会话——学生的会话也归教师所有，一并可删；越权的 id
-    （其他教师 / 不存在）被归属过滤掉，静默忽略，不会误删他人数据。
+    双端通用（``CallerDep``），与列表 / 详情同一判据。``ids`` 只认本人拥有的会话；
+    越权的 id（他人会话 / 不存在）被归属过滤掉，静默忽略，不会误删他人数据。
 
     会话与消息是两张表、无 FK 级联（ADR-0048 有意不做的缺口），删除在 repository
     内按「先消息后会话」的顺序完成。返回实际删除的会话条数。
     """
     return assistant_service.delete_conversations(
-        session=session, teacher_id=teacher.id, ids=body.ids
+        session=session, user=caller.user, ids=body.ids
     )

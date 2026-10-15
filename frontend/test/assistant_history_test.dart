@@ -1,10 +1,9 @@
-// 守住 ADR-0048：助手页内的「历史会话 + 只读回放」。
+// 守住 ADR-0048（归属口径经 ADR-0096 收敛）：助手页内的「历史会话」。
 //
-// 断言的是**行为分叉**而不是「渲染了某个组件」：
-// - 我的会话点开 → 回到对话模式且历史气泡在里面（可以接着聊）；
-// - 学生的会话点开 → 只读回放（没有输入框），并说明为什么不能输入。
-// 第二条是这套设计的核心约束：拿学生的 session_id 去续接会被后端归属校验拒掉并
-// 另建一段会话，而屏幕上看起来像续上了。
+// 断言的是**行为**而不是「渲染了某个组件」：
+// - 列表里每一条点开都进入**续接**（有输入框、气泡带进对话区）；
+// - 不再有「只读回放」那一态——后端只返回本人可见的会话，每条都可续接；
+// - 学生端也有历史入口（ADR-0048 曾把它定为教师专属，那条理由已不成立）。
 import 'dart:async';
 
 import 'package:cupertino_ui/cupertino_ui.dart';
@@ -30,12 +29,11 @@ const _mine = AssistantConversation(
   updatedAt: '2026-09-15T12:00:00+00:00',
 );
 
-const _kid = AssistantConversation(
-  id: 'kid-1',
+/// 另一段**同一个人的**会话（ADR-0096 前它是「学生的会话」，归属口径已变）。
+const _other = AssistantConversation(
+  id: 'other-1',
   title: '23 + 45 怎么算',
   kind: 'tutor',
-  studentId: 'child-1',
-  studentName: '小明',
   bubbleCount: 4,
   updatedAt: '2026-09-16T01:30:00+00:00',
 );
@@ -48,8 +46,8 @@ const _mineDetail = AssistantConversationDetail(
   ],
 );
 
-const _kidDetail = AssistantConversationDetail(
-  conversation: _kid,
+const _otherDetail = AssistantConversationDetail(
+  conversation: _other,
   bubbles: [
     AssistantBubble(role: 'user', text: '23 + 45 怎么算'),
     AssistantBubble(role: 'assistant', text: '先看清条件，再选方法。'),
@@ -61,7 +59,7 @@ const _kidDetail = AssistantConversationDetail(
 /// [scheduleDelete] / [cancelScheduledDelete] 用真 [Timer] 复刻仓库行为，
 /// 这样测试能靠 `tester.pump` 推进假时钟，验证「5 秒窗口内可撤销、到期才真删」。
 class _FakeAssistant extends Fake implements AssistantRepository {
-  _FakeAssistant({this.items = const [_kid, _mine]});
+  _FakeAssistant({this.items = const [_other, _mine]});
 
   final List<AssistantConversation> items;
   final List<String> opened = [];
@@ -76,7 +74,7 @@ class _FakeAssistant extends Fake implements AssistantRepository {
   @override
   Future<AssistantConversationDetail> conversationDetail(String id) async {
     opened.add(id);
-    return id == 'me-1' ? _mineDetail : _kidDetail;
+    return id == 'me-1' ? _mineDetail : _otherDetail;
   }
 
   @override
@@ -128,15 +126,15 @@ class _ScheduledDelete {
   final Timer timer;
 }
 
-/// 只读回放带「题目卡片」的假仓库（Task 2 守卫：回放要连卡片一起显示，不只是 text）。
+/// 带「题目卡片」的假仓库（Task 2 守卫：续接要连卡片一起显示，不只是 text）。
 class _FakeCardRepo extends _FakeAssistant {
-  _FakeCardRepo() : super(items: const [_kid]);
+  _FakeCardRepo() : super(items: const [_other]);
 
   @override
   Future<AssistantConversationDetail> conversationDetail(String id) async {
     opened.add(id);
     return AssistantConversationDetail(
-      conversation: _kid,
+      conversation: _other,
       bubbles: [
         const AssistantBubble(role: 'user', text: '出一道二年级的数学题'),
         AssistantBubble(
@@ -195,28 +193,27 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('教师端顶栏有历史入口，点开进入历史列表', (tester) async {
+  testWidgets('顶栏有历史入口，点开进入历史列表', (tester) async {
     await pumpPage(tester, _FakeAssistant());
     expect(find.text('AI 学习助手'), findsOneWidget);
 
     await openHistory(tester);
 
     expect(find.text('历史会话'), findsOneWidget);
-    expect(find.text('我的对话'), findsOneWidget);
-    expect(find.text('小明的对话'), findsOneWidget,
-        reason: '学生的会话按娃分段，段名用学生显示名');
-    expect(find.text('只读'), findsOneWidget, reason: '只读这件事要写在行上，'
-        '而不是等用户点进去才发现输入框没了');
+    expect(find.text('我都有哪些娃'), findsOneWidget);
+    expect(find.text('23 + 45 怎么算'), findsOneWidget);
+    expect(find.text('只读'), findsNothing,
+        reason: '列表里每条都可续接，不再有只读条目与只读徽标（ADR-0096）');
   });
 
-  testWidgets('「我的对话」置顶，不受最近活动时间影响', (tester) async {
-    // 装置里学生那段更近（排在前面）——「我的对话」仍应在最上。
+  testWidgets('列表按后端顺序原样铺开（最近活动的在前）', (tester) async {
+    // 装置里 23+45 那段更近（排在前面），前端不重排、也不再分组。
     await pumpPage(tester, _FakeAssistant());
     await openHistory(tester);
 
-    final mineY = tester.getTopLeft(find.text('我的对话')).dy;
-    final kidY = tester.getTopLeft(find.text('小明的对话')).dy;
-    expect(mineY, lessThan(kidY));
+    final otherY = tester.getTopLeft(find.text('23 + 45 怎么算')).dy;
+    final mineY = tester.getTopLeft(find.text('我都有哪些娃')).dy;
+    expect(otherY, lessThan(mineY), reason: '后端已按 updated_at 倒序，前端原样渲染');
   });
 
   testWidgets('点我的会话：回到对话模式，历史气泡就在里面（可续接）', (tester) async {
@@ -227,7 +224,7 @@ void main() {
     await tester.tap(find.text('我都有哪些娃'));
     await tester.pumpAndSettle();
 
-    expect(repo.opened, ['me-1'], reason: '必须按 id 取回放载荷，而不是拿列表里的字段拼');
+    expect(repo.opened, ['me-1'], reason: '必须按 id 取会话载荷，而不是拿列表里的字段拼');
     expect(find.text('历史会话'), findsNothing);
     expect(find.text('AI 学习助手'), findsOneWidget);
     expect(find.text('我都有哪些娃'), findsOneWidget,
@@ -235,7 +232,7 @@ void main() {
     expect(find.byType(ShadInput), findsOneWidget, reason: '自己的会话可以继续提问');
   });
 
-  testWidgets('点学生的会话：只读回放——有气泡、无输入框、且说明原因', (tester) async {
+  testWidgets('点任一段会话：都是续接——有气泡、有输入框', (tester) async {
     final repo = _FakeAssistant();
     await pumpPage(tester, repo);
     await openHistory(tester);
@@ -243,25 +240,23 @@ void main() {
     await tester.tap(find.text('23 + 45 怎么算'));
     await tester.pumpAndSettle();
 
-    expect(repo.opened, ['kid-1']);
-    expect(find.text('这是小明的对话，只能查看，不能继续提问'), findsOneWidget,
-        reason: '输入框被撤掉时必须说明原因，否则用户会以为界面坏了');
-    expect(find.byType(ShadInput), findsNothing,
-        reason: '学生的会话不能续接：后端归属校验会另建一段，屏幕上却像续上了');
-    expect(find.text('23 + 45 怎么算'), findsOneWidget, reason: '回放气泡要看得到');
+    expect(repo.opened, ['other-1']);
+    expect(find.text('23 + 45 怎么算'), findsOneWidget, reason: '历史气泡要看得到');
+    expect(find.byType(ShadInput), findsOneWidget,
+        reason: 'ADR-0096：列表里每条都是本人的会话，都能接着问');
   });
 
-  testWidgets('只读回放可退回列表，再从列表回到对话', (tester) async {
+  testWidgets('续接后可退回列表，再从列表回到对话', (tester) async {
     await pumpPage(tester, _FakeAssistant());
     await openHistory(tester);
     await tester.tap(find.text('23 + 45 怎么算'));
     await tester.pumpAndSettle();
 
-    // 返回键（页内返回历史列表，不是 pop 整页）
-    await tester.tap(find.byIcon(LucideIcons.chevronLeft));
-    await tester.pumpAndSettle();
+    // 顶栏「历史」回到列表（页内切模式，不是 pop 整页）
+    await openHistory(tester);
     expect(find.text('历史会话'), findsOneWidget);
 
+    // 返回键回对话
     await tester.tap(find.byIcon(LucideIcons.chevronLeft));
     await tester.pumpAndSettle();
     expect(find.text('AI 学习助手'), findsOneWidget);
@@ -299,13 +294,12 @@ void main() {
             '而 flutter analyze 照不出来');
   });
 
-  testWidgets('学生端没有历史入口（有意的不对称）', (tester) async {
+  testWidgets('学生端也有历史入口（ADR-0096 反转了「教师专属」）', (tester) async {
     await pumpPage(tester, _FakeAssistant(), isTeacher: false);
 
     expect(find.text('问 AI 老师'), findsOneWidget);
-    expect(find.byIcon(LucideIcons.history), findsNothing,
-        reason: '后端没有 child-scoped 会话列表路由；且学生看到自己「被拦过」的'
-            '记录是负面强化——这是有意留的不对称，不是漏做');
+    expect(find.byIcon(LucideIcons.history), findsOneWidget,
+        reason: '后端按调用者身份返回本人可见的会话，学生看到的就是自己问过的');
   });
 
   testWidgets('列表为空时给空态而不是白屏', (tester) async {
@@ -359,7 +353,7 @@ void main() {
     await tester.pumpAndSettle();
     // 「已选 N 项」同时出现在顶栏标题与列表操作条，文本命中 2 处；这里只验存在。
     expect(find.text('已选 2 项'), findsWidgets,
-        reason: '默认列表 2 段（我的 + 学生的），全选应全中');
+        reason: '默认列表 2 段，全选应全中');
     expect(find.byIcon(LucideIcons.checkCircle2), findsNWidgets(2));
 
     // 全选后按钮变「取消全选」，再点一次清空。
@@ -482,9 +476,9 @@ void main() {
     expect(action.onPressed, isNull, reason: '空选时删除不应可点');
   });
 
-  // ── 回放卡片（Task 2） ────────────────────────────────────────────────
-  testWidgets('只读回放包含题目卡片（不只是 text）', (tester) async {
-    // 守卫 ADR-0042：回放载荷里的 DATA 卡片必须连题干一起渲染，不能只显示文本。
+  // ── 会话卡片（Task 2） ────────────────────────────────────────────────
+  testWidgets('续接包含题目卡片（不只是 text）', (tester) async {
+    // 守卫 ADR-0042：会话载荷里的 DATA 卡片必须连题干一起渲染，不能只显示文本。
     final repo = _FakeCardRepo();
     await pumpPage(tester, repo);
     await openHistory(tester);
@@ -494,7 +488,7 @@ void main() {
 
     // 题目卡片渲染出来了：题干文本只可能来自卡片（气泡正文是「好的，这道题给你：」）。
     expect(find.text('1 + 1 等于多少？'), findsOneWidget,
-        reason: '题目卡片的题干应显示在回放里，而不是只显示文本气泡');
+        reason: '题目卡片的题干应显示在续接的对话区里，而不是只显示文本气泡');
     expect(find.text('数学'), findsWidgets, reason: '学科标签随卡片一起出现');
     // 文本气泡也在：卡片之外，正文照常显示。
     expect(find.text('好的，这道题给你：'), findsOneWidget);

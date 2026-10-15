@@ -71,21 +71,21 @@ class AssistantChatReq(SQLModel):
 
 
 class AssistantConversationResp(SQLModel):
-    """会话列表行：一段可续接的多轮对话（ADR-0048）。
+    """会话列表行：一段可续接的多轮对话（ADR-0048，归属口径 ADR-0096）。
 
     - ``title``：会话名（首条用户消息截断；历史会话无 title 时由服务端回落）。
     - ``kind``：**首轮**路由结果的展示标签，不承担分组或筛选——续接轮不更新它，
       拿它当类型筛选会撒谎。
-    - ``student_id`` / ``student_name``：``None`` 表示这是教师自己的会话；非空即学生的，
-      前端据此分「只读回放」与「可续接」两条路径。
     - ``bubble_count``：可见轮次数（用户的提问数 + 回答数），列表行上的「几轮」。
+
+    **没有归属字段**：列表只返回本人可见的会话（ADR-0096），每行都可续接，
+    ``student_id`` / ``student_name`` 不再有任何判别价值——留着只会诱导前端
+    重新长出「只读 / 可编辑」的分叉。
     """
 
     id: UUID
     title: str
     kind: str
-    student_id: UUID | None = None
-    student_name: str | None = None
     bubble_count: int = 0
     created_at: datetime | None = None
     updated_at: datetime | None = None
@@ -109,7 +109,10 @@ class AssistantBubbleResp(SQLModel):
 
 
 class AssistantConversationDetailResp(SQLModel):
-    """一次会话的回放：概要 + 全部气泡（供只读查看或恢复续接）。"""
+    """一次会话的载荷：概要 + 全部气泡（恢复续接）。
+
+    只有一种读法（ADR-0096 删掉了「只读回放」）：调用者已过归属校验，拿到就能续接。
+    """
 
     conversation: AssistantConversationResp
     bubbles: list[AssistantBubbleResp] = []
@@ -118,9 +121,8 @@ class AssistantConversationDetailResp(SQLModel):
 class AssistantConversationsDeleteReq(SQLModel):
     """批量删除会话（多选删除，ADR-0048 补充）。
 
-    ``ids`` 只认**本教师名下**的会话：学生的会话也归教师所有（``teacher_id`` 是教师），
-    所以一并可删；越权的 id（其他教师 / 不存在）被后端按归属过滤掉，静默忽略，
-    不会误删他人数据。
+    ``ids`` 只认**本人**名下的会话（ADR-0096）：越权的 id（他人会话 / 不存在）
+    被后端按归属过滤掉，静默忽略，不会误删他人数据。
     """
 
     ids: list[UUID]

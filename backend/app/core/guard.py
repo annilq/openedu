@@ -17,10 +17,11 @@ from __future__ import annotations
 from typing import TypeVar
 from uuid import UUID
 
-from sqlmodel import Session, SQLModel
+from sqlalchemy import and_
+from sqlmodel import Session, SQLModel, select
 
 from app.core.errors import AppErrorException, ErrCode
-from app.db.models import Role, User
+from app.db.models import Conversation, Role, User
 
 _T = TypeVar("_T", bound=SQLModel)
 
@@ -87,6 +88,74 @@ def require_owned_or_admin(
         obj_id=obj_id,
         code=code,
         message=message,
+    )
+
+
+# ── 会话归属（ADR-0096） ────────────────────────────────────────────────────
+def conversation_owner_clause(user: User):
+    """「这条会话属于本人」的 SQL 判据——会话归属的**唯一真源**（ADR-0096）。
+
+    - 学生：``student_id == 本人``；
+    - 教师 / admin：``teacher_id == 本人 AND student_id IS NULL``——只看自己聊的，
+      不再看名下学生的（ADR-0048 §3 的反转）。
+
+    **``teacher_id`` 列不等于归属**：它在 chat 链路里还表示教学域（RAG 检索范围、
+    引擎解析，见 ``service.chat`` 的角色分流），学生的会话也填的是其教师。所以
+    「谁的教学域」与「谁能看」在这里是两件事，本函数只表达后者——别把它改成
+    单字段比较，那会把教学域重新混进归属口径。
+
+    列表（SQL 过滤）、详情（单行断言）、删除（批量过滤）三处都从这里取判据，
+    避免「列表里有但详情 403」这类分裂。
+    """
+    if user.role == Role.STUDENT:
+        return Conversation.student_id == user.id
+    return and_(
+        Conversation.teacher_id == user.id,
+        Conversation.student_id.is_(None),
+    )
+
+
+def require_owned_conversation(
+    *,
+    session: Session,
+    user: User,
+    conv_id: UUID,
+    code: ErrCode = ErrCode.FORBIDDEN,
+    message: str = "无权访问该会话",
+) -> Conversation:
+    """断言 ``conv_id`` 是**本人**的会话，返回该行。
+
+    不存在与不属于抛同一个错误（同 :func:`require_owned`）：否则「越权」会被
+    降级成「不存在」，掩盖越权尝试。
+    """
+    obj = session.exec(
+        select(Conversation).where(
+            Conversation.id == conv_id,
+            conversation_owner_clause(user),
+        )
+    ).first()
+    if obj is None:
+        raise AppErrorException(code, message)
+    return obj
+
+
+def owned_conversation_ids(
+    *, session: Session, user: User, ids: list[UUID]
+) -> list[UUID]:
+    """批量版：返回给定 id 中**确实属于本人**的那些（其余静默忽略）。
+
+    给多选删除用——越权 id 不报错也不删，与 :func:`require_owned_conversation`
+    共用同一判据，不会出现「列表能列出、删除却删不掉」的口径差。
+    """
+    if not ids:
+        return []
+    return list(
+        session.exec(
+            select(Conversation.id).where(
+                Conversation.id.in_(ids),
+                conversation_owner_clause(user),
+            )
+        ).all()
     )
 
 

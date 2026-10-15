@@ -37,7 +37,7 @@ from app.ai.engine import resolve_engine
 from app.ai.subagents.tutor.agent import detect_subject
 from app.core.errors import AppErrorException, ErrCode
 from app.core.guard import require_owned
-from app.db.models import Class, Conversation, Message, Role, get_datetime_utc
+from app.db.models import Class, Conversation, Message, Role, User, get_datetime_utc
 from app.db.models.material import KnowledgePoint
 from app.domain import build_provider, build_retriever
 from app.domain.safety import StudentSafety
@@ -46,11 +46,10 @@ from app.features.assistant.repository import (
     conversation_meta,
     derive_title,
     get_conversation_by_id,
-    list_chat_conversations,
+    list_my_conversations,
     load_chat_history_with_summary,
     next_turn,
     read_conversation_bubbles,
-    student_names,
     title_of,
 )
 from app.features.assistant.repository import (
@@ -824,7 +823,7 @@ async def chat(
     return event_stream()
 
 
-# ── 会话历史读编排（用户面，ADR-0048） ────────────────────────────────────────
+# ── 会话历史读编排（用户面，ADR-0048；归属口径 ADR-0096） ──────────────────────
 #
 # 与「运行轨迹」调试端点（``/api/v1/ai/debug/conversations``）刻意分开：那边返回全部
 # step 与原始 payload，供审计与排障；这边只返回对话气泡与列表元信息。两者读同一批行，
@@ -835,16 +834,18 @@ def _summary_of(
     conv: Conversation,
     *,
     first_user: str,
-    student_name: str | None,
     bubble_count: int,
 ) -> AssistantConversationResp:
-    """ORM 行 → 列表行契约（title 的回落规则收口在 ``repository.title_of``）。"""
+    """ORM 行 → 列表行契约（title 的回落规则收口在 ``repository.title_of``）。
+
+    **不再带归属标签**（ADR-0096）：列表只会返回本人可见的会话，``student_id``
+    要么是 ``None``（教师自己）要么就是调用者本人（学生），带回去是纯噪声，
+    还会诱导前端重新长出「只读 / 可编辑」的分叉。
+    """
     return AssistantConversationResp(
         id=conv.id,
         title=title_of(conv, first_user),
         kind=conv.kind,
-        student_id=conv.student_id,
-        student_name=student_name,
         bubble_count=bubble_count,
         created_at=conv.created_at,
         updated_at=conv.updated_at,
@@ -852,16 +853,16 @@ def _summary_of(
 
 
 def list_conversations(
-    *, session: Any, teacher_id: UUID, limit: int = 50
+    *, session: Any, user: User, limit: int = 50
 ) -> list[AssistantConversationResp]:
-    """教师的历史会话列表（含名下学生的），最近活动倒序。
+    """**本人**的历史会话列表，最近活动倒序（ADR-0096）。
 
-    「我的 / 学生的」不在这里分段：分段是展示层决策（ADR-0048 选了按娃分两段），
-    服务端只保证每行带够判别信息（``student_id`` → 是否可续接，``student_name`` → 归属标签）。
+    教师与学生走同一条路径，判据收口在 ``core.guard``：教师看到自己聊的（不含
+    名下学生的），学生看到自己聊的。列表里每一条都**可续接**，不再有「只读回放」
+    那一类条目——所以响应里也没有判别归属的字段。
     """
-    convs = list_chat_conversations(session=session, teacher_id=teacher_id, limit=limit)
+    convs = list_my_conversations(session=session, user=user, limit=limit)
     meta = conversation_meta(session, [c.id for c in convs])
-    names = student_names(session, [c.student_id for c in convs if c.student_id])
     out: list[AssistantConversationResp] = []
     for conv in convs:
         m = meta.get(conv.id, {})
@@ -869,7 +870,6 @@ def list_conversations(
             _summary_of(
                 conv,
                 first_user=m.get("first_user", ""),
-                student_name=names.get(conv.student_id) if conv.student_id else None,
                 bubble_count=m.get("bubble_count", 0),
             )
         )
@@ -881,33 +881,27 @@ def conversation_detail(
 ) -> AssistantConversationDetailResp:
     """一次会话的概要 + 全部气泡。
 
-    只读回放（学生的会话）与恢复续接（教师自己的会话）拿的是**同一份载荷**：
-    两者只在「加载后能不能继续发消息」上有区别，那是前端的模式状态，不是两种数据。
+    载荷只有一种：调用者已通过 ``core.guard.require_owned_conversation`` 判定归属，
+    拿到就能续接（ADR-0096 删掉了「只读回放」这一种读法）。
     """
     bubbles = [
         AssistantBubbleResp(**b) for b in read_conversation_bubbles(session, conv.id)
     ]
     first_user = next((b.text for b in bubbles if b.role == "user"), "")
-    names = student_names(session, [conv.student_id] if conv.student_id else [])
     return AssistantConversationDetailResp(
         conversation=_summary_of(
             conv,
             first_user=first_user,
-            student_name=names.get(conv.student_id) if conv.student_id else None,
             bubble_count=len(bubbles),
         ),
         bubbles=bubbles,
     )
 
 
-def delete_conversations(
-    *, session: Any, teacher_id: UUID, ids: list[UUID]
-) -> int:
-    """批量删除本教师名下的会话及其消息（多选删除，ADR-0048 补充）。
+def delete_conversations(*, session: Any, user: User, ids: list[UUID]) -> int:
+    """批量删除**本人**名下的会话及其消息（多选删除，ADR-0048 补充）。
 
-    归属校验与消息级联删除都收口在 repository（与读路径同一份可见轮次判定相反，
-    这里只做「按 id + teacher_id 删干净」）。返回实际删掉的会话条数。
+    归属校验与消息级联删除都收口在 repository，与读路径共用 ``core.guard`` 的
+    同一判据。返回实际删掉的会话条数。
     """
-    return repo_delete_conversations(
-        session=session, teacher_id=teacher_id, ids=ids
-    )
+    return repo_delete_conversations(session=session, user=user, ids=ids)
