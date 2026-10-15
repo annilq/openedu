@@ -50,19 +50,23 @@ class ClarifySlot {
         max: json['max'] as int?,
       );
 
-  /// 从事件帧的 `extra.clarify` 解析缺失槽列表；无澄清标记则空列表。
+  /// 从 `clarify` map（``{missing_slots: [...]}``）解析缺失槽列表；空 / 畸形则空列表。
   ///
-  /// 畸形帧（extra 不是 Map / missing_slots 不是 List / 槽缺 name）一律降级为空，
-  /// 不抛、不造出无法操作的空气卡。
-  static List<ClarifySlot> slotsOfEvent(AssistantEvent ev) {
-    final clarify = ev.extra?['clarify'];
-    if (clarify is! Map<String, dynamic>) return const <ClarifySlot>[];
+  /// 实时流（事件帧的 `extra.clarify`）与历史回放（气泡的 `clarify` 字段，落库时存的
+  /// 就是同一形状）共用本解析——两份实现迟早漂移。畸形帧一律降级为空，不抛、不造出
+  /// 无法操作的空气卡。
+  static List<ClarifySlot> slotsOf(Object? clarify) {
+    if (clarify is! Map) return const <ClarifySlot>[];
     final raw = clarify['missing_slots'];
     if (raw is! List) return const <ClarifySlot>[];
     return raw
-        .whereType<Map<String, dynamic>>()
-        .map(ClarifySlot.fromJson)
+        .whereType<Map>()
+        .map((e) => ClarifySlot.fromJson(e.cast<String, dynamic>()))
         .where((s) => s.name.isNotEmpty)
         .toList();
   }
+
+  /// 从事件帧的 `extra.clarify` 解析缺失槽列表；无澄清标记则空列表。
+  static List<ClarifySlot> slotsOfEvent(AssistantEvent ev) =>
+      slotsOf(ev.extra?['clarify']);
 }

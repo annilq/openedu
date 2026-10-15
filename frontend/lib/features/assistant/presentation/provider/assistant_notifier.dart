@@ -43,15 +43,23 @@ class AssistantMessage {
   /// 回放气泡**没有 `blocked`**：`Message` 上那组安全标记列从未被写入（真正的被拦记录
   /// 在 TutorLog，即 F-305 的「已拦截」徽标），所以历史消息上不会出现安全提示——
   /// 这是有意的不对称，别用「顺带补个字段」把它掩盖成看起来能用的空值。
+  ///
+  /// ``clarify`` / ``summary`` 照搬：气泡载荷里存的就是与实时流 `extra` 同形的结构化
+  /// 帧（ADR-0095），解析后挂到消息上，历史里的追问卡与汇总卡按原样还原。
   factory AssistantMessage.fromBubble(AssistantBubble bubble) =>
       AssistantMessage(
         role: bubble.role == 'assistant' ? 'ai' : 'user',
         text: bubble.text,
         cards: bubble.cards.isEmpty ? null : bubble.cards,
+        clarify: _orNull(ClarifySlot.slotsOf(bubble.clarify)),
+        summary: _orNull(SummarySlot.slotsOf(bubble.summary)),
         // 回放溯源为后续增强：当前气泡载荷未携带 sources，留空不展示。
         sources: const <RagSource>[],
       );
 }
+
+/// 空列表折成 null：与实时流同一口径（`clarify` / `summary` 非空才渲染卡）。
+List<T>? _orNull<T>(List<T> slots) => slots.isEmpty ? null : slots;
 
 sealed class AssistantState {
   const AssistantState();
