@@ -10,11 +10,11 @@
 > 年级 chip 回传「3年级」而非「3」，因后端按「N年级」正则抽取。历史回放
 > （`AssistantMessage.fromBubble`）暂不还原引导卡——气泡载荷未带 clarify，属后续增强。
 
-- [ ] 识别 `AssistantMessage.extra.clarify` 非空 → 走引导输入卡分支（否则普通气泡）。
-- [ ] 枚举槽按 `enum` 直接用、`enum_ref` 映射到前端既有学科常量（与 `app.domain.subjects.SUBJECTS` 同源）；int 槽数值输入；文本槽文本输入。
-- [ ] 点选 / 输入补参后回填并发送；下一轮与 01 跨轮合并协同、进入生成。
-- [ ] 汇总帧展示已填 + 默认填充项清单，提供「修改」入口。
-- [ ] `flutter analyze` 0 issue；几何 / 结构断言通过（禁截图装置）；前端测试无回归。
+- [x] 识别 `AssistantMessage.extra.clarify` 非空 → 走引导输入卡分支（否则普通气泡）。
+- [x] 枚举槽按 `enum` 直接用、`enum_ref` 映射到前端既有学科常量（与 `app.domain.subjects.SUBJECTS` 同源）；int 槽数值输入；文本槽文本输入。
+- [x] 点选 / 输入补参后回填并发送；下一轮与 01 跨轮合并协同、进入生成。
+- [x] 汇总帧展示已填 + 默认填充项清单，提供「修改」入口。
+- [x] `flutter analyze` 0 issue；几何 / 结构断言通过（禁截图装置）；前端测试无回归。
 
 ## 纪律 / 实施提示
 - 全站禁 Material 控件；可点区一律 `AppFocusableAction`。

@@ -63,3 +63,23 @@
 3. 汇总帧「修改」入口 + 前端汇总渲染（ticket 02 验收缺口）。
 4. `payload.clarify` 形状与契约对齐（list → map）。
 5. 去重：抽取表与 `question/agent.py` 同源（Standards a1）。
+
+## 修复记录（评审后实修）
+
+全部 5 项已修，另加 2 项实现期新暴露的缺陷。
+
+| # | 处置 |
+|---|---|
+| 1 跨业务覆盖 | `Conversation.slots` 改 `{business: {...}}`；`service.py` 读写按 business 取子账。 |
+| 2 US2 边界 | 以 grill 决策 #4（qtype 必填）为准：只回「三年级」= 记住 grade、只再问 qtype，非直接生成。ticket 01 原话已改；新增 `test_partial_fill_asks_only_remaining_required` 锁定。 |
+| 3 汇总修改入口 | 后端新增 `slot_summary.py`（中文标签 + `extra.summary` 结构化载荷）；前端新增 `SummarySlot` + `AssistantSummaryCard`，「修改」复用 `AssistantSlotInput`。bool 槽不给入口。 |
+| 4 clarify 落库形状 | `payload={"clarify": {"missing_slots": [...]}}`，与 `extra.clarify` 同形。 |
+| 5 抽取表去重 | 抽到 `app.domain.spec_keywords`（表 + 正则），出题子代理与预检共用；顺带修「道法→政治」未校验枚举（现在必须收敛到 SUBJECTS）。 |
+| 新 ① | **JSON 列脏值陷阱**：就地改同一个 dict 不触发 UPDATE（SQLAlchemy 按对象 identity 判脏）→ 第二轮 grade 写不进库。改为赋新 dict `{**store, business: merged}`。 |
+| 新 ② | **齐备即重出**：槽位齐备后此后每条消息（如「谢谢」）都会拿旧规格再出一轮题。改为仅当「本轮补进了槽位」或「本轮刚好补齐」才注入 specs 并汇总。 |
+
+### 仍挂着（未修，判断项）
+
+- Standards 判断项：`_load_input_schema` 运行期反向依赖 ai 层、裸数字尺寸（`height: 36` / `BorderRadius.circular(999)` / `slot.max ?? 9`）、`_MISSING = object()` + 裸 dict 无类型、`_extract_*` 的 name/type 分派散在两处（Repeated Switches）。
+- 历史回放（`fromBubble`）仍不还原澄清卡 / 汇总卡——气泡载荷未带 clarify/summary，需后端落库 + 前端反解析，另起一票。
+- `file_size_guard` 基线红：`home_screen.dart` 672 > 665（非本次引入，需有权人下调或说明）。
