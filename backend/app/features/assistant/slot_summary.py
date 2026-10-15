@@ -34,7 +34,9 @@ QTYPE_LABELS: dict[str, str] = {
     "choice": "选择题",
     "fill": "填空题",
     "calc": "计算题",
-    "open": "解答题",
+    # 「应用题」而非「解答题」：与前端 shared/utils/question_labels.dart 的
+    # qtypeLabelFull 同一套文案，避免同一题型两处念法不同。
+    "open": "应用题",
 }
 DIFFICULTY_LABELS: dict[str, str] = {
     "easy": "简单",
