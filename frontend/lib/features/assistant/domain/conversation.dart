@@ -59,18 +59,35 @@ class AssistantBubble {
   /// DATA 卡片（整帧：判别键 + 载荷）。认不出的种类由渲染器的降级卡兜住。
   final List<AssistantCard> cards;
 
+  /// 缺槽追问的结构化载荷（落库时与 SSE 的 `extra.clarify` 同形，ADR-0095）。
+  ///
+  /// 回放要还原追问卡就得带上它——只带 `text` 的话，历史里那句「请告诉我年级」
+  /// 会退化成光秃秃的文本，用户看不到当初的可点选项。
+  final Map<String, dynamic>? clarify;
+
+  /// 规格汇总的结构化载荷（与 SSE 的 `extra.summary` 同形，ADR-0095）。
+  final Map<String, dynamic>? summary;
+
   const AssistantBubble({
     required this.role,
     this.text = '',
     this.cards = const <AssistantCard>[],
+    this.clarify,
+    this.summary,
   });
 
   factory AssistantBubble.fromJson(Map<String, dynamic> json) => AssistantBubble(
         role: '${json['role'] ?? ''}',
         text: (json['text'] as String?) ?? '',
         cards: _cardsFrom(json['cards']),
+        clarify: _mapOf(json['clarify']),
+        summary: _mapOf(json['summary']),
       );
 }
+
+/// JSON 里的可选 map 字段：非 map（含 null）一律 None，不抛。
+Map<String, dynamic>? _mapOf(Object? raw) =>
+    raw is Map ? raw.cast<String, dynamic>() : null;
 
 /// 一次会话的载荷：概要 + 全部气泡。
 ///

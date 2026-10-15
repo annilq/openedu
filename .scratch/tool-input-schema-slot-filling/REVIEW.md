@@ -81,5 +81,5 @@
 ### 仍挂着（未修，判断项）
 
 - Standards 判断项：`_load_input_schema` 运行期反向依赖 ai 层、裸数字尺寸（`height: 36` / `BorderRadius.circular(999)` / `slot.max ?? 9`）、`_MISSING = object()` + 裸 dict 无类型、`_extract_*` 的 name/type 分派散在两处（Repeated Switches）。
-- 历史回放（`fromBubble`）仍不还原澄清卡 / 汇总卡——气泡载荷未带 clarify/summary，需后端落库 + 前端反解析，另起一票。
+- ~~历史回放（`fromBubble`）不还原澄清卡 / 汇总卡~~ **已修**（2026-10-15，分支 `integration/replay-structured-extras`）：气泡投影改白名单带 `clarify`/`summary` 两个结构化 extra（不透传整包 payload，审计面字段不进用户面），前端 `AssistantBubble` 解析后由 `fromBubble` 挂到消息上；`ClarifySlot.slotsOf` / `SummarySlot.slotsOf` 收口为实时流与回放共用的单一解析。回放里的追问卡可点（归属收敛后每条历史会话都是本人的）。
 - `file_size_guard` 基线红：`home_screen.dart` 672 > 665（非本次引入，需有权人下调或说明）。

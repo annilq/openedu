@@ -107,21 +107,51 @@ def _read_history(session: Session, conv_id: UUID) -> list[dict]:
     return out
 
 
+def _structured_extra_of(m: Message) -> tuple[dict | None, dict | None]:
+    """assistant 输出行 payload 里的两个结构化 extra（ADR-0095）。
+
+    澄清帧（``payload["clarify"]``，缺槽追问）与规格汇总帧（``payload["summary"]``）
+    与 ``cards`` 是同一类东西：整帧落库、整帧投影，前端复用实时流那套解析。
+
+    **白名单而非整包透传**：payload 里还躺着审计面字段（工具原始出参等），用户面
+    气泡拖走它们会同时污染两个消费者——气泡渲染器拿到不认识的键、运行轨迹的
+    「只投影必要字段」纪律被绕开。两个 extra 是 ADR-0095 明确要进回放的全部内容。
+    """
+    if m.role != "assistant" or not isinstance(m.payload, dict):
+        return None, None
+    clarify = m.payload.get("clarify")
+    summary = m.payload.get("summary")
+    return (
+        clarify if isinstance(clarify, dict) else None,
+        summary if isinstance(summary, dict) else None,
+    )
+
+
 def read_conversation_bubbles(session: Session, conv_id: UUID) -> list[dict]:
     """把落库轨迹折回对话气泡（用户面回放，ADR-0048）。
 
     卡片取自 assistant 输出行 ``payload["cards"]``——落库时存的是 DATA **整帧**
     （判别键 + 载荷），故可原样交给前端按种类分派回渲染器（ADR-0042 当初把整帧落库
-    就是为这一步留的口子）。
+    就是为这一步留的口子）。``clarify`` / ``summary`` 两个结构化 extra 同路径投影
+    （见 :func:`_structured_extra_of`），回放与实时流共用一份解析。
 
     不做二次过滤：可见行与气泡是**一一对应**的——assistant 输出行只在
     ``final_text or cards`` 成立时才落库（见 ``service.chat`` 的收尾），
     故不存在「无正文无卡片」的空输出行。因此本函数返回的条数就等于会话的可见轮次数。
     """
-    return [
-        {"role": m.role, "text": m.content or "", "cards": _cards_of(m)}
-        for m in _visible_rows(session, conv_id)
-    ]
+    out: list[dict] = []
+    for m in _visible_rows(session, conv_id):
+        clarify, summary = _structured_extra_of(m)
+        out.append(
+            {
+                "role": m.role,
+                "text": m.content or "",
+                "cards": _cards_of(m),
+                "clarify": clarify,
+                "summary": summary,
+            }
+        )
+    return out
 
 
 def _split_compaction(

@@ -42,18 +42,23 @@ class SummarySlot {
         valueLabel: (json['value_label'] as String?) ?? '',
       );
 
-  /// 从事件帧的 `extra.summary` 解析汇总槽列表；无汇总标记则空列表。
+  /// 从 `summary` map（``{slots: [...]}``）解析汇总槽列表；空 / 畸形则空列表。
   ///
-  /// 与澄清帧同样宽容：畸形帧一律降级为空，不抛、不造出空卡片。
-  static List<SummarySlot> slotsOfEvent(AssistantEvent ev) {
-    final summary = ev.extra?['summary'];
-    if (summary is! Map<String, dynamic>) return const <SummarySlot>[];
+  /// 实时流与历史回放共用本解析（落库存的就是与事件帧 `extra.summary` 同一形状）。
+  static List<SummarySlot> slotsOf(Object? summary) {
+    if (summary is! Map) return const <SummarySlot>[];
     final raw = summary['slots'];
     if (raw is! List) return const <SummarySlot>[];
     return raw
-        .whereType<Map<String, dynamic>>()
-        .map(SummarySlot.fromJson)
+        .whereType<Map>()
+        .map((e) => SummarySlot.fromJson(e.cast<String, dynamic>()))
         .where((s) => s.slot.name.isNotEmpty)
         .toList();
   }
+
+  /// 从事件帧的 `extra.summary` 解析汇总槽列表；无汇总标记则空列表。
+  ///
+  /// 与澄清帧同样宽容：畸形帧一律降级为空，不抛、不造出空卡片。
+  static List<SummarySlot> slotsOfEvent(AssistantEvent ev) =>
+      slotsOf(ev.extra?['summary']);
 }

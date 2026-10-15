@@ -158,6 +158,71 @@ class _FakeCardRepo extends _FakeAssistant {
   }
 }
 
+/// 带「追问卡 / 汇总卡」结构化帧的假仓库（ADR-0095 回放守卫）。
+///
+/// 气泡载荷里存的就是与实时流 `extra` 同形的 clarify / summary map——续接一段
+/// 发生过缺槽追问的旧会话时，卡必须按原样还原，而不是退化成一句裸文本。
+class _FakeSlotRepo extends _FakeAssistant {
+  _FakeSlotRepo() : super(items: const [_other]);
+
+  @override
+  Future<AssistantConversationDetail> conversationDetail(String id) async {
+    opened.add(id);
+    return AssistantConversationDetail(
+      conversation: _other,
+      bubbles: const [
+        AssistantBubble(role: 'user', text: '出几道数学题'),
+        AssistantBubble(
+          role: 'assistant',
+          text: '请告诉我几年级、要什么题型',
+          clarify: {
+            'missing_slots': [
+              {
+                'name': 'grade',
+                'prompt': '几年级？（1-9）',
+                'type': 'int',
+                'min': 1,
+                'max': 9,
+              },
+              {
+                'name': 'qtype',
+                'prompt': '要什么题型？',
+                'type': 'enum',
+                'enum': ['choice', 'fill', 'calc', 'open'],
+              },
+            ],
+          },
+        ),
+        AssistantBubble(role: 'user', text: '三年级出选择题'),
+        AssistantBubble(
+          role: 'assistant',
+          text: '已确认规格：科目=数学，年级=3，题型=选择题',
+          summary: {
+            'slots': [
+              {
+                'name': 'subject',
+                'label': '科目',
+                'type': 'enum',
+                'enum': ['数学', '语文'],
+                'value': '数学',
+                'value_label': '数学',
+              },
+              {
+                'name': 'qtype',
+                'label': '题型',
+                'type': 'enum',
+                'enum': ['choice', 'fill', 'calc', 'open'],
+                'value': 'choice',
+                'value_label': '选择题',
+              },
+            ],
+          },
+        ),
+      ],
+    );
+  }
+}
+
 void main() {
   Future<void> pumpPage(
     WidgetTester tester,
@@ -492,5 +557,45 @@ void main() {
     expect(find.text('数学'), findsWidgets, reason: '学科标签随卡片一起出现');
     // 文本气泡也在：卡片之外，正文照常显示。
     expect(find.text('好的，这道题给你：'), findsOneWidget);
+  });
+
+  // ── 追问卡 / 汇总卡的回放还原（ADR-0095） ─────────────────────────────
+  testWidgets('续接还原追问卡与汇总卡（不是裸文本）', (tester) async {
+    // 落库存的就是与实时流 extra 同形的结构化帧；只搬 text 会让历史里的
+    // 「请告诉我年级」退化成光秃秃一句，用户看不到当初的可点选项。
+    final repo = _FakeSlotRepo();
+    await pumpPage(tester, repo);
+    await openHistory(tester);
+
+    await tester.tap(find.text('23 + 45 怎么算'));
+    await tester.pumpAndSettle();
+
+    // 追问卡：标题 + 两个槽的 prompt + 年级数字 chip 都在
+    expect(find.text('还差这些信息：'), findsOneWidget);
+    expect(find.text('几年级？（1-9）'), findsOneWidget);
+    expect(find.text('要什么题型？'), findsOneWidget);
+    expect(find.text('选择题'), findsWidgets, reason: 'enum 槽铺中文选项 chip');
+
+    // 汇总卡：逐项列出已确认规格
+    expect(find.text('已确认规格：'), findsOneWidget);
+    expect(find.text('科目'), findsOneWidget);
+    expect(find.text('题型'), findsOneWidget);
+  });
+
+  testWidgets('回放的追问卡仍可点：值作为新消息发回本会话', (tester) async {
+    // 归属收敛后每条历史会话都是本人的、都可续接——追问卡不是静态展板，
+    // 点 chip 等于接着补槽，后端按同一套 fill_slots 合并。
+    final repo = _FakeSlotRepo();
+    await pumpPage(tester, repo);
+    await openHistory(tester);
+    await tester.tap(find.text('23 + 45 怎么算'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('3'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('3年级'), findsOneWidget,
+        reason: '点年级 chip 后该值作为一条用户消息进入对话区');
+    expect(find.byType(ShadInput), findsOneWidget, reason: '仍在本会话内，可继续输入');
   });
 }

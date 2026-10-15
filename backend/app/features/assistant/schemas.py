@@ -97,6 +97,12 @@ class AssistantBubbleResp(SQLModel):
     ``cards`` 是落库的 DATA **整帧**列表（``{type, result}``），原样透传给前端按种类
     分派渲染器——服务端不在这里拼展示串（ADR-0042）。
 
+    ``clarify`` / ``summary`` 是 ADR-0095 的两个**结构化 extra**：澄清帧（缺槽追问）
+    与规格汇总帧。它们与 ``cards`` 是同一类东西——落库在 assistant 输出行的
+    ``payload`` 里（整帧，与 SSE 的 ``extra`` 同形），回放时原样投影出来，前端复用
+    实时流那一套解析，不新增契约。投影走**白名单**而非整包透传 ``payload``：payload
+    里还躺着审计面字段（如工具原始出参），用户面气泡不该拖走它们。
+
     **没有 ``blocked``**：``Message`` 上那组安全标记列自 ADR-0088 起会在落库时写实
     （运行轨迹投影据此排障），但气泡投影仍刻意不暴露它——用户面的「已拦截」由
     ``TutorLog``（F-305 的徽标）承载。这是有意的不对称，别用「顺带补一个字段」
@@ -106,6 +112,8 @@ class AssistantBubbleResp(SQLModel):
     role: str
     text: str = ""
     cards: list[dict] = []
+    clarify: dict | None = None
+    summary: dict | None = None
 
 
 class AssistantConversationDetailResp(SQLModel):
