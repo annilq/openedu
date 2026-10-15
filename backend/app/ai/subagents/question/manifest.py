@@ -36,4 +36,28 @@ MANIFEST = {
     # 不再经服务端 quiz_generate / quiz_judge 动作键与待判定态。
     "actions": ["task_generate"],
     "skills": ["question_sop"],
+    # 输入 schema（ADR-0095）：出题所需槽位唯一事实源。required=True 的槽缺失时阻塞追问；
+    # enum_ref 引用 app.domain.subjects.SUBJECTS（ADR-0055 §11 收敛为数学/语文/英语），
+    # 由 slot_filling 载入时解析，避免选项重复漂移。
+    "input_schema": [
+        {"name": "subject", "type": "enum", "required": True,
+         "prompt": "请问要出哪个科目？", "enum_ref": "app.domain.subjects.SUBJECTS", "source": "both"},
+        {"name": "grade", "type": "int", "required": True,
+         "prompt": "几年级？（1-9）", "min": 1, "max": 9, "source": "both"},
+        {"name": "qtype", "type": "enum", "required": True,
+         "prompt": "要什么题型（选择/填空/计算/解答）？",
+         "enum": ["choice", "fill", "calc", "open"], "source": "text"},
+        {"name": "count", "type": "int", "required": False, "default": 1,
+         "min": 1, "max": 5, "source": "text"},
+        {"name": "knowledge_point", "type": "string", "required": False, "default": "",
+         "prompt": "有指定的知识点吗？（可留空按教材随机）", "source": "both"},
+        {"name": "difficulty", "type": "enum", "required": False, "default": "medium",
+         "enum": ["easy", "medium", "hard"], "source": "text"},
+        {"name": "semester", "type": "enum", "required": False, "default": "",
+         "enum": ["", "上", "下"], "source": "text"},
+        {"name": "multi", "type": "bool", "required": False, "default": False, "source": "text"},
+        {"name": "judge", "type": "bool", "required": False, "default": False, "source": "text"},
+        {"name": "multi_subject", "type": "bool", "required": False, "default": False,
+         "prompt": "是否需要多学科组卷？（是则按科目分别出题）", "source": "text"},
+    ],
 }

@@ -21,4 +21,14 @@ MANIFEST = {
     # 触发、判断题判定由对话历史里的题卡驱动，均不经服务端动作键与待判定态。
     "actions": [],
     "skills": ["tutor_sop"],
+    # 输入 schema（ADR-0095）：伴学答疑的核心输入就是用户消息本身（question_text）。
+    # subject/grade/knowledge_point 为 optional，命中上下文（课件/知识点下钻）即补全，不追问。
+    "input_schema": [
+        {"name": "question_text", "type": "string", "required": True,
+         "prompt": "你想问什么？（把问题发给我）", "source": "text"},
+        {"name": "subject", "type": "enum", "required": False,
+         "enum_ref": "app.domain.subjects.SUBJECTS", "source": "both"},
+        {"name": "grade", "type": "int", "required": False, "min": 1, "max": 9, "source": "both"},
+        {"name": "knowledge_point", "type": "string", "required": False, "source": "both"},
+    ],
 }
