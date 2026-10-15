@@ -4,7 +4,11 @@
 
 **Blocked by:** 01（引擎与契约已证明）
 
-**Status:** ready-for-agent
+**Status:** done（已合入 `integration/tool-input-schema-slot-filling`）
+
+> 实现补记：`tutor.question_text` 由 required 改为**非必填**——引擎按设计不回填 string
+> 自由文本槽，若标必填会让任何伴学提问恒被追问「你想问什么？」而阻塞（ADR-0095 §2.4）。
+> 汇总帧与 `ctx.extra["specs"]` 交接仍仅限 question（其他业务静默放行，不制造噪声）。
 
 - [ ] query（6 个 optional 槽）接入预检：缺可选槽不阻塞，直接回答；subject/grade/kp 等从消息/context 抽取、可推断则声明。
 - [ ] tutor（question_text required + 3 optional）接入：缺 `question_text` → 澄清（它是唯一必填）；subject/grade/knowledge_point 可选、从 context 透传。

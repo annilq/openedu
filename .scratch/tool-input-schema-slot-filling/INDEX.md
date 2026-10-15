@@ -11,11 +11,19 @@
 ## 依赖链（to-tickets 垂直重切）
 
 ```
-00 schema 落地（manifest 写 input_schema）──── 已完成（ADR-0095 附带写入 5 个 manifest）
-01 后端垂直（引擎+持久化+question 接线+后端测试）─ 00 已完成，可立即开工
-02 前端垂直（clarify 卡+汇总+前端测试）────────── 01
-03 拓宽（query/tutor/guide 接入）────────────── 01
+00 schema 落地（manifest 写 input_schema）──── done
+01 后端垂直（引擎+持久化+question 接线+后端测试）─ done
+02 前端垂直（clarify 卡+汇总+前端测试）────────── done
+03 拓宽（query/tutor/guide 接入）────────────── done
 ```
+
+**全部 4 票已合入 `integration/tool-input-schema-slot-filling`**（00→01→02/03 并行）。
+本轮收尾时补掉两个实现期才暴露的缺陷，均已在 ticket 内标注：
+
+- `01` 补丁：完整轮必须把 merged 槽位写入 `ctx.extra["specs"]`，否则生成步回落
+  自由文本兜底、丢失已收集槽位（「继续生成」承诺失效）；另修正 int 抽取把年级当
+  成数量（`grade`/`count` 现按槽名分派）。
+- `03` 补丁：`tutor.question_text` 降为可选，否则自由问答恒被追问而阻塞。
 
 - 01 是核心 tracer bullet：跨层（schema→引擎→持久化→API→后端测试）一次打通出题业务的缺槽闭环，无需前端即可经集成测试演示。
 - 02 与 03 都只依赖 01，可在 01 后**并行**（02 是 UI 层、03 是其余业务的 widen）。

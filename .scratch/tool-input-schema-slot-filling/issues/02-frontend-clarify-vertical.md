@@ -4,7 +4,11 @@
 
 **Blocked by:** 01（契约稳定：`extra.clarify` 形状与汇总帧）
 
-**Status:** ready-for-agent
+**Status:** done（已合入 `integration/tool-input-schema-slot-filling`）
+
+> 实现补记：无 Material 控件（可点区走 `AppFocusableAction`、输入用 `CupertinoTextField`）；
+> 年级 chip 回传「3年级」而非「3」，因后端按「N年级」正则抽取。历史回放
+> （`AssistantMessage.fromBubble`）暂不还原引导卡——气泡载荷未带 clarify，属后续增强。
 
 - [ ] 识别 `AssistantMessage.extra.clarify` 非空 → 走引导输入卡分支（否则普通气泡）。
 - [ ] 枚举槽按 `enum` 直接用、`enum_ref` 映射到前端既有学科常量（与 `app.domain.subjects.SUBJECTS` 同源）；int 槽数值输入；文本槽文本输入。

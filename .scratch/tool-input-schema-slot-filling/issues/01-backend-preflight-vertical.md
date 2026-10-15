@@ -4,7 +4,11 @@
 
 **Blocked by:** 00（schema 落地，已完成，无门禁）
 
-**Status:** ready-for-agent
+**Status:** done（已合入 `integration/tool-input-schema-slot-filling`）
+
+> 实现补丁（合入时补记）：预检齐备后必须把 merged 槽位写入 `ctx.extra["specs"]`，
+> 否则生成步会回落自由文本兜底、丢失已收集的科目/年级/题型；另修正 int 抽取把年级
+> 当成数量的问题（`count` 与 `grade` 现按槽名分派）。
 
 - [ ] `slot_filling` 引擎（纯函数、无 IO）：载入 business 的 `input_schema` 并解析 `enum_ref`；从「已持久化槽位 + 本轮消息 + ctx.extra」抽取；`merge`；校验 `required`；构造澄清帧。原型形状（来自设计，编码决策比文字精确）：
   ```
