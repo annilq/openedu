@@ -25,6 +25,9 @@ class Conversation(SQLModel, table=True):
     title: str | None = Field(default=None, max_length=255)
     ref_task_id: uuid.UUID | None = Field(default=None, foreign_key="task.id")
     status: str = Field(default="running", max_length=16)
+    # 跨轮槽位记忆（ADR-0095）：按 business 累积的出题/查询等输入槽位字典。
+    # JSON(none_as_null=True)：空槽位存 NULL 而非 {} 污染（ADR-0061 纪律）。
+    slots: dict | None = Field(default=None, sa_type=JSON(none_as_null=True))
     created_at: datetime | None = Field(
         default_factory=get_datetime_utc,
         sa_type=DateTime(timezone=True),  # type: ignore

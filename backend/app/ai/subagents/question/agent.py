@@ -24,6 +24,15 @@ from app.ai.subagents.question.pipeline import (
 )
 from app.ai.subagents.question.translate import translate_stream
 from app.ai.subagents.subject_personas import get_subject_persona
+from app.domain.spec_keywords import (
+    CN_NUM,
+    COUNT_CN_RE,
+    COUNT_RE,
+    GRADE_CN_RE,
+    GRADE_RE,
+    QTYPE_KEYWORDS,
+    SUBJECT_ALIASES,
+)
 from app.domain.subjects import SUBJECTS
 from app.features.materials.figure_stamp import (
     available_figures,
@@ -152,55 +161,6 @@ def build_question_context(
     return rag_context, persona_hint, source_refs
 
 
-# 学科别名 → 标准学科名（自由文本容错）
-_SUBJECT_ALIASES = {
-    "数学": "数学",
-    "语文": "语文",
-    "英语": "英语",
-    "英文": "英语",
-    "科学": "科学",
-    "物理": "物理",
-    "化学": "化学",
-    "生物": "生物",
-    "历史": "历史",
-    "地理": "地理",
-    "政治": "政治",
-    "道法": "政治",
-    "美术": "美术",
-    "音乐": "音乐",
-    "体育": "体育",
-    "信息": "信息",
-}
-_QTYPE_MAP = {
-    "选择": "choice",
-    "单选": "choice",
-    "选择题": "choice",
-    "多选": "choice",
-    "填空": "fill",
-    "填空题": "fill",
-    "判断": "choice",
-    "判断题": "choice",
-    "计算": "calc",
-    "计算题": "calc",
-    "应用题": "calc",
-    "问答": "open",
-    "解答": "open",
-    "简答题": "open",
-    "问答题": "open",
-}
-_CN_NUM = {
-    "一": 1,
-    "二": 2,
-    "三": 3,
-    "四": 4,
-    "五": 5,
-    "六": 6,
-    "七": 7,
-    "八": 8,
-    "九": 9,
-}
-
-
 def parse_specs_from_text(text: str) -> list[dict]:
     """从自由文本解析出题规格（悬浮助手一句话出题）。
 
@@ -212,7 +172,7 @@ def parse_specs_from_text(text: str) -> list[dict]:
     specs: list[dict] = []
 
     subject = ""
-    for alias, std in _SUBJECT_ALIASES.items():
+    for alias, std in SUBJECT_ALIASES.items():
         if alias in text:
             subject = std
             break
@@ -223,31 +183,31 @@ def parse_specs_from_text(text: str) -> list[dict]:
                 break
 
     grade = 0
-    m = re.search(r"(\d)\s*年级", text)
+    m = GRADE_RE.search(text)
     if m:
         grade = int(m.group(1))
     else:
-        m = re.search(r"([一二三四五六七八九])\s*年级", text)
+        m = GRADE_CN_RE.search(text)
         if m:
-            grade = _CN_NUM.get(m.group(1), 0)
+            grade = CN_NUM.get(m.group(1), 0)
 
     count = 1
-    m = re.search(r"(\d+)\s*(道|题|个)", text)
+    m = COUNT_RE.search(text)
     if m:
         count = min(int(m.group(1)), 5)
     else:
-        m = re.search(r"([一二三四五])\s*(道|题)", text)
+        m = COUNT_CN_RE.search(text)
         if m:
-            count = min(_CN_NUM.get(m.group(1), 1), 5)
+            count = min(CN_NUM.get(m.group(1), 1), 5)
 
     qtype = "choice"
-    for kw, qt in _QTYPE_MAP.items():
+    for kw, qt in QTYPE_KEYWORDS.items():
         if kw in text:
             qtype = qt
             break
 
     # 多选题标记（ADR-0004 D5）：自然语言里出现「多选 / 多选题」即视为多选，
-    # 与 _QTYPE_MAP 把「多选」映射到 choice 相互独立——多选题仍是 choice 题型，
+    # 与 QTYPE_KEYWORDS 把「多选」映射到 choice 相互独立——多选题仍是 choice 题型，
     # 只是 multi=True，渲染为复选、批改按集合比对。
     multi = "多选" in text or "多选题" in text
 
@@ -261,7 +221,7 @@ def parse_specs_from_text(text: str) -> list[dict]:
     if m:
         kp = m.group(1)
     else:
-        qt_kw = next((kw for kw, _ in _QTYPE_MAP.items() if kw in text), None)
+        qt_kw = next((kw for kw, _ in QTYPE_KEYWORDS.items() if kw in text), None)
         if subject and qt_kw:
             between = text.split(subject, 1)[-1].split(qt_kw, 1)[0]
             candidate = re.sub(r"[关于的\s]+", "", between)

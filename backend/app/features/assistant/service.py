@@ -12,6 +12,7 @@ ADR-0048 起还持有**会话历史的读编排**（列表 / 回放）：端点�
 """
 from __future__ import annotations
 
+import importlib
 import logging
 from collections.abc import AsyncIterator
 from time import perf_counter
@@ -69,6 +70,18 @@ log = logging.getLogger(__name__)
 
 # 输入被拒但闸门未给出原因时的兜底文案（``INPUT_UNSAFE`` 帧只带 code 不带 reason）。
 _BLOCK_REASON_GATE = "输入被安全闸门拦截"
+
+
+def _load_input_schema(business: str) -> list | None:
+    """载入某业务的 ``input_schema``（manifest 唯一事实源）；缺失业务返回 None。
+
+    异常隔离：未知 business 不抛，返回 None（调用方据此跳过预检）。
+    """
+    try:
+        mod = importlib.import_module(f"app.ai.subagents.{business}.manifest")
+    except ModuleNotFoundError:
+        return None
+    return mod.MANIFEST.get("input_schema")
 
 
 def _student_grade(session, user) -> int:
@@ -537,6 +550,106 @@ async def chat(
         gen_started: float | None = None
         # 已落库但尚未配到结果帧的 tool_call 行（工具名 → 行）。
         pending_calls: list[tuple[str | None, Message]] = []
+
+        # ── 缺槽预检（ADR-0095，确定性，非 LLM）──
+        # 对任何声明了 input_schema 的业务生效（ADR-0095：schema 是槽位唯一事实源，
+        # 不再按 business 硬编码开关）。是否阻塞完全由 schema 的 required 决定：
+        # 目前仅 question 声明了必填槽（subject/grade/qtype），故只有它会澄清；
+        # query/guide/tutor 全 optional → 恒放行、不追问、也不发汇总帧
+        # （§2.4：读操作与问答过度追问反而干扰，汇总对它们只是噪声）。
+        # 结构化 POST /tasks/generate 经 ctx.extra["specs"] 自带校验，必须跳过本预检。
+        if not ctx.extra.get("specs"):
+            from app.features.assistant.slot_filling import fill_slots
+            from app.features.assistant.slot_summary import (
+                summarize_slots,
+                summary_payload,
+            )
+
+            _schema = _load_input_schema(decision.business)
+            if _schema:
+                # 槽位按 business 分组：flat 存会让 tutor/query 一轮就冲掉 question
+                # 已收集的槽（fill_slots 只搬当前 schema 内的键），故各自一本账。
+                _store = conversation.slots if isinstance(conversation.slots, dict) else {}
+                _collected = _store.get(decision.business)
+                if not isinstance(_collected, dict):
+                    _collected = {}
+                _result = fill_slots(
+                    _schema,
+                    _collected,
+                    incoming=message,
+                    ctx_extra=ctx.extra,
+                )
+                # 本轮开始前必填是否已齐（用于区分「刚补齐」与「齐了还说别的」）
+                _was_incomplete = any(
+                    _collected.get(s["name"]) in (None, "")
+                    for s in _schema
+                    if s.get("required")
+                )
+                # 必须赋**新对象**：SQLAlchemy 按对象 identity 判定脏值，就地改同一个
+                # dict（_store[..] = .. 后再赋回）不会触发 UPDATE，槽位写不进库。
+                conversation.slots = {**_store, decision.business: _result["merged"]}
+                if _result["clarifying"]:
+                    # 写回已知槽位，供下一轮合并续接（跨轮记忆）
+                    session.commit()
+                    _clarify_text = " ".join(m["prompt"] for m in _result["missing"])
+                    yield AssistantEvent(
+                        eventType=EVENT_ASSISTANT_MESSAGE,
+                        text=_clarify_text,
+                        extra={"clarify": {"missing_slots": _result["missing"]}},
+                    ).to_sse()
+                    # 澄清帧作为普通助手消息落库（历史回放可见，不新增 eventType）。
+                    # payload 形状与 extra.clarify 一致（map 而非裸 list），回放时
+                    # 前端可以复用同一套解析。
+                    session.add(
+                        Message(
+                            conversation_id=conv_id,
+                            turn=turn,
+                            role="assistant",
+                            step="output",
+                            content=_clarify_text,
+                            payload={"clarify": {"missing_slots": _result["missing"]}},
+                        )
+                    )
+                    return
+                # 必填齐备：写回合并后的槽位，先发「已确认规格」汇总，再进生成。
+                # 仅 question 需要「汇总 + 交给定题子代理的 specs 路径」：它是唯一按
+                # 结构化规格生成的业务；query/guide/tutor 静默放行（不打扰、无噪声）。
+                #
+                # 触发条件：本轮补进了槽位，或本轮刚好补齐。二者皆无 → 说明槽位早
+                # 已齐备、本轮与出题无关（如「谢谢」），若仍注入 specs 会拿着旧规格
+                # 再出一轮题；此时按普通对话放行。
+                if decision.business == "question" and (
+                    _result["extracted"] or _was_incomplete
+                ):
+                    # 把合并后的槽位交给出题子代理的结构化规格路径（ADR-0034 Phase 1
+                    # 接缝），否则生成步会重新回落自由文本兜底、丢失已收集的科目/年级/题型。
+                    ctx.extra["specs"] = [_result["merged"]]
+                    _summary_text = summarize_slots(_result["merged"])
+                    yield AssistantEvent(
+                        eventType=EVENT_ASSISTANT_MESSAGE,
+                        text=_summary_text,
+                        extra={
+                            "summary": {
+                                "slots": summary_payload(_schema, _result["merged"])
+                            }
+                        },
+                    ).to_sse()
+                    session.add(
+                        Message(
+                            conversation_id=conv_id,
+                            turn=turn,
+                            role="assistant",
+                            step="output",
+                            content=_summary_text,
+                            payload={
+                                "summary": {
+                                    "slots": summary_payload(
+                                        _schema, _result["merged"]
+                                    )
+                                }
+                            },
+                        )
+                    )
 
         # 复用预航班决策（decision），避免重复路由；run 返回事件流。
         stream: AsyncIterator[AssistantEvent] = rt.run(

@@ -497,6 +497,11 @@ def run_migrations() -> None:
                 )
             )
 
+        # —— conversation.slots（ADR-0095 跨轮槽位记忆）——
+        # 新库由 init_db 的 create_all 已带该列（模型层声明），no-op；
+        # 既有库（本特性上线前的库）启动期补齐。幂等（PRAGMA 探列后 ALTER）。
+        add_conversation_slots_column(conn, is_sqlite)
+
         # —— 场景 kind 级默认图形（ADR-0074 v4）——
         # 新表走 CREATE TABLE IF NOT EXISTS：既有库启动期自动补齐；新库由 create_all
         # 已建好，no-op。kind = 注册表 key，不做外键（注册表非 DB 实体）。
@@ -524,6 +529,35 @@ def run_migrations() -> None:
                 ")"
             )
         )
+
+
+def add_conversation_slots_column(conn, is_sqlite: bool) -> None:
+    """给 ``conversation`` 加 ``slots`` JSON 列（ADR-0095 跨轮槽位记忆）。
+
+    幂等：SQLite 无 ``ADD COLUMN IF NOT EXISTS``，先 ``PRAGMA table_info`` 探列，
+    缺失才 ``ALTER``；Postgres 用 ``IF NOT EXISTS``。表未建（偏序迁移）时跳过。
+    """
+    try:
+        if is_sqlite:
+            cols = [
+                r[1]
+                for r in conn.execute(
+                    text("PRAGMA table_info(conversation)")
+                ).fetchall()
+            ]
+            if "slots" not in cols:
+                conn.execute(
+                    text("ALTER TABLE conversation ADD COLUMN slots TEXT")
+                )
+        else:
+            conn.execute(
+                text(
+                    "ALTER TABLE conversation ADD COLUMN IF NOT EXISTS slots JSON"
+                )
+            )
+    except OperationalError:
+        # 偏序迁移：conversation 表还没建（首次启动由 init_db 建表并带新列），跳过即可。
+        pass
 
 
 def _purge_orphan_wrong_questions(conn) -> None:

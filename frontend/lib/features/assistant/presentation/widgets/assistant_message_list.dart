@@ -10,10 +10,14 @@ import '../../../../shared/widgets/app_markdown.dart';
 import '../../../../shared/widgets/app_motion.dart';
 import '../../../../shared/widgets/app_toast.dart';
 import '../../domain/assistant_card.dart';
+import '../../domain/assistant_clarify.dart';
+import '../../domain/assistant_summary.dart';
 import '../provider/assistant_notifier.dart';
 import 'assistant_card_plain_text.dart';
 import 'assistant_cards.dart';
+import 'assistant_clarify_card.dart';
 import 'assistant_sources_bar.dart';
+import 'assistant_summary_card.dart';
 import 'assistant_suggested_actions.dart';
 import '../../domain/assistant_suggested_action.dart';
 import '../../../../shared/widgets/app_actions.dart';
@@ -162,6 +166,24 @@ class _Bubble extends StatelessWidget {
                   ],
                 ),
               ),
+            // 缺槽引导卡（ADR-0095）：澄清帧的 `extra.clarify` 非空时渲染可点选 /
+            // 可输入的引导卡，选中的值经 [onPrompt] 作为一条用户消息发出→后端合并该
+            // 槽后继续。用户气泡上永不渲染（只有助手会追问）。
+            if (!isUser && (message.clarify ?? const <ClarifySlot>[]).isNotEmpty)
+              AssistantClarifyCard(
+                slots: message.clarify!,
+                onPrompt: onPrompt,
+              ),
+
+            // 规格汇总卡（ADR-0095）：齐备帧的 `extra.summary` 非空时渲染「已确认规格」
+            // 清单，每项给一个「修改」入口——生成的题就是按这些值出的，必须看得见、
+            // 且来得及改（US5）。与澄清互斥，同一轮只会命中其一。
+            if (!isUser && (message.summary ?? const <SummarySlot>[]).isNotEmpty)
+              AssistantSummaryCard(
+                slots: message.summary!,
+                onPrompt: onPrompt,
+              ),
+
             // 复制入口只挂在 AI 回复上：用户自己的提问没有复制价值，占位「思考中」
             // 气泡也没有内容可复制。卡片算内容——有卡无文（引用查询结果时很常见）
             // 也要能复制，所以判据是「正文或卡片非空」。

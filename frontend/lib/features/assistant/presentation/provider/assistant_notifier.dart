@@ -5,6 +5,8 @@ import '../../domain/assistant_requests.dart';
 import '../../providers/assistant_provider.dart';
 import '../../domain/ai_text_fold.dart';
 import '../../domain/assistant_card.dart';
+import '../../domain/assistant_clarify.dart';
+import '../../domain/assistant_summary.dart';
 import '../../domain/assistant_event.dart';
 import '../../domain/assistant_source.dart';
 import '../../domain/assistant_suggested_action.dart';
@@ -20,6 +22,8 @@ class AssistantMessage {
   final String stage; // thinking 时的阶段文案（路由/工具帧提取），空 = 默认「思考中…」
   final List<RagSource> sources; // 答疑引用落点（答案下方「参考来源」条）
   final List<SuggestedAction>? followups; // 回复后 follow-up chips（SUGGESTED_ACTIONS 帧，票 03(a)）
+  final List<ClarifySlot>? clarify; // 缺槽引导（extra.clarify，ADR-0095）：非空时渲染引导输入卡
+  final List<SummarySlot>? summary; // 规格汇总（extra.summary，ADR-0095）：非空时渲染带修改入口的汇总卡
 
   const AssistantMessage({
     required this.role,
@@ -30,6 +34,8 @@ class AssistantMessage {
     this.stage = '',
     this.sources = const <RagSource>[],
     this.followups,
+    this.clarify,
+    this.summary,
   });
 
   /// 从回放气泡重建一条消息（role 换算成 UI 侧口径：`assistant` → `ai`）。
@@ -215,6 +221,8 @@ class AssistantNotifier extends StateNotifier<AssistantState> {
           cards: fold.cards.isEmpty ? null : fold.cards,
           blocked: fold.blocked,
           sources: fold.sources,
+          clarify: fold.clarifySlots.isEmpty ? null : fold.clarifySlots,
+          summary: fold.summarySlots.isEmpty ? null : fold.summarySlots,
         ),
       );
     }
@@ -241,6 +249,10 @@ class AssistantNotifier extends StateNotifier<AssistantState> {
             stage: m.stage,
             sources: m.sources,
             followups: fold.suggestedActions,
+            // 重建时不能丢 clarify / summary：follow-up 挂在同一条 ai 消息上，
+            // 丢掉会让引导卡、汇总卡在 chips 到达的那一刻消失。
+            clarify: m.clarify,
+            summary: m.summary,
           );
           break;
         }

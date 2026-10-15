@@ -21,4 +21,17 @@ MANIFEST = {
     # 触发、判断题判定由对话历史里的题卡驱动，均不经服务端动作键与待判定态。
     "actions": [],
     "skills": ["tutor_sop"],
+    # 输入 schema（ADR-0095）：伴学答疑的核心输入就是用户消息本身（question_text）。
+    # subject/grade/knowledge_point 为 optional，命中上下文（课件/知识点下钻）即补全，不追问。
+    "input_schema": [
+        # question_text 刻意**非必填**：用户消息本身就是这个问题（自由问答不该被追问
+        # 打断），且引擎按设计不回填 string 的自由文本槽——若标 required，任何伴学
+        # 提问都会恒被追问「你想问什么？」，与 ADR-0095 §2.4「tutor 不阻塞」冲突。
+        {"name": "question_text", "type": "string", "required": False,
+         "prompt": "你想问什么？（把问题发给我）", "source": "text"},
+        {"name": "subject", "type": "enum", "required": False,
+         "enum_ref": "app.domain.subjects.SUBJECTS", "source": "both"},
+        {"name": "grade", "type": "int", "required": False, "min": 1, "max": 9, "source": "both"},
+        {"name": "knowledge_point", "type": "string", "required": False, "source": "both"},
+    ],
 }

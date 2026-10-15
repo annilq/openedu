@@ -25,4 +25,6 @@ MANIFEST = {
     "priority": 16,
     "actions": [],
     "skills": [],
+    # 输入 schema（ADR-0095）：能力自述不接收输入，返回服务端固定清单。空列表即无槽位。
+    "input_schema": [],
 }

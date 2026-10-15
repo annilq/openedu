@@ -37,4 +37,19 @@ MANIFEST = {
     # 高于 question(0) / tutor(-10)：接住原 tasks 的 priority=10，并压住 question 的「题目」
     "priority": 12,
     "skills": ["query_sop"],
+    # 输入 schema（ADR-0095）：学情查询的输入全部 optional（读操作，过度追问反而干扰）。
+    # subject 复用 question 的枚举源；target 由 ctx.extra 透传（教师端指定学生/班级）。
+    "input_schema": [
+        {"name": "scope", "type": "enum", "required": False, "default": "tasks",
+         "prompt": "想查什么？",
+         "enum": ["tasks", "wrong", "review", "mastery", "bank"], "source": "text"},
+        {"name": "target", "type": "string", "required": False,
+         "prompt": "查哪个学生或班级？（教师端；学生端默认查自己）", "source": "context"},
+        {"name": "subject", "type": "enum", "required": False,
+         "enum_ref": "app.domain.subjects.SUBJECTS", "source": "both"},
+        {"name": "grade", "type": "int", "required": False, "min": 1, "max": 9, "source": "both"},
+        {"name": "knowledge_point", "type": "string", "required": False, "source": "both"},
+        {"name": "time_range", "type": "enum", "required": False,
+         "enum": ["today", "week", "month", "all"], "source": "text"},
+    ],
 }

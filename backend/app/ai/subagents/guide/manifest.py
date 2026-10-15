@@ -37,4 +37,12 @@ MANIFEST = {
     # ADR-0087 移除该键及其后端半边。
     "actions": [],
     "skills": [],
+    # 输入 schema（ADR-0095）：任务引导只做导航，不代写。槽位全部 optional，不阻塞。
+    "input_schema": [
+        {"name": "task_type", "type": "enum", "required": False, "default": "homework",
+         "enum": ["homework", "practice", "exam"], "source": "text"},
+        {"name": "subject", "type": "enum", "required": False,
+         "enum_ref": "app.domain.subjects.SUBJECTS", "source": "both"},
+        {"name": "grade", "type": "int", "required": False, "min": 1, "max": 9, "source": "both"},
+    ],
 }
