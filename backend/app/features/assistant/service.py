@@ -12,6 +12,7 @@ ADR-0048 起还持有**会话历史的读编排**（列表 / 回放）：端点�
 """
 from __future__ import annotations
 
+import importlib
 import logging
 from collections.abc import AsyncIterator
 from time import perf_counter
@@ -69,6 +70,18 @@ log = logging.getLogger(__name__)
 
 # 输入被拒但闸门未给出原因时的兜底文案（``INPUT_UNSAFE`` 帧只带 code 不带 reason）。
 _BLOCK_REASON_GATE = "输入被安全闸门拦截"
+
+
+def _load_input_schema(business: str) -> list | None:
+    """载入某业务的 ``input_schema``（manifest 唯一事实源）；缺失业务返回 None。
+
+    异常隔离：未知 business 不抛，返回 None（调用方据此跳过预检）。
+    """
+    try:
+        mod = importlib.import_module(f"app.ai.subagents.{business}.manifest")
+    except ModuleNotFoundError:
+        return None
+    return mod.MANIFEST.get("input_schema")
 
 
 def _student_grade(session, user) -> int:
@@ -537,6 +550,55 @@ async def chat(
         gen_started: float | None = None
         # 已落库但尚未配到结果帧的 tool_call 行（工具名 → 行）。
         pending_calls: list[tuple[str | None, Message]] = []
+
+        # ── 缺槽预检（ADR-0095，确定性，非 LLM）──
+        # question 业务先接（最小阻塞：subject+grade+qtype）；其余业务本轮暂不接入——
+        # query 全 optional 不会阻塞，tutor 的 question_text 为 string/text 槽、按本设计
+        # 不抽自由文本，接入会恒阻塞自由问答（ADR-0095 §2.4 也要求 tutor/query 不阻塞），
+        # 故垂直切片仅放 question，后续票再扩。
+        # 结构化 POST /tasks/generate 经 ctx.extra["specs"] 自带校验，必须跳过本预检。
+        if decision.business == "question" and not ctx.extra.get("specs"):
+            from app.features.assistant.slot_filling import (
+                fill_slots,
+                summarize_slots,
+            )
+
+            _schema = _load_input_schema(decision.business)
+            if _schema:
+                _result = fill_slots(
+                    _schema,
+                    conversation.slots or {},
+                    incoming=message,
+                    ctx_extra=ctx.extra,
+                )
+                if _result["clarifying"]:
+                    # 写回已知槽位，供下一轮合并续接（跨轮记忆）
+                    conversation.slots = _result["merged"]
+                    session.commit()
+                    _clarify_text = " ".join(m["prompt"] for m in _result["missing"])
+                    yield AssistantEvent(
+                        eventType=EVENT_ASSISTANT_MESSAGE,
+                        text=_clarify_text,
+                        extra={"clarify": {"missing_slots": _result["missing"]}},
+                    ).to_sse()
+                    # 澄清帧作为普通助手消息落库（历史回放可见，不新增 eventType）
+                    session.add(
+                        Message(
+                            conversation_id=conv_id,
+                            turn=turn,
+                            role="assistant",
+                            step="output",
+                            content=_clarify_text,
+                            payload={"clarify": _result["missing"]},
+                        )
+                    )
+                    return
+                # 必填齐备：写回合并后的槽位，先发「已确认规格」汇总，再进生成
+                conversation.slots = _result["merged"]
+                yield AssistantEvent(
+                    eventType=EVENT_ASSISTANT_MESSAGE,
+                    text=summarize_slots(_result["merged"]),
+                ).to_sse()
 
         # 复用预航班决策（decision），避免重复路由；run 返回事件流。
         stream: AsyncIterator[AssistantEvent] = rt.run(

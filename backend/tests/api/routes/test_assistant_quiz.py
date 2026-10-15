@@ -203,13 +203,21 @@ def test_quiz_chat_runs_via_runtime_and_keeps_answer(client, db):
 
 
 def _ask_quiz(client, token, kp_id) -> str:
-    """首轮：经运行时的出题助手出一道判断题，返回会话 id。"""
+    """首轮：经运行时的出题助手出一道判断题，返回会话 id。
+
+    ADR-0095 预检：出题业务要求 subject/grade 齐备，故课件上下文须带 subject=数学 /
+    grade=4，否则会先澄清而非出题（与判断题闭环无关）。
+    """
     _status, events = _stream(
         client,
         token,
         {
             "message": "请为「轴对称」出一道判断题，只展示题目和两个选项，等我回答。",
-            "courseware": {"knowledge_point_id": str(kp_id)},
+            "courseware": {
+                "knowledge_point_id": str(kp_id),
+                "subject": "数学",
+                "grade": 4,
+            },
         },
     )
     return [e for e in events if e["eventType"] == "DONE"][-1]["session_id"]

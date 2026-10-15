@@ -37,7 +37,7 @@ from app.ai.subagents.question.agent import QuestionSubAgent, parse_specs_from_t
 from app.ai.subagents.tutor.agent import TutorSubAgent
 from app.db.models import Conversation, Message
 from app.domain.provider import EducationLLMProvider
-from app.features.assistant.schemas import AssistantChatReq
+from app.features.assistant.schemas import AssistantChatReq, CoursewareContext
 from app.features.assistant.service import chat
 
 # 固定判断题面（只含题面四要素；subject/grade/judge 由 spec 回填）。
@@ -206,14 +206,22 @@ class _JudgeCardRuntime:
 
 
 def test_chat_keeps_judge_card_answer_in_history(db):
-    """题卡连答案下发并落库（服务端不再有剥离 / pending_quiz 分支）。"""
+    """题卡连答案下发并落库（服务端不再有剥离 / pending_quiz 分支）。
+
+    ADR-0095 预检：出题业务在缺 subject/grade 时会先澄清而非直接生成，故这里带课件
+    上下文（subject=数学 / grade=4）使必填齐备、走「汇总确认 → 生成」路径，验证题卡
+    仍连答案落库。
+    """
     tid = uuid.uuid4()
     rt = _JudgeCardRuntime()
     caller = SimpleNamespace(
         role="teacher",
         user=SimpleNamespace(id=tid, teacher_id=tid, class_id=None),
     )
-    req = AssistantChatReq(message="请为「轴对称」出一道判断题，等我回答。")
+    req = AssistantChatReq(
+        message="请为「轴对称」出一道判断题，等我回答。",
+        courseware=CoursewareContext(subject="数学", grade=4),
+    )
 
     frames = asyncio.run(
         _drain_chat(chat(caller=caller, req=req, session=db, runtime=rt))
@@ -243,14 +251,21 @@ def test_chat_keeps_judge_card_answer_in_history(db):
 
 
 def test_chat_text_route_reaches_question_agent_without_action(db):
-    """判断题不再靠 quiz_generate 动作键：纯文本即可经 decide 落到出题助手。"""
+    """判断题不再靠 quiz_generate 动作键：纯文本即可经 decide 落到出题助手。
+
+    ADR-0095 预检下带课件上下文（subject=数学 / grade=4）使必填齐备，run 仍被调用、
+    定向仍为 question。
+    """
     tid = uuid.uuid4()
     rt = _JudgeCardRuntime()
     caller = SimpleNamespace(
         role="teacher",
         user=SimpleNamespace(id=tid, teacher_id=tid, class_id=None),
     )
-    req = AssistantChatReq(message="请为「轴对称」出一道判断题，等我回答。")
+    req = AssistantChatReq(
+        message="请为「轴对称」出一道判断题，等我回答。",
+        courseware=CoursewareContext(subject="数学", grade=4),
+    )
 
     asyncio.run(
         _drain_chat(chat(caller=caller, req=req, session=db, runtime=rt))

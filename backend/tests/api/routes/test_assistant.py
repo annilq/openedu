@@ -113,7 +113,9 @@ def test_student_generation_routes_to_question(client):
     决策已显式化：路由 THINKING 帧标记 ``routing: True``，且 Conversation.kind 由决策写入。
     """
     _ptoken, _student, ctoken = _setup(client, "as6_teacher", "as6_kid")
-    status, events = _stream(client, ctoken, "帮我出 2 道数学题")
+    # ADR-0095 预检：出题业务要求 subject/grade/qtype 齐备，否则先澄清；这里直接给全，
+    # 验证「路由到出题助手并产出题卡」的意图不被预检误伤。
+    status, events = _stream(client, ctoken, "帮我出 2 道三年级数学选择题")
     assert status == 200, events
     # 路由 THINKING 帧标记 routing=True（决策显式化后不再经 extra.business 透传）
     routed = [e for e in events if e["eventType"] == "THINKING" and e.get("extra", {}).get("routing")]
@@ -132,8 +134,9 @@ def test_student_action_task_generate_routes_to_question(client):
     输入安全闸门（role==student → StudentSafety）被真正调用（出题链路此前把闸门设为「无」）。
     """
     _ptoken, _student, ctoken = _setup(client, "as9_teacher", "as9_kid")
+    # ADR-0095 预检：出题业务要求 subject/grade/qtype 齐备，这里直接给全以验证动作直配。
     status, events = _stream(
-        client, ctoken, "帮我出 2 道数学题", extra={"action": "task_generate"}
+        client, ctoken, "帮我出 2 道三年级数学选择题", extra={"action": "task_generate"}
     )
     assert status == 200, events
     routed = [e for e in events if e["eventType"] == "THINKING" and e.get("extra", {}).get("routing")]
