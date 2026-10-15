@@ -3,6 +3,7 @@ import 'assistant_clarify.dart';
 import 'assistant_event.dart';
 import 'assistant_source.dart';
 import 'assistant_suggested_action.dart';
+import 'assistant_summary.dart';
 import 'stream_stage.dart';
 
 /// 把 AG-UI 事件流折成「AI 文本 + 结构化卡片 + 安全兜底标记」的纯模块。
@@ -52,6 +53,12 @@ class AiTextFold {
   /// 前端据此渲染引导输入卡；空列表 = 本轮不是澄清，按普通正文渲染。
   final List<ClarifySlot> clarifySlots;
 
+  /// 「已确认规格」汇总槽（同一帧类的 `extra.summary`，ADR-0095）。
+  ///
+  /// 与澄清互斥：一轮要么缺槽要澄清、要么齐备发汇总。前端据此渲染带「修改」入口的
+  /// 汇总卡，让用户在生成前有机会改被默认填充的项（US5）。
+  final List<SummarySlot> summarySlots;
+
   const AiTextFold({
     this.text = '',
     this.cards = const <AssistantCard>[],
@@ -61,6 +68,7 @@ class AiTextFold {
     this.sources = const <RagSource>[],
     this.suggestedActions = const <SuggestedAction>[],
     this.clarifySlots = const <ClarifySlot>[],
+    this.summarySlots = const <SummarySlot>[],
   });
 
   static const _fallbackError = '出错了，请稍后重试';
@@ -95,10 +103,12 @@ class AiTextFold {
   /// 本轮后续帧若不带 clarify 则**维持**已有列表（一问一帧，不重复叠加）。
   AiTextFold _withAssistantMessage(AssistantEvent ev, {String? stage}) {
     final slots = ClarifySlot.slotsOfEvent(ev);
+    final summary = SummarySlot.slotsOfEvent(ev);
     return _copy(
       text: text + (ev.text ?? ''),
       stage: stage,
       clarifySlots: slots.isEmpty ? null : slots,
+      summarySlots: summary.isEmpty ? null : summary,
     );
   }
 
@@ -155,6 +165,7 @@ class AiTextFold {
     List<RagSource>? sources,
     List<SuggestedAction>? suggestedActions,
     List<ClarifySlot>? clarifySlots,
+    List<SummarySlot>? summarySlots,
   }) =>
       AiTextFold(
         text: text ?? this.text,
@@ -167,6 +178,7 @@ class AiTextFold {
         sources: sources ?? this.sources,
         suggestedActions: suggestedActions ?? this.suggestedActions,
         clarifySlots: clarifySlots ?? this.clarifySlots,
+        summarySlots: summarySlots ?? this.summarySlots,
       );
 
   static const _unset = Object();
