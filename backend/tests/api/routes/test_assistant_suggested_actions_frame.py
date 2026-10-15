@@ -24,7 +24,9 @@ def test_suggested_actions_frame_not_persisted(client, db):
     from app.db.models import Message
 
     _ptoken, _student, ctoken = _setup(client, "asfa2_teacher", "asfa2_kid")
-    _status, events = _stream(client, ctoken, "帮我出一道加法题")
+    # ADR-0095 预检：出题业务要求 subject/grade/qtype 齐备；给全后走生成路径，
+    # 验证「回复后 suggested_actions 下发但不落库」的意图不被预检误伤。
+    _status, events = _stream(client, ctoken, "帮我出一道三年级数学选择题")
     assert any(e["eventType"] == "SUGGESTED_ACTIONS" for e in events)
 
     # 会话轨迹里不应出现 suggested_actions 步（落库只记 routing/工具/输出等）。
