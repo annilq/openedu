@@ -133,6 +133,14 @@ def test_second_turn_merges_and_generates(db):
     # 本轮不再澄清（merged 已齐备），且产出了题卡 DATA 帧
     assert not [e for e in events2 if e.get("extra", {}).get("clarify")]
     assert any(e["eventType"] == EVENT_DATA for e in events2)
+    # 预检必须把合并后的槽位交给出题子代理的结构化规格路径（ctx.extra["specs"]），
+    # 否则生成步会重新回落自由文本兜底、丢失已收集的科目/年级/题型。
+    specs = (rt.last_ctx_extra or {}).get("specs")
+    assert isinstance(specs, list) and specs, "完整轮必须把合并槽位交给 specs"
+    handed = specs[0]
+    assert handed["subject"] == "数学"
+    assert handed["grade"] == 3
+    assert handed["qtype"] == "choice"
     # 合并后的槽位已落库：subject(沿用) + grade + qtype
     conv = db.get(Conversation, uuid.UUID(sid))
     assert conv.slots["subject"] == "数学"
@@ -163,5 +171,6 @@ def test_complete_specs_still_generate(db):
         e["eventType"] == EVENT_ASSISTANT_MESSAGE and "已确认规格" in e.get("text", "")
         for e in events
     )
-    # 仍正常出题
+    # 仍正常出题；且结构化路径收到 specs（科目/年级/题型齐全）
     assert any(e["eventType"] == EVENT_DATA for e in events)
+    assert (rt.last_ctx_extra or {}).get("specs"), "完整轮必须注入 specs"

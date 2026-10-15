@@ -595,6 +595,9 @@ async def chat(
                     return
                 # 必填齐备：写回合并后的槽位，先发「已确认规格」汇总，再进生成
                 conversation.slots = _result["merged"]
+                # 把合并后的槽位交给出题子代理的结构化规格路径（ADR-0034 Phase 1 接缝）：
+                # 否则生成步会重新回落自由文本兜底、丢失已收集的科目/年级/题型。
+                ctx.extra["specs"] = [_result["merged"]]
                 yield AssistantEvent(
                     eventType=EVENT_ASSISTANT_MESSAGE,
                     text=summarize_slots(_result["merged"]),
