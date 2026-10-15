@@ -754,8 +754,10 @@ def get_knowledge_point_sources(
                 KnowledgePointSourceChunk(seq=seq, content=content)
                 for seq, content in chunks
             ],
+            total_chunks=total_chunks,
+            matched=matched,
         )
-        for material_id, material_name, chunks in raw
+        for material_id, material_name, chunks, total_chunks, matched in raw
     ]
     return KnowledgePointSourcesResp(sources=sources)
 

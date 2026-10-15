@@ -6,8 +6,11 @@ find_owned）拿行，本层只做**已知 owner** 下的集合查询。
 
 from __future__ import annotations
 
+import re
+import unicodedata
 import uuid
 from collections.abc import Iterable, Sequence
+from typing import NamedTuple
 
 from sqlmodel import Session, func, select
 
@@ -23,6 +26,51 @@ from app.db.models.material import (
 )
 
 UNINDEXED_STATES = (INDEX_STATE_PENDING, INDEX_STATE_FAILED, INDEX_STATE_STALE)
+
+# 溯源片段上限（ADR-0093）：一本书 58-157 段全铺等于没铺，概念密度最高的 10 段
+# 足以让教师核对出处；实测「比」命中 60/137 段，不限量就退回整本书。
+_SOURCE_CHUNK_LIMIT = 10
+
+
+class SourceMaterialChunks(NamedTuple):
+    """一份来源资料的溯源结果：挑选出的片段 + 总量 + 是否为真命中。"""
+
+    material_id: uuid.UUID
+    material_name: str
+    chunks: list[tuple[int, str]]
+    total_chunks: int
+    matched: bool
+
+
+def _normalize_for_match(text: str) -> str:
+    """匹配用规范化：NFKC 归一（全角波浪号/字母数字归一半角）+ 去全部空白。
+
+    模型提炼的知识点名与教材正文常在标点半角/全角上打架（「1~5的认识」vs 教材
+    「1～5的认识」），不归一就会把同一段判成未命中，白丢 21% 的可溯源段落。
+    """
+    return re.sub(r"\s+", "", unicodedata.normalize("NFKC", text))
+
+
+def _rank_chunks_by_term(
+    chunk_rows: Sequence[tuple[int, str]], name: str
+) -> tuple[list[tuple[int, str]], bool]:
+    """从一本书的片段里挑出提及 ``name`` 的段：命中数降序、seq 升序、取前 N。
+
+    一段都不命中时返回 (全本, False)——不回归到「空」，但让上层知道这是兜底，
+    前端要照实说「正文未出现该词」而不是把全本伪装成命中集。
+    """
+    term = _normalize_for_match(name)
+    if not term:
+        return list(chunk_rows), False
+    scored: list[tuple[int, int, str]] = []
+    for seq, content in chunk_rows:
+        hits = _normalize_for_match(content).count(term)
+        if hits:
+            scored.append((hits, seq, content))
+    if not scored:
+        return list(chunk_rows), False
+    scored.sort(key=lambda x: (-x[0], x[1]))
+    return [(seq, content) for _, seq, content in scored[:_SOURCE_CHUNK_LIMIT]], True
 
 
 def get_owned_folder(
@@ -343,12 +391,14 @@ def list_knowledge_point_sources(
     subject: str,
     grade: int,
     name: str,
-) -> list[tuple[uuid.UUID, str, list[tuple[int, str]]]]:
+) -> list[SourceMaterialChunks]:
     """溯源：反查 (学科, 年级) 内**哪些资料**的知识清单含该名字，并返回其片段。
 
     知识点与资料无外键，唯一真实链接是 ``Material.knowledge_points``（JSON 名字
     列表）。``MaterialChunk.knowledge_point`` 字段（就近匹配）当前全为空、未实际
-    赋值，故不能走它。这里直接按名字在资料范围里反查，片段按 ``seq`` 升序返回。
+    赋值，故不能走它。这里按名字在资料范围里反查，再在命中资料内做**段级词匹配**
+    （``_rank_chunks_by_term``）：一本书里点任何知识点都返回全部片段，教师就永远
+    核对不到「这个点出自哪一段」——那是 ADR-0093 要解决的事。
     """
     materials = session.exec(
         select(Material).where(
@@ -357,7 +407,7 @@ def list_knowledge_point_sources(
             Material.grade == grade,
         )
     ).all()
-    out: list[tuple[uuid.UUID, str, list[tuple[int, str]]]] = []
+    out: list[SourceMaterialChunks] = []
     for material in materials:
         if name not in (material.knowledge_points or []):
             continue
@@ -366,7 +416,16 @@ def list_knowledge_point_sources(
             .where(MaterialChunk.material_id == material.id)
             .order_by(MaterialChunk.seq)
         ).all()
-        out.append((material.id, material.name, list(chunk_rows)))
+        picked, matched = _rank_chunks_by_term(chunk_rows, name)
+        out.append(
+            SourceMaterialChunks(
+                material_id=material.id,
+                material_name=material.name,
+                chunks=picked,
+                total_chunks=len(chunk_rows),
+                matched=matched,
+            )
+        )
     return out
 
 

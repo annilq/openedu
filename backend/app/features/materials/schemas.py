@@ -182,16 +182,21 @@ class KnowledgePointSourceChunk(SQLModel):
 
 
 class KnowledgePointSourceMaterial(SQLModel):
-    """溯源用：某个知识点来源的一份资料及其全部片段（ADR-0093）。
+    """溯源用：某个知识点来源的一份资料及其片段（ADR-0093）。
 
     知识点与资料之间**没有外键**，唯一的真实链接是 ``Material.knowledge_points``
     里存的名字字符串（资料涌现该点时记下的名字）。所以溯源 = 反查「哪些资料的
-    知识清单里含这个名字」，再把那些资料的片段原文交给教师核对。
+    知识清单里含这个名字」，再在书内做段级词匹配挑出最相关的片段交给教师核对。
+
+    ``matched=False`` 表示该书一段都没提到这个名字（模型提炼措辞与教材正文不同），
+    此时 ``chunks`` 是兜底的全本——前端必须照实说明，不能把全本伪装成命中集。
     """
 
     material_id: UUID
     material_name: str
     chunks: list[KnowledgePointSourceChunk] = Field(default_factory=list)
+    total_chunks: int = 0
+    matched: bool = True
 
 
 class KnowledgePointSourcesResp(SQLModel):
