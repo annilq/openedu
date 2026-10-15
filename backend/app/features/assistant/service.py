@@ -552,12 +552,13 @@ async def chat(
         pending_calls: list[tuple[str | None, Message]] = []
 
         # ── 缺槽预检（ADR-0095，确定性，非 LLM）──
-        # question 业务先接（最小阻塞：subject+grade+qtype）；其余业务本轮暂不接入——
-        # query 全 optional 不会阻塞，tutor 的 question_text 为 string/text 槽、按本设计
-        # 不抽自由文本，接入会恒阻塞自由问答（ADR-0095 §2.4 也要求 tutor/query 不阻塞），
-        # 故垂直切片仅放 question，后续票再扩。
+        # 对任何声明了 input_schema 的业务生效（ADR-0095：schema 是槽位唯一事实源，
+        # 不再按 business 硬编码开关）。是否阻塞完全由 schema 的 required 决定：
+        # 目前仅 question 声明了必填槽（subject/grade/qtype），故只有它会澄清；
+        # query/guide/tutor 全 optional → 恒放行、不追问、也不发汇总帧
+        # （§2.4：读操作与问答过度追问反而干扰，汇总对它们只是噪声）。
         # 结构化 POST /tasks/generate 经 ctx.extra["specs"] 自带校验，必须跳过本预检。
-        if decision.business == "question" and not ctx.extra.get("specs"):
+        if not ctx.extra.get("specs"):
             from app.features.assistant.slot_filling import (
                 fill_slots,
                 summarize_slots,
@@ -595,13 +596,16 @@ async def chat(
                     return
                 # 必填齐备：写回合并后的槽位，先发「已确认规格」汇总，再进生成
                 conversation.slots = _result["merged"]
-                # 把合并后的槽位交给出题子代理的结构化规格路径（ADR-0034 Phase 1 接缝）：
-                # 否则生成步会重新回落自由文本兜底、丢失已收集的科目/年级/题型。
-                ctx.extra["specs"] = [_result["merged"]]
-                yield AssistantEvent(
-                    eventType=EVENT_ASSISTANT_MESSAGE,
-                    text=summarize_slots(_result["merged"]),
-                ).to_sse()
+                # 仅 question 需要「汇总 + 交给定题子代理的 specs 路径」：它是唯一按
+                # 结构化规格生成的业务；query/guide/tutor 静默放行（不打扰、无噪声）。
+                if decision.business == "question":
+                    # 把合并后的槽位交给出题子代理的结构化规格路径（ADR-0034 Phase 1
+                    # 接缝），否则生成步会重新回落自由文本兜底、丢失已收集的科目/年级/题型。
+                    ctx.extra["specs"] = [_result["merged"]]
+                    yield AssistantEvent(
+                        eventType=EVENT_ASSISTANT_MESSAGE,
+                        text=summarize_slots(_result["merged"]),
+                    ).to_sse()
 
         # 复用预航班决策（decision），避免重复路由；run 返回事件流。
         stream: AsyncIterator[AssistantEvent] = rt.run(
