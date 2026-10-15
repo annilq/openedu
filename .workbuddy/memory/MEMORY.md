@@ -35,6 +35,11 @@
 - 会话三端点 `CallerDep` 双端通用（学生端有自己的列表）；响应无 `student_id`/`student_name`；前端**无只读态**（`_AssistantMode.reading` 已删），列表单段、每条可续接。历史学生会话留库不删（可逆）。审计仍走 `/ai/debug/conversations`(`require_owned_or_admin`)，是另一个消费者。
 - 教师失去「看学生在问什么」→ 该需求归 F-305（粒度=交换），不在会话列表另造入口。
 
-## 7. ai-prompts-hardening epic（集成分支 `integration/ai-prompts-hardening`）
-- 3 票：01 capability(ADR-0079)+02 知识点聚焦(ADR-0080) 已 done（commit `ec67a75`+`4e3eeff`，隔离 worktree `/tmp/oedu-aph`）。纪律：主树 `integration/legacy-compat-cleanup` 带在途改动，开发全在 `/tmp/oedu-aph`、零污染主树。
+## 7. ai-prompts-hardening epic（已合入 main 并删除分支）
+- 3 票：01 capability(ADR-0079)+02 知识点聚焦(ADR-0080) 已 done（commit `ec67a75`+`4e3eeff`，隔离 worktree `/tmp/oedu-aph`）。纪律：开发在隔离 worktree、零污染主树。
 - 03(b) pending_quiz 锁死随 ADR-0089 DROP COLUMN 作废，**不再实现**；03(a) follow-up chips **已 done**（commit `59872f8`）：统一 `build_actions` 入口 + SSE `suggested_actions` 新帧（不落库）+ 前端给定列表模式渲染。ai-prompts-hardening epic **全闭环**（01+02+03(a)），并已 `--no-ff` 合入 main（merge `f183c7f` + fix `4748f58`）+ 推送 origin（`58f7fac..4748f58`，含 ADR-0088-0091/0090）。
+
+## 8. 分支卫生与合并台账（2026-10-15 大盘点后）
+- **本地长期只有 `main` 一个分支**；integration/ticket 分支合入即删（`git branch -d` 有未合入保护）。曾有分支：adr-0088-0091、ai-prompts-hardening、tool-input-schema-slot-filling、conversation-ownership、replay-structured-extras、slots-01/02/03——全部已合入并删除。
+- **slot-filling 线是后来才真正进 main 的**：早期「已合入 main」的记录与仓库现状不符（内容实际只在分支上），2026-10-15 按 `4fe9f81`(ADR-0095) → `0629b63`(ADR-0096) → `db05e35`(回放补全) 三个 `--no-ff` 合并补齐，合并后主仓复跑绿才删分支。**教训：「记忆/记录说合过了」不可信，以 `git branch --no-merged main` 与 `git log main..<branch>` 实测为准。**
+- main 现 ahead origin/main 39（含全部上述内容，**未推送**——推送时机留用户）。
