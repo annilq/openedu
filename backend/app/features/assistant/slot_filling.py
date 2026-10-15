@@ -10,41 +10,22 @@
 from __future__ import annotations
 
 import importlib
-import re
 from typing import Any
+
+from app.domain.spec_keywords import (
+    BOOL_SLOT_KEYWORDS,
+    COUNT_CN_RE,
+    COUNT_RE,
+    DIFFICULTY_KEYWORDS,
+    GRADE_CN_RE,
+    GRADE_RE,
+    QTYPE_KEYWORDS,
+    SUBJECT_ALIASES,
+    cn_to_int,
+)
 
 # 内部哨兵：表示本轮未从任何来源抽到该槽（与 ``collected`` 的缺省值区分）。
 _MISSING = object()
-
-# 题型中文关键词 → 标准英文码（与 ``question/agent.parse_specs_from_text`` 同源）。
-_QTYPE_KEYWORDS: dict[str, str] = {
-    "选择": "choice", "单选": "choice", "选择题": "choice", "多选": "choice",
-    "填空": "fill", "填空题": "fill",
-    "判断": "choice", "判断题": "choice",
-    "计算": "calc", "计算题": "calc", "应用题": "calc",
-    "问答": "open", "解答": "open", "简答题": "open", "问答题": "open", "解答题": "open",
-}
-# 学科别名 → 标准名（自由文本容错，复用出题子代理风格）。
-_SUBJECT_ALIASES: dict[str, str] = {
-    "英文": "英语", "道法": "政治",
-}
-# 难度中文关键词 → 标准英文码。
-_DIFFICULTY_KEYWORDS: dict[str, str] = {
-    "简单": "easy", "容易": "easy",
-    "中等": "medium", "适中": "medium",
-    "难": "hard", "困难": "hard", "难题": "hard",
-}
-# bool 槽的关键词（出现即视为 True）。
-_BOOL_KEYWORDS: dict[str, tuple[str, ...]] = {
-    "multi": ("多选", "多选题"),
-    "judge": ("判断题", "判断对错", "判断正误"),
-    "multi_subject": ("多学科", "组卷", "多学科组卷"),
-}
-# 中文数字 → 阿拉伯数字（年级抽取用）。
-_CN_NUM: dict[str, int] = {
-    "一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
-    "六": 6, "七": 7, "八": 8, "九": 9,
-}
 
 
 def resolve_enum_ref(ref: str) -> list:
@@ -102,10 +83,13 @@ def _matches_type(type_: str, value: Any, slot: dict) -> bool:
 
 
 def _extract_enum_from_text(name: str, slot: dict, message: str) -> Any:
-    # 学科别名 → 标准名（与 parse_specs_from_text 同款容错）
+    # 学科别名 → 标准名（与 parse_specs_from_text 同款容错）。别名必须**收敛到
+    # 本槽枚举**：SUBJECT_ALIASES 含「道法→政治」「科学→科学」等比 SUBJECTS 宽的
+    # 面，若不过滤会把非枚举值写进 Conversation.slots（后端只认三学科）。
     if name == "subject":
-        for alias, std in _SUBJECT_ALIASES.items():
-            if alias in message:
+        allowed = _effective_enum(slot)
+        for alias, std in SUBJECT_ALIASES.items():
+            if alias in message and (not allowed or std in allowed):
                 return std
     # 直接子串匹配枚举值（学科等中文枚举天然命中）
     for v in _effective_enum(slot):
@@ -113,11 +97,11 @@ def _extract_enum_from_text(name: str, slot: dict, message: str) -> Any:
             return v
     # 英文码枚举（qtype / difficulty）走中文关键词映射
     if name == "qtype":
-        for kw, code in _QTYPE_KEYWORDS.items():
+        for kw, code in QTYPE_KEYWORDS.items():
             if kw in message:
                 return code
     if name == "difficulty":
-        for kw, code in _DIFFICULTY_KEYWORDS.items():
+        for kw, code in DIFFICULTY_KEYWORDS.items():
             if kw in message:
                 return code
     if name == "semester":
@@ -133,13 +117,6 @@ def _in_range(val: int, lo: Any, hi: Any) -> bool:
     return (lo is None or val >= lo) and (hi is None or val <= hi)
 
 
-def _int_from_group(raw: str) -> int | None:
-    """正则捕获组 → int（阿拉伯数字或中文数字）；无法解析返回 None。"""
-    if raw.isdigit():
-        return int(raw)
-    return _CN_NUM.get(raw)
-
-
 def _extract_int_from_text(name: str, slot: dict, message: str) -> Any:
     """按**槽名**分派 int 抽取：grade 只认「N年级」，count 只认「N道/题/个」。
 
@@ -148,24 +125,17 @@ def _extract_int_from_text(name: str, slot: dict, message: str) -> Any:
     故二者必须按 name 分派，绝不能共用同一条正则顺序尝试。
     """
     lo, hi = slot.get("min"), slot.get("max")
+    patterns: tuple = ()
     if name == "grade":
-        m = re.search(r"(\d)\s*年级", message)
-        if not m:
-            m = re.search(r"([一二三四五六七八九])\s*年级", message)
+        patterns = (GRADE_RE, GRADE_CN_RE)
+    elif name == "count":
+        patterns = (COUNT_RE, COUNT_CN_RE)
+    for pattern in patterns:
+        m = pattern.search(message)
         if m:
-            val = _int_from_group(m.group(1))
+            val = cn_to_int(m.group(1))
             if val is not None and _in_range(val, lo, hi):
                 return val
-        return _MISSING
-    if name == "count":
-        m = re.search(r"(\d+)\s*(道|题|个)", message)
-        if not m:
-            m = re.search(r"([一二三四五])\s*(道|题)", message)
-        if m:
-            val = _int_from_group(m.group(1))
-            if val is not None and _in_range(val, lo, hi):
-                return val
-        return _MISSING
     return _MISSING
 
 
@@ -177,7 +147,7 @@ def _extract_from_text(name: str, type_: str, slot: dict, message: str) -> Any:
     if type_ == "int":
         return _extract_int_from_text(name, slot, message)
     if type_ == "bool":
-        keywords = _BOOL_KEYWORDS.get(name)
+        keywords = BOOL_SLOT_KEYWORDS.get(name)
         if keywords and any(k in message for k in keywords):
             return True
         return _MISSING
@@ -271,17 +241,3 @@ def fill_slots(
         "missing": missing,
         "clarifying": bool(missing),
     }
-
-
-def summarize_slots(merged: dict) -> str:
-    """生成「已确认规格」汇总文案（覆盖被默认填充的 optional 槽，供用户生成前修正）。"""
-    subject = merged.get("subject") or "（未指定）"
-    grade = merged.get("grade") or "（未指定）"
-    qtype = merged.get("qtype") or "（未指定）"
-    count = merged.get("count", 1)
-    difficulty = merged.get("difficulty") or "medium"
-    kp = merged.get("knowledge_point") or "（未指定）"
-    return (
-        f"已确认规格：科目={subject} 年级={grade} 题型={qtype} "
-        f"数量={count} 难度={difficulty} 知识点={kp}"
-    )

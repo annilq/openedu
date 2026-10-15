@@ -559,22 +559,37 @@ async def chat(
         # （§2.4：读操作与问答过度追问反而干扰，汇总对它们只是噪声）。
         # 结构化 POST /tasks/generate 经 ctx.extra["specs"] 自带校验，必须跳过本预检。
         if not ctx.extra.get("specs"):
-            from app.features.assistant.slot_filling import (
-                fill_slots,
+            from app.features.assistant.slot_filling import fill_slots
+            from app.features.assistant.slot_summary import (
                 summarize_slots,
+                summary_payload,
             )
 
             _schema = _load_input_schema(decision.business)
             if _schema:
+                # 槽位按 business 分组：flat 存会让 tutor/query 一轮就冲掉 question
+                # 已收集的槽（fill_slots 只搬当前 schema 内的键），故各自一本账。
+                _store = conversation.slots if isinstance(conversation.slots, dict) else {}
+                _collected = _store.get(decision.business)
+                if not isinstance(_collected, dict):
+                    _collected = {}
                 _result = fill_slots(
                     _schema,
-                    conversation.slots or {},
+                    _collected,
                     incoming=message,
                     ctx_extra=ctx.extra,
                 )
+                # 本轮开始前必填是否已齐（用于区分「刚补齐」与「齐了还说别的」）
+                _was_incomplete = any(
+                    _collected.get(s["name"]) in (None, "")
+                    for s in _schema
+                    if s.get("required")
+                )
+                # 必须赋**新对象**：SQLAlchemy 按对象 identity 判定脏值，就地改同一个
+                # dict（_store[..] = .. 后再赋回）不会触发 UPDATE，槽位写不进库。
+                conversation.slots = {**_store, decision.business: _result["merged"]}
                 if _result["clarifying"]:
                     # 写回已知槽位，供下一轮合并续接（跨轮记忆）
-                    conversation.slots = _result["merged"]
                     session.commit()
                     _clarify_text = " ".join(m["prompt"] for m in _result["missing"])
                     yield AssistantEvent(
@@ -582,7 +597,9 @@ async def chat(
                         text=_clarify_text,
                         extra={"clarify": {"missing_slots": _result["missing"]}},
                     ).to_sse()
-                    # 澄清帧作为普通助手消息落库（历史回放可见，不新增 eventType）
+                    # 澄清帧作为普通助手消息落库（历史回放可见，不新增 eventType）。
+                    # payload 形状与 extra.clarify 一致（map 而非裸 list），回放时
+                    # 前端可以复用同一套解析。
                     session.add(
                         Message(
                             conversation_id=conv_id,
@@ -590,22 +607,49 @@ async def chat(
                             role="assistant",
                             step="output",
                             content=_clarify_text,
-                            payload={"clarify": _result["missing"]},
+                            payload={"clarify": {"missing_slots": _result["missing"]}},
                         )
                     )
                     return
-                # 必填齐备：写回合并后的槽位，先发「已确认规格」汇总，再进生成
-                conversation.slots = _result["merged"]
+                # 必填齐备：写回合并后的槽位，先发「已确认规格」汇总，再进生成。
                 # 仅 question 需要「汇总 + 交给定题子代理的 specs 路径」：它是唯一按
                 # 结构化规格生成的业务；query/guide/tutor 静默放行（不打扰、无噪声）。
-                if decision.business == "question":
+                #
+                # 触发条件：本轮补进了槽位，或本轮刚好补齐。二者皆无 → 说明槽位早
+                # 已齐备、本轮与出题无关（如「谢谢」），若仍注入 specs 会拿着旧规格
+                # 再出一轮题；此时按普通对话放行。
+                if decision.business == "question" and (
+                    _result["extracted"] or _was_incomplete
+                ):
                     # 把合并后的槽位交给出题子代理的结构化规格路径（ADR-0034 Phase 1
                     # 接缝），否则生成步会重新回落自由文本兜底、丢失已收集的科目/年级/题型。
                     ctx.extra["specs"] = [_result["merged"]]
+                    _summary_text = summarize_slots(_result["merged"])
                     yield AssistantEvent(
                         eventType=EVENT_ASSISTANT_MESSAGE,
-                        text=summarize_slots(_result["merged"]),
+                        text=_summary_text,
+                        extra={
+                            "summary": {
+                                "slots": summary_payload(_schema, _result["merged"])
+                            }
+                        },
                     ).to_sse()
+                    session.add(
+                        Message(
+                            conversation_id=conv_id,
+                            turn=turn,
+                            role="assistant",
+                            step="output",
+                            content=_summary_text,
+                            payload={
+                                "summary": {
+                                    "slots": summary_payload(
+                                        _schema, _result["merged"]
+                                    )
+                                }
+                            },
+                        )
+                    )
 
         # 复用预航班决策（decision），避免重复路由；run 返回事件流。
         stream: AsyncIterator[AssistantEvent] = rt.run(
