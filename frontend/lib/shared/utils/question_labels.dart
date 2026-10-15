@@ -37,6 +37,13 @@ String qtypeLabelFull(String qtype) => switch (qtype) {
       _ => qtype,
     };
 
+/// 学期标签：`上` → 「上学期」。用于出题规格汇总这类要给人念的位置。
+String semesterLabel(String semester) => switch (semester) {
+      '上' => '上学期',
+      '下' => '下学期',
+      _ => semester,
+    };
+
 /// 难度短标签：`medium` → 「中等」。
 String difficultyLabel(String difficulty) => switch (difficulty) {
       'easy' => '简单',
