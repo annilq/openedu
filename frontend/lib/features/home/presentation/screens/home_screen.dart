@@ -295,8 +295,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           onNavigateToList: (tab) => _go(TaskListPage(initialTab: tab)),
         ),
       // ADR-0057：生成页不再接跳转回调——收尾（含进草稿页）由本页的监听统一负责。
-      // 05：表单类页面用窄宽度（contentNarrow）居中，两侧不再大片留白。
-      CreateTaskPage() => _narrow(const TeacherTaskFormView()),
+      // 05：表单类页默认窄宽度（contentNarrow）居中；出题表单字段多（每行 6 项），
+      // 480 下规格行被压到 ~120px 选不清单词，故放宽到 contentReading 居中。
+      CreateTaskPage() => _narrow(
+        const TeacherTaskFormView(),
+        maxWidth: AppLayout.contentReading,
+      ),
       AddStudentPage() => _narrow(StudentFormScreen(
           mode: ChildFormMode.create,
           classId: page.classId,
@@ -443,8 +447,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   /// 只声明「这个页想要更窄」，实际生效由壳的 [AppContentFrame]（默认 contentWide）
   /// 让内层更紧者生效——页面本身不感知宽窄，也不改动任何内部排版。未包裹的页面沿用
   /// 壳的默认宽度。应用：表单类页面（出题 / 新建·编辑学生）与「我的」。
-  Widget _narrow(Widget child) =>
-      AppContentFrame(maxWidth: AppLayout.contentNarrow, child: child);
+  ///
+  /// [maxWidth] 给个别字段密集的表单（如出题表单）一个更宽的出口，默认仍 [AppLayout.contentNarrow]；
+  /// 调用方显式传更宽值即可，不影响其它窄页面。
+  Widget _narrow(Widget child, {double maxWidth = AppLayout.contentNarrow}) =>
+      AppContentFrame(maxWidth: maxWidth, child: child);
 
   /// 出题进行中的常驻指示条（跨 Tab），带停止按钮。
   Widget? _genTrailing(TaskGenState gen) {
