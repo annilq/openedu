@@ -128,28 +128,44 @@ def _extract_enum_from_text(name: str, slot: dict, message: str) -> Any:
     return _MISSING
 
 
+def _in_range(val: int, lo: Any, hi: Any) -> bool:
+    """int 槽的范围校验（min/max 缺省即不限）。"""
+    return (lo is None or val >= lo) and (hi is None or val <= hi)
+
+
+def _int_from_group(raw: str) -> int | None:
+    """正则捕获组 → int（阿拉伯数字或中文数字）；无法解析返回 None。"""
+    if raw.isdigit():
+        return int(raw)
+    return _CN_NUM.get(raw)
+
+
 def _extract_int_from_text(name: str, slot: dict, message: str) -> Any:
+    """按**槽名**分派 int 抽取：grade 只认「N年级」，count 只认「N道/题/个」。
+
+    grade 与 count 同为 int 但语义互斥：若让年级正则对 count 槽也生效，
+    「帮我出 2 道三年级数学选择题」会把年级 3 当作数量（实测多出一道题）。
+    故二者必须按 name 分派，绝不能共用同一条正则顺序尝试。
+    """
     lo, hi = slot.get("min"), slot.get("max")
-    m = re.search(r"(\d)\s*年级", message)
-    if not m:
-        m = re.search(r"([一二三四五六七八九])\s*年级", message)
-    if m:
-        raw = m.group(1)
-        if raw.isdigit():
-            val = int(raw)
-        else:
-            val = _CN_NUM.get(raw)
-            if val is None:
-                return _MISSING
-        if (lo is None or val >= lo) and (hi is None or val <= hi):
-            return val
-    # count：N道 / N题 / N个
+    if name == "grade":
+        m = re.search(r"(\d)\s*年级", message)
+        if not m:
+            m = re.search(r"([一二三四五六七八九])\s*年级", message)
+        if m:
+            val = _int_from_group(m.group(1))
+            if val is not None and _in_range(val, lo, hi):
+                return val
+        return _MISSING
     if name == "count":
         m = re.search(r"(\d+)\s*(道|题|个)", message)
+        if not m:
+            m = re.search(r"([一二三四五])\s*(道|题)", message)
         if m:
-            val = int(m.group(1))
-            if (lo is None or val >= lo) and (hi is None or val <= hi):
+            val = _int_from_group(m.group(1))
+            if val is not None and _in_range(val, lo, hi):
                 return val
+        return _MISSING
     return _MISSING
 
 
