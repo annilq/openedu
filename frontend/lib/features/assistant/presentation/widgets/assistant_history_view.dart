@@ -4,7 +4,6 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/util/datetime_format.dart';
-import '../../../../shared/widgets/app_badge.dart';
 import '../../../../shared/widgets/app_select_strip.dart';
 import '../../domain/conversation.dart';
 import '../provider/conversation_history_provider.dart';
@@ -12,17 +11,14 @@ import 'assistant_hint_card.dart';
 import '../../../../shared/widgets/app_buttons.dart';
 import '../../../../shared/widgets/app_card.dart';
 
-/// 助手页内的「历史会话」视图（ADR-0048）。
+/// 助手页内的「历史会话」视图（ADR-0048；归属口径 ADR-0096）。
 ///
 /// 形态是**页内切模式**而非再 push 一层：助手页本身已经是 push 出来的整页
 /// （ADR-0047），再叠「列表页 → 回放页」就成三层栈，输入栏逻辑也会分到两处。
-/// 本组件只负责列表——点开某一段之后进「续接」还是「只读」，由调用方决定。
 ///
-/// 列表分两段（ADR-0048 Q5(b)）：
-/// - **我的对话**：可续接，点开就是继续聊；
-/// - **学生的对话**：按娃分段，**只能只读回放**。这不是 UX 取舍——教师发请求时
-///   `student_id` 恒为 `None`，拿学生的 session_id 去续接过不了后端归属校验，
-///   会另建一段会话而屏幕上像续上了，顺带把学生的消息当成教师的 prompt 历史灌进去。
+/// 列表是**单段**的：后端只返回**本人**可见的会话（教师看不到名下学生的，学生
+/// 看不到同学与教师的），因此每一行都可续接，不再有「只读回放」那一类条目与
+/// 「只读」徽标——ADR-0048 §3 的两段式分组随归属收敛一起删掉。
 class AssistantHistoryView extends ConsumerWidget {
   /// 点开某一段会话（调用方负责取回放载荷并决定进入聊天还是只读模式）。
   final ValueChanged<AssistantConversation> onOpen;
@@ -85,7 +81,7 @@ class AssistantHistoryView extends ConsumerWidget {
               title: '还没有历史对话',
               body: '问过的问题会留在这里，随时能翻回来接着聊。',
             )
-          : _ConversationGroups(
+          : _ConversationList(
               all: all,
               onOpen: onOpen,
               openingId: openingId,
@@ -99,12 +95,12 @@ class AssistantHistoryView extends ConsumerWidget {
   }
 }
 
-/// 两段式分组的容器：先「我的对话」，再按娃分段的「学生的对话」。
+/// 单段列表容器：后端已按最近活动倒序，这里原样铺开，不再分组。
 ///
 /// 顶部还放一条「多选 / 已选 N 项 / 全选」操作条（[AppSelectStrip]）——多选入口与
 /// 全选放在这里而非顶栏，是因为 [AppTopBar] 的 trailing 槽位只有 40px、只够放一个
 /// 图标动作（ADR-0045/0046 的顶栏几何），而这里是一整条可用宽度，能并排放多选 / 全选。
-class _ConversationGroups extends StatelessWidget {
+class _ConversationList extends StatelessWidget {
   final List<AssistantConversation> all;
   final ValueChanged<AssistantConversation> onOpen;
   final String? openingId;
@@ -114,7 +110,7 @@ class _ConversationGroups extends StatelessWidget {
   final VoidCallback onEnterSelecting;
   final VoidCallback onToggleSelectAll;
 
-  const _ConversationGroups({
+  const _ConversationList({
     required this.all,
     required this.onOpen,
     this.openingId,
@@ -127,27 +123,6 @@ class _ConversationGroups extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final mine = <AssistantConversation>[];
-    // 后端已按最近活动倒序，故「某娃第一次出现」的先后 = 该娃最近一段的先后：
-    // 组序由这一趟扫描自然得出，零额外查询、且是确定性的。
-    final kidOrder = <String>[];
-    final kidItems = <String, List<AssistantConversation>>{};
-    final kidNames = <String, String>{};
-
-    for (final conv in all) {
-      final studentId = conv.studentId;
-      if (studentId == null) {
-        mine.add(conv);
-        continue;
-      }
-      if (!kidItems.containsKey(studentId)) {
-        kidOrder.add(studentId);
-        kidItems[studentId] = <AssistantConversation>[];
-        kidNames[studentId] = conv.studentName ?? '学生';
-      }
-      kidItems[studentId]!.add(conv);
-    }
-
     return Column(
       children: [
         AppSelectStrip(
@@ -161,14 +136,15 @@ class _ConversationGroups extends StatelessWidget {
           child: ListView(
             padding: const EdgeInsets.all(AppSpacing.md),
             children: [
-              if (mine.isNotEmpty)
-                ..._section(context, '我的对话', mine, readOnly: false),
-              for (final studentId in kidOrder)
-                ..._section(
-                  context,
-                  '${kidNames[studentId]}的对话',
-                  kidItems[studentId]!,
-                  readOnly: true,
+              for (final conv in all)
+                _ConversationRow(
+                  conversation: conv,
+                  opening: openingId == conv.id,
+                  selecting: selecting,
+                  selected: selectedIds.contains(conv.id),
+                  onTap: selecting
+                      ? () => onToggleSelection(conv)
+                      : () => onOpen(conv),
                 ),
             ],
           ),
@@ -176,38 +152,9 @@ class _ConversationGroups extends StatelessWidget {
       ],
     );
   }
-
-  List<Widget> _section(
-    BuildContext context,
-    String title,
-    List<AssistantConversation> items, {
-    required bool readOnly,
-  }) => [
-    Padding(
-      padding: const EdgeInsets.only(
-          left: AppSpacing.xs, top: AppSpacing.sm, bottom: AppSpacing.xs),
-      child: Text(
-        title,
-        style: AppTheme.textOf(context).labelLarge?.copyWith(
-              color: AppTheme.colorsOf(context).onSurfaceVariant,
-            ),
-      ),
-    ),
-    for (final conv in items)
-      _ConversationRow(
-        conversation: conv,
-        readOnly: readOnly,
-        opening: openingId == conv.id,
-        selecting: selecting,
-        selected: selectedIds.contains(conv.id),
-        onTap: selecting
-            ? () => onToggleSelection(conv)
-            : () => onOpen(conv),
-      ),
-  ];
 }
 
-/// 列表一行：会话名 + 元信息（几轮 · 最近活动时间），学生的条目带「只读」徽标。
+/// 列表一行：会话名 + 元信息（几轮 · 最近活动时间）。
 ///
 /// 用 [AppCard.listRow] 而非标准卡：密集列表逐行套 2px 边 + 硬阴影会让整页过载
 /// （ADR-0044「列表降噪」）。行整体可点 → 走 [AppCard] 的 onTap（内部是
@@ -217,7 +164,6 @@ class _ConversationGroups extends StatelessWidget {
 /// 点行 = 切换选中（不打开）。
 class _ConversationRow extends StatelessWidget {
   final AssistantConversation conversation;
-  final bool readOnly;
   final bool opening;
   final bool selecting;
   final bool selected;
@@ -225,7 +171,6 @@ class _ConversationRow extends StatelessWidget {
 
   const _ConversationRow({
     required this.conversation,
-    required this.readOnly,
     required this.opening,
     this.selecting = false,
     this.selected = false,
@@ -276,10 +221,6 @@ class _ConversationRow extends StatelessWidget {
                             ?.copyWith(color: scheme.onSurfaceVariant),
                       ),
                     ),
-                    if (readOnly) ...[
-                      const SizedBox(width: AppSpacing.xs),
-                      const AppBadge(label: '只读'),
-                    ],
                   ],
                 ),
               ],

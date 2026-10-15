@@ -168,12 +168,11 @@ class AssistantNotifier extends StateNotifier<AssistantState> {
     }
   }
 
-  /// 恢复一段历史会话（ADR-0048 的「我的对话」条目）：换掉当前会话身份与气泡，
-  /// 之后的 [send] 会续接到它（后端按 session_id 归属校验后续接，零后端改动）。
+  /// 恢复一段历史会话：换掉当前会话身份与气泡，之后的 [send] 会续接到它
+  /// （后端按 session_id 归属校验后续接，零后端改动）。
   ///
-  /// **只对教师自己的会话开放**：[AssistantConversation.isMine] 为 false 的（学生的
-  /// 会话）只能只读回放——教师发请求时 `student_id` 恒为 `None`，拿学生的 session_id
-  /// 续接必然过不了归属校验，后端会另建一段并回写新 id，屏幕上却像续上了。
+  /// 历史列表里每一条都是**调用者本人**的会话（ADR-0096），所以续接必然过归属校验——
+  /// 不再需要在调用侧按归属挑路径。
   void resume({
     required String sessionId,
     required List<AssistantMessage> messages,

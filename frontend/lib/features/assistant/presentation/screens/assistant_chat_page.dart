@@ -33,14 +33,15 @@ import '../../../../shared/widgets/app_actions.dart';
 /// （ADR-0045），所以整页自带 `contentWide` 上限：消息列表与输入栏同宽同轴，大屏下
 /// 不会出现「气泡收在中间一列、输入框横贯全屏」的错位。
 ///
-/// 教师端在本页内还有「历史会话」与「只读回放」两种模式，**页内切换、不新增路由**：
-/// 本页已经是 push 出来的整页，再叠「列表页 → 回放页」就成三层栈，输入栏逻辑也会
-/// 分到两处（ADR-0048）。
+/// 本页内还有「历史会话」模式，**页内切换、不新增路由**：本页已经是 push 出来的
+/// 整页，再叠「列表页 → 回放页」就成三层栈，输入栏逻辑也会分到两处（ADR-0048）。
+/// 历史里每一段**都可续接**——后端只返回本人可见的会话（ADR-0096），「只读回放」
+/// 这一态连同它存在的前提一起删掉了。
 ///
 /// 收敛前的旧 `TutorChatScreen` 自带 `TutorNotifier` 与学科/年级/知识点三个控件，
 /// 但请求体只发 `message`：控件不生效、DATA 帧被丢弃、会话与悬浮助手互不可见。
 /// 这三处已随收敛一并消除。
-enum _AssistantMode { chat, history, reading }
+enum _AssistantMode { chat, history }
 
 class AssistantChatPage extends ConsumerStatefulWidget {
   final bool showBack;
@@ -72,17 +73,10 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
   final _ctrl = TextEditingController();
   final _scroll = ScrollController();
 
-  /// 只读回放用自己的滚动控制器：复用 [_scroll] 会把上一模式的偏移带进来，
-  /// 打开一段旧对话应该是从头看，而不是接着聊天列表的位置。
-  final _replayScroll = ScrollController();
-
   _AssistantMode _mode = _AssistantMode.chat;
 
   /// 历史列表里正在打开的那一段（行内加载态）。
   String? _openingId;
-
-  /// 只读回放的内容（学生的会话）。教师自己的会话走 [_resumeToChat]，不进这里。
-  AssistantConversationDetail? _replay;
 
   /// 是否处于「多选管理」态：是则历史行可勾选、不可点开。
   bool _selecting = false;
@@ -94,7 +88,6 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
   void dispose() {
     _ctrl.dispose();
     _scroll.dispose();
-    _replayScroll.dispose();
     super.dispose();
   }
 
@@ -115,7 +108,6 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
     ref.invalidate(conversationHistoryProvider);
     setState(() {
       _mode = _AssistantMode.history;
-      _replay = null;
       _selecting = false;
       _selectedIds.clear();
     });
@@ -214,11 +206,8 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
     );
   }
 
-  /// 从历史 / 只读回到对话。只切模式，不动会话本身。
-  void _backToChat() => setState(() {
-        _mode = _AssistantMode.chat;
-        _replay = null;
-      });
+  /// 从历史回到对话。只切模式，不动会话本身。
+  void _backToChat() => setState(() => _mode = _AssistantMode.chat);
 
   /// 把「要去哪」交给壳，再关掉自己（若本页是 push 出来的整页）。
   ///
@@ -242,49 +231,35 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
   void _handleCardAction(AssistantCardAction action) =>
       _dispatchTarget(action.target);
 
-  void _backToHistory() => _showHistory();
-
   /// 新对话：丢弃当前会话身份与气泡。
   ///
   /// 后端按 `session_id` 续接，不显式断开的话「新对话」只是一句空话。
   void _newConversation() {
     ref.read(assistantNotifierProvider.notifier).reset();
     _ctrl.clear();
-    setState(() {
-      _mode = _AssistantMode.chat;
-      _replay = null;
-    });
+    setState(() => _mode = _AssistantMode.chat);
   }
 
-  /// 打开一段历史会话：我的 → 恢复续接；学生的 → 只读回放。
+  /// 打开一段历史会话 = **恢复续接**（ADR-0096 前分「续接 / 只读」两态）。
   ///
-  /// 分叉的依据是条目本身的归属（[AssistantConversation.isMine]），不是模式状态：
-  /// 学生的会话**不能**续接（教师发请求时 student_id 恒为 None，过不了后端归属校验，
-  /// 后端会另建一段而屏幕上像续上了）。
+  /// 列表里每一条都是本人的会话，后端归属校验必然通过，续接后消息落回原会话；
+  /// 不再需要按归属挑走哪条路径。
   Future<void> _open(AssistantConversation conv) async {
     setState(() => _openingId = conv.id);
     try {
       final detail =
           await ref.read(assistantRepositoryProvider).conversationDetail(conv.id);
       if (!mounted) return;
-      if (conv.isMine) {
-        ref.read(assistantNotifierProvider.notifier).resume(
-              sessionId: detail.conversation.id,
-              messages: [
-                for (final b in detail.bubbles) AssistantMessage.fromBubble(b),
-              ],
-            );
-        setState(() {
-          _mode = _AssistantMode.chat;
-          _openingId = null;
-        });
-      } else {
-        setState(() {
-          _mode = _AssistantMode.reading;
-          _replay = detail;
-          _openingId = null;
-        });
-      }
+      ref.read(assistantNotifierProvider.notifier).resume(
+            sessionId: detail.conversation.id,
+            messages: [
+              for (final b in detail.bubbles) AssistantMessage.fromBubble(b),
+            ],
+          );
+      setState(() {
+        _mode = _AssistantMode.chat;
+        _openingId = null;
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() => _openingId = null);
@@ -303,7 +278,7 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
     };
     final streaming = state is AssistantActive && state.streaming;
 
-    // 流式产出时自动滚到底部（逐帧更新）。只读回放不参与：它用另一个控制器。
+    // 流式产出时自动滚到底部（逐帧更新）。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_mode == _AssistantMode.chat && _scroll.hasClients) {
         _scroll.animateTo(
@@ -313,8 +288,6 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
         );
       }
     });
-
-    final replay = _replay;
 
     return SizedBox.expand(
       child: ColoredBox(
@@ -354,19 +327,6 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
                               onEnterSelecting: _enterSelecting,
                               onToggleSelectAll: _toggleSelectAll,
                             ),
-                          _AssistantMode.reading => replay == null
-                              ? const SizedBox.shrink()
-                              : AssistantMessageList(
-                                  messages: [
-                                    for (final b in replay.bubbles)
-                                      AssistantMessage.fromBubble(b),
-                                  ],
-                                  controller: _replayScroll,
-                                  onPrompt: (payload) => ref
-                                      .read(assistantNotifierProvider.notifier)
-                                      .send(payload, courseware: widget.coursewareContext),
-                                  onNavigate: _dispatchTarget,
-                                ),
                         },
                     ),
                   ],
@@ -377,17 +337,13 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
               _hairline(scheme),
               AssistantInputBar(controller: _ctrl, sending: streaming, onSend: _send),
             ],
-            if (_mode == _AssistantMode.reading) ...[
-              _hairline(scheme),
-              _ReadOnlyNotice(studentName: replay?.conversation.studentName),
-            ],
           ],
         ),
       ),
     );
   }
 
-  /// 顶栏即模式切换器：对话态给「历史」，历史态给「新对话」，回放态给「回列表」。
+  /// 顶栏即模式切换器：对话态给「历史」，历史态给「新对话」。
   ///
   /// 两个动作各占一个 40 宽槽位，不额外挤第二个图标：历史态的 trailing 换成「新对话」
   /// 是有意的——去翻历史的人，下一步常常就是想开一段新的。
@@ -397,16 +353,15 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
         return AppTopBar(
           title: widget.isTeacher ? 'AI 学习助手' : '问 AI 老师',
           showBack: widget.showBack,
-          // 历史入口**只给教师**：后端没有 child-scoped 的会话列表路由，且学生看到
-          // 自己「被拦过」的记录是负面强化（ADR-0048 记录了这个有意的不对称）。
-          trailing: widget.isTeacher
-              ? AppIconAction(
-                  icon: LucideIcons.history,
-                  iconSize: 20,
-                  semanticLabel: '历史会话',
-                  onPressed: _showHistory,
-                )
-              : null,
+          // 历史入口**双端都有**（ADR-0096）：后端按调用者身份返回本人可见的会话，
+          // 学生看到的就是自己问过的。ADR-0048 曾把它定为教师专属（「有意的不对称」），
+          // 那条理由随归属收敛不再成立。
+          trailing: AppIconAction(
+            icon: LucideIcons.history,
+            iconSize: 20,
+            semanticLabel: '历史会话',
+            onPressed: _showHistory,
+          ),
         );
       case _AssistantMode.history:
         return AppTopBar(
@@ -429,13 +384,6 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
                   semanticLabel: '新对话',
                   onPressed: _newConversation,
                 ),
-        );
-      case _AssistantMode.reading:
-        final name = _replay?.conversation.studentName;
-        return AppTopBar(
-          title: name == null ? '会话回放' : '$name的对话',
-          showBack: true,
-          onBack: _backToHistory,
         );
     }
   }
@@ -535,44 +483,4 @@ class _WelcomeHint extends StatelessWidget {
         title: isTeacher ? '可以出题、查学情、看错题' : '有问题就问 AI 老师吧',
         body: isTeacher ? '布置与派发任务请到「任务」页，点右上角「发布任务」' : '只讲学习内容，其他问题不回答哦',
       );
-}
-
-/// 只读回放的底栏：学生的会话不能续接，输入栏换成一句说明。
-///
-/// **替换而不是隐藏**：直接去掉底栏会让人以为界面坏了，而这里必须说清**为什么**
-/// 不能输入——否则用户会反复点空白处，以为是自己没点对。
-class _ReadOnlyNotice extends StatelessWidget {
-  final String? studentName;
-
-  const _ReadOnlyNotice({this.studentName});
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = AppTheme.colorsOf(context);
-    final text = AppTheme.textOf(context);
-    return SafeArea(
-      top: false,
-      // 与消息列表、输入栏同宽同轴（本页可能 push 在壳外）。
-      child: AppContentFrame(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(
-              AppSpacing.xl2, AppSpacing.md, AppSpacing.xl2, AppSpacing.xl),
-          child: Row(
-            children: [
-              Icon(LucideIcons.lock,
-                  size: 18, color: scheme.onSurfaceVariant),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(
-                child: Text(
-                  '这是${studentName ?? '学生'}的对话，只能查看，不能继续提问',
-                  style: text.bodyMedium
-                      ?.copyWith(color: scheme.onSurfaceVariant),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }
