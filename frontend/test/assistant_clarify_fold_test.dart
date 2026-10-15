@@ -70,4 +70,61 @@ void main() {
       expect(const AiTextFold().apply(ev).clarifySlots, isEmpty);
     }
   });
+
+  test('extra.summary.slots 收进 summarySlots（含中文标签与值文案）', () {
+    const ev = AssistantEvent(
+      eventType: AssistantEventType.assistantMessage,
+      text: '已确认规格：科目=数学 题型=选择题',
+      extra: {
+        'summary': {
+          'slots': [
+            {
+              'name': 'subject',
+              'label': '科目',
+              'prompt': '请问要出哪个科目？',
+              'type': 'enum',
+              'enum': ['数学', '语文', '英语'],
+              'value': '数学',
+              'value_label': '数学',
+            },
+            {
+              'name': 'qtype',
+              'label': '题型',
+              'prompt': '要什么题型？',
+              'type': 'enum',
+              'enum': ['choice', 'fill'],
+              'value': 'choice',
+              'value_label': '选择题',
+            },
+          ],
+        },
+      },
+    );
+
+    final fold = const AiTextFold().apply(ev);
+
+    expect(fold.text, contains('已确认规格'));
+    // 汇总帧与澄清帧互斥：一轮要么缺槽要澄清、要么齐备发汇总
+    expect(fold.clarifySlots, isEmpty);
+    expect(fold.summarySlots.length, 2);
+    expect(fold.summarySlots[0].label, '科目');
+    expect(fold.summarySlots[0].valueLabel, '数学');
+    expect(fold.summarySlots[1].valueLabel, '选择题');
+    expect(fold.summarySlots[1].canEdit, isTrue);
+  });
+
+  test('畸形 summary 降级为空，不抛', () {
+    for (final badExtra in <Map<String, dynamic>>[
+      {'summary': 'oops'},
+      {'summary': {'slots': 'oops'}},
+      {'summary': {}},
+    ]) {
+      final ev = AssistantEvent(
+        eventType: AssistantEventType.assistantMessage,
+        text: '你好',
+        extra: badExtra,
+      );
+      expect(const AiTextFold().apply(ev).summarySlots, isEmpty);
+    }
+  });
 }
