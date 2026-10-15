@@ -218,16 +218,24 @@ class KnowledgePointSourceChunk {
       );
 }
 
-/// 溯源：某个知识点来源的一份资料及其全部片段（ADR-0093）。
+/// 溯源：某个知识点来源的一份资料及其片段（ADR-0093）。
+///
+/// [matched] = false 表示该书一段都没提到这个名字（模型提炼措辞与教材正文
+/// 不同），此时 [chunks] 是后端兜底的全本，UI 必须照实说明，不能把全本
+/// 伪装成命中集。[totalChunks] 是该资料切片总数，供「命中 N / 共 M 段」。
 class KnowledgePointSourceMaterial {
   final String materialId;
   final String materialName;
   final List<KnowledgePointSourceChunk> chunks;
+  final int totalChunks;
+  final bool matched;
 
   const KnowledgePointSourceMaterial({
     required this.materialId,
     required this.materialName,
     this.chunks = const [],
+    this.totalChunks = 0,
+    this.matched = true,
   });
 
   factory KnowledgePointSourceMaterial.fromJson(Map<String, dynamic> json) =>
@@ -238,6 +246,8 @@ class KnowledgePointSourceMaterial {
             .map((e) => KnowledgePointSourceChunk.fromJson(
                 Map<String, dynamic>.from(e as Map)))
             .toList(),
+        totalChunks: json['total_chunks'] as int? ?? 0,
+        matched: json['matched'] as bool? ?? true,
       );
 }
 
