@@ -11,6 +11,8 @@ import json
 import uuid
 from types import SimpleNamespace
 
+import pytest
+
 from agent_core.protocol import (
     EVENT_ASSISTANT_MESSAGE,
     EVENT_DATA,
@@ -30,13 +32,14 @@ def _caller(role: str, *, user_id: uuid.UUID, teacher_id: uuid.UUID):
 
 
 class _QuestionStubRuntime:
-    """桩 runtime：question 业务产出一张题卡（DATA 帧）。"""
+    """桩 runtime：产出一张题卡（DATA 帧）；business 可配（默认 question）。"""
 
-    def __init__(self) -> None:
+    def __init__(self, business: str = "question") -> None:
+        self.business = business
         self.last_ctx_extra = None
 
     async def decide(self, signal, *, role: str, deps) -> RouteDecision:
-        return RouteDecision(business="question", name="出题助手")
+        return RouteDecision(business=self.business, name="桩业务")
 
     async def run(self, message, *, role, ctx, deps, business=None, session=None):
         self.last_ctx_extra = ctx.extra
@@ -174,3 +177,61 @@ def test_complete_specs_still_generate(db):
     # 仍正常出题；且结构化路径收到 specs（科目/年级/题型齐全）
     assert any(e["eventType"] == EVENT_DATA for e in events)
     assert (rt.last_ctx_extra or {}).get("specs"), "完整轮必须注入 specs"
+
+
+@pytest.mark.parametrize(
+    "business,text",
+    [
+        ("query", "看看我的错题"),
+        ("tutor", "为什么天空是蓝的"),
+        ("guide", "帮我创建一个任务"),
+    ],
+)
+def test_non_question_businesses_never_clarify(db, business, text):
+    """预检已扩展到全部业务，但 query/guide/tutor 全 optional → 永不追问。
+
+    tutor 的 question_text 亦为**非必填**（消息本身就是问题），否则自由问答会被
+    恒追问「你想问什么？」而阻塞（ADR-0095 §2.4）。
+    """
+    pid = uuid.uuid4()
+    rt = _QuestionStubRuntime(business=business)
+    frames = asyncio.run(
+        _drain(
+            chat(
+                caller=_caller("teacher", user_id=pid, teacher_id=pid),
+                req=_req(text),
+                session=db,
+                runtime=rt,
+            )
+        )
+    )
+    events = _parse(frames)
+    assert not [e for e in events if e.get("extra", {}).get("clarify")], (
+        f"{business} 不应产出澄清帧"
+    )
+    # 未被预检短路，正常进子代理生成
+    assert rt.last_ctx_extra is not None, "应进入 rt.run"
+    assert any(e["eventType"] == EVENT_DATA for e in events)
+
+
+def test_tutor_does_not_emit_summary_frame(db):
+    """汇总确认帧只对 question 发；tutor 等问答/只读业务不发（避免噪声）。"""
+    pid = uuid.uuid4()
+    rt = _QuestionStubRuntime(business="tutor")
+    frames = asyncio.run(
+        _drain(
+            chat(
+                caller=_caller("teacher", user_id=pid, teacher_id=pid),
+                req=_req("为什么天空是蓝的"),
+                session=db,
+                runtime=rt,
+            )
+        )
+    )
+    events = _parse(frames)
+    assert not any(
+        e["eventType"] == EVENT_ASSISTANT_MESSAGE and "已确认规格" in e.get("text", "")
+        for e in events
+    ), "tutor 不应出现「已确认规格」汇总帧"
+    # 也不该给非 question 业务注入 specs（它们不按规格生成）
+    assert not (rt.last_ctx_extra or {}).get("specs")

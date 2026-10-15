@@ -134,3 +134,28 @@ def test_summarize_slots_covers_defaults():
     assert "数量=1" in text
     assert "难度=medium" in text
     assert "知识点=（未指定）" in text
+
+
+def test_grade_and_count_are_not_conflated():
+    """grade 与 count 必须按槽名分派：「2 道三年级…」→ count=2、grade=3。
+
+    回归：二者同为 int，若共用「N年级」正则顺序尝试，count 会被年级 3 污染
+    （实测「帮我出 2 道三年级数学选择题」多出一道题）。
+    """
+    result = fill_slots(
+        _question_schema(), {}, incoming="帮我出 2 道三年级数学选择题", ctx_extra={}
+    )
+    assert result["clarifying"] is False
+    assert result["merged"]["count"] == 2, "数量必须取「2 道」"
+    assert result["merged"]["grade"] == 3, "年级必须取「三年级」"
+    assert result["merged"]["subject"] == "数学"
+    assert result["merged"]["qtype"] == "choice"
+
+
+def test_count_defaults_to_one_when_absent():
+    """未提数量 → count 回落默认 1（不因年级误填数量）。"""
+    result = fill_slots(
+        _question_schema(), {}, incoming="出一道三年级数学选择题", ctx_extra={}
+    )
+    assert result["merged"]["grade"] == 3
+    assert result["merged"]["count"] == 1
