@@ -413,8 +413,12 @@ def _conversations(client, token) -> list[dict]:
     return r.json()
 
 
-def test_conversation_list_includes_own_and_student(client, fake_llm):
-    """列表同时给出「我聊的」与「学生聊的」，各行自带判别信息（是否可续接）。"""
+def test_conversation_list_only_returns_my_own(client, fake_llm):
+    """ADR-0096：教师列表**不含**名下学生的会话；学生第一次有了自己的列表。
+
+    响应不再带 ``student_id`` / ``student_name``——列表里每一条都可续接，
+    没有「只读 / 可编辑」的判别需求，留着字段只会诱导前端重新长出那条分叉。
+    """
     setup = _query_setup(client, "ashist1")
     ctoken = login(client, "qt_ashist1_a", KID_PASSWORD).json()["access_token"]
 
@@ -428,18 +432,19 @@ def test_conversation_list_includes_own_and_student(client, fake_llm):
     teacher_sid = _of(ev_teacher, "DONE")[-1]["session_id"]
 
     rows = {row["id"]: row for row in _conversations(client, setup["teacher_token"])}
-    assert set(rows) == {student_sid, teacher_sid}, "应恰好是这两个会话，且不混入别家"
+    assert set(rows) == {teacher_sid}, "教师列表不该出现学生的会话（ADR-0096）"
 
     mine = rows[teacher_sid]
     assert mine["title"] == "我都有哪些娃"  # 会话名 = 首条用户消息截断
-    assert mine["student_id"] is None and mine["student_name"] is None
     assert mine["bubble_count"] == 2, "提问 + 回答；routing/tool 不算气泡"
     assert mine["kind"] == "query"
+    assert "student_id" not in mine and "student_name" not in mine, "归属字段已移除"
 
-    kids = rows[student_sid]
-    assert kids["title"] == "23 + 45 怎么算"
-    assert kids["student_id"] == setup["a"]["id"] and kids["student_name"] == "小明"
-    assert kids["bubble_count"] == 2
+    # 学生看到的是**自己**那段，且只有那一段
+    kid_rows = {row["id"]: row for row in _conversations(client, ctoken)}
+    assert set(kid_rows) == {student_sid}, "学生只看到自己聊的"
+    assert kid_rows[student_sid]["title"] == "23 + 45 怎么算"
+    assert kid_rows[student_sid]["bubble_count"] == 2
 
 
 def test_conversation_list_is_recency_ordered(client, fake_llm):
@@ -469,26 +474,61 @@ def test_conversation_list_is_recency_ordered(client, fake_llm):
     ]
 
 
-def test_student_conversation_replays_without_answers(client, fake_llm):
-    """回放学生的会话：气泡 = 轨迹里的可见轮次，卡片随气泡回来，且仍无答案。
+def test_teacher_cannot_read_student_conversation(client, fake_llm):
+    """ADR-0096：教师读学生的会话 → 403（不是「不存在」，是明确越权）。
 
-    学生看到的与自己教师的相同（工具出参在**落库前**已按角色剥过答案，ADR-0033），
-    所以「教师看学生会话」不会额外漏出答案——这条断言守住这个结论。
+    被取代的是 ADR-0048 §3「教师可查看学生在问什么」。数据仍在库里，只是教师
+    这侧查不到；学生自己读同一段是 200——同一条会话两种归属结果。
     """
     setup = _query_setup(client, "ashist3")
     ctoken = login(client, "qt_ashist3_a", KID_PASSWORD).json()["access_token"]
-    fake_llm.script("list_wrong_questions")
-    _s, ev = _stream(client, ctoken, "我的错题本里有哪些题")
+    _s, ev = _stream(client, ctoken, "23 + 45 怎么算")
     sid = _of(ev, "DONE")[-1]["session_id"]
 
     r = client.get(
         f"/api/v1/assistant/conversations/{sid}",
         headers=auth_headers(setup["teacher_token"]),
     )
+    assert r.status_code == 403, r.text
+
+    ok = client.get(
+        f"/api/v1/assistant/conversations/{sid}", headers=auth_headers(ctoken)
+    )
+    assert ok.status_code == 200, ok.text
+
+
+def test_student_cannot_read_peers_conversation(client, fake_llm):
+    """同班同学之间也互不可见：学生口径是 ``student_id == 本人``，不是「同学都能看」。"""
+    setup = _query_setup(client, "ashist3c")
+    atoken = login(client, "qt_ashist3c_a", KID_PASSWORD).json()["access_token"]
+    btoken = login(client, "qt_ashist3c_b", KID_PASSWORD).json()["access_token"]
+
+    _s, ev = _stream(client, atoken, "23 + 45 怎么算")
+    sid = _of(ev, "DONE")[-1]["session_id"]
+
+    r = client.get(f"/api/v1/assistant/conversations/{sid}", headers=auth_headers(btoken))
+    assert r.status_code == 403, r.text
+    assert setup["b"]["id"] != setup["a"]["id"]
+
+
+def test_student_replays_own_conversation_without_answers(client, fake_llm):
+    """回放自己的会话（学生视角）：气泡 = 可见轮次，卡片整帧回来，且仍无答案。
+
+    工具出参在**落库前**已按角色剥过答案（ADR-0033），所以学生回看自己那段
+    也不会因此拿到答案——这条断言守住这个结论。
+    """
+    setup = _query_setup(client, "ashist3b")
+    ctoken = login(client, "qt_ashist3b_a", KID_PASSWORD).json()["access_token"]
+    fake_llm.script("list_wrong_questions")
+    _s, ev = _stream(client, ctoken, "我的错题本里有哪些题")
+    sid = _of(ev, "DONE")[-1]["session_id"]
+
+    r = client.get(
+        f"/api/v1/assistant/conversations/{sid}", headers=auth_headers(ctoken)
+    )
     assert r.status_code == 200, r.text
     detail = r.json()
 
-    assert detail["conversation"]["student_name"] == "小明"
     assert detail["conversation"]["title"] == "我的错题本里有哪些题"
     bubbles = detail["bubbles"]
     assert [b["role"] for b in bubbles] == ["user", "assistant"]
@@ -522,10 +562,9 @@ def test_my_conversation_replays_as_resumable(client, fake_llm):
         headers=auth_headers(setup["teacher_token"]),
     )
     assert r.status_code == 200, r.text
-    assert r.json()["conversation"]["student_id"] is None
     assert [b["text"] for b in r.json()["bubbles"] if b["role"] == "user"] == ["我都有哪些娃"]
 
-    # 用回放拿到的 id 续接，仍是同一段会话（只读回放与恢复续接共用同一份载荷）
+    # 用回放拿到的 id 续接，仍是同一段会话
     _s, again = _stream(
         client, setup["teacher_token"], "那今天有什么作业", extra={"session_id": sid}
     )
@@ -538,7 +577,7 @@ def test_my_conversation_replays_as_resumable(client, fake_llm):
 
 
 def test_delete_conversations_removes_sessions_and_messages(client, fake_llm):
-    """多选删除：删掉本教师名下（含学生的）会话及其关联消息，越权的 id 静默忽略。"""
+    """多选删除只删**本人**的：学生的会话对教师不可删，越权 id 静默忽略。"""
     setup = _query_setup(client, "ashist7")
     ctoken = login(client, "qt_ashist7_a", KID_PASSWORD).json()["access_token"]
 
@@ -549,7 +588,7 @@ def test_delete_conversations_removes_sessions_and_messages(client, fake_llm):
     _s, ev_p2 = _stream(client, setup["teacher_token"], "今天有什么作业")
     sid_p2 = _of(ev_p2, "DONE")[-1]["session_id"]
 
-    # 学生聊一段（也归教师所有）
+    # 学生聊一段：**归学生自己**（ADR-0096），教师删不掉
     _s, ev_k = _stream(client, ctoken, "23 + 45 怎么算")
     sid_k = _of(ev_k, "DONE")[-1]["session_id"]
 
@@ -566,7 +605,7 @@ def test_delete_conversations_removes_sessions_and_messages(client, fake_llm):
         json={"ids": [sid_p1, sid_k, str(UUID(int=0))]},
     )
     assert r.status_code == 200, r.text
-    assert r.json() == 2, "实际删除 2 段（自己的 1 段 + 学生的 1 段），不存在的 id 忽略"
+    assert r.json() == 1, "只删掉自己的 1 段：学生的会话不属于教师，不存在的 id 忽略"
 
     remaining = {row["id"] for row in _conversations(client, setup["teacher_token"])}
     assert remaining == {sid_p2}, "只剩下没被删的那段"
@@ -574,31 +613,40 @@ def test_delete_conversations_removes_sessions_and_messages(client, fake_llm):
 
     # 关联消息一并删除：被删会话在 messages 表里不应再有行
     with Session(engine) as s:
-        for cid in (sid_p1, sid_k):
-            n = s.exec(
-                select(Message).where(Message.conversation_id == UUID(cid))
-            ).all()
-            assert n == [], "会话删了，关联消息必须跟着删（无 FK 级联，靠 repository 先删消息）"
+        n = s.exec(select(Message).where(Message.conversation_id == UUID(sid_p1))).all()
+        assert n == [], "会话删了，关联消息必须跟着删（无 FK 级联，靠 repository 先删消息）"
+
+    # 学生的会话完好，且学生自己能删掉它
+    assert {sid_k} == {row["id"] for row in _conversations(client, ctoken)}
+    r_kid = client.request(
+        "DELETE",
+        "/api/v1/assistant/conversations",
+        headers=auth_headers(ctoken),
+        json={"ids": [sid_k]},
+    )
+    assert r_kid.status_code == 200 and r_kid.json() == 1, r_kid.text
 
     # 越权会话完好
     assert {sid_o} <= {row["id"] for row in _conversations(client, other.json()["access_token"])}
 
 
-def test_delete_conversations_is_teacher_only(client):
-    """学生端不能删会话：与列表 / 回放同一口径（有意的不对称）。
+def test_student_can_list_and_delete_own_conversations(client):
+    """ADR-0096 的反转：学生端有自己的列表与删除（ADR-0048 曾把它定为「有意的不对称」）。
 
-    与其他用例一样先 `_query_setup` 建好 `ashist8` 这套测试用户——
-    `login` 要拿得到 kid 账号才能拿到 token 触发 403。
+    不存在的 id 走「静默忽略」而非 403——删除端点只按归属过滤，不为越权单开错误。
     """
     _query_setup(client, "ashist8")
     ctoken = login(client, "qt_ashist8_a", KID_PASSWORD).json()["access_token"]
-    r = client.request(
+    r = client.get("/api/v1/assistant/conversations", headers=auth_headers(ctoken))
+    assert r.status_code == 200, r.text
+
+    r2 = client.request(
         "DELETE",
         "/api/v1/assistant/conversations",
         headers=auth_headers(ctoken),
         json={"ids": [str(UUID(int=1))]},
     )
-    assert r.status_code == 403, r.text
+    assert r2.status_code == 200 and r2.json() == 0, r2.text
 
 
 def test_foreign_conversation_is_forbidden(client, fake_llm):
@@ -617,10 +665,17 @@ def test_foreign_conversation_is_forbidden(client, fake_llm):
     assert r.status_code == 403, r.text
 
 
-def test_conversation_history_is_teacher_only(client):
-    """学生端没有会话列表：这是有意的不对称（学生不该看到自己被拦的记录）。"""
+def test_student_conversation_list_scoped_to_self(client, fake_llm):
+    """学生的列表只有自己的：看不见同学的，也看不见教师的（ADR-0096）。"""
     setup = _query_setup(client, "ashist6")
-    ctoken = login(client, "qt_ashist6_a", KID_PASSWORD).json()["access_token"]
-    r = client.get("/api/v1/assistant/conversations", headers=auth_headers(ctoken))
-    assert r.status_code == 403, r.text
-    assert setup["teacher_id"]
+    atoken = login(client, "qt_ashist6_a", KID_PASSWORD).json()["access_token"]
+    fake_llm.script("list_students")
+    _s, ev_t = _stream(client, setup["teacher_token"], "我都有哪些娃")
+    teacher_sid = _of(ev_t, "DONE")[-1]["session_id"]
+
+    _s, ev_a = _stream(client, atoken, "23 + 45 怎么算")
+    kid_sid = _of(ev_a, "DONE")[-1]["session_id"]
+
+    rows = {row["id"] for row in _conversations(client, atoken)}
+    assert rows == {kid_sid}, "学生列表不该出现教师或同学的会话"
+    assert teacher_sid not in rows
