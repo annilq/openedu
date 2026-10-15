@@ -213,10 +213,52 @@ def test_read_bubbles_attaches_cards_to_assistant_only():
     assert bubbles[2]["text"] == "换一题"
 
 
+def test_read_bubbles_whitelists_structured_extras():
+    """clarify / summary 白名单投影：整包 payload 不透传（ADR-0095）。
+
+    用户面气泡只认五个键；payload 里躺着的审计面字段（工具原始出参等）不能被拖
+    进气泡——否则气泡渲染器拿到不认识的键，运行轨迹的「只投影必要字段」纪律也被
+    绕开。畸形 clarify（非 dict / missing_slots 非 list）按 None 处理。
+    """
+    rows = [
+        _BubbleRow("user", "出几道数学题"),
+        _BubbleRow(
+            "assistant",
+            "请告诉我年级和题型",
+            {
+                "clarify": {"missing_slots": [{"name": "grade", "prompt": "几年级"}]},
+                "tools": [{"name": "secret_tool", "result": {"raw": "审计面字段"}}],
+            },
+        ),
+        _BubbleRow("assistant", "汇总", {"summary": "not-a-dict"}),
+        _BubbleRow("assistant", "普通回复", {"cards": [], "extra_field": 1}),
+    ]
+    bubbles = repo.read_conversation_bubbles(_RowSession(rows), uuid4())
+
+    clarify_bubble = bubbles[1]
+    assert set(clarify_bubble) == {"role", "text", "cards", "clarify", "summary"}
+    assert clarify_bubble["clarify"] == {
+        "missing_slots": [{"name": "grade", "prompt": "几年级"}]
+    }
+    assert "tools" not in clarify_bubble
+
+    assert bubbles[2]["summary"] is None, "畸形 summary 按 None 处理，不抛"
+    assert bubbles[3]["summary"] is None and bubbles[3]["clarify"] is None
+    assert "extra_field" not in bubbles[3]
+
+
 def test_read_bubbles_tolerates_malformed_payload():
     """畸形载荷按「无卡片」处理：回放不该因为一行坏数据整段打不开。"""
     for payload in ({"cards": "oops"}, {"cards": [1, "x"]}, None, "not-a-dict"):
         bubbles = repo.read_conversation_bubbles(
             _RowSession([_BubbleRow("assistant", "有正文", payload)]), uuid4()
         )
-        assert bubbles == [{"role": "assistant", "text": "有正文", "cards": []}]
+        assert bubbles == [
+            {
+                "role": "assistant",
+                "text": "有正文",
+                "cards": [],
+                "clarify": None,
+                "summary": None,
+            }
+        ]

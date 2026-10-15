@@ -402,3 +402,73 @@ def test_clarify_message_payload_matches_frame_contract(db):
     assert stored, "澄清帧应作为普通助手消息落库"
     assert isinstance(stored[0]["clarify"], dict)
     assert "missing_slots" in stored[0]["clarify"]
+
+
+def test_replay_bubbles_carry_clarify_and_summary(db):
+    """回放气泡带 clarify / summary 两个结构化 extra，且不透传 payload 其余键。
+
+    两轮对话（第一轮缺 grade/qtype → 澄清；第二轮补齐 → 汇总 + 生成）之后调
+    ``read_conversation_bubbles``：澄清行与汇总行的气泡必须各带一个结构化载荷，
+    形状与实时流的 ``extra`` 一致（同一份解析）。同时断言**白名单**语义——气泡只有
+    role/text/cards/clarify/summary 五个键，审计面字段不被拖进用户面。
+    """
+    from app.features.assistant.repository import read_conversation_bubbles
+
+    pid = uuid.uuid4()
+    rt = _QuestionStubRuntime()
+    asyncio.run(
+        _drain(
+            chat(
+                caller=_caller("teacher", user_id=pid, teacher_id=pid),
+                req=_req("出几道数学题"),
+                session=db,
+                runtime=rt,
+            )
+        )
+    )
+    conv = _latest_conv(db, teacher_id=pid)
+    sid = str(conv.id)
+    asyncio.run(
+        _drain(
+            chat(
+                caller=_caller("teacher", user_id=pid, teacher_id=pid),
+                req=_req("三年级出选择题", session_id=sid),
+                session=db,
+                runtime=rt,
+            )
+        )
+    )
+
+    bubbles = read_conversation_bubbles(db, conv.id)
+    # 第二轮是「汇总帧 + 题卡」两个 assistant 行（final_text or cards 才落库），
+    # 所以一共 5 条而不是 4 条。
+    assert [b["role"] for b in bubbles] == [
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "assistant",
+    ]
+
+    clarify_bubble = bubbles[1]
+    assert clarify_bubble["clarify"] is not None
+    slots = clarify_bubble["clarify"]["missing_slots"]
+    assert [s["name"] for s in slots] == ["grade", "qtype"]
+    # 白名单：气泡不带 payload 里的审计面字段
+    assert set(clarify_bubble) == {"role", "text", "cards", "clarify", "summary"}
+    assert clarify_bubble["summary"] is None
+
+    summary_bubble = bubbles[3]
+    assert summary_bubble["summary"] is not None
+    # 汇总带**全部**槽（含可选）：required 三项在前，可选槽随后
+    names = [
+        s["slot"]["name"] if "slot" in s else s["name"]
+        for s in summary_bubble["summary"]["slots"]
+    ]
+    assert names[:3] == ["subject", "grade", "qtype"]
+    assert set(names[:3]) <= set(names)
+    assert summary_bubble["clarify"] is None
+
+    # 汇总之后的生成行：题卡整帧照常投影（卡片链路不受结构化 extra 影响）
+    gen_bubble = bubbles[4]
+    assert gen_bubble["cards"], "汇总轮生成的题卡应随气泡回来"
