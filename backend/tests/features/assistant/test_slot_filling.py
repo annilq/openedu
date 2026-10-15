@@ -12,8 +12,8 @@ from app.domain.subjects import SUBJECTS
 from app.features.assistant.slot_filling import (
     fill_slots,
     resolve_enum_ref,
-    summarize_slots,
 )
+from app.features.assistant.slot_summary import summarize_slots, summary_payload
 
 
 def _question_schema() -> list[dict]:
@@ -125,15 +125,42 @@ def test_int_range_rejects_out_of_range_grade():
 
 
 def test_summarize_slots_covers_defaults():
-    """汇总文案覆盖被默认填充项；缺知识点显示（未指定）。"""
+    """汇总文案覆盖被默认填充项；缺知识点显示（未指定）。
+
+    英文码必须翻译：念给用户「题型=choice / 难度=medium」等于没给修正机会
+    （US5），故断言的是中文。
+    """
     merged = {"subject": "数学", "grade": 3, "qtype": "choice", "count": 1, "difficulty": "medium"}
     text = summarize_slots(merged)
     assert "科目=数学" in text
     assert "年级=3" in text
-    assert "题型=choice" in text
+    assert "题型=选择题" in text
     assert "数量=1" in text
-    assert "难度=medium" in text
+    assert "难度=中等" in text
     assert "知识点=（未指定）" in text
+
+
+def test_summary_payload_resolves_enum_ref_and_labels():
+    """汇总载荷：enum_ref 解析为具体选项（前端才渲染得出修改项），值带中文文案。"""
+    merged = {"subject": "数学", "grade": 3, "qtype": "choice"}
+    slots = summary_payload(_question_schema(), merged)
+    subject = next(s for s in slots if s["name"] == "subject")
+    assert subject["enum"], "enum_ref 必须解析成具体可选项"
+    assert "语文" in subject["enum"]
+    assert subject["label"] == "科目"
+    assert subject["value"] == "数学"
+    qtype = next(s for s in slots if s["name"] == "qtype")
+    assert qtype["value_label"] == "选择题"
+
+
+def test_subject_alias_outside_enum_is_rejected():
+    """别名必须收敛到本槽枚举：「道法→政治」「科学→科学」都不在 SUBJECTS 内。
+
+    回归：不过滤会把非枚举值写进 Conversation.slots，下游按三学科处理即炸。
+    """
+    for text in ("出道法题", "出科学题"):
+        result = fill_slots(_question_schema(), {}, incoming=text, ctx_extra={})
+        assert result["merged"].get("subject") in (None, ""), f"{text} 不应命中学科"
 
 
 def test_grade_and_count_are_not_conflated():
