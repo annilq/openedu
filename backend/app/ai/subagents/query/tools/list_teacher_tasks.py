@@ -10,7 +10,7 @@ from typing import Any
 
 from agent_core.subagent import SubAgentContext
 from agent_core.tools import ToolSpec
-from app.ai.subagents.query.tools._shared import (
+from app.ai.shared.tool_support import (
     LOCATOR_PROPS,
     NO_FILTER,
     ToolArgumentError,
@@ -35,7 +35,7 @@ TASK_STATUSES = ("draft", "assigned", "done")
 
 
 async def handler(args: dict[str, Any], *, ctx: SubAgentContext, session: Any = None) -> Any:
-    # 缺席归一：strict 模式会替模型补 ""，模型也可能自发填 all/none（见 _shared 顶部说明）。
+    # 缺席归一：strict 模式会替模型补 ""，模型也可能自发填 all/none（见 tool_support 顶部说明）。
     status = optional_str(args.get("status"))
     if status is not None and status not in TASK_STATUSES:
         raise ToolArgumentError(

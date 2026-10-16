@@ -9,7 +9,7 @@ from typing import Any
 
 from agent_core.subagent import SubAgentContext
 from agent_core.tools import ToolSpec
-from app.ai.subagents.query.tools._shared import (
+from app.ai.shared.tool_support import (
     envelope,
     project_for_role,
     resolve_students,

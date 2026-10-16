@@ -24,7 +24,7 @@ from sqlmodel import Session, func, select
 
 from agent_core.subagent import SubAgentContext
 from app.ai.subagents.query.agent import QuerySubAgent
-from app.ai.subagents.query.tools._shared import (
+from app.ai.shared.tool_support import (
     ANSWER_FIELDS,
     NO_FILTER,
     ToolArgumentError,
