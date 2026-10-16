@@ -7,7 +7,7 @@
 
 角色来源可信：``ctx.role`` 由 ``/assistant/chat`` 端点从 JWT 解出的 ``user.role`` 写入，
 客户端无法伪造；工具 handler 不是 FastAPI 依赖、拿不到 request，只能靠 ``ctx`` 透传，
-故「每个工具是否记得用它」由契约测试守护（``tests/ai/test_query_tools_contract.py``）。
+故「每个工具是否记得用它」由契约测试守护（``tests/ai/test_business_tools_contract.py``）。
 """
 from __future__ import annotations
 
@@ -55,7 +55,7 @@ LOCATOR_PROPS: dict[str, Any] = {
 # 编码，模型只能填非法值 → 收到硬错误 → 反复试探（省略 → 仍被要求必填 → 空串 → 还是错）
 # → 撞上 SOP「不重复调用同一个工具」后空转、把调用叙述成文本。
 #
-# 两条不变量（由 ``tests/ai/test_query_tools_contract.py`` 的行为级守卫测试守住）：
+# 两条不变量（由 ``tests/ai/test_business_tools_contract.py`` 的行为级守卫测试守住）：
 # 1. 每个可省略参数都必须有**类型合法的缺席编码**：字符串用 ``""``，整数用 ``0``；
 # 2. 枚举型参数必须把 ``NO_FILTER``（``"all"``）列进 ``enum``，否则模型无合法值可填。
 #
