@@ -1,7 +1,7 @@
 # 业务 agent 化 · INDEX
 
 > SPEC：[SPEC.md](SPEC.md)。ADR：`docs/adr/0097-business-feature-agents.md`（权威决策）。
-> 分支：`integration/business-feature-agents`（自 main 拉出）。
+> 分支 `integration/business-feature-agents` 已于 2026-10-17 合入 main（merge b8e371e）并删除。
 
 ## 共同纪律
 
@@ -27,14 +27,14 @@
 
 | # | 票 | Blocked by | 状态 |
 | --- | --- | --- | --- |
-| 01 | [agent_core 流式 tool 扩展](issues/01-agent-core-stream-tool.md) | — | ready |
-| 02 | [shared 层迁移](issues/02-shared-layer.md) | 01 | ready |
-| 03 | [questions agent](issues/03-questions-agent.md) | 01, 02 | ready |
-| 04 | [tasks agent](issues/04-tasks-agent.md) | 02 | ready |
-| 05 | [students agent](issues/05-students-agent.md) | 02 | ready |
-| 06 | [删 query/guide + capability 生成](issues/06-remove-query-guide.md) | 03, 04, 05 | ready |
-| 07 | [前端草稿确认卡](issues/07-draft-confirm-card.md) | 04 | ready |
-| 08 | [测试与全量回归](issues/08-tests-regression.md) | 01–07 | ready |
+| 01 | [agent_core 流式 tool 扩展](issues/01-agent-core-stream-tool.md) | — | done（9152d09） |
+| 02 | [shared 层迁移](issues/02-shared-layer.md) | 01 | done（e5bed03） |
+| 03 | [questions agent](issues/03-questions-agent.md) | 01, 02 | done（2d8a38b） |
+| 04 | [tasks agent](issues/04-tasks-agent.md) | 02 | done（f245190） |
+| 05 | [students agent](issues/05-students-agent.md) | 02 | done（f245190） |
+| 06 | [删 query/guide + capability 生成](issues/06-remove-query-guide.md) | 03, 04, 05 | done（f245190/02feef6） |
+| 07 | [前端草稿确认卡](issues/07-draft-confirm-card.md) | 04 | **pending**（后端 confirm/assign REST 端点也未建，票面「前端已有调用代码」与现状不符） |
+| 08 | [测试与全量回归](issues/08-tests-regression.md) | 01–07 | done（ff623d2；合并后主仓 976 passed，唯一红为 main 既有 materials 环境性失败） |
 
 ## 关键锚点（grill 决策）
 
