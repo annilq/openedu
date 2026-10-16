@@ -42,12 +42,16 @@ def _patch_provider(monkeypatch, *, fail_at: set[int] | None = None) -> None:
     import build_ai_provider——此前打在 router 上会让本文件 4 个用例全部以
     AttributeError 崩溃，等于这条「多学科出题」回归防线长期失效）。
     ``fail_at`` 指定第几次模型调用失败，用于验证部分失败时少题是否如实上报。
+
+    ADR-0097 起出题是 tool loop：替身须脚本化首轮选中 ``generate_questions``
+    （规格由端点的 specs 经 ctx.extra 直达 handler，空 args 即按系统规格出题）；
+    不脚本化的默认单跳会命中工具列表第一个（list_bank_questions）而出不了题。
     """
     monkeypatch.setattr(
         "app.features.tasks.service.build_ai_provider",
         lambda model_ref=None, *, teacher_id=None, session=None: FakeLLMProvider(
             fail_at=fail_at or set()
-        ),
+        ).script("generate_questions"),
     )
 
 
@@ -131,26 +135,31 @@ def test_generate_empty_specs_rejected(client, teacher_token, monkeypatch):
     assert r.status_code == 422
 
 
-def _messages(sse_text: str) -> list[str]:
-    out = []
+def _parse_frames(sse_text: str) -> list[dict]:
+    """解析 SSE 文本为帧列表（与端点序列化形状一致）。"""
+    out: list[dict] = []
     for raw in sse_text.split("\n\n"):
         frame = raw.strip()
         if not frame.startswith("data:"):
             continue
         try:
-            obj = json.loads(frame[len("data:") :].strip())
+            out.append(json.loads(frame[len("data:") :].strip()))
         except json.JSONDecodeError:
             continue
-        if obj.get("eventType") == "ASSISTANT_MESSAGE":
-            out.append(obj.get("text") or "")
     return out
 
 
 def test_generate_partial_failure_reports_shortfall(client, teacher_token, monkeypatch):
-    """数学+语文各 1 题、语文那次失败：必须只出 1 张卡，且收尾如实报「少题」。
+    """数学+语文各 1 题、语文那次失败：必须只出 1 张卡，且失败在流里留痕。
 
     这是本次缺陷的端点级回归：失败题此前只产出一条 STEP(status=error)，前端当普通
     进度吞掉后照常落库 → 教师拿到「只有数学」的草稿却毫无提示。
+
+    ADR-0097 起出题是流式 tool，失败痕迹有两处**确定性**证据（收尾话术由模型据
+    回灌计数生成，属真机形态，替身只发固定文本、不断言其内容）：
+    ① 失败题产出 STEP(status="error") 帧（translate_stream 的转换）；
+    ② 回灌的 ToolOutcome 带 requested=2 / count=1 / failed=1（TOOL_RESULT 载荷，
+    收尾轮的数据源）。
     """
     _patch_provider(monkeypatch, fail_at={2})
     body = {
@@ -163,6 +172,17 @@ def test_generate_partial_failure_reports_shortfall(client, teacher_token, monke
     assert r.status_code == 200, r.text
     assert _count_question_cards(r.text) == 1
 
-    text = " ".join(_messages(r.text))
-    assert "应出 2 题" in text
-    assert "实出 1 题" in text
+    frames = _parse_frames(r.text)
+    # ① 失败题的状态帧：status=error（前端据此提示，而不是当普通进度吞掉）
+    error_steps = [
+        f for f in frames
+        if f.get("eventType") == "STEP" and f.get("status") == "error"
+    ]
+    assert error_steps, "失败题必须留痕（STEP status=error）"
+    # ② 回灌计数：应出 2 / 实出 1 / 失败 1
+    tool_results = [f for f in frames if f.get("eventType") == "TOOL_RESULT"]
+    assert tool_results, "流式 tool 必须补 TOOL_RESULT 关闭调用配对"
+    payload = tool_results[-1].get("result") or {}
+    assert payload.get("requested") == 2
+    assert payload.get("count") == 1
+    assert payload.get("failed") == 1

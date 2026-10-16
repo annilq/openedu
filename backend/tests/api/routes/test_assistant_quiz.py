@@ -130,16 +130,18 @@ class _JudgeLoopRuntime:
         yield done(ctx.extra.get("session_id"))
 
 
-def test_quiz_chat_runs_via_runtime_and_keeps_answer(client, db):
+def test_quiz_chat_runs_via_runtime_and_keeps_answer(client, db, fake_llm):
     """出题经文本路由落到出题助手：题卡**连答案一起**下发（不再剥离 / 无 pending_quiz）。
 
-    真实 runtime + 确定性替身 LLM（``fake_llm`` autouse 夹具）：题卡由出题 subagent
-    产出，故断言的「经运行时」证据（用户消息帧 / 路由思考帧）真实反映编排形态。
+    真实 runtime + 确定性替身 LLM（``fake_llm`` autouse 夹具）：ADR-0097 起出题是
+    tool loop，替身脚本首轮选中 ``generate_questions``（judge 规格由消息文本
+    「判断题」在 question 域内自主判定），题卡由流式工具逐题产出。
     """
     r = register_teacher(client, username="qz_teacher")
     token = r.json()["access_token"]
     tid = _teacher_id(db, "qz_teacher")
     kp = _make_kp(db, tid=tid)
+    fake_llm.script("generate_questions")
 
     status, events = _stream(
         client,

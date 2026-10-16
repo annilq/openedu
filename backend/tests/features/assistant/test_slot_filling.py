@@ -21,8 +21,8 @@ def _question_schema() -> list[dict]:
     return mod.MANIFEST["input_schema"]
 
 
-def _query_schema() -> list[dict]:
-    mod = importlib.import_module("app.ai.subagents.query.manifest")
+def _tasks_schema() -> list[dict]:
+    mod = importlib.import_module("app.ai.subagents.tasks.manifest")
     return mod.MANIFEST["input_schema"]
 
 
@@ -84,12 +84,12 @@ def test_resolve_enum_ref_handles_bad_ref():
     assert resolve_enum_ref("not_a_ref") == []
 
 
-def test_question_and_query_schemas_load_independently():
-    """多业务载入各自 schema 互不串：question 缺槽阻塞，query 全 optional 不阻塞。"""
+def test_question_and_tasks_schemas_load_independently():
+    """多业务载入各自 schema 互不串：question 缺槽阻塞，tasks 全 optional 不阻塞。"""
     q_result = fill_slots(_question_schema(), {}, incoming="查一下", ctx_extra={})
     assert q_result["clarifying"] is True  # subject/grade/qtype 缺失
-    query_result = fill_slots(_query_schema(), {}, incoming="查一下", ctx_extra={})
-    assert query_result["clarifying"] is False  # 全部 optional
+    tasks_result = fill_slots(_tasks_schema(), {}, incoming="查一下", ctx_extra={})
+    assert tasks_result["clarifying"] is False  # 全部 optional
 
 
 def test_context_passthrough_fills_slots():
