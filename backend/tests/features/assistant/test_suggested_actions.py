@@ -141,11 +141,14 @@ def test_followup_chips_by_business(db):
     assert _by_label(tutor_kp)["出一道判断题"].kind == "prompt"
 
     # 其它 business 各取各组；无 business → 空（不渲染）。
-    query = build_actions(
-        situation="followup", business="query", knowledge_point_id=None,
+    tasks = build_actions(
+        situation="followup", business="tasks", knowledge_point_id=None,
         role="teacher", teacher_id=tid, session=db,
     )
-    assert _labels(query) == ["看看相关错题", "整理成可导出要点", "换个范围再查"]
+    assert _labels(tasks) == [
+        "看看相关错题", "整理成可导出要点", "换个范围再查",
+        "查看学习进度", "回到首页",
+    ]
     assert build_actions(
         situation="followup", business=None, knowledge_point_id=None,
         role="teacher", teacher_id=tid, session=db,

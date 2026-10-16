@@ -3,7 +3,7 @@
 查询工具取数的唯一下游（ADR-0033 决策 13 / 分层不变量 7）：把 repository 行投影成
 dump 友好的结构化字典（UUID / datetime → str），并合并每题被任务引用的复用度
 ``usage_count``。写路径（组卷 / 删除）留在 router + repository；本模块刻意只读，
-因为 query 工具的 handler 在 SSE 请求内同步直调 service，不经 ASGI（不变量 6）。
+因为业务 agent 工具的 handler 在 SSE 请求内同步直调 service，不经 ASGI（不变量 6）。
 """
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from uuid import UUID
 from sqlmodel import Session
 
 from app.features.materials.scene_fusion import scene_spec_for_read
+from app.features.questions import repository
 from app.features.questions.repository import list_bank_questions as _repo_list
 
 # 对话场景上限：取前 N 条，不做无限翻页（仓库分页在此收口为「截断」）。
@@ -102,3 +103,33 @@ def list_bank_questions(
         }
         for q in items
     ]
+
+
+# ── 写路径（ADR-0097 下沉）：REST router 与 AI 业务工具共用的同一下游 ──
+#
+# 分层不变量 7 要求业务 agent 工具只许经 feature service 取数/落数；此前
+# delete_questions / archive_questions 两个工具直连 repository，被 AST 守卫拦下。
+# 修法不是放宽守卫，而是把写路径下沉到 service——router 与工具从此共用一份，
+# 与读路径（list_bank_questions）同构。语义（级联范围 / owner 隔离 / skipped
+# 口径）以 repository 为准，本层不做第二份逻辑。
+
+
+def delete_bank_questions(
+    *, session: Session, teacher_id: UUID, question_ids: list[UUID]
+) -> dict[str, list[UUID]]:
+    """批量硬删题库题（REST ``DELETE /questions`` 与 AI ``delete_questions`` 工具同下游）。"""
+    return repository.delete_bank_questions(
+        session=session, teacher_id=teacher_id, question_ids=question_ids
+    )
+
+
+def set_bank_questions_archived(
+    *, session: Session, teacher_id: UUID, question_ids: list[UUID], archived: bool
+) -> dict[str, list[UUID]]:
+    """批量归档 / 恢复题库题（REST ``POST /questions/archive`` 与 AI ``archive_questions`` 同下游）。"""
+    return repository.set_bank_questions_archived(
+        session=session,
+        teacher_id=teacher_id,
+        question_ids=question_ids,
+        archived=archived,
+    )

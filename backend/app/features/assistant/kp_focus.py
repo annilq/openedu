@@ -1,7 +1,7 @@
 """知识点聚焦解析（ADR-0080 / ai-prompts-hardening ticket 02）。
 
 把会话传入的 ``knowledge_point_id`` 经归属校验解析为结构化四元组
-``(subject, grade, semester, name)``，供 tutor / query 两个 subagent 在系统提示里拼
+``(subject, grade, semester, name)``，供 tutor / tasks 两个 subagent 在系统提示里拼
 一段**独立**的【知识点聚焦】段（与 ``tutor_system_prompt`` 安全锁物理分离）。
 
 越权 / 缺失 → ``None``（调用方据此不注入，无越权数据泄漏）。解析只经
@@ -36,7 +36,7 @@ def resolve_kp_focus(*, session, owner_id: UUID, kp_id: UUID | None) -> dict | N
 
 
 def format_kp_focus(focus: dict | None, *, query_mode: bool = False) -> str:
-    """拼【知识点聚焦】段。``query_mode`` 给 query subagent 额外加一句「查询须依托工具数据」。
+    """拼【知识点聚焦】段。``query_mode`` 给查询类 subagent 额外加一句「查询须依托工具数据」。
 
     无聚焦（``None`` 或空 name）→ 空串，调用方据此不追加任何段（无回归）。
     """

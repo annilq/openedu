@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 
-from agent_core.ports import StructuredDone, TextDelta
+from agent_core.ports import StructuredDone, TextDelta, ToolCall
 from agent_core.registry import (
     build_subagent,
     discover_subagent_manifests,
@@ -24,7 +24,8 @@ from agent_core.registry import (
 )
 from agent_core.subagent import SubAgentContext
 from app.ai.subagents import get_subject_persona
-from app.ai.subagents.question.agent import QuestionSubAgent, expand_specs
+from app.ai.subagents.question.agent import QuestionSubAgent
+from app.ai.subagents.question.specs import expand_specs
 from app.ai.subagents.tutor.agent import TutorSubAgent
 from app.domain.provider import EducationLLMProvider
 
@@ -52,13 +53,37 @@ _Q_DICT: dict = {
 
 
 class _FakeProvider(EducationLLMProvider):
-    """实现消息级 ``stream`` + 教育特有 ``tutor``，隔离真实模型。"""
+    """实现消息级 ``stream`` + 教育特有 ``tutor``，隔离真实模型。
+
+    ADR-0097 起出题走 tool loop：``tools`` 非空的调用是 loop 的首轮（产
+    ``generate_questions`` ToolCall），回灌后的第二轮产收尾正文；``tools`` 为
+    ``None`` 的调用是出题生成本身（TextDelta + StructuredDone 协议）。
+    """
 
     def __init__(self) -> None:
         self.last_gen_kwargs: dict | None = None
         self.last_tutor_context: str | None = None
+        self.stream_calls: int = 0
 
     async def stream(self, system, prompt, *, schema=None, tools=None, history=None):
+        self.stream_calls += 1
+        if tools:
+            if self.stream_calls == 1:
+                # tool loop 首轮：模型选中出题工具（规格按 message 填写）。
+                yield ToolCall(
+                    name="generate_questions",
+                    args={
+                        "subject": "数学",
+                        "grade": 3,
+                        "qtype": "choice",
+                        "count": 2,
+                        "knowledge_point": "分数",
+                    },
+                )
+                return
+            # 回灌后的收尾轮：据 ToolOutcome 计数生成正文。
+            yield TextDelta(delta="已生成 2 道题。")
+            return
         self.last_gen_kwargs = {"user_prompt": prompt}
         yield TextDelta(delta="思路")
         yield StructuredDone(data=dict(_Q_DICT))
@@ -117,7 +142,11 @@ def test_build_subagent_factory():
 
 
 def test_question_subagent_rag_and_persona_threading():
-    """出题 run()：RAG 检索 + 学科 Persona 注入 user_prompt（ADR-0030 收口 #4 后 prompt 在此组装）。"""
+    """出题 tool loop：RAG 检索 + 学科 Persona 注入 user_prompt（ADR-0030 收口 #4 后 prompt 在此组装）。
+
+    ADR-0097 起出题降级为流式 tool：run() 委托 run_with_tools，模型首轮选中
+    generate_questions，handler 内逐题组装 prompt——本测试经该真实路径驱动。
+    """
     provider = _FakeProvider()
     retriever = _FakeRetriever()
     agent = QuestionSubAgent(provider=provider, retriever=retriever)
@@ -163,7 +192,7 @@ def test_expand_specs_expands_count():
 
 
 def test_question_subagent_run_per_item_rag_and_persona():
-    """流式路径：每题独立触发 RAG + 学科 Persona 注入（不触真实 genkit）。"""
+    """流式 tool 路径：每题独立触发 RAG + 学科 Persona 注入（不触真实 genkit）。"""
     retriever = _FakeRetriever()
     agent = QuestionSubAgent(provider=_FakeProvider(), retriever=retriever)
     ctx = SubAgentContext(role="teacher", message="帮我出2道三年级数学分数选择题")

@@ -6,6 +6,8 @@ AG-UI 事件帧）。意图路由由 ``AgentRuntime`` 负责，各 SubAgent 只�
 - ``SubAgentContext`` 仅含业务无关字段；教育等业务的 subject/grade/focus 等走 ``extra``。
 - ``BaseSubAgent.tools``（默认空）声明真实可调用工具；非空时 runtime 以 tool loop 调度
   （见 ``run_with_tools``）。``tools=[]`` 的 subagent 走一次性 ``run``（opt-in）。
+- 工具分同步 / 流式两种执行形态（``ToolSpec.handler`` / ``stream_handler``，ADR-0097）：
+  流式 generator 逐帧 yield 中间帧、以 ``ToolOutcome`` 收尾，供出题类长时流式生成使用。
 
 **轮次与失败边界（ADR-0033 / ADR-0038）**：tool loop 受 ``BaseSubAgent.max_turns`` 保护（默认 3）。
 失败分两类且**不得混用**：引擎不支持工具调用时由适配器抛 ``ToolUnsupportedError``，runtime 转
@@ -38,7 +40,7 @@ from agent_core.protocol import (
     tool_call,
     tool_result,
 )
-from agent_core.tools import ToolRegistry, ToolSpec
+from agent_core.tools import ToolOutcome, ToolRegistry, ToolSpec
 
 
 @dataclass
@@ -313,6 +315,31 @@ async def run_with_tools(
                     )
                     if spec is None:
                         result: Any = {"error": f"unknown tool: {ev.name}"}
+                    elif spec.stream_handler is not None:
+                        # 流式 tool（ADR-0097）：generator 执行期间逐帧 yield 中间帧
+                        # （THINKING / DATA / STEP），ToolOutcome 即回灌 content。
+                        # 与同步路径的差异：部分帧已外发（用户已看到部分事实），
+                        # 故成败都必须补 tool_result 关闭「TOOL_CALL ↔ TOOL_RESULT」
+                        # 配对，否则前端中间态永远转不完；异常按 ``{"error": ...}``
+                        # 回灌让模型自行决定下一步，不硬失败（已发帧不可收回）。
+                        outcome: Any = None
+                        try:
+                            async for frame in spec.stream_handler(
+                                ev.args, ctx=ctx, session=session
+                            ):
+                                if isinstance(frame, ToolOutcome):
+                                    outcome = frame.data
+                                    break
+                                yield frame
+                        except Exception as exc:  # noqa: BLE001 — 同上：流已部分外发
+                            outcome = {"error": str(exc)}
+                        if outcome is None:
+                            # 协议违例：generator 正常结束却未 yield ToolOutcome。
+                            # 按错误回灌——空 content 会让模型以为工具什么都没返回。
+                            outcome = {
+                                "error": f"stream tool {ev.name!r} 未以 ToolOutcome 收尾"
+                            }
+                        result = outcome
                     else:
                         try:
                             result = await spec.handler(ev.args, ctx=ctx, session=session)
@@ -327,8 +354,10 @@ async def run_with_tools(
                         except Exception:  # noqa: BLE001 — 钩子故障不得影响主链路
                             pass
                     yield tool_result(ev.name, result)
-                    for frame in agent.render_tool_result(ev.name, result):
-                        yield frame
+                    # 流式 tool 的展示帧由 generator 自己负责，跳过本 hook 避免同卡两发。
+                    if spec is None or spec.stream_handler is None:
+                        for frame in agent.render_tool_result(ev.name, result):
+                            yield frame
                     # 回灌契约（适配器据 role=="tool" + ref 构造引擎侧 ToolResponse）：
                     # {"role": "tool", "name": <工具名>, "ref": <关联 id>, "content": <结果 JSON>}
                     results.append(

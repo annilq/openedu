@@ -43,8 +43,10 @@ def test_build_provider_without_engine_defers_to_global_resolution():
 # ── 2. 发现即注册 ──
 def test_discovery_picks_up_agent_class_and_skill_prompt():
     manifests = discover_subagent_manifests()
-    assert set(manifests) >= {"tutor", "question", "query"}
-    assert "tasks" not in manifests, "tasks 已被 query 吸收（ADR-0033 决策 6）"
+    # ADR-0097：query 解散、guide 删除，业务面重组为 tasks/question/students/tutor
+    assert set(manifests) >= {"tutor", "question", "tasks", "students"}
+    assert "query" not in manifests, "query 已解散（ADR-0097）"
+    assert "guide" not in manifests, "guide 已删除（ADR-0097）"
     for business, manifest in manifests.items():
         assert manifest.agent_cls is not None, f"{business} 未发现 agent 类"
         assert get_subagent_class(manifests, business) is manifest.agent_cls
@@ -52,7 +54,8 @@ def test_discovery_picks_up_agent_class_and_skill_prompt():
     # skills/*.md 真的被读进来了（此前是死元数据）
     assert "出题 SOP" in manifests["question"].skill_prompt
     assert manifests["tutor"].skill_prompt.strip() != ""
-    assert "学情查询 SOP" in manifests["query"].skill_prompt
+    # tasks 的 SOP 纪律已并入 system prompt（原 query_sop 的核心约束逐条在内），
+    # 不再有独立 skill 文件——这是 ADR-0097 的刻意选择，防止两份真相源。
 
 
 def test_build_subagent_uses_discovered_class():
@@ -69,10 +72,12 @@ class _SpyProvider(FakeLLMProvider):
     def __init__(self) -> None:
         super().__init__()  # 复用替身的计数与失败编排（缺了会丢 schema_calls 等状态）
         self.user_prompt: str | None = None
+        self.system_prompt: str | None = None
         self.context: str | None = None
 
     async def stream(self, system, prompt, *, schema=None, tools=None, history=None):
         self.user_prompt = prompt
+        self.system_prompt = system
         async for ev in super().stream(system, prompt, schema=schema, tools=tools, history=history):
             yield ev
 
@@ -84,8 +89,13 @@ class _SpyProvider(FakeLLMProvider):
         )
 
 
-def test_question_agent_injects_sop_into_user_prompt():
-    provider = _SpyProvider()
+def test_question_agent_injects_sop_into_system_prompt():
+    """SOP 注入模型上下文（ADR-0097 起位置在 tool loop 首轮 system）。
+
+    旧实现把 SOP 拼进出题的 user_prompt（约束解码 run 内 with_skills）；tool loop
+    化后 initial_system 统一承载——守护的是「SOP 真的到达模型」，不是位置本身。
+    """
+    provider = _SpyProvider().script("generate_questions")
     agent = QuestionSubAgent(provider=provider)
     ctx = SubAgentContext(role="teacher", message="帮我出3道三年级数学选择题", skills="SOP-XYZ")
 
@@ -93,8 +103,8 @@ def test_question_agent_injects_sop_into_user_prompt():
         return [ev async for ev in agent.run(ctx.message or "", ctx)]
 
     asyncio.run(_go())
-    assert provider.user_prompt is not None
-    assert "SOP-XYZ" in provider.user_prompt
+    assert provider.system_prompt is not None
+    assert "SOP-XYZ" in provider.system_prompt
 
 
 def test_tutor_agent_injects_sop_into_context():

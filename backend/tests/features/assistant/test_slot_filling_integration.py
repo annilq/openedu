@@ -182,13 +182,13 @@ def test_complete_specs_still_generate(db):
 @pytest.mark.parametrize(
     "business,text",
     [
-        ("query", "看看我的错题"),
+        ("tasks", "看看我的错题"),
+        ("students", "我班有哪些学生"),
         ("tutor", "为什么天空是蓝的"),
-        ("guide", "帮我创建一个任务"),
     ],
 )
 def test_non_question_businesses_never_clarify(db, business, text):
-    """预检已扩展到全部业务，但 query/guide/tutor 全 optional → 永不追问。
+    """预检已扩展到全部业务，但 tasks/students/tutor 全 optional → 永不追问。
 
     tutor 的 question_text 亦为**非必填**（消息本身就是问题），否则自由问答会被
     恒追问「你想问什么？」而阻塞（ADR-0095 §2.4）。

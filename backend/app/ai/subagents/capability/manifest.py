@@ -1,13 +1,14 @@
-"""能力自述与超范围引导 SubAgent 清单（ADR-0079）。
+"""能力自述与超范围引导 SubAgent 清单（ADR-0079 / ADR-0097）。
 
-- ``priority=16``：高于 ``query``(12)、低于 ``guide``(20)。必须压过 query 的泛词
-  「查 / 有哪些」，否则「你能查什么」类元问题会被 query 的 ``requires_tool_data`` 硬失败；
-  但又不能抢 ``guide`` 的写意图（guide 的 triggers 是「创建任务」等高精度短语，不冲突）。
+- ``priority=16``：高于 ``tasks``(14) / ``question``(12) / ``students``(10)。必须压过
+  它们的泛词（「查 / 有哪些」），否则「你能查什么」类元问题会被 ``requires_tool_data``
+  硬失败。写意图不冲突：``tasks`` 的写触发词是「创建任务」等高精度短语，与能力自述
+  问句无交集（ADR-0097 起 guide 删除，写意图由 tasks 承接）。
 - ``roles=["teacher","student"]``：双端都会问「你能做什么」。
-- ``triggers`` 只收完整短语（与 guide 同策略），``hints`` 留空——宁可漏给 tutor 兜底
-  也不误抢其它意图（路由是「词是否被包含」匹配，泛词命中面过宽）。
+- ``triggers`` 只收完整短语，``hints`` 留空——宁可漏给 tutor 兜底也不误抢其它意图
+  （路由是「词是否被包含」匹配，泛词命中面过宽）。
 - ``actions=[]``：本 subagent 不接收结构化动作键。
-- ``skills=[]``：能力清单是服务端常量，不需要 SOP 注入。
+- ``skills=[]``：能力清单由 manifests 投影生成（见 agent.py），不需要 SOP 注入。
 """
 from __future__ import annotations
 

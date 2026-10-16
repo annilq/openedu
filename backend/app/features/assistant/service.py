@@ -177,12 +177,20 @@ _FOLLOWUP_BY_BUSINESS: dict[str, list[SuggestedAction]] = {
         SuggestedAction(label="换个角度讲", kind="prompt",
                         payload="能不能换个角度或比喻再讲一遍？"),
     ],
-    "query": [
+    "tasks": [
         SuggestedAction(label="看看相关错题", kind="navigate", payload="teacher_task_list"),
         SuggestedAction(label="整理成可导出要点", kind="prompt",
                         payload="请把刚才的分析整理成可以导出的要点。"),
         SuggestedAction(label="换个范围再查", kind="prompt",
                         payload="我想换个范围或角度再查一下学习情况。"),
+        # 自 guide 迁入：起草 / 查询之后的两个出口（ADR-0097）
+        SuggestedAction(label="查看学习进度", kind="prompt",
+                        payload="请帮我分析一下最近的学习进度和掌握情况。"),
+        SuggestedAction(label="回到首页", kind="navigate", payload="home"),
+    ],
+    "students": [
+        SuggestedAction(label="看看学生近期学情", kind="prompt",
+                        payload="请帮我分析一下学生最近的学习情况。"),
     ],
     "question": [
         SuggestedAction(label="再出几道", kind="prompt",
@@ -191,11 +199,6 @@ _FOLLOWUP_BY_BUSINESS: dict[str, list[SuggestedAction]] = {
                         payload="这些题有点难，请降低难度再出几道。"),
         SuggestedAction(label="讲解这道题", kind="prompt",
                         payload="请讲解一下刚才出的题该怎么思考。"),
-    ],
-    "guide": [
-        SuggestedAction(label="查看学习进度", kind="prompt",
-                        payload="请帮我分析一下最近的学习进度和掌握情况。"),
-        SuggestedAction(label="回到首页", kind="navigate", payload="home"),
     ],
     "capability": [
         SuggestedAction(label="我要问个问题", kind="prompt",
@@ -228,8 +231,8 @@ def build_actions(
     - ``situation="empty"``：复现原 ``build_suggested_actions`` 行为（全局能力；
       带知识点 id 时叠加知识点目录）。供 ``GET /suggested-actions`` 空态调用，
       输出逐条等价于旧实现。
-    - ``situation="followup"``：按本轮 ``business``（query/tutor/question/guide/
-      capability）选一组回复后 chips；带知识点焦点时叠加知识点向 chips。
+    - ``situation="followup"``：按本轮 ``business``（tasks/questions/students/
+      tutor/capability）选一组回复后 chips；带知识点焦点时叠加知识点向 chips。
     """
     if situation == "empty":
         return _build_empty_suggested_actions(
@@ -554,7 +557,7 @@ async def chat(
         # 对任何声明了 input_schema 的业务生效（ADR-0095：schema 是槽位唯一事实源，
         # 不再按 business 硬编码开关）。是否阻塞完全由 schema 的 required 决定：
         # 目前仅 question 声明了必填槽（subject/grade/qtype），故只有它会澄清；
-        # query/guide/tutor 全 optional → 恒放行、不追问、也不发汇总帧
+        # tasks/students/tutor 全 optional → 恒放行、不追问、也不发汇总帧
         # （§2.4：读操作与问答过度追问反而干扰，汇总对它们只是噪声）。
         # 结构化 POST /tasks/generate 经 ctx.extra["specs"] 自带校验，必须跳过本预检。
         if not ctx.extra.get("specs"):
@@ -566,7 +569,7 @@ async def chat(
 
             _schema = _load_input_schema(decision.business)
             if _schema:
-                # 槽位按 business 分组：flat 存会让 tutor/query 一轮就冲掉 question
+                # 槽位按 business 分组：flat 存会让 tutor/tasks 一轮就冲掉 question
                 # 已收集的槽（fill_slots 只搬当前 schema 内的键），故各自一本账。
                 _store = conversation.slots if isinstance(conversation.slots, dict) else {}
                 _collected = _store.get(decision.business)
@@ -612,7 +615,7 @@ async def chat(
                     return
                 # 必填齐备：写回合并后的槽位，先发「已确认规格」汇总，再进生成。
                 # 仅 question 需要「汇总 + 交给定题子代理的 specs 路径」：它是唯一按
-                # 结构化规格生成的业务；query/guide/tutor 静默放行（不打扰、无噪声）。
+                # 结构化规格生成的业务；tasks/students/tutor 静默放行（不打扰、无噪声）。
                 #
                 # 触发条件：本轮补进了槽位，或本轮刚好补齐。二者皆无 → 说明槽位早
                 # 已齐备、本轮与出题无关（如「谢谢」），若仍注入 specs 会拿着旧规格

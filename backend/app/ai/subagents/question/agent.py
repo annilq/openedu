@@ -1,456 +1,108 @@
-"""出题 SubAgent（ADR-0024 / 文件夹化）：RAG + 学科 Persona 注入。
+"""题库与出题 SubAgent（ADR-0097：原出题 agent 改造为 tool loop agent）。
 
-位于 ``app/ai/subagents/question/``，与本文件夹 ``manifest.py`` 一同被 AgentRuntime
-发现并加载。统一契约：``run(message, ctx)`` 异步产出 AG-UI 事件帧（TOOL_CALL / STEP /
-THINKING / DATA / TOOL_RESULT / ASSISTANT_MESSAGE），由 runtime 负责
-USER_MESSAGE / 路由 THINKING / DONE 与持久化。
+business 键保持 ``question``（契约测试的动作归属 ``task_generate``、ADR-0095
+slot filling 的分组键、历史会话 ``kind`` 都不变），语义从「出题助手」扩大为
+「题库与出题助手」——目录名沿用 ``question/`` 是历史原因，manifest.name 才是
+对外名称。
 
-出题走**单调用流式**：每题先发 STEP 进度锚点，再把模型推理逐 token 转为 THINKING
-增量，JSON 解析 + 安全闸门通过后发 DATA 题卡（ADR-0017 升级）。
+执行模型从**约束解码 run()** 改为 **tool loop**（用户拍板「出题降级为 tool」）：
 
-本 subagent 是 ``agent_core`` 的「首个接入方」之一：只依赖 agent_core 的
-``BaseSubAgent`` / ``SubAgentContext`` 与通用 ``LLMProvider.stream``；出题特有的
-prompt 组装与解析就地在子包内完成（``pipeline.py`` / ``parsers.py``，ADR-0032 Q3）。
+- ``generate_questions`` 是**流式** tool（``stream_handler``）：STEP / THINKING /
+  DATA 帧逐帧外发，末帧 ToolOutcome 带「应出 / 实出 / 失败」计数回灌，收尾话术
+  由 tool loop 第二轮的模型据实生成——流式体验不丢，且比原 run() 直接吐固定
+  文案更贴合「结论必须有据」（ADR-0033）。
+- 出题规格优先取 ``ctx.extra["specs"]``（ADR-0095 slot filling 结构化规格），
+  不到 model 侧传话；无 specs 时才由模型从 args 给规格。
+- 其余三个工具管题库 CRUD：list / delete / archive。删除不可逆，两步模式
+  （先 list 展示、用户点名再删）；归档可逆，优先引导归档。
+
+``requires_tool_data=True``：整轮零工具调用却给正文＝编题/编数据，硬失败拦截
+（ADR-0033）。元问题（「你能做什么」）由 capability 在路由层接走，不进本 agent。
 """
-
 from __future__ import annotations
 
-from agent_core.protocol import EVENT_STEP, step
-from agent_core.subagent import BaseSubAgent, SubAgentContext
-from app.ai.subagents.question.pipeline import (
-    build_question_prompts,
-    step_label,
-    stream_question,
+from typing import Any, AsyncIterator
+
+from agent_core.protocol import data_event
+from agent_core.subagent import BaseSubAgent, SubAgentContext, run_with_tools
+from app.ai.shared.render import render_cards
+from app.ai.subagents.question.tools import questions_tools
+from app.features.assistant.kp_focus import format_kp_focus
+
+_SYSTEM = """你是「题库与出题」助手，帮教师管理题库、按规格出题。用中文简洁作答。
+
+规则：
+- **出题**：调用 generate_questions，把用户说的科目/年级/题型/数量/知识点如实填进参数；
+  规格可能已由系统备好（工具内部优先使用），不要自行改写或编造题目内容。
+- **收尾话术**：据工具返回的计数如实汇报——应出几道、实出几道、失败几道及原因；
+  少出题必须说明，不许把残缺说成完整。多学科时列出各科数量（如「数学 1 道、
+  语文 1 道」），不得只报第一科。
+- **题库查询**：用户问「题库里有什么题」时调 list_bank_questions 查出来展示，
+  不要只反问「要不要我帮你查」。
+- **删除不可逆**：必须先调 list_bank_questions 让用户看到题、且用户明确点名要删，
+  才可调 delete_questions；用户说「收起来 / 先不管」时用 archive_questions（可逆），
+  不要主动建议删除。
+- 只依据工具返回的数据回答，绝不编造数字、题目、姓名或日期；数据为空就如实说「没有查到」。
+- 需要定位某个学生时用 student_name（昵称）直接查明细；只有昵称有歧义时才先调
+  list_students 拿 id。
+- 与题库/出题无关的请求（闲聊、解题、查学情）不要硬凑，直接说明你能做什么。"""
+
+_CHILD_HINT = (
+    "当前提问者是**学生本人**：题库管理与删除/归档对其不可用（工具会拒绝）。"
+    "学生可以出题自练；不得输出任何题目的答案或解析。"
 )
-from app.ai.subagents.question.translate import translate_stream
-from app.ai.subagents.subject_personas import get_subject_persona
-from app.domain.spec_keywords import (
-    CN_NUM,
-    COUNT_CN_RE,
-    COUNT_RE,
-    GRADE_CN_RE,
-    GRADE_RE,
-    QTYPE_KEYWORDS,
-    SUBJECT_ALIASES,
-)
-from app.domain.subjects import SUBJECTS
-from app.features.materials.figure_stamp import (
-    available_figures,
-    render_figure_catalog,
-)
-from app.features.materials.scene_fusion import find_knowledge_point
-
-
-def figure_catalog_for_question(
-    session,
-    *,
-    teacher_id,
-    subject: str,
-    grade: int,
-    knowledge_point: str,
-    semester: str = "",
-) -> str | None:
-    """本题「可用图形清单」渲染成 prompt 文本（ADR-0089 §4.3）；取不到 → ``None``。
-
-    目录 = ``kp.scenes`` curated 图形优先 → 回落图库全量（``available_figures``）。
-    只给 key + 中文名，**顶点绝不进 prompt**。无 session / 查询失败 → 不注入清单，
-    出题照常（清单是增强，绝不阻断出题主链路）。
-    """
-    if session is None or teacher_id is None:
-        return None
-    try:
-        kp = find_knowledge_point(
-            session,
-            teacher_id=teacher_id,
-            subject=subject,
-            grade=grade,
-            knowledge_point=knowledge_point,
-            semester=semester,
-        )
-        catalog = render_figure_catalog(available_figures(session, kp=kp))
-    except Exception:  # noqa: BLE001 — 目录是增强，任何异常都不阻断出题
-        return None
-    return catalog or None
-
-
-def expand_specs(specs) -> list[dict]:
-    """把 specs（dict 或对象）按 count 展开为「每题一条」列表（顺序即 q_index）。"""
-    items: list[dict] = []
-    for sp in specs:
-        if isinstance(sp, dict):
-            subject = str(sp.get("subject", ""))
-            grade = int(sp.get("grade", 0))
-            knowledge_point = str(sp.get("knowledge_point", ""))
-            qtype = str(sp.get("qtype", ""))
-            difficulty = str(sp.get("difficulty", "medium"))
-            semester = str(sp.get("semester", ""))
-            count = int(sp.get("count", 1))
-            # 判断题标记（ADR-0072）：判断题闭环的规格带 judge=True，让题面为「陈述句 +
-            # 对/错两个选项」；普通按规格出题不带，行为不变。
-            judge = bool(sp.get("judge", False))
-        else:
-            subject = str(sp.subject)
-            grade = int(sp.grade)
-            knowledge_point = str(sp.knowledge_point)
-            qtype = str(sp.qtype)
-            difficulty = str(sp.difficulty)
-            semester = str(getattr(sp, "semester", "") or "")
-            count = int(sp.count)
-            judge = bool(getattr(sp, "judge", False))
-        for _ in range(max(0, count)):
-            items.append(
-                {
-                    "subject": subject,
-                    "grade": grade,
-                    "knowledge_point": knowledge_point,
-                    "qtype": qtype,
-                    "difficulty": difficulty,
-                    "semester": semester,
-                    "judge": judge,
-                }
-            )
-    return items
-
-
-def build_prompt_from_specs(specs) -> list[dict]:
-    """结构化出题规格 → 内部 per-question 项列表（按 count 展开，顺序即 q_index）。
-
-    这是 ADR-0034 Phase 1 的「通过结构化参数构造 prompt」接缝：规格在此直接规整为
-    内部表示，驱动 ``run`` 内逐题 prompt 构造，取代原先「自由文本 → 正则解析」的
-    有损通路。``specs`` 元素是 dict 或带 subject/grade/knowledge_point/qtype/
-    difficulty/count 属性的对象。
-    """
-    return expand_specs(specs)
-
-
-def build_question_context(
-    *,
-    subject: str,
-    grade: int,
-    knowledge_point: str,
-    query: str | None,
-    retriever=None,
-) -> tuple[str | None, str, list[dict]]:
-    """计算 ``(rag_context, persona_hint, source_refs)``：RAG 命中 + Persona + 溯源快照。
-
-    ``source_refs`` 是 ADR-0055 §10 的快照溯源：``[{material: 资料名, snippet: 摘要}]``，
-    随题卡下发并随题落库——资料删除后题目依据仍在（不建外键的原因）。
-    rag_context 每行带【资料名】前缀，让模型知道口径来自哪份资料（仅作对齐参考）。
-    """
-    rag_context: str | None = None
-    source_refs: list[dict] = []
-    if retriever is not None and (knowledge_point or query):
-        chunks = retriever.retrieve(
-            subject=subject,
-            grade=grade,
-            knowledge_point=knowledge_point,
-            query=query or knowledge_point,
-        )
-        if chunks:
-            lines = []
-            for c in chunks:
-                if c.source_name:
-                    source_refs.append(
-                        {"material": c.source_name, "snippet": c.content[:80]}
-                    )
-                    lines.append(f"- 【{c.source_name}】{c.content}")
-                else:
-                    lines.append(f"- {c.content}")
-            rag_context = "\n".join(lines)
-    persona_hint = get_subject_persona(subject).render()
-    return rag_context, persona_hint, source_refs
-
-
-def parse_specs_from_text(text: str) -> list[dict]:
-    """从自由文本解析出题规格（悬浮助手一句话出题）。
-
-    识别：科目（标准名/别名）、年级（数字/中文+年级）、数量（N道/题）、题型。
-    识别不到时返回空列表（runtime 提示用户补充）。数量上限 5 防滥用。
-    """
-    import re
-
-    specs: list[dict] = []
-
-    subject = ""
-    for alias, std in SUBJECT_ALIASES.items():
-        if alias in text:
-            subject = std
-            break
-    if not subject:
-        for s in SUBJECTS:
-            if s in text:
-                subject = s
-                break
-
-    grade = 0
-    m = GRADE_RE.search(text)
-    if m:
-        grade = int(m.group(1))
-    else:
-        m = GRADE_CN_RE.search(text)
-        if m:
-            grade = CN_NUM.get(m.group(1), 0)
-
-    count = 1
-    m = COUNT_RE.search(text)
-    if m:
-        count = min(int(m.group(1)), 5)
-    else:
-        m = COUNT_CN_RE.search(text)
-        if m:
-            count = min(CN_NUM.get(m.group(1), 1), 5)
-
-    qtype = "choice"
-    for kw, qt in QTYPE_KEYWORDS.items():
-        if kw in text:
-            qtype = qt
-            break
-
-    # 多选题标记（ADR-0004 D5）：自然语言里出现「多选 / 多选题」即视为多选，
-    # 与 QTYPE_KEYWORDS 把「多选」映射到 choice 相互独立——多选题仍是 choice 题型，
-    # 只是 multi=True，渲染为复选、批改按集合比对。
-    multi = "多选" in text or "多选题" in text
-
-    # 判断题标记（ADR-0089）：自然语言出现「判断题 / 判断对错 / 判断正误」即视为
-    # 判断题，由出题子代理自主产出 judge 规格（不再经服务端信号归一化与 quiz_generate
-    # 动作键）。题面为「陈述句 + 对/错两个选项」，题卡含答案原样落对话历史、前端隐藏待揭示。
-    judge = "判断题" in text or "判断对错" in text or "判断正误" in text
-
-    kp = ""
-    m = re.search(r"关于\s*《?\s*([\u4e00-\u9fa5A-Za-z0-9]+)", text)
-    if m:
-        kp = m.group(1)
-    else:
-        qt_kw = next((kw for kw, _ in QTYPE_KEYWORDS.items() if kw in text), None)
-        if subject and qt_kw:
-            between = text.split(subject, 1)[-1].split(qt_kw, 1)[0]
-            candidate = re.sub(r"[关于的\s]+", "", between)
-            candidate = re.sub(r"\d\s*年级|[一二三四五六七八九]\s*年级", "", candidate)
-            if re.search(r"[\u4e00-\u9fa5]", candidate):
-                kp = candidate
-
-    if subject:
-        specs.append(
-            {
-                "subject": subject,
-                "grade": grade,
-                "knowledge_point": kp,
-                "qtype": qtype,
-                "difficulty": "medium",
-                "semester": "",
-                "count": count,
-                "multi": multi,
-                "judge": judge,
-            }
-        )
-    return specs
-
-
-def with_skills(persona_hint: str, skills: str) -> str:
-    """把业务 SOP（ADR-0030：manifest 声明的 skills/*.md 全文）拼到学科 Persona 之后。"""
-    sop = (skills or "").strip()
-    return f"{persona_hint}\n\n{sop}" if sop else persona_hint
-
-
-def _subject_summary(items: list[dict]) -> str:
-    """多学科一卷的学科概览：``数学 1 道、语文 1 道``；单学科返回空串。"""
-    order: list[str] = []
-    tally: dict[str, int] = {}
-    for it in items:
-        s = it["subject"]
-        if s not in tally:
-            order.append(s)
-            tally[s] = 0
-        tally[s] += 1
-    if len(order) < 2:
-        return ""
-    return "、".join(f"{s} {tally[s]} 道" for s in order)
-
-
-def _finish_message(
-    *, items: list[dict], generated: list[dict], failures: list[str]
-) -> str:
-    """收尾文案：如实反映「应出 / 实出 / 失败」三态。
-
-    三条不变量（本次修复的核心）：
-    - **多学科不得只报第一科的学科名**（旧实现取 ``items[0].subject``，数学+语文会
-      说出「已生成 2 道数学题」这种错话）。
-    - **部分成功必须报少题**，并给出第一处失败原因；教师据此重生成，而不是
-      拿到一份残缺任务还以为生成成功。
-    - **全失败优先回显真实失败原因**，不再笼统甩锅「调整科目或年级」。
-    """
-    requested = len(items)
-    ok = len(generated)
-    if ok == 0:
-        reason = failures[0] if failures else None
-        return (
-            reason
-            or "本次未能生成题目，请检查「模型管理」中的模型配置（添加模型并设为默认）。"
-        )
-
-    summary = _subject_summary(items)
-    head = f"已生成 {ok} 道题" + (
-        f"（{summary}）" if summary and ok == requested else ""
-    )
-    tail = "题卡中包含题目、选项与解析，可据此布置给学生（保存为任务为后续能力）。"
-    if ok < requested:
-        reason = failures[0] if failures else "未知原因"
-        return (
-            f"应出 {requested} 题，实出 {ok} 题：第 {ok + 1} 题生成失败（{reason}）。"
-            f"已保存这 {ok} 题，可返回出题页重新生成补齐。"
-        )
-    return f"{head}，{tail}"
+_TEACHER_HINT = "当前提问者是**教师**：可查询名下学生数据、管理自己的题库并出题（含答案与解析，仅限本家庭）。"
 
 
 class QuestionSubAgent(BaseSubAgent):
     business = "question"
 
-    async def run(self, message: str, ctx: SubAgentContext, *, session=None):
-        """出题入口：结构化规格（ctx.extra["specs"]）优先；无则回落自由文本解析。
+    # 结论必须有据（ADR-0033）：每一句结论都得来自工具数据（出题计数 / 题库查询结果）。
+    requires_tool_data = True
 
-        结构化路径取代「自由文本 → parse_specs_from_text 正则」的有损往返：规格直接
-        进入逐题 prompt 构造，绝不过自然语言（ADR-0034 Phase 1）。
+    def __init__(self, *, provider, retriever=None) -> None:
+        super().__init__(provider=provider, retriever=retriever)
+        # 出题 tool 需要 provider（流式生成），故在装配期构造。
+        self.tools = questions_tools(provider=provider, retriever=retriever)
+
+    # ── tool loop 的初轮消息 ──
+    def initial_system(self, message: str, ctx: SubAgentContext) -> str:
+        role = (ctx.role or "").strip().lower()
+        parts = [_SYSTEM, _CHILD_HINT if role == "student" else _TEACHER_HINT]
+        # ADR-0080：知识点聚焦段（强调须依托工具数据，维持 requires_tool_data 契约）。
+        focus_seg = format_kp_focus(ctx.extra.get("knowledge_point"), query_mode=True)
+        if focus_seg:
+            parts.append(focus_seg)
+        if ctx.skills:
+            parts.append(ctx.skills)
+        return "\n\n".join(p for p in parts if p)
+
+    def initial_user(self, message: str, ctx: SubAgentContext) -> str:
+        return message
+
+    # ── 展示投影（决策 11 / ADR-0042）：TOOL_RESULT 存原始，DATA 帧供前端渲染 ──
+    # 流式 tool（generate_questions）的展示帧由 generator 自负，runtime 跳过本 hook。
+    def render_tool_result(self, name: str, result: Any) -> list[Any]:
+        return [
+            data_event(card.payload, extra={"type": card.kind})
+            for card in render_cards(name, result)
+        ]
+
+    # ── 直接调用入口 ──
+    async def run(
+        self, message: str, ctx: SubAgentContext, *, session: Any = None
+    ) -> AsyncIterator[Any]:
+        """runtime 主路径走 ``run_with_tools(self, …)``（本 subagent tools 恒非空）。
+
+        本方法仅为「有人绕过 runtime 直接 ``agent.run(...)``」兜底：委托同一套 tool loop，
+        保证两条路径行为一致（含轮次上限与硬失败），不复制一份编排。
         """
-        structured = ctx.extra.get("specs")
-        if structured:
-            items = build_prompt_from_specs(structured)
-        else:
-            specs = parse_specs_from_text(message)
-            # 上下文回填（ADR-0089）：自由文本没识别到学科时，用请求透传的 ctx.extra
-            # （subject / grade / 知识点来自课件或知识点下钻）补全，使「出一道判断题」
-            # 按钮在知识点语境下无需用户再敲科目年级即可产出相关题。出题/判定决定权
-            # 整体在子代理，服务端只负责把这些上下文透传进来。
-            if not specs:
-                extra_subject = str(ctx.extra.get("subject") or "")
-                if extra_subject:
-                    cw = ctx.extra.get("courseware") or {}
-                    kp_name = (
-                        str(cw.get("knowledge_point") or "")
-                        if isinstance(cw, dict)
-                        else ""
-                    )
-                    specs.append(
-                        {
-                            "subject": extra_subject,
-                            "grade": int(ctx.extra.get("grade") or 0),
-                            "knowledge_point": kp_name,
-                            "qtype": "choice",
-                            "difficulty": "medium",
-                            "semester": "",
-                            "count": 1,
-                            "multi": False,
-                            "judge": (
-                                "判断题" in message
-                                or "判断对错" in message
-                                or "判断正误" in message
-                            ),
-                        }
-                    )
-            if not specs:
-                yield self._finish(
-                    "请告诉我科目、年级和题型，例如：「帮我出 3 道三年级分数选择题」。"
-                )
-                return
-            items = expand_specs(specs)
-
-        if not items:
-            yield self._finish("未解析到有效的出题规格，请检查科目、年级与题型。")
+        if not self.tools:
+            # 结构性自检：tools 为空说明装配出错（真实路径不允许静默退化成纯聊天）。
+            yield self._finish("题库与出题暂不可用，请稍后重试。", blocked=True)
             return
-        tc = self._tool(
-            "generate_question",
-            label="出题",
-            args={"subject": items[0]["subject"], "count": len(items)},
-        )
-        yield tc.call
+        async for ev in run_with_tools(self, message, ctx, session=session):
+            yield ev
 
-        # 反馈边（ADR-0060 D4）：掌握度看板下发的代表错题样例，注入每题 prompt 做同类题仿写。
-        weak_examples = ctx.extra.get("weak_examples")
 
-        generated: list[dict] = []
-        # 单题失败原因（按题序）：引擎未配置 / 解析或安全闸门未过。
-        # 逐题串行出题时「某一题失败」必须留痕——否则多学科出题会静默少题
-        # （教师只看到少了某一科，却没有任何提示），这是本次修复的目标缺陷。
-        failures: list[str] = []
-        # 资料溯源（ADR-0055 §13）：逐题快照 + 去重后的「参考了 N 份资料」计数。
-        referenced: set[str] = set()
-        for idx, item in enumerate(items):
-            rag_context, persona_hint, item_refs = build_question_context(
-                subject=item["subject"],
-                grade=item["grade"],
-                knowledge_point=item["knowledge_point"],
-                query=item["knowledge_point"],
-                retriever=self.retriever,
-            )
-            referenced.update(ref["material"] for ref in item_refs)
-            persona_hint = with_skills(persona_hint, ctx.skills)
-            system_prompt, user_prompt, spec = build_question_prompts(
-                subject=item["subject"],
-                grade=item["grade"],
-                knowledge_point=item["knowledge_point"],
-                qtype=item["qtype"],
-                difficulty=item["difficulty"],
-                semester=item.get("semester", ""),
-                rag_context=rag_context,
-                persona_hint=persona_hint,
-                history=ctx.history,
-                weak_examples=weak_examples,
-                multi=item.get("multi", False),
-                # 判断题（ADR-0072 闭环）：题面强制「陈述句 + 对/错两个选项」。
-                judge=item.get("judge", False),
-                # 图形化选项（ADR-0089）：注入可用图形清单，模型只填身份键。
-                figure_catalog=figure_catalog_for_question(
-                    session,
-                    teacher_id=ctx.extra.get("teacher_id"),
-                    subject=item["subject"],
-                    grade=item["grade"],
-                    knowledge_point=item["knowledge_point"],
-                    semester=item.get("semester", ""),
-                ),
-            )
-            yield step(
-                step_label(
-                    item["subject"],
-                    item["grade"],
-                    item["knowledge_point"],
-                    item["qtype"],
-                )
-            )
-            async for frame in translate_stream(
-                stream_question(
-                    self.provider,
-                    system_prompt=system_prompt,
-                    user_prompt=user_prompt,
-                    spec=spec,
-                    history=ctx.history,
-                )
-            ):
-                # 单题失败：translate_stream 把 QuestionFailed 转成 STEP(status="error")。
-                # 帧照常下发（前端据此展示失败），同时留痕到 failures 供收尾汇总。
-                if frame.eventType == EVENT_STEP and frame.status == "error":
-                    failures.append(frame.label or "生成失败")
-                    yield frame
-                    continue
-                data = frame.data
-                if data is not None and data.get("type") == "question":
-                    # 溯源快照随题卡下发（ADR-0055 §10）；客户端原样回传落库。
-                    if item_refs:
-                        data["result"]["source_refs"] = item_refs
-                    generated.append(data["result"])
-                yield frame
-
-        # TOOL_RESULT 带上「应出 / 实出 / 失败」计数：前端据此判断本次是否少题，
-        # 不再靠「题卡数 == 规格数」的隐式假设（少题时前端会静默落库残缺任务）。
-        # 另带 RAG 溯源计数与未向量化资料数（ADR-0055 §13 的两条提示的数据源）。
-        yield tc.result(
-            {
-                "count": len(generated),
-                "requested": len(items),
-                "failed": len(failures),
-                "fail_reason": failures[0] if failures else None,
-                "referenced_materials": len(referenced),
-                "unindexed_materials": ctx.extra.get("unindexed_materials") or 0,
-            }
-        )
-        yield self._finish(
-            _finish_message(items=items, generated=generated, failures=failures)
-        )
+__all__ = ["QuestionSubAgent"]

@@ -16,8 +16,8 @@ from sqlmodel import Session, select
 
 from app.core.db import engine
 from app.db.models import Conversation, Message
-from tests.ai.test_query_tools_contract import KID_PASSWORD
-from tests.ai.test_query_tools_contract import _setup as _query_setup
+from tests.ai.test_business_tools_contract import KID_PASSWORD
+from tests.ai.test_business_tools_contract import _setup as _query_setup
 from tests.utils.user import auth_headers, login, register_teacher
 
 
@@ -93,9 +93,14 @@ def test_student_jailbreak_blocked(client):
     assert answer.strip() == ""
 
 
-def test_teacher_question_generation_emits_data_events(client):
-    """教师一句话出题：路由到 question subagent，DATA 事件携带题卡（ADR-0024）。"""
+def test_teacher_question_generation_emits_data_events(client, fake_llm):
+    """教师一句话出题：路由到 question subagent，DATA 事件携带题卡（ADR-0024）。
+
+    ADR-0097 起出题是 tool loop：替身脚本首轮选中 ``generate_questions`` 流式工具
+    （规格经 slot filling 注入 ctx.extra["specs"]，空 args 即按系统规格出题）。
+    """
     ptoken, _student, _ctoken = _setup(client, "as5_teacher", "as5_kid")
+    fake_llm.script("generate_questions")
 
     status, events = _stream(client, ptoken, "帮我出 2 道三年级数学选择题")
     assert status == 200, events
@@ -107,12 +112,13 @@ def test_teacher_question_generation_emits_data_events(client):
         assert q.get("subject") and q.get("stem")
 
 
-def test_student_generation_routes_to_question(client):
+def test_student_generation_routes_to_question(client, fake_llm):
     """学生自练出题（ADR-0081 §2.2）：出题意图路由到出题助手，产出题卡，而非强制收敛到伴学答疑。
 
     决策已显式化：路由 THINKING 帧标记 ``routing: True``，且 Conversation.kind 由决策写入。
     """
     _ptoken, _student, ctoken = _setup(client, "as6_teacher", "as6_kid")
+    fake_llm.script("generate_questions")
     # ADR-0095 预检：出题业务要求 subject/grade/qtype 齐备，否则先澄清；这里直接给全，
     # 验证「路由到出题助手并产出题卡」的意图不被预检误伤。
     status, events = _stream(client, ctoken, "帮我出 2 道三年级数学选择题")
@@ -127,13 +133,14 @@ def test_student_generation_routes_to_question(client):
     assert question_cards
 
 
-def test_student_action_task_generate_routes_to_question(client):
+def test_student_action_task_generate_routes_to_question(client, fake_llm):
     """结构化动作经统一路由（T04）：学生显式带 action=task_generate，命中出题助手并产出题卡。
 
     端点把 req.action 透传给 IntentSignal，统一路由做动作直配——且学生这条路径上
     输入安全闸门（role==student → StudentSafety）被真正调用（出题链路此前把闸门设为「无」）。
     """
     _ptoken, _student, ctoken = _setup(client, "as9_teacher", "as9_kid")
+    fake_llm.script("generate_questions")
     # ADR-0095 预检：出题业务要求 subject/grade/qtype 齐备，这里直接给全以验证动作直配。
     status, events = _stream(
         client, ctoken, "帮我出 2 道三年级数学选择题", extra={"action": "task_generate"}
@@ -215,7 +222,7 @@ def _query_trace(events) -> tuple[str, list[Message]]:
 
 
 def test_teacher_query_streams_tool_chain_and_persists_trace(client, fake_llm):
-    """教师查错题：路由 query → TOOL_CALL/TOOL_RESULT/DATA/ASSISTANT_MESSAGE，轨迹落库。"""
+    """教师查错题：路由 tasks → TOOL_CALL/TOOL_RESULT/DATA/ASSISTANT_MESSAGE，轨迹落库。"""
     setup = _query_setup(client, "asq1")
     fake_llm.script("list_wrong_questions")
 
@@ -223,9 +230,9 @@ def test_teacher_query_streams_tool_chain_and_persists_trace(client, fake_llm):
     assert status == 200, events
     types = [e["eventType"] for e in events]
 
-    # 路由到「学情查询」（而非 question / tutor）
+    # 路由到「任务学情助手」（而非 question / tutor）
     routed = [e.get("text", "") for e in _of(events, "THINKING") if e.get("extra", {}).get("routing")]
-    assert any("学情查询" in t for t in routed), routed
+    assert any("任务学情助手" in t for t in routed), routed
     assert "ERROR" not in types
 
     # 事件链顺序：TOOL_CALL → TOOL_RESULT → DATA（展示卡后发）
@@ -254,10 +261,10 @@ def test_teacher_query_streams_tool_chain_and_persists_trace(client, fake_llm):
 
     # 落库轨迹：路由步 / 工具调用 / 工具结果 / 助手输出（turn 升序即因果顺序）
     conv, rows = _query_trace(events)
-    assert (conv.kind, conv.status) == ("query", "done")
+    assert (conv.kind, conv.status) == ("tasks", "done")
     assert str(conv.teacher_id) == setup["teacher_id"] and conv.student_id is None
     assert [r.step for r in rows] == ["input", "routing", "tool_call", "tool_result", "output"]
-    assert rows[1].content == "学情查询"
+    assert rows[1].content == "任务学情助手"
     # tool_call 落的是**可读标签**（ev.label or ev.tool，service.py）：
     # 轨迹是给人回看的投影，不是给机器反解的标识——英文工具名跟着 frame 走，
     # 落到库里的是「查询错题本」这种能读的句子。tool_result 没有标签，仍落工具名。
@@ -293,9 +300,9 @@ def test_student_query_ignores_foreign_student_id_and_hides_answers(client, fake
 
     # 会话归属仍是「教师 + 该学生」，双端隔离可审计
     conv, _rows = _query_trace(events)
-    assert (conv.kind, str(conv.student_id)) == ("query", setup["a"]["id"])
+    assert (conv.kind, str(conv.student_id)) == ("tasks", setup["a"]["id"])
 
-    # query ≠ 伴学：不落 TutorLog（伴学答疑才记日志，F-305）
+    # tasks ≠ 伴学：不落 TutorLog（伴学答疑才记日志，F-305）
     logs = client.get(
         "/api/v1/tutor/logs",
         headers=auth_headers(setup["teacher_token"]),
@@ -305,20 +312,29 @@ def test_student_query_ignores_foreign_student_id_and_hides_answers(client, fake
 
 
 def test_query_multi_hop_runs_two_tools_in_sequence(client, fake_llm):
-    """替身升级的核心证据：一次问句内「先定位学生 → 再查明细」两跳真跑。"""
+    """替身升级的核心证据：一次问句内两跳工具真跑（ADR-0097 后两跳须同域）。"""
     setup = _query_setup(client, "asq3")
-    fake_llm.script(("list_students", {}), ("list_today_tasks", {}))
+    fake_llm.script(("list_teacher_tasks", {}), ("list_wrong_questions", {}))
 
-    status, events = _stream(client, setup["teacher_token"], "我学生今天有什么作业")
+    status, events = _stream(client, setup["teacher_token"], "我的任务和错题都看看")
     assert status == 200, events
     types = [e["eventType"] for e in events]
     assert "ERROR" not in types, "两跳不应触轮次上限"
 
-    assert [e["tool"] for e in _of(events, "TOOL_CALL")] == ["list_students", "list_today_tasks"]
-    assert [e["tool"] for e in _of(events, "TOOL_RESULT")] == ["list_students", "list_today_tasks"]
+    assert [e["tool"] for e in _of(events, "TOOL_CALL")] == [
+        "list_teacher_tasks",
+        "list_wrong_questions",
+    ]
+    assert [e["tool"] for e in _of(events, "TOOL_RESULT")] == [
+        "list_teacher_tasks",
+        "list_wrong_questions",
+    ]
     # 两跳工具 + 一轮收尾 = 3 次模型请求；每次调用都被替身记下
     assert fake_llm.requests == 3
-    assert fake_llm.calls == [("list_students", {}), ("list_today_tasks", {})]
+    assert fake_llm.calls == [
+        ("list_teacher_tasks", {}),
+        ("list_wrong_questions", {}),
+    ]
     assert len(_of(events, "DATA")) >= 2  # 每个工具各补发展示卡
 
 
@@ -437,7 +453,7 @@ def test_conversation_list_only_returns_my_own(client, fake_llm):
     mine = rows[teacher_sid]
     assert mine["title"] == "我都有哪些娃"  # 会话名 = 首条用户消息截断
     assert mine["bubble_count"] == 2, "提问 + 回答；routing/tool 不算气泡"
-    assert mine["kind"] == "query"
+    assert mine["kind"] == "students"  # 人群问句归 students 域（ADR-0097）
     assert "student_id" not in mine and "student_name" not in mine, "归属字段已移除"
 
     # 学生看到的是**自己**那段，且只有那一段

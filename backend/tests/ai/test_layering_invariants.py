@@ -6,14 +6,16 @@
 1. ``agent_core`` 内核（不含 ``adapters/``）**零 ``app.*`` 依赖**；
 2. ``agent_core`` 内核**零第三方依赖**（只允许 stdlib + 自身）；
 3. 全后端 ``import genkit`` **只出现在 ``agent_core/adapters/genkit.py``**，且只在函数体内（延迟导入）；
-4. 已删模块（``app.ai.generation`` / ``parsers`` / ``segment`` / ``debug_log`` / ``tools``）**零残留引用**；
+4. 已删模块（``app.ai.generation`` / ``parsers`` / ``segment`` / ``debug_log`` / ``tools``，
+   以及 ADR-0097 解散的 ``app.ai.subagents.query`` / ``app.ai.subagents.guide``）
+   **零残留引用**；
 5. ``app/features/*/service.py`` **不得 import 本 feature 或其他 feature 的 router**——service 是
    router 与查询工具共用的下游（ADR-0033 决策 13），反向依赖会立刻形成循环；
 6. ``app/features/*/service.py`` **不得 import ``fastapi``**——否则查询工具经 service 就绑上了
    HTTP 层（工具在 SSE 请求内同步直调 service，不经 ASGI）；
-7. ``app/ai/subagents/query/tools/**`` **不得 import 任何 router 或 repository**——查询工具只许
-   经 feature service 取数（ADR-0033 决策 13）；绕过 service 直连 repository 会让聚合逻辑出现
-   第二份，正是本次重构要消灭的漂移源。
+7. ``app/ai/subagents/{tasks,students,question}/tools/**`` **不得 import 任何 router 或
+   repository**——业务工具只许经 feature service 取数（ADR-0033 决策 13）；绕过 service
+   直连 repository 会让聚合逻辑出现第二份，正是本次重构要消灭的漂移源。
 8. **归属校验只许经 ``app.core.guard``**——源码里不得再出现 ``X.teacher_id != y`` 这类内联
    比较。该不变量曾散在 7 处各写一遍，失败语义互相矛盾（同一越权有的返 403、有的返 404、
    有的伪装成「不存在」），漏写一处即越权读。
@@ -30,7 +32,12 @@ BACKEND_ROOT = Path(__file__).resolve().parents[2]
 KERNEL_ROOT = BACKEND_ROOT / "agent_core"
 ADAPTER_PATH = KERNEL_ROOT / "adapters" / "genkit.py"
 FEATURES_ROOT = BACKEND_ROOT / "app" / "features"
-QUERY_TOOLS_ROOT = BACKEND_ROOT / "app" / "ai" / "subagents" / "query" / "tools"
+# ADR-0097：query 解散后，业务 agent 工具分布在三个域的 tools/ 下（原 query/tools 单根）
+BUSINESS_TOOL_ROOTS = [
+    BACKEND_ROOT / "app" / "ai" / "subagents" / "tasks" / "tools",
+    BACKEND_ROOT / "app" / "ai" / "subagents" / "students" / "tools",
+    BACKEND_ROOT / "app" / "ai" / "subagents" / "question" / "tools",
+]
 
 # genkit 是引擎 SDK，其（及插件包）的唯一合法落点是适配器
 GENKIT_ROOTS = {"genkit", "genkit_ollama", "genkit_openai", "genkit_fastapi"}
@@ -43,6 +50,10 @@ DEAD_MODULES = {
     # ADR-0033：shared_tool 包随 tasks 一并退役（list_tasks 逻辑并入 query 工具、
     # search_knowledge 零调用方）；将来真被复用时再按 ADR-0024 语义重建。
     "app.ai.tools",
+    # ADR-0097：query 解散（功能按域迁入 tasks/question/students）、guide 删除
+    # （写意图由 tasks 的 create_draft 承接）。目录已不存在，import 即回归。
+    "app.ai.subagents.query",
+    "app.ai.subagents.guide",
 }
 _SKIP_DIRS = {".venv", "dist", "build", "__pycache__", "site-packages", "htmlcov"}
 
@@ -164,34 +175,34 @@ def test_feature_services_do_not_import_fastapi():
     assert not offenders, f"feature service 不得 import fastapi：{sorted(offenders)}"
 
 
-def _query_tool_files() -> list[Path]:
-    return sorted(QUERY_TOOLS_ROOT.rglob("*.py"))
+def _business_tool_files() -> list[Path]:
+    return sorted(p for root in BUSINESS_TOOL_ROOTS for p in root.rglob("*.py"))
 
 
-def test_query_tools_go_through_feature_services_only():
-    """不变量 7：查询工具只许经 feature service 取数，不得碰 router / repository。
+def test_business_tools_go_through_feature_services_only():
+    """不变量 7：业务工具只许经 feature service 取数，不得碰 router / repository。
 
     - 碰 router：依赖方向反了（router → service ← tool）；
     - 碰 repository：聚合与裁剪逻辑会绕过 service 出现第二份（ADR-0033 决策 13）。
     """
     offenders = {
         f"{p.relative_to(BACKEND_ROOT)}: {m}"
-        for p in _query_tool_files()
+        for p in _business_tool_files()
         for m in _dotted_targets(p)
         if m.endswith(".router") or m.endswith(".repository")
     }
-    assert not offenders, f"query 工具不得 import router/repository：{sorted(offenders)}"
+    assert not offenders, f"业务工具不得 import router/repository：{sorted(offenders)}"
 
 
-def test_query_tools_do_not_import_fastapi():
-    """不变量 8：查询工具不绑 HTTP 层（handler 在 SSE 请求内同步直调）。"""
+def test_business_tools_do_not_import_fastapi():
+    """不变量 8：业务工具不绑 HTTP 层（handler 在 SSE 请求内同步直调）。"""
     offenders = {
         f"{p.relative_to(BACKEND_ROOT)}: {m}"
-        for p in _query_tool_files()
+        for p in _business_tool_files()
         for m in _import_roots(p)
         if m == "fastapi"
     }
-    assert not offenders, f"query 工具不得 import fastapi：{sorted(offenders)}"
+    assert not offenders, f"业务工具不得 import fastapi：{sorted(offenders)}"
 
 
 GUARD_PATH = BACKEND_ROOT / "app" / "core" / "guard.py"

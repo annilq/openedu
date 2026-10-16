@@ -1,12 +1,13 @@
-"""``capability`` 能力自述与超范围引导 SubAgent 契约测试（ADR-0079，零 LLM）。
+"""``capability`` 能力自述与超范围引导 SubAgent 契约测试（ADR-0079 / ADR-0097，零 LLM）。
 
-守住四条（全部确定性、不接真实模型）：
+守住六条（全部确定性、不接真实模型）：
 
 - 能力自述意图（你能做什么 / 你会什么 / 怎么用你 / 你是谁 …）路由到 ``capability``，
-  而非 ``tutor`` / ``query``；
-- ``guide`` 的写意图（priority 20）不被 ``capability``（16）抢走；
-- ``query`` 的读意图（priority 12）不被 ``capability`` 抢走；
-- 能力清单为服务端固定目录（非 LLM 生成），按角色分叉且内容确定；
+  而非 ``tutor`` / ``tasks``；
+- ``tasks`` 的写意图（「创建任务」类短语）不被 ``capability`` 抢走；
+- ``tasks`` 的读意图（错题 / 作业）不被 ``capability`` 抢走；
+- 能力清单为 **manifests 的投影**（ADR-0097：单一事实源，非 LLM 生成、非手抄），
+  按角色过滤可见 business，无 query/guide 残留字样；
 - 超范围问题落 ``tutor`` 兜底（不硬失败），且 ``tutor_system_prompt`` 含超范围自述句式；
 - subagent 不持有工具、不调用 provider（零 LLM）。
 """
@@ -53,13 +54,15 @@ def test_manifest_declares_capability_and_dual_role():
     assert m.hints == []
 
 
-def test_priority_sits_between_query_and_guide():
-    """priority=16 是功能本身：高于 query(12) 才能接走「你能查什么」类元问题
-    （否则被 query 的 requires_tool_data 硬失败），低于 guide(20) 才不抢写意图。
+def test_priority_sits_above_all_business_domains():
+    """priority=16 是功能本身：压过 tasks(14)/question(12)/students(10) 的泛词
+    （「查 / 有哪些」），否则「你能查什么」类元问题会被 requires_tool_data 硬失败。
+    写意图不冲突：tasks 的写触发词是「创建任务」等高精度短语，与自述问句无交集。
     """
     manifests = discover_subagent_manifests()
     assert manifests["capability"].priority == 16
-    assert manifests["query"].priority < manifests["capability"].priority < manifests["guide"].priority
+    for lower in ("tasks", "question", "students", "tutor"):
+        assert manifests["capability"].priority > manifests[lower].priority
 
 
 def test_agent_carries_no_tools():
@@ -80,13 +83,13 @@ def test_capability_intent_routes_for_both_roles():
         assert _route(phrase, "teacher") == "capability", phrase
 
 
-def test_guide_write_intent_not_stolen():
-    assert _route("帮我创建一个任务", "teacher") == "guide"
+def test_tasks_write_intent_not_stolen():
+    assert _route("帮我创建一个任务", "teacher") == "tasks"
 
 
-def test_query_read_intent_not_stolen():
-    assert _route("查一下我的错题", "teacher") == "query"
-    assert _route("今天有什么作业", "teacher") == "query"
+def test_tasks_read_intent_not_stolen():
+    assert _route("查一下我的错题", "teacher") == "tasks"
+    assert _route("今天有什么作业", "teacher") == "tasks"
 
 
 def test_out_of_scope_falls_to_tutor():
@@ -94,14 +97,44 @@ def test_out_of_scope_falls_to_tutor():
     assert _route("今天天气怎么样", "student") == "tutor"
 
 
-# ───────────── 3. 固定目录 + 零 LLM ─────────────
+# ───────────── 3. 清单 = manifests 投影 + 零 LLM ─────────────
 
 
-def test_catalog_splits_by_role():
-    student = capability_catalog("student")
-    teacher = capability_catalog("teacher")
-    assert student and teacher
-    assert student != teacher  # 师生能力清单不同
+def test_catalog_is_manifest_projection():
+    """ADR-0097：清单从 manifests 生成——新增/调整业务只需改 manifest，此处自动跟随。
+
+    同时是「无 query/guide 残留」的守卫：旧手抄清单在两者解散后仍在描述
+    「查询学情 / 引导发布」，这类漂移从此不可能再发生。
+    """
+    manifests = discover_subagent_manifests()
+    for role in ("student", "teacher"):
+        lines = capability_catalog(role)
+        assert lines, f"{role} 清单为空"
+        joined = "\n".join(lines)
+        # 每个可见业务（除 capability 自身）各一行：name + description
+        for biz, m in manifests.items():
+            if biz == "capability" or role not in m.roles:
+                continue
+            assert f"{m.name}：{m.description}" in lines, f"{role} 清单缺 {biz}"
+        # capability 自身不出现在自己的清单里
+        assert "能力自述" not in joined
+        # 已解散业务的字样不得残留
+        assert "学情查询" not in joined and "任务引导" not in joined
+
+
+def test_catalog_order_follows_priority():
+    """呈现顺序 = 路由优先级降序（主能力在前），与用户提问的命中概率一致。"""
+    lines = capability_catalog("teacher")
+    assert lines[0].startswith("任务学情助手")
+    assert lines[-1].startswith("伴学答疑")
+
+
+def test_boundary_text_mentions_draft_and_confirmation():
+    """边界话术（ADR-0097 改写）：起草 + 发布前确认，且不暗示学生有写能力。"""
+    teacher = capability_response("teacher")
+    assert "起草任务与题目" in teacher and "请你确认" in teacher
+    student = capability_response("student")
+    assert "起草任务" not in student  # create_draft 对学生不可用，不得暗示
 
 
 def test_run_yields_fixed_text_and_never_calls_provider():
@@ -112,7 +145,7 @@ def test_run_yields_fixed_text_and_never_calls_provider():
     assert msgs, "capability 必须产出 ASSISTANT_MESSAGE"
     assert msgs[0].text == capability_response("student")
 
-    # 教师端拿到的是教师清单
+    # 教师端拿到的是教师边界 + 清单
     events_t = asyncio.run(_collect(agent, "你能做什么", "teacher"))
     msgs_t = [ev for ev in events_t if ev.eventType == EVENT_ASSISTANT_MESSAGE]
     assert msgs_t[0].text == capability_response("teacher")
