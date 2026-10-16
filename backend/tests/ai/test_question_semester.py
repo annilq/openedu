@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 
 from agent_core.ports import StructuredDone
-from app.ai.subagents.question.agent import expand_specs
+from app.ai.subagents.question.specs import expand_specs
 from app.ai.subagents.question.parsers import QuestionSpec
 from app.ai.subagents.question.pipeline import build_question_prompts, stream_question
 from app.domain.provider import QuestionCard

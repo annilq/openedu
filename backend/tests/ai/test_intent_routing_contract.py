@@ -100,7 +100,7 @@ def test_action_ownership_is_unique():
 def test_decide_action_routes_teacher_to_question():
     decision = asyncio.run(_decide(IntentSignal(text="", action="task_generate"), role="teacher"))
     assert decision.business == "question"
-    assert decision.name == "出题助手"
+    assert decision.name == "题库与出题助手"
     assert decision.extra.get("routed_by") == "action"
 
 
@@ -117,7 +117,7 @@ def test_decide_action_routes_student_to_question():
     # 出题助手现已对师生双开（ADR-0081 §2.2）：学生打 task_generate → 直接路由 question。
     decision = asyncio.run(_decide(IntentSignal(text="", action="task_generate"), role="student"))
     assert decision.business == "question"
-    assert decision.name == "出题助手"
+    assert decision.name == "题库与出题助手"
     assert decision.extra.get("routed_by") == "action"
 
 

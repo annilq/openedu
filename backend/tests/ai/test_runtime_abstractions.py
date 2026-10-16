@@ -69,10 +69,12 @@ class _SpyProvider(FakeLLMProvider):
     def __init__(self) -> None:
         super().__init__()  # 复用替身的计数与失败编排（缺了会丢 schema_calls 等状态）
         self.user_prompt: str | None = None
+        self.system_prompt: str | None = None
         self.context: str | None = None
 
     async def stream(self, system, prompt, *, schema=None, tools=None, history=None):
         self.user_prompt = prompt
+        self.system_prompt = system
         async for ev in super().stream(system, prompt, schema=schema, tools=tools, history=history):
             yield ev
 
@@ -84,8 +86,13 @@ class _SpyProvider(FakeLLMProvider):
         )
 
 
-def test_question_agent_injects_sop_into_user_prompt():
-    provider = _SpyProvider()
+def test_question_agent_injects_sop_into_system_prompt():
+    """SOP 注入模型上下文（ADR-0097 起位置在 tool loop 首轮 system）。
+
+    旧实现把 SOP 拼进出题的 user_prompt（约束解码 run 内 with_skills）；tool loop
+    化后 initial_system 统一承载——守护的是「SOP 真的到达模型」，不是位置本身。
+    """
+    provider = _SpyProvider().script("generate_questions")
     agent = QuestionSubAgent(provider=provider)
     ctx = SubAgentContext(role="teacher", message="帮我出3道三年级数学选择题", skills="SOP-XYZ")
 
@@ -93,8 +100,8 @@ def test_question_agent_injects_sop_into_user_prompt():
         return [ev async for ev in agent.run(ctx.message or "", ctx)]
 
     asyncio.run(_go())
-    assert provider.user_prompt is not None
-    assert "SOP-XYZ" in provider.user_prompt
+    assert provider.system_prompt is not None
+    assert "SOP-XYZ" in provider.system_prompt
 
 
 def test_tutor_agent_injects_sop_into_context():

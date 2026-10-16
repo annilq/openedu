@@ -18,7 +18,7 @@ from types import SimpleNamespace
 
 from sqlmodel import select
 
-from agent_core.ports import StructuredDone, TextDelta
+from agent_core.ports import StructuredDone, TextDelta, ToolCall
 from agent_core.protocol import (
     EVENT_ASSISTANT_MESSAGE,
     EVENT_DATA,
@@ -33,7 +33,8 @@ from agent_core.protocol import (
 from agent_core.registry import discover_subagent_manifests
 from agent_core.runtime import RouteDecision
 from agent_core.subagent import SubAgentContext
-from app.ai.subagents.question.agent import QuestionSubAgent, parse_specs_from_text
+from app.ai.subagents.question.agent import QuestionSubAgent
+from app.ai.subagents.question.specs import parse_specs_from_text
 from app.ai.subagents.tutor.agent import TutorSubAgent
 from app.db.models import Conversation, Message
 from app.domain.provider import EducationLLMProvider
@@ -66,12 +67,27 @@ _JUDGE_CARD: dict = {
 
 
 class _JudgeFakeProvider(EducationLLMProvider):
-    """确定性出题替身：按 schema 调用返回固定判断题面。"""
+    """确定性出题替身：按 schema 调用返回固定判断题面。
+
+    ADR-0097：出题走 tool loop——``tools`` 非空的首轮产出
+    ``generate_questions`` ToolCall（规格经 ctx.extra["specs"] 结构化路径进
+    handler），回灌后的第二轮产收尾正文。
+    """
+
+    def __init__(self) -> None:
+        self.stream_calls: int = 0
 
     async def stream(self, system, prompt, *, schema=None, tools=None, history=None):
+        self.stream_calls += 1
         if schema is not None:
             yield TextDelta(delta="先确认考查点")
             yield StructuredDone(data=dict(_JUDGE_QUESTION))
+            return
+        if tools:
+            if self.stream_calls == 1:
+                yield ToolCall(name="generate_questions", args={})
+                return
+            yield TextDelta(delta="讲解")
             return
         yield TextDelta(delta="讲解")
 
@@ -147,6 +163,37 @@ def test_parse_specs_from_text_detects_judge():
 
     plain = parse_specs_from_text("帮我出3道三年级数学选择题，关于分数")
     assert plain[0]["judge"] is False
+
+
+def test_specs_from_context_expands_count_on_every_path():
+    """三条规格路径统一 expand：正则兜底漏展开会把「2 道」静默变成 1 道。
+
+    ADR-0097 曾据此红过一轮——specs_from_context 的结构化路径走了
+    build_prompt_from_specs（展开），正则兜底路径却直接返回 spec 列表。
+    """
+    from app.ai.subagents.question.specs import specs_from_context
+
+    ctx = SubAgentContext(role="teacher", message="帮我出2道三年级数学选择题，关于分数")
+    # 正则兜底路径
+    assert len(specs_from_context([], ctx=ctx)) == 2
+    # 结构化路径（ctx.extra["specs"]，slot filling 注入的同款）
+    assert (
+        len(
+            specs_from_context(
+                [
+                    {
+                        "subject": "数学",
+                        "grade": 3,
+                        "knowledge_point": "分数",
+                        "qtype": "choice",
+                        "count": 2,
+                    }
+                ],
+                ctx=ctx,
+            )
+        )
+        == 2
+    )
 
 
 def test_judge_spec_card_keeps_answer_and_flags_judge():

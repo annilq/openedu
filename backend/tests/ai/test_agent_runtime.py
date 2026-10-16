@@ -63,7 +63,7 @@ async def _run(message: str, *, role: str):
 def test_decide_teacher_question():
     decision = asyncio.run(_decide("帮我出几道数学题", role="teacher"))
     assert decision.business == "question"
-    assert decision.name == "出题助手"
+    assert decision.name == "题库与出题助手"
 
 
 def test_decide_teacher_query():
@@ -87,7 +87,7 @@ ROUTING_REGRESSION = [
     ("查一下这道题为什么选B", "teacher", "tutor", "伴学答疑"),
     ("今天有什么作业", "teacher", "query", "学情查询"),
     ("帮我创建一个任务，包含四年级数学题", "teacher", "guide", "任务引导"),
-    ("帮我出2道四年级数学题", "teacher", "question", "出题助手"),
+    ("帮我出2道四年级数学题", "teacher", "question", "题库与出题助手"),
     # 删除单字「查」后的「不得误伤」面：查询类问句必须仍落学情查询
     ("我的任务", "teacher", "query", "学情查询"),
     ("我的错题", "teacher", "query", "学情查询"),
@@ -114,7 +114,7 @@ def test_decide_student_can_generate_question():
     """ADR-0081 §2.2：学生可自练出题，出题助手对师生双开，故学生自由文本出题路由到 question。"""
     decision = asyncio.run(_decide("帮我出几道数学题", role="student"))
     assert decision.business == "question"
-    assert decision.name == "出题助手"
+    assert decision.name == "题库与出题助手"
 
 
 def test_decide_student_query_visible():

@@ -32,7 +32,7 @@ from agent_core.registry import build_subagent, discover_subagent_manifests
 from agent_core.runtime import AgentRuntime
 from agent_core.subagent import SubAgentContext, run_with_tools
 from app.ai.subagents.query import QuerySubAgent
-from app.ai.subagents.query.render import render_cards
+from app.ai.shared.render import render_cards
 from app.ai.shared.tool_support import ANSWER_FIELDS
 from app.ai.subagents.query.tools.registry import QUERY_TOOLS
 from app.ai.subagents.tutor import TutorSubAgent

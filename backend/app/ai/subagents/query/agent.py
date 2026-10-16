@@ -23,7 +23,7 @@ from typing import Any, AsyncIterator
 
 from agent_core.protocol import data_event
 from agent_core.subagent import BaseSubAgent, SubAgentContext, run_with_tools
-from app.ai.subagents.query.render import render_cards
+from app.ai.shared.render import render_cards
 from app.ai.subagents.query.tools.registry import QUERY_TOOLS
 from app.features.assistant.kp_focus import format_kp_focus
 

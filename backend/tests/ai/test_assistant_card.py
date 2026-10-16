@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from app.ai.subagents.query.render import (
+from app.ai.shared.render import (
     INTERACTIVE_SCENE_KIND,
     Card,
     render_scene_card,
