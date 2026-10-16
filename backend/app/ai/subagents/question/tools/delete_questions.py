@@ -1,6 +1,7 @@
 """工具 ``delete_questions``：批量硬删题库题（仅教师，ADR-0097）。
 
-与 REST ``DELETE /questions`` 同一下游（``repository.delete_bank_questions``）：
+与 REST ``DELETE /questions`` 同一下游（``questions.service.delete_bank_questions``，
+ADR-0097 写路径下沉：业务工具不得直连 repository，分层不变量 7）：
 级联清理引用它的数据（任务里的题目副本、作答记录、错题；任务因此变空则连
 任务一并删）。归属校验在 repository（owner 隔离）。
 
@@ -15,7 +16,7 @@ from typing import Any
 from agent_core.subagent import SubAgentContext
 from agent_core.tools import ToolSpec
 from app.ai.shared.tool_support import ToolArgumentError, caller_role, resolve_teacher
-from app.features.questions.repository import delete_bank_questions
+from app.features.questions import service as questions_service
 
 NAME = "delete_questions"
 DESCRIPTION = (
@@ -50,7 +51,7 @@ async def handler(args: dict[str, Any], *, ctx: SubAgentContext, session: Any = 
         except (ValueError, TypeError, AttributeError) as exc:
             raise ToolArgumentError(f"question_ids 含非法 uuid：{raw!r}") from exc
 
-    result = delete_bank_questions(
+    result = questions_service.delete_bank_questions(
         session=session, teacher_id=teacher.id, question_ids=ids
     )
     return {

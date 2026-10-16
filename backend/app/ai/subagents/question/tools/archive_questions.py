@@ -1,6 +1,7 @@
 """工具 ``archive_questions``：批量归档 / 恢复题库题（仅教师，ADR-0097）。
 
-与 REST ``POST /questions/archive`` 同一下游（``repository.set_bank_questions_archived``）。
+与 REST ``POST /questions/archive`` 同一下游（``questions.service.set_bank_questions_archived``，
+ADR-0097 写路径下沉：业务工具不得直连 repository，分层不变量 7）。
 与删除的分工（ADR-0053 P2）：删除是「彻底不要了」（被任务引用的题删不掉），
 归档是「先收起来」——被引用也能归档，且随时能恢复（``archived=false``）。
 删除不可逆、归档可逆，故 AI 侧默认引导归档而非删除。
@@ -12,7 +13,7 @@ from typing import Any
 from agent_core.subagent import SubAgentContext
 from agent_core.tools import ToolSpec
 from app.ai.shared.tool_support import ToolArgumentError, caller_role, resolve_teacher
-from app.features.questions.repository import set_bank_questions_archived
+from app.features.questions import service as questions_service
 
 NAME = "archive_questions"
 DESCRIPTION = (
@@ -47,7 +48,7 @@ async def handler(args: dict[str, Any], *, ctx: SubAgentContext, session: Any = 
         except (ValueError, TypeError, AttributeError) as exc:
             raise ToolArgumentError(f"question_ids 含非法 uuid：{raw!r}") from exc
 
-    result = set_bank_questions_archived(
+    result = questions_service.set_bank_questions_archived(
         session=session, teacher_id=teacher.id, question_ids=ids, archived=archived
     )
     return {

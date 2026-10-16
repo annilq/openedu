@@ -15,10 +15,8 @@ from app.core.deps import CurrentTeacher, SessionDep
 from app.core.pagination import clamp_page_size, encode_cursor
 from app.features.materials.scene_fusion import scene_spec_for_read
 from app.features.questions.repository import (
-    delete_bank_questions,
     get_question_usages,
     list_bank_questions,
-    set_bank_questions_archived,
 )
 from app.features.questions.schemas import (
     ArchiveQuestionsReq,
@@ -29,6 +27,10 @@ from app.features.questions.schemas import (
     DeleteQuestionsResult,
     QuestionUsageItem,
     QuestionUsagesResp,
+)
+from app.features.questions.service import (
+    delete_bank_questions,
+    set_bank_questions_archived,
 )
 
 router = APIRouter(prefix="/questions", tags=["questions"])
