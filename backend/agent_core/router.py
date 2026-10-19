@@ -36,6 +36,23 @@ class IntentSignal:
         return cls(text=text)
 
 
+@dataclass(frozen=True)
+class Classification:
+    """``classify`` 的结构化结果（ADR-0098）。
+
+    - ``business``：路由目标。
+    - ``trigger``：规则匹配命中的触发词；启发式 / 兜底 / 无可用清单时为 ``None``。
+      业务合并后（如 question 并入 tasks），调用方靠命中词分子意图——出题槽位
+      预检按「词落在哪个 intent 组」选 schema，无需第二套匹配器。
+    - ``level``：决策层级（``rule`` / ``heuristic`` / ``fallback``），供测试断言
+      路由走了哪一级，重排词表时不碎。
+    """
+
+    business: str
+    trigger: str | None = None
+    level: str = "fallback"
+
+
 def _norm(text: str) -> str:
     return (text or "").strip().lower()
 
@@ -65,26 +82,34 @@ def _ordered(businesses: Sequence[str], manifests: dict[str, SubAgentManifest]) 
 
 def _rule_match(
     text: str, businesses: Sequence[str], manifests: dict[str, SubAgentManifest]
-) -> str | None:
+) -> tuple[str, str] | None:
+    """规则匹配：返回 ``(business, 命中触发词)``；未命中返回 ``None``。
+
+    命中词随结果返回（ADR-0098）：业务合并后调用方需要它分子意图（如出题槽位
+    预检按命中词落在哪个 intent 组选 schema）。词表遍历顺序即优先级语义，
+    与原先只返回 business 时完全一致。
+    """
     low = _norm(text)
     for biz in _ordered(businesses, manifests):
         for trig in manifests[biz].triggers:
             if _norm(trig) in low:
-                return biz
+                return biz, trig
     return None
 
 
 def _heuristic(
     text: str, businesses: Sequence[str], manifests: dict[str, SubAgentManifest]
-) -> str:
+) -> tuple[str, str]:
+    """启发式兜底：返回 ``(business, level)``——``heuristic``（hint 命中）或
+    ``fallback``（priority 最低业务 / tutor）。"""
     low = _norm(text)
     ordered = _ordered(businesses, manifests)
     for biz in ordered:
         for hint in manifests[biz].hints:
             if _norm(hint) in low:
-                return biz
+                return biz, "heuristic"
     # 兜底：priority 最低的业务
-    return ordered[-1] if ordered else "tutor"
+    return (ordered[-1] if ordered else "tutor"), "fallback"
 
 
 async def classify(
@@ -92,13 +117,15 @@ async def classify(
     *,
     available: Sequence[str],
     manifests: dict[str, SubAgentManifest],
-) -> str:
+) -> Classification:
     """把自由文本路由到某个可见 business。链路：规则 → 启发式。"""
     if not available:
-        return "tutor"
+        return Classification(business="tutor", level="fallback")
 
     ruled = _rule_match(text, available, manifests)
     if ruled is not None:
-        return ruled
+        biz, trig = ruled
+        return Classification(business=biz, trigger=trig, level="rule")
 
-    return _heuristic(text, available, manifests)
+    biz, level = _heuristic(text, available, manifests)
+    return Classification(business=biz, level=level)

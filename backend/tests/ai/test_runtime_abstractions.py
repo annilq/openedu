@@ -154,7 +154,11 @@ def _manifest(business: str, *, priority: int, triggers: list[str], hints: list[
 
 
 def _route(text: str, available: list[str], manifests: dict) -> str:
-    return asyncio.run(classify(text, available=available, manifests=manifests))
+    # classify 返回结构化 Classification（business / trigger / level）；
+    # 本文件只断言路由归属，故取 .business。
+    return asyncio.run(
+        classify(text, available=available, manifests=manifests)
+    ).business
 
 
 def test_router_orders_by_manifest_priority_only():
