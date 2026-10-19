@@ -1,7 +1,8 @@
 # ADR-0095 工具输入 schema 与缺槽追问
 
-- 状态：草稿（待评审）
+- 状态：已采纳（§2.2 澄清帧的「前端据此渲染选项 chips」部分由 [ADR-0100](0100-clarify-as-text-not-options.md) 修订为纯文本引导）
 - 日期：2026-10-15
+- 修订：ADR-0100（缺槽追问只做文本引导，不做选项表单）
 - 关联：ADR-0081（结构化动作）、ADR-0089（判断题闭环下沉）、ADR-0061（JSON 列 `none_as_null` 纪律）、ADR-0053（迁移纪律）；现状分析见 `docs/research/slot-filling-analysis.md` 与 `docs/research/slot-filling-mainstream.md`
 
 ## 1. 背景
@@ -46,7 +47,7 @@
 5. 校验 `required`：有缺则产出澄清帧、写回已知槽位、return（不生成）。
 6. 无缺则进入生成；生成前先发一条「已确认规格」汇总（覆盖被默认填充的槽），再出 DATA 帧。
 
-澄清帧走「普通消息 + 标记」：用一条助手消息帧承载，文本为各缺槽 `prompt` 拼接，`extra` 带 `clarify: {"missing_slots": [{"name","prompt","type","enum","min","max"}]}`。不新增 eventType（沿用 `agent_core/protocol.py:37` 的 `AssistantEvent`，业务字段走 `extra`，见 `protocol.py:55`）。
+澄清帧走「普通消息 + 标记」：用一条助手消息帧承载（正文话术见 ADR-0100，早期实现是各缺槽 `prompt` 空格拼接），`extra` 带 `clarify: {"missing_slots": [{"name","prompt","type","enum","min","max"}]}`。不新增 eventType（沿用 `agent_core/protocol.py:37` 的 `AssistantEvent`，业务字段走 `extra`，见 `protocol.py:55`）。
 
 ### 2.3 跨轮记忆：Conversation.slots 持久化
 

@@ -335,7 +335,9 @@ void main() {
     expect(find.text('我都有哪些娃'), findsOneWidget);
 
     await openHistory(tester);
-    await tester.tap(find.byIcon(LucideIcons.squarePen));
+    // 历史态的「新对话」图标是 plus（ADR-0048：「去翻历史的人，下一步常是想开一段新的」；
+    // 早期是 squarePen「编辑风」，与对话态的 plus 不一致，已统一）。
+    await tester.tap(find.byIcon(LucideIcons.plus));
     await tester.pumpAndSettle();
 
     expect(find.text('我都有哪些娃'), findsNothing,
@@ -346,9 +348,13 @@ void main() {
   });
 
   testWidgets('历史入口键盘可达：Tab 到它、Enter 进入列表', (tester) async {
-    // showBack=false → 顶栏只有一个可点区域，首次 Tab 必然落在它上面。
+    // 对话态顶栏是「新对话 / 历史 / 导出」三连（各占一个图标槽位），故首次 Tab 落在
+    // 最左的「新对话」上，历史是**第二**个焦点。断言点在此：历史入口自己必须进焦点树
+    // ——裸 GestureDetector 跳不到、Enter 点不动，而 flutter analyze 照不出来。
     await pumpPage(tester, _FakeAssistant(), showBack: false);
 
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pumpAndSettle();
     await tester.sendKeyEvent(LogicalKeyboardKey.tab);
     await tester.pumpAndSettle();
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
@@ -570,11 +576,16 @@ void main() {
     await tester.tap(find.text('23 + 45 怎么算'));
     await tester.pumpAndSettle();
 
-    // 追问卡：标题 + 两个槽的 prompt + 年级数字 chip 都在
-    expect(find.text('还差这些信息：'), findsOneWidget);
-    expect(find.text('几年级？（1-9）'), findsOneWidget);
-    expect(find.text('要什么题型？'), findsOneWidget);
-    expect(find.text('选择题'), findsWidgets, reason: 'enum 槽铺中文选项 chip');
+    // 追问卡（ADR-0100）：不再逐槽铺选项 chip，只剩一个「一句补齐」入口；正文那句
+    // 引导由后端下发（本假仓库的 text 就是它）。grade/qtype 的 chip 必须消失。
+    expect(find.text('请告诉我几年级、要什么题型'), findsOneWidget);
+    expect(find.textContaining('一句补齐'), findsOneWidget);
+    expect(find.text('选择题'), findsWidgets,
+        reason: '汇总卡里仍会念到已确认值（value_label），但不再是选项 chip');
+    for (final chipOnly in ['3', 'choice', 'fill']) {
+      expect(find.text(chipOnly), findsNothing,
+          reason: '选项 chip 已移除（ADR-0100）：$chipOnly 不该单独可点');
+    }
 
     // 汇总卡：逐项列出已确认规格
     expect(find.text('已确认规格：'), findsOneWidget);
@@ -582,20 +593,21 @@ void main() {
     expect(find.text('题型'), findsOneWidget);
   });
 
-  testWidgets('回放的追问卡仍可点：值作为新消息发回本会话', (tester) async {
-    // 归属收敛后每条历史会话都是本人的、都可续接——追问卡不是静态展板，
-    // 点 chip 等于接着补槽，后端按同一套 fill_slots 合并。
+  testWidgets('回放的追问入口仍可点：整句一次发回本会话', (tester) async {
+    // 归属收敛后每条历史会话都是本人的、都可续接——追问入口不是静态展板，
+    // 点它等于接着补槽，后端按同一套 fill_slots 合并（ADR-0100：一次补齐）。
     final repo = _FakeSlotRepo();
     await pumpPage(tester, repo);
     await openHistory(tester);
     await tester.tap(find.text('23 + 45 怎么算'));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('3'));
+    await tester.tap(find.textContaining('一句补齐'));
     await tester.pumpAndSettle();
 
-    expect(find.text('3年级'), findsOneWidget,
-        reason: '点年级 chip 后该值作为一条用户消息进入对话区');
+    // 命中的两处：卡片上的示例句 + 刚发出的用户气泡。后者才是本句要验的东西。
+    expect(find.textContaining('三年级数学'), findsNWidgets(2),
+        reason: '点示例句后整句作为一条用户消息进入对话区');
     expect(find.byType(ShadInput), findsOneWidget, reason: '仍在本会话内，可继续输入');
   });
 }

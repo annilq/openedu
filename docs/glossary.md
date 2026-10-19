@@ -24,7 +24,7 @@
 
 ## 澄清帧（clarification frame）
 
-缺槽时发给用户的引导消息。复用普通助手消息帧，文本为各缺槽 `prompt` 拼接，`extra` 带 `clarify: {"missing_slots": [...]}`。不新增事件类型。
+缺槽时发给用户的引导消息。复用普通助手消息帧，文本是一句「还差什么 + 怎么一次说清」（`slot_clarify.clarify_sentence`，见 ADR-0100），`extra` 带 `clarify: {"missing_slots": [...]}`。不新增事件类型。**不做选项表单**：补槽应一次往返，不该拆成逐项点选。
 
 ## 槽位记忆 / 槽位持久化（slot memory）
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 import importlib
 
 from app.domain.subjects import SUBJECTS
+from app.features.assistant.slot_clarify import clarify_sentence
 from app.features.assistant.slot_filling import (
     fill_slots,
     resolve_enum_ref,
@@ -188,3 +189,44 @@ def test_count_defaults_to_one_when_absent():
     )
     assert result["merged"]["grade"] == 3
     assert result["merged"]["count"] == 1
+
+
+# ── 追问话术（ADR-0100）：一句说完，不逐槽反问 ─────────────────────────────
+
+
+def test_clarify_sentence_lists_labels_and_one_shot_example():
+    """三个缺槽 → 一句话点出「还差什么」+ 一个可照抄的示例句。
+
+    锁的是 ADR-0100 的核心取舍：追问只做文本引导，不铺选项 chip 逼用户点三次。
+    话术必须同时回答「还差什么」与「怎么一次说清」，否则用户仍要猜措辞。
+    """
+    missing = [
+        {"name": "subject", "prompt": "请问要出哪个科目？"},
+        {"name": "grade", "prompt": "几年级？（1-9）"},
+        {"name": "qtype", "prompt": "要什么题型？"},
+    ]
+    text = clarify_sentence(missing)
+    assert "科目" in text and "年级" in text and "题型" in text
+    assert "一次" in text, "必须明确告知可以一次说完（否则用户仍会一项一项补）"
+    assert "例如" in text, "必须给示例句，用户才能照抄一句补齐"
+    # 逐槽的反问句不该再出现在正文里（它们只在 bubble 外部当选项标签用）
+    assert "？" not in text
+    assert "请问要出哪个科目" not in text
+
+
+def test_clarify_sentence_single_slot_is_shorter():
+    """只剩一个槽时话术收短，不再说「这几项」。"""
+    text = clarify_sentence([{"name": "qtype", "prompt": "要什么题型？"}])
+    assert text.startswith("还差题型")
+    assert "这几项" not in text
+
+
+def test_clarify_sentence_unknown_slot_falls_back_to_name():
+    """schema 新增了话术表里没有的槽 → 退回槽名本身，不抛、不留空。"""
+    text = clarify_sentence([{"name": "foo_bar", "prompt": "?"}])
+    assert "foo_bar" in text
+
+
+def test_clarify_sentence_empty_is_empty_string():
+    """无缺槽返回空串：调用方据此判断「本轮不是澄清」。"""
+    assert clarify_sentence([]) == ""

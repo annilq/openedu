@@ -486,3 +486,38 @@ def test_replay_bubbles_carry_clarify_and_summary(db):
     # 汇总之后的生成行：题卡整帧照常投影（卡片链路不受结构化 extra 影响）
     gen_bubble = bubbles[4]
     assert gen_bubble["cards"], "汇总轮生成的题卡应随气泡回来"
+
+
+def test_clarify_message_text_is_one_shot_guidance(db):
+    """澄清帧正文是一句「还差什么 + 怎么一次说全」，不是逐槽反问（ADR-0100）。
+
+    旧正文是各缺槽 ``prompt`` 空格拼接（「请问要出哪个科目？ 几年级？（1-9） 要什么
+    题型？」），气泡里念成一串反问，且与前端铺出的选项 chip 重复。ADR-0100 把引导
+    收回一句话：用户回一句「三年级数学、选择题」即补齐，不必点三次。
+    """
+    pid = uuid.uuid4()
+    rt = _StubRuntime()
+    events = _parse(
+        asyncio.run(
+            _drain(
+                chat(
+                    caller=_caller("teacher", user_id=pid, teacher_id=pid),
+                    req=_req("出几道题"),
+                    session=db,
+                    runtime=rt,
+                )
+            )
+        )
+    )
+    clarify = next(e for e in events if e.get("extra", {}).get("clarify"))
+    text = clarify["text"]
+    # 三个缺槽的中文标签都在一句话里
+    for label in ("科目", "年级", "题型"):
+        assert label in text, f"正文必须点名缺哪个槽（{label}）"
+    assert "一次" in text, "必须告诉用户可以一次说完"
+    assert "例如" in text, "必须给可照抄的示例句"
+    # 逐槽的反问句不再出现在正文里
+    assert "？" not in text, "正文不该是一串反问"
+    # 协议侧 missing_slots 照旧下发
+    names = {m["name"] for m in clarify["extra"]["clarify"]["missing_slots"]}
+    assert names == {"subject", "grade", "qtype"}

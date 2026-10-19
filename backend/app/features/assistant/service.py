@@ -599,6 +599,7 @@ async def chat(
         # 汇总对它们只是噪声）。
         # 结构化 POST /tasks/generate 经 ctx.extra["specs"] 自带校验，必须跳过本预检。
         if not ctx.extra.get("specs"):
+            from app.features.assistant.slot_clarify import clarify_sentence
             from app.features.assistant.slot_filling import fill_slots
             from app.features.assistant.slot_summary import (
                 summarize_slots,
@@ -638,7 +639,10 @@ async def chat(
                 if _result["clarifying"]:
                     # 写回已知槽位，供下一轮合并续接（跨轮记忆）
                     session.commit()
-                    _clarify_text = " ".join(m["prompt"] for m in _result["missing"])
+                    # 追问正文是一句「还差什么 + 怎么一次说全」（ADR-0100）：不逐槽
+                    # 反问、也不铺选项 chip——用户一句话就能补齐，不该被迫点三次。
+                    # `extra.clarify` 结构化载荷照旧下发：它是协议，历史回放与读屏靠它。
+                    _clarify_text = clarify_sentence(_result["missing"])
                     yield AssistantEvent(
                         eventType=EVENT_ASSISTANT_MESSAGE,
                         text=_clarify_text,

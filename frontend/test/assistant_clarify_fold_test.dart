@@ -9,7 +9,7 @@ void main() {
   test('extra.clarify.missing_slots 收进 clarifySlots', () {
     const ev = AssistantEvent(
       eventType: AssistantEventType.assistantMessage,
-      text: '请问要出哪个科目？ 几年级？（1-9）',
+      text: '还差科目、年级这几项，可以一次说完。例如：三年级数学、选择题、5 道',
       extra: {
         'clarify': {
           'missing_slots': [
@@ -36,8 +36,9 @@ void main() {
 
     final fold = const AiTextFold().apply(ev);
 
-    // 澄清帧**同时**是普通正文（各缺槽 prompt 拼成的句子），不是二选一
-    expect(fold.text, contains('请问要出哪个科目？'));
+    // 澄清帧**同时**是普通正文（ADR-0100：一句「还差什么 + 怎么一次说全」），
+    // 不是二选一。协议侧的 missing_slots 照旧解析，供「一句补齐」入口判定。
+    expect(fold.text, contains('还差科目、年级'));
     expect(fold.clarifySlots.length, 2);
     expect(fold.clarifySlots[0].name, 'subject');
     expect(fold.clarifySlots[0].values, ['数学', '语文', '英语']);

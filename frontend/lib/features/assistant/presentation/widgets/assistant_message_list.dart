@@ -166,9 +166,10 @@ class _Bubble extends StatelessWidget {
                   ],
                 ),
               ),
-            // 缺槽引导卡（ADR-0095）：澄清帧的 `extra.clarify` 非空时渲染可点选 /
-            // 可输入的引导卡，选中的值经 [onPrompt] 作为一条用户消息发出→后端合并该
-            // 槽后继续。用户气泡上永不渲染（只有助手会追问）。
+            // 缺槽引导（ADR-0095 / ADR-0100）：正文已经把它念成一句「还差什么 +
+            // 怎么一次说完」，这里只补一个可点即发的示例句（不想打字时点一下）。
+            // **不再**逐槽铺选项 chip：补三项要点三次，比纯文本更慢。
+            // 用户气泡上永不渲染（只有助手会追问）。
             if (!isUser && (message.clarify ?? const <ClarifySlot>[]).isNotEmpty)
               AssistantClarifyCard(
                 slots: message.clarify!,

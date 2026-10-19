@@ -75,3 +75,4 @@ genkit 对每个工具**无条件**套 `_ensure_strict_json_schema` + `strict: T
 | `tests/ai/test_subagents_seam.py` | SubAgent 契约 |
 | `tests/ai/test_guide_subagent.py` | 写意图走 `guide`（优先级不被 `query` 抢走） |
 | `tests/features/assistant/test_slot_context_carryover.py` | 已确认规格跨轮回灌（ADR-0099） |
+| `tests/features/assistant/test_slot_filling.py` | 缺槽追问话术：一句话点齐缺项 + 可照拄示例（ADR-0100） |

@@ -22,7 +22,13 @@ class AssistantMessage {
   final String stage; // thinking 时的阶段文案（路由/工具帧提取），空 = 默认「思考中…」
   final List<RagSource> sources; // 答疑引用落点（答案下方「参考来源」条）
   final List<SuggestedAction>? followups; // 回复后 follow-up chips（SUGGESTED_ACTIONS 帧，票 03(a)）
-  final List<ClarifySlot>? clarify; // 缺槽引导（extra.clarify，ADR-0095）：非空时渲染引导输入卡
+
+  /// 缺槽引导（ADR-0095 / ADR-0100）：非空时补一个「一句补齐」快捷入口。
+  ///
+  /// ADR-0100：正文已由后端念成一句引导，这里**不再**逐槽铺选项 chip——补三项点三次
+  /// 往返比纯文本更慢。本卡只把示例句做成可点的一行。
+  final List<ClarifySlot>? clarify;
+
   final List<SummarySlot>? summary; // 规格汇总（extra.summary，ADR-0095）：非空时渲染带修改入口的汇总卡
 
   const AssistantMessage({
