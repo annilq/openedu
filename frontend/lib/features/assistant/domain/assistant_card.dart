@@ -161,7 +161,7 @@ class AssistantCardAction {
 class AssistantCardKind {
   const AssistantCardKind._();
 
-  /// 出题引擎的题目卡（`app/ai/subagents/question/translate.py`）。
+  /// 出题引擎的题目卡（`app/ai/subagents/tasks/generation/translate.py`）。
   static const question = 'question';
 
   /// 任务列表（`list_teacher_tasks` / `list_today_tasks`）。
