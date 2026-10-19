@@ -4,8 +4,11 @@
 「小明最近错题多吗」这类跨子域的聚合问题在本 agent 内闭环——这是选「能力域
 粗切」而非按 features 一级目录细切的理由（细切下该问题无处路由）。
 
-执行模型：tool loop（7 个同步工具，无流式执行体）。``requires_tool_data=True``
+执行模型：tool loop（8 个同步工具，无流式执行体）。``requires_tool_data=True``
 （结论必须有据，ADR-0033；元问题由 capability 在路由层接走）。
+
+ADR-0098：``list_students`` 自 students 域吸收（原单工具域的存在理由是路由边界，
+现由 tasks 的名单 triggers 承接）；出题与题库工具在第二波并入。
 
 写操作只有 ``create_draft`` 一个且**只起草**：建 draft 态任务，确认与派发
 由用户在确认卡上点「确认发布」完成（前端直走 REST，ADR-0097 §2.3）。学生端

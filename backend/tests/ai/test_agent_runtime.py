@@ -100,8 +100,8 @@ ROUTING_REGRESSION = [
     ("查题库里有哪些题", "teacher", "question", "题库与出题助手"),
     # 触发词与启发式都不该用单字「查」接走讲解类提问
     ("帮我查查轴对称是什么", "teacher", "tutor", "伴学答疑"),
-    # 人群域（ADR-0097 新增）：纯名单问句归 students，学情语境归 tasks
-    ("我班有哪些学生", "teacher", "students", "学生名单助手"),
+    # 名单域（ADR-0098 起吸收进 tasks）：纯名单问句归 tasks，学情语境同样归 tasks
+    ("我班有哪些学生", "teacher", "tasks", "任务学情助手"),
     ("小明最近错题多吗", "teacher", "tasks", "任务学情助手"),
     # 能力自述（零 LLM 元问题）
     ("你能做什么", "teacher", "capability", "能力自述"),

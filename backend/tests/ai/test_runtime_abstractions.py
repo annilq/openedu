@@ -44,7 +44,7 @@ def test_build_provider_without_engine_defers_to_global_resolution():
 def test_discovery_picks_up_agent_class_and_skill_prompt():
     manifests = discover_subagent_manifests()
     # ADR-0097：query 解散、guide 删除，业务面重组为 tasks/question/students/tutor
-    assert set(manifests) >= {"tutor", "question", "tasks", "students"}
+    assert set(manifests) >= {"tutor", "question", "tasks"}
     assert "query" not in manifests, "query 已解散（ADR-0097）"
     assert "guide" not in manifests, "guide 已删除（ADR-0097）"
     for business, manifest in manifests.items():

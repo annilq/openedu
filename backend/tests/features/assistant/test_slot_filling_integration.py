@@ -183,13 +183,14 @@ def test_complete_specs_still_generate(db):
     "business,text",
     [
         ("tasks", "看看我的错题"),
-        ("students", "我班有哪些学生"),
+        ("tasks", "我班有哪些学生"),
         ("tutor", "为什么天空是蓝的"),
     ],
 )
 def test_non_question_businesses_never_clarify(db, business, text):
-    """预检已扩展到全部业务，但 tasks/students/tutor 全 optional → 永不追问。
+    """预检已扩展到全部业务，但 tasks/tutor 全 optional → 永不追问。
 
+    ADR-0098：名单问句随 students 域吸收进 tasks，仍不触发任何澄清。
     tutor 的 question_text 亦为**非必填**（消息本身就是问题），否则自由问答会被
     恒追问「你想问什么？」而阻塞（ADR-0095 §2.4）。
     """

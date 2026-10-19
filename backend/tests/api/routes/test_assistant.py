@@ -453,7 +453,7 @@ def test_conversation_list_only_returns_my_own(client, fake_llm):
     mine = rows[teacher_sid]
     assert mine["title"] == "我都有哪些娃"  # 会话名 = 首条用户消息截断
     assert mine["bubble_count"] == 2, "提问 + 回答；routing/tool 不算气泡"
-    assert mine["kind"] == "students"  # 人群问句归 students 域（ADR-0097）
+    assert mine["kind"] == "tasks"  # 名单问句归 tasks（students 域已吸收，ADR-0098）
     assert "student_id" not in mine and "student_name" not in mine, "归属字段已移除"
 
     # 学生看到的是**自己**那段，且只有那一段

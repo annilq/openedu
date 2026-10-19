@@ -2,12 +2,14 @@
 
 守护四件事，全部**确定性**、不接真实模型（CI 红线）：
 
-1. **清单与装配**：``tasks`` 被发现、``query``/``guide`` 已消失、``priority=14``
-   （压住 question 的泛触发词「题目」、接住原 guide 的写意图位）；SubAgent 实例
-   携带全部 7 个工具（6 读 + 1 写 create_draft）。
+1. **清单与装配**：``tasks`` 被发现、``query``/``guide``/``students`` 已消失、
+   ``priority=14``（压住 question 的泛触发词「题目」、接住原 guide 的写意图位）；
+   SubAgent 实例携带全部 8 个工具（7 读 + 1 写 create_draft；``list_students``
+   自 students 域吸收，ADR-0098）。
 2. **路由边界**：带学情语境的问句（任务/作业/错题/复习）归 ``tasks``，
-   「出题」意图仍归 ``question``，纯人群问句归 ``students``；学生端同样可见
-   ``tasks``（查自己），「出题」对学生也开放（ADR-0081 §2.2）。
+   纯名单问句也归 ``tasks``（students 域已吸收）；「出题」意图仍归
+   ``question``；学生端同样可见 ``tasks``（查自己），「出题」对学生也开放
+   （ADR-0081 §2.2）。
 3. **展示投影**（决策 11 / ADR-0042）：卡片是**类型化**的——``kind`` 作判别键、
    载荷是结构化字段（``items`` / ``stats`` / ``total``），不是拼好的展示字符串；
    答案与解析永不进卡片，错误结果不炸流。
@@ -50,8 +52,9 @@ from tests.utils.fake_provider import FakeLLMProvider
 def test_manifest_declares_tasks_domain():
     manifests = discover_subagent_manifests()
     assert "tasks" in manifests
-    # ADR-0097：query 解散、guide 删除——两者的位置由 tasks 接任
+    # ADR-0097：query 解散、guide 删除；ADR-0098：students 域吸收进 tasks
     assert "query" not in manifests and "guide" not in manifests
+    assert "students" not in manifests
     m = manifests["tasks"]
     assert (m.business, m.name) == ("tasks", "任务学情助手")
     assert m.roles == ["teacher", "student"]
@@ -59,6 +62,13 @@ def test_manifest_declares_tasks_domain():
     assert m.priority == 14
     # 无 skills：SOP 纪律已并入 system prompt（原 query_sop 的核心约束逐条在内）
     assert m.skills == []
+
+
+def test_manifest_absorbs_roster_triggers():
+    """ADR-0098：students 的纯人群短语进 tasks triggers（路由边界由归属表达）。"""
+    triggers = discover_subagent_manifests()["tasks"].triggers
+    for phrase in ("有哪些学生", "我的娃", "我班", "班里", "学生名单", "多少个学生"):
+        assert phrase in triggers, phrase
 
 
 def test_agent_carries_all_tasks_tools():
@@ -71,6 +81,7 @@ def test_agent_carries_all_tasks_tools():
         "get_progress",
         "list_due_reviews",
         "get_mastery",
+        "list_students",
         "create_draft",
     ]
     assert [t.name for t in TASKS_TOOLS] == [t.name for t in agent.tools]
@@ -131,9 +142,10 @@ def test_question_intent_still_goes_to_question():
     assert _route("来几道数学题练练", "teacher") == "question"
 
 
-def test_students_intent_goes_to_students():
-    """人群域边界：纯名单问句归 students，带学情语境的仍归 tasks。"""
-    assert _route("我班有哪些学生", "teacher") == "students"
+def test_roster_intent_absorbed_into_tasks():
+    """ADR-0098：students 域消失后，纯名单问句归 tasks；带学情语境的同样归 tasks。"""
+    assert _route("我班有哪些学生", "teacher") == "tasks"
+    assert _route("班里孩子们名单", "teacher") == "tasks"
     assert _route("小明最近错题多吗", "teacher") == "tasks"
 
 
@@ -403,3 +415,28 @@ def test_run_degrades_explicitly_when_tools_missing():
     events = asyncio.run(_go())
     assert [e.eventType for e in events] == [EVENT_ASSISTANT_MESSAGE]
     assert events[0].blocked is True
+
+
+def test_roster_tool_loop_emits_student_list_card(client):
+    """名单工具（自 students 域吸收）的 tool loop：DATA 帧是类型化的 student_list。"""
+    setup = _setup(client, "st")
+    ctx = SubAgentContext(role="teacher", extra={"teacher_id": setup["teacher_id"]})
+    events = _drive(TasksSubAgent(provider=_ScriptedProvider("list_students")), ctx)
+
+    types = [ev.eventType for ev in events]
+    assert EVENT_TOOL_CALL in types and EVENT_DATA in types
+    data = [ev for ev in events if ev.eventType == EVENT_DATA]
+    assert data[0].data["type"] == "student_list"
+
+
+def test_roster_student_only_sees_self(client):
+    """学生端跑 list_students：恒为自己，不出现兄弟学生（ADR-008 帧层再守）。"""
+    setup = _setup(client, "st_self")
+    ctx = SubAgentContext(
+        role="student",
+        extra={"student_id": setup["a"]["id"], "teacher_id": setup["teacher_id"]},
+    )
+    events = _drive(TasksSubAgent(provider=_ScriptedProvider("list_students")), ctx)
+    blob = _payloads(events, EVENT_DATA)
+    assert "小明" in blob, "学生端没拿到自己 → 断言失去意义（假绿）"
+    assert "小红" not in blob, "学生端泄漏了兄弟学生"

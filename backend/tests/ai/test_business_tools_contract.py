@@ -38,8 +38,6 @@ from app.ai.shared.tool_support import (
 from app.ai.subagents.question.tools.list_bank_questions import (
     SPEC as LIST_BANK_QUESTIONS,
 )
-from app.ai.subagents.students.agent import StudentsSubAgent
-from app.ai.subagents.students.tools import STUDENTS_TOOLS
 from app.ai.subagents.tasks.agent import TasksSubAgent
 from app.ai.subagents.tasks.tools import TASKS_TOOLS
 from app.core.db import engine
@@ -53,11 +51,10 @@ from app.db.models import (
 )
 from tests.utils.user import auth_headers, login, register_teacher
 
-# 跨域只读工具集：tasks 去掉唯一写工具 create_draft，加上 students 全量与
-# question 的题库查询（出题/删除/归档非只读，另见各域测试）。
+# 跨域只读工具集：tasks 去掉唯一写工具 create_draft（list_students 自 ADR-0098
+# 起就在 tasks 域内），加上 question 的题库查询（出题/删除/归档非只读，另见各域测试）。
 READ_TOOLS: list = [
     *[t for t in TASKS_TOOLS if t.name != "create_draft"],
-    *STUDENTS_TOOLS,
     LIST_BANK_QUESTIONS,
 ]
 
@@ -257,15 +254,18 @@ def test_every_tool_documents_itself_and_its_args():
             assert prop.get("type"), f"{spec.name}.{arg} 缺类型"
 
 
-def test_query_agents_require_tool_data():
+def test_business_agents_require_tool_data():
     """「未查先答」闸门必须开着（ADR-0033）。
 
     真机教训（2026-09-22）：本地小模型在流式下不产出原生 ``ToolCall``，直接编造
     「你有 3 个学生：小明 / 小红 / 小华」——工具一个都没执行，权限层自然无从生效。
     这条断言防止有人为了「让模型能回答元问题」把闸门悄悄关掉。
+    ADR-0098：students 域吸收进 tasks 后，取数域只剩 tasks / question 两个。
     """
     assert TasksSubAgent.requires_tool_data is True
-    assert StudentsSubAgent.requires_tool_data is True
+    from app.ai.subagents.question.agent import QuestionSubAgent
+
+    assert QuestionSubAgent.requires_tool_data is True
 
 
 def test_handlers_match_runtime_signature():

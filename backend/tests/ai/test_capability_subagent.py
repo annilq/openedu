@@ -55,13 +55,14 @@ def test_manifest_declares_capability_and_dual_role():
 
 
 def test_priority_sits_above_all_business_domains():
-    """priority=16 是功能本身：压过 tasks(14)/question(12)/students(10) 的泛词
-    （「查 / 有哪些」），否则「你能查什么」类元问题会被 requires_tool_data 硬失败。
+    """priority=16 是功能本身：压过 tasks(14)/question(12) 的泛词（「查 / 有哪些」），
+    否则「你能查什么」类元问题会被 requires_tool_data 硬失败。
     写意图不冲突：tasks 的写触发词是「创建任务」等高精度短语，与自述问句无交集。
+    ADR-0098：students 域吸收进 tasks 后，被压制的域少一个，16 仍高于全部执行体。
     """
     manifests = discover_subagent_manifests()
     assert manifests["capability"].priority == 16
-    for lower in ("tasks", "question", "students", "tutor"):
+    for lower in ("tasks", "question", "tutor"):
         assert manifests["capability"].priority > manifests[lower].priority
 
 

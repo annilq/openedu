@@ -186,11 +186,10 @@ _FOLLOWUP_BY_BUSINESS: dict[str, list[SuggestedAction]] = {
         # 自 guide 迁入：起草 / 查询之后的两个出口（ADR-0097）
         SuggestedAction(label="查看学习进度", kind="prompt",
                         payload="请帮我分析一下最近的学习进度和掌握情况。"),
-        SuggestedAction(label="回到首页", kind="navigate", payload="home"),
-    ],
-    "students": [
+        # 自 students 域迁入（ADR-0098）：名单问句之后的学情出口
         SuggestedAction(label="看看学生近期学情", kind="prompt",
                         payload="请帮我分析一下学生最近的学习情况。"),
+        SuggestedAction(label="回到首页", kind="navigate", payload="home"),
     ],
     "question": [
         SuggestedAction(label="再出几道", kind="prompt",
@@ -231,8 +230,9 @@ def build_actions(
     - ``situation="empty"``：复现原 ``build_suggested_actions`` 行为（全局能力；
       带知识点 id 时叠加知识点目录）。供 ``GET /suggested-actions`` 空态调用，
       输出逐条等价于旧实现。
-    - ``situation="followup"``：按本轮 ``business``（tasks/questions/students/
-      tutor/capability）选一组回复后 chips；带知识点焦点时叠加知识点向 chips。
+    - ``situation="followup"``：按本轮 ``business``（tasks/question/tutor/capability；
+      students 域已吸收进 tasks，ADR-0098）选一组回复后 chips；带知识点焦点时叠加
+      知识点向 chips。
     """
     if situation == "empty":
         return _build_empty_suggested_actions(
