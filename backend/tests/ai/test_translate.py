@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import pytest
 
 from agent_core.protocol import EVENT_DATA, EVENT_STEP, EVENT_THINKING
-from app.ai.subagents.question.translate import to_frames, translate_stream
+from app.ai.subagents.tasks.generation.translate import to_frames, translate_stream
 from app.domain.provider import (
     GeneratedQuestion,
     QuestionCard,

@@ -2,7 +2,7 @@
 
 两处消费者共用本模块，绝不再各抄一份：
 
-- ``app.ai.subagents.question.agent.parse_specs_from_text``：自由文本一句话出题。
+- ``app.ai.subagents.tasks.generation.specs.parse_specs_from_text``：自由文本一句话出题。
 - ``app.features.assistant.slot_filling``：缺槽预检的确定性抽取。
 
 历史教训：两份逐字复制的表（``_QTYPE_MAP`` / ``_SUBJECT_ALIASES`` / ``_CN_NUM``）

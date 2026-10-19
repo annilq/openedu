@@ -26,7 +26,7 @@ from typing import Any, AsyncIterator
 from agent_core.protocol import data_event
 from agent_core.subagent import BaseSubAgent, SubAgentContext, run_with_tools
 from app.ai.shared.render import render_cards
-from app.ai.subagents.question.tools import questions_tools
+from app.ai.subagents.tasks.tools import BANK_TOOLS, generation_tools
 from app.features.assistant.kp_focus import format_kp_focus
 
 _SYSTEM = """你是「题库与出题」助手，帮教师管理题库、按规格出题。用中文简洁作答。
@@ -63,7 +63,13 @@ class QuestionSubAgent(BaseSubAgent):
     def __init__(self, *, provider, retriever=None) -> None:
         super().__init__(provider=provider, retriever=retriever)
         # 出题 tool 需要 provider（流式生成），故在装配期构造。
-        self.tools = questions_tools(provider=provider, retriever=retriever)
+        # ADR-0098 票 02：题库三工具与出题流式 tool 的模块已迁入 tasks/tools/，
+        # 本 agent（票 03 删除前）经同一组导出装配，工具面与顺序不变。
+        self.tools = [
+            *BANK_TOOLS[:1],
+            *generation_tools(provider=provider, retriever=retriever),
+            *BANK_TOOLS[1:],
+        ]
 
     # ── tool loop 的初轮消息 ──
     def initial_system(self, message: str, ctx: SubAgentContext) -> str:

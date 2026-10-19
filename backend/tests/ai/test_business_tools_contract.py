@@ -35,7 +35,7 @@ from app.ai.shared.tool_support import (
     project_for_role,
     resolve_students,
 )
-from app.ai.subagents.question.tools.list_bank_questions import (
+from app.ai.subagents.tasks.tools.list_bank_questions import (
     SPEC as LIST_BANK_QUESTIONS,
 )
 from app.ai.subagents.tasks.agent import TasksSubAgent

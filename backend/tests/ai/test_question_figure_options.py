@@ -9,12 +9,12 @@
 """
 from __future__ import annotations
 
-from app.ai.subagents.question.parsers import (
+from app.ai.subagents.tasks.generation.parsers import (
     QuestionOptionOut,
     QuestionSpec,
     assemble_question,
 )
-from app.ai.subagents.question.pipeline import build_question_prompts
+from app.ai.subagents.tasks.generation.pipeline import build_question_prompts
 
 
 def _spec() -> QuestionSpec:

@@ -1,6 +1,6 @@
 """教育场景共享系统提示（跨业务共用）。
 
-出题（``app.ai.subagents.question``）与开放题批改（``app.domain.genkit_provider``）共用
+出题（``app.ai.subagents.tasks.generation``）与开放题批改（``app.domain.genkit_provider``）共用
 同一份系统约束——两者的适龄 / 安全 / 「只输出 JSON」口径必须一致，故收敛到共享内核。
 
 放在 ``app.domain`` 而非任一业务包：它是**跨业务**的公共口径，任一侧都不该拥有它。

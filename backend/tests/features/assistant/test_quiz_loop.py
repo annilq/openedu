@@ -34,7 +34,7 @@ from agent_core.registry import discover_subagent_manifests
 from agent_core.runtime import RouteDecision
 from agent_core.subagent import SubAgentContext
 from app.ai.subagents.question.agent import QuestionSubAgent
-from app.ai.subagents.question.specs import parse_specs_from_text
+from app.ai.subagents.tasks.generation.specs import parse_specs_from_text
 from app.ai.subagents.tutor.agent import TutorSubAgent
 from app.db.models import Conversation, Message
 from app.domain.provider import EducationLLMProvider
@@ -171,7 +171,7 @@ def test_specs_from_context_expands_count_on_every_path():
     ADR-0097 曾据此红过一轮——specs_from_context 的结构化路径走了
     build_prompt_from_specs（展开），正则兜底路径却直接返回 spec 列表。
     """
-    from app.ai.subagents.question.specs import specs_from_context
+    from app.ai.subagents.tasks.generation.specs import specs_from_context
 
     ctx = SubAgentContext(role="teacher", message="帮我出2道三年级数学选择题，关于分数")
     # 正则兜底路径

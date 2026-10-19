@@ -25,7 +25,7 @@ from agent_core.registry import (
 from agent_core.subagent import SubAgentContext
 from app.ai.subagents import get_subject_persona
 from app.ai.subagents.question.agent import QuestionSubAgent
-from app.ai.subagents.question.specs import expand_specs
+from app.ai.subagents.tasks.generation.specs import expand_specs
 from app.ai.subagents.tutor.agent import TutorSubAgent
 from app.domain.provider import EducationLLMProvider
 
