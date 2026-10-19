@@ -184,19 +184,23 @@ class _Bubble extends StatelessWidget {
                 onPrompt: onPrompt,
               ),
 
-            // 复制入口只挂在 AI 回复上：用户自己的提问没有复制价值，占位「思考中」
-            // 气泡也没有内容可复制。卡片算内容——有卡无文（引用查询结果时很常见）
-            // 也要能复制，所以判据是「正文或卡片非空」。
+            // 复制入口 AI 回复与用户提问都给：用户复述自己的提问、把题干粘到别处很常见。
+            // 占位「思考中」气泡无正文、不渲染。卡片算内容——有卡无文（引用查询结果时
+            // 很常见）也要能复制，所以判据是「正文或卡片非空」（见 _copyText）。
+            // 用户气泡右对齐，复制入口靠右；AI 气泡左对齐，复制入口靠左。
             // 答疑引用条：命中并注入 prompt 的资料片段溯源，紧跟答案下方展示
             // （与复制入口同列左缩进，AI 靠左）。未命中资料库时不渲染。
             if (message.sources.isNotEmpty)
               AssistantSourcesBar(sources: message.sources),
 
-            if (!isUser && !message.thinking && copyText.isNotEmpty)
+            if (!message.thinking && copyText.isNotEmpty)
               Padding(
-                padding: const EdgeInsets.only(
-                    top: AppSpacing.xs2, left: AppSpacing.xs),
-                child: _CopyButton(text: copyText),
+                padding: EdgeInsets.only(
+                  top: AppSpacing.xs2,
+                  left: isUser ? 0 : AppSpacing.xs,
+                  right: isUser ? AppSpacing.xs : 0,
+                ),
+                child: _CopyButton(text: copyText, isUser: isUser),
               ),
             if (message.blocked)
               Padding(
@@ -309,7 +313,8 @@ class _BubbleBody extends StatelessWidget {
 /// （Toast 浮在面板底部，视线常不在此处）。
 class _CopyButton extends StatefulWidget {
   final String text;
-  const _CopyButton({required this.text});
+  final bool isUser;
+  const _CopyButton({required this.text, this.isUser = false});
 
   @override
   State<_CopyButton> createState() => _CopyButtonState();
@@ -350,7 +355,7 @@ class _CopyButtonState extends State<_CopyButton> {
       iconSize: 15,
       color: _copied ? scheme.primary : scheme.onSurfaceVariant,
       onPressed: _copy,
-      semanticLabel: _copied ? '已复制' : '复制这条回复',
+      semanticLabel: _copied ? '已复制' : (widget.isUser ? '复制这条提问' : '复制这条回复'),
     );
   }
 }

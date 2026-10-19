@@ -91,10 +91,10 @@ class AppTopBar extends StatelessWidget {
                     maxLines: 1,
                   ),
                 ),
-                SizedBox(
-                  width: 40,
-                  child: trailing ?? const SizedBox.shrink(),
-                ),
+                // trailing 不再固定 40 宽：允许（历史 + 导出）等并列图标；单图标时
+                // 固有宽约 40，与其他页一致。标题是 Expanded，trailing 变宽只会让标题
+                // 收缩省略，不会与左缘返回键重叠。
+                trailing ?? const SizedBox.shrink(),
               ],
             ),
           ),

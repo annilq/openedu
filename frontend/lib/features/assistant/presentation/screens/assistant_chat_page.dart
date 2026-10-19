@@ -1,3 +1,7 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -19,6 +23,7 @@ import '../widgets/assistant_hint_card.dart';
 import '../widgets/assistant_history_view.dart';
 import '../widgets/assistant_input_bar.dart';
 import '../widgets/assistant_message_list.dart';
+import '../conversation_transcript.dart';
 import '../../../../shared/widgets/app_actions.dart';
 
 /// AI 单入口整页形态（ADR-0036 / ADR-0047）：**双端唯一的助手页面**。
@@ -240,6 +245,38 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
     setState(() => _mode = _AssistantMode.chat);
   }
 
+  /// 导出当前对话：本地把消息压成 Markdown，经系统保存面板落盘（file_picker.saveFile），
+  /// 复用既有导出落盘通道、不引新依赖。空对话直接提示、不弹面板。
+  ///
+  /// 落盘由原生保存面板负责（桌面选路径 / 移动端写文档目录），取消保存不提示——
+  /// 与 `student_management_screen._downloadTemplate` 同一口径。
+  Future<void> _exportConversation() async {
+    final current = ref.read(assistantNotifierProvider);
+    final messages = switch (current) {
+      AssistantActive(:final messages) => messages,
+      _ => const <AssistantMessage>[],
+    };
+    if (messages.isEmpty) {
+      AppToast.show(context, '当前没有可导出的对话');
+      return;
+    }
+    final markdown = buildConversationMarkdown(messages);
+    try {
+      final uri = await FilePicker.saveFile(
+        dialogTitle: '导出对话记录',
+        fileName: 'ai_conversation_${conversationFileNameStamp()}.md',
+        bytes: Uint8List.fromList(utf8.encode(markdown)),
+      );
+      final path = uri?.path;
+      if (mounted && path != null) {
+        AppToast.show(context, '对话已导出：$path');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.error(context, e);
+    }
+  }
+
   /// 打开一段历史会话 = **恢复续接**（ADR-0096 前分「续接 / 只读」两态）。
   ///
   /// 列表里每一条都是本人的会话，后端归属校验必然通过，续接后消息落回原会话；
@@ -343,10 +380,11 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
     );
   }
 
-  /// 顶栏即模式切换器：对话态给「历史」，历史态给「新对话」。
+  /// 顶栏即模式切换器：对话态给「新对话 / 历史 / 导出」三连，历史态给「新对话」。
   ///
-  /// 两个动作各占一个 40 宽槽位，不额外挤第二个图标：历史态的 trailing 换成「新对话」
-  /// 是有意的——去翻历史的人，下一步常常就是想开一段新的。
+  /// 对话态把常用动作都收进顶栏：最左「新对话」（plus）开一段空白会话，紧挨其右
+  /// 「历史」翻看旧会话，最右「导出」落盘——三者各占一个图标槽位。
+  /// 历史态的 trailing 换成「新对话」是有意的——去翻历史的人，下一步常常就是想开一段新的。
   Widget _topBar() {
     switch (_mode) {
       case _AssistantMode.chat:
@@ -356,11 +394,30 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
           // 历史入口**双端都有**（ADR-0096）：后端按调用者身份返回本人可见的会话，
           // 学生看到的就是自己问过的。ADR-0048 曾把它定为教师专属（「有意的不对称」），
           // 那条理由随归属收敛不再成立。
-          trailing: AppIconAction(
-            icon: LucideIcons.history,
-            iconSize: 20,
-            semanticLabel: '历史会话',
-            onPressed: _showHistory,
+          // 历史入口与导出并列：三者都是对话态的常用动作，各占一个图标槽位。
+          // trailing 已放开固定 40 宽（app_top_bar.dart），多个图标并排不会裁切。
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AppIconAction(
+                icon: LucideIcons.plus,
+                iconSize: 20,
+                semanticLabel: '新对话',
+                onPressed: _newConversation,
+              ),
+              AppIconAction(
+                icon: LucideIcons.history,
+                iconSize: 20,
+                semanticLabel: '历史会话',
+                onPressed: _showHistory,
+              ),
+              AppIconAction(
+                icon: LucideIcons.download,
+                iconSize: 20,
+                semanticLabel: '导出对话',
+                onPressed: _exportConversation,
+              ),
+            ],
           ),
         );
       case _AssistantMode.history:
@@ -379,7 +436,7 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
                   onPressed: _selectedIds.isEmpty ? null : _deleteSelected,
                 )
               : AppIconAction(
-                  icon: LucideIcons.squarePen,
+                  icon: LucideIcons.plus,
                   iconSize: 20,
                   semanticLabel: '新对话',
                   onPressed: _newConversation,
