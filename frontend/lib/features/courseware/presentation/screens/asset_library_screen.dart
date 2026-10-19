@@ -171,7 +171,7 @@ class _AssetLibraryScreenState extends ConsumerState<AssetLibraryScreen> {
             style: text.bodySmall?.copyWith(color: app.onSurfaceVariant),
           ),
           const SizedBox(height: AppSpacing.lg),
-          // 工具条：普通态 = 上传 + 检索 + 进入选择；选择态 = 取消 + 批量删除。
+          // 工具条：普通态 = 上传 + 检索（左）｜进入选择（右）；选择态 = 取消 + 批量删除。
           if (_selecting)
             Row(
               children: [
@@ -185,28 +185,37 @@ class _AssetLibraryScreenState extends ConsumerState<AssetLibraryScreen> {
               ],
             )
           else
-            Wrap(
-              spacing: AppSpacing.md,
-              runSpacing: AppSpacing.sm,
-              crossAxisAlignment: WrapCrossAlignment.center,
+            Row(
               children: [
-                AppPrimaryButton(
-                  label: _uploading ? '上传中…' : '上传图片',
-                  onPressed: _uploading ? null : _upload,
+                // 左侧：上传 + 检索。用 Wrap 而非固定 Row，窄屏时检索自动换行不溢出。
+                Expanded(
+                  child: Wrap(
+                    spacing: AppSpacing.md,
+                    runSpacing: AppSpacing.sm,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      AppPrimaryButton(
+                        label: _uploading ? '上传中…' : '上传图片',
+                        onPressed: _uploading ? null : _upload,
+                      ),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 320),
+                        child: AppTextField(
+                          key: const Key('asset-library-search'),
+                          label: '检索',
+                          controller: _queryCtl,
+                          hintText: '按文件名检索图片素材',
+                          onChanged: (v) => setState(() => _query = v.trim()),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
+                const SizedBox(width: AppSpacing.md),
+                // 右侧：选择（批量选择入口，与课件环节列表同位置）。
                 AppTextAction(
                   label: '选择',
                   onPressed: canSelect ? _enterSelect : null,
-                ),
-                SizedBox(
-                  width: 320,
-                  child: AppTextField(
-                    key: const Key('asset-library-search'),
-                    label: '检索',
-                    controller: _queryCtl,
-                    hintText: '按文件名检索图片素材',
-                    onChanged: (v) => setState(() => _query = v.trim()),
-                  ),
                 ),
               ],
             ),

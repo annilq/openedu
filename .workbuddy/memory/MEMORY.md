@@ -8,6 +8,8 @@
 
 ## 1. 前端分层
 - AI 唯一入口 `assistantNotifierProvider`+`AssistantMessageList`；后端唯一端点 `POST /api/v1/assistant/chat`（写意图 `guide`(20)>只读 `query`(12)）。结构化键=manifest `actions`(ADR-0081)：`task_generate`/`quiz_generate`/`courseware_hint`/`quiz_judge`。出题=`POST /tasks/generate`(流式)+`/tasks/from-generated`(重生成全删)。单向 `main/→features/*→shared/*`；R4：`presentation/` 禁 import `*/data/`(测试 `feature_boundaries_test.dart`)。
+- **出题触发词缺口（2026-10-19 实测）**：`出道` 是触发词但 `出一道` 不含它（子串不覆盖）；`出一道/来一道/出一题` 规则与启发式全落空 → 兜底给 tutor（`hints=[]`、`priority=-10`，manifest 注释明示此设计），出题请求被当文本问答（DB 实证 routing=伴学答疑、tool=tutor_explain、0 张题卡落库）。main 与 ADR-0098 合并版同缺；`6489a97` 串台修复未覆盖。修法：词加进合并版出题段 + `intent_schemas.generate` + 真实 classify 契约测试。
+- **流式题卡无 `scene_spec` 生产者**：前端 `AssistantQuestionCard` 已渲染 `scene_spec`、`QuestionPreview` 已透传、落库 `tasks/service.py:616-633` 优先用前端回传的「出题时已算好的」——但 `GeneratedQuestion` 无此字段、`generate_questions` 不构建 → 聊天题卡永远无图（只有落库后的任务/题库页读 `scene_spec_for_read`）。tutor 侧另有 `interactive_scene` 卡（`scene_intent.py` L0/L1/L2 三层，模型判定 + 同键去重），与出题侧互不复用。聊天题卡 options 走 `cardStr`（`{text,figure_key}` dict 会渲染成 map 字符串），`QuizOption.parseList` 只在 `QuestionPreview` 用——形状不一致（潜伏）。
 
 ## 2. 视觉/控件（analyze 照不出）
 - 禁用 Material 控件(`InkWell`/`Icons.`/`Scaffold`/`ListTile`/`Divider`/`Tooltip`)：根 `ShadApp`+`CupertinoApp` 无 Material 祖先→抛「No Material widget found」。可点区一律 `AppFocusableAction`。
@@ -42,4 +44,10 @@
 ## 8. 分支卫生与合并台账（2026-10-15 大盘点后）
 - **本地长期只有 `main` 一个分支**；integration/ticket 分支合入即删（`git branch -d` 有未合入保护）。曾有分支：adr-0088-0091、ai-prompts-hardening、tool-input-schema-slot-filling、conversation-ownership、replay-structured-extras、slots-01/02/03——全部已合入并删除。
 - **slot-filling 线是后来才真正进 main 的**：早期「已合入 main」的记录与仓库现状不符（内容实际只在分支上），2026-10-15 按 `4fe9f81`(ADR-0095) → `0629b63`(ADR-0096) → `db05e35`(回放补全) 三个 `--no-ff` 合并补齐，合并后主仓复跑绿才删分支。**教训：「记忆/记录说合过了」不可信，以 `git branch --no-merged main` 与 `git log main..<branch>` 实测为准。**
-- main 现 ahead origin/main 39（含全部上述内容，**未推送**——推送时机留用户）。
+- main 现 `6ad7bb6` ahead origin/main **1**（2026-10-19 22:48 并行会话把触发词收紧 `6489a97` 推到 origin，随后本地 `6ad7bb6` 对话导出未推）。ADR-0098 分支仍未合（用户令暂停）：合并时 `tasks/manifest.py`（学情行同 hunk）与 `question/manifest.py`（modify/delete）必冲突；裁决方向：把「哪些错题/错题有哪些/错题情况」并入合并版学情段，把「删裸词题目/练」带进 generate 组。
+
+## 9. ADR-0098 二执行体收敛（分支 `integration/two-execution-bodies`，5 提交全绿，**未合 main**）
+- 拓扑终态：执行体 **tasks / tutor**（students→tasks 票 01、question→tasks 票 02/03）；capability 零 LLM 固定回复不计执行体。tasks = 学情 8 工具（7 读+create_draft）+ 题库 3 + 出题流式 1 = 12。
+- **slot filling 意图分组**（最实质机制变更）：manifest `intent_schemas.generate`（出题必填槽）；router `classify`→`Classification(business,trigger,level)`、`RouteDecision.trigger`；service `_resolve_input_schema(business,trigger)` 选 schema；槽位两本账 `business`（默认意图）/`business:intent`（如 `tasks:generate`）；specs 注入条件 `intent=="generate"`。词序即子意图（`_rule_match` 返回首个命中词；题库词不在 generate 组）；契约测试守 `intent_schemas⊆triggers`。
+- 等价验证基线：**976 passed / 1 failed（materials `test_empty_text_422` 环境性红）/ 2 skipped**，与 main 同。提交链 9db4c7d→54b4a54→47ea91a→ba6428a（机制层）→3090d1c（合并波次，原子性：删 question/ 斩断测试 import，必须同提交）。
+- **提交纪律**：`git add <部分>` 后**不带 pathspec** 的 `git commit` 会连带提交索引里已暂存的删除/改名——提交前必先 `git diff --cached --stat` 核对。

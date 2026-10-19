@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>小红书封面卡片 · 白底大字高亮</title>
+<style>
+  :root{
+    --ink:#111111;
+    --ink-soft:#5A5A5A;
+    --paper:#FBFAF7;
+    --hl-purple:#D96FE0;
+    --hl-yellow:#FFD84D;
+    --hl-green:#9FE0A0;
+    --hl-blue:#8FD0FF;
+    --hl-pink:#FFA0C4;
+    --hl-orange:#FFC078;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--paper);
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    color:var(--ink);
+    padding:48px 24px 64px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1120px;margin:0 auto}
+  header{margin-bottom:40px;max-width:720px}
+  h1{font-size:24px;font-weight:700;letter-spacing:-.01em;margin-bottom:10px}
+  .lede{font-size:14px;line-height:1.75;color:var(--ink-soft)}
+  .grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fill,324px);
+    gap:28px;
+    justify-content:center;
+    margin-bottom:56px;
+  }
+  .slot{width:324px;height:432px;overflow:hidden;border-radius:12px;background:#fff;
+        box-shadow:0 1px 3px rgba(0,0,0,.08)}
+  .card{
+    width:1080px;height:1440px;zoom:.3;
+    background:#fff;
+    padding:96px 84px 84px;
+    display:flex;flex-direction:column;justify-content:center;
+    position:relative;
+    overflow:hidden;
+  }
+  .stack{display:flex;flex-direction:column;align-items:center;gap:14px;text-align:center}
+  .l1,.l2{
+    font-size:116px;font-weight:800;line-height:1.12;letter-spacing:-.02em;color:var(--ink);
+  }
+  .l2{align-self:center}
+  .hl{
+    display:inline-block;
+    padding:2px 36px 14px;
+    border-radius:22px;
+    color:var(--ink);
+  }
+  .l3,.l4{
+    font-size:64px;font-weight:500;line-height:1.36;letter-spacing:-.01em;color:var(--ink);
+  }
+  .wave{
+    position:relative;display:inline-block;padding-bottom:20px;
+  }
+  .wave svg{position:absolute;left:2%;bottom:0;width:96%;height:18px}
+  .art{
+    margin-top:72px;
+    display:flex;align-items:flex-end;justify-content:center;
+    padding-bottom:8px;
+  }
+  .art svg{width:100%;max-width:880px;height:auto;display:block}
+  .card.is-photo{padding:96px 84px 84px;justify-content:center}
+  .card.is-photo .art{margin-top:88px}
+  .art.photo{
+    position:relative;width:100%;height:598px;border-radius:20px;
+    background-color:#F1EFE8;background-position:center;background-size:cover;background-repeat:no-repeat;
+    border:4px solid var(--ink);
+  }
+  section.notes{
+    border-top:1px solid #E8E4DC;
+    max-width:820px;padding-top:32px;
+  }
+  section.notes h2{font-size:16px;font-weight:700;margin:0 0 14px}
+  section.notes p{font-size:14px;line-height:1.85;color:var(--ink-soft);margin-bottom:14px}
+  section.notes code{
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    font-size:13px;background:#F1EFE8;padding:1px 6px;border-radius:4px;color:#2C2C2A;
+  }
+  section.notes ul{margin:0 0 16px 20px}
+  section.notes li{font-size:14px;line-height:1.85;color:var(--ink-soft);margin-bottom:6px}
+  .warn{
+    background:#FAEEDA;border-left:3px solid #BA7517;border-radius:0 8px 8px 0;
+    padding:14px 18px;font-size:14px;line-height:1.8;color:#633806;margin-bottom:16px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>小红书封面卡片 · 白底大字高亮</h1>
+  <p class="lede">
+    「白底 + 超大字 + 一行高亮块 + 底部插画」—— 小红书图文最主流的封面语言。
+    卡片实际尺寸 <b>1080 × 1440</b>（3:4），下方为缩放预览。
+    导出：把 <code>.card</code> 的 <code>zoom:.3</code> 改成 <code>zoom:1</code>，逐个卡片截图即可。
+  </p>
+</header>
+
+<div class="grid">
+
+  <div class="slot"><div class="card">
+    <div class="stack">
+      <div class="l1">按知识点出题</div>
+      <div class="l2"><span class="hl" style="background:var(--hl-yellow);font-size:96px">40 分钟 → 3 分钟</span></div>
+      <div class="l3">生成完我不急着用</div>
+      <div class="l4"><span class="wave">得一道一道过一遍<svg viewBox="0 0 200 12" preserveAspectRatio="none"><path d="M2 8 Q15 1,28 8 T54 8 T80 8 T106 8 T132 8 T158 8 T184 8" fill="none" stroke="#F0A030" stroke-width="4" stroke-linecap="round"/></svg></span></div>
+    </div>
+    <div class="art">
+      <svg viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg">
+        <rect x="150" y="30" width="150" height="14" rx="7" fill="#D8D4CC"/>
+        <rect x="120" y="20" width="210" height="150" rx="18" fill="#EDE9E0" stroke="#2E2A2A" stroke-width="4"/>
+        <rect x="140" y="44" width="170" height="104" rx="8" fill="#fff" stroke="#2E2A2A" stroke-width="3"/>
+        <rect x="156" y="62" width="110" height="10" rx="5" fill="#B9B4A9"/>
+        <rect x="156" y="84" width="138" height="10" rx="5" fill="#DDD9D0"/>
+        <rect x="156" y="106" width="90" height="10" rx="5" fill="#DDD9D0"/>
+        <circle cx="330" cy="150" r="34" fill="#FFD84D" stroke="#2E2A2A" stroke-width="4"/>
+        <path d="M316 150 L326 161 L346 139" fill="none" stroke="#2E2A2A" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+  </div></div>
+
+  <div class="slot"><div class="card">
+    <div class="stack">
+      <div class="l1">比赛文件写了</div>
+      <div class="l2"><span class="hl" style="background:var(--hl-pink)">不得用成品</span></div>
+      <div class="l3">那「自己搭」</div>
+      <div class="l4"><span class="wave">要搭到什么程度？<svg viewBox="0 0 200 12" preserveAspectRatio="none"><path d="M2 8 Q15 1,28 8 T54 8 T80 8 T106 8 T132 8 T158 8 T184 8" fill="none" stroke="#F0A030" stroke-width="4" stroke-linecap="round"/></svg></span></div>
+    </div>
+    <div class="art">
+      <svg viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg">
+        <rect x="110" y="18" width="130" height="164" rx="12" fill="#fff" stroke="#2E2A2A" stroke-width="4"/>
+        <rect x="130" y="52" width="90" height="9" rx="4.5" fill="#D8D4CC"/>
+        <rect x="130" y="74" width="66" height="9" rx="4.5" fill="#E4E0D8"/>
+        <rect x="130" y="96" width="80" height="9" rx="4.5" fill="#E4E0D8"/>
+        <rect x="130" y="118" width="54" height="9" rx="4.5" fill="#E4E0D8"/>
+        <circle cx="272" cy="118" r="52" fill="#FFA0C4" fill-opacity=".55" stroke="#2E2A2A" stroke-width="4"/>
+        <path d="M246 118 L266 138 L300 96" fill="none" stroke="#2E2A2A" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+  </div></div>
+
+  <div class="slot"><div class="card">
+    <div class="stack">
+      <div class="l1">智能体说明文档</div>
+      <div class="l2"><span class="hl" style="background:var(--hl-purple)">到底要写啥</span></div>
+      <div class="l3">我按 5 个板块拆</div>
+      <div class="l4"><span class="wave">照着填就行<svg viewBox="0 0 200 12" preserveAspectRatio="none"><path d="M2 8 Q15 1,28 8 T54 8 T80 8 T106 8 T132 8 T158 8 T184 8" fill="none" stroke="#F0A030" stroke-width="4" stroke-linecap="round"/></svg></span></div>
+    </div>
+    <div class="art">
+      <svg viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg">
+        <rect x="128" y="14" width="144" height="176" rx="12" fill="#fff" stroke="#2E2A2A" stroke-width="4"/>
+        <rect x="150" y="40" width="76" height="10" rx="5" fill="#2E2A2A"/>
+        <rect x="150" y="66" width="100" height="9" rx="4.5" fill="#E4E0D8"/>
+        <rect x="150" y="88" width="84" height="9" rx="4.5" fill="#E4E0D8"/>
+        <rect x="150" y="110" width="96" height="9" rx="4.5" fill="#E4E0D8"/>
+        <rect x="150" y="132" width="62" height="9" rx="4.5" fill="#E4E0D8"/>
+        <circle cx="272" cy="46" r="30" fill="#D96FE0" fill-opacity=".45" stroke="#2E2A2A" stroke-width="4"/>
+        <text x="272" y="58" text-anchor="middle" font-family="PingFang SC,sans-serif" font-size="34" font-weight="700" fill="#2E2A2A">5</text>
+      </svg>
+    </div>
+  </div></div>
+
+  <div class="slot"><div class="card">
+    <div class="stack">
+      <div class="l1">教学智能体</div>
+      <div class="l2"><span class="hl" style="background:var(--hl-blue)">不是聊天机器人</span></div>
+      <div class="l3">差在 4 个地方</div>
+      <div class="l4"><span class="wave">第 3 个最容易被忽略<svg viewBox="0 0 200 12" preserveAspectRatio="none"><path d="M2 8 Q15 1,28 8 T54 8 T80 8 T106 8 T132 8 T158 8 T184 8" fill="none" stroke="#F0A030" stroke-width="4" stroke-linecap="round"/></svg></span></div>
+    </div>
+    <div class="art">
+      <svg viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg">
+        <rect x="60" y="60" width="130" height="86" rx="26" fill="#EDE9E0" stroke="#2E2A2A" stroke-width="4"/>
+        <circle cx="112" cy="103" r="8" fill="#2E2A2A"/>
+        <circle cx="142" cy="103" r="8" fill="#2E2A2A"/>
+        <path d="M100 154 L86 178 L128 158 Z" fill="#EDE9E0" stroke="#2E2A2A" stroke-width="4" stroke-linejoin="round"/>
+        <rect x="228" y="42" width="122" height="122" rx="20" fill="#8FD0FF" fill-opacity=".5" stroke="#2E2A2A" stroke-width="4"/>
+        <path d="M262 103 L286 127 L318 79" fill="none" stroke="#2E2A2A" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+  </div></div>
+
+  <div class="slot"><div class="card">
+    <div class="stack">
+      <div class="l1">我的智能体</div>
+      <div class="l2"><span class="hl" style="background:var(--hl-green)">生成完会停住</span></div>
+      <div class="l3">等我点确认才落库</div>
+      <div class="l4"><span class="wave">这不是卡，是设计<svg viewBox="0 0 200 12" preserveAspectRatio="none"><path d="M2 8 Q15 1,28 8 T54 8 T80 8 T106 8 T132 8 T158 8 T184 8" fill="none" stroke="#F0A030" stroke-width="4" stroke-linecap="round"/></svg></span></div>
+    </div>
+    <div class="art">
+      <svg viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg">
+        <rect x="62" y="56" width="140" height="88" rx="14" fill="#fff" stroke="#2E2A2A" stroke-width="4"/>
+        <rect x="82" y="78" width="100" height="9" rx="4.5" fill="#D8D4CC"/>
+        <rect x="82" y="100" width="72" height="9" rx="4.5" fill="#E4E0D8"/>
+        <path d="M222 100 L258 100" stroke="#2E2A2A" stroke-width="6" stroke-linecap="round" stroke-dasharray="12 10"/>
+        <circle cx="308" cy="100" r="52" fill="#9FE0A0" fill-opacity=".6" stroke="#2E2A2A" stroke-width="5"/>
+        <path d="M308 74 L308 106" stroke="#2E2A2A" stroke-width="8" stroke-linecap="round"/>
+        <path d="M308 126 L308 130" stroke="#2E2A2A" stroke-width="9" stroke-linecap="round"/>
+      </svg>
+    </div>
+  </div></div>
+
+  <div class="slot"><div class="card">
+    <div class="stack">
+      <div class="l1">演示的时候</div>
+      <div class="l2"><span class="hl" style="background:var(--hl-orange)">它答错了</span></div>
+      <div class="l3">当场怎么办</div>
+      <div class="l4"><span class="wave">我准备了三个预案<svg viewBox="0 0 200 12" preserveAspectRatio="none"><path d="M2 8 Q15 1,28 8 T54 8 T80 8 T106 8 T132 8 T158 8 T184 8" fill="none" stroke="#F0A030" stroke-width="4" stroke-linecap="round"/></svg></span></div>
+    </div>
+    <div class="art">
+      <svg viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="200" cy="98" r="66" fill="#FFC078" fill-opacity=".55" stroke="#2E2A2A" stroke-width="5"/>
+        <path d="M176 84 L188 96 M188 84 L176 96" stroke="#2E2A2A" stroke-width="7" stroke-linecap="round"/>
+        <path d="M212 84 L224 96 M224 84 L212 96" stroke="#2E2A2A" stroke-width="7" stroke-linecap="round"/>
+        <path d="M172 128 Q200 106 228 128" fill="none" stroke="#2E2A2A" stroke-width="7" stroke-linecap="round"/>
+      </svg>
+    </div>
+  </div></div>
+
+  <div class="slot"><div class="card">
+    <div class="stack">
+      <div class="l1">它是在查</div>
+      <div class="l2"><span class="hl" style="background:var(--hl-purple)">还是在编</span></div>
+      <div class="l3">我准备了 5 类测试题</div>
+      <div class="l4"><span class="wave">只测正常问题发现不了<svg viewBox="0 0 200 12" preserveAspectRatio="none"><path d="M2 8 Q15 1,28 8 T54 8 T80 8 T106 8 T132 8 T158 8 T184 8" fill="none" stroke="#F0A030" stroke-width="4" stroke-linecap="round"/></svg></span></div>
+    </div>
+    <div class="art">
+      <svg viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="176" cy="92" r="52" fill="#fff" stroke="#2E2A2A" stroke-width="6"/>
+        <path d="M214 130 L258 174" stroke="#2E2A2A" stroke-width="12" stroke-linecap="round"/>
+        <path d="M152 92 L172 112 L204 72" fill="none" stroke="#D96FE0" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+  </div></div>
+
+  <div class="slot"><div class="card">
+    <div class="stack">
+      <div class="l1">智能体评审</div>
+      <div class="l2"><span class="hl" style="background:var(--hl-blue)">五个维度</span></div>
+      <div class="l3">我逐项对了一遍</div>
+      <div class="l4"><span class="wave">附自评表，可照着填<svg viewBox="0 0 200 12" preserveAspectRatio="none"><path d="M2 8 Q15 1,28 8 T54 8 T80 8 T106 8 T132 8 T158 8 T184 8" fill="none" stroke="#F0A030" stroke-width="4" stroke-linecap="round"/></svg></span></div>
+    </div>
+    <div class="art">
+      <svg viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg">
+        <rect x="126" y="20" width="148" height="160" rx="12" fill="#fff" stroke="#2E2A2A" stroke-width="4"/>
+        <rect x="152" y="44" width="96" height="198" rx="0" fill="none"/>
+        <g stroke="#2E2A2A" stroke-width="4" stroke-linecap="round">
+          <path d="M152 62 L158 68 L172 52"/>
+          <path d="M152 92 L158 98 L172 82"/>
+          <path d="M152 122 L158 128 L172 112"/>
+        </g>
+        <rect x="186" y="57" width="62" height="9" rx="4.5" fill="#E4E0D8"/>
+        <rect x="186" y="87" width="52" height="9" rx="4.5" fill="#E4E0D8"/>
+        <rect x="186" y="117" width="58" height="9" rx="4.5" fill="#E4E0D8"/>
+        <circle cx="300" cy="150" r="38" fill="#8FD0FF" fill-opacity=".5" stroke="#2E2A2A" stroke-width="4"/>
+        <text x="300" y="163" text-anchor="middle" font-family="PingFang SC,sans-serif" font-size="40" font-weight="700" fill="#2E2A2A">A</text>
+      </svg>
+    </div>
+  </div></div>
+
+</div>
+
+<h2 style="font-size:16px;font-weight:700;margin:0 0 6px">叙事线 · 七天做一个教育智能体（真实素材版）</h2>
+<p class="lede" style="margin-bottom:24px">
+  起因 → 想清楚 → 七天 → demo 跑通 → 入选。正文见 <code>story-notes.md</code>。
+  高亮色循环：黄 / 粉 / 绿 / 紫 / 蓝，一张一色不重复。
+  <b>第 5 张是真实图片位</b>：把入选截图放到本文件同目录、命名为 <code>selected.png</code> 即可自动填充（打码到只留必要信息）。
+</p>
+
+<div class="grid">
+
+  <div class="slot"><div class="card">
+    <div class="stack">
+      <div class="l1">「孩子爸，</div>
+      <div class="l2"><span class="hl" style="background:var(--hl-yellow)">有个智能体比赛</span></div>
+      <div class="l3">我们一起做一个</div>
+      <div class="l4"><span class="wave">参加怎么样？」<svg viewBox="0 0 200 12" preserveAspectRatio="none"><path d="M2 8 Q15 1,28 8 T54 8 T80 8 T106 8 T132 8 T158 8 T184 8" fill="none" stroke="#F0A030" stroke-width="4" stroke-linecap="round"/></svg></span></div>
+    </div>
+    <div class="art">
+      <svg viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg">
+        <rect x="70" y="40" width="200" height="86" rx="24" fill="#FFD84D" fill-opacity=".45" stroke="#2E2A2A" stroke-width="4"/>
+        <path d="M96 126 L90 158 L136 128 Z" fill="#FFD84D" stroke="#2E2A2A" stroke-width="4" stroke-linejoin="round"/>
+        <rect x="100" y="66" width="140" height="10" rx="5" fill="#2E2A2A"/>
+        <rect x="100" y="90" width="96" height="10" rx="5" fill="#B9B4A9"/>
+        <circle cx="316" cy="120" r="40" fill="#fff" stroke="#2E2A2A" stroke-width="4"/>
+        <path d="M316 100 L316 122 L330 132" fill="none" stroke="#2E2A2A" stroke-width="5" stroke-linecap="round"/>
+      </svg>
+    </div>
+  </div></div>
+
+  <div class="slot"><div class="card">
+    <div class="stack">
+      <div class="l1">于是我俩开始想</div>
+      <div class="l2"><span class="hl" style="background:var(--hl-pink)">到底做成什么样</span></div>
+      <div class="l3">一条一条列功能</div>
+    </div>
+    <div class="art">
+      <svg viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg">
+        <rect x="52" y="52" width="130" height="76" rx="22" fill="#FFA0C4" fill-opacity=".5" stroke="#2E2A2A" stroke-width="4"/>
+        <path d="M78 128 L72 156 L114 130 Z" fill="#FFA0C4" stroke="#2E2A2A" stroke-width="4" stroke-linejoin="round"/>
+        <rect x="218" y="52" width="130" height="76" rx="22" fill="#EDE9E0" stroke="#2E2A2A" stroke-width="4"/>
+        <path d="M322 128 L328 156 L286 130 Z" fill="#EDE9E0" stroke="#2E2A2A" stroke-width="4" stroke-linejoin="round"/>
+        <rect x="238" y="76" width="90" height="9" rx="4.5" fill="#B9B4A9"/>
+        <rect x="238" y="98" width="62" height="9" rx="4.5" fill="#D8D4CC"/>
+      </svg>
+    </div>
+  </div></div>
+
+  <div class="slot"><div class="card">
+    <div class="stack">
+      <div class="l1">国庆七天</div>
+      <div class="l2"><span class="hl" style="background:var(--hl-green)">哪儿也没去</span></div>
+      <div class="l3">从「什么是智能体」学起</div>
+      <div class="l4"><span class="wave">还有提示词<svg viewBox="0 0 200 12" preserveAspectRatio="none"><path d="M2 8 Q15 1,28 8 T54 8 T80 8 T106 8 T132 8 T158 8 T184 8" fill="none" stroke="#F0A030" stroke-width="4" stroke-linecap="round"/></svg></span></div>
+    </div>
+    <div class="art">
+      <svg viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg">
+        <rect x="96" y="24" width="150" height="164" rx="12" fill="#fff" stroke="#2E2A2A" stroke-width="4"/>
+        <rect x="122" y="56" width="98" height="9" rx="4.5" fill="#D8D4CC"/>
+        <rect x="122" y="78" width="72" height="9" rx="4.5" fill="#E4E0D8"/>
+        <rect x="122" y="100" width="86" height="9" rx="4.5" fill="#E4E0D8"/>
+        <rect x="122" y="122" width="56" height="9" rx="4.5" fill="#E4E0D8"/>
+        <circle cx="300" cy="112" r="46" fill="#D96FE0" fill-opacity=".45" stroke="#2E2A2A" stroke-width="4"/>
+        <text x="300" y="142" text-anchor="middle" font-family="PingFang SC,sans-serif" font-size="76" font-weight="800" fill="#2E2A2A">?</text>
+      </svg>
+    </div>
+  </div></div>
+
+  <div class="slot"><div class="card">
+    <div class="stack">
+      <div class="l1">一个一个功能过</div>
+      <div class="l2"><span class="hl" style="background:var(--hl-purple)">demo 跑通了</span></div>
+      <div class="l3">赶在国庆最后一天</div>
+      <div class="l4"><span class="wave">这七天值了<svg viewBox="0 0 200 12" preserveAspectRatio="none"><path d="M2 8 Q15 1,28 8 T54 8 T80 8 T106 8 T132 8 T158 8 T184 8" fill="none" stroke="#F0A030" stroke-width="4" stroke-linecap="round"/></svg></span></div>
+    </div>
+    <div class="art">
+      <svg viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg">
+        <rect x="96" y="34" width="208" height="150" rx="8" fill="#F1EFE8" stroke="#2E2A2A" stroke-width="4"/>
+        <rect x="112" y="22" width="208" height="150" rx="8" fill="#fff" stroke="#2E2A2A" stroke-width="4"/>
+        <rect x="136" y="48" width="96" height="9" rx="4.5" fill="#D8D4CC"/>
+        <rect x="136" y="70" width="140" height="9" rx="4.5" fill="#E4E0D8"/>
+        <rect x="136" y="92" width="118" height="9" rx="4.5" fill="#E4E0D8"/>
+        <circle cx="286" cy="130" r="34" fill="#9FE0A0" stroke="#2E2A2A" stroke-width="4"/>
+        <path d="M272 130 L282 141 L302 119" fill="none" stroke="#2E2A2A" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+  </div></div>
+
+  <div class="slot"><div class="card is-photo">
+    <div class="stack">
+      <div class="l1">交上去之后</div>
+      <div class="l2"><span class="hl" style="background:var(--hl-blue)">入选了</span></div>
+      <div class="l3">这张截图我俩看了很久</div>
+    </div>
+    <div class="art photo" style="background-image:url('selected.png')"></div>
+  </div></div>
+
+</div>
+
+<section class="notes">
+  <h2>使用说明</h2>
+
+  <p><b>导出尺寸</b>：把 <code>.card</code> 的 <code>zoom:.3</code> 改成 <code>zoom:1</code>，页面会变成 1080×1440 实尺，逐个在浏览器里截图即可（Chrome DevTools → 选中 <code>.card</code> 节点 → 右键 Capture node screenshot）。</p>
+
+  <p><b>换高亮色</b>：改 <code>.hl</code> 的内联 <code>background</code>，可选值都在 <code>:root</code> 里（紫 / 黄 / 绿 / 蓝 / 粉 / 橙）。一条封面只用一种，多了就废。</p>
+
+  <p><b>换插画</b>：<code>.art</code> 里的 SVG 是占位线稿，两种替换方式，二选一：</p>
+  <ul>
+    <li><b>产品界面截图局部</b>（推荐）—— 裁一块最关键的区域（比如出题页、学情卡片），不要整屏，不要带手机边框。</li>
+    <li><b>手绘贴纸</b> —— 网上买授权素材，或让 AI 生成同色系简笔插画，统一风格后重复使用。</li>
+  </ul>
+
+  <p><b>字体</b>：现在是 PingFang SC。想要更重的字（参考图那种压迫感），装「<b>思源黑体 Heavy</b>」或「<b>阿里巴巴普惠体 Bold</b>」，然后改 <code>body</code> 的 <code>font-family</code> 即可。这一步对效果的提升比调任何参数都大。</p>
+
+  <div class="warn">
+    <b>两条别踩的坑</b><br>
+    ① 高亮块里的字必须还是<b>黑色</b> —— 改成白字就变成「色块按钮」，荧光笔的感觉没了，这是这个风格唯一的语法底线。<br>
+    ② 一条封面<b>只高亮一行</b>。高亮两行以上，视线就没有落点了，用户会跳过。
+  </div>
+
+  <p><b>适合发什么</b>：成果线（A）和方法线（B）的封面都可以用这套 —— 它们靠情绪钩子拉点击率。评审线（C）的封面同样能用，但<b>内页必须换成清单/表格</b>，因为 C 线的目标是收藏，不是点击。</p>
+</section>
+</div>
+</body>
+</html>

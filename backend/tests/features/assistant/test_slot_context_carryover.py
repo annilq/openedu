@@ -19,7 +19,10 @@ from types import SimpleNamespace
 from agent_core.protocol import EVENT_DATA, data_event, done
 from agent_core.runtime import RouteDecision
 from agent_core.subagent import SubAgentContext
-from app.ai.subagents.question.specs import merge_spec_layers, specs_from_context
+from app.ai.subagents.tasks.generation.specs import (
+    merge_spec_layers,
+    specs_from_context,
+)
 from app.features.assistant.schemas import AssistantChatReq
 from app.features.assistant.service import chat
 
@@ -32,13 +35,31 @@ def _caller(role: str, *, user_id: uuid.UUID, teacher_id: uuid.UUID):
 
 
 class _StubRuntime:
-    """桩 runtime：只记录本轮看到的 ``ctx.extra``，产出一张题卡。"""
+    """桩 runtime：只记录本轮看到的 ``ctx.extra``，产出一张题卡。
+
+    ADR-0098 把 question 并入 tasks，预检改按 ``(business, trigger)`` 选 schema，
+    故桩需按消息推出命中的触发词（等值于真实路由的规则层），不能写死：
+    出题类句子给 generate 组词，其余给 ``None``（走默认 schema）。
+    """
 
     def __init__(self) -> None:
         self.last_ctx_extra = None
 
+    @staticmethod
+    def _trigger_of(message: str) -> str | None:
+        from app.ai.subagents.tasks.manifest import MANIFEST
+
+        for spec in (MANIFEST.get("intent_schemas") or {}).values():
+            for word in spec.get("triggers") or []:
+                if word in message:
+                    return word
+        return None
+
     async def decide(self, signal, *, role: str, deps) -> RouteDecision:
-        return RouteDecision(business="question", name="题库与出题助手")
+        text = getattr(signal, "text", signal) or ""
+        return RouteDecision(
+            business="tasks", name="任务学情与出题助手", trigger=self._trigger_of(text)
+        )
 
     async def run(self, message, *, role, ctx, deps, business=None, session=None):
         self.last_ctx_extra = ctx.extra
@@ -74,7 +95,7 @@ def _send(db, rt, message: str, *, pid: uuid.UUID, session_id: str | None = None
 
 def _collect_specs(db, rt, *, pid: uuid.UUID) -> str:
     """跑完一轮「出数学三年级选择题」，返回会话 id。"""
-    _send(db, rt, "出2道三年级数学选择题", pid=pid)
+    _send(db, rt, "帮我出2道三年级数学选择题", pid=pid)
     return str(rt.last_ctx_extra["session_id"])
 
 
@@ -130,7 +151,7 @@ def test_new_turn_overrides_slot_and_does_resend_summary(db):
     rt = _StubRuntime()
     sid = _collect_specs(db, rt, pid=pid)
 
-    events = _send(db, rt, "换成一年级语文选择题", pid=pid, session_id=sid)
+    events = _send(db, rt, "换成一年级语文选择题，再出几道", pid=pid, session_id=sid)
 
     specs = (rt.last_ctx_extra or {}).get("specs")
     assert specs[0]["subject"] == "语文"
