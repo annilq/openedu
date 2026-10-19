@@ -83,6 +83,26 @@ def _load_input_schema(business: str) -> list | None:
     return mod.MANIFEST.get("input_schema")
 
 
+def _business_triggered(business: str, message: str) -> bool:
+    """本轮消息是否携带了该业务自己的意图词（manifest 的 triggers + hints）。
+
+    ADR-0099 的注入闸门：已确认规格只在**本轮确实在作出题请求**时回灌。
+
+    为什么不靠路由独自把关：路由在续接轮仍可能因 hints 或三级兜底落到同一
+    business，而“再说一句无关话就按旧规格再出一轮题”是用户直接可见的故障
+    （既有回归 ``test_unrelated_followup_does_not_regenerate`` 锁的正是它）。
+    判定复用 manifest 词表，不在 service 另写一份意图词，避免两份口径漂移。
+    """
+    try:
+        mod = importlib.import_module(f"app.ai.subagents.{business}.manifest")
+    except ModuleNotFoundError:
+        return False
+    manifest = mod.MANIFEST or {}
+    low = (message or "").strip().lower()
+    words = list(manifest.get("triggers") or []) + list(manifest.get("hints") or [])
+    return any((w or "").strip().lower() in low for w in words if w)
+
+
 def _student_grade(session, user) -> int:
     """学生年级 = 所属班级年级（ADR-0086 修正）。
 
@@ -613,19 +633,32 @@ async def chat(
                         )
                     )
                     return
-                # 必填齐备：写回合并后的槽位，先发「已确认规格」汇总，再进生成。
-                # 仅 question 需要「汇总 + 交给定题子代理的 specs 路径」：它是唯一按
-                # 结构化规格生成的业务；tasks/students/tutor 静默放行（不打扰、无噪声）。
+                # 必填齐备：写回合并后的槽位，再进生成。
+                # 仅 question 需要 specs 路径：它是唯一按结构化规格生成的业务；
+                # tasks/students/tutor 静默放行（不打扰、无噪声）。
                 #
-                # 触发条件：本轮补进了槽位，或本轮刚好补齐。二者皆无 → 说明槽位早
-                # 已齐备、本轮与出题无关（如「谢谢」），若仍注入 specs 会拿着旧规格
-                # 再出一轮题；此时按普通对话放行。
-                if decision.business == "question" and (
-                    _result["extracted"] or _was_incomplete
-                ):
+                # **回灌条件（ADR-0099）**：本轮确实是「在向本业务提问」时才注入已确认
+                # 规格。旧实现的闸门是「本轮抽到槽或刚补齐」，续话（「再出几道」）不
+                # 含槽关键词便不注入，规格只能靠模型从会被 compaction 压缩的历史里自行
+                # 重建——「上一轮说了三年级这一轮又问一遍」即源于此。
+                #
+                # 三道证据任一成立即认定为本轮意图（均为确定性判定，无模型参与）：
+                # 1. 消息含本业务意图词（manifest triggers/hints，如「再出几道」）；
+                # 2. 本轮抽到了槽（如「换成一年级语文」虽无意图词但明确在改规格）；
+                # 3. 本轮刚好补齐槽位（刚回答完澄清，必然还在同一流程里）。
+                # 三者皆无 → 「谢谢」这类无关话，不注入，避免拿旧规格再出一轮题。
+                _wants_generation = (
+                    _business_triggered(decision.business, message)
+                    or bool(_result["extracted"])
+                    or _was_incomplete
+                )
+                if decision.business == "question" and _wants_generation:
                     # 把合并后的槽位交给出题子代理的结构化规格路径（ADR-0034 Phase 1
                     # 接缝），否则生成步会重新回落自由文本兜底、丢失已收集的科目/年级/题型。
                     ctx.extra["specs"] = [_result["merged"]]
+                if decision.business == "question" and (
+                    _result["extracted"] or _was_incomplete
+                ):
                     _summary_text = summarize_slots(_result["merged"])
                     yield AssistantEvent(
                         eventType=EVENT_ASSISTANT_MESSAGE,
