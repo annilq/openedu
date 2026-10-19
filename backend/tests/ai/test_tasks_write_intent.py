@@ -110,8 +110,9 @@ def test_read_intent_not_stolen_by_write_phrases():
     assert _route("我的错题本里有哪些题", "teacher") == "tasks"
 
 
-def test_question_and_tutor_intent_unaffected():
-    assert _route("帮我出2道四年级数学题", "teacher") == "question"
+def test_generation_and_tutor_intent_unaffected():
+    """ADR-0098：出题意图随 question 域并入 tasks（同学情/写意图同域）；伴学仍归 tutor。"""
+    assert _route("帮我出2道四年级数学题", "teacher") == "tasks"
     assert _route("为什么天空是蓝色的？帮我讲解", "teacher") == "tutor"
 
 

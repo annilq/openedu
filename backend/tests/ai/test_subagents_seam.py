@@ -24,7 +24,7 @@ from agent_core.registry import (
 )
 from agent_core.subagent import SubAgentContext
 from app.ai.subagents import get_subject_persona
-from app.ai.subagents.question.agent import QuestionSubAgent
+from app.ai.subagents.tasks.agent import TasksSubAgent
 from app.ai.subagents.tasks.generation.specs import expand_specs
 from app.ai.subagents.tutor.agent import TutorSubAgent
 from app.domain.provider import EducationLLMProvider
@@ -127,7 +127,8 @@ def test_persona_normalization_and_fallback():
 
 def test_registry_dispatch():
     manifests = discover_subagent_manifests()
-    assert get_subagent_class(manifests, "question") is QuestionSubAgent
+    # ADR-0098：question 域并入 tasks，出题 tool loop 归 tasks agent
+    assert get_subagent_class(manifests, "tasks") is TasksSubAgent
     assert get_subagent_class(manifests, "tutor") is TutorSubAgent
     assert get_subagent_class(manifests, "diagnosis") is None  # 尚未实现
 
@@ -141,15 +142,16 @@ def test_build_subagent_factory():
     assert build_subagent(manifests, "diagnosis", provider=provider) is None
 
 
-def test_question_subagent_rag_and_persona_threading():
+def test_tasks_subagent_rag_and_persona_threading():
     """出题 tool loop：RAG 检索 + 学科 Persona 注入 user_prompt（ADR-0030 收口 #4 后 prompt 在此组装）。
 
     ADR-0097 起出题降级为流式 tool：run() 委托 run_with_tools，模型首轮选中
     generate_questions，handler 内逐题组装 prompt——本测试经该真实路径驱动。
+    ADR-0098：question 域并入 tasks，本路径由 TasksSubAgent 承载。
     """
     provider = _FakeProvider()
     retriever = _FakeRetriever()
-    agent = QuestionSubAgent(provider=provider, retriever=retriever)
+    agent = TasksSubAgent(provider=provider, retriever=retriever)
     ctx = SubAgentContext(
         role="teacher", message="帮我出2道三年级关于《分数》的数学选择题"
     )
@@ -191,10 +193,10 @@ def test_expand_specs_expands_count():
     assert items[2]["difficulty"] == "easy"
 
 
-def test_question_subagent_run_per_item_rag_and_persona():
+def test_tasks_subagent_run_per_item_rag_and_persona():
     """流式 tool 路径：每题独立触发 RAG + 学科 Persona 注入（不触真实 genkit）。"""
     retriever = _FakeRetriever()
-    agent = QuestionSubAgent(provider=_FakeProvider(), retriever=retriever)
+    agent = TasksSubAgent(provider=_FakeProvider(), retriever=retriever)
     ctx = SubAgentContext(role="teacher", message="帮我出2道三年级数学分数选择题")
 
     asyncio.run(_drive(agent, ctx))

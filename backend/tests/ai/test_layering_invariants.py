@@ -33,10 +33,10 @@ KERNEL_ROOT = BACKEND_ROOT / "agent_core"
 ADAPTER_PATH = KERNEL_ROOT / "adapters" / "genkit.py"
 FEATURES_ROOT = BACKEND_ROOT / "app" / "features"
 # ADR-0097：query 解散后，业务 agent 工具分布在域的 tools/ 下（原 query/tools 单根）。
-# ADR-0098：students 域吸收进 tasks（tools 根随之消失），question 域在第二波并入。
+# ADR-0098：students 与 question 域均吸收进 tasks（两域 tools 根随之消失），
+# 业务工具只余 tasks/tools 一个根。
 BUSINESS_TOOL_ROOTS = [
     BACKEND_ROOT / "app" / "ai" / "subagents" / "tasks" / "tools",
-    BACKEND_ROOT / "app" / "ai" / "subagents" / "question" / "tools",
 ]
 
 # genkit 是引擎 SDK，其（及插件包）的唯一合法落点是适配器
@@ -51,10 +51,12 @@ DEAD_MODULES = {
     # search_knowledge 零调用方）；将来真被复用时再按 ADR-0024 语义重建。
     "app.ai.tools",
     # ADR-0097：query 解散（功能按域迁入业务 agent）、guide 删除（写意图由 tasks 的
-    # create_draft 承接）。ADR-0098：students 域吸收进 tasks。目录已不存在，import 即回归。
+    # create_draft 承接）。ADR-0098：students 与 question 域均吸收进 tasks。目录已不存在，
+    # import 即回归。
     "app.ai.subagents.query",
     "app.ai.subagents.guide",
     "app.ai.subagents.students",
+    "app.ai.subagents.question",
 }
 _SKIP_DIRS = {".venv", "dist", "build", "__pycache__", "site-packages", "htmlcov"}
 

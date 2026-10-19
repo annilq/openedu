@@ -1,10 +1,10 @@
-"""业务 agent **只读**工具集契约测试（ADR-0033 决策 9 的机制化兜底 / ADR-0097 按域重组）。
+"""业务 agent **只读**工具集契约测试（ADR-0033 决策 9 的机制化兜底 / ADR-0097 按域重组 / ADR-0098 三域合一）。
 
 守护三条不变量，全部**静态或确定性**，不接真实模型：
 
-1. **工具集形状**：跨域只读工具（tasks 6 + students 1 + question 题库查询 1）、
-   名称唯一、schema 合法、每个参数与工具本身都有描述（模型靠它选型）、
-   handler 是 ``async (args, *, ctx, session)``。
+1. **工具集形状**：跨域只读工具（tasks 学情 7 + 题库查询 1；students 与 question
+   域均已并入 tasks，ADR-0098）、名称唯一、schema 合法、每个参数与工具本身都有
+   描述（模型靠它选型）、handler 是 ``async (args, *, ctx, session)``。
 2. **学生端无答案**（ADR-008 硬门槛）：遍历全部工具跑一遍学生视角，断言输出中
    **不出现** ``ANSWER_FIELDS``；并有**对照组**证明教师视角确实看得到答案——
    否则「学生端没有」可能只是数据本来就空，属假绿。
@@ -14,7 +14,7 @@
 
 写工具（``create_draft`` / ``delete_questions`` / ``archive_questions``）与流式工具
 （``generate_questions``）不在此文件——它们会写库或无同步 handler，契约另见
-``test_tasks_write_intent.py`` 与 question 相关测试。
+``test_tasks_write_intent.py`` 与出题相关测试。
 """
 from __future__ import annotations
 
@@ -52,7 +52,8 @@ from app.db.models import (
 from tests.utils.user import auth_headers, login, register_teacher
 
 # 跨域只读工具集：tasks 去掉唯一写工具 create_draft（list_students 自 ADR-0098
-# 起就在 tasks 域内），加上 question 的题库查询（出题/删除/归档非只读，另见各域测试）。
+# 起就在 tasks 域内），加上题库查询（出题/删除/归档非只读，另见各域测试）。
+# students 与 question 两个业务键均已并入 tasks（ADR-0098），本表即全部只读工具。
 READ_TOOLS: list = [
     *[t for t in TASKS_TOOLS if t.name != "create_draft"],
     LIST_BANK_QUESTIONS,
@@ -260,12 +261,9 @@ def test_business_agents_require_tool_data():
     真机教训（2026-09-22）：本地小模型在流式下不产出原生 ``ToolCall``，直接编造
     「你有 3 个学生：小明 / 小红 / 小华」——工具一个都没执行，权限层自然无从生效。
     这条断言防止有人为了「让模型能回答元问题」把闸门悄悄关掉。
-    ADR-0098：students 域吸收进 tasks 后，取数域只剩 tasks / question 两个。
+    ADR-0098：students / question 域吸收进 tasks 后，取数执行体只剩 tasks 一个。
     """
     assert TasksSubAgent.requires_tool_data is True
-    from app.ai.subagents.question.agent import QuestionSubAgent
-
-    assert QuestionSubAgent.requires_tool_data is True
 
 
 def test_handlers_match_runtime_signature():

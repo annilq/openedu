@@ -1,8 +1,12 @@
-"""缺槽预检端到端集成（ADR-0095，question 业务）。
+"""缺槽预检端到端集成（ADR-0095 / ADR-0098，tasks 业务 generate 意图）。
 
 用桩 AgentRuntime 驱动 ``chat``，断言：缺 subject/grade 时响应含 ``extra.clarify`` 且
 无非澄清 DATA 帧；下一轮只补 grade+qtype 则合并后继续生成；必填齐备（如带课件上下文）
 仍正常出 DATA 卡（结构化路径行为不变回归）。
+
+ADR-0098：question 域并入 tasks，预检按 ``(business, trigger)`` 分子意图——桩按
+``trigger`` 配置：给 generate 组触发词（默认）时走出题槽位预检，槽位落
+``tasks:generate`` 键；给非 generate 词 / ``None`` 时走默认 schema（恒放行）。
 """
 from __future__ import annotations
 
@@ -31,15 +35,23 @@ def _caller(role: str, *, user_id: uuid.UUID, teacher_id: uuid.UUID):
     return SimpleNamespace(role=role, user=SimpleNamespace(id=user_id, teacher_id=teacher_id, class_id=None))
 
 
-class _QuestionStubRuntime:
-    """桩 runtime：产出一张题卡（DATA 帧）；business 可配（默认 question）。"""
+class _StubRuntime:
+    """桩 runtime：产出一张题卡（DATA 帧）。
 
-    def __init__(self, business: str = "question") -> None:
+    ADR-0098：question 并入 tasks 后，预检按 ``(business, trigger)`` 选 schema。
+    默认配置模拟真实路由对出题问句的决策（business=tasks、命中 generate 组触发词）；
+    ``trigger`` 显式配非 generate 词或 ``None`` 时模拟学情 / 问答类决策。
+    """
+
+    def __init__(self, business: str = "tasks", trigger: str | None = "出题") -> None:
         self.business = business
+        self.trigger = trigger
         self.last_ctx_extra = None
 
     async def decide(self, signal, *, role: str, deps) -> RouteDecision:
-        return RouteDecision(business=self.business, name="桩业务")
+        return RouteDecision(
+            business=self.business, name="桩业务", trigger=self.trigger
+        )
 
     async def run(self, message, *, role, ctx, deps, business=None, session=None):
         self.last_ctx_extra = ctx.extra
@@ -76,7 +88,7 @@ def _latest_conv(db, *, teacher_id: uuid.UUID) -> Conversation:
 def test_missing_slots_yields_clarify_and_no_data_card(db):
     """缺 grade/qtype → 响应含 extra.clarify，且整条流无非澄清 DATA 帧。"""
     pid = uuid.uuid4()
-    rt = _QuestionStubRuntime()
+    rt = _StubRuntime()
     frames = asyncio.run(
         _drain(
             chat(
@@ -96,17 +108,17 @@ def test_missing_slots_yields_clarify_and_no_data_card(db):
     # 无生成（无 DATA 帧）；澄清轮不调 rt.run
     assert not [e for e in events if e["eventType"] == EVENT_DATA]
     assert rt.last_ctx_extra is None
-    # 已持久化已知槽位（subject=数学），grade 尚未收集。槽位按 business 分组存放。
+    # 已持久化已知槽位（subject=数学），grade 尚未收集。槽位按 business:intent 分组存放。
     conv = _latest_conv(db, teacher_id=pid)
     assert conv is not None
-    assert conv.slots["question"]["subject"] == "数学"
-    assert "grade" not in (conv.slots["question"] or {})
+    assert conv.slots["tasks:generate"]["subject"] == "数学"
+    assert "grade" not in (conv.slots["tasks:generate"] or {})
 
 
 def test_second_turn_merges_and_generates(db):
     """第一轮缺 grade/qtype；第二轮补「三年级出选择题」→ 合并后继续生成。"""
     pid = uuid.uuid4()
-    rt = _QuestionStubRuntime()
+    rt = _StubRuntime()
     # 第一轮
     asyncio.run(
         _drain(
@@ -146,15 +158,15 @@ def test_second_turn_merges_and_generates(db):
     assert handed["qtype"] == "choice"
     # 合并后的槽位已落库：subject(沿用) + grade + qtype
     conv = db.get(Conversation, uuid.UUID(sid))
-    assert conv.slots["question"]["subject"] == "数学"
-    assert conv.slots["question"]["grade"] == 3
-    assert conv.slots["question"]["qtype"] == "choice"
+    assert conv.slots["tasks:generate"]["subject"] == "数学"
+    assert conv.slots["tasks:generate"]["grade"] == 3
+    assert conv.slots["tasks:generate"]["qtype"] == "choice"
 
 
 def test_complete_specs_still_generate(db):
     """必填齐备（带课件 subject/grade）+ 文本 qtype → 汇总帧后正常出题（回归不误阻塞）。"""
     pid = uuid.uuid4()
-    rt = _QuestionStubRuntime()
+    rt = _StubRuntime()
     frames = asyncio.run(
         _drain(
             chat(
@@ -180,22 +192,23 @@ def test_complete_specs_still_generate(db):
 
 
 @pytest.mark.parametrize(
-    "business,text",
+    "business,trigger,text",
     [
-        ("tasks", "看看我的错题"),
-        ("tasks", "我班有哪些学生"),
-        ("tutor", "为什么天空是蓝的"),
+        # tasks 默认意图（学情 / 名单，ADR-0098）：非 generate 触发词 → 全 optional
+        ("tasks", "错题", "看看我的错题"),
+        ("tasks", "我班", "我班有哪些学生"),
+        ("tutor", None, "为什么天空是蓝的"),
     ],
 )
-def test_non_question_businesses_never_clarify(db, business, text):
-    """预检已扩展到全部业务，但 tasks/tutor 全 optional → 永不追问。
+def test_non_question_businesses_never_clarify(db, business, trigger, text):
+    """预检已扩展到全部业务，但默认意图 / tutor 全 optional → 永不追问。
 
-    ADR-0098：名单问句随 students 域吸收进 tasks，仍不触发任何澄清。
+    ADR-0098：名单问句随 students 域吸收进 tasks（默认意图），仍不触发任何澄清。
     tutor 的 question_text 亦为**非必填**（消息本身就是问题），否则自由问答会被
     恒追问「你想问什么？」而阻塞（ADR-0095 §2.4）。
     """
     pid = uuid.uuid4()
-    rt = _QuestionStubRuntime(business=business)
+    rt = _StubRuntime(business=business, trigger=trigger)
     frames = asyncio.run(
         _drain(
             chat(
@@ -216,9 +229,9 @@ def test_non_question_businesses_never_clarify(db, business, text):
 
 
 def test_tutor_does_not_emit_summary_frame(db):
-    """汇总确认帧只对 question 发；tutor 等问答/只读业务不发（避免噪声）。"""
+    """汇总确认帧只对 generate 意图发；tutor 等问答/只读意图不发（避免噪声）。"""
     pid = uuid.uuid4()
-    rt = _QuestionStubRuntime(business="tutor")
+    rt = _StubRuntime(business="tutor", trigger=None)
     frames = asyncio.run(
         _drain(
             chat(
@@ -234,7 +247,7 @@ def test_tutor_does_not_emit_summary_frame(db):
         e["eventType"] == EVENT_ASSISTANT_MESSAGE and "已确认规格" in e.get("text", "")
         for e in events
     ), "tutor 不应出现「已确认规格」汇总帧"
-    # 也不该给非 question 业务注入 specs（它们不按规格生成）
+    # 也不该给非 generate 意图注入 specs（它们不按规格生成）
     assert not (rt.last_ctx_extra or {}).get("specs")
 
 
@@ -255,7 +268,7 @@ def test_partial_fill_asks_only_remaining_required(db):
     下一轮只需补说缺失项」，它指已填槽不丢、只问仍缺的。本测试锁定该语义。
     """
     pid = uuid.uuid4()
-    rt = _QuestionStubRuntime()
+    rt = _StubRuntime()
     _turn1 = asyncio.run(
         _drain(
             chat(
@@ -284,7 +297,7 @@ def test_partial_fill_asks_only_remaining_required(db):
     assert {m["name"] for m in _clarify_missing(_turn2)} == {"qtype"}, "只该问 qtype"
     assert not [e for e in _parse(_turn2) if e["eventType"] == EVENT_DATA]
     conv = db.get(Conversation, uuid.UUID(sid))
-    assert conv.slots["question"]["grade"] == 3, "grade 必须跨轮记住"
+    assert conv.slots["tasks:generate"]["grade"] == 3, "grade 必须跨轮记住"
 
     # 第三轮补题型 → 齐备，进入生成
     _turn3 = asyncio.run(
@@ -301,14 +314,14 @@ def test_partial_fill_asks_only_remaining_required(db):
     assert (rt.last_ctx_extra or {}).get("specs")
 
 
-def test_other_business_does_not_clobber_question_slots(db):
-    """tutor 一轮之后，question 已收集的槽位仍在（槽位按 business 分组存）。
+def test_other_business_does_not_clobber_generate_slots(db):
+    """tutor 一轮之后，generate 意图已收集的槽位仍在（槽位按 business:intent 分组存）。
 
     回归：flat 存 + fill_slots 只搬当前 schema 内的键 → tutor 轮写回的 merged 不含
-    question 的 grade/qtype，半成形意图被静默清空。
+    出题的 grade/qtype，半成形意图被静默清空。
     """
     pid = uuid.uuid4()
-    rt = _QuestionStubRuntime()
+    rt = _StubRuntime()
     asyncio.run(
         _drain(
             chat(
@@ -321,9 +334,9 @@ def test_other_business_does_not_clobber_question_slots(db):
     )
     conv = _latest_conv(db, teacher_id=pid)
     sid = str(conv.id)
-    assert conv.slots["question"]["subject"] == "数学"
+    assert conv.slots["tasks:generate"]["subject"] == "数学"
 
-    tutor_rt = _QuestionStubRuntime(business="tutor")
+    tutor_rt = _StubRuntime(business="tutor", trigger=None)
     asyncio.run(
         _drain(
             chat(
@@ -335,7 +348,7 @@ def test_other_business_does_not_clobber_question_slots(db):
         )
     )
     conv = db.get(Conversation, uuid.UUID(sid))
-    assert conv.slots["question"]["subject"] == "数学", "tutor 轮不得冲掉 question 槽位"
+    assert conv.slots["tasks:generate"]["subject"] == "数学", "tutor 轮不得冲掉出题槽位"
 
 
 def test_unrelated_followup_does_not_regenerate(db):
@@ -344,7 +357,7 @@ def test_unrelated_followup_does_not_regenerate(db):
     回归：齐备即注入 specs 会让此后**每一条**消息都重出题，用户根本没法正常聊天。
     """
     pid = uuid.uuid4()
-    rt = _QuestionStubRuntime()
+    rt = _StubRuntime()
     frames = asyncio.run(
         _drain(
             chat(
@@ -359,7 +372,7 @@ def test_unrelated_followup_does_not_regenerate(db):
     conv = _latest_conv(db, teacher_id=pid)
     sid = str(conv.id)
 
-    rt2 = _QuestionStubRuntime()
+    rt2 = _StubRuntime()
     frames2 = asyncio.run(
         _drain(
             chat(
@@ -382,7 +395,7 @@ def test_clarify_message_payload_matches_frame_contract(db):
     from app.db.models import Message
 
     pid = uuid.uuid4()
-    rt = _QuestionStubRuntime()
+    rt = _StubRuntime()
     asyncio.run(
         _drain(
             chat(
@@ -416,7 +429,7 @@ def test_replay_bubbles_carry_clarify_and_summary(db):
     from app.features.assistant.repository import read_conversation_bubbles
 
     pid = uuid.uuid4()
-    rt = _QuestionStubRuntime()
+    rt = _StubRuntime()
     asyncio.run(
         _drain(
             chat(

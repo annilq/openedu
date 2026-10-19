@@ -1,8 +1,10 @@
 """tasks ``generate_task_stream`` 窄接口存活测试（绕过 HTTP 与真 LLM）。
 
-只验证「构造 question subagent 上下文 + 透传 run 输出」这一编排：桩 ``AgentRuntime``
-直接注入 ``runtime=...``，断言 SSE 帧逐条透传、且 run 收到 ``business="question"`` 与
+只验证「构造 tasks 子代理上下文 + 透传 run 输出」这一编排：桩 ``AgentRuntime``
+直接注入 ``runtime=...``，断言 SSE 帧逐条透传、且 run 收到 ``business="tasks"`` 与
 正确 subject。把编排移回 router 会让本测试无法成立（深度保证书）。
+
+ADR-0098：question 域并入 tasks，结构化出题的 business 键随迁。
 """
 import asyncio
 from collections.abc import AsyncIterator
@@ -22,7 +24,7 @@ class _StubRuntime(AgentRuntime):
         self.captured_business = None
 
     async def decide(self, *args, **kwargs):
-        return SimpleNamespace(business="question", name="出题")
+        return SimpleNamespace(business="tasks", name="任务学情与出题")
 
     def run(self, message, *, role, ctx, deps, business, session) -> AsyncIterator[AssistantEvent]:
         self.captured_ctx = ctx
@@ -73,7 +75,7 @@ def test_generate_task_stream_passthrough_and_ctx():
         frames = asyncio.run(_drain(gen))
 
         assert len(frames) == 2
-        assert rt.captured_business == "question"
+        assert rt.captured_business == "tasks"
         assert rt.captured_ctx is not None
         assert rt.captured_ctx.extra["subject"] == "数学"
         assert rt.captured_ctx.extra["teacher_id"] == teacher.id

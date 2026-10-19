@@ -1,15 +1,14 @@
-"""``tasks`` 任务学情域 SubAgent 契约测试（ADR-0033 决策 6 / 11 / 14 / ADR-0097 按域重组）。
+"""``tasks`` 任务学情与出题域 SubAgent 契约测试（ADR-0033 决策 6 / 11 / 14 / ADR-0097 按域重组 / ADR-0098 三域合一）。
 
 守护四件事，全部**确定性**、不接真实模型（CI 红线）：
 
-1. **清单与装配**：``tasks`` 被发现、``query``/``guide``/``students`` 已消失、
-   ``priority=14``（压住 question 的泛触发词「题目」、接住原 guide 的写意图位）；
-   SubAgent 实例携带全部 8 个工具（7 读 + 1 写 create_draft；``list_students``
-   自 students 域吸收，ADR-0098）。
+1. **清单与装配**：``tasks`` 被发现、``query``/``guide``/``students``/``question``
+   已消失、``priority=14``；SubAgent 实例携带全部 12 个工具（学情 7 读 + 1 写
+   create_draft + 题库 3 + 出题流式 1；students 与 question 域均已并入，ADR-0098）。
 2. **路由边界**：带学情语境的问句（任务/作业/错题/复习）归 ``tasks``，
-   纯名单问句也归 ``tasks``（students 域已吸收）；「出题」意图仍归
-   ``question``；学生端同样可见 ``tasks``（查自己），「出题」对学生也开放
-   （ADR-0081 §2.2）。
+   纯名单问句也归 ``tasks``（students 域已吸收）；「出题」意图同样归
+   ``tasks``（question 域已并入）；学生端同样可见 ``tasks``（查自己），
+   「出题」对学生也开放（ADR-0081 §2.2）。
 3. **展示投影**（决策 11 / ADR-0042）：卡片是**类型化**的——``kind`` 作判别键、
    载荷是结构化字段（``items`` / ``stats`` / ``total``），不是拼好的展示字符串；
    答案与解析永不进卡片，错误结果不炸流。
@@ -38,7 +37,7 @@ from agent_core.subagent import SubAgentContext, run_with_tools
 from app.ai.shared.render import render_cards
 from app.ai.shared.tool_support import ANSWER_FIELDS
 from app.ai.subagents.tasks import TasksSubAgent
-from app.ai.subagents.tasks.tools import TASKS_TOOLS
+from app.ai.subagents.tasks.tools import BANK_TOOLS, TASKS_TOOLS, generation_tools
 from app.ai.subagents.tutor import TutorSubAgent
 from app.core.db import engine
 from tests.ai.test_business_tools_contract import (
@@ -52,16 +51,19 @@ from tests.utils.fake_provider import FakeLLMProvider
 def test_manifest_declares_tasks_domain():
     manifests = discover_subagent_manifests()
     assert "tasks" in manifests
-    # ADR-0097：query 解散、guide 删除；ADR-0098：students 域吸收进 tasks
+    # ADR-0097：query 解散、guide 删除；ADR-0098：students 与 question 域吸收进 tasks
     assert "query" not in manifests and "guide" not in manifests
     assert "students" not in manifests
+    assert "question" not in manifests
     m = manifests["tasks"]
-    assert (m.business, m.name) == ("tasks", "任务学情助手")
+    assert (m.business, m.name) == ("tasks", "任务学情与出题助手")
     assert m.roles == ["teacher", "student"]
-    # 高于 question(12) 才能压住泛词「题目」；写意图短语接原 guide(20) 的拦截位
+    # 高于 tutor(-10) 的泛词 triggers；原 guide(20) 的写意图拦截位由本域完整短语承接
     assert m.priority == 14
-    # 无 skills：SOP 纪律已并入 system prompt（原 query_sop 的核心约束逐条在内）
-    assert m.skills == []
+    # 出题 SOP（自 question 域迁入）：适龄 / 对齐教材 / 题型约定 / 儿童安全闸门
+    assert m.skills == ["question_sop"]
+    # 出题动作键（自 question 移入）
+    assert m.actions == ["task_generate"]
 
 
 def test_manifest_absorbs_roster_triggers():
@@ -83,8 +85,20 @@ def test_agent_carries_all_tasks_tools():
         "get_mastery",
         "list_students",
         "create_draft",
+        # 题库三件（自 question 域迁入，ADR-0098）
+        "list_bank_questions",
+        "delete_questions",
+        "archive_questions",
+        # 出题流式 tool（自 question 域迁入）
+        "generate_questions",
     ]
-    assert [t.name for t in TASKS_TOOLS] == [t.name for t in agent.tools]
+    # 装配 = 三组导出的拼接（学情 8 + 题库 3 + 出题流式 1，ADR-0098）
+    _expected = [
+        *TASKS_TOOLS,
+        *BANK_TOOLS,
+        *generation_tools(provider=FakeLLMProvider()),
+    ]
+    assert [t.name for t in agent.tools] == [t.name for t in _expected]
     assert agent.max_turns == 3  # 内默认：查询 1–2 跳足够
 
 
@@ -131,15 +145,16 @@ def _route(text: str, role: str) -> str:
     return decision.business or ""
 
 
-def test_task_question_goes_to_tasks_not_question():
-    """question 的 triggers 含泛词「题目」，tasks 用 priority=14 压住它。"""
+def test_task_question_goes_to_tasks():
+    """「任务题目」是学情查询：虽含泛词「题目」，仍归 tasks 学情域（词序由契约测试守护）。"""
     assert _route("查看我的任务题目", "teacher") == "tasks"
     assert _route("我的错题本里有哪些题", "teacher") == "tasks"
 
 
-def test_question_intent_still_goes_to_question():
-    assert _route("帮我出 3 道三年级分数选择题", "teacher") == "question"
-    assert _route("来几道数学题练练", "teacher") == "question"
+def test_generation_intent_stays_in_tasks():
+    """ADR-0098：question 域并入 tasks 后，出题意图同样归 tasks。"""
+    assert _route("帮我出 3 道三年级分数选择题", "teacher") == "tasks"
+    assert _route("来几道数学题练练", "teacher") == "tasks"
 
 
 def test_roster_intent_absorbed_into_tasks():
@@ -167,9 +182,9 @@ def test_wrong_question_phrasing_goes_to_tasks_not_tutor():
     assert _route("我错了哪些题", "student") == "tasks"
 
 
-def test_student_generation_routes_to_question():
-    """学生自练出题：出题助手对师生双开（ADR-0081 §2.2），故学生出题意图路由到 question。"""
-    assert _route("帮我出几道数学题", "student") == "question"
+def test_student_generation_routes_to_tasks():
+    """学生自练出题：出题对师生双开（ADR-0081 §2.2），故学生出题意图同样路由到 tasks。"""
+    assert _route("帮我出几道数学题", "student") == "tasks"
     assert _route("今天有什么作业", "student") == "tasks"
 
 
@@ -270,7 +285,7 @@ def test_render_cards_unassigned_items_keep_structure():
 
 
 def test_render_cards_bank_questions_emits_question_bank_list():
-    """题库题目 → ``question_bank_list`` 卡片，明细是结构化字段（该工具已归 question 域）。"""
+    """题库题目 → ``question_bank_list`` 卡片，明细是结构化字段（该工具随 question 域并入 tasks）。"""
     cards = render_cards(
         "list_bank_questions",
         _envelope(

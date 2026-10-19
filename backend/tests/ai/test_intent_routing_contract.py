@@ -1,4 +1,4 @@
-"""动作直配内核契约（T02）：结构化动作 → business 的等值匹配。
+"""动作直配内核契约（T02 / ADR-0098 意图分组）：结构化动作 → business 的等值匹配。
 
 接缝：唯一裁决点 ``AgentRuntime.decide``。所有断言打在它的返回值上，不断言内部走了哪一级。
 
@@ -8,6 +8,8 @@
 - 动作命中但角色不可见 → 显式 ``action_not_visible``，**不是**静默回落可见集首个
 - 未知动作 → 容错回落文本路由，不报错
 - 纯文本调用（不带 action）结果与改动前逐条一致（由 test_agent_runtime 的回归表钉死）
+- ADR-0098：``classify`` 返回结构化 ``Classification``（business / trigger / level）；
+  ``intent_schemas[*].triggers ⊆ MANIFEST["triggers"]``（子意图组的词必须能被路由命中）
 """
 from __future__ import annotations
 
@@ -16,7 +18,7 @@ import random
 
 from agent_core import IntentSignal
 from agent_core.ports import RuntimeDeps
-from agent_core.router import match_action
+from agent_core.router import Classification, classify, match_action
 from agent_core.runtime import AgentRuntime
 from app.domain.safety import StudentSafety
 from tests.utils.fake_provider import FakeLLMProvider
@@ -38,10 +40,11 @@ async def _decide(signal: IntentSignal, *, role: str) -> object:
 
 
 # ── 动作归属声明 ──
-def test_question_manifest_declares_all_actions():
-    m = AgentRuntime.discover().manifests.get("question")
+def test_tasks_manifest_declares_all_actions():
+    # ADR-0098：question 域并入 tasks，task_generate 动作随迁
+    m = AgentRuntime.discover().manifests.get("tasks")
     assert m is not None
-    # ADR-0089：出题助手只声明「按规格出题」（task_generate）。判断题闭环（出题-判定-讲解）
+    # ADR-0089：出题只声明「按规格出题」（task_generate）。判断题闭环（出题-判定-讲解）
     # 已整体下沉到子代理：出题从自由文本/上下文自主判定 judge 规格，判定由 tutor 从对话
     # 历史读答案，不再有 quiz_generate / quiz_judge / courseware_hint 动作键。
     assert m.actions == ["task_generate"]
@@ -49,7 +52,7 @@ def test_question_manifest_declares_all_actions():
 
 def test_match_action_helper():
     manifests = AgentRuntime.discover().manifests
-    assert match_action("task_generate", manifests) == "question"
+    assert match_action("task_generate", manifests) == "tasks"
     # 空动作 / 未知动作 → None（交给文本路由）
     assert match_action("", manifests) is None
     assert match_action("nonexistent_action", manifests) is None
@@ -61,7 +64,7 @@ def test_match_action_helper():
 # 同时在 manifest 与本表各加一行；只加其一，本契约测试即失败。
 _EXPECTED_ACTION_OWNERS: dict[str, str] = {
     # 请求方：客户端结构化出题（req.action=task_generate）
-    "task_generate": "question",
+    "task_generate": "tasks",
 }
 
 
@@ -97,10 +100,10 @@ def test_action_ownership_is_unique():
 
 
 # ── 动作直配路由结果 ──
-def test_decide_action_routes_teacher_to_question():
+def test_decide_action_routes_teacher_to_tasks():
     decision = asyncio.run(_decide(IntentSignal(text="", action="task_generate"), role="teacher"))
-    assert decision.business == "question"
-    assert decision.name == "题库与出题助手"
+    assert decision.business == "tasks"
+    assert decision.name == "任务学情与出题助手"
     assert decision.extra.get("routed_by") == "action"
 
 
@@ -109,21 +112,21 @@ def test_decide_action_with_text_still_precedes_text_routing():
     decision = asyncio.run(
         _decide(IntentSignal(text="帮我讲讲这道题", action="task_generate"), role="teacher")
     )
-    assert decision.business == "question"
+    assert decision.business == "tasks"
     assert decision.extra.get("routed_by") == "action"
 
 
-def test_decide_action_routes_student_to_question():
-    # 出题助手现已对师生双开（ADR-0081 §2.2）：学生打 task_generate → 直接路由 question。
+def test_decide_action_routes_student_to_tasks():
+    # 出题现已对师生双开（ADR-0081 §2.2）：学生打 task_generate → 直接路由 tasks。
     decision = asyncio.run(_decide(IntentSignal(text="", action="task_generate"), role="student"))
-    assert decision.business == "question"
-    assert decision.name == "题库与出题助手"
+    assert decision.business == "tasks"
+    assert decision.name == "任务学情与出题助手"
     assert decision.extra.get("routed_by") == "action"
 
 
 def test_decide_action_not_visible_when_role_lacks_manifest():
     # 防御路径：动作命中但其归属 subagent 对当前角色不可见 → 显式 action_not_visible，
-    # 不静默落成答非所问。用合成清单验证代码路径（question 现已双开，不再能触发此分支）。
+    # 不静默落成答非所问。用合成清单验证代码路径（tasks 现已双开，不再能触发此分支）。
     from agent_core.registry import SubAgentManifest
 
     m = SubAgentManifest(
@@ -151,12 +154,12 @@ def test_decide_unknown_action_falls_back_to_text_routing():
     decision = asyncio.run(
         _decide(IntentSignal(text="帮我出几道数学题", action="does_not_exist"), role="teacher")
     )
-    assert decision.business == "question"
+    assert decision.business == "tasks"
 
 
 # ── T06：课件上下文 / 待判定态定向迁进信号（各有独立动作键） ──
 # ADR-0089：courseware_hint / quiz_judge / quiz_generate 三个动作键已删除——课件提示由
-# courseware 上下文触发，判断题出题/判定由 question / tutor 子代理自主驱动（文本/历史），
+# courseware 上下文触发，判断题出题/判定由 tasks / tutor 子代理自主驱动（文本/历史），
 # 服务端不再在信号归一化阶段硬发射动作键。
 
 
@@ -171,4 +174,66 @@ def test_action_match_order_independent():
         decision = asyncio.run(
             rt.decide(IntentSignal(text="", action=action), role="teacher", deps=_deps("teacher"))
         )
-        assert decision.business == "question", f"{action} 在打乱清单后仍应变 question"
+        assert decision.business == "tasks", f"{action} 在打乱清单后仍应变 tasks"
+
+
+# ── ADR-0098：意图分组契约（业务合并后按命中词分子意图） ──
+
+
+def test_intent_schemas_triggers_subset_of_manifest_triggers():
+    """子意图组的触发词必须是顶层 triggers 的子集——否则该词永远路由不到本域，
+    组内 schema（如出题必填槽）成为死代码，澄清链静默失效。"""
+    for biz, m in AgentRuntime.discover().manifests.items():
+        # intent_schemas 是 manifest 原文字段（经 raw 透传，registry 不解释其语义）
+        for intent, spec in (m.raw.get("intent_schemas") or {}).items():
+            missing = set(spec.get("triggers") or []) - set(m.triggers)
+            assert not missing, (
+                f"{biz} 的 intent_schemas[{intent}].triggers 有词不在顶层 triggers："
+                f"{sorted(missing)}"
+            )
+
+
+def test_classify_returns_structured_classification():
+    """规则命中 → Classification(business, trigger, level='rule')。"""
+    manifests = AgentRuntime.discover().manifests
+    result = asyncio.run(
+        classify("帮我出几道数学题", available=["tasks", "tutor"], manifests=manifests)
+    )
+    assert isinstance(result, Classification)
+    assert result.business == "tasks"
+    assert result.level == "rule"
+    # 命中词必须是 generate 组的成员（预检据此选出题 schema）
+    generate_words = set(
+        manifests["tasks"].raw["intent_schemas"]["generate"]["triggers"]
+    )
+    assert result.trigger in generate_words
+
+
+def test_classify_heuristic_and_fallback_levels():
+    """规则未命中：hint 命中 → level='heuristic'；全不命中 → 'fallback'。"""
+    manifests = AgentRuntime.discover().manifests
+    # 「掌握情况」命中 tasks 的 hint「掌握」（非 trigger），且不含 tutor 的「怎么/为什么」
+    heuristic = asyncio.run(
+        classify("掌握情况", available=["tasks", "tutor"], manifests=manifests)
+    )
+    assert heuristic.business == "tasks"
+    assert heuristic.level == "heuristic"
+    assert heuristic.trigger is None
+    # 无任何命中 → 兜底到 priority 最低的业务
+    fallback = asyncio.run(
+        classify("你好呀", available=["tasks", "tutor"], manifests=manifests)
+    )
+    assert fallback.level == "fallback"
+    assert fallback.trigger is None
+
+
+def test_decide_text_routing_carries_trigger_for_generate_intent():
+    """端到端：出题问句经 decide 拿到 generate 组命中词（预检的输入）。"""
+    decision = asyncio.run(
+        _decide(IntentSignal(text="帮我出2道四年级数学题"), role="teacher")
+    )
+    assert decision.business == "tasks"
+    generate_words = set(
+        AgentRuntime.discover().manifests["tasks"].raw["intent_schemas"]["generate"]["triggers"]
+    )
+    assert decision.trigger in generate_words
