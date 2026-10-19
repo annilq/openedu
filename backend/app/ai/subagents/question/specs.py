@@ -240,6 +240,32 @@ def parse_specs_from_text(text: str) -> list[dict]:
     return specs
 
 
+def merge_spec_layers(base: list, overrides: list) -> list[dict]:
+    """把「已确认规格」（base）与「模型 args 规格」（overrides）合成一份。
+
+    **合并而非拼接**（ADR-0099）：旧实现把两条来源 append 成列表再各自展开，
+    注入持久规格后模型若仍按历史填 args，count 会相加（「再出 2 道」变 4 道）。
+    这里 base 作基底、overrides 只覆盖自身**有值**的字段——既保住「结构化规格
+    优先、不让模型改写」（ADR-0095），又让模型表达的新意图（换难度 / 换题型）生效。
+
+    ``overrides`` 中缺省（缺席编码）的字段不参与覆盖：``qtype`` 取 ``""`` / ``count``
+    取 ``0`` 等值由调用方先行归一为「未提供」（见 ``_spec_from_args``）。
+    """
+    if not overrides:
+        return list(base)
+    if not base:
+        return list(overrides)
+    # 单规格场景（slot filling 一次只产出一份）：基底取首份，其余保持在后。
+    merged = dict(base[0]) if isinstance(base[0], dict) else base[0]
+    layered = dict(overrides[0]) if isinstance(overrides[0], dict) else overrides[0]
+    out = {**merged}
+    for key, value in layered.items():
+        if value in (None, "", 0, False):
+            continue
+        out[key] = value
+    return [out, *base[1:]]
+
+
 def specs_from_context(specs, *, ctx: Any) -> list[dict]:
     """规格解析的完整入口：结构化 specs 优先，课件上下文回填，正则兜底。
 

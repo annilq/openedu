@@ -26,6 +26,7 @@ from app.ai.subagents.question.pipeline import (
 )
 from app.ai.subagents.question.specs import (
     build_question_context,
+    merge_spec_layers,
     specs_from_context,
     subject_summary,
     with_skills,
@@ -74,11 +75,12 @@ def make_stream_handler(*, provider, retriever=None):
     ) -> AsyncIterator[Any]:
         extra = ctx.extra or {}
         # 规格三级来源：系统备好的 specs（含 slot filling）→ 模型 args → message 正则 /
-        # 课件回填。args 规格拼在 specs 之后解析，保证结构化规格优先。
+        # 课件回填。args 不拼接而是**按字段覆盖**系统规格（ADR-0099）：两条来源各自
+        # 展开会让 count 相加（「再出 2 道」变 4 道）。
         specs = list(extra.get("specs") or [])
         from_args = _spec_from_args(args)
         if from_args:
-            specs.append(from_args)
+            specs = merge_spec_layers(specs, [from_args])
         items = specs_from_context(specs, ctx=ctx)
         if not items:
             # 无规格可解析：不产出 ASSISTANT_MESSAGE（流式契约），把「缺什么」回灌给
