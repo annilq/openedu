@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import importlib
 import inspect
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, TypeVar
@@ -35,6 +36,16 @@ class SubAgentManifest:
     triggers: list[str] = field(default_factory=list)
     # 启发式兜底词（规则未命中时用）
     hints: list[str] = field(default_factory=list)
+    # 正则触发词：(已编译正则, 回传的**规范触发词**)。
+    #
+    # 为什么需要它：``triggers`` 是**子串包含**匹配，「出几道」命不中「出2道」
+    # （数字一变就漏），而用户写「出 2 道 / 出一道 / 来三题」远比写「出几道」多。
+    # 逐个词穷举数字与量词会指数膨胀，故把「出 + 数词 + 道」这类**族**用正则表达。
+    #
+    # 回传的必须是 ``triggers`` 里已有的**规范词**（不是正则本身）：下游子意图分组
+    # （``intent_schemas[*].triggers``）按词等值判定，回个正则串就永远落不进任何组。
+    # 该不变量由契约测试守住。
+    trigger_patterns: list[tuple[re.Pattern[str], str]] = field(default_factory=list)
     # 路由优先级：大者先匹配；最小者兼作最终兜底业务
     priority: int = 0
     # 结构化动作键清单（等值匹配，先于触发词；「哪个业务拥有哪个动作」的唯一声明处）。
@@ -93,8 +104,36 @@ def _manifest_from_dict(business: str, data: dict[str, Any]) -> SubAgentManifest
         priority=int(data.get("priority", 0)),
         actions=list(data.get("actions", [])),
         skills=list(data.get("skills", [])),
+        trigger_patterns=_compile_trigger_patterns(business, data),
         raw=data,
     )
+
+
+def _compile_trigger_patterns(
+    business: str, data: dict[str, Any]
+) -> list[tuple[re.Pattern[str], str]]:
+    """``trigger_patterns``（``[{pattern, trigger}]``）→ 已编译正则 + 规范触发词。
+
+    宽容解析：非 list / 缺字段 / 正则编译失败 → 跳过该条并打印告警，不阻断发现——
+    静默跳过会让「新加的正则没生效」变成一个查不出来的坑。
+    """
+    out: list[tuple[re.Pattern[str], str]] = []
+    raw = data.get("trigger_patterns")
+    if not isinstance(raw, list):
+        return out
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        pattern = entry.get("pattern")
+        trigger = entry.get("trigger")
+        if not pattern or not trigger:
+            print(f"[agent_core] subagent {business}: trigger_patterns 条目缺 pattern/trigger，已跳过")
+            continue
+        try:
+            out.append((re.compile(str(pattern)), str(trigger)))
+        except re.error as exc:
+            print(f"[agent_core] subagent {business}: trigger_patterns 正则非法（{exc}），已跳过")
+    return out
 
 
 def discover_subagent_manifests(

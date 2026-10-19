@@ -88,12 +88,23 @@ def _rule_match(
     命中词随结果返回（ADR-0098）：业务合并后调用方需要它分子意图（如出题槽位
     预检按命中词落在哪个 intent 组选 schema）。词表遍历顺序即优先级语义，
     与原先只返回 business 时完全一致。
+
+    两级：先字面触发词（子串），再正则触发词（``trigger_patterns``）。
+    **两级都按 business 优先级排序**，所以正则不会抢在该业务自己的高优字面词
+    前面，也不会跨业务抢先——某个业务的正则命中词仍按该业务的位置排序。
+
+    为什么要正则（ADR-0101）：字面词是**子串**匹配，「出几道」命不中「出 2 道」
+    （数字一变就漏），而用户写「出2道 / 出一道 / 来三题」远比写「出几道」多。
     """
     low = _norm(text)
     for biz in _ordered(businesses, manifests):
         for trig in manifests[biz].triggers:
             if _norm(trig) in low:
                 return biz, trig
+    for biz in _ordered(businesses, manifests):
+        for pattern, trigger in manifests[biz].trigger_patterns:
+            if pattern.search(low):
+                return biz, trigger
     return None
 
 

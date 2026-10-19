@@ -237,3 +237,90 @@ def test_decide_text_routing_carries_trigger_for_generate_intent():
         AgentRuntime.discover().manifests["tasks"].raw["intent_schemas"]["generate"]["triggers"]
     )
     assert decision.trigger in generate_words
+
+
+# ── ADR-0101：正则触发词（「出 N 道」族） ──
+
+
+def test_trigger_patterns_canonical_trigger_is_routable_and_grouped():
+    """``trigger_patterns`` 回传的触发词必须是**顶层字面触发词**，且（若要在出题组
+    生效）在 ``intent_schemas.generate.triggers`` 里。
+
+    为什么钉这一条：路由只回传一个**词**，下游子意图分组按词**等值**判定。若回传
+    正则串、或回传一个没在 generate 组里的词，出题就路由得到、却选不到出题 schema
+    ——必填槽预检静默失效，而所有既有测试（只断言 business）照样全绿。
+    """
+    for biz, m in AgentRuntime.discover().manifests.items():
+        literal = set(m.triggers)
+        for pattern, trigger in m.trigger_patterns:
+            assert trigger in literal, (
+                f"{biz} 的 trigger_patterns 回传了非字面触发词 {trigger!r}；"
+                f"必须是 triggers 里已有的词，否则子意图分组落不进去"
+            )
+            assert not pattern.pattern.startswith("^") or True  # 正则形态不限
+    generate_words = set(
+        AgentRuntime.discover().manifests["tasks"].raw["intent_schemas"]["generate"]["triggers"]
+    )
+    for _, trigger in AgentRuntime.discover().manifests["tasks"].trigger_patterns:
+        assert trigger in generate_words, (
+            f"tasks 的 trigger_patterns 回传 {trigger!r}，但它不在 generate 组里；"
+            f"「出 N 道」会走默认 schema（不追问科目/年级/题型）"
+        )
+
+
+def test_take_n_question_family_routes_to_tasks_generate():
+    """「出 N 道 / 来 N 题」整族必须路由到 tasks 且落在 generate 组（ADR-0101）。
+
+    实测缺口（2026-10-19）：字面触发词是子串匹配，「出几道」命不中「出 2 道」——
+    数字一变就漏，「出一道选择题 / 出一题 / 出五道数学题」全部 fallback 给 tutor，
+    出题请求被当成文本问答（DB 实证 routing=伴学答疑、tool=tutor_explain、0 张题卡）。
+    用户原句「请为「图形的运动（轴对称）」出一道选择题」正是这一族。
+    """
+    manifests = AgentRuntime.discover().manifests
+    generate_words = set(
+        manifests["tasks"].raw["intent_schemas"]["generate"]["triggers"]
+    )
+    cases = [
+        "请为「图形的运动（轴对称）」出一道选择题",
+        "出一道选择题",
+        "出一道题",
+        "出2道数学题",
+        "出五道数学题",
+        "来一道题",
+        "再来两道",
+        "出一题",
+        "出个题",
+    ]
+    for text in cases:
+        result = asyncio.run(
+            classify(text, available=["tasks", "tutor"], manifests=manifests)
+        )
+        assert result.business == "tasks", f"{text!r} 应路由到 tasks，实得 {result}"
+        assert result.level == "rule", f"{text!r} 应走规则层，实得 {result.level}"
+        assert result.trigger in generate_words, (
+            f"{text!r} 命中 {result.trigger!r}，不在 generate 组；出题必填槽预检会失效"
+        )
+
+
+def test_trigger_patterns_do_not_steal_query_or_write_intents():
+    """正则触发词不得把查询 / 写意图抢走（防「出」字泛化过头）。
+
+    「出」是高频字：一旦正则写宽（如只认「出」），「我有哪些题目」「今天有什么作业」
+    「帮我创建一个任务」都会被拽进出题意图并触发科目/年级澄清——比原来更糟。
+    """
+    manifests = AgentRuntime.discover().manifests
+    expectations = {
+        "我有哪些题目": "题目",  # 题库管理（不在 generate 组）
+        "今天有什么作业": "作业",  # 学情查询
+        "帮我创建一个任务": "创建一个任务",  # 写意图
+        "错了哪些题": "错了哪些",  # 学情查询（具体短语在裸词「错题」之后不在出题段）
+    }
+    for text, expected_trigger in expectations.items():
+        result = asyncio.run(
+            classify(text, available=["tasks", "tutor"], manifests=manifests)
+        )
+        assert result.business == "tasks", f"{text!r} 应仍归 tasks"
+        assert result.trigger == expected_trigger, (
+            f"{text!r} 命中词变了（实得 {result.trigger!r}，应为 {expected_trigger!r}）；"
+            f"词序或正则写宽了会改变子意图分组"
+        )
