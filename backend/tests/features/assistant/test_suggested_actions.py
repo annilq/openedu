@@ -145,12 +145,25 @@ def test_followup_chips_by_business(db):
         situation="followup", business="tasks", knowledge_point_id=None,
         role="teacher", teacher_id=tid, session=db,
     )
+    # ADR-0098：students 与 question 域均并入 tasks——「看看学生近期学情」与出题链
+    # 三个续出口（再出几道 / 降低难度 / 讲解这道题）都在 tasks 组内
     assert _labels(tasks) == [
         "看看相关错题", "整理成可导出要点", "换个范围再查",
-        "查看学习进度", "回到首页",
+        "查看学习进度", "看看学生近期学情",
+        "再出几道", "降低难度", "讲解这道题",
+        "回到首页",
     ]
     assert build_actions(
         situation="followup", business=None, knowledge_point_id=None,
+        role="teacher", teacher_id=tid, session=db,
+    ) == []
+    # 已消亡的业务键取不到组（不静默回落，避免前端渲染错组）
+    assert build_actions(
+        situation="followup", business="students", knowledge_point_id=None,
+        role="teacher", teacher_id=tid, session=db,
+    ) == []
+    assert build_actions(
+        situation="followup", business="question", knowledge_point_id=None,
         role="teacher", teacher_id=tid, session=db,
     ) == []
 

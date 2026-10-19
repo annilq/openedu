@@ -1,4 +1,4 @@
-"""出题 SubAgent 事件流单测：验证 STEP / THINKING / DATA 帧确实被产出。
+"""出题流式 tool 事件流单测：验证 STEP / THINKING / DATA 帧确实被产出。
 
 回归背景：早期 ``QuestionSubAgent.run`` 每题一次性调用 ``generate_question``，
 整条流只有 TOOL_CALL / DATA / TOOL_RESULT / ASSISTANT_MESSAGE，前端无从实时渲染
@@ -11,6 +11,8 @@ ADR-0097：出题降级为流式 tool——``run()`` 委托 ``run_with_tools``�
 ``tools`` 非空调用是 tool loop（首轮产 ``generate_questions`` ToolCall、回灌后
 的收尾轮产正文），``schema`` 调用是出题生成本身。收尾话术改由模型据 ToolOutcome
 计数生成，「应出 / 实出 / 失败」与多学科概览以回灌数据进入收尾轮可见的 history。
+
+ADR-0098：question 域并入 tasks，本文件随迁改名（``TasksSubAgent`` 承载）。
 """
 
 from __future__ import annotations
@@ -29,7 +31,7 @@ from agent_core.protocol import (
     EVENT_TOOL_RESULT,
 )
 from agent_core.subagent import SubAgentContext
-from app.ai.subagents.question.agent import QuestionSubAgent
+from app.ai.subagents.tasks.agent import TasksSubAgent
 from app.domain.provider import GeneratedQuestion
 
 _Q = GeneratedQuestion(
@@ -113,7 +115,7 @@ class _ScriptedProvider(LLMProvider):
 
 def _run(message: str, *, fail: bool = False):
     provider = _FakeProvider(fail=fail)
-    agent = QuestionSubAgent(provider=provider, retriever=None)
+    agent = TasksSubAgent(provider=provider, retriever=None)
     ctx = SubAgentContext(role="teacher", message=message)
 
     async def _go():
@@ -125,7 +127,7 @@ def _run(message: str, *, fail: bool = False):
 def _run_specs(specs: list[dict], *, fail_at: set[int]):
     """按结构化 specs 出题（ADR-0034），可指定第几次出题调用失败。"""
     provider = _ScriptedProvider(fail_at=fail_at)
-    agent = QuestionSubAgent(provider=provider, retriever=None)
+    agent = TasksSubAgent(provider=provider, retriever=None)
     ctx = SubAgentContext(role="teacher", message="", extra={"specs": specs})
 
     async def _go():

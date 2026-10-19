@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 
 from agent_core.ports import LLMProvider, StructuredDone
-from app.ai.subagents.question.pipeline import generate_question
+from app.ai.subagents.tasks.generation.pipeline import generate_question
 from app.domain.provider import GeneratedQuestion
 from app.domain.safety import SafetyVerdict
 
@@ -63,7 +63,7 @@ def test_generate_question_returns_generated():
 def test_generate_question_unsafe_returns_none(monkeypatch):
     """真实产出不安全 → 返回 None，由路由层以 LLM_UNAVAILABLE 报错。"""
     monkeypatch.setattr(
-        "app.ai.subagents.question.parsers.check_output",
+        "app.ai.subagents.tasks.generation.parsers.check_output",
         lambda text: SafetyVerdict(safe=False, reason="测试"),
     )
     g = _run(

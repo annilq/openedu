@@ -16,8 +16,8 @@ import pytest
 
 from agent_core.adapters.genkit import Segment, SegmentKind
 from agent_core.ports import LLMProvider, StructuredDone, TextDelta
-from app.ai.subagents.question.parsers import QuestionSpec, SchemaQuestionParser
-from app.ai.subagents.question.pipeline import build_question_prompts, stream_question
+from app.ai.subagents.tasks.generation.parsers import QuestionSpec, SchemaQuestionParser
+from app.ai.subagents.tasks.generation.pipeline import build_question_prompts, stream_question
 from app.domain.provider import (
     QuestionCard,
     QuestionFailed,
@@ -137,7 +137,7 @@ def test_no_structured_done_yields_question_failed():
 
 def test_unsafe_stem_yields_question_failed(monkeypatch):
     monkeypatch.setattr(
-        "app.ai.subagents.question.parsers.check_output",
+        "app.ai.subagents.tasks.generation.parsers.check_output",
         lambda text: SafetyVerdict(safe=("BAD" not in text), reason="测试"),
     )
     provider = _FakeProvider([StructuredDone(data=_q_dict(stem="BAD 题面"))])
@@ -150,7 +150,7 @@ def test_unsafe_stem_yields_question_failed(monkeypatch):
 def test_unsafe_reasoning_dropped_but_card_kept(monkeypatch):
     """推理单独过闸门：不安全只丢推理，好题不该被推理措辞连坐。"""
     monkeypatch.setattr(
-        "app.ai.subagents.question.parsers.check_output",
+        "app.ai.subagents.tasks.generation.parsers.check_output",
         lambda text: SafetyVerdict(safe=("BAD" not in text), reason="测试"),
     )
     provider = _FakeProvider([StructuredDone(data=_q_dict(reasoning="BAD 推理"))])

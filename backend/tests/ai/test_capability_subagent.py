@@ -55,13 +55,15 @@ def test_manifest_declares_capability_and_dual_role():
 
 
 def test_priority_sits_above_all_business_domains():
-    """priority=16 是功能本身：压过 tasks(14)/question(12)/students(10) 的泛词
-    （「查 / 有哪些」），否则「你能查什么」类元问题会被 requires_tool_data 硬失败。
+    """priority=16 是功能本身：压过 tasks(14) 的泛词（「查 / 有哪些」），
+    否则「你能查什么」类元问题会被 requires_tool_data 硬失败。
     写意图不冲突：tasks 的写触发词是「创建任务」等高精度短语，与自述问句无交集。
+    ADR-0098：students / question 域吸收进 tasks 后，被压制的域只剩两个执行体，
+    16 仍高于全部。
     """
     manifests = discover_subagent_manifests()
     assert manifests["capability"].priority == 16
-    for lower in ("tasks", "question", "students", "tutor"):
+    for lower in ("tasks", "tutor"):
         assert manifests["capability"].priority > manifests[lower].priority
 
 
@@ -123,9 +125,13 @@ def test_catalog_is_manifest_projection():
 
 
 def test_catalog_order_follows_priority():
-    """呈现顺序 = 路由优先级降序（主能力在前），与用户提问的命中概率一致。"""
+    """呈现顺序 = 路由优先级降序（主能力在前），与用户提问的命中概率一致。
+
+    ADR-0098：students / question 域并入 tasks 后，清单只剩两个执行体——
+    tasks（学情 + 出题）在前，tutor（伴学）收尾。
+    """
     lines = capability_catalog("teacher")
-    assert lines[0].startswith("任务学情助手")
+    assert lines[0].startswith("任务学情与出题助手")
     assert lines[-1].startswith("伴学答疑")
 
 

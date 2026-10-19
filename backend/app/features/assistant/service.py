@@ -71,16 +71,32 @@ log = logging.getLogger(__name__)
 _BLOCK_REASON_GATE = "输入被安全闸门拦截"
 
 
-def _load_input_schema(business: str) -> list | None:
-    """载入某业务的 ``input_schema``（manifest 唯一事实源）；缺失业务返回 None。
+def _resolve_input_schema(
+    business: str, trigger: str | None
+) -> tuple[list | None, str | None]:
+    """按 ``(business, 命中触发词)`` 解析预检 schema 与子意图（ADR-0098 §2.3）。
 
-    异常隔离：未知 business 不抛，返回 None（调用方据此跳过预检）。
+    返回 ``(schema, intent)``：
+
+    - ``trigger`` 命中 manifest ``intent_schemas`` 某组的 ``triggers`` → 该组 schema，
+      intent = 组名（如 tasks + 「出题」→ generate 组）；
+    - 否则回落 ``input_schema``（默认意图），intent = ``None``。
+
+    业务合并后（question 并入 tasks）schema 按命中词分组：出题必填槽只在出题意图
+    下生效，学情 / 名单 / 题库管理走全 optional 默认 schema 恒放行。
+
+    异常隔离：未知 business 不抛，返回 ``(None, None)``（调用方据此跳过预检）。
     """
     try:
         mod = importlib.import_module(f"app.ai.subagents.{business}.manifest")
     except ModuleNotFoundError:
-        return None
-    return mod.MANIFEST.get("input_schema")
+        return None, None
+    manifest = mod.MANIFEST
+    if trigger:
+        for intent, spec in (manifest.get("intent_schemas") or {}).items():
+            if trigger in (spec.get("triggers") or []):
+                return spec.get("schema"), intent
+    return manifest.get("input_schema"), None
 
 
 def _business_triggered(business: str, message: str) -> bool:
@@ -144,9 +160,10 @@ async def _summarize_dropped(provider, dropped: list[dict]) -> str | None:
 # ── 推荐操作目录（ADR-0072，出题-判断闭环的子代理化见 ADR-0089） ───────────────
 #
 # 推荐操作是服务端静态目录（零延迟、可控、可单测），不靠 LLM 生成。
-# 判断题闭环（出题-判定-讲解）现由 question / tutor 子代理自主驱动（ADR-0089）：
-# 出题助手从自由文本/知识点上下文自主判断是否出判断题；伴学答疑从对话历史（题卡含答案）
-# 自行判对错、给支架、按需揭示答案。服务端不再有出题/判定的分支逻辑。
+# 判断题闭环（出题-判定-讲解）现由 tasks / tutor 子代理自主驱动（ADR-0089，question
+# 域已并入 tasks，ADR-0098）：出题从自由文本/知识点上下文自主判断是否出判断题；伴学
+# 答疑从对话历史（题卡含答案）自行判对错、给支架、按需揭示答案。服务端不再有出题/判定
+# 的分支逻辑。
 
 
 
@@ -154,7 +171,7 @@ async def _summarize_dropped(provider, dropped: list[dict]) -> str | None:
 # 布尔收口——见 ADR-0089。
 
 
-# 知识点上下文解析（含 quiz 出题）已下沉到 question 子代理（读取 ctx.extra 的
+# 知识点上下文解析（含 quiz 出题）已下沉到 tasks 子代理（读取 ctx.extra 的
 # knowledge_point_id / courseware 字段自行解析），service 不再持有出题侧的 KP 解析。
 
 
@@ -206,19 +223,17 @@ _FOLLOWUP_BY_BUSINESS: dict[str, list[SuggestedAction]] = {
         # 自 guide 迁入：起草 / 查询之后的两个出口（ADR-0097）
         SuggestedAction(label="查看学习进度", kind="prompt",
                         payload="请帮我分析一下最近的学习进度和掌握情况。"),
-        SuggestedAction(label="回到首页", kind="navigate", payload="home"),
-    ],
-    "students": [
+        # 自 students 域迁入（ADR-0098）：名单问句之后的学情出口
         SuggestedAction(label="看看学生近期学情", kind="prompt",
                         payload="请帮我分析一下学生最近的学习情况。"),
-    ],
-    "question": [
+        # 自 question 域迁入（ADR-0098）：出题链的续出口
         SuggestedAction(label="再出几道", kind="prompt",
                         payload="请再给我出几道同类型的练习题。"),
         SuggestedAction(label="降低难度", kind="prompt",
                         payload="这些题有点难，请降低难度再出几道。"),
         SuggestedAction(label="讲解这道题", kind="prompt",
                         payload="请讲解一下刚才出的题该怎么思考。"),
+        SuggestedAction(label="回到首页", kind="navigate", payload="home"),
     ],
     "capability": [
         SuggestedAction(label="我要问个问题", kind="prompt",
@@ -251,8 +266,9 @@ def build_actions(
     - ``situation="empty"``：复现原 ``build_suggested_actions`` 行为（全局能力；
       带知识点 id 时叠加知识点目录）。供 ``GET /suggested-actions`` 空态调用，
       输出逐条等价于旧实现。
-    - ``situation="followup"``：按本轮 ``business``（tasks/questions/students/
-      tutor/capability）选一组回复后 chips；带知识点焦点时叠加知识点向 chips。
+    - ``situation="followup"``：按本轮 ``business``（tasks/tutor/capability；
+      students 与 question 域已吸收进 tasks，ADR-0098）选一组回复后 chips；带知识点
+      焦点时叠加知识点向 chips。
     """
     if situation == "empty":
         return _build_empty_suggested_actions(
@@ -337,7 +353,7 @@ def _build_empty_suggested_actions(
 # 前端按 `judge` 标记隐藏答案、待揭示；tutor 从历史读答案判定——见 ADR-0089。
 
 
-# 判断题出题不再有专属子生成器：统一走 question 子代理（文本/上下文路由），由它
+# 判断题出题不再有专属子生成器：统一走 tasks 子代理（文本/上下文路由），由它
 # 自主产出 judge 规格——不再经 ``_quiz_generate_stream`` 拦截剥离。见 ADR-0089。
 
 
@@ -349,7 +365,7 @@ def _build_empty_suggested_actions(
 #
 # 早期版本在此做「信号归一化」：按请求上下文（待判定态 / 出判断题 / 课件提示）服务端硬发射
 # 动作键（quiz_judge / quiz_generate / courseware_hint），再交给 `decide` 动作直配。ADR-0089
-# 把这些决定权交回子代理：出题由 question 子代理从文本/知识点上下文自主判定是否出判断题；
+# 把这些决定权交回子代理：出题由 tasks 子代理从文本/知识点上下文自主判定是否出判断题；
 # 判定由 tutor 子代理从对话历史（题卡含答案）自行判对错；课件提示由 tutor 的 courseware
 # 上下文触发。因此这里不再有任何出题/判定分支，只构造纯文本信号（保留客户端显式 action
 # 透传，如 task_generate）。
@@ -515,7 +531,7 @@ async def chat(
     focused_kp = resolve_kp_focus(session=session, owner_id=teacher_id, kp_id=kp_id)
 
     # 业务字段经 ctx.extra 透传（agent_core 不感知任何教育语义）。
-    # 判断题出题与常规对话共用它——出题段在其上补 ``specs``（由 question 子代理驱动）。
+    # 判断题出题与常规对话共用它——出题段在其上补 ``specs``（由 tasks 子代理驱动）。
     ctx = SubAgentContext(
         role=role,
         message=message,
@@ -550,7 +566,7 @@ async def chat(
     )
 
     # ── 出题 / 判定闭环（ADR-0089，子代理化） ──
-    # 判断题的出题与判定不再有服务端分支：question 子代理从文本/知识点上下文自主决定
+    # 判断题的出题与判定不再有服务端分支：tasks 子代理从文本/知识点上下文自主决定
     # 是否出 judge 规格的题卡（含答案），题卡原样落对话历史、前端按 `judge` 标记隐藏答案
     # 待揭示；tutor 子代理从对话历史读题卡答案自行判对错、给支架、按需揭示。服务端不再
     # 维护 pending_quiz 状态机，也不剥离/注入答案。
@@ -573,12 +589,14 @@ async def chat(
         # 已落库但尚未配到结果帧的 tool_call 行（工具名 → 行）。
         pending_calls: list[tuple[str | None, Message]] = []
 
-        # ── 缺槽预检（ADR-0095，确定性，非 LLM）──
-        # 对任何声明了 input_schema 的业务生效（ADR-0095：schema 是槽位唯一事实源，
-        # 不再按 business 硬编码开关）。是否阻塞完全由 schema 的 required 决定：
-        # 目前仅 question 声明了必填槽（subject/grade/qtype），故只有它会澄清；
-        # tasks/students/tutor 全 optional → 恒放行、不追问、也不发汇总帧
-        # （§2.4：读操作与问答过度追问反而干扰，汇总对它们只是噪声）。
+        # ── 缺槽预检（ADR-0095，确定性，非 LLM） ──
+        # 对任何声明了 input_schema / intent_schemas 的业务生效（ADR-0095：schema 是
+        # 槽位唯一事实源，不再按 business 硬编码开关；ADR-0098 §2.3：业务合并后按
+        # 命中触发词落哪个 intent 组选 schema）。是否阻塞完全由 schema 的 required
+        # 决定：目前仅 tasks 的 generate 意图声明了必填槽（subject/grade/qtype），
+        # 故只有出题意图会澄清；学情 / 名单 / 题库管理走默认 schema（全 optional）
+        # → 恒放行、不追问、也不发汇总帧（§2.4：读操作与问答过度追问反而干扰，
+        # 汇总对它们只是噪声）。
         # 结构化 POST /tasks/generate 经 ctx.extra["specs"] 自带校验，必须跳过本预检。
         if not ctx.extra.get("specs"):
             from app.features.assistant.slot_filling import fill_slots
@@ -587,12 +605,19 @@ async def chat(
                 summary_payload,
             )
 
-            _schema = _load_input_schema(decision.business)
+            _schema, _intent = _resolve_input_schema(
+                decision.business, decision.trigger
+            )
+            # 槽位两本账（ADR-0098 §2.3）：默认意图按 business 存，子意图按
+            # ``business:intent`` 存——flat 存会让学情一轮冲掉出题已收集的槽
+            # （fill_slots 只搬当前 schema 内的键）。历史 question 键的旧行不读，
+            # 无需迁移。
+            _slot_key = (
+                f"{decision.business}:{_intent}" if _intent else decision.business
+            )
             if _schema:
-                # 槽位按 business 分组：flat 存会让 tutor/tasks 一轮就冲掉 question
-                # 已收集的槽（fill_slots 只搬当前 schema 内的键），故各自一本账。
                 _store = conversation.slots if isinstance(conversation.slots, dict) else {}
-                _collected = _store.get(decision.business)
+                _collected = _store.get(_slot_key)
                 if not isinstance(_collected, dict):
                     _collected = {}
                 _result = fill_slots(
@@ -609,7 +634,7 @@ async def chat(
                 )
                 # 必须赋**新对象**：SQLAlchemy 按对象 identity 判定脏值，就地改同一个
                 # dict（_store[..] = .. 后再赋回）不会触发 UPDATE，槽位写不进库。
-                conversation.slots = {**_store, decision.business: _result["merged"]}
+                conversation.slots = {**_store, _slot_key: _result["merged"]}
                 if _result["clarifying"]:
                     # 写回已知槽位，供下一轮合并续接（跨轮记忆）
                     session.commit()
@@ -633,14 +658,15 @@ async def chat(
                         )
                     )
                     return
-                # 必填齐备：写回合并后的槽位，再进生成。
-                # 仅 question 需要 specs 路径：它是唯一按结构化规格生成的业务；
-                # tasks/students/tutor 静默放行（不打扰、无噪声）。
+                # 必填齐备：写回合并后的槽位，先发「已确认规格」汇总，再进生成。
+                # 仅 generate 意图需要「汇总 + 交给定题子代理的 specs 路径」：它是
+                # 唯一按结构化规格生成的意图；学情 / 名单 / 题库管理静默放行
+                # （不打扰、无噪声）。
                 #
-                # **回灌条件（ADR-0099）**：本轮确实是「在向本业务提问」时才注入已确认
-                # 规格。旧实现的闸门是「本轮抽到槽或刚补齐」，续话（「再出几道」）不
-                # 含槽关键词便不注入，规格只能靠模型从会被 compaction 压缩的历史里自行
-                # 重建——「上一轮说了三年级这一轮又问一遍」即源于此。
+                # **回灌条件（ADR-0099 × ADR-0098）**：本轮确实是「在向本业务作出题
+                # 请求」时才注入已确认规格。旧实现的闸门是「本轮抽到槽或刚补齐」，续话
+                # （「再出几道」）不含槽关键词便不注入，规格只能靠模型从会被 compaction
+                # 压缩的历史里自行重建——「上一轮说了三年级这一轮又问一遍」即源于此。
                 #
                 # 三道证据任一成立即认定为本轮意图（均为确定性判定，无模型参与）：
                 # 1. 消息含本业务意图词（manifest triggers/hints，如「再出几道」）；
@@ -652,11 +678,11 @@ async def chat(
                     or bool(_result["extracted"])
                     or _was_incomplete
                 )
-                if decision.business == "question" and _wants_generation:
+                if _intent == "generate" and _wants_generation:
                     # 把合并后的槽位交给出题子代理的结构化规格路径（ADR-0034 Phase 1
                     # 接缝），否则生成步会重新回落自由文本兜底、丢失已收集的科目/年级/题型。
                     ctx.extra["specs"] = [_result["merged"]]
-                if decision.business == "question" and (
+                if _intent == "generate" and (
                     _result["extracted"] or _was_incomplete
                 ):
                     _summary_text = summarize_slots(_result["merged"])

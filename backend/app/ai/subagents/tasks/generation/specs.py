@@ -8,12 +8,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.ai.subagents.question.pipeline import (
+from app.ai.subagents.tasks.generation.pipeline import (
     build_question_prompts,
     step_label,
     stream_question,
 )
-from app.ai.subagents.question.translate import translate_stream
+from app.ai.subagents.tasks.generation.translate import translate_stream
 from app.ai.subagents.subject_personas import get_subject_persona
 from app.domain.spec_keywords import (
     CN_NUM,

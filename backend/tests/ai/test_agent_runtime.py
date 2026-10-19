@@ -60,16 +60,18 @@ async def _run(message: str, *, role: str):
 
 
 # ── decide：父端混合路由 ──
-def test_decide_teacher_question():
+def test_decide_teacher_generation():
     decision = asyncio.run(_decide("帮我出几道数学题", role="teacher"))
-    assert decision.business == "question"
-    assert decision.name == "题库与出题助手"
+    assert decision.business == "tasks"
+    assert decision.name == "任务学情与出题助手"
+    # ADR-0098：命中词随决策返回（预检据此落 generate 意图组）
+    assert decision.trigger in ("帮我出", "出题", "出几道")
 
 
 def test_decide_teacher_tasks():
     decision = asyncio.run(_decide("查看我的任务有哪些", role="teacher"))
     assert decision.business == "tasks"
-    assert decision.name == "任务学情助手"
+    assert decision.name == "任务学情与出题助手"
 
 
 def test_decide_teacher_tutor():
@@ -85,24 +87,24 @@ def test_decide_teacher_tutor():
 ROUTING_REGRESSION = [
     # (输入, 角色, business, name)
     ("查一下这道题为什么选B", "teacher", "tutor", "伴学答疑"),
-    ("今天有什么作业", "teacher", "tasks", "任务学情助手"),
-    ("帮我创建一个任务，包含四年级数学题", "teacher", "tasks", "任务学情助手"),
-    ("帮我出2道四年级数学题", "teacher", "question", "题库与出题助手"),
+    ("今天有什么作业", "teacher", "tasks", "任务学情与出题助手"),
+    ("帮我创建一个任务，包含四年级数学题", "teacher", "tasks", "任务学情与出题助手"),
+    ("帮我出2道四年级数学题", "teacher", "tasks", "任务学情与出题助手"),
     # 学情查询词（自 query 迁入 tasks）：「不得误伤」面必须仍在 tasks
-    ("我的任务", "teacher", "tasks", "任务学情助手"),
-    ("我的错题", "teacher", "tasks", "任务学情助手"),
-    ("掌握度", "teacher", "tasks", "任务学情助手"),
-    ("该复习哪些题", "teacher", "tasks", "任务学情助手"),
+    ("我的任务", "teacher", "tasks", "任务学情与出题助手"),
+    ("我的错题", "teacher", "tasks", "任务学情与出题助手"),
+    ("掌握度", "teacher", "tasks", "任务学情与出题助手"),
+    ("该复习哪些题", "teacher", "tasks", "任务学情与出题助手"),
     # 错题精确短语（自 query 迁入）仍归 tasks，不落 tutor 兜底
-    ("帮我查一下我的错题", "teacher", "tasks", "任务学情助手"),
-    ("查询我今天的待复习", "teacher", "tasks", "任务学情助手"),
-    # 题库词归 question（ADR-0097 起题库查询迁出 tasks）
-    ("查题库里有哪些题", "teacher", "question", "题库与出题助手"),
+    ("帮我查一下我的错题", "teacher", "tasks", "任务学情与出题助手"),
+    ("查询我今天的待复习", "teacher", "tasks", "任务学情与出题助手"),
+    # 题库词归 tasks（ADR-0098 起题库查询随 question 域并入）
+    ("查题库里有哪些题", "teacher", "tasks", "任务学情与出题助手"),
     # 触发词与启发式都不该用单字「查」接走讲解类提问
     ("帮我查查轴对称是什么", "teacher", "tutor", "伴学答疑"),
-    # 人群域（ADR-0097 新增）：纯名单问句归 students，学情语境归 tasks
-    ("我班有哪些学生", "teacher", "students", "学生名单助手"),
-    ("小明最近错题多吗", "teacher", "tasks", "任务学情助手"),
+    # 名单域（ADR-0098 起吸收进 tasks）：纯名单问句归 tasks，学情语境同样归 tasks
+    ("我班有哪些学生", "teacher", "tasks", "任务学情与出题助手"),
+    ("小明最近错题多吗", "teacher", "tasks", "任务学情与出题助手"),
     # 能力自述（零 LLM 元问题）
     ("你能做什么", "teacher", "capability", "能力自述"),
 ]
@@ -117,10 +119,10 @@ def test_decide_routing_regression(message, role, business, name):
 
 # ── decide：学生端角色可见性（师生均可出题，见 ADR-0081 §2.2；查询恒限自己，见 ADR-0033） ──
 def test_decide_student_can_generate_question():
-    """ADR-0081 §2.2：学生可自练出题，出题助手对师生双开，故学生自由文本出题路由到 question。"""
+    """ADR-0081 §2.2：学生可自练出题，出题对师生双开，故学生自由文本出题路由到 tasks。"""
     decision = asyncio.run(_decide("帮我出几道数学题", role="student"))
-    assert decision.business == "question"
-    assert decision.name == "题库与出题助手"
+    assert decision.business == "tasks"
+    assert decision.name == "任务学情与出题助手"
 
 
 def test_decide_student_query_visible():
@@ -128,7 +130,7 @@ def test_decide_student_query_visible():
     但工具侧恒查自己、去答案。"""
     decision = asyncio.run(_decide("今天有什么作业", role="student"))
     assert decision.business == "tasks"
-    assert decision.name == "任务学情助手"
+    assert decision.name == "任务学情与出题助手"
 
 
 def test_decide_student_tutor_stays_tutor():
@@ -159,7 +161,7 @@ def test_run_returns_decision_and_stream():
         return d, s
 
     d, s = asyncio.run(go())
-    assert d.business == "question"
+    assert d.business == "tasks"
     assert hasattr(s, "__aiter__")  # 是异步迭代器（事件流）
 
 
@@ -193,7 +195,7 @@ def test_classify_takes_no_llm_classify():
 # ── run：路由 THINKING 帧不再携带 business（侧信道已移除） ──
 def test_run_routing_thinking_has_no_business_side_channel():
     decision, events = asyncio.run(_run("帮我出几道数学题", role="teacher"))
-    assert decision.business == "question"
+    assert decision.business == "tasks"
     for ev in events:
         if ev.eventType == EVENT_THINKING:
             assert "business" not in ev.extra

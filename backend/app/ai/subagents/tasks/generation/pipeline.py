@@ -1,7 +1,8 @@
 """出题管线（prompt 组装 → provider 流式 → 语义事件）。
 
-本模块是**出题业务的完整管线**，归属 question 子包（ADR-0032 Q3：原 ``app/ai/generation.py``
-的教育出题内容归位到 ``app/ai/subagents/question/``，``app/ai`` 只留 genkit/DB 桥接）：
+本模块是**出题业务的完整管线**，原归属 question 子包（ADR-0032 Q3：原
+``app/ai/generation.py`` 的教育出题内容归位到子代理），ADR-0098 随 question 域
+并入迁至 ``tasks/generation/``（``app/ai`` 只留 genkit/DB 桥接）：
 
 - ``build_question_prompts``：组装 ``(system_prompt, user_prompt, spec)``——流式与落库**同一份**
   prompt，杜绝两路口径漂移。
@@ -17,7 +18,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 
 from agent_core.ports import LLMProvider, StructuredDone, TextDelta
-from app.ai.subagents.question.parsers import (
+from app.ai.subagents.tasks.generation.parsers import (
     QuestionSchema,
     QuestionSpec,
     assemble_question,

@@ -99,7 +99,8 @@ class _JudgeLoopRuntime:
     """桩 runtime：出题轮产出含答案的判断题卡，作答轮定向 tutor 并记录历史。
 
     ADR-0089 起定向不再有 quiz_generate / quiz_judge 动作键：出题轮按文本路由到
-    question，作答轮（「对 / 错 / 不会」）落到 tutor，判定依据是对话历史里的题卡。
+    tasks（question 域已并入，ADR-0098），作答轮（「对 / 错 / 不会」）落到 tutor，
+    判定依据是对话历史里的题卡。
     """
 
     def __init__(self) -> None:
@@ -109,15 +110,19 @@ class _JudgeLoopRuntime:
 
     async def decide(self, signal, *, role, deps) -> RouteDecision:
         text = getattr(signal, "text", "") or ""
-        if any(kw in text for kw in ("判断题", "出一道", "出题", "练习题")):
-            return RouteDecision(business="question", name="出题助手")
+        # ADR-0098：命中词随决策返回——预检按它落 generate 意图组（出题 schema）。
+        for kw in ("判断题", "出一道", "出题", "练习题"):
+            if kw in text:
+                return RouteDecision(
+                    business="tasks", name="任务学情与出题助手", trigger=kw
+                )
         return RouteDecision(business="tutor", name="伴学答疑")
 
     async def run(self, message, *, role, ctx, deps, business=None, session=None):
         self.business = business
         self.extra = ctx.extra
         self.history = ctx.history
-        if business == "question":
+        if business == "tasks":
             yield run_started()
             yield user_message(message)
             yield thinking("正在理解你的需求，并选择最合适的助手…", extra={"routing": True})
@@ -135,7 +140,7 @@ def test_quiz_chat_runs_via_runtime_and_keeps_answer(client, db, fake_llm):
 
     真实 runtime + 确定性替身 LLM（``fake_llm`` autouse 夹具）：ADR-0097 起出题是
     tool loop，替身脚本首轮选中 ``generate_questions``（judge 规格由消息文本
-    「判断题」在 question 域内自主判定），题卡由流式工具逐题产出。
+    「判断题」在 tasks 域内自主判定），题卡由流式工具逐题产出。
     """
     r = register_teacher(client, username="qz_teacher")
     token = r.json()["access_token"]

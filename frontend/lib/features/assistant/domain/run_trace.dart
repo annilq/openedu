@@ -168,11 +168,12 @@ int _asInt(Object? v) {
 /// 收口在领域层而不是各视图私写：轨迹列表与轨迹详情都渲染它，写两遍迟早出现
 /// 「两个面板对不上」的排障事故（同后端 `trace.py` 的口径收口理由）。
 ///
-/// ADR-0097 起业务面重组：tasks（学情）/ question（出题）/ students（名单）/
-/// capability（能力自述）。`query` / `guide` 两个旧 kind 的映射**保留**——历史
-/// 会话行留库不删（可逆），轨迹页要能原样渲染它们。
+/// ADR-0098 起执行体收敛：tasks 吸收 question / students 两域（学情 + 名单 +
+/// 题库 + 出题），新会话的这几类轮次 kind 均为 ``tasks``；capability 是路由层
+/// 固定回复（零 LLM）。历史 kind（question / students / query…）的映射**保留**——
+/// 历史会话行留库不删（可逆），轨迹页要能原样渲染它们。
 String runKindLabel(String kind) => switch (kind) {
-      'tasks' => '学情',
+      'tasks' => '任务与出题',
       'question' => '出题',
       'students' => '名单',
       'capability' => '能力自述',

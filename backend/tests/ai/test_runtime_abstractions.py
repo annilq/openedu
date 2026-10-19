@@ -19,7 +19,7 @@ from agent_core.registry import (
 )
 from agent_core.router import classify
 from agent_core.subagent import SubAgentContext
-from app.ai.subagents.question import QuestionSubAgent
+from app.ai.subagents.tasks import TasksSubAgent
 from app.ai.subagents.tutor import TutorSubAgent
 from app.domain import build_provider
 from app.domain.genkit_provider import GenkitProvider
@@ -43,8 +43,8 @@ def test_build_provider_without_engine_defers_to_global_resolution():
 # ── 2. 发现即注册 ──
 def test_discovery_picks_up_agent_class_and_skill_prompt():
     manifests = discover_subagent_manifests()
-    # ADR-0097：query 解散、guide 删除，业务面重组为 tasks/question/students/tutor
-    assert set(manifests) >= {"tutor", "question", "tasks", "students"}
+    # ADR-0097：query 解散、guide 删除；ADR-0098：students/question 并入 tasks
+    assert set(manifests) >= {"tutor", "tasks"}
     assert "query" not in manifests, "query 已解散（ADR-0097）"
     assert "guide" not in manifests, "guide 已删除（ADR-0097）"
     for business, manifest in manifests.items():
@@ -52,7 +52,7 @@ def test_discovery_picks_up_agent_class_and_skill_prompt():
         assert get_subagent_class(manifests, business) is manifest.agent_cls
 
     # skills/*.md 真的被读进来了（此前是死元数据）
-    assert "出题 SOP" in manifests["question"].skill_prompt
+    assert "出题 SOP" in manifests["tasks"].skill_prompt
     assert manifests["tutor"].skill_prompt.strip() != ""
     # tasks 的 SOP 纪律已并入 system prompt（原 query_sop 的核心约束逐条在内），
     # 不再有独立 skill 文件——这是 ADR-0097 的刻意选择，防止两份真相源。
@@ -60,7 +60,7 @@ def test_discovery_picks_up_agent_class_and_skill_prompt():
 
 def test_build_subagent_uses_discovered_class():
     manifests = discover_subagent_manifests()
-    assert isinstance(build_subagent(manifests, "question", provider=FakeLLMProvider()), QuestionSubAgent)
+    assert isinstance(build_subagent(manifests, "tasks", provider=FakeLLMProvider()), TasksSubAgent)
     assert isinstance(build_subagent(manifests, "tutor", provider=FakeLLMProvider()), TutorSubAgent)
     assert build_subagent(manifests, "nonexistent", provider=FakeLLMProvider()) is None
 
@@ -96,7 +96,7 @@ def test_question_agent_injects_sop_into_system_prompt():
     化后 initial_system 统一承载——守护的是「SOP 真的到达模型」，不是位置本身。
     """
     provider = _SpyProvider().script("generate_questions")
-    agent = QuestionSubAgent(provider=provider)
+    agent = TasksSubAgent(provider=provider)
     ctx = SubAgentContext(role="teacher", message="帮我出3道三年级数学选择题", skills="SOP-XYZ")
 
     async def _go():
@@ -154,7 +154,11 @@ def _manifest(business: str, *, priority: int, triggers: list[str], hints: list[
 
 
 def _route(text: str, available: list[str], manifests: dict) -> str:
-    return asyncio.run(classify(text, available=available, manifests=manifests))
+    # classify 返回结构化 Classification（business / trigger / level）；
+    # 本文件只断言路由归属，故取 .business。
+    return asyncio.run(
+        classify(text, available=available, manifests=manifests)
+    ).business
 
 
 def test_router_orders_by_manifest_priority_only():

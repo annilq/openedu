@@ -1065,9 +1065,10 @@ async def generate_task_stream(
 ) -> AsyncIterator[str]:
     """结构化出题流式端点（ADR-0034 Phase 1）的业务层。
 
-    收 specs → 构造 question subagent 上下文 → 流式逐题产出 DATA 题卡（SSE 帧）。
-    纯透传：题卡由前端收齐后走 ``create_from_generated`` 落库（两步法第二步），
-    本函数不做任何持久化。``runtime`` 可选注入（默认 ``get_runtime()`` 单例），便于单测。
+    收 specs → 构造 tasks 子代理上下文（question 域已并入，ADR-0098）→ 流式逐题产出
+    DATA 题卡（SSE 帧）。纯透传：题卡由前端收齐后走 ``create_from_generated`` 落库
+    （两步法第二步），本函数不做任何持久化。``runtime`` 可选注入（默认
+    ``get_runtime()`` 单例），便于单测。
     """
     rt = runtime or get_runtime()
     teacher_id = teacher.id
@@ -1082,7 +1083,8 @@ async def generate_task_stream(
 
     # 反馈边（ADR-0060 D4）：把看板下发的代表错题解析为题干样例，注入出题 prompt。
     # 仅取本教师且 AI 生成的题（teacher_id + origin="ai"），避免把教师从教辅录入的
-    # 题当仿写样例（版权红线，ADR-0020）。解析后在 ctx.extra 透传给 question subagent。
+    # 题当仿写样例（版权红线，ADR-0020）。解析后在 ctx.extra 透传给 tasks 子代理
+    # （出题域随 question 并入，ADR-0098）。
     weak_examples: list[dict] | None = None
     if req.weak_example_ids:
         from sqlmodel import select
@@ -1137,6 +1139,6 @@ async def generate_task_stream(
     )
 
     async for ev in rt.run(
-        "", role="teacher", ctx=ctx, deps=deps, business="question", session=session
+        "", role="teacher", ctx=ctx, deps=deps, business="tasks", session=session
     ):
         yield ev.to_sse()

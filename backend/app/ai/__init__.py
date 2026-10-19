@@ -2,8 +2,9 @@
 
 本包是跨 feature 的 AI runtime（ADR-0027 共享内核）：编排 subagents + 桥接 Genkit 引擎。
 
-ADR-0032 Q3 后**教育出题业务已全部归位到** ``app.ai.subagents.question``
-（``pipeline.py`` 出题管线 / ``parsers.py`` 契约与解析器），本包只留：
+ADR-0032 Q3 后**教育出题业务已全部归位到** ``app.ai.subagents.tasks.generation``
+（``pipeline.py`` 出题管线 / ``parsers.py`` 契约与解析器；ADR-0098 随 question 域
+并入 tasks），本包只留：
 - ``engine``：模型引用 → 中性参数（ModelConfig / 解密 / settings）→ 适配器构造；
 - ``model_catalog``：服务商产品预设；
 - ``subagents``：业务 SubAgent 编排入口。
@@ -31,11 +32,11 @@ def __getattr__(name: str) -> Any:
 
         return subagents
     if name == "generate_question":
-        from app.ai.subagents.question.pipeline import generate_question
+        from app.ai.subagents.tasks.generation.pipeline import generate_question
 
         return generate_question
     if name == "QuestionSchema":
-        from app.ai.subagents.question.parsers import QuestionSchema
+        from app.ai.subagents.tasks.generation.parsers import QuestionSchema
 
         return QuestionSchema
     if name in {"resolve_engine", "EngineResolution"}:

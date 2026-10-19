@@ -33,8 +33,8 @@ from agent_core.protocol import (
 from agent_core.registry import discover_subagent_manifests
 from agent_core.runtime import RouteDecision
 from agent_core.subagent import SubAgentContext
-from app.ai.subagents.question.agent import QuestionSubAgent
-from app.ai.subagents.question.specs import parse_specs_from_text
+from app.ai.subagents.tasks.agent import TasksSubAgent
+from app.ai.subagents.tasks.generation.specs import parse_specs_from_text
 from app.ai.subagents.tutor.agent import TutorSubAgent
 from app.db.models import Conversation, Message
 from app.domain.provider import EducationLLMProvider
@@ -171,7 +171,7 @@ def test_specs_from_context_expands_count_on_every_path():
     ADR-0097 曾据此红过一轮——specs_from_context 的结构化路径走了
     build_prompt_from_specs（展开），正则兜底路径却直接返回 spec 列表。
     """
-    from app.ai.subagents.question.specs import specs_from_context
+    from app.ai.subagents.tasks.generation.specs import specs_from_context
 
     ctx = SubAgentContext(role="teacher", message="帮我出2道三年级数学选择题，关于分数")
     # 正则兜底路径
@@ -198,7 +198,7 @@ def test_specs_from_context_expands_count_on_every_path():
 
 def test_judge_spec_card_keeps_answer_and_flags_judge():
     """judge 规格 → 题卡带 ``judge: true`` 且**答案不剥离**（前端据此隐藏待揭示）。"""
-    agent = QuestionSubAgent(provider=_JudgeFakeProvider(), retriever=None)
+    agent = TasksSubAgent(provider=_JudgeFakeProvider(), retriever=None)
     ctx = SubAgentContext(
         role="teacher",
         message="",
@@ -231,14 +231,20 @@ def test_judge_spec_card_keeps_answer_and_flags_judge():
 
 
 class _JudgeCardRuntime:
-    """桩 runtime：emit 一张含答案的判断题卡，模拟出题子代理的产出。"""
+    """桩 runtime：emit 一张含答案的判断题卡，模拟出题子代理的产出。
+
+    ADR-0098：question 域并入 tasks；桩按真实路由对「判断题」问句的决策返回
+    （business=tasks + generate 组命中词），预检据此选出题 schema。
+    """
 
     def __init__(self) -> None:
         self.business = None
         self.extra = None
 
     async def decide(self, signal, *, role: str, deps) -> RouteDecision:
-        return RouteDecision(business="question", name="出题助手")
+        return RouteDecision(
+            business="tasks", name="任务学情与出题助手", trigger="判断题"
+        )
 
     async def run(self, message, *, role, ctx, deps, business=None, session=None):
         self.business = business
@@ -297,11 +303,11 @@ def test_chat_keeps_judge_card_answer_in_history(db):
     assert not hasattr(conv, "pending_quiz")
 
 
-def test_chat_text_route_reaches_question_agent_without_action(db):
+def test_chat_text_route_reaches_tasks_agent_without_action(db):
     """判断题不再靠 quiz_generate 动作键：纯文本即可经 decide 落到出题助手。
 
     ADR-0095 预检下带课件上下文（subject=数学 / grade=4）使必填齐备，run 仍被调用、
-    定向仍为 question。
+    定向仍为 tasks（question 域已并入，ADR-0098）。
     """
     tid = uuid.uuid4()
     rt = _JudgeCardRuntime()
@@ -318,7 +324,7 @@ def test_chat_text_route_reaches_question_agent_without_action(db):
         _drain_chat(chat(caller=caller, req=req, session=db, runtime=rt))
     )
     # 请求不带 action；定向由桩 decide 给出（真实路由由契约测试覆盖）。
-    assert rt.business == "question"
+    assert rt.business == "tasks"
 
 
 # ── 判定：tutor 从历史读答案，服务端不再注入待判定态 ─────────────────────────

@@ -19,19 +19,19 @@ from typing import Any, AsyncIterator
 from agent_core.protocol import EVENT_STEP, step
 from agent_core.subagent import SubAgentContext
 from agent_core.tools import ToolOutcome, ToolSpec
-from app.ai.subagents.question.pipeline import (
+from app.ai.subagents.tasks.generation.pipeline import (
     build_question_prompts,
     step_label,
     stream_question,
 )
-from app.ai.subagents.question.specs import (
+from app.ai.subagents.tasks.generation.specs import (
     build_question_context,
     merge_spec_layers,
     specs_from_context,
     subject_summary,
     with_skills,
 )
-from app.ai.subagents.question.translate import translate_stream
+from app.ai.subagents.tasks.generation.translate import translate_stream
 from app.domain.spec_keywords import SUBJECT_ALIASES
 
 NAME = "generate_questions"
@@ -192,7 +192,7 @@ def make_stream_handler(*, provider, retriever=None):
 
 def _figure_catalog(session, **kwargs) -> str | None:
     """图形清单（ADR-0089 §4.3）：增强项，任何异常都不阻断出题主链路。"""
-    from app.ai.subagents.question.specs import figure_catalog_for_question
+    from app.ai.subagents.tasks.generation.specs import figure_catalog_for_question
 
     try:
         return figure_catalog_for_question(session, **kwargs)

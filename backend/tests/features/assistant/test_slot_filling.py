@@ -17,8 +17,10 @@ from app.features.assistant.slot_summary import summarize_slots, summary_payload
 
 
 def _question_schema() -> list[dict]:
-    mod = importlib.import_module("app.ai.subagents.question.manifest")
-    return mod.MANIFEST["input_schema"]
+    # ADR-0098：question 域并入 tasks，出题（generate 意图）的槽位 schema 迁到
+    # intent_schemas.generate——「_question_schema」这个名字留给出题意图的调用方。
+    mod = importlib.import_module("app.ai.subagents.tasks.manifest")
+    return mod.MANIFEST["intent_schemas"]["generate"]["schema"]
 
 
 def _tasks_schema() -> list[dict]:
@@ -85,7 +87,7 @@ def test_resolve_enum_ref_handles_bad_ref():
 
 
 def test_question_and_tasks_schemas_load_independently():
-    """多业务载入各自 schema 互不串：question 缺槽阻塞，tasks 全 optional 不阻塞。"""
+    """多意图载入各自 schema 互不串：generate 意图缺槽阻塞，默认意图全 optional 不阻塞。"""
     q_result = fill_slots(_question_schema(), {}, incoming="查一下", ctx_extra={})
     assert q_result["clarifying"] is True  # subject/grade/qtype 缺失
     tasks_result = fill_slots(_tasks_schema(), {}, incoming="查一下", ctx_extra={})

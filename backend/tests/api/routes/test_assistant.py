@@ -230,9 +230,9 @@ def test_teacher_query_streams_tool_chain_and_persists_trace(client, fake_llm):
     assert status == 200, events
     types = [e["eventType"] for e in events]
 
-    # 路由到「任务学情助手」（而非 question / tutor）
+    # 路由到「任务学情与出题助手」（question 域已并入 tasks，ADR-0098）
     routed = [e.get("text", "") for e in _of(events, "THINKING") if e.get("extra", {}).get("routing")]
-    assert any("任务学情助手" in t for t in routed), routed
+    assert any("任务学情与出题助手" in t for t in routed), routed
     assert "ERROR" not in types
 
     # 事件链顺序：TOOL_CALL → TOOL_RESULT → DATA（展示卡后发）
@@ -264,7 +264,7 @@ def test_teacher_query_streams_tool_chain_and_persists_trace(client, fake_llm):
     assert (conv.kind, conv.status) == ("tasks", "done")
     assert str(conv.teacher_id) == setup["teacher_id"] and conv.student_id is None
     assert [r.step for r in rows] == ["input", "routing", "tool_call", "tool_result", "output"]
-    assert rows[1].content == "任务学情助手"
+    assert rows[1].content == "任务学情与出题助手"
     # tool_call 落的是**可读标签**（ev.label or ev.tool，service.py）：
     # 轨迹是给人回看的投影，不是给机器反解的标识——英文工具名跟着 frame 走，
     # 落到库里的是「查询错题本」这种能读的句子。tool_result 没有标签，仍落工具名。
@@ -453,7 +453,7 @@ def test_conversation_list_only_returns_my_own(client, fake_llm):
     mine = rows[teacher_sid]
     assert mine["title"] == "我都有哪些娃"  # 会话名 = 首条用户消息截断
     assert mine["bubble_count"] == 2, "提问 + 回答；routing/tool 不算气泡"
-    assert mine["kind"] == "students"  # 人群问句归 students 域（ADR-0097）
+    assert mine["kind"] == "tasks"  # 名单问句归 tasks（students 域已吸收，ADR-0098）
     assert "student_id" not in mine and "student_name" not in mine, "归属字段已移除"
 
     # 学生看到的是**自己**那段，且只有那一段

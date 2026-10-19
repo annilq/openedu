@@ -42,11 +42,15 @@ class RouteDecision:
 
     - ``business``：路由到的业务键；``None`` 表示输入被安全闸门拦截（不路由）。
     - ``name``：业务可读名（来自 manifest.name）。
+    - ``trigger``：规则匹配命中的触发词（启发式 / 兜底 / 动作直配为 ``None``）。
+      ADR-0098：业务合并后（question 并入 tasks），调用方靠它分子意图——
+      如出题槽位预检按「命中词落在哪个 intent 组」选 schema。
     - ``extra``：路由附加信息（如置信度），业务无关。
     """
 
     business: str | None
     name: str | None = None
+    trigger: str | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 
 
@@ -122,11 +126,16 @@ class AgentRuntime:
                 )
             # 未知动作：容错回落自然语言路由（不报错）；同名不同步的静默失效由契约测试兜。
 
-        business = await _classify(text, available=visible, manifests=self._manifests)
+        decision = await _classify(text, available=visible, manifests=self._manifests)
         # 角色可见性是唯一真相源：classify 只在 visible 内决策。
-        if business not in visible:
-            business = visible[0] if visible else None
-        return RouteDecision(business=business, name=self.name_of(business) if business else None)
+        biz = decision.business
+        if biz not in visible:
+            biz = visible[0] if visible else None
+        return RouteDecision(
+            business=biz,
+            name=self.name_of(biz) if biz else None,
+            trigger=decision.trigger,
+        )
 
     # ── 运行 ──
     async def run(
