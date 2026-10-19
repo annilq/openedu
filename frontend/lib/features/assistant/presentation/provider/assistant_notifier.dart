@@ -152,6 +152,9 @@ class AssistantNotifier extends StateNotifier<AssistantState> {
           history: history,
           model: model,
           courseware: courseware,
+          // 与 courseware 同源：课件入口带知识点 id 时一并透传，后端据此解析知识点
+          // 场景（L0 门控），否则为 null 走普通对话。补上此前漏传的字段。
+          knowledgePointId: courseware?.knowledgePointId,
         ),
       )) {
         // 会话身份随 DONE 帧回写：首轮建立；归属校验失败时后端换新 id，此处自愈覆盖。

@@ -1,10 +1,12 @@
 """答疑「要不要出图」三层识别（ADR-0089 §4，ticket 03）。
 
-钉死四件事：
-- **L0 确定性门控（不调模型）**：解析不出知识点 → 一次模型调用都不发、也不发射场景卡。
+钉死几件事：
+- **L0 确定性门控（不调模型、零成本）**：显式知识点（课件 / id）解析不出 → 仍发起一次
+  **置信度门控**的文字抽取（B 版最小破口），抽到可信名字且 ``find_knowledge_point`` 能
+  命中才放行；否则不发射、不发起 L1 意图判定。
 - **L2 后端校验盖章**：``should_show`` / ``figure_key`` 自洽、键 ∈ 目录、图库有行 → 才发射；
   四态全部不发射（决定权在后端，模型只有建议权）。
-- **异常态**：L1 微调用抛错 → 不发射、不吞正文（返回 ``None``）。
+- **异常态**：任一微调用抛错 → 不发射、不吞正文（返回 ``None``）。
 - **去重**：与上一条已发射身份键相同 → 不重复发射。
 - **顶点不进提示词**：喂给模型的目录只含 ``key — 中文名``。
 
@@ -19,6 +21,7 @@ from agent_core.subagent import SubAgentContext
 from app.ai.subagents.tutor.agent import TutorSubAgent
 from app.ai.subagents.tutor.scene_intent import (
     SceneIntent,
+    SceneKpHint,
     accept_scene_intent,
     resolve_interactive_scene,
     resolve_scene_knowledge_point,
@@ -46,23 +49,110 @@ class _FakeIntentProvider:
         yield StructuredDone(data=self.intent.model_dump())
 
 
+class _FakeKpHintProvider:
+    """同时服务文字抽取与场景意图判定的替身：按 schema 区分两次微调用。
+
+    记录各自的调用次数（``scene_calls`` / ``intent_calls``），便于断言 L0→L1 的放行边界。
+    """
+
+    configured = True
+
+    def __init__(
+        self,
+        *,
+        hint: SceneKpHint | None = None,
+        intent: SceneIntent | None = None,
+        raise_error: bool = False,
+    ) -> None:
+        self.hint = hint or SceneKpHint()
+        self.intent = intent or SceneIntent()
+        self.raise_error = raise_error
+        self.scene_calls: list[tuple[str, str]] = []
+        self.intent_calls: list[tuple[str, str]] = []
+        self.last_prompt: str | None = None
+
+    async def stream(self, system, prompt, *, schema=None, tools=None, history=None):
+        self.last_prompt = prompt
+        if self.raise_error:
+            raise RuntimeError("boom")
+        if schema is SceneKpHint:
+            self.scene_calls.append((system, prompt))
+            yield TextDelta(delta="reasoning")
+            yield StructuredDone(data=self.hint.model_dump())
+        else:
+            self.intent_calls.append((system, prompt))
+            yield TextDelta(delta="reasoning")
+            yield StructuredDone(data=self.intent.model_dump())
+
+
 _KP = "图形的运动（轴对称）"
 
 
 # ───────────────────── L0 门控（不调模型） ─────────────────────
 
 
-def test_l0_no_knowledge_point_emits_no_microcall(db):
-    """解析不出知识点 → 不放行、一次模型调用都不发（断言微调用次数为 0）。"""
+def test_l0_no_knowledge_point_attempts_kp_hint_only(db):
+    """解析不出知识点 → 仍尝试一次置信度门控的文字抽取（不发射场景卡）。
+
+    新契约（B 版最小破口）：显式知识点缺失时 L0 会发起一次 KP 抽取微调用；
+    抽取未命中可信知识点则维持「不发射」。断言点从「零次调用」改为「抽取未命中即 None」。
+    """
 
     async def _run():
-        provider = _FakeIntentProvider(intent=SceneIntent(should_show=True, figure_key="square"))
+        # 抽取替身：返回低置信度的幻觉名字，应被门控拦下 → 不发射、不发起 L1 意图判定。
+        provider = _FakeKpHintProvider(
+            hint=SceneKpHint(knowledge_point="幻影知识点", confidence=0.2)
+        )
         result = await resolve_interactive_scene(
-            provider=provider, session=db, message="对称轴有几条",
+            provider=provider, session=db, message="今天作业是什么",
             subject="数学", grade=4, teacher_id=uuid.uuid4(),
         )
         assert result is None
-        assert provider.calls == []  # 微调用次数为 0
+        # L0 只发过 KP 抽取，未放行到 L1 意图判定。
+        assert len(provider.scene_calls) == 1
+        assert len(provider.intent_calls) == 0
+
+    asyncio.run(_run())
+
+
+def test_l0_kp_hint_hit_resolves_and_continues_to_l1(db):
+    """文字抽到可信知识点且库中存在 → 经 find_knowledge_point 核实 → 放行到 L1。"""
+    teacher_id = uuid.uuid4()
+    kp = KnowledgePoint(
+        id=uuid.uuid4(), teacher_id=teacher_id, subject="数学", grade=4,
+        semester="", name="轴对称",
+    )
+    db.add(kp)
+    db.commit()
+
+    async def _run():
+        provider = _FakeKpHintProvider(
+            hint=SceneKpHint(knowledge_point="轴对称", confidence=0.9),
+            intent=SceneIntent(should_show=True, figure_key="square"),
+        )
+        await resolve_interactive_scene(
+            provider=provider, session=db, message="对称轴有几条",
+            subject="数学", grade=4, teacher_id=teacher_id,
+        )
+        assert len(provider.scene_calls) == 1   # KP 抽取
+        assert len(provider.intent_calls) == 1  # 放行 L1 意图判定
+
+    asyncio.run(_run())
+
+
+def test_l0_kp_hint_phantom_name_does_not_resolve(db):
+    """文字抽到名字但库里查无此知识点 → 视为没抽到，不发射。"""
+    teacher_id = uuid.uuid4()
+
+    async def _run():
+        provider = _FakeKpHintProvider(
+            hint=SceneKpHint(knowledge_point="幻影知识点", confidence=0.95)
+        )
+        result = await resolve_interactive_scene(
+            provider=provider, session=db, message="对称轴有几条",
+            subject="数学", grade=4, teacher_id=teacher_id,
+        )
+        assert result is None
 
     asyncio.run(_run())
 
@@ -287,10 +377,13 @@ def test_agent_wiring_maps_ctx_extra(db):
 
 
 def test_agent_wiring_no_kp_no_emit(db):
-    """无任何知识点来源 → 不发射、不发起微调用。"""
+    """无任何知识点来源 → 尝试一次 KP 抽取后仍未命中 → 不发射。"""
 
     async def _run():
-        provider = _FakeIntentProvider(intent=SceneIntent(should_show=True, figure_key="square"))
+        # 抽取替身返回低置信度名字，被门控拦下 → 不发射、不发起 L1 意图判定。
+        provider = _FakeKpHintProvider(
+            hint=SceneKpHint(knowledge_point="幻影", confidence=0.1)
+        )
         agent = TutorSubAgent(provider=provider)
         ctx = SubAgentContext(
             role="student", message="今天作业是什么", history=[], model=None, skills="",
@@ -305,7 +398,7 @@ def test_agent_wiring_no_kp_no_emit(db):
         )
         result = await agent._interactive_scene_for("今天作业是什么", ctx, session=db)
         assert result is None
-        assert provider.calls == []
+        assert len(provider.intent_calls) == 0
 
     asyncio.run(_run())
 

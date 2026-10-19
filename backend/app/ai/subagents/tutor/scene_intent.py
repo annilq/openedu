@@ -20,6 +20,12 @@
 那条路径连同整个抽取模块一起删除——后端从此不从自然语言猜任何图形；未命中 / 异常一律
 不发射，且**绝不回退到关键词猜测**。
 
+文字 → 知识点（B 版最小破口）：当调用方没有显式知识点（课件 / id）时，用一次
+**置信度门控**的结构化微调用，只从学生原话里抽出**知识点名**；抽到的名字仍然走
+**全工程唯一的匹配口径** ``find_knowledge_point``（学期精确 → 整学年回落），命中才算解析
+成功。本模块**自己不实现任何字面匹配**，绝不创造第二份事实源；抽取置信度低 / 模型
+未配置 / 抛错 / 不守 schema，一律视为「没抽到」，维持原门控行为（不发射、不吞正文）。
+
 边界：本模块是答疑侧编排（``ai/subagents/tutor``），投影 / 校验 / 盖章的实现在
 ``features/materials/figure_stamp.py``（与出题侧共用同一套）。
 """
@@ -44,13 +50,112 @@ from app.features.materials.scene_fusion import find_knowledge_point
 
 __all__ = [
     "SCENE_INTENT_SYSTEM_PROMPT",
+    "SCENE_KP_HINT_SYSTEM_PROMPT",
     "SceneIntent",
+    "SceneKpHint",
     "accept_scene_intent",
     "build_scene_intent_prompt",
+    "build_scene_kp_hint_prompt",
+    "extract_scene_knowledge_point",
     "resolve_interactive_scene",
     "resolve_scene_intent",
     "resolve_scene_knowledge_point",
 ]
+
+
+# 文字 → 知识点抽取（B 版最小破口）的置信度阈值：低于此值（含模型不给置信度）一律
+# 视为「没抽到」，回退到原门控行为（不发射）。阈值偏保守，宁可少出图也不弹错知识点。
+_KP_HINT_MIN_CONFIDENCE = 0.7
+
+
+class SceneKpHint(SQLModel):
+    """从学生原话里抽出的知识点名（文字 → 知识点这一跳的结构化产出）。
+
+    只产出**名字**，不直接匹配任何库条目——命中与否由 ``find_knowledge_point`` 决定
+    （单一事实源）。``confidence`` 是模型自己的把握度，低于阈值即丢弃。
+    """
+
+    knowledge_point: str | None = None  # 抽到的知识点名；抽不到则为空
+    confidence: float = 0.0  # 模型对该抽取的把握度（0~1）
+    rationale: str = ""  # 仅调试 / 轨迹用，不进正文
+
+
+SCENE_KP_HINT_SYSTEM_PROMPT = (
+    "你是教学知识点抽取助手。从学生的原话中识别其正在讨论的**单一**学科知识点名称。\n"
+    "硬约束：只输出知识点名（如「轴对称」「分数的加减法」），不要解释、不要造词；"
+    "若原话里根本没有提到具体知识点（只是在闲聊、问作业、求计算），"
+    "则 knowledge_point 留空、confidence 给 0。"
+)
+
+
+def build_scene_kp_hint_prompt(
+    *,
+    message: str,
+    subject: str = "",
+    grade: int = 0,
+) -> str:
+    """文字 → 知识点抽取的用户消息：只给原话 + 学科/年级作为语境。"""
+    scope = ""
+    if subject:
+        scope = f"（语境：{subject}"
+        if grade:
+            scope += f" · {grade}年级"
+        scope += "）"
+    return f"{scope}\n学生原话：{message}"
+
+
+async def extract_scene_knowledge_point(
+    provider,
+    *,
+    message: str,
+    subject: str = "",
+    grade: int = 0,
+) -> str | None:
+    """文字 → 知识点名的置信度门控抽取（一次结构化微调用）。
+
+    命中门槛：模型抽出名字 **且** confidence ≥ 阈值 **且** 该名字能经 ``find_knowledge_point``
+    解析成功（单一事实源），才返回名字；否则 ``None``。
+
+    以下一律 ``None``（维持原门控「不发射」行为）：
+    - provider 未配置 / 抛错 / 模型没给结构化产出 / 产出畸形；
+    - confidence 低于阈值（含模型不给置信度）；
+    - 抽到的名字在 ``find_knowledge_point`` 里查无此知识点（学期精确 → 整学年回落均无）。
+
+    本函数**不接收 session**：它只负责「文字 → 候选名」，真正的归属匹配交给调用方传入
+    的 ``session`` + ``find_knowledge_point``，避免在此处另建一套匹配口径。
+    """
+    if provider is None or not getattr(provider, "configured", True):
+        return None
+    if not message.strip():
+        return None
+    prompt = build_scene_kp_hint_prompt(message=message, subject=subject, grade=grade)
+    try:
+        async for ev in provider.stream(
+            SCENE_KP_HINT_SYSTEM_PROMPT, prompt, schema=SceneKpHint
+        ):
+            if isinstance(ev, StructuredDone):
+                return _coerce_kp_hint(ev.data)
+    except Exception:  # noqa: BLE001 — 抽取失败绝不许吞掉讲解正文
+        return None
+    return None
+
+
+def _coerce_kp_hint(data: Any) -> str | None:
+    """结构化产出 → 候选知识点名；不守 schema / 置信度不足 / 无名字 → ``None``。"""
+    if isinstance(data, SceneKpHint):
+        hint = data
+    elif isinstance(data, dict):
+        try:
+            hint = SceneKpHint.model_validate(data)
+        except Exception:  # noqa: BLE001 — 模型偶发不守 schema 属正常输入，不抛错
+            return None
+    else:
+        return None
+    name = (hint.knowledge_point or "").strip()
+    # 置信度门控：低于阈值即视为「没抽到」，绝不带着低把握的名字去匹配库。
+    if name and hint.confidence >= _KP_HINT_MIN_CONFIDENCE:
+        return name
+    return None
 
 
 class SceneIntent(SQLModel):
@@ -225,7 +330,27 @@ async def resolve_interactive_scene(
         teacher_id=teacher_id,
     )
     if not kp_name:
-        return None
+        # B 版最小破口：调用方没给显式知识点时，从文字抽一个候选名，**再经
+        # ``find_knowledge_point``（单一事实源）核实归属**——抽到的名字若查无此知识点
+        # 则视为没抽到，绝不带着幻觉名字放行。这一跳本身不实现任何字面匹配。
+        # 只有「两者都缺」时才发起这次抽取（课件 / id 已给则跳过，零额外开销）。
+        if not knowledge_point and not knowledge_point_id:
+            candidate = await extract_scene_knowledge_point(
+                provider, message=message, subject=subject, grade=grade
+            )
+            if candidate:
+                kp = find_knowledge_point(
+                    session,
+                    teacher_id=teacher_id,
+                    subject=subject,
+                    grade=grade,
+                    knowledge_point=candidate,
+                    semester=semester,
+                )
+                if kp is not None and kp.name:
+                    kp_name = kp.name
+        if not kp_name:
+            return None
     kp = find_knowledge_point(
         session,
         teacher_id=teacher_id,
