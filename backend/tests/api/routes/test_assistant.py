@@ -62,9 +62,14 @@ def _stream(client, token, message, extra=None):
     return status, events
 
 
-def test_student_tutor_ask_returns_answer_and_logs(client):
-    """学生正常提问：200 + ASSISTANT_MESSAGE 讲解，且 TutorLog 落库（ADR-008 / F-305）。"""
+def test_student_tutor_ask_returns_answer_and_logs(client, fake_llm):
+    """学生正常提问：200 + ASSISTANT_MESSAGE 讲解，且 TutorLog 落库（ADR-008 / F-305）。
+
+    ADR-0105：tutor 不再作无命中兜底，必须被模型显式路由到——测试经 ``route_to``
+    显式声明落点 tutor（没有声明时都不命中会落 capability 能力引导）。
+    """
     ptoken, student, ctoken = _setup(client, "as1_teacher", "as1_kid")
+    fake_llm.route_to = "tutor"
     status, events = _stream(client, ctoken, "23 + 45 怎么算")
     assert status == 200, events
     types = [e["eventType"] for e in events]
@@ -94,12 +99,14 @@ def test_student_jailbreak_blocked(client):
 
 
 def test_teacher_question_generation_emits_data_events(client, fake_llm):
-    """教师一句话出题：路由到 question subagent，DATA 事件携带题卡（ADR-0024）。
+    """教师一句话出题：路由到出题助手，DATA 事件携带题卡（ADR-0024）。
 
     ADR-0097 起出题是 tool loop：替身脚本首轮选中 ``generate_questions`` 流式工具
     （规格经 slot filling 注入 ctx.extra["specs"]，空 args 即按系统规格出题）。
+    ADR-0104：文本路由由模型决定，测试经 ``route_to`` 显式声明落点 tasks。
     """
     ptoken, _student, _ctoken = _setup(client, "as5_teacher", "as5_kid")
+    fake_llm.route_to = "tasks"
     fake_llm.script("generate_questions")
 
     status, events = _stream(client, ptoken, "帮我出 2 道三年级数学选择题")
@@ -118,9 +125,10 @@ def test_student_generation_routes_to_question(client, fake_llm):
     决策已显式化：路由 THINKING 帧标记 ``routing: True``，且 Conversation.kind 由决策写入。
     """
     _ptoken, _student, ctoken = _setup(client, "as6_teacher", "as6_kid")
+    fake_llm.route_to = "tasks"
     fake_llm.script("generate_questions")
-    # ADR-0095 预检：出题业务要求 subject/grade/qtype 齐备，否则先澄清；这里直接给全，
-    # 验证「路由到出题助手并产出题卡」的意图不被预检误伤。
+    # ADR-0104：出题引导（必填槽澄清）已随规则路由下线，预检恒放行；这里直接给全，
+    # 验证「路由到出题助手并产出题卡」的意图不受预检影响。
     status, events = _stream(client, ctoken, "帮我出 2 道三年级数学选择题")
     assert status == 200, events
     # 路由 THINKING 帧标记 routing=True（决策显式化后不再经 extra.business 透传）
@@ -141,7 +149,7 @@ def test_student_action_task_generate_routes_to_question(client, fake_llm):
     """
     _ptoken, _student, ctoken = _setup(client, "as9_teacher", "as9_kid")
     fake_llm.script("generate_questions")
-    # ADR-0095 预检：出题业务要求 subject/grade/qtype 齐备，这里直接给全以验证动作直配。
+    # ADR-0104：预检恒放行（出题引导下线），动作直配不受影响；给全规格验证直配路径。
     status, events = _stream(
         client, ctoken, "帮我出 2 道三年级数学选择题", extra={"action": "task_generate"}
     )
@@ -169,7 +177,7 @@ def test_teacher_only_action_is_explicitly_forbidden(client, monkeypatch):
         def name_of(self, biz):
             return biz
 
-        async def decide(self, signal, *, role, deps):
+        async def decide(self, signal, *, role, deps, history=None):
             return RouteDecision(
                 business=None,
                 name=None,
@@ -224,6 +232,7 @@ def _query_trace(events) -> tuple[str, list[Message]]:
 def test_teacher_query_streams_tool_chain_and_persists_trace(client, fake_llm):
     """教师查错题：路由 tasks → TOOL_CALL/TOOL_RESULT/DATA/ASSISTANT_MESSAGE，轨迹落库。"""
     setup = _query_setup(client, "asq1")
+    fake_llm.route_to = "tasks"
     fake_llm.script("list_wrong_questions")
 
     status, events = _stream(client, setup["teacher_token"], "我的错题本里有哪些题")
@@ -283,6 +292,7 @@ def test_student_query_ignores_foreign_student_id_and_hides_answers(client, fake
     """学生端查询：恒查自己（越权入参被无视）、帧里无答案、不计入伴学日志。"""
     setup = _query_setup(client, "asq2")
     ctoken = login(client, "qt_asq2_a", KID_PASSWORD).json()["access_token"]
+    fake_llm.route_to = "tasks"
     # 脚本故意让模型带「另一个学生的 student_id」：学生端必须无视，只查自己
     fake_llm.script(("list_wrong_questions", {"student_id": setup["b"]["id"]}))
 
@@ -314,6 +324,7 @@ def test_student_query_ignores_foreign_student_id_and_hides_answers(client, fake
 def test_query_multi_hop_runs_two_tools_in_sequence(client, fake_llm):
     """替身升级的核心证据：一次问句内两跳工具真跑（ADR-0097 后两跳须同域）。"""
     setup = _query_setup(client, "asq3")
+    fake_llm.route_to = "tasks"
     fake_llm.script(("list_teacher_tasks", {}), ("list_wrong_questions", {}))
 
     status, events = _stream(client, setup["teacher_token"], "我的任务和错题都看看")
@@ -341,6 +352,7 @@ def test_query_multi_hop_runs_two_tools_in_sequence(client, fake_llm):
 def test_client_history_does_not_suppress_query_tool_call(client, fake_llm):
     """回归：客户端自带历史（无工具回灌）不得让首轮工具调用消失。"""
     setup = _query_setup(client, "asq4")
+    fake_llm.route_to = "tasks"
     fake_llm.script("list_students")
 
     status, events = _stream(
@@ -438,11 +450,13 @@ def test_conversation_list_only_returns_my_own(client, fake_llm):
     setup = _query_setup(client, "ashist1")
     ctoken = login(client, "qt_ashist1_a", KID_PASSWORD).json()["access_token"]
 
-    # 学生聊一段（学生端恒路由到伴学答疑，不需要工具脚本）
+    # 学生聊一段（不表态路由 → 都不命中落 capability 能力引导，ADR-0105；
+    # 本断言只关心会话归属，不关心 kind）
     _s, ev_student = _stream(client, ctoken, "23 + 45 怎么算")
     student_sid = _of(ev_student, "DONE")[-1]["session_id"]
 
-    # 教师自己聊一段
+    # 教师自己聊一段（名单问句：测试显式声明落点 tasks，替代原规则命中，ADR-0104）
+    fake_llm.route_to = "tasks"
     fake_llm.script("list_students")
     _s, ev_teacher = _stream(client, setup["teacher_token"], "我都有哪些娃")
     teacher_sid = _of(ev_teacher, "DONE")[-1]["session_id"]
@@ -535,6 +549,7 @@ def test_student_replays_own_conversation_without_answers(client, fake_llm):
     """
     setup = _query_setup(client, "ashist3b")
     ctoken = login(client, "qt_ashist3b_a", KID_PASSWORD).json()["access_token"]
+    fake_llm.route_to = "tasks"
     fake_llm.script("list_wrong_questions")
     _s, ev = _stream(client, ctoken, "我的错题本里有哪些题")
     sid = _of(ev, "DONE")[-1]["session_id"]

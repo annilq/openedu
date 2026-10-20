@@ -1,20 +1,20 @@
-"""``tasks`` 任务学情与出题域 SubAgent 契约测试（ADR-0033 决策 6 / 11 / 14 / ADR-0097 按域重组 / ADR-0098 三域合一）。
+"""``tasks`` 任务学情与出题域 SubAgent 契约测试（ADR-0033 决策 6 / 11 / 14 / ADR-0097 按域重组 / ADR-0098 三域合一 / ADR-0104）。
 
-守护四件事，全部**确定性**、不接真实模型（CI 红线）：
+守护三件事，全部**确定性**、不接真实模型（CI 红线）：
 
 1. **清单与装配**：``tasks`` 被发现、``query``/``guide``/``students``/``question``
    已消失、``priority=14``；SubAgent 实例携带全部 12 个工具（学情 7 读 + 1 写
    create_draft + 题库 3 + 出题流式 1；students 与 question 域均已并入，ADR-0098）。
-2. **路由边界**：带学情语境的问句（任务/作业/错题/复习）归 ``tasks``，
-   纯名单问句也归 ``tasks``（students 域已吸收）；「出题」意图同样归
-   ``tasks``（question 域已并入）；学生端同样可见 ``tasks``（查自己），
-   「出题」对学生也开放（ADR-0081 §2.2）。
-3. **展示投影**（决策 11 / ADR-0042）：卡片是**类型化**的——``kind`` 作判别键、
+2. **展示投影**（决策 11 / ADR-0042）：卡片是**类型化**的——``kind`` 作判别键、
    载荷是结构化字段（``items`` / ``stats`` / ``total``），不是拼好的展示字符串；
    答案与解析永不进卡片，错误结果不炸流。
-4. **端到端 tool loop**：真 DB + 脚本化 provider 跑一轮，``TOOL_CALL`` → ``TOOL_RESULT``
+3. **端到端 tool loop**：真 DB + 脚本化 provider 跑一轮，``TOOL_CALL`` → ``TOOL_RESULT``
    → ``DATA`` → ``ASSISTANT_MESSAGE`` 齐备；**学生端帧里不出现答案/解析**，教师端对照
    组证明这不是「数据为空」的假绿。
+
+ADR-0104：原「路由边界」（学情/名单/出题词句归 tasks）一组测试随规则路由移除而
+删除——业务选择由 LLM / 决策模型按上下文 + 能力清单决定，不再是词表可钉的东西；
+本文件从此不再做文本路由断言（机制由 tests/ai/test_llm_routing.py 等覆盖）。
 """
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ from typing import Any
 
 from sqlmodel import Session
 
-from agent_core.ports import RuntimeDeps, TextDelta, ToolCall
+from agent_core.ports import TextDelta, ToolCall
 from agent_core.protocol import (
     EVENT_ASSISTANT_MESSAGE,
     EVENT_DATA,
@@ -32,7 +32,6 @@ from agent_core.protocol import (
     EVENT_TOOL_RESULT,
 )
 from agent_core.registry import build_subagent, discover_subagent_manifests
-from agent_core.runtime import AgentRuntime
 from agent_core.subagent import SubAgentContext, run_with_tools
 from app.ai.shared.render import render_cards
 from app.ai.shared.tool_support import ANSWER_FIELDS
@@ -58,19 +57,14 @@ def test_manifest_declares_tasks_domain():
     m = manifests["tasks"]
     assert (m.business, m.name) == ("tasks", "任务学情与出题助手")
     assert m.roles == ["teacher", "student"]
-    # 高于 tutor(-10) 的泛词 triggers；原 guide(20) 的写意图拦截位由本域完整短语承接
+    # ADR-0104/0105：规则移除后 priority 只剩「清单顺序」语义（无命中引导由
+    # capability 的 fallback_guide 声明），14 只需高于 tutor(-10)；
+    # 原「压过泛词 triggers」的竞争不再存在。
     assert m.priority == 14
     # 出题 SOP（自 question 域迁入）：适龄 / 对齐教材 / 题型约定 / 儿童安全闸门
     assert m.skills == ["question_sop"]
     # 出题动作键（自 question 移入）
     assert m.actions == ["task_generate"]
-
-
-def test_manifest_absorbs_roster_triggers():
-    """ADR-0098：students 的纯人群短语进 tasks triggers（路由边界由归属表达）。"""
-    triggers = discover_subagent_manifests()["tasks"].triggers
-    for phrase in ("有哪些学生", "我的娃", "我班", "班里", "学生名单", "多少个学生"):
-        assert phrase in triggers, phrase
 
 
 def test_agent_carries_all_tasks_tools():
@@ -134,61 +128,7 @@ def test_initial_system_no_kp_focus_without_extra():
     assert "查询仍须依托工具数据" not in plain
 
 
-# ───────────────────────── 2. 路由边界 ─────────────────────────
-
-
-def _route(text: str, role: str) -> str:
-    runtime = AgentRuntime.discover()
-    decision = asyncio.run(
-        runtime.decide(text, role=role, deps=RuntimeDeps(provider=FakeLLMProvider()))
-    )
-    return decision.business or ""
-
-
-def test_task_question_goes_to_tasks():
-    """「任务题目」是学情查询：虽含泛词「题目」，仍归 tasks 学情域（词序由契约测试守护）。"""
-    assert _route("查看我的任务题目", "teacher") == "tasks"
-    assert _route("我的错题本里有哪些题", "teacher") == "tasks"
-
-
-def test_generation_intent_stays_in_tasks():
-    """ADR-0098：question 域并入 tasks 后，出题意图同样归 tasks。"""
-    assert _route("帮我出 3 道三年级分数选择题", "teacher") == "tasks"
-    assert _route("来几道数学题练练", "teacher") == "tasks"
-
-
-def test_roster_intent_absorbed_into_tasks():
-    """ADR-0098：students 域消失后，纯名单问句归 tasks；带学情语境的同样归 tasks。"""
-    assert _route("我班有哪些学生", "teacher") == "tasks"
-    assert _route("班里孩子们名单", "teacher") == "tasks"
-    assert _route("小明最近错题多吗", "teacher") == "tasks"
-
-
-def test_tutor_intent_unaffected():
-    assert _route("为什么天空是蓝色的？帮我讲解", "teacher") == "tutor"
-
-
-def test_wrong_question_phrasing_goes_to_tasks_not_tutor():
-    """回归（2026-09-22）：『我错了哪些题』原落 tutor 兜底（无取数工具，让用户发题目），
-
-    现已在 tasks triggers 覆盖——只加带『哪些/错过』的精确短语，不抢伴学答疑。"""
-    assert _route("我错了哪些题", "teacher") == "tasks"
-    assert _route("我错过的题", "teacher") == "tasks"
-    assert _route("做错了哪些题", "teacher") == "tasks"
-    # 伴学答疑句仍归 tutor，不被新词抢走（ADR-0024/0030）
-    assert _route("这道题我哪里做错了，为什么", "teacher") == "tutor"
-    assert _route("为什么天空是蓝色的？帮我讲解", "teacher") == "tutor"
-    # 学生端同样归 tasks（查自己错题，ADR-008），不被角色拦回 tutor
-    assert _route("我错了哪些题", "student") == "tasks"
-
-
-def test_student_generation_routes_to_tasks():
-    """学生自练出题：出题对师生双开（ADR-0081 §2.2），故学生出题意图同样路由到 tasks。"""
-    assert _route("帮我出几道数学题", "student") == "tasks"
-    assert _route("今天有什么作业", "student") == "tasks"
-
-
-# ───────────────────────── 3. 展示投影 ─────────────────────────
+# ───────────────────────── 2. 展示投影 ─────────────────────────
 
 
 def _envelope(items: list[Any]) -> dict[str, Any]:
@@ -341,7 +281,7 @@ def test_render_tool_result_emits_typed_data_frames():
     assert TutorSubAgent(provider=FakeLLMProvider()).render_tool_result("x", {}) == []
 
 
-# ───────────────────────── 4. 端到端 tool loop（真 DB） ─────────────────────────
+# ───────────────────────── 3. 端到端 tool loop（真 DB） ─────────────────────────
 
 
 class _ScriptedProvider(FakeLLMProvider):

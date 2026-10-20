@@ -48,7 +48,7 @@ class _StubRuntime:
         self._unsafe = unsafe
         self._answer = answer
 
-    async def decide(self, message, *, role, deps) -> RouteDecision:
+    async def decide(self, message, *, role, deps, history=None) -> RouteDecision:
         return RouteDecision(business=self._business, name="伴学答疑")
 
     async def run(

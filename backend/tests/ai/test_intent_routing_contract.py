@@ -1,4 +1,4 @@
-"""动作直配内核契约（T02 / ADR-0098 意图分组）：结构化动作 → business 的等值匹配。
+"""动作直配内核契约（T02 / ADR-0104）：结构化动作 → business 的等值匹配。
 
 接缝：唯一裁决点 ``AgentRuntime.decide``。所有断言打在它的返回值上，不断言内部走了哪一级。
 
@@ -6,10 +6,12 @@
 - 动作归属唯一性（无孤儿 / 无悬空 / 不受清单顺序影响）
 - 动作命中且角色可见 → 正确 business
 - 动作命中但角色不可见 → 显式 ``action_not_visible``，**不是**静默回落可见集首个
-- 未知动作 → 容错回落文本路由，不报错
-- 纯文本调用（不带 action）结果与改动前逐条一致（由 test_agent_runtime 的回归表钉死）
-- ADR-0098：``classify`` 返回结构化 ``Classification``（business / trigger / level）；
-  ``intent_schemas[*].triggers ⊆ MANIFEST["triggers"]``（子意图组的词必须能被路由命中）
+- 未知动作 → 容错回落文本路由（策略原语：LLM 分类 / 无命中引导），不报错
+
+ADR-0104：规则（关键词/启发式）路由已整体移除——``classify`` / ``Classification`` /
+``trigger_patterns`` / ``intent_schemas`` 连同其契约测试一并删除；业务选择由 LLM /
+决策模型按「对话上下文 + 能力清单」决定，纯文本路由的语义正确性不再是单测可钉的
+东西（由路由原语测试覆盖机制，由真实模型负责语义）。
 """
 from __future__ import annotations
 
@@ -17,26 +19,27 @@ import asyncio
 import random
 
 from agent_core import IntentSignal
+from agent_core.adapters.llm_route import RoutingDecision
 from agent_core.ports import RuntimeDeps
-from agent_core.router import Classification, classify, match_action
+from agent_core.router import match_action
 from agent_core.runtime import AgentRuntime
 from app.domain.safety import StudentSafety
-from tests.utils.fake_provider import FakeLLMProvider
+from tests.utils.fake_provider import FakeLLMProvider, RoutingFakeProvider
 
 
 def _rt() -> AgentRuntime:
     return AgentRuntime.discover()
 
 
-def _deps(role: str) -> RuntimeDeps:
+def _deps(role: str, *, provider=None) -> RuntimeDeps:
     return RuntimeDeps(
-        provider=FakeLLMProvider(),
+        provider=provider if provider is not None else FakeLLMProvider(),
         safety=StudentSafety() if role == "student" else None,
     )
 
 
-async def _decide(signal: IntentSignal, *, role: str) -> object:
-    return await _rt().decide(signal, role=role, deps=_deps(role))
+async def _decide(signal: IntentSignal, *, role: str, provider=None) -> object:
+    return await _rt().decide(signal, role=role, deps=_deps(role, provider=provider))
 
 
 # ── 动作归属声明 ──
@@ -150,11 +153,18 @@ def test_decide_action_not_visible_when_role_lacks_manifest():
 
 
 def test_decide_unknown_action_falls_back_to_text_routing():
-    # 未知动作：容错回落自然语言路由，不报错。
+    # 未知动作：容错回落自然语言路由（ADR-0104 后＝策略原语），不报错。
+    # 用路由 LLM 桩注入「tasks」证明落的确实是文本路由那条路，而不是无命中引导。
+    provider = RoutingFakeProvider(RoutingDecision(business="tasks", confidence=0.9))
     decision = asyncio.run(
-        _decide(IntentSignal(text="帮我出几道数学题", action="does_not_exist"), role="teacher")
+        _decide(
+            IntentSignal(text="帮我出几道数学题", action="does_not_exist"),
+            role="teacher",
+            provider=provider,
+        )
     )
     assert decision.business == "tasks"
+    assert decision.extra.get("routed_by") == "llm"
 
 
 # ── T06：课件上下文 / 待判定态定向迁进信号（各有独立动作键） ──
@@ -175,152 +185,3 @@ def test_action_match_order_independent():
             rt.decide(IntentSignal(text="", action=action), role="teacher", deps=_deps("teacher"))
         )
         assert decision.business == "tasks", f"{action} 在打乱清单后仍应变 tasks"
-
-
-# ── ADR-0098：意图分组契约（业务合并后按命中词分子意图） ──
-
-
-def test_intent_schemas_triggers_subset_of_manifest_triggers():
-    """子意图组的触发词必须是顶层 triggers 的子集——否则该词永远路由不到本域，
-    组内 schema（如出题必填槽）成为死代码，澄清链静默失效。"""
-    for biz, m in AgentRuntime.discover().manifests.items():
-        # intent_schemas 是 manifest 原文字段（经 raw 透传，registry 不解释其语义）
-        for intent, spec in (m.raw.get("intent_schemas") or {}).items():
-            missing = set(spec.get("triggers") or []) - set(m.triggers)
-            assert not missing, (
-                f"{biz} 的 intent_schemas[{intent}].triggers 有词不在顶层 triggers："
-                f"{sorted(missing)}"
-            )
-
-
-def test_classify_returns_structured_classification():
-    """规则命中 → Classification(business, trigger, level='rule')。"""
-    manifests = AgentRuntime.discover().manifests
-    result = asyncio.run(
-        classify("帮我出几道数学题", available=["tasks", "tutor"], manifests=manifests)
-    )
-    assert isinstance(result, Classification)
-    assert result.business == "tasks"
-    assert result.level == "rule"
-    # 命中词必须是 generate 组的成员（预检据此选出题 schema）
-    generate_words = set(
-        manifests["tasks"].raw["intent_schemas"]["generate"]["triggers"]
-    )
-    assert result.trigger in generate_words
-
-
-def test_classify_heuristic_and_fallback_levels():
-    """规则未命中：hint 命中 → level='heuristic'；全不命中 → 'fallback'。"""
-    manifests = AgentRuntime.discover().manifests
-    # 「掌握情况」命中 tasks 的 hint「掌握」（非 trigger），且不含 tutor 的「怎么/为什么」
-    heuristic = asyncio.run(
-        classify("掌握情况", available=["tasks", "tutor"], manifests=manifests)
-    )
-    assert heuristic.business == "tasks"
-    assert heuristic.level == "heuristic"
-    assert heuristic.trigger is None
-    # 无任何命中 → 兜底到 priority 最低的业务
-    fallback = asyncio.run(
-        classify("你好呀", available=["tasks", "tutor"], manifests=manifests)
-    )
-    assert fallback.level == "fallback"
-    assert fallback.trigger is None
-
-
-def test_decide_text_routing_carries_trigger_for_generate_intent():
-    """端到端：出题问句经 decide 拿到 generate 组命中词（预检的输入）。"""
-    decision = asyncio.run(
-        _decide(IntentSignal(text="帮我出2道四年级数学题"), role="teacher")
-    )
-    assert decision.business == "tasks"
-    generate_words = set(
-        AgentRuntime.discover().manifests["tasks"].raw["intent_schemas"]["generate"]["triggers"]
-    )
-    assert decision.trigger in generate_words
-
-
-# ── ADR-0101：正则触发词（「出 N 道」族） ──
-
-
-def test_trigger_patterns_canonical_trigger_is_routable_and_grouped():
-    """``trigger_patterns`` 回传的触发词必须是**顶层字面触发词**，且（若要在出题组
-    生效）在 ``intent_schemas.generate.triggers`` 里。
-
-    为什么钉这一条：路由只回传一个**词**，下游子意图分组按词**等值**判定。若回传
-    正则串、或回传一个没在 generate 组里的词，出题就路由得到、却选不到出题 schema
-    ——必填槽预检静默失效，而所有既有测试（只断言 business）照样全绿。
-    """
-    for biz, m in AgentRuntime.discover().manifests.items():
-        literal = set(m.triggers)
-        for pattern, trigger in m.trigger_patterns:
-            assert trigger in literal, (
-                f"{biz} 的 trigger_patterns 回传了非字面触发词 {trigger!r}；"
-                f"必须是 triggers 里已有的词，否则子意图分组落不进去"
-            )
-            assert not pattern.pattern.startswith("^") or True  # 正则形态不限
-    generate_words = set(
-        AgentRuntime.discover().manifests["tasks"].raw["intent_schemas"]["generate"]["triggers"]
-    )
-    for _, trigger in AgentRuntime.discover().manifests["tasks"].trigger_patterns:
-        assert trigger in generate_words, (
-            f"tasks 的 trigger_patterns 回传 {trigger!r}，但它不在 generate 组里；"
-            f"「出 N 道」会走默认 schema（不追问科目/年级/题型）"
-        )
-
-
-def test_take_n_question_family_routes_to_tasks_generate():
-    """「出 N 道 / 来 N 题」整族必须路由到 tasks 且落在 generate 组（ADR-0101）。
-
-    实测缺口（2026-10-19）：字面触发词是子串匹配，「出几道」命不中「出 2 道」——
-    数字一变就漏，「出一道选择题 / 出一题 / 出五道数学题」全部 fallback 给 tutor，
-    出题请求被当成文本问答（DB 实证 routing=伴学答疑、tool=tutor_explain、0 张题卡）。
-    用户原句「请为「图形的运动（轴对称）」出一道选择题」正是这一族。
-    """
-    manifests = AgentRuntime.discover().manifests
-    generate_words = set(
-        manifests["tasks"].raw["intent_schemas"]["generate"]["triggers"]
-    )
-    cases = [
-        "请为「图形的运动（轴对称）」出一道选择题",
-        "出一道选择题",
-        "出一道题",
-        "出2道数学题",
-        "出五道数学题",
-        "来一道题",
-        "再来两道",
-        "出一题",
-        "出个题",
-    ]
-    for text in cases:
-        result = asyncio.run(
-            classify(text, available=["tasks", "tutor"], manifests=manifests)
-        )
-        assert result.business == "tasks", f"{text!r} 应路由到 tasks，实得 {result}"
-        assert result.level == "rule", f"{text!r} 应走规则层，实得 {result.level}"
-        assert result.trigger in generate_words, (
-            f"{text!r} 命中 {result.trigger!r}，不在 generate 组；出题必填槽预检会失效"
-        )
-
-
-def test_trigger_patterns_do_not_steal_query_or_write_intents():
-    """正则触发词不得把查询 / 写意图抢走（防「出」字泛化过头）。
-
-    「出」是高频字：一旦正则写宽（如只认「出」），「我有哪些题目」「今天有什么作业」
-    「帮我创建一个任务」都会被拽进出题意图并触发科目/年级澄清——比原来更糟。
-    """
-    manifests = AgentRuntime.discover().manifests
-    expectations = {
-        "我有哪些题目": "题目",  # 题库管理（不在 generate 组）
-        "今天有什么作业": "作业",  # 学情查询
-        "帮我创建一个任务": "创建一个任务",  # 写意图
-        "错了哪些题": "错了哪些",  # 学情查询（具体短语在裸词「错题」之后不在出题段）
-    }
-    for text, expected_trigger in expectations.items():
-        result = asyncio.run(
-            classify(text, available=["tasks", "tutor"], manifests=manifests)
-        )
-        assert result.business == "tasks", f"{text!r} 应仍归 tasks"
-        assert result.trigger == expected_trigger, (
-            f"{text!r} 命中词变了（实得 {result.trigger!r}，应为 {expected_trigger!r}）；"
-            f"词序或正则写宽了会改变子意图分组"
-        )

@@ -233,17 +233,17 @@ def test_judge_spec_card_keeps_answer_and_flags_judge():
 class _JudgeCardRuntime:
     """桩 runtime：emit 一张含答案的判断题卡，模拟出题子代理的产出。
 
-    ADR-0098：question 域并入 tasks；桩按真实路由对「判断题」问句的决策返回
-    （business=tasks + generate 组命中词），预检据此选出题 schema。
+    ADR-0098：question 域并入 tasks；ADR-0104：规则路由移除后无 trigger 子意图词，
+    桩只按 business 决策（出题问句 → tasks），出题走纯 LLM 自由文本生成。
     """
 
     def __init__(self) -> None:
         self.business = None
         self.extra = None
 
-    async def decide(self, signal, *, role: str, deps) -> RouteDecision:
+    async def decide(self, signal, *, role: str, deps, history=None) -> RouteDecision:
         return RouteDecision(
-            business="tasks", name="任务学情与出题助手", trigger="判断题"
+            business="tasks", name="任务学情与出题助手"
         )
 
     async def run(self, message, *, role, ctx, deps, business=None, session=None):

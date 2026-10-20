@@ -1,25 +1,27 @@
-"""``capability`` 能力自述与超范围引导 SubAgent 契约测试（ADR-0079 / ADR-0097，零 LLM）。
+"""``capability`` 能力自述与超范围引导 SubAgent 契约测试（ADR-0079 / ADR-0097 / ADR-0104 / ADR-0105，零 LLM）。
 
 守住六条（全部确定性、不接真实模型）：
 
-- 能力自述意图（你能做什么 / 你会什么 / 怎么用你 / 你是谁 …）路由到 ``capability``，
-  而非 ``tutor`` / ``tasks``；
-- ``tasks`` 的写意图（「创建任务」类短语）不被 ``capability`` 抢走；
-- ``tasks`` 的读意图（错题 / 作业）不被 ``capability`` 抢走；
 - 能力清单为 **manifests 的投影**（ADR-0097：单一事实源，非 LLM 生成、非手抄），
   按角色过滤可见 business，无 query/guide 残留字样；
-- 超范围问题落 ``tutor`` 兜底（不硬失败），且 ``tutor_system_prompt`` 含超范围自述句式；
-- subagent 不持有工具、不调用 provider（零 LLM）。
+- 超范围问题落 ``tutor``（显式路由时，不硬失败），且 ``tutor_system_prompt`` 含超范围自述句式；
+- subagent 不持有工具、不调用 provider（零 LLM）；
+- ``priority=16``：规则时代它压过 tasks(14) 的泛词；ADR-0104 移除规则路由后 priority
+  只剩「清单呈现顺序」语义，16 保持清单首位；
+- ADR-0105：``fallback_guide=True``——都没有命中（策略原语均不决策）时由本业务给出
+  能力引导；契约：全清单至多一个业务声明、且对师生双端可见（否则该角色的无命中
+  会静默退到 priority 最小者）。
+
+ADR-0104：原「能力自述问句路由到 capability」一组测试随规则路由移除而删除——
+「你能做什么」类元问题由 LLM / 决策模型按能力清单路由，不再是词表可钉的东西。
 """
 from __future__ import annotations
 
 import asyncio
 from typing import Any
 
-from agent_core.ports import RuntimeDeps
 from agent_core.protocol import EVENT_ASSISTANT_MESSAGE
 from agent_core.registry import discover_subagent_manifests
-from agent_core.runtime import AgentRuntime
 from agent_core.subagent import SubAgentContext
 from app.ai.subagents.capability import (
     CapabilitySubAgent,
@@ -28,14 +30,6 @@ from app.ai.subagents.capability import (
 )
 from app.domain.safety import tutor_system_prompt
 from tests.utils.fake_provider import FakeLLMProvider
-
-
-def _route(text: str, role: str) -> str:
-    runtime = AgentRuntime.discover()
-    decision = asyncio.run(
-        runtime.decide(text, role=role, deps=RuntimeDeps(provider=FakeLLMProvider()))
-    )
-    return decision.business or ""
 
 
 async def _collect(agent, message: str, role: str) -> list[Any]:
@@ -50,16 +44,30 @@ def test_manifest_declares_capability_and_dual_role():
     m = discover_subagent_manifests()["capability"]
     assert (m.business, m.name) == ("capability", "能力自述")
     assert m.roles == ["teacher", "student"]
-    # hints 必须留空：能力自述要的是高精度，启发式兜底会把查询/讲解意图一并抢走。
-    assert m.hints == []
+
+
+def test_manifest_declares_unique_fallback_guide():
+    """ADR-0105：至多一个业务声明 ``fallback_guide``，且就是 capability、双端可见。
+
+    都不命中时该业务给出「自身能力引导」；若声明不唯一，无命中落点随清单顺序漂移；
+    若对某角色不可见，该角色的无命中会静默退到 priority 最小者（回到「执行体兜底」）。
+    """
+    manifests = discover_subagent_manifests()
+    declared = [b for b, m in manifests.items() if m.fallback_guide]
+    assert declared == ["capability"], f"无命中引导应仅 capability 声明：{declared}"
+    guide = manifests["capability"]
+    for role in ("teacher", "student"):
+        assert role in guide.roles, f"无命中引导必须对 {role} 可见"
 
 
 def test_priority_sits_above_all_business_domains():
-    """priority=16 是功能本身：压过 tasks(14) 的泛词（「查 / 有哪些」），
-    否则「你能查什么」类元问题会被 requires_tool_data 硬失败。
-    写意图不冲突：tasks 的写触发词是「创建任务」等高精度短语，与自述问句无交集。
-    ADR-0098：students / question 域吸收进 tasks 后，被压制的域只剩两个执行体，
-    16 仍高于全部。
+    """priority=16 是清单呈现顺序的第一位（ADR-0104 后不再「压词」）。
+
+    规则路由时代它必须压过 tasks(14) 的泛词（「查 / 有哪些」），否则「你能查什么」
+    类元问题会被 requires_tool_data 硬失败；规则移除后该竞争消失，16 的现实语义只是
+    能力清单中 capability 之后按序排。ADR-0105：都没有命中时的落点由 ``fallback_guide``
+    声明（capability），与 priority 数值无关。
+    ADR-0098：students / question 域吸收进 tasks 后，被排序的域只剩两个执行体。
     """
     manifests = discover_subagent_manifests()
     assert manifests["capability"].priority == 16
@@ -73,33 +81,7 @@ def test_agent_carries_no_tools():
     assert agent.tools == []
 
 
-# ───────────── 2. 路由边界 ─────────────
-
-
-def test_capability_intent_routes_for_both_roles():
-    for phrase in (
-        "你能做什么", "你会什么", "你能帮我什么", "你有什么功能", "有什么功能",
-        "怎么用你", "你是谁", "你是什么", "你能干什么",
-    ):
-        assert _route(phrase, "student") == "capability", phrase
-        assert _route(phrase, "teacher") == "capability", phrase
-
-
-def test_tasks_write_intent_not_stolen():
-    assert _route("帮我创建一个任务", "teacher") == "tasks"
-
-
-def test_tasks_read_intent_not_stolen():
-    assert _route("查一下我的错题", "teacher") == "tasks"
-    assert _route("今天有什么作业", "teacher") == "tasks"
-
-
-def test_out_of_scope_falls_to_tutor():
-    # 明显超范围（天气）不归 capability，落 tutor 兜底（不硬失败）。
-    assert _route("今天天气怎么样", "student") == "tutor"
-
-
-# ───────────── 3. 清单 = manifests 投影 + 零 LLM ─────────────
+# ───────────── 2. 清单 = manifests 投影 + 零 LLM ─────────────
 
 
 def test_catalog_is_manifest_projection():

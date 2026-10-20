@@ -2,18 +2,18 @@
 
 每个 subagent 以文件夹 ``<business>/`` 组织，内含：
 - ``agent.py``     SubAgent 执行体（``BaseSubAgent`` 子类，由发现自动拾取）
-- ``manifest.py`` ``MANIFEST`` 字典：business / name / roles / triggers / hints / priority / skills
+- ``manifest.py`` ``MANIFEST`` 字典：business / name / description / roles / priority /
+  actions / skills / input_schema / fallback_guide
 - ``skills/``      本 subagent 的提示词/方法论资产（.md，注入 system prompt）
 
 运行时经 ``discover_subagent_manifests(root)`` 扫描文件夹自动注册，新增 subagent = 丢一个文件夹
-（无需在任何注册表里手工登记）。路由相关字段（triggers/hints/priority）语义由 ``router`` 解释，
-本模块只负责发现 + 业务键 → 类 的查询。
+（无需在任何注册表里手工登记）。路由相关字段（roles / priority / actions）语义由 ``runtime``
+解释，本模块只负责发现 + 业务键 → 类 的查询。
 """
 from __future__ import annotations
 
 import importlib
 import inspect
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, TypeVar
@@ -32,22 +32,14 @@ class SubAgentManifest:
     description: str = ""
     # 可见角色：teacher / student（runtime 按当前角色过滤）
     roles: list[str] = field(default_factory=lambda: ["teacher", "student"])
-    # 意图触发词（规则匹配用，priority 降序）
-    triggers: list[str] = field(default_factory=list)
-    # 启发式兜底词（规则未命中时用）
-    hints: list[str] = field(default_factory=list)
-    # 正则触发词：(已编译正则, 回传的**规范触发词**)。
-    #
-    # 为什么需要它：``triggers`` 是**子串包含**匹配，「出几道」命不中「出2道」
-    # （数字一变就漏），而用户写「出 2 道 / 出一道 / 来三题」远比写「出几道」多。
-    # 逐个词穷举数字与量词会指数膨胀，故把「出 + 数词 + 道」这类**族**用正则表达。
-    #
-    # 回传的必须是 ``triggers`` 里已有的**规范词**（不是正则本身）：下游子意图分组
-    # （``intent_schemas[*].triggers``）按词等值判定，回个正则串就永远落不进任何组。
-    # 该不变量由契约测试守住。
-    trigger_patterns: list[tuple[re.Pattern[str], str]] = field(default_factory=list)
-    # 路由优先级：大者先匹配；最小者兼作最终兜底业务
+    # 路由优先级：不再参与「触发词排序竞争」（规则路由已移除，ADR-0104）——
+    # 现仅两处语义：① 能力清单（capability subagent）的呈现顺序；② 无任何业务声明
+    # ``fallback_guide`` 时的最后防线（数值最小者接住）。新增业务无需再斟酌「抢词」。
     priority: int = 0
+    # 无命中引导（ADR-0105）：策略原语（决策模型 / LLM 分类）均不决策时，由本业务
+    # 接住并给出「自身能力引导」，而不是静默把消息塞给某个执行体。至多一个业务声明
+    # （契约测试守护）；对当前角色不可见时退到 priority 最小者。
+    fallback_guide: bool = False
     # 结构化动作键清单（等值匹配，先于触发词；「哪个业务拥有哪个动作」的唯一声明处）。
     # 动作直配不参与优先级排序，因此无需为它设计排序规则（唯一性由契约测试保证）。
     actions: list[str] = field(default_factory=list)
@@ -99,41 +91,12 @@ def _manifest_from_dict(business: str, data: dict[str, Any]) -> SubAgentManifest
         name=str(data.get("name", business)),
         description=str(data.get("description", "")),
         roles=list(data.get("roles", ["teacher", "student"])),
-        triggers=list(data.get("triggers", [])),
-        hints=list(data.get("hints", [])),
         priority=int(data.get("priority", 0)),
+        fallback_guide=bool(data.get("fallback_guide", False)),
         actions=list(data.get("actions", [])),
         skills=list(data.get("skills", [])),
-        trigger_patterns=_compile_trigger_patterns(business, data),
         raw=data,
     )
-
-
-def _compile_trigger_patterns(
-    business: str, data: dict[str, Any]
-) -> list[tuple[re.Pattern[str], str]]:
-    """``trigger_patterns``（``[{pattern, trigger}]``）→ 已编译正则 + 规范触发词。
-
-    宽容解析：非 list / 缺字段 / 正则编译失败 → 跳过该条并打印告警，不阻断发现——
-    静默跳过会让「新加的正则没生效」变成一个查不出来的坑。
-    """
-    out: list[tuple[re.Pattern[str], str]] = []
-    raw = data.get("trigger_patterns")
-    if not isinstance(raw, list):
-        return out
-    for entry in raw:
-        if not isinstance(entry, dict):
-            continue
-        pattern = entry.get("pattern")
-        trigger = entry.get("trigger")
-        if not pattern or not trigger:
-            print(f"[agent_core] subagent {business}: trigger_patterns 条目缺 pattern/trigger，已跳过")
-            continue
-        try:
-            out.append((re.compile(str(pattern)), str(trigger)))
-        except re.error as exc:
-            print(f"[agent_core] subagent {business}: trigger_patterns 正则非法（{exc}），已跳过")
-    return out
 
 
 def discover_subagent_manifests(
