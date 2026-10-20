@@ -1,0 +1,540 @@
+{
+  "laya:multilingual": [
+    {
+      "latency_ms": 37,
+      "error": null,
+      "choice": "tasks",
+      "confidence": 0.668,
+      "probabilities": {
+        "tasks": 0.7786,
+        "capability": 0.1336,
+        "tutor": 0.0878
+      },
+      "served_model": "laya:multilingual",
+      "case": "T01 首轮出题",
+      "role": "teacher",
+      "expect": "tasks",
+      "state_chars": 19,
+      "scored": true
+    },
+    {
+      "latency_ms": 27,
+      "error": null,
+      "choice": "tasks",
+      "confidence": 0.7965,
+      "probabilities": {
+        "tasks": 0.8643,
+        "capability": 0.1087,
+        "tutor": 0.027
+      },
+      "served_model": "laya:multilingual",
+      "case": "T02 出一道（旧坑）",
+      "role": "teacher",
+      "expect": "tasks",
+      "state_chars": 15,
+      "scored": true
+    },
+    {
+      "latency_ms": 25,
+      "error": null,
+      "choice": "tasks",
+      "confidence": 0.6057,
+      "probabilities": {
+        "tasks": 0.7371,
+        "capability": 0.1242,
+        "tutor": 0.1387
+      },
+      "served_model": "laya:multilingual",
+      "case": "T03 来一道",
+      "role": "teacher",
+      "expect": "tasks",
+      "state_chars": 16,
+      "scored": true
+    },
+    {
+      "latency_ms": 24,
+      "error": null,
+      "choice": "tutor",
+      "confidence": 0.3968,
+      "probabilities": {
+        "tasks": 0.2277,
+        "capability": 0.1744,
+        "tutor": 0.5979
+      },
+      "served_model": "laya:multilingual",
+      "case": "T04 查学情",
+      "role": "teacher",
+      "expect": "tasks",
+      "state_chars": 13,
+      "scored": true
+    },
+    {
+      "latency_ms": 23,
+      "error": null,
+      "choice": "capability",
+      "confidence": 0.1483,
+      "probabilities": {
+        "tasks": 0.4275,
+        "capability": 0.4322,
+        "tutor": 0.1403
+      },
+      "served_model": "laya:multilingual",
+      "case": "T05 查错题",
+      "role": "teacher",
+      "expect": "tasks",
+      "state_chars": 13,
+      "scored": true
+    },
+    {
+      "latency_ms": 23,
+      "error": null,
+      "choice": "capability",
+      "confidence": 0.754,
+      "probabilities": {
+        "tasks": 0.1239,
+        "capability": 0.836,
+        "tutor": 0.04
+      },
+      "served_model": "laya:multilingual",
+      "case": "T06 元问题",
+      "role": "teacher",
+      "expect": "capability",
+      "state_chars": 11,
+      "scored": true
+    },
+    {
+      "latency_ms": 23,
+      "error": null,
+      "choice": "tasks",
+      "confidence": 0.5117,
+      "probabilities": {
+        "tasks": 0.6745,
+        "capability": 0.0932,
+        "tutor": 0.2324
+      },
+      "served_model": "laya:multilingual",
+      "case": "T07 纯讲解",
+      "role": "teacher",
+      "expect": "tutor",
+      "state_chars": 15,
+      "scored": true
+    },
+    {
+      "latency_ms": 68,
+      "error": null,
+      "choice": "tasks",
+      "confidence": 0.6575,
+      "probabilities": {
+        "tasks": 0.7717,
+        "capability": 0.1281,
+        "tutor": 0.1002
+      },
+      "served_model": "laya:multilingual",
+      "case": "T08 续接改年级",
+      "role": "teacher",
+      "expect": "tasks",
+      "state_chars": 54,
+      "scored": true
+    },
+    {
+      "latency_ms": 24,
+      "error": null,
+      "choice": "tasks",
+      "confidence": 0.7717,
+      "probabilities": {
+        "tasks": 0.8478,
+        "capability": 0.0406,
+        "tutor": 0.1116
+      },
+      "served_model": "laya:multilingual",
+      "case": "T09 续接换学科",
+      "role": "teacher",
+      "expect": "tasks",
+      "state_chars": 61,
+      "scored": true
+    },
+    {
+      "latency_ms": 24,
+      "error": null,
+      "choice": "tasks",
+      "confidence": 0.3154,
+      "probabilities": {
+        "tasks": 0.5436,
+        "capability": 0.1379,
+        "tutor": 0.3185
+      },
+      "served_model": "laya:multilingual",
+      "case": "T10 续接转讲解",
+      "role": "teacher",
+      "expect": "tutor",
+      "state_chars": 71,
+      "scored": true
+    },
+    {
+      "latency_ms": 17,
+      "error": null,
+      "choice": "capability",
+      "confidence": 0.9126,
+      "probabilities": {
+        "capability": 0.9563,
+        "tutor": 0.0437
+      },
+      "served_model": "laya:multilingual",
+      "case": "S01 提问求解",
+      "role": "student",
+      "expect": "tutor",
+      "state_chars": 17,
+      "scored": true
+    },
+    {
+      "latency_ms": 17,
+      "error": null,
+      "choice": "capability",
+      "confidence": 0.9359,
+      "probabilities": {
+        "capability": 0.9679,
+        "tutor": 0.0321
+      },
+      "served_model": "laya:multilingual",
+      "case": "S02 元问题",
+      "role": "student",
+      "expect": "capability",
+      "state_chars": 13,
+      "scored": true
+    },
+    {
+      "latency_ms": 15,
+      "error": null,
+      "choice": "tutor",
+      "confidence": 0.5532,
+      "probabilities": {
+        "capability": 0.2234,
+        "tutor": 0.7766
+      },
+      "served_model": "laya:multilingual",
+      "case": "S03 续接",
+      "role": "student",
+      "expect": "tutor",
+      "state_chars": 45,
+      "scored": true
+    },
+    {
+      "latency_ms": 21,
+      "error": null,
+      "choice": "tasks",
+      "confidence": 0.238,
+      "probabilities": {
+        "tasks": 0.492,
+        "capability": 0.3183,
+        "tutor": 0.1897
+      },
+      "served_model": "laya:multilingual",
+      "case": "X01 闲聊",
+      "role": "teacher",
+      "expect": null,
+      "state_chars": 10,
+      "scored": false
+    },
+    {
+      "latency_ms": 21,
+      "error": null,
+      "choice": "tutor",
+      "confidence": 0.3162,
+      "probabilities": {
+        "tasks": 0.2903,
+        "capability": 0.1656,
+        "tutor": 0.5441
+      },
+      "served_model": "laya:multilingual",
+      "case": "X02 空泛",
+      "role": "teacher",
+      "expect": null,
+      "state_chars": 9,
+      "scored": false
+    }
+  ],
+  "laya:multilingual#long": [
+    {
+      "latency_ms": 87,
+      "error": null,
+      "choice": "tasks",
+      "confidence": 0.2542,
+      "probabilities": {
+        "tasks": 0.5028,
+        "capability": 0.4225,
+        "tutor": 0.0747
+      },
+      "served_model": "laya:multilingual",
+      "case": "L00 长历史(12轮)",
+      "role": "teacher",
+      "expect": "tasks",
+      "state_chars": 719
+    }
+  ],
+  "largha": [
+    {
+      "latency_ms": 12,
+      "error": null,
+      "choice": "capability",
+      "confidence": 0.1551,
+      "probabilities": {
+        "tasks": 0.3823,
+        "capability": 0.4368,
+        "tutor": 0.1809
+      },
+      "served_model": "largha:latest",
+      "case": "T01 首轮出题",
+      "role": "teacher",
+      "expect": "tasks",
+      "state_chars": 19,
+      "scored": true
+    },
+    {
+      "latency_ms": 12,
+      "error": null,
+      "choice": "capability",
+      "confidence": 0.227,
+      "probabilities": {
+        "tasks": 0.3539,
+        "capability": 0.4847,
+        "tutor": 0.1614
+      },
+      "served_model": "largha:latest",
+      "case": "T02 出一道（旧坑）",
+      "role": "teacher",
+      "expect": "tasks",
+      "state_chars": 15,
+      "scored": true
+    },
+    {
+      "latency_ms": 13,
+      "error": null,
+      "choice": "capability",
+      "confidence": 0.124,
+      "probabilities": {
+        "tasks": 0.3915,
+        "capability": 0.416,
+        "tutor": 0.1926
+      },
+      "served_model": "largha:latest",
+      "case": "T03 来一道",
+      "role": "teacher",
+      "expect": "tasks",
+      "state_chars": 16,
+      "scored": true
+    },
+    {
+      "latency_ms": 14,
+      "error": null,
+      "choice": "capability",
+      "confidence": 0.2273,
+      "probabilities": {
+        "tasks": 0.306,
+        "capability": 0.4849,
+        "tutor": 0.2091
+      },
+      "served_model": "largha:latest",
+      "case": "T04 查学情",
+      "role": "teacher",
+      "expect": "tasks",
+      "state_chars": 13,
+      "scored": true
+    },
+    {
+      "latency_ms": 17,
+      "error": null,
+      "choice": "tasks",
+      "confidence": 0.1217,
+      "probabilities": {
+        "tasks": 0.4145,
+        "capability": 0.329,
+        "tutor": 0.2565
+      },
+      "served_model": "largha:latest",
+      "case": "T05 查错题",
+      "role": "teacher",
+      "expect": "tasks",
+      "state_chars": 13,
+      "scored": true
+    },
+    {
+      "latency_ms": 18,
+      "error": null,
+      "choice": "capability",
+      "confidence": 0.3576,
+      "probabilities": {
+        "tasks": 0.2606,
+        "capability": 0.5717,
+        "tutor": 0.1677
+      },
+      "served_model": "largha:latest",
+      "case": "T06 元问题",
+      "role": "teacher",
+      "expect": "capability",
+      "state_chars": 11,
+      "scored": true
+    },
+    {
+      "latency_ms": 20,
+      "error": null,
+      "choice": "capability",
+      "confidence": 0.2144,
+      "probabilities": {
+        "tasks": 0.3221,
+        "capability": 0.4763,
+        "tutor": 0.2016
+      },
+      "served_model": "largha:latest",
+      "case": "T07 纯讲解",
+      "role": "teacher",
+      "expect": "tutor",
+      "state_chars": 15,
+      "scored": true
+    },
+    {
+      "latency_ms": 14,
+      "error": null,
+      "choice": "tasks",
+      "confidence": 0.2721,
+      "probabilities": {
+        "tasks": 0.5147,
+        "capability": 0.3054,
+        "tutor": 0.1799
+      },
+      "served_model": "largha:latest",
+      "case": "T08 续接改年级",
+      "role": "teacher",
+      "expect": "tasks",
+      "state_chars": 54,
+      "scored": true
+    },
+    {
+      "latency_ms": 15,
+      "error": null,
+      "choice": "tasks",
+      "confidence": 0.2422,
+      "probabilities": {
+        "tasks": 0.4948,
+        "capability": 0.3147,
+        "tutor": 0.1906
+      },
+      "served_model": "largha:latest",
+      "case": "T09 续接换学科",
+      "role": "teacher",
+      "expect": "tasks",
+      "state_chars": 61,
+      "scored": true
+    },
+    {
+      "latency_ms": 16,
+      "error": null,
+      "choice": "tasks",
+      "confidence": 0.108,
+      "probabilities": {
+        "tasks": 0.4053,
+        "capability": 0.3905,
+        "tutor": 0.2042
+      },
+      "served_model": "largha:latest",
+      "case": "T10 续接转讲解",
+      "role": "teacher",
+      "expect": "tutor",
+      "state_chars": 71,
+      "scored": true
+    },
+    {
+      "latency_ms": 10,
+      "error": null,
+      "choice": "capability",
+      "confidence": 0.4435,
+      "probabilities": {
+        "capability": 0.7218,
+        "tutor": 0.2782
+      },
+      "served_model": "largha:latest",
+      "case": "S01 提问求解",
+      "role": "student",
+      "expect": "tutor",
+      "state_chars": 17,
+      "scored": true
+    },
+    {
+      "latency_ms": 9,
+      "error": null,
+      "choice": "capability",
+      "confidence": 0.6791,
+      "probabilities": {
+        "capability": 0.8396,
+        "tutor": 0.1604
+      },
+      "served_model": "largha:latest",
+      "case": "S02 元问题",
+      "role": "student",
+      "expect": "capability",
+      "state_chars": 13,
+      "scored": true
+    },
+    {
+      "latency_ms": 10,
+      "error": null,
+      "choice": "capability",
+      "confidence": 0.3401,
+      "probabilities": {
+        "capability": 0.67,
+        "tutor": 0.33
+      },
+      "served_model": "largha:latest",
+      "case": "S03 续接",
+      "role": "student",
+      "expect": "tutor",
+      "state_chars": 45,
+      "scored": true
+    },
+    {
+      "latency_ms": 13,
+      "error": null,
+      "choice": "capability",
+      "confidence": 0.1781,
+      "probabilities": {
+        "tasks": 0.3094,
+        "capability": 0.4521,
+        "tutor": 0.2386
+      },
+      "served_model": "largha:latest",
+      "case": "X01 闲聊",
+      "role": "teacher",
+      "expect": null,
+      "state_chars": 10,
+      "scored": false
+    },
+    {
+      "latency_ms": 13,
+      "error": null,
+      "choice": "capability",
+      "confidence": 0.1776,
+      "probabilities": {
+        "tasks": 0.3184,
+        "capability": 0.4517,
+        "tutor": 0.2299
+      },
+      "served_model": "largha:latest",
+      "case": "X02 空泛",
+      "role": "teacher",
+      "expect": null,
+      "state_chars": 9,
+      "scored": false
+    }
+  ],
+  "largha#long": [
+    {
+      "latency_ms": 66,
+      "error": "HTTP 422 {\"error\":\"state: part of state was dropped to fit the context of largha:latest\",\"code\":\"STATE_TRUNCATED\",\"detail\":[{\"loc\":[\"body\",\"state\"],\"msg\":\"part of state was dropped to fit the context of largha",
+      "choice": null,
+      "confidence": null,
+      "case": "L00 长历史(12轮)",
+      "role": "teacher",
+      "expect": "tasks",
+      "state_chars": 719
+    }
+  ]
+}
