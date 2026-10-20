@@ -1138,7 +1138,9 @@ async def generate_task_stream(
         },
     )
 
-    async for ev in rt.run(
+    # 复用与聊天路径同一道带闸入口 invoke_subagent（T03）：business 已知为 "tasks"，
+    # 不重走自然语言路由，但仍过同一道安全 / 可见性闸，杜绝此前绕过 decide 的静默漂移。
+    async for ev in rt.invoke_subagent(
         "", role="teacher", ctx=ctx, deps=deps, business="tasks", session=session
     ):
         yield ev.to_sse()
