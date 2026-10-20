@@ -78,7 +78,7 @@ def create_from_generated(
 async def generate_task(
     req: TaskGenerateReq, *, session: SessionDep, teacher: CurrentTeacher
 ) -> StreamingResponse:
-    """结构化出题（ADR-0034 Phase 1）：收 specs → question subagent 流式题卡。
+    """结构化出题（ADR-0034 Phase 1）：收 specs → tasks subagent 流式题卡。
 
     编排（构造 provider/ctx、流式透传）已收口到 ``tasks_service.generate_task_stream``；
     本端点只做空规格校验与 ``StreamingResponse`` 包装。题卡由前端收齐后走

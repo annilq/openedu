@@ -2,7 +2,7 @@
 
 回归核心：多行 specs（各 1 道）必须产出与总行数对应的题卡数，而不是被「自由文本 →
 正则解析」吞成 1 道（即先前「总题数 2 只出 1 题」的根因）。结构化规格直传后端，服务端
-构造 prompt 后走 question subagent 流式返回 DATA 题卡。
+构造 prompt 后走 tasks subagent 流式返回 DATA 题卡。
 """
 from __future__ import annotations
 
