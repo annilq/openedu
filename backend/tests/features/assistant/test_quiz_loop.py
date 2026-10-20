@@ -241,7 +241,7 @@ class _JudgeCardRuntime:
         self.business = None
         self.extra = None
 
-    async def decide(self, signal, *, role: str, deps) -> RouteDecision:
+    async def decide(self, signal, *, role: str, deps, history=None) -> RouteDecision:
         return RouteDecision(
             business="tasks", name="任务学情与出题助手", trigger="判断题"
         )

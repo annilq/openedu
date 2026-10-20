@@ -55,7 +55,7 @@ class _StubRuntime:
                     return word
         return None
 
-    async def decide(self, signal, *, role: str, deps) -> RouteDecision:
+    async def decide(self, signal, *, role: str, deps, history=None) -> RouteDecision:
         text = getattr(signal, "text", signal) or ""
         return RouteDecision(
             business="tasks", name="任务学情与出题助手", trigger=self._trigger_of(text)

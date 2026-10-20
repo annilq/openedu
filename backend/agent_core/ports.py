@@ -179,6 +179,67 @@ class Hooks:
         return messages
 
 
+# ───────────────────────── 决策模型抽象（路由主原语，非聊天 LLM） ─────────────────────────
+@dataclass(frozen=True)
+class DecisionOption:
+    """决策模型的一个候选业务选项。
+
+    - ``key``：业务键（如 ``"tasks"``），同时是模型选中后的回传值。
+    - ``label``：喂给模型的「能力描述」——manifest 的 ``name`` / ``description`` /
+      ``actions`` 拼接而成，使「按 agent 能力路由」自动随 subagent 增减扩缩。
+    """
+
+    key: str
+    label: str
+
+
+@dataclass(frozen=True)
+class DecisionResult:
+    """决策模型对单个 choice 问题的回答。"""
+
+    choice: str | None
+    """选中的选项 key（业务键）；``None`` 表示模型无法决策（歧义 / 超时 / 低于阈值）。"""
+    prob: float
+    """校准概率（0–1）；低于模型自带阈值时调用方约定返回 ``None``。"""
+    raw: Any = None
+    """模型原始输出（可观测用，可选）。"""
+
+
+class DecisionModel(ABC):
+    """决策模型端口（分类 / 决策原语，**不**进 ``LLMProvider`` 聊天抽象）。
+
+    把「给定 state + 候选业务选项，挑一个并给校准概率」作为路由主原语，
+    替代脆弱的「规则词表 + 无状态分类」。参考实现：
+    ``convaiinnovations/laya-multilingual``（非自回归 System 1 决策模型：
+    encoder + 决策头，单次前向返回校准概率，本地 ~40ms，Apache-2.0，中文可用）。
+
+    Agent 执行仍用通用 LLM（genkit / ``LLMProvider``），两者不冲突——
+    它是分类器不是聊天模型，强行走 ``provider.stream(schema=)`` 是错配。
+    """
+
+    @abstractmethod
+    def available(self) -> bool:
+        """模型是否就绪（权重 / 服务可达）。
+
+        不可用 → 路由回落规则 ``classify``，链路不崩（见 ``runtime.decide``）。
+        """
+        ...
+
+    @abstractmethod
+    async def decide(
+        self, *, state: str, options: list[DecisionOption]
+    ) -> DecisionResult | None:
+        """对「哪个业务处理本 state」这一 choice 问题做决策。
+
+        - ``state``：近期对话上下文（history + 当前消息）拼接的文本。
+        - ``options``：当前角色可见的候选业务（来自 manifest 能力清单）。
+
+        返回选中业务 key + 校准概率；无法决策（歧义 / 超时 / 低于模型阈值）
+        返回 ``None``，调用方据此回落规则分类。
+        """
+        ...
+
+
 # ───────────────────────── 运行时依赖注入包 ─────────────────────────
 @dataclass
 class RuntimeDeps:
@@ -188,9 +249,12 @@ class RuntimeDeps:
     - ``retriever``：可选知识库。
     - ``safety``：可选输入安全闸门（路由前拦截）。
     - ``hooks``：可选生命周期钩子（扩展 seam，参考评审 P2）；``None`` 表示不挂载。
+    - ``decision_model``：可选决策模型（Laya-multilingual 等），作路由主原语；
+      ``None`` 或未就绪时路由回落规则 ``classify``。
     """
 
     provider: LLMProvider
     retriever: Retriever | None = None
     safety: Safety | None = None
     hooks: Hooks | None = None
+    decision_model: DecisionModel | None = None

@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any, AsyncIterator
 
 from agent_core.errors import ProviderRequestError
-from agent_core.ports import RuntimeDeps
+from agent_core.ports import DecisionOption, RuntimeDeps
 from agent_core.protocol import (
     AssistantEvent,
     done,
@@ -54,6 +54,46 @@ class RouteDecision:
     extra: dict[str, Any] = field(default_factory=dict)
 
 
+# 路由用历史窗口上限（Laya-multilingual 上下文 1024 tok，取近期轮次足够消歧）。
+# 近期 N 轮即可覆盖「上一轮出题 → 本轮补参数 / 作答」这类续接消歧，不撑爆 state。
+ROUTING_HISTORY_LIMIT = 12
+
+
+def _build_routing_state(
+    history: "list[dict] | None", text: str
+) -> str:
+    """把「近期历史 + 当前消息」拼成决策模型的 ``state`` 文本。
+
+    实现「每轮保持所有消息上下文」：续接时 history 为既有轮次，当前消息追尾，
+    使模型在上下文里区分「补参数（留 tasks）」与「作答（交 tutor）」，无需黏性分支。
+    """
+    parts: list[str] = []
+    if history:
+        for turn in history[-ROUTING_HISTORY_LIMIT:]:
+            if not isinstance(turn, dict):
+                continue
+            role = turn.get("role")
+            content = turn.get("content")
+            if content:
+                parts.append(f"{role or 'user'}: {content}")
+    if text:
+        parts.append(f"user: {text}")
+    return "\n".join(parts)
+
+
+def _capability_text(manifest: "SubAgentManifest") -> str:
+    """把 manifest 的 ``name`` / ``description`` / ``actions`` 拼成决策模型的选项描述。
+
+    即「按 agent 能力路由」的能力清单：新增 subagent 自动扩展候选，无需改路由代码。
+    """
+    bits = [manifest.name]
+    if manifest.description:
+        bits.append(manifest.description)
+    if manifest.actions:
+        bits.append("actions: " + ", ".join(manifest.actions))
+    return "\n".join(bits)
+
+
 class AgentRuntime:
     def __init__(self, manifests: dict[str, SubAgentManifest]) -> None:
         self._manifests = manifests
@@ -81,18 +121,31 @@ class AgentRuntime:
 
     # ── 路由决策（纯计算，不流式、不构建依赖） ──
     async def decide(
-        self, signal: "str | IntentSignal", *, role: str, deps: RuntimeDeps
+        self,
+        signal: "str | IntentSignal",
+        *,
+        role: str,
+        deps: RuntimeDeps,
+        history: "list[dict] | None" = None,
     ) -> RouteDecision:
-        """解析路由决策：角色可见性 → 安全闸门 → 结构化动作直配 → 混合文本路由。
+        """解析路由决策：角色可见性 → 安全闸门 → 结构化动作直配 → 决策模型 → 规则兜底。
 
         输入接受 ``str``（迁移期兼容）或 ``IntentSignal``；不产出事件帧、不构建 provider。
         端点可据此在流式前做预航班（配额判定）。
 
-        三级路由（动作直配排在文本规则之前）：
+        四级路由（动作直配最前，决策模型主路由，规则作确定性兜底）：
 
         1. **动作直配**：``signal.action`` 与各 manifest ``actions`` 等值匹配，命中即路由，
-           不参与优先级排序、不与文本竞争。
-        2. **规则匹配** / 3. **启发式兜底**：现有文本路由（``classify``），行为不变。
+           不参与优先级排序、不与文本竞争（ADR-0081，不变）。
+        2. **决策模型主路由**：``deps.decision_model`` 可用时，以「近期 history + 当前消息」
+           为 ``state``、可见 business 的能力清单为选项，调用其返回「业务 + 校准概率」；
+           置信则路由（``extra.routed_by = "decision"``），不置信或不可用则回落规则。
+        3. **规则匹配** / 4. **启发式兜底**：现有文本路由（``classify``），行为不变，
+           作决策模型不可用时的确定性兜底与离线测试用。
+
+        ``history`` 让路由基于完整对话上下文（而非孤立当前句），天然实现「续接留住出题态」
+        而无需手写黏性分支；也支撑「按 agent 能力路由」（manifest 的 ``description``/
+        ``actions`` 即能力清单）。
 
         动作命中但业务对当前角色**不可见** → 返回显式 ``action_not_visible``，**禁止**沿用
         「换成第一个可见业务」的静默兜底（那会把越权变成答非所问）。未知动作 → 容错回落文本路由，
@@ -125,6 +178,31 @@ class AgentRuntime:
                     extra={"reason": "action_not_visible", "action": signal.action},
                 )
             # 未知动作：容错回落自然语言路由（不报错）；同名不同步的静默失效由契约测试兜。
+
+        # 第二级：决策模型主路由（Laya-multilingual 等）。不可用 / 低置信 → 落规则兜底。
+        dm = deps.decision_model
+        if dm is not None and dm.available():
+            state = _build_routing_state(history, text)
+            options = [
+                DecisionOption(
+                    key=biz, label=_capability_text(self._manifests[biz])
+                )
+                for biz in visible
+            ]
+            try:
+                result = await dm.decide(state=state, options=options)
+            except Exception:  # noqa: BLE001 — 决策模型异常不应击穿路由
+                result = None
+            if result is not None and result.choice in visible:
+                return RouteDecision(
+                    business=result.choice,
+                    name=self.name_of(result.choice),
+                    extra={
+                        "routed_by": "decision",
+                        "level": "decision",
+                        "prob": result.prob,
+                    },
+                )
 
         decision = await _classify(text, available=visible, manifests=self._manifests)
         # 角色可见性是唯一真相源：classify 只在 visible 内决策。

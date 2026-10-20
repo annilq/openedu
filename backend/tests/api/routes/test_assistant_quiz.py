@@ -108,7 +108,7 @@ class _JudgeLoopRuntime:
         self.extra = None
         self.history = None
 
-    async def decide(self, signal, *, role, deps) -> RouteDecision:
+    async def decide(self, signal, *, role, deps, history=None) -> RouteDecision:
         text = getattr(signal, "text", "") or ""
         # ADR-0098：命中词随决策返回——预检按它落 generate 意图组（出题 schema）。
         for kw in ("判断题", "出一道", "出题", "练习题"):

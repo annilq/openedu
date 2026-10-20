@@ -20,6 +20,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from agent_core import IntentSignal
+from agent_core.adapters.laya import get_decision_model
 from agent_core.ports import RuntimeDeps, TextDelta
 from agent_core.protocol import (
     EVENT_ASSISTANT_MESSAGE,
@@ -420,7 +421,14 @@ async def chat(
     # 学生端 teacher_id 为 None → 自动回落 mock（资料库是教师私有的）。
     retriever = build_retriever(session=session, teacher_id=teacher_id)
     safety = StudentSafety() if role == Role.STUDENT else None
-    deps = RuntimeDeps(provider=provider, retriever=retriever, safety=safety)
+    # 决策模型（Laya-multilingual）：注入路由作主原语；不可用时 available() 为 False，
+    # 路由自动回落规则 classify，链路不崩（权重就位 / LAYA_SERVE_URL 配置后自动激活）。
+    deps = RuntimeDeps(
+        provider=provider,
+        retriever=retriever,
+        safety=safety,
+        decision_model=get_decision_model(),
+    )
 
     # 安全判定（ADR-0088）：学生面走 StudentSafety，教师面 ``safety`` 为 None → 一律放行。
     # 与 agent_core 路由里的输入闸门是同一个确定性扫描，重复调用无副作用。
@@ -453,12 +461,25 @@ async def chat(
             conversation = existing
             conv_id = existing.id
 
+    # 路由用历史（先于 decide）：续接已有会话 → 载入既有轮次；新建会话 → 用客户端
+    # 自带历史（兜底）。随后作为 state 喂给决策模型，实现「每轮保持所有消息上下文」。
+    if conversation is not None:
+        prior_history = await load_chat_history_with_summary(
+            session,
+            conv_id,
+            summarize=lambda dropped: _summarize_dropped(provider, dropped),
+        )
+    else:
+        prior_history = req.history
+
     # 预路由：动作键在信号归一化阶段产出（课件练习方向 / 待判定态方向 / 客户端结构化动作），
     # 归属由 SubAgent 清单声明，``decide`` 一次裁决即为最终结果，不再「路由算完再改判业务」。
     # 动作命中但当前角色不可见 → 显式 action_not_visible，见下方转 403。
     signal = IntentSignal(text=message, action=req.action)
     _routing_started = perf_counter()
-    decision = await rt.decide(signal, role=_surface_of(role), deps=deps)
+    decision = await rt.decide(
+        signal, role=_surface_of(role), deps=deps, history=prior_history
+    )
     routing_ms = elapsed_ms(_routing_started)
     # 动作不可见（如学生打教师专属动作）：**显式 403**（spec 硬约束），**不要**静默回落成
     # 另一个业务的答非所问，也不要退化成 HTTP 200 + 错误帧。``chat`` 是普通 async 函数
@@ -472,17 +493,11 @@ async def chat(
 
     # ── 会话持久化（复用 Conversation/Message，ADR-0026 多轮） ──
     # 续接已有会话并载入历史；否则新建（kind 取路由决策）。
-    history: list[dict] | None = None
+    # ``history`` 复用路由前已算好的 ``prior_history``（避免重复查库 / 两次摘要）。
+    history: list[dict] | None = prior_history
 
     if conversation is not None:
         conversation.status = "running"
-        # 自动摘要（P2）：compaction 需丢最旧轮次时复用本次 provider 压成摘要注入，
-        # 失败则回退纯丢弃——不额外构造 provider、不阻断主链路。
-        history = await load_chat_history_with_summary(
-            session,
-            conv_id,
-            summarize=lambda dropped: _summarize_dropped(provider, dropped),
-        )
         session.add(
             Message(
                 conversation_id=conv_id,
@@ -519,8 +534,6 @@ async def chat(
             )
         )
         session.commit()
-        # 无 session_id：兼容客户端自带历史（兜底）
-        history = req.history
 
     # ADR-0080：焦点知识点优先取显式参数，回落课件上下文内的 id；经归属校验解析四元组。
     # 越权 / 缺失 → None（不注入聚焦段，无越权数据泄漏）。

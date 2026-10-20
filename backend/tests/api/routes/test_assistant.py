@@ -169,7 +169,7 @@ def test_teacher_only_action_is_explicitly_forbidden(client, monkeypatch):
         def name_of(self, biz):
             return biz
 
-        async def decide(self, signal, *, role, deps):
+        async def decide(self, signal, *, role, deps, history=None):
             return RouteDecision(
                 business=None,
                 name=None,

@@ -48,7 +48,7 @@ class _StubRuntime:
         self.trigger = trigger
         self.last_ctx_extra = None
 
-    async def decide(self, signal, *, role: str, deps) -> RouteDecision:
+    async def decide(self, signal, *, role: str, deps, history=None) -> RouteDecision:
         return RouteDecision(
             business=self.business, name="桩业务", trigger=self.trigger
         )

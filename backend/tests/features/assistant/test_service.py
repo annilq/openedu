@@ -31,7 +31,7 @@ class _StubRuntime:
         self._business = business
         self._name = name
 
-    async def decide(self, message: str, *, role: str, deps) -> RouteDecision:
+    async def decide(self, message: str, *, role: str, deps, history=None) -> RouteDecision:
         return RouteDecision(business=self._business, name=self._name)
 
     async def run(

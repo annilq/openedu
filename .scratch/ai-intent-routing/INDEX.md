@@ -20,9 +20,10 @@
 | 05 | 换一题走统一路由 | 04 | done |
 | 06 | 课件上下文与待判定态定向迁进信号 | 04 | done |
 | 07 | 判断题闭环走运行时（含前端帧兼容） | 06 | done |
+| 08 | 决策模型路由替代规则分类（Laya-multilingual） | — | done（实现于分支 `ticket/08-decision-routing`） |
 
-**全部 ticket 已落地。** 评审轮修复（课件定向纠偏 / 动作不可见转真 403 / 文档与契约测试对齐）已并入集成分支。
-**Frontier：空。** 集成分支 `ai-intent-routing`，最终全量 812 passed / 2 skipped / 0 failed。
+**全部 ticket 已落地（含 08）。** 08 在分支 `ticket/08-decision-routing` 实现并自测通过：新增 `DecisionModel` 端口（`agent_core/ports.py`）+ `LayaDecisionModel` 适配器（仅 `laya-multilingual`，英文 `laya` 显式拒绝；`available()` 无权重/无 `LAYA_SERVE_URL` 时为 False 回落规则）+ `runtime.decide` 透传 `history` 并接入决策模型作主路由、规则 `classify` 退为兜底 + `service.py` 路由前算 `prior_history` 并注入 `get_decision_model()`。新增 `tests/ai/test_decision_model_routing.py` / `test_laya_adapter.py`（内存桩，无权重/网络依赖）。`tests/ai` 全量 378 passed；assistant/tasks 注入桩测试 38 passed。
+**Frontier：空。**
 
 > 并行执行分析：T05 ‖ T06 文件集不相交（T05=`features/tasks/*`，T06=`features/assistant/*`+清单），可并行；T07 与 T06 改同一段对话编排，**必须串行**（票据已注明）。实际执行即按此：T05/T06 并行于两个 worktree，T07 待 T06 合并后开工。
 
@@ -74,7 +75,7 @@
 
 ## Backlog（延后待办，不在本轮 7 票内）
 
-- 接上**真的被调用**的弱意图 LLM 兜底（本轮只删掉那个从未生效的参数）
+- 接上**真的被调用**的弱意图 LLM 兜底 → **已由 ticket 08 承接并实现**（采用 `convaiinnovations/laya-multilingual` 决策模型：非自回归、本地 ~40ms、中文可用、校准置信度门控；规则 `classify` 退为兜底 + 离线测试）。原「只删掉那个从未生效的参数」为 01 已完成的 prefactor 部分。
 - 删除结构化出题端点与两个同步重生成端点（属 ADR-0081 的落地，非路由归一）
 - ADR-0082 的题目归属与学生题库（本轮只要求「不阻断」，落点由它负责）
 - 学生题库视图「默认只显示练过的」（ADR-0082，防生成日志淹没）
