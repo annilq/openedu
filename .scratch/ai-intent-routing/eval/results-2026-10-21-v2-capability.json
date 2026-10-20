@@ -1,0 +1,728 @@
+{
+  "laya:multilingual": [
+    {
+      "latency_ms": 43,
+      "error": null,
+      "choice": "capability",
+      "pmax": 0.4499,
+      "confidence": 0.1748,
+      "probabilities": {
+        "capability": 0.4499,
+        "tasks": 0.2019,
+        "tutor": 0.3482
+      },
+      "served_model": "laya:multilingual",
+      "case": "T01 查学生名单",
+      "role": "teacher",
+      "expect": "tasks",
+      "scored": true,
+      "source": "trace",
+      "state_chars": 13
+    },
+    {
+      "latency_ms": 39,
+      "error": null,
+      "choice": "tutor",
+      "pmax": 0.5648,
+      "confidence": 0.3471,
+      "probabilities": {
+        "capability": 0.384,
+        "tasks": 0.0513,
+        "tutor": 0.5648
+      },
+      "served_model": "laya:multilingual",
+      "case": "T02 查学习进度",
+      "role": "teacher",
+      "expect": "tasks",
+      "scored": true,
+      "source": "构造",
+      "state_chars": 18
+    },
+    {
+      "latency_ms": 29,
+      "error": null,
+      "choice": "tutor",
+      "pmax": 0.4315,
+      "confidence": 0.1473,
+      "probabilities": {
+        "capability": 0.3632,
+        "tasks": 0.2053,
+        "tutor": 0.4315
+      },
+      "served_model": "laya:multilingual",
+      "case": "T03 查人数",
+      "role": "teacher",
+      "expect": "tasks",
+      "scored": true,
+      "source": "构造",
+      "state_chars": 15
+    },
+    {
+      "latency_ms": 28,
+      "error": null,
+      "choice": "tutor",
+      "pmax": 0.6725,
+      "confidence": 0.5088,
+      "probabilities": {
+        "capability": 0.1069,
+        "tasks": 0.2206,
+        "tutor": 0.6725
+      },
+      "served_model": "laya:multilingual",
+      "case": "T04 查错题",
+      "role": "teacher",
+      "expect": "tasks",
+      "scored": true,
+      "source": "trace",
+      "state_chars": 13
+    },
+    {
+      "latency_ms": 27,
+      "error": null,
+      "choice": "tasks",
+      "pmax": 0.4402,
+      "confidence": 0.1603,
+      "probabilities": {
+        "capability": 0.2137,
+        "tasks": 0.4402,
+        "tutor": 0.3461
+      },
+      "served_model": "laya:multilingual",
+      "case": "T05 查错题变体",
+      "role": "teacher",
+      "expect": "tasks",
+      "scored": true,
+      "source": "构造",
+      "state_chars": 15
+    },
+    {
+      "latency_ms": 26,
+      "error": null,
+      "choice": "capability",
+      "pmax": 0.5964,
+      "confidence": 0.3946,
+      "probabilities": {
+        "capability": 0.5964,
+        "tasks": 0.214,
+        "tutor": 0.1896
+      },
+      "served_model": "laya:multilingual",
+      "case": "T06 待复习",
+      "role": "teacher",
+      "expect": "tasks",
+      "scored": true,
+      "source": "构造",
+      "state_chars": 16
+    },
+    {
+      "latency_ms": 27,
+      "error": null,
+      "choice": "tasks",
+      "pmax": 0.4549,
+      "confidence": 0.1824,
+      "probabilities": {
+        "capability": 0.2047,
+        "tasks": 0.4549,
+        "tutor": 0.3403
+      },
+      "served_model": "laya:multilingual",
+      "case": "T07 查作业",
+      "role": "teacher",
+      "expect": "tasks",
+      "scored": true,
+      "source": "构造",
+      "state_chars": 15
+    },
+    {
+      "latency_ms": 28,
+      "error": null,
+      "choice": "tasks",
+      "pmax": 0.694,
+      "confidence": 0.541,
+      "probabilities": {
+        "capability": 0.2218,
+        "tasks": 0.694,
+        "tutor": 0.0842
+      },
+      "served_model": "laya:multilingual",
+      "case": "T08 首轮出题",
+      "role": "teacher",
+      "expect": "tasks",
+      "scored": true,
+      "source": "trace",
+      "state_chars": 19
+    },
+    {
+      "latency_ms": 25,
+      "error": null,
+      "choice": "tasks",
+      "pmax": 0.4961,
+      "confidence": 0.2442,
+      "probabilities": {
+        "capability": 0.4816,
+        "tasks": 0.4961,
+        "tutor": 0.0223
+      },
+      "served_model": "laya:multilingual",
+      "case": "T09 出一道",
+      "role": "teacher",
+      "expect": "tasks",
+      "scored": true,
+      "source": "trace",
+      "state_chars": 15
+    },
+    {
+      "latency_ms": 23,
+      "error": null,
+      "choice": "capability",
+      "pmax": 0.6114,
+      "confidence": 0.417,
+      "probabilities": {
+        "capability": 0.6114,
+        "tasks": 0.2057,
+        "tutor": 0.183
+      },
+      "served_model": "laya:multilingual",
+      "case": "T10 来一道",
+      "role": "teacher",
+      "expect": "tasks",
+      "scored": true,
+      "source": "trace",
+      "state_chars": 16
+    },
+    {
+      "latency_ms": 26,
+      "error": null,
+      "choice": "capability",
+      "pmax": 0.5009,
+      "confidence": 0.2513,
+      "probabilities": {
+        "capability": 0.5009,
+        "tasks": 0.173,
+        "tutor": 0.3262
+      },
+      "served_model": "laya:multilingual",
+      "case": "T11 出 5 道",
+      "role": "teacher",
+      "expect": "tasks",
+      "scored": true,
+      "source": "构造",
+      "state_chars": 17
+    },
+    {
+      "latency_ms": 40,
+      "error": null,
+      "choice": "tutor",
+      "pmax": 0.3548,
+      "confidence": 0.0322,
+      "probabilities": {
+        "capability": 0.3518,
+        "tasks": 0.2934,
+        "tutor": 0.3548
+      },
+      "served_model": "laya:multilingual",
+      "case": "T12 续接改年级",
+      "role": "teacher",
+      "expect": "tasks",
+      "scored": true,
+      "source": "trace",
+      "state_chars": 54
+    },
+    {
+      "latency_ms": 30,
+      "error": null,
+      "choice": "tutor",
+      "pmax": 0.5071,
+      "confidence": 0.2607,
+      "probabilities": {
+        "capability": 0.1763,
+        "tasks": 0.3166,
+        "tutor": 0.5071
+      },
+      "served_model": "laya:multilingual",
+      "case": "T13 续接换学科",
+      "role": "teacher",
+      "expect": "tasks",
+      "scored": true,
+      "source": "trace",
+      "state_chars": 61
+    },
+    {
+      "latency_ms": 29,
+      "error": null,
+      "choice": "tutor",
+      "pmax": 0.4408,
+      "confidence": 0.1612,
+      "probabilities": {
+        "capability": 0.1585,
+        "tasks": 0.4007,
+        "tutor": 0.4408
+      },
+      "served_model": "laya:multilingual",
+      "case": "T14 续接加量",
+      "role": "teacher",
+      "expect": "tasks",
+      "scored": true,
+      "source": "构造",
+      "state_chars": 67
+    },
+    {
+      "latency_ms": 24,
+      "error": null,
+      "choice": "tutor",
+      "pmax": 0.3591,
+      "confidence": 0.0387,
+      "probabilities": {
+        "capability": 0.305,
+        "tasks": 0.3359,
+        "tutor": 0.3591
+      },
+      "served_model": "laya:multilingual",
+      "case": "T15 讲解选择题",
+      "role": "teacher",
+      "expect": "tutor",
+      "scored": true,
+      "source": "trace",
+      "state_chars": 15
+    },
+    {
+      "latency_ms": 24,
+      "error": null,
+      "choice": "capability",
+      "pmax": 0.784,
+      "confidence": 0.6761,
+      "probabilities": {
+        "capability": 0.784,
+        "tasks": 0.171,
+        "tutor": 0.0449
+      },
+      "served_model": "laya:multilingual",
+      "case": "T16 讲解解法",
+      "role": "teacher",
+      "expect": "tutor",
+      "scored": true,
+      "source": "构造",
+      "state_chars": 15
+    },
+    {
+      "latency_ms": 24,
+      "error": null,
+      "choice": "tutor",
+      "pmax": 0.8446,
+      "confidence": 0.7669,
+      "probabilities": {
+        "capability": 0.1248,
+        "tasks": 0.0306,
+        "tutor": 0.8446
+      },
+      "served_model": "laya:multilingual",
+      "case": "T17 讲解答案",
+      "role": "teacher",
+      "expect": "tutor",
+      "scored": true,
+      "source": "构造",
+      "state_chars": 15
+    },
+    {
+      "latency_ms": 25,
+      "error": null,
+      "choice": "capability",
+      "pmax": 0.6064,
+      "confidence": 0.4096,
+      "probabilities": {
+        "capability": 0.6064,
+        "tasks": 0.0795,
+        "tutor": 0.3141
+      },
+      "served_model": "laya:multilingual",
+      "case": "T18 讲解公式",
+      "role": "teacher",
+      "expect": "tutor",
+      "scored": true,
+      "source": "构造",
+      "state_chars": 17
+    },
+    {
+      "latency_ms": 29,
+      "error": null,
+      "choice": "tutor",
+      "pmax": 0.6054,
+      "confidence": 0.4081,
+      "probabilities": {
+        "capability": 0.0977,
+        "tasks": 0.2969,
+        "tutor": 0.6054
+      },
+      "served_model": "laya:multilingual",
+      "case": "T19 续接转讲解",
+      "role": "teacher",
+      "expect": "tutor",
+      "scored": true,
+      "source": "trace",
+      "state_chars": 71
+    },
+    {
+      "latency_ms": 28,
+      "error": null,
+      "choice": "tutor",
+      "pmax": 0.6863,
+      "confidence": 0.5294,
+      "probabilities": {
+        "capability": 0.1473,
+        "tasks": 0.1664,
+        "tutor": 0.6863
+      },
+      "served_model": "laya:multilingual",
+      "case": "T20 续接问答案",
+      "role": "teacher",
+      "expect": "tutor",
+      "scored": true,
+      "source": "构造",
+      "state_chars": 57
+    },
+    {
+      "latency_ms": 28,
+      "error": null,
+      "choice": "capability",
+      "pmax": 0.5666,
+      "confidence": 0.3498,
+      "probabilities": {
+        "capability": 0.5666,
+        "tasks": 0.1064,
+        "tutor": 0.327
+      },
+      "served_model": "laya:multilingual",
+      "case": "T21 概念提问",
+      "role": "teacher",
+      "expect": "tutor",
+      "scored": true,
+      "source": "构造",
+      "state_chars": 11
+    },
+    {
+      "latency_ms": 40,
+      "error": null,
+      "choice": "tutor",
+      "pmax": 0.6231,
+      "confidence": 0.4346,
+      "probabilities": {
+        "capability": 0.248,
+        "tasks": 0.1289,
+        "tutor": 0.6231
+      },
+      "served_model": "laya:multilingual",
+      "case": "T22 续接保持讲解",
+      "role": "teacher",
+      "expect": "tutor",
+      "scored": true,
+      "source": "构造",
+      "state_chars": 45
+    },
+    {
+      "latency_ms": 24,
+      "error": null,
+      "choice": "capability",
+      "pmax": 0.931,
+      "confidence": 0.8965,
+      "probabilities": {
+        "capability": 0.931,
+        "tasks": 0.0318,
+        "tutor": 0.0371
+      },
+      "served_model": "laya:multilingual",
+      "case": "T23 你能做什么",
+      "role": "teacher",
+      "expect": "capability",
+      "scored": true,
+      "source": "trace",
+      "state_chars": 11
+    },
+    {
+      "latency_ms": 24,
+      "error": null,
+      "choice": "capability",
+      "pmax": 0.7981,
+      "confidence": 0.6972,
+      "probabilities": {
+        "capability": 0.7981,
+        "tasks": 0.0538,
+        "tutor": 0.148
+      },
+      "served_model": "laya:multilingual",
+      "case": "T24 你会什么",
+      "role": "teacher",
+      "expect": "capability",
+      "scored": true,
+      "source": "构造",
+      "state_chars": 10
+    },
+    {
+      "latency_ms": 25,
+      "error": null,
+      "choice": "capability",
+      "pmax": 0.7918,
+      "confidence": 0.6877,
+      "probabilities": {
+        "capability": 0.7918,
+        "tasks": 0.0838,
+        "tutor": 0.1244
+      },
+      "served_model": "laya:multilingual",
+      "case": "T25 你能帮我干什么",
+      "role": "teacher",
+      "expect": "capability",
+      "scored": true,
+      "source": "构造",
+      "state_chars": 13
+    },
+    {
+      "latency_ms": 27,
+      "error": null,
+      "choice": "capability",
+      "pmax": 0.9327,
+      "confidence": 0.8991,
+      "probabilities": {
+        "capability": 0.9327,
+        "tasks": 0.0389,
+        "tutor": 0.0284
+      },
+      "served_model": "laya:multilingual",
+      "case": "S01 算术求解",
+      "role": "student",
+      "expect": "tutor",
+      "scored": true,
+      "source": "trace",
+      "state_chars": 17
+    },
+    {
+      "latency_ms": 30,
+      "error": null,
+      "choice": "capability",
+      "pmax": 0.5863,
+      "confidence": 0.3795,
+      "probabilities": {
+        "capability": 0.5863,
+        "tasks": 0.2432,
+        "tutor": 0.1705
+      },
+      "served_model": "laya:multilingual",
+      "case": "S02 分数求解",
+      "role": "student",
+      "expect": "tutor",
+      "scored": true,
+      "source": "构造",
+      "state_chars": 20
+    },
+    {
+      "latency_ms": 26,
+      "error": null,
+      "choice": "capability",
+      "pmax": 0.5666,
+      "confidence": 0.3498,
+      "probabilities": {
+        "capability": 0.5666,
+        "tasks": 0.1064,
+        "tutor": 0.327
+      },
+      "served_model": "laya:multilingual",
+      "case": "S03 概念提问",
+      "role": "student",
+      "expect": "tutor",
+      "scored": true,
+      "source": "构造",
+      "state_chars": 11
+    },
+    {
+      "latency_ms": 29,
+      "error": null,
+      "choice": "capability",
+      "pmax": 0.3605,
+      "confidence": 0.0408,
+      "probabilities": {
+        "capability": 0.3605,
+        "tasks": 0.3475,
+        "tutor": 0.292
+      },
+      "served_model": "laya:multilingual",
+      "case": "S04 作答求证",
+      "role": "student",
+      "expect": "tutor",
+      "scored": true,
+      "source": "构造",
+      "state_chars": 16
+    },
+    {
+      "latency_ms": 28,
+      "error": null,
+      "choice": "tutor",
+      "pmax": 0.6932,
+      "confidence": 0.5398,
+      "probabilities": {
+        "capability": 0.2427,
+        "tasks": 0.0641,
+        "tutor": 0.6932
+      },
+      "served_model": "laya:multilingual",
+      "case": "S05 续接追问",
+      "role": "student",
+      "expect": "tutor",
+      "scored": true,
+      "source": "trace",
+      "state_chars": 45
+    },
+    {
+      "latency_ms": 27,
+      "error": null,
+      "choice": "capability",
+      "pmax": 0.7179,
+      "confidence": 0.5769,
+      "probabilities": {
+        "capability": 0.7179,
+        "tasks": 0.0669,
+        "tutor": 0.2151
+      },
+      "served_model": "laya:multilingual",
+      "case": "S06 元问题",
+      "role": "student",
+      "expect": "capability",
+      "scored": true,
+      "source": "trace",
+      "state_chars": 13
+    },
+    {
+      "latency_ms": 27,
+      "error": null,
+      "choice": "tutor",
+      "pmax": 0.6176,
+      "confidence": 0.4263,
+      "probabilities": {
+        "capability": 0.3031,
+        "tasks": 0.0793,
+        "tutor": 0.6176
+      },
+      "served_model": "laya:multilingual",
+      "case": "S07 元问题变体",
+      "role": "student",
+      "expect": "capability",
+      "scored": true,
+      "source": "构造",
+      "state_chars": 12
+    },
+    {
+      "latency_ms": 27,
+      "error": null,
+      "choice": "tutor",
+      "pmax": 0.6725,
+      "confidence": 0.5088,
+      "probabilities": {
+        "capability": 0.1069,
+        "tasks": 0.2206,
+        "tutor": 0.6725
+      },
+      "served_model": "laya:multilingual",
+      "case": "S08 查自己的错题",
+      "role": "student",
+      "expect": "tasks",
+      "scored": true,
+      "source": "构造",
+      "state_chars": 13
+    },
+    {
+      "latency_ms": 25,
+      "error": null,
+      "choice": "tasks",
+      "pmax": 0.7689,
+      "confidence": 0.6533,
+      "probabilities": {
+        "capability": 0.0743,
+        "tasks": 0.7689,
+        "tutor": 0.1568
+      },
+      "served_model": "laya:multilingual",
+      "case": "S09 查自己的作业",
+      "role": "student",
+      "expect": "tasks",
+      "scored": true,
+      "source": "构造",
+      "state_chars": 15
+    },
+    {
+      "latency_ms": 26,
+      "error": null,
+      "choice": "capability",
+      "pmax": 0.776,
+      "confidence": 0.664,
+      "probabilities": {
+        "capability": 0.776,
+        "tasks": 0.0971,
+        "tutor": 0.1269
+      },
+      "served_model": "laya:multilingual",
+      "case": "X01 闲聊",
+      "role": "teacher",
+      "expect": null,
+      "scored": false,
+      "source": "构造",
+      "state_chars": 10
+    },
+    {
+      "latency_ms": 26,
+      "error": null,
+      "choice": "capability",
+      "pmax": 0.5071,
+      "confidence": 0.2606,
+      "probabilities": {
+        "capability": 0.5071,
+        "tasks": 0.1169,
+        "tutor": 0.3761
+      },
+      "served_model": "laya:multilingual",
+      "case": "X02 空泛",
+      "role": "teacher",
+      "expect": null,
+      "scored": false,
+      "source": "构造",
+      "state_chars": 9
+    },
+    {
+      "latency_ms": 29,
+      "error": null,
+      "choice": "tasks",
+      "pmax": 0.7578,
+      "confidence": 0.6367,
+      "probabilities": {
+        "capability": 0.1094,
+        "tasks": 0.7578,
+        "tutor": 0.1328
+      },
+      "served_model": "laya:multilingual",
+      "case": "X03 学生出题",
+      "role": "student",
+      "expect": null,
+      "scored": false,
+      "source": "构造",
+      "state_chars": 14
+    }
+  ],
+  "laya:multilingual#long": [
+    {
+      "latency_ms": 102,
+      "error": null,
+      "choice": "tasks",
+      "pmax": 0.4054,
+      "confidence": 0.1081,
+      "probabilities": {
+        "capability": 0.3825,
+        "tasks": 0.4054,
+        "tutor": 0.2121
+      },
+      "served_model": "laya:multilingual",
+      "case": "L00 长历史(12轮)",
+      "role": "teacher",
+      "expect": null,
+      "source": "构造",
+      "scored": false,
+      "state_chars": 719
+    }
+  ]
+}
