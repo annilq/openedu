@@ -17,7 +17,7 @@ import asyncio
 from contextlib import contextmanager
 
 from agent_core import IntentSignal
-from agent_core.adapters.llm_route import RoutingDecision
+from agent_core.adapters.llm_route import ROUTING_SYSTEM_PROMPT, RoutingDecision
 from agent_core.ports import DecisionModel, DecisionResult, RuntimeDeps
 from agent_core.runtime import AgentRuntime, get_routing_strategy, set_routing_strategy
 from app.domain.safety import StudentSafety
@@ -144,6 +144,21 @@ def test_strategy_switch_decision_vs_llm():
     d_llm = _decide("随便一句", provider=provider, dm=dm, strategy="llm")
     assert d_llm.business == "tutor"
     assert d_llm.extra.get("routed_by") == "llm"
+
+
+# ── 提示词快照：剥离 ADR-0104 已删除的硬编码编号规则（T04） ──
+def test_routing_system_prompt_has_no_hardcoded_rules():
+    """``ROUTING_SYSTEM_PROMPT`` 不得内嵌任何编号路由规则（ADR-0104 规则整体移除）。
+
+    只允许：能力清单 + 上下文的角色说明 + 「只输出业务键」的格式约束。断言缺失的
+    子串对应原提示词里 3 条编号规则（沿用上一轮 / 学生作答 / 只输出**某个业务键）。
+    """
+    assert "沿用上一轮" not in ROUTING_SYSTEM_PROMPT
+    assert "学生作答" not in ROUTING_SYSTEM_PROMPT
+    assert "判定规则" not in ROUTING_SYSTEM_PROMPT
+    assert "只输出**某个业务键" not in ROUTING_SYSTEM_PROMPT
+    # 格式约束（输出业务键）仍保留，但不得是带 markdown 加粗的编号规则形式。
+    assert "只输出" in ROUTING_SYSTEM_PROMPT and "业务键" in ROUTING_SYSTEM_PROMPT
 
 
 # ── 动作直配（ADR-0081）仍在所有策略原语之前 ──
