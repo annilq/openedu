@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.features.ai.router import router as ai_router
+from app.features.agent_debug.router import router as ai_router
 from app.features.analytics.router import router as analytics_router
 from app.features.assistant.router import router as assistant_router
 from app.features.auth.router import router as auth_router
