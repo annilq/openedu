@@ -16,14 +16,14 @@ from app.core.deps import CurrentAdmin, CurrentTeacher, SessionDep
 from app.core.errors import ErrCode
 from app.core.guard import require_owned_or_admin
 from app.db.models import Conversation, Role
-from app.features.ai.masking import full_message, mask_message
-from app.features.ai.repository import (
+from app.features.agent_debug.masking import full_message, mask_message
+from app.features.agent_debug.repository import (
     create_break_glass,
     get_conversation_messages,
     list_break_glass,
     list_conversations,
 )
-from app.features.ai.schemas import (
+from app.features.agent_debug.schemas import (
     BreakGlassLogResp,
     BreakGlassReason,
     ConversationDetailResp,

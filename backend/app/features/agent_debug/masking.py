@@ -6,7 +6,7 @@ tool 参数与结果（``payload``，含学生 PII：姓名/学号/作答）与�
 """
 
 from app.db.models import Message
-from app.features.ai.schemas import MessageResp
+from app.features.agent_debug.schemas import MessageResp
 
 # 脱敏占位：默认视图里正文与 tool 载荷被换成此标记，原文不出现在响应里。
 REDACTED_MARKER = "⟨已脱敏⟩"
