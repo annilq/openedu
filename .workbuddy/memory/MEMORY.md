@@ -38,10 +38,13 @@
 - 本机：Apple silicon 走 MLX(10–30ms)；虽有 HTTP_PROXY 无 no_proxy，urllib 对 localhost 自动绕过（**勿**加 ProxyHandler 旁路）。
 
 ## 6. 路由调优次序（ticket 12/13，用户 2026-10-20 定序）
-- **文案 → 门控 → 权重**。ticket 12（`ready-for-agent`）：只改三个 manifest 的 `name`/`description`（即 `criteria` 值），用同一脚本量化；脚本改吃生产投影（`discover_subagent_manifests`+`_capability_text`）消除手抄副本；用例集 13→~30 条并**先用旧文案建对照基线**；单变量迭代；验收线=教师端不低于基线且无 pmax≥0.8 的错误、学生端 S01 必须翻正、长历史不截断；达不到才启用 `routing_criteria` 字段（需在 ADR-0097 上补修订）。
+- **文案 → 门控 → 权重**。ticket 12 **已 done（2026-10-21）**：脚本改吃生产投影（`discover_subagent_manifests`+`_capability_text`）消除手抄副本；顺带发现**学生端可见集被写成 K=2、生产实为 K=3**（tasks 对学生可见，ticket 11 那条「学生 23+45 被 0.956 判 capability」是在错选项集上测的）。34 条计分用例 + 10 条留出，基线 59%；七轮单变量爬山后 **74%**（采纳且正确 15→24/34，未采纳落引导 10→2），p50 23 ms、长历史不截断。
+- **criteria 文案三条实测教训**（已写进 manifest 注释 + `tests/ai/test_routing_criteria.py` 契约测试）：① **禁止排他式否定句**（「不查数据/不出题」→35%，高置信错 6 条）；② **禁止堆示例问句**（50%）；③ capability **不要窄化成「只在问助手自身」**（44%）。capability 的「能做什么、不能做什么」对称措辞有效，不在禁止之列。
+- **收益性质（重要）**：留出集 top-1 未提升（60%→60%），提升全在「正确路由过得了 0.5 门控」（30%→50%）→ 文案改的是**置信度分布**而非排序能力；下一步该动门控（ticket 13）。未达成验收项：新增 2 条高置信错误（查数据→tutor）、学生端 S01 未翻正（capability 0.56）。
 - ticket 13（`needs-decision`，等 12 的数据）：把阈值从适配器构造参数上移为 runtime 的**声明式门控**（决策模型只出分布、runtime 决定是否采纳；LLM 的 confidence 一并纳入——今天它完全没被门控），再谈「学生端单独阈值」与「与 LLM 交叉校验(consensus)」。否决：把 role 塞进适配器、把 consensus 设为默认（每轮多一次 LLM 往返）。
 - **capability 误判代价不对称**：判成 capability 与「都没命中」在用户侧同形（ADR-0105），判成执行体会答非所问 → 不应共用同一采纳门槛。
-- 改 `description` 会同时改用户可见能力清单（`capability_catalog`「name：description」）与轨迹业务名 → 同步核对 `test_capability_subagent`/`test_assistant`/`test_tasks_subagent`/`test_intent_routing_contract`/`test_agent_runtime` 的断言；**只更新断言不改语义**；文案若变得不像人话即启用 `routing_criteria` 熔断。
+- **`routing_criteria`（ADR-0106，ADR-0097 单一事实源的有据例外）**：可选 manifest 字段，`_capability_text` 用它替换 `description`（name/actions 照旧，未声明行为不变）；**用户可见清单 `capability_catalog` 仍直读 `description`**。启用理由有实测：把「教师可管理题库/组建草稿任务」留在路由文案里准确率 74%→56%，但删了它用户就少一条真实能力 → 两份文本分离。契约测试守「清单显示的 == description」+ 长度 ≤120 + 无排他否定/示例问句 + 各具专属动词。
+- 改 `description` 会同时改用户可见能力清单（`capability_catalog`「name：description」）与轨迹业务名 → 同步核对 `test_capability_subagent`/`test_assistant`/`test_tasks_subagent`/`test_intent_routing_contract`/`test_agent_runtime` 的断言；**只更新断言不改语义**。
 
 ## 7. 分支卫生 / ADR 状态
 - 本地长期只有 `main`；integration/ticket 分支合入即删（`git branch -d` 保护未合入）。「记录说合过了」不可信，以 `git branch --no-merged main` 与 `git log main..<branch>` 实测为准。
