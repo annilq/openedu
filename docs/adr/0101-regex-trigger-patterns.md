@@ -12,9 +12,7 @@
 ```
 0 user   请为「图形的运动（轴对称）」出一道选择题
 1 system routing  伴学答疑        ← 路由到了 tutor
-2 tool   tool_call  伴学答疑
-3 tool   tool_result tutor_explain
-4 assistant 下面是一道关于「轴对称」的选择题…   ← 纯文本，无 DATA 题卡
+2 assistant 下面是一道关于「轴对称」的选择题…   ← 纯文本，无 DATA 题卡
 ```
 
 根因在规则路由的**匹配方式**，不在词表少了一两个词：
