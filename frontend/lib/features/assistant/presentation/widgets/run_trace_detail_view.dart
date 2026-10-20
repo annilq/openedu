@@ -1,3 +1,7 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -11,6 +15,7 @@ import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/app_toast.dart';
 import '../../domain/run_trace.dart';
 import '../../providers/run_trace_provider.dart';
+import '../run_trace_transcript.dart';
 import 'assistant_hint_card.dart';
 
 /// 运行轨迹详情（ADR-0088 ticket 02）：一次 AI 运行的**全步骤 + 元数据**。
@@ -50,6 +55,16 @@ class AiRunTraceDetailView extends ConsumerWidget {
               ),
               const SizedBox(width: AppSpacing.xs),
               Expanded(child: Text('运行详情', style: text.titleLarge)),
+              // 详情页专属导出：把这一次运行的「概要 + 全步骤」落盘。数据未就绪
+              // （加载中 / 读取失败）时禁用——[async.value] 为 null。
+              AppIconAction(
+                icon: LucideIcons.download,
+                iconSize: 20,
+                semanticLabel: '导出运行详情',
+                onPressed: async.value == null
+                    ? null
+                    : () => _exportDetail(context, async.value!),
+              ),
             ],
           ),
         ),
@@ -108,6 +123,26 @@ class AiRunTraceDetailView extends ConsumerWidget {
         ),
       ],
     );
+  }
+
+  /// 导出本次运行的详情：把「概要 + 全步骤」压成 Markdown，经系统保存面板落盘
+  /// （file_picker.saveFile，复用 `student_management_screen._downloadTemplate` 通道、
+  /// 不引新依赖）。标题含 runId 便于区分多段运行；落盘后 toast 显示实际路径。
+  Future<void> _exportDetail(BuildContext context, RunTraceDetail detail) async {
+    final markdown = buildRunTraceDetailMarkdown(detail);
+    try {
+      final uri = await FilePicker.saveFile(
+        dialogTitle: '导出运行详情',
+        fileName: 'ai_run_trace_${detail.run.id}_${runTraceFileNameStamp()}.md',
+        bytes: Uint8List.fromList(utf8.encode(markdown)),
+      );
+      final path = uri?.path;
+      if (context.mounted && path != null) {
+        AppToast.show(context, '运行详情已导出：$path');
+      }
+    } catch (e) {
+      if (context.mounted) AppToast.error(context, e);
+    }
   }
 
   /// 破窗：弹理由框 → 调 reveal → 刷新详情（原文显现）。非 admin 后端会拒（403）。

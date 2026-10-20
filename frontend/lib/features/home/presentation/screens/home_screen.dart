@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -47,6 +50,8 @@ import '../../../../features/courseware/presentation/screens/courseware_center_s
 import '../../../../features/courseware/presentation/screens/asset_library_screen.dart';
 import '../../../../features/assistant/presentation/widgets/run_trace_detail_view.dart';
 import '../../../../features/assistant/presentation/widgets/run_trace_view.dart';
+import '../../../../features/assistant/providers/run_trace_provider.dart';
+import '../../../../features/assistant/presentation/run_trace_transcript.dart';
 import 'student_mastery_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -380,9 +385,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       // ADR-0088 ticket 02：运行轨迹（全步骤 + 元数据口径）与助手页内的历史会话
       // （气泡口径）并列，入口分离；详情是列表的下钻，返回统一回列表。
       // ticket 08：列表页经由「我的」入栈进入，套返回头使返回落回「我的」。
-      RunTracePage() => _withBackHeader(AiRunTraceView(
-          onOpenRun: (run) => _go(RunTraceDetailPage(run.id)),
-        )),
+      // 列表页顶栏带标题「运行轨迹」+ 导出图标（见 [_withBackHeader] 的 title/trailing）。
+      RunTracePage() => _withBackHeader(
+          AiRunTraceView(
+            onOpenRun: (run) => _go(RunTraceDetailPage(run.id)),
+          ),
+          title: '运行轨迹',
+          trailing: AppIconAction(
+            icon: LucideIcons.download,
+            iconSize: 20,
+            semanticLabel: '导出运行轨迹',
+            onPressed: _exportRunTrace,
+          ),
+        ),
       RunTraceDetailPage(runId: final runId) => AiRunTraceDetailView(
           runId: runId,
           onBack: _back,
@@ -424,23 +439,67 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   ///
   /// 这两个页面原本是侧栏根页、自身不带返回按钮；搬进「我的」后必须经此头提供返回，
   /// 否则用户进入后只能靠系统返回键——单一出口原则也要求返回动作集中在组合根。
-  Widget _withBackHeader(Widget page) => Column(
+  ///
+  /// [title] 给带标题的页（如运行轨迹）；[trailing] 给顶栏右侧动作（如导出）。
+  /// 两者都可选：模型管理页只传返回头、不带标题与动作。
+  Widget _withBackHeader(Widget page, {String? title, Widget? trailing}) =>
+      Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
             padding: const EdgeInsets.all(AppSpacing.sm),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: AppIconAction(
-                icon: LucideIcons.arrowLeft,
-                semanticLabel: '返回',
-                onPressed: _back,
-              ),
+            child: Row(
+              children: [
+                AppIconAction(
+                  icon: LucideIcons.arrowLeft,
+                  semanticLabel: '返回',
+                  onPressed: _back,
+                ),
+                if (title != null) ...[
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: AppTheme.textOf(context).titleMedium,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ] else
+                  const Spacer(),
+                if (trailing != null) trailing,
+              ],
             ),
           ),
           Expanded(child: page),
         ],
       );
+
+  /// 导出运行轨迹：把当前列表里的全部运行概要压成 Markdown，经系统保存面板落盘
+  /// （file_picker.saveFile，复用 `student_management_screen._downloadTemplate` 通道、
+  /// 不引新依赖）。列表为空直接提示、不弹面板。
+  Future<void> _exportRunTrace() async {
+    final runs = ref.read(runTraceListProvider).value;
+    if (runs == null || runs.isEmpty) {
+      AppToast.show(context, '暂无可导出的运行轨迹');
+      return;
+    }
+    final markdown = buildRunTraceMarkdown(runs);
+    try {
+      final uri = await FilePicker.saveFile(
+        dialogTitle: '导出运行轨迹',
+        fileName: 'ai_run_trace_${runTraceFileNameStamp()}.md',
+        bytes: Uint8List.fromList(utf8.encode(markdown)),
+      );
+      final path = uri?.path;
+      if (mounted && path != null) {
+        AppToast.show(context, '运行轨迹已导出：$path');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      AppToast.error(context, e);
+    }
+  }
 
   /// 05：把页面内容收进窄宽度框（contentNarrow），两侧不再大片留白。
   ///
