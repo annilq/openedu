@@ -58,4 +58,14 @@
 - 上下文：`decide(history=…)` 全量透传（近期 12 轮裁剪），manifest 的 name/description/actions 经 `_capability_text` 作候选选项——「每轮带全量上下文、按能力路由」即此。
 - **纯 LLM 出题（用户接受的 UX 降级）**：聊天出题无澄清引导、无规格回显、无 specs 注入，自由文本生成；按规格结构化出题仍走 `POST /tasks/generate`。通用槽位引擎（`fill_slots`/`clarify_sentence`/DONE 补发 726dba9）保留但聊天层暂不可达（manifest 全 optional），由 `required_slots` 合成 schema 守护。
 - 测试确定性来源 = 路由桩显式表态：`FakeLLMProvider(route_to=...)`（schema 为 RoutingDecision 时表态）+ `RoutingFakeProvider`；**禁止在测试替身里复刻关键词匹配**。都不命中恒落 capability（8 句回归表 + 契约「至多一个 fallback_guide 声明 + 双端可见」守护）；学生 TutorLog 仅显式 tutor 轮落库。`tests/ai` 355 passed；全量基线 1003 passed/2 skipped/1 failed（materials `test_empty_text_422` 环境性红，与 main 同）。
-- scratch：`.scratch/ai-intent-routing/`（spec INDEX + issues 01–10 全 done；gh 未登录仅本地）。工单 09 推翻 08「规则兜底」纪律；工单 10（ADR-0105）把 ADR-0104 §2.1 兜底子句从「min(priority)=tutor」改为「fallback_guide 声明=capability 能力引导」。
+- scratch：`.scratch/ai-intent-routing/`（spec INDEX + issues 01–11 全 done；gh 未登录仅本地）。工单 09 推翻 08「规则兜底」纪律；工单 10（ADR-0105）把 ADR-0104 §2.1 兜底子句从「min(priority)=tutor」改为「fallback_guide 声明=capability 能力引导」；工单 11 = Ollaya 本地决策服务接入 + 中文实测（见 §11）。
+
+## 11. 决策模型：本地 Ollaya 服务 + 中文实测否决候选（ticket 11，2026-10-20）
+- **部署**：本机 `ollaya` 0.15.0（`/usr/local/bin`，与 Ollama 11434 并存），服务监听 `127.0.0.1:11435`，走 TypeSafe 兼容 `POST /v1/systemone`；模型缓存 `~/.ollaya/models`，pid `~/.ollaya/server.11435.pid`。已拉 `laya:multilingual`(683 MB) 与 `largha`(328 MB)。`ollaya list/ps/pull/run/serve` 是主要命令。
+- **旧适配层从未验证**：原 `{"state","questions":[{"question","options"}]}` 形状直连 ollaya 返回 `422 INVALID_REQUEST`（`model` 必填、`questions` 必须是字典）。现契约 payload = `{model, state, questions:{id:{type:"choice",instructions,criteria:{业务键: capability_text}}}}`；响应 `answers[id].{choice,confidence,probabilities}`。
+- **门控用 `probabilities` 的 top 值，不用 TypeSafe `confidence`**：`confidence=(K·pmax−1)/(K−1)`，同一置信在教师端 K=3 / 学生端 K=2 是两个数字，固定阈值跨可见集不可比（实测 pmax 0.823 → confidence 0.7345）。
+- **参数/env 改名**：模型参数 HF 仓库名 → **ollaya 标签**（白名单 `laya:multilingual`/`largha`，英文权重构造即 ValueError）；`LAYA_SERVE_URL` → `OLLAYA_URL`（可选 `OLLAYA_MODEL`）。本地配置在 `backend/.env`（gitignore）。超长 state → ollaya `422 STATE_TRUNCATED` → `predict` None → 回落 LLM 分类（这是设计好的降级，不是 bug）。
+- **中文实测（`.scratch/ai-intent-routing/eval/decision_model_eval.py`，可复跑）**：13 条中文用例 + 12 轮长历史(719 字符)。`laya:multilingual` 8/13=62%、p50 23 ms、平均置信 0.617、长历史不截断；`largha` 5/13=38%、平均置信 0.270（阈值 0.5 下近乎恒不决策）、长历史**422 截断**。→ **推翻上一轮基于公开英文基准的「largha 首选升级」推断**。
+- **纪律（血泪）**：候选模型取舍**必须有本项目中文数据**；低于现任 62% 的权重不得进白名单；评测跑在 pytest 之外（网络/权重依赖），测试保持确定性。
+- 失败面（待办）：tasks↔tutor↔capability 描述可分性（占 5 错中 4 条）；最坏是学生「23+45 怎么算」被 **0.913 置信**判成 capability——下一步应改 manifest 文案（`criteria` 值）而非换权重。
+- 本机环境注记：Apple silicon，laya/largha 走 MLX（故 10–30 ms）；虽有 `HTTP_PROXY=127.0.0.1:62790` 且无 `no_proxy`，实测 urllib 对 localhost 自动绕过（**不要**为此加 ProxyHandler 旁路代码）。
