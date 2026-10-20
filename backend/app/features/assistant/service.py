@@ -73,52 +73,24 @@ log = logging.getLogger(__name__)
 _BLOCK_REASON_GATE = "输入被安全闸门拦截"
 
 
-def _resolve_input_schema(
-    business: str, trigger: str | None
-) -> tuple[list | None, str | None]:
-    """按 ``(business, 命中触发词)`` 解析预检 schema 与子意图（ADR-0098 §2.3）。
+def _resolve_input_schema(business: str) -> list | None:
+    """按 business 解析缺槽预检的 schema（ADR-0095）。
 
-    返回 ``(schema, intent)``：
+    返回 manifest 的 ``input_schema``（默认意图，全 optional）；未知 business 返回
+    ``None``（调用方据此跳过预检）。
 
-    - ``trigger`` 命中 manifest ``intent_schemas`` 某组的 ``triggers`` → 该组 schema，
-      intent = 组名（如 tasks + 「出题」→ generate 组）；
-    - 否则回落 ``input_schema``（默认意图），intent = ``None``。
+    ADR-0104：规则（关键词/启发式）路由移除后不再有 ``trigger`` 子意图词，原
+    「按命中词落 intent 组选 schema」的子意图分组（ADR-0098 §2.3）随之删除——
+    出题引导（必填槽澄清 + 规格回显）下线，聊天链路走纯 LLM 自由文本生成。
+    按规格的结构化出题仍由 ``POST /tasks/generate``（``ctx.extra["specs"]``）承载。
 
-    业务合并后（question 并入 tasks）schema 按命中词分组：出题必填槽只在出题意图
-    下生效，学情 / 名单 / 题库管理走全 optional 默认 schema 恒放行。
-
-    异常隔离：未知 business 不抛，返回 ``(None, None)``（调用方据此跳过预检）。
+    异常隔离：未知 business 不抛，返回 ``None``。
     """
     try:
         mod = importlib.import_module(f"app.ai.subagents.{business}.manifest")
     except ModuleNotFoundError:
-        return None, None
-    manifest = mod.MANIFEST
-    if trigger:
-        for intent, spec in (manifest.get("intent_schemas") or {}).items():
-            if trigger in (spec.get("triggers") or []):
-                return spec.get("schema"), intent
-    return manifest.get("input_schema"), None
-
-
-def _business_triggered(business: str, message: str) -> bool:
-    """本轮消息是否携带了该业务自己的意图词（manifest 的 triggers + hints）。
-
-    ADR-0099 的注入闸门：已确认规格只在**本轮确实在作出题请求**时回灌。
-
-    为什么不靠路由独自把关：路由在续接轮仍可能因 hints 或三级兜底落到同一
-    business，而“再说一句无关话就按旧规格再出一轮题”是用户直接可见的故障
-    （既有回归 ``test_unrelated_followup_does_not_regenerate`` 锁的正是它）。
-    判定复用 manifest 词表，不在 service 另写一份意图词，避免两份口径漂移。
-    """
-    try:
-        mod = importlib.import_module(f"app.ai.subagents.{business}.manifest")
-    except ModuleNotFoundError:
-        return False
-    manifest = mod.MANIFEST or {}
-    low = (message or "").strip().lower()
-    words = list(manifest.get("triggers") or []) + list(manifest.get("hints") or [])
-    return any((w or "").strip().lower() in low for w in words if w)
+        return None
+    return mod.MANIFEST.get("input_schema")
 
 
 def _student_grade(session, user) -> int:
@@ -422,7 +394,7 @@ async def chat(
     retriever = build_retriever(session=session, teacher_id=teacher_id)
     safety = StudentSafety() if role == Role.STUDENT else None
     # 决策模型（Laya-multilingual）：注入路由作主原语；不可用时 available() 为 False，
-    # 路由自动回落规则 classify，链路不崩（权重就位 / LAYA_SERVE_URL 配置后自动激活）。
+    # 路由自动回落 LLM 分类或兜底助手，链路不崩（权重就位 / LAYA_SERVE_URL 配置后自动激活）。
     deps = RuntimeDeps(
         provider=provider,
         retriever=retriever,
@@ -604,35 +576,21 @@ async def chat(
         pending_calls: list[tuple[str | None, Message]] = []
 
         # ── 缺槽预检（ADR-0095，确定性，非 LLM） ──
-        # 对任何声明了 input_schema / intent_schemas 的业务生效（ADR-0095：schema 是
-        # 槽位唯一事实源，不再按 business 硬编码开关；ADR-0098 §2.3：业务合并后按
-        # 命中触发词落哪个 intent 组选 schema）。是否阻塞完全由 schema 的 required
-        # 决定：目前仅 tasks 的 generate 意图声明了必填槽（subject/grade/qtype），
-        # 故只有出题意图会澄清；学情 / 名单 / 题库管理走默认 schema（全 optional）
-        # → 恒放行、不追问、也不发汇总帧（§2.4：读操作与问答过度追问反而干扰，
-        # 汇总对它们只是噪声）。
+        # 对任何声明了 input_schema 的业务生效（ADR-0095：schema 是槽位唯一事实源，
+        # 不按 business 硬编码开关）。是否阻塞完全由 schema 的 required 决定。
+        # ADR-0104：规则路由移除、子意图分组（intent_schemas / trigger）下线后，出题
+        # 引导（必填槽澄清 + 已确认规格汇总 + specs 回灌）随之结束——聊天链路走纯
+        # LLM 自由文本生成。现有 manifest 的 input_schema 全部 optional，故预检恒
+        # 放行；本机制保留给将来声明必填槽的业务（澄清 / 跨轮合并 / DONE 补发照旧）。
         # 结构化 POST /tasks/generate 经 ctx.extra["specs"] 自带校验，必须跳过本预检。
         if not ctx.extra.get("specs"):
             from app.features.assistant.slot_clarify import clarify_sentence
             from app.features.assistant.slot_filling import fill_slots
-            from app.features.assistant.slot_summary import (
-                summarize_slots,
-                summary_payload,
-            )
 
-            _schema, _intent = _resolve_input_schema(
-                decision.business, decision.trigger
-            )
-            # 槽位两本账（ADR-0098 §2.3）：默认意图按 business 存，子意图按
-            # ``business:intent`` 存——flat 存会让学情一轮冲掉出题已收集的槽
-            # （fill_slots 只搬当前 schema 内的键）。历史 question 键的旧行不读，
-            # 无需迁移。
-            _slot_key = (
-                f"{decision.business}:{_intent}" if _intent else decision.business
-            )
+            _schema = _resolve_input_schema(decision.business)
             if _schema:
                 _store = conversation.slots if isinstance(conversation.slots, dict) else {}
-                _collected = _store.get(_slot_key)
+                _collected = _store.get(decision.business)
                 if not isinstance(_collected, dict):
                     _collected = {}
                 _result = fill_slots(
@@ -641,15 +599,9 @@ async def chat(
                     incoming=message,
                     ctx_extra=ctx.extra,
                 )
-                # 本轮开始前必填是否已齐（用于区分「刚补齐」与「齐了还说别的」）
-                _was_incomplete = any(
-                    _collected.get(s["name"]) in (None, "")
-                    for s in _schema
-                    if s.get("required")
-                )
                 # 必须赋**新对象**：SQLAlchemy 按对象 identity 判定脏值，就地改同一个
                 # dict（_store[..] = .. 后再赋回）不会触发 UPDATE，槽位写不进库。
-                conversation.slots = {**_store, _slot_key: _result["merged"]}
+                conversation.slots = {**_store, decision.business: _result["merged"]}
                 if _result["clarifying"]:
                     # 写回已知槽位，供下一轮合并续接（跨轮记忆）
                     session.commit()
@@ -688,59 +640,6 @@ async def chat(
                     # 的 ``if final_text or cards`` 再落一条重复助手消息。
                     final_text = ""
                     return
-                # 必填齐备：写回合并后的槽位，先发「已确认规格」汇总，再进生成。
-                # 仅 generate 意图需要「汇总 + 交给定题子代理的 specs 路径」：它是
-                # 唯一按结构化规格生成的意图；学情 / 名单 / 题库管理静默放行
-                # （不打扰、无噪声）。
-                #
-                # **回灌条件（ADR-0099 × ADR-0098）**：本轮确实是「在向本业务作出题
-                # 请求」时才注入已确认规格。旧实现的闸门是「本轮抽到槽或刚补齐」，续话
-                # （「再出几道」）不含槽关键词便不注入，规格只能靠模型从会被 compaction
-                # 压缩的历史里自行重建——「上一轮说了三年级这一轮又问一遍」即源于此。
-                #
-                # 三道证据任一成立即认定为本轮意图（均为确定性判定，无模型参与）：
-                # 1. 消息含本业务意图词（manifest triggers/hints，如「再出几道」）；
-                # 2. 本轮抽到了槽（如「换成一年级语文」虽无意图词但明确在改规格）；
-                # 3. 本轮刚好补齐槽位（刚回答完澄清，必然还在同一流程里）。
-                # 三者皆无 → 「谢谢」这类无关话，不注入，避免拿旧规格再出一轮题。
-                _wants_generation = (
-                    _business_triggered(decision.business, message)
-                    or bool(_result["extracted"])
-                    or _was_incomplete
-                )
-                if _intent == "generate" and _wants_generation:
-                    # 把合并后的槽位交给出题子代理的结构化规格路径（ADR-0034 Phase 1
-                    # 接缝），否则生成步会重新回落自由文本兜底、丢失已收集的科目/年级/题型。
-                    ctx.extra["specs"] = [_result["merged"]]
-                if _intent == "generate" and (
-                    _result["extracted"] or _was_incomplete
-                ):
-                    _summary_text = summarize_slots(_result["merged"])
-                    yield AssistantEvent(
-                        eventType=EVENT_ASSISTANT_MESSAGE,
-                        text=_summary_text,
-                        extra={
-                            "summary": {
-                                "slots": summary_payload(_schema, _result["merged"])
-                            }
-                        },
-                    ).to_sse()
-                    session.add(
-                        Message(
-                            conversation_id=conv_id,
-                            turn=turn,
-                            role="assistant",
-                            step="output",
-                            content=_summary_text,
-                            payload={
-                                "summary": {
-                                    "slots": summary_payload(
-                                        _schema, _result["merged"]
-                                    )
-                                }
-                            },
-                        )
-                    )
 
         # 复用预航班决策（decision），避免重复路由；run 返回事件流。
         stream: AsyncIterator[AssistantEvent] = rt.run(

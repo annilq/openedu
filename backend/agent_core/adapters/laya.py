@@ -5,7 +5,7 @@
 高棉语 0.000 准确率却仍高置信，仅 23/51 语种过 3×随机线）。产品是中文，英文版是错误选择。
 
 本适配器为「尽力可用」实现：未配置服务 / 缺权重 / 离线时 ``available()`` 返回 False，
-路由回落规则 ``classify``，链路不崩。真实 ``laya-serve`` 就位（设 ``LAYA_SERVE_URL``）
+路由回落 LLM 分类或兜底助手，链路不崩。真实 ``laya-serve`` 就位（设 ``LAYA_SERVE_URL``）
 后自动激活，无需改路由代码。
 """
 from __future__ import annotations
@@ -56,7 +56,7 @@ class _LayaServeEngine:
 
             self._client = (urllib.request, self._base_url)
             return True
-        except Exception:  # noqa: BLE001 — 任何失败都视为不可用，回落规则分类
+        except Exception:  # noqa: BLE001 — 任何失败都视为不可用，回落 LLM 分类 / 兜底助手
             return False
 
     def predict(
@@ -91,7 +91,7 @@ class LayaDecisionModel(DecisionModel):
 
     - 路由决策：把可见 business 的能力清单作为 ``choice`` 问题的选项，state = 近期
       对话上下文，问「哪个业务处理本 state」，取校准概率最高者。
-    - 低于 ``threshold`` 或无法决策 → ``decide`` 返回 ``None``，路由回落规则分类。
+    - 低于 ``threshold`` 或无法决策 → ``decide`` 返回 ``None``，路由回落 LLM 分类或兜底助手。
     - ``engine`` 可注入（测试 / 私有部署）；缺省懒连 ``laya-serve``。
     """
 
@@ -133,7 +133,7 @@ class LayaDecisionModel(DecisionModel):
         }
         try:
             answers = self._engine.predict(state, [question])
-        except Exception:  # noqa: BLE001 — 模型异常不应击穿路由，回落规则分类
+        except Exception:  # noqa: BLE001 — 模型异常不应击穿路由，回落 LLM 分类 / 兜底助手
             return None
         if not answers:
             return None
@@ -143,7 +143,7 @@ class LayaDecisionModel(DecisionModel):
 
         key = self._resolve_key(choice, options)
         if key is None or prob < self._threshold:
-            # 无法解析选项 / 低于置信阈值 → 视为无决策，回落规则分类
+            # 无法解析选项 / 低于置信阈值 → 视为无决策，回落 LLM 分类 / 兜底助手
             return None
         return DecisionResult(choice=key, prob=prob, raw=ans)
 

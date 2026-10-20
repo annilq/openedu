@@ -16,12 +16,35 @@ from app.features.assistant.slot_filling import (
 )
 from app.features.assistant.slot_summary import summarize_slots, summary_payload
 
+# ADR-0104：出题子意图的 intent_schemas 随规则路由下线（manifest 的 input_schema 现
+# 全 optional），必填槽 schema 改为本文件内联声明——fill_slots 是通用机制，schema 由
+# 调用方给；保留这组必填槽用例是为了继续钉住「缺槽澄清 / 跨轮合并 / 默认回填」机制
+# 本身（将来任何业务声明必填槽都走同一条路）。
+_QUESTION_SCHEMA: list[dict] = [
+    {"name": "subject", "type": "enum", "required": True,
+     "prompt": "请问要出哪个科目？", "enum_ref": "app.domain.subjects.SUBJECTS", "source": "both"},
+    {"name": "grade", "type": "int", "required": True,
+     "prompt": "几年级？（1-9）", "min": 1, "max": 9, "source": "both"},
+    {"name": "qtype", "type": "enum", "required": True,
+     "prompt": "要什么题型（选择/填空/计算/解答）？",
+     "enum": ["choice", "fill", "calc", "open"], "source": "text"},
+    {"name": "count", "type": "int", "required": False, "default": 1,
+     "min": 1, "max": 5, "source": "text"},
+    {"name": "knowledge_point", "type": "string", "required": False, "default": "",
+     "prompt": "有指定的知识点吗？（可留空按教材随机）", "source": "both"},
+    {"name": "difficulty", "type": "enum", "required": False, "default": "medium",
+     "enum": ["easy", "medium", "hard"], "source": "text"},
+    {"name": "semester", "type": "enum", "required": False, "default": "",
+     "enum": ["", "上", "下"], "source": "text"},
+    {"name": "multi", "type": "bool", "required": False, "default": False, "source": "text"},
+    {"name": "judge", "type": "bool", "required": False, "default": False, "source": "text"},
+    {"name": "multi_subject", "type": "bool", "required": False, "default": False,
+     "prompt": "是否需要多学科组卷？（是则按科目分别出题）", "source": "text"},
+]
+
 
 def _question_schema() -> list[dict]:
-    # ADR-0098：question 域并入 tasks，出题（generate 意图）的槽位 schema 迁到
-    # intent_schemas.generate——「_question_schema」这个名字留给出题意图的调用方。
-    mod = importlib.import_module("app.ai.subagents.tasks.manifest")
-    return mod.MANIFEST["intent_schemas"]["generate"]["schema"]
+    return _QUESTION_SCHEMA
 
 
 def _tasks_schema() -> list[dict]:
@@ -88,7 +111,11 @@ def test_resolve_enum_ref_handles_bad_ref():
 
 
 def test_question_and_tasks_schemas_load_independently():
-    """多意图载入各自 schema 互不串：generate 意图缺槽阻塞，默认意图全 optional 不阻塞。"""
+    """两种 schema 互不串：内联必填 schema 缺槽阻塞；manifest 默认 schema 全 optional。
+
+    ADR-0104 后 manifest 不再有必填槽（出题引导下线），本对照钉的是「同一引擎、
+    不同 schema 决定阻塞与否」这一机制本身。
+    """
     q_result = fill_slots(_question_schema(), {}, incoming="查一下", ctx_extra={})
     assert q_result["clarifying"] is True  # subject/grade/qtype 缺失
     tasks_result = fill_slots(_tasks_schema(), {}, incoming="查一下", ctx_extra={})

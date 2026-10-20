@@ -51,3 +51,11 @@
 - **slot filling 意图分组**（最实质机制变更）：manifest `intent_schemas.generate`（出题必填槽）；router `classify`→`Classification(business,trigger,level)`、`RouteDecision.trigger`；service `_resolve_input_schema(business,trigger)` 选 schema；槽位两本账 `business`（默认意图）/`business:intent`（如 `tasks:generate`）；specs 注入条件 `intent=="generate"`。词序即子意图（`_rule_match` 返回首个命中词；题库词不在 generate 组）；契约测试守 `intent_schemas⊆triggers`。
 - 等价验证基线：**976 passed / 1 failed（materials `test_empty_text_422` 环境性红）/ 2 skipped**，与 main 同。提交链 9db4c7d→54b4a54→47ea91a→ba6428a（机制层）→3090d1c（合并波次，原子性：删 question/ 斩断测试 import，必须同提交）。
 - **提交纪律**：`git add <部分>` 后**不带 pathspec** 的 `git commit` 会连带提交索引里已暂存的删除/改名——提交前必先 `git diff --cached --stat` 核对。
+
+## 10. 意图路由终态：规则路由整体移除（ADR-0104，2026-10-20，分支 `ticket/08-decision-routing` 未合 main）
+- **§9 的 slot filling 部分已被本节废止**：`intent_schemas`/`RouteDecision.trigger`/`business:intent` 两本账/`_business_triggered`/specs 聊天侧注入/汇总帧全部随 ADR-0104 删除；槽位回归每 business 单键，旧键行不读无需迁移。
+- 路由链：动作直配（ADR-0081，等值匹配，永远最前）→ `decision`（LayaDecisionModel，`agent_core/adapters/laya.py`，**仅 `laya-multilingual`**，英文 laya 构造即 ValueError）→ `llm`（`classify_llm`，`adapters/llm_route.py`，`RoutingDecision(SQLModel)` 只落适配器保内核 stdlib-only）→ 兜底 = 可见集中 `priority` 最小者（生产 tutor，`routed_by="default"`），永不返回 None。策略 `AI_ROUTING_STRATEGY`：`llm=[llm]`/`decision=[decision,llm]`/`auto=[decision,llm]`（默认）。
+- 上下文：`decide(history=…)` 全量透传（近期 12 轮裁剪），manifest 的 name/description/actions 经 `_capability_text` 作候选选项——「每轮带全量上下文、按能力路由」即此。
+- **纯 LLM 出题（用户接受的 UX 降级）**：聊天出题无澄清引导、无规格回显、无 specs 注入，自由文本生成；按规格结构化出题仍走 `POST /tasks/generate`。通用槽位引擎（`fill_slots`/`clarify_sentence`/DONE 补发 726dba9）保留但聊天层暂不可达（manifest 全 optional），由 `required_slots` 合成 schema 守护。
+- 测试确定性来源 = 路由桩显式表态：`FakeLLMProvider(route_to=...)`（schema 为 RoutingDecision 时表态）+ `RoutingFakeProvider`；**禁止在测试替身里复刻关键词匹配**。`tests/ai` 353 passed；全量基线 1001 passed/2 skipped/1 failed（materials `test_empty_text_422` 环境性红，与 main 同）。
+- scratch：`.scratch/ai-intent-routing/`（spec INDEX + issues 01–09 全 done；gh 未登录仅本地）。工单 09 推翻了 08「规则 classify 保留兜底」纪律。

@@ -110,11 +110,12 @@ class _JudgeLoopRuntime:
 
     async def decide(self, signal, *, role, deps, history=None) -> RouteDecision:
         text = getattr(signal, "text", "") or ""
-        # ADR-0098：命中词随决策返回——预检按它落 generate 意图组（出题 schema）。
+        # ADR-0104：规则路由移除后无 trigger 子意图词；出题轮 → tasks（纯 LLM 生成），
+        # 作答轮（「对 / 错 / 不会」）→ tutor，判定依据是对话历史里的题卡。
         for kw in ("判断题", "出一道", "出题", "练习题"):
             if kw in text:
                 return RouteDecision(
-                    business="tasks", name="任务学情与出题助手", trigger=kw
+                    business="tasks", name="任务学情与出题助手"
                 )
         return RouteDecision(business="tutor", name="伴学答疑")
 
@@ -146,6 +147,7 @@ def test_quiz_chat_runs_via_runtime_and_keeps_answer(client, db, fake_llm):
     token = r.json()["access_token"]
     tid = _teacher_id(db, "qz_teacher")
     kp = _make_kp(db, tid=tid)
+    fake_llm.route_to = "tasks"
     fake_llm.script("generate_questions")
 
     status, events = _stream(

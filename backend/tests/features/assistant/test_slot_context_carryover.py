@@ -1,13 +1,23 @@
-"""已确认规格的跨轮回灌（ADR-0099）。
+"""已确认规格的跨轮回灌（ADR-0099 → ADR-0104 下线）。
 
-背景：``Conversation.slots`` 早就持久化了已确认规格，但注入条件绑定在「本轮抽到槽
-或刚补齐」上。续话（「再出几道」）不含槽关键词 → 不注入 → 出题子代理只能从会被
-compaction 压缩的历史里重建规格，表现为「上一轮说了三年级这一轮又问一遍」。
+背景（ADR-0099 时代）：``Conversation.slots`` 早就持久化了已确认规格，但注入条件
+绑定在「本轮抽到槽或刚补齐」上。续话（「再出几道」）不含槽关键词 → 不注入 →
+出题子代理只能从会被 compaction 压缩的历史里重建规格，表现为「上一轮说了三年级
+这一轮又问一遍」。当时的修法是把闸门放宽到「消息含本业务意图词」。
 
-本文件锁三条行为：
-1. 续话（无新槽）仍把已确认规格注入 ``ctx.extra["specs"]``；
-2. 续话**不再**重发「已确认规格」汇总帧（避免每轮弹一遍）；
-3. 规格以「基底 + 覆盖」合并，不与模型 args 各自展开而让 count 相加。
+ADR-0104：规则路由移除、出题子意图分组（intent_schemas / trigger）下线后，
+**聊天链路不再回灌 specs**——出题走纯 LLM 自由文本生成，规格由模型从对话历史
+自行重建（history 每轮全量进上下文，见 runtime.decide 的 ``history`` 透传）。
+本文件因此从「锁回灌」翻转为「锁不回流」：
+
+1. 续话（无新槽）**不**把旧规格注入 ``ctx.extra["specs"]``；
+2. 续话**不**重发「已确认规格」汇总帧；
+3. 长会话把首轮压掉后**不**回灌（不依赖历史重建由模型自己负责）；
+4. 换科目 / 年级的轮次同样静默（无汇总帧、无 specs）。
+
+按规格的结构化出题仍由 ``POST /tasks/generate``（``ctx.extra["specs"]``）承载，
+其规格合并语义（``merge_spec_layers`` / ``specs_from_context``）由本文件尾部用例
+继续守护——那条路径不随聊天链路变化。
 """
 from __future__ import annotations
 
@@ -37,29 +47,14 @@ def _caller(role: str, *, user_id: uuid.UUID, teacher_id: uuid.UUID):
 class _StubRuntime:
     """桩 runtime：只记录本轮看到的 ``ctx.extra``，产出一张题卡。
 
-    ADR-0098 把 question 并入 tasks，预检改按 ``(business, trigger)`` 选 schema，
-    故桩需按消息推出命中的触发词（等值于真实路由的规则层），不能写死：
-    出题类句子给 generate 组词，其余给 ``None``（走默认 schema）。
+    ADR-0104：无 trigger 子意图词，桩只按 business 决策（出题问句 → tasks）。
     """
 
     def __init__(self) -> None:
         self.last_ctx_extra = None
 
-    @staticmethod
-    def _trigger_of(message: str) -> str | None:
-        from app.ai.subagents.tasks.manifest import MANIFEST
-
-        for spec in (MANIFEST.get("intent_schemas") or {}).values():
-            for word in spec.get("triggers") or []:
-                if word in message:
-                    return word
-        return None
-
     async def decide(self, signal, *, role: str, deps, history=None) -> RouteDecision:
-        text = getattr(signal, "text", signal) or ""
-        return RouteDecision(
-            business="tasks", name="任务学情与出题助手", trigger=self._trigger_of(text)
-        )
+        return RouteDecision(business="tasks", name="任务学情与出题助手")
 
     async def run(self, message, *, role, ctx, deps, business=None, session=None):
         self.last_ctx_extra = ctx.extra
@@ -93,51 +88,42 @@ def _send(db, rt, message: str, *, pid: uuid.UUID, session_id: str | None = None
     return _parse(asyncio.run(_go()))
 
 
-def _collect_specs(db, rt, *, pid: uuid.UUID) -> str:
+def _collect(db, rt, *, pid: uuid.UUID) -> str:
     """跑完一轮「出数学三年级选择题」，返回会话 id。"""
     _send(db, rt, "帮我出2道三年级数学选择题", pid=pid)
     return str(rt.last_ctx_extra["session_id"])
 
 
-def test_followup_turn_reinjects_confirmed_specs(db):
-    """续话不含任何槽关键词，仍须把已确认规格交给生成器。"""
+def test_followup_turn_does_not_reinject_specs(db):
+    """续话（「再出几道」）不注入 specs：聊天链路纯 LLM 生成（ADR-0104）。"""
     pid = uuid.uuid4()
     rt = _StubRuntime()
-    sid = _collect_specs(db, rt, pid=pid)
+    sid = _collect(db, rt, pid=pid)
 
     _send(db, rt, "再出几道", pid=pid, session_id=sid)
 
-    specs = (rt.last_ctx_extra or {}).get("specs")
-    assert isinstance(specs, list) and specs, "续话轮必须复用已确认规格"
-    assert specs[0]["subject"] == "数学"
-    assert specs[0]["grade"] == 3
-    assert specs[0]["qtype"] == "choice"
+    assert not (rt.last_ctx_extra or {}).get("specs"), "纯 LLM 生成不得回灌旧规格"
 
 
 def test_followup_turn_does_not_resend_summary_frame(db):
-    """汇总帧只在本轮带来新/变更规格时下发，续话轮不重复弹。"""
+    """汇总帧已随出题引导下线：续话轮不弹，也不该在任何轮次弹。"""
     pid = uuid.uuid4()
     rt = _StubRuntime()
-    sid = _collect_specs(db, rt, pid=pid)
+    sid = _collect(db, rt, pid=pid)
 
     events = _send(db, rt, "再出几道", pid=pid, session_id=sid)
 
     assert not [
         e for e in events if (e.get("extra") or {}).get("summary")
-    ], "续话轮不应重发「已确认规格」帧"
+    ], "不应出现「已确认规格」帧"
     assert any(e["eventType"] == EVENT_DATA for e in events), "仍应正常出题"
 
 
 def test_unrelated_message_does_not_reinject(db):
-    """「谢谢」既无意图词也未抽到槽 → 不注入，不拿旧规格再出一轮题。
-
-    注：真实路由会把「谢谢」判到 tutor（question 无匹配词，三级兜底落 priority
-    最低的 tutor）。这里桩 runtime 恒返回 question，故意把消息送到分支前，
-    以锁定**服务端自己的闸门**不依赖路由兜底。
-    """
+    """「谢谢」这类无关话同样不注入——纯 LLM 生成下 specs 恒不回流。"""
     pid = uuid.uuid4()
     rt = _StubRuntime()
-    sid = _collect_specs(db, rt, pid=pid)
+    sid = _collect(db, rt, pid=pid)
 
     rt2 = _StubRuntime()
     _send(db, rt2, "谢谢", pid=pid, session_id=sid)
@@ -145,35 +131,30 @@ def test_unrelated_message_does_not_reinject(db):
     assert not (rt2.last_ctx_extra or {}).get("specs"), "无关消息不得复用旧规格出题"
 
 
-def test_new_turn_overrides_slot_and_does_resend_summary(db):
-    """换科目/年级时：规格被覆盖，并照常下发汇总帧。"""
+def test_spec_change_turn_is_silent(db):
+    """换科目/年级的轮次：无 specs 注入、无汇总帧（引导链路已下线）。"""
     pid = uuid.uuid4()
     rt = _StubRuntime()
-    sid = _collect_specs(db, rt, pid=pid)
+    sid = _collect(db, rt, pid=pid)
 
     events = _send(db, rt, "换成一年级语文选择题，再出几道", pid=pid, session_id=sid)
 
-    specs = (rt.last_ctx_extra or {}).get("specs")
-    assert specs[0]["subject"] == "语文"
-    assert specs[0]["grade"] == 1
-    assert [e for e in events if (e.get("extra") or {}).get("summary")], (
-        "带来变更规格的轮次仍应下发汇总帧"
-    )
+    assert not (rt.last_ctx_extra or {}).get("specs")
+    assert not [e for e in events if (e.get("extra") or {}).get("summary")]
 
 
-def test_injected_specs_survive_compaction(db):
-    """长会话把首轮压掉后，已确认规格仍从 slots 回灌（不依赖历史）。"""
+def test_long_conversation_does_not_reinject(db):
+    """长会话把首轮压掉后也不回灌——规格重建由模型从 history 自行负责。"""
     pid = uuid.uuid4()
     rt = _StubRuntime()
-    sid = _collect_specs(db, rt, pid=pid)
+    sid = _collect(db, rt, pid=pid)
     # 灌入大量闲聊轮次，把首轮的规格描述挤出 compaction 窗口
     for i in range(25):
         _send(db, rt, f"第{i}个补充说明", pid=pid, session_id=sid)
 
     _send(db, rt, "再出几道", pid=pid, session_id=sid)
 
-    specs = (rt.last_ctx_extra or {}).get("specs")
-    assert specs and specs[0]["subject"] == "数学" and specs[0]["grade"] == 3
+    assert not (rt.last_ctx_extra or {}).get("specs")
 
 
 def test_new_conversation_starts_with_empty_slots(db):
@@ -184,7 +165,7 @@ def test_new_conversation_starts_with_empty_slots(db):
 
     pid = uuid.uuid4()
     rt = _StubRuntime()
-    _collect_specs(db, rt, pid=pid)
+    _collect(db, rt, pid=pid)
     _send(db, rt, "再出一道题", pid=pid)  # 不传 session_id → 新会话
 
     convs = list(
@@ -192,12 +173,12 @@ def test_new_conversation_starts_with_empty_slots(db):
     )
     assert len(convs) == 2, "不传 session_id 应新建会话"
     newest = max(convs, key=lambda c: c.created_at)
-    # 新会话本轮自己也抽到了「题」但无科目 → 槽位应是它自己的，而非旧会话的。
-    slots = (newest.slots or {}).get("question") or {}
+    # 新会话本轮自己也抽到了槽，但应是它自己的，而非旧会话的（按 business 单键存）。
+    slots = (newest.slots or {}).get("tasks") or {}
     assert slots.get("grade") != 3, "新会话不得继承旧会话已确认的年级"
 
 
-# ── 规格合并语义（specs.merge_spec_layers） ──────────────────────────────────
+# ── 规格合并语义（specs.merge_spec_layers，结构化端点路径仍用） ──────────────────
 
 
 def test_merge_layers_overrides_without_double_counting():

@@ -1,50 +1,53 @@
-"""AgentRuntime 路由决策与流式契约（ADR-0024 / 0026 / 0031，不加载 genkit 重型依赖）。
+"""AgentRuntime 路由决策与流式契约（ADR-0024 / 0026 / 0031 / 0104）。
 
-聚焦本轮重构的「显式路由决策」契约：
-- ``decide`` 纯计算：角色可见性 → 安全闸门 → 混合路由，不构建依赖、不流式。
-- ``run`` 直接产出 ``AsyncIterator[AssistantEvent]``（不再返回 (decision, stream) 元组）；
-  决策由调用方先 ``decide`` 取得，再传入 ``run(..., business=decision.business)``。
-- agent_core 业务无关：``RouteDecision`` 不再含 education 专属的 ``subject`` 字段；
-  subject 由端点本地解析并走 ``ctx.extra``，路由 / 事件流均不感知。
+聚焦「显式路由决策」契约：
+- ``decide`` 纯计算：角色可见性 → 安全闸门 → 动作直配 → 策略原语（决策模型 /
+  LLM 分类）→ 兜底助手，不构建依赖、不流式。
+- 文本路由（ADR-0104）：规则（关键词/启发式）引擎已整体移除，业务选择由路由原语
+  按「对话上下文 + 能力清单」决定——测试里用路由 LLM 桩注入；**无任何模型可用时**
+  落「兜底助手」（可见集中 priority 最小者，通常 tutor），不再有关键词命中。
+- ``run`` 直接产出 ``AsyncIterator[AssistantEvent]``（不再返回 (decision, stream)
+  元组）；决策由调用方先 ``decide`` 取得，再传入 ``run(..., business=decision.business)``。
+- agent_core 业务无关：``RouteDecision`` 不含 education 专属字段；subject 由端点
+  本地解析并走 ``ctx.extra``，路由 / 事件流均不感知。
 
-``decide`` 与 ``run`` 的「决策」部分不触 LLM；仅 unsafe 路径会短路（不构建 subagent），
-故可在 mock 环境单测覆盖，不依赖真实引擎。
+``decide`` 与 ``run`` 的「决策」部分不触真实模型（桩注入）；仅 unsafe 路径会短路
+（不构建 subagent），故可在 mock 环境单测覆盖，不依赖真实引擎。
 """
 from __future__ import annotations
 
 import asyncio
-import inspect
 
 import pytest
 
-from agent_core import classify
+from agent_core.adapters.llm_route import RoutingDecision
 from agent_core.ports import RuntimeDeps
 from agent_core.protocol import EVENT_DONE, EVENT_ERROR, EVENT_THINKING
 from agent_core.runtime import AgentRuntime
 from agent_core.subagent import SubAgentContext
 from app.domain.safety import StudentSafety
-from tests.utils.fake_provider import FakeLLMProvider
+from tests.utils.fake_provider import FakeLLMProvider, RoutingFakeProvider
 
 
 def _rt() -> AgentRuntime:
     return AgentRuntime.discover()
 
 
-def _deps(role: str) -> RuntimeDeps:
+def _deps(role: str, *, provider=None) -> RuntimeDeps:
     return RuntimeDeps(
-        provider=FakeLLMProvider(),
+        provider=provider if provider is not None else FakeLLMProvider(),
         safety=StudentSafety() if role == "student" else None,
     )
 
 
-async def _decide(message: str, *, role: str) -> object:
+async def _decide(message: str, *, role: str, provider=None) -> object:
     rt = _rt()
-    return await rt.decide(message, role=role, deps=_deps(role))
+    return await rt.decide(message, role=role, deps=_deps(role, provider=provider))
 
 
-async def _run(message: str, *, role: str):
+async def _run(message: str, *, role: str, provider=None):
     rt = _rt()
-    deps = _deps(role)
+    deps = _deps(role, provider=provider)
     decision = await rt.decide(message, role=role, deps=deps)
     events = [
         ev
@@ -59,86 +62,54 @@ async def _run(message: str, *, role: str):
     return decision, events
 
 
-# ── decide：父端混合路由 ──
-def test_decide_teacher_generation():
-    decision = asyncio.run(_decide("帮我出几道数学题", role="teacher"))
+# ── decide：文本路由由策略原语决定（ADR-0104，规则引擎已移除） ──
+def test_decide_text_routing_follows_llm_classifier():
+    provider = RoutingFakeProvider(RoutingDecision(business="tasks", confidence=0.9))
+    decision = asyncio.run(_decide("帮我出几道数学题", role="teacher", provider=provider))
     assert decision.business == "tasks"
     assert decision.name == "任务学情与出题助手"
-    # ADR-0098：命中词随决策返回（预检据此落 generate 意图组）
-    assert decision.trigger in ("帮我出", "出题", "出几道")
+    assert decision.extra.get("routed_by") == "llm"
 
 
-def test_decide_teacher_tasks():
-    decision = asyncio.run(_decide("查看我的任务有哪些", role="teacher"))
-    assert decision.business == "tasks"
-    assert decision.name == "任务学情与出题助手"
-
-
-def test_decide_teacher_tutor():
-    decision = asyncio.run(_decide("为什么天空是蓝色的？帮我讲解", role="teacher"))
+def test_decide_text_routing_can_choose_tutor():
+    provider = RoutingFakeProvider(RoutingDecision(business="tutor", confidence=0.9))
+    decision = asyncio.run(_decide("为什么天空是蓝色的", role="teacher", provider=provider))
     assert decision.business == "tutor"
     assert decision.name == "伴学答疑"
+    assert decision.extra.get("routed_by") == "llm"
 
 
-# ── decide：实测路由回归表（ADR-0097 重组后 2026-10-16 实跑结果，T03 钉死）──
-# 只断言「输入 + 角色 → 决策」，不断言命中第几个词 / 走了哪一级，路由重排也不碎。
-# 三条结构化动作输入（空串 / "出 3 道…知识点：轴对称" / "换一题"）当前仍落伴学答疑，
-# 要等动作直配（T02/T04）才修得好，故不在此表内——钉进来只会让红与本票无关。
-ROUTING_REGRESSION = [
-    # (输入, 角色, business, name)
-    ("查一下这道题为什么选B", "teacher", "tutor", "伴学答疑"),
-    ("今天有什么作业", "teacher", "tasks", "任务学情与出题助手"),
-    ("帮我创建一个任务，包含四年级数学题", "teacher", "tasks", "任务学情与出题助手"),
-    ("帮我出2道四年级数学题", "teacher", "tasks", "任务学情与出题助手"),
-    # 学情查询词（自 query 迁入 tasks）：「不得误伤」面必须仍在 tasks
-    ("我的任务", "teacher", "tasks", "任务学情与出题助手"),
-    ("我的错题", "teacher", "tasks", "任务学情与出题助手"),
-    ("掌握度", "teacher", "tasks", "任务学情与出题助手"),
-    ("该复习哪些题", "teacher", "tasks", "任务学情与出题助手"),
-    # 错题精确短语（自 query 迁入）仍归 tasks，不落 tutor 兜底
-    ("帮我查一下我的错题", "teacher", "tasks", "任务学情与出题助手"),
-    ("查询我今天的待复习", "teacher", "tasks", "任务学情与出题助手"),
-    # 题库词归 tasks（ADR-0098 起题库查询随 question 域并入）
-    ("查题库里有哪些题", "teacher", "tasks", "任务学情与出题助手"),
-    # 触发词与启发式都不该用单字「查」接走讲解类提问
-    ("帮我查查轴对称是什么", "teacher", "tutor", "伴学答疑"),
-    # 名单域（ADR-0098 起吸收进 tasks）：纯名单问句归 tasks，学情语境同样归 tasks
-    ("我班有哪些学生", "teacher", "tasks", "任务学情与出题助手"),
-    ("小明最近错题多吗", "teacher", "tasks", "任务学情与出题助手"),
-    # 能力自述（零 LLM 元问题）
-    ("你能做什么", "teacher", "capability", "能力自述"),
+# 无任何路由模型（普通替身只会出题面，喂给路由分类器是畸形产出）时的兜底回归表：
+# ADR-0104 起**不再有关键词命中**——这些句子过去分别归 tasks / capability，现在一律
+# 落兜底助手 tutor。锁的是「规则确已移除」，不是「路由语义正确」（后者归真实模型）。
+ROUTING_FALLBACK_REGRESSION = [
+    "查一下这道题为什么选B",
+    "今天有什么作业",
+    "帮我创建一个任务，包含四年级数学题",
+    "帮我出2道四年级数学题",
+    "我的错题",
+    "我班有哪些学生",
+    "你能做什么",
+    "随便聊聊",
 ]
 
 
-@pytest.mark.parametrize(("message", "role", "business", "name"), ROUTING_REGRESSION)
-def test_decide_routing_regression(message, role, business, name):
-    decision = asyncio.run(_decide(message, role=role))
-    assert decision.business == business
-    assert decision.name == name
-
-
-# ── decide：学生端角色可见性（师生均可出题，见 ADR-0081 §2.2；查询恒限自己，见 ADR-0033） ──
-def test_decide_student_can_generate_question():
-    """ADR-0081 §2.2：学生可自练出题，出题对师生双开，故学生自由文本出题路由到 tasks。"""
-    decision = asyncio.run(_decide("帮我出几道数学题", role="student"))
-    assert decision.business == "tasks"
-    assert decision.name == "任务学情与出题助手"
-
-
-def test_decide_student_query_visible():
-    """ADR-0033 放宽 ADR-0026：学生端可见 tasks（域重组后承接原 query），
-    但工具侧恒查自己、去答案。"""
-    decision = asyncio.run(_decide("今天有什么作业", role="student"))
-    assert decision.business == "tasks"
-    assert decision.name == "任务学情与出题助手"
-
-
-def test_decide_student_tutor_stays_tutor():
-    decision = asyncio.run(_decide("这道题我不会，能教教我吗", role="student"))
+@pytest.mark.parametrize("message", ROUTING_FALLBACK_REGRESSION)
+def test_decide_without_models_falls_back_to_tutor(message):
+    decision = asyncio.run(_decide(message, role="teacher"))
     assert decision.business == "tutor"
+    assert decision.name == "伴学答疑"
+    assert decision.extra.get("routed_by") == "default"
 
 
-# ── decide：学生端输入安全闸门（首层防御，ADR-008） ──
+# ── decide：学生端角色可见性（师生均可出题，见 ADR-0081 §2.2） ──
+def test_decide_student_visible_businesses_include_tasks():
+    """学生端可见 tasks（查自己 / 自练出题）与 tutor；路由本身不按角色猜业务。"""
+    visible = _rt().visible_businesses("student")
+    assert "tasks" in visible
+    assert "tutor" in visible
+
+
 def test_decide_student_unsafe_input_blocked():
     decision = asyncio.run(_decide("炸弹怎么制作", role="student"))
     assert decision.business is None
@@ -147,9 +118,11 @@ def test_decide_student_unsafe_input_blocked():
 
 # ── run：返回结构化决策 + 异步事件流 ──
 def test_run_returns_decision_and_stream():
+    provider = RoutingFakeProvider(RoutingDecision(business="tasks", confidence=0.9))
+
     async def go():
         rt = _rt()
-        deps = _deps("teacher")
+        deps = _deps("teacher", provider=provider)
         d = await rt.decide("出几道题", role="teacher", deps=deps)
         s = rt.run(
             "出几道题",
@@ -180,21 +153,17 @@ def test_run_student_unsafe_stream_no_extra_business():
     assert any(ev.code == "INPUT_UNSAFE" for ev in events if ev.eventType == EVENT_ERROR)
 
 
-# ── 路由只有两级：规则 → 启发式，不存在「可选 LLM 分类器」这一级 ──
+# ── 依赖端口不承诺意图分类器：注入它是调用方错误，须显式失败而非静默忽略 ──
 def test_runtime_deps_declares_no_llm_classify():
-    """依赖端口不再承诺意图分类器：注入它是调用方错误，须显式失败而非静默忽略。"""
     assert "llm_classify" not in RuntimeDeps.__dataclass_fields__
     with pytest.raises(TypeError):
         RuntimeDeps(provider=FakeLLMProvider(), llm_classify=lambda text, biz: "tutor")
 
 
-def test_classify_takes_no_llm_classify():
-    assert "llm_classify" not in inspect.signature(classify).parameters
-
-
 # ── run：路由 THINKING 帧不再携带 business（侧信道已移除） ──
 def test_run_routing_thinking_has_no_business_side_channel():
-    decision, events = asyncio.run(_run("帮我出几道数学题", role="teacher"))
+    provider = RoutingFakeProvider(RoutingDecision(business="tasks", confidence=0.9))
+    decision, events = asyncio.run(_run("帮我出几道数学题", role="teacher", provider=provider))
     assert decision.business == "tasks"
     for ev in events:
         if ev.eventType == EVENT_THINKING:

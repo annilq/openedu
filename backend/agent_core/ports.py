@@ -221,7 +221,7 @@ class DecisionModel(ABC):
     def available(self) -> bool:
         """模型是否就绪（权重 / 服务可达）。
 
-        不可用 → 路由回落规则 ``classify``，链路不崩（见 ``runtime.decide``）。
+        不可用 → 路由回落 LLM 分类或兜底助手，链路不崩（见 ``runtime.decide``）。
         """
         ...
 
@@ -235,7 +235,7 @@ class DecisionModel(ABC):
         - ``options``：当前角色可见的候选业务（来自 manifest 能力清单）。
 
         返回选中业务 key + 校准概率；无法决策（歧义 / 超时 / 低于模型阈值）
-        返回 ``None``，调用方据此回落规则分类。
+        返回 ``None``，调用方据此回落 LLM 分类或兜底助手。
         """
         ...
 
@@ -250,7 +250,7 @@ class RuntimeDeps:
     - ``safety``：可选输入安全闸门（路由前拦截）。
     - ``hooks``：可选生命周期钩子（扩展 seam，参考评审 P2）；``None`` 表示不挂载。
     - ``decision_model``：可选决策模型（Laya-multilingual 等），作路由主原语；
-      ``None`` 或未就绪时路由回落规则 ``classify``。
+      ``None`` 或未就绪时路由回落 LLM 分类或兜底助手。
     """
 
     provider: LLMProvider

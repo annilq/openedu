@@ -1,4 +1,4 @@
-"""tasks 域写意图契约测试（ADR-0097 §2.3：AI 只起草 + 会话内确认卡发布）。
+"""tasks 域写意图契约测试（ADR-0097 §2.3：AI 只起草 + 会话内确认卡发布；ADR-0104）。
 
 **真机报障（2026-09-17，guide 时代）**：教师说「帮我创建一个任务，包含四年级数学题」，
 得到的是「我这边只能查询学习数据，不能生成或派发任务…请到『任务/作业』相关页面操作」。
@@ -6,17 +6,19 @@
 guide 删除后（ADR-0097），写意图的出口从「固定话术引导到页面」变为
 **create_draft 建草稿 + 会话内确认卡**：确认/派发由用户点卡上按钮完成（前端直走
 REST ``POST /tasks/{id}/confirm`` + ``/assign``），发布决定权与任务页按钮同权。
-本文件守住四件事（全部确定性，不接真实模型）：
+本文件守住三件事（全部确定性，不接真实模型）：
 
-1. **路由**：写意图（「创建任务」类完整短语）归 ``tasks``；查询意图不被写短语误抢；
-   ``question`` / ``tutor`` 意图不受影响；学生端**可见** tasks（查自己），但写工具
-   在 handler 内按角色拒绝（不靠隐藏业务来「保护」）。
-2. **必填校验**：未指名目标学生 → ``ToolArgumentError`` 回灌（模型转问），
+1. **必填校验**：未指名目标学生 → ``ToolArgumentError`` 回灌（模型转问），
    不擅自建任务；昵称命中多人 → 同样回灌要求指明。
-3. **只起草**：建出来是 ``draft`` 态任务、未派发；确认卡以
+2. **只起草**：建出来是 ``draft`` 态任务、未派发；确认卡以
    ``task_draft_card`` DATA 帧下发（ADR-0042 类型化卡片）。
-4. **端到端 tool loop**：真 DB + 脚本化 provider 跑一轮，事件链齐备且卡载荷含
+3. **端到端 tool loop**：真 DB + 脚本化 provider 跑一轮，事件链齐备且卡载荷含
    ``task_id``；库里任务确为 draft。
+
+ADR-0104：原「路由边界」（写意图短语归 tasks、查询不被误抢等）一组测试随规则
+路由移除而删除——业务选择由 LLM / 决策模型按上下文 + 能力清单决定。学生端**可见**
+tasks（查自己）但写工具在 handler 内按角色拒绝（不靠隐藏业务来「保护」）这一条
+不依赖路由，保留。
 """
 from __future__ import annotations
 
@@ -28,14 +30,13 @@ from uuid import UUID
 import pytest
 from sqlmodel import Session
 
-from agent_core.ports import RuntimeDeps, TextDelta, ToolCall
+from agent_core.ports import TextDelta, ToolCall
 from agent_core.protocol import (
     EVENT_ASSISTANT_MESSAGE,
     EVENT_DATA,
     EVENT_TOOL_CALL,
     EVENT_TOOL_RESULT,
 )
-from agent_core.registry import build_subagent, discover_subagent_manifests
 from agent_core.runtime import AgentRuntime
 from agent_core.subagent import SubAgentContext, run_with_tools
 from app.ai.shared.tool_support import ToolArgumentError
@@ -53,14 +54,6 @@ def _spec(name: str):
         if spec.name == name:
             return spec
     raise AssertionError(f"tasks 域未注册的工具：{name}")
-
-
-def _route(text: str, role: str) -> str:
-    runtime = AgentRuntime.discover()
-    decision = asyncio.run(
-        runtime.decide(text, role=role, deps=RuntimeDeps(provider=FakeLLMProvider()))
-    )
-    return decision.business or ""
 
 
 def _ctx(role: str, **extra: Any) -> SubAgentContext:
@@ -93,27 +86,7 @@ def _seed_bank(session: Session, teacher_id: str, *, count: int = 2) -> list[UUI
     return ids
 
 
-# ───────────────────────── 1. 路由边界 ─────────────────────────
-
-
-def test_write_intent_routes_to_tasks():
-    """真机报障原句——guide 时代它路由到只读查询，现在归 tasks 的写短语接住。"""
-    assert _route("帮我创建一个任务，包含四年级数学题", "teacher") == "tasks"
-    assert _route("创建一个任务", "teacher") == "tasks"
-    assert _route("帮我建个作业，放2道四年级数学题", "teacher") == "tasks"
-
-
-def test_read_intent_not_stolen_by_write_phrases():
-    """写短语只收「动作+对象」完整短语：查询意图同域着陆，但不触发起草。"""
-    assert _route("查一下我创建过的任务", "teacher") == "tasks"
-    assert _route("今天有什么作业", "teacher") == "tasks"
-    assert _route("我的错题本里有哪些题", "teacher") == "tasks"
-
-
-def test_generation_and_tutor_intent_unaffected():
-    """ADR-0098：出题意图随 question 域并入 tasks（同学情/写意图同域）；伴学仍归 tutor。"""
-    assert _route("帮我出2道四年级数学题", "teacher") == "tasks"
-    assert _route("为什么天空是蓝色的？帮我讲解", "teacher") == "tutor"
+# ───────────────────────── 1. 角色边界（可见 ≠ 可写） ─────────────────────────
 
 
 def test_student_sees_tasks_but_write_tool_rejects(client):

@@ -64,7 +64,7 @@ async def classify_llm(
     """用通用 LLM（结构化输出）做意图路由，返回 :class:`RoutingDecision` 或 ``None``。
 
     与决策模型（Laya）互为可切换的路由原语；``history`` 实现「每轮保持所有消息上下文」，
-    ``manifests`` 的能力清单即候选。以下一律 ``None``（调用方据此回落规则 ``classify``）：
+    ``manifests`` 的能力清单即候选。以下一律 ``None``（调用方据此回落兜底助手）：
 
     - provider 未配置 / 抛错 / 模型没给结构化产出 / 产出畸形；
     - 模型回传的业务既不在可见集、也匹配不上任何 manifest 的 name（含幻觉）。

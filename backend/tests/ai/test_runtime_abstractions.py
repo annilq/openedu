@@ -4,12 +4,14 @@
 1. 引擎单一解析链：显式引擎能一路传到 provider（``build_provider(engine=)``）。
 2. 发现即注册：discover 出的清单自带 ``agent_cls``，``registry`` 不再手工登记。
 3. skills 真消费：manifest 声明的 SOP 文本进 prompt（出题走 persona_hint、伴学走 context）。
-4. 路由无硬编码：匹配顺序完全由 manifest 的 ``priority`` 决定。
+4. 路由无硬编码：ADR-0104 移除规则路由后，``priority`` 只剩「兜底助手」语义——
+   策略原语均不决策时，可见集中数值最小者接住，匹配顺序不再由任何词表决定。
 """
 from __future__ import annotations
 
 import asyncio
 
+from agent_core.ports import RuntimeDeps
 from agent_core.protocol import EVENT_ASSISTANT_MESSAGE
 from agent_core.registry import (
     SubAgentManifest,
@@ -17,7 +19,7 @@ from agent_core.registry import (
     discover_subagent_manifests,
     get_subagent_class,
 )
-from agent_core.router import classify
+from agent_core.runtime import AgentRuntime
 from agent_core.subagent import SubAgentContext
 from app.ai.subagents.tasks import TasksSubAgent
 from app.ai.subagents.tutor import TutorSubAgent
@@ -142,42 +144,50 @@ def test_real_sop_does_not_trip_input_safety():
     assert not any(e.blocked for e in assistant_messages)
 
 
-# ── 4. 路由无硬编码 ──
-def _manifest(business: str, *, priority: int, triggers: list[str], hints: list[str]):
+# ── 4. 路由无硬编码（ADR-0104：规则移除后 priority 只剩兜底语义） ──
+def _manifest(business: str, *, priority: int, roles: list[str] | None = None):
     return SubAgentManifest(
         business=business,
         name=business,
-        triggers=triggers,
-        hints=hints,
         priority=priority,
+        roles=roles if roles is not None else ["teacher", "student"],
     )
 
 
-def _route(text: str, available: list[str], manifests: dict) -> str:
-    # classify 返回结构化 Classification（business / trigger / level）；
-    # 本文件只断言路由归属，故取 .business。
-    return asyncio.run(
-        classify(text, available=available, manifests=manifests)
-    ).business
+def test_decide_falls_back_to_lowest_priority_business():
+    """策略原语均不决策（无路由模型）时，兜底 = 可见集中 priority 最小者。
 
-
-def test_router_orders_by_manifest_priority_only():
-    """路由顺序只认 manifest 的 priority：业务名对 router 完全不可见。"""
+    ADR-0104：原「匹配顺序由 priority 决定 + hints 兜底」的规则层整体移除，
+    priority 不再参与任何「抢词」竞争，只在这一处继承旧兜底语义。
+    """
     manifests = {
-        "low": _manifest("low", priority=-10, triggers=["题目"], hints=["题"]),
-        "high": _manifest("high", priority=10, triggers=["作业"], hints=["作业"]),
+        "a": _manifest("a", priority=5),
+        "z": _manifest("z", priority=-5),
     }
-    # 两业务都能匹配时，priority 高者胜
-    assert _route("查看作业里的题目", ["low", "high"], manifests) == "high"
-    # 只有低优先级命中 → 低优先级
-    assert _route("来几道题", ["low", "high"], manifests) == "low"
-    # 规则全未命中 → hints 兜底
-    assert _route("随便聊聊", ["low", "high"], manifests) == "low"
+    rt = AgentRuntime(manifests)
+    decision = asyncio.run(
+        rt.decide(
+            "今天天气不错",
+            role="teacher",
+            deps=RuntimeDeps(provider=FakeLLMProvider()),
+        )
+    )
+    assert decision.business == "z"
+    assert decision.extra.get("routed_by") == "default"
 
 
-def test_router_falls_back_to_lowest_priority():
+def test_decide_visible_set_bounds_fallback():
+    """兜底只在**当前角色可见集**里挑：低优先级业务对角色不可见时跳过它。"""
     manifests = {
-        "a": _manifest("a", priority=5, triggers=["出"], hints=[]),
-        "z": _manifest("z", priority=-5, triggers=["讲"], hints=[]),
+        "a": _manifest("a", priority=5),
+        "z": _manifest("z", priority=-5, roles=["student"]),
     }
-    assert _route("今天天气不错", ["a", "z"], manifests) == "z"
+    rt = AgentRuntime(manifests)
+    decision = asyncio.run(
+        rt.decide(
+            "随便一句",
+            role="teacher",
+            deps=RuntimeDeps(provider=FakeLLMProvider()),
+        )
+    )
+    assert decision.business == "a"
