@@ -407,3 +407,119 @@ def test_scene_intent_model_invariants():
     """SceneIntent 是结构化微调用的契约：should_show 默认 False（保守）。"""
     assert SceneIntent().should_show is False
     assert SceneIntent(should_show=True, figure_key="square").figure_key == "square"
+
+
+# ── ADR-0102：四元组不全时的知识点回落（allow_partial） ──
+
+
+def test_l0_resolves_kp_when_subject_grade_missing(db):
+    """用户原话只给知识点名、不写学科年级 → 仍要放行到 L1。
+
+    实测缺口：`请为「图形的运动（轴对称）」出一道选择题` 里没有「数学」「四年级」，
+    `tutor` 的 `detect_subject` 得到空串、`grade` 为 0，而 `find_knowledge_point` 按
+    四元组严格等值 → 恒不命中 → L0 直接 `return None`，场景卡永远不出（不管知识点
+    配得多好）。名字本身已是强证据，故 L0 放宽（ADR-0102）；出题侧仍走严格匹配。
+    """
+    teacher_id = uuid.uuid4()
+    db.add(
+        KnowledgePoint(
+            id=uuid.uuid4(), teacher_id=teacher_id, subject="数学", grade=4,
+            semester="下学期", name="图形的运动（轴对称）",
+            scenes=[{
+                "kind": "reflection",
+                "figure": {
+                    "key": "house", "label": "房子",
+                    "points": [[0.3, 0.7], [0.7, 0.7], [0.7, 0.45], [0.5, 0.25], [0.3, 0.45]],
+                    "edges": [[0, 1], [1, 2], [2, 3], [3, 4], [4, 0]],
+                },
+                "curated": False,
+            }],
+        )
+    )
+    db.commit()
+
+    async def _run():
+        provider = _FakeKpHintProvider(
+            hint=SceneKpHint(knowledge_point="图形的运动（轴对称）", confidence=0.95),
+            intent=SceneIntent(should_show=True, figure_key="house"),
+        )
+        result = await resolve_interactive_scene(
+            provider=provider, session=db,
+            message="请为「图形的运动（轴对称）」出一道选择题",
+            subject="", grade=0, teacher_id=teacher_id,
+        )
+        assert result is not None, "四元组不全时也必须能找到配了场景的知识点"
+        assert result["figure"]["key"] == "house"
+        assert len(provider.intent_calls) == 1
+
+    asyncio.run(_run())
+
+
+def test_l0_partial_does_not_cross_teacher_or_name(db):
+    """放宽只放「缺字段」，不放「归属」与「名字」：别人的行 / 名字不符仍不命中。"""
+    owner = uuid.uuid4()
+    other = uuid.uuid4()
+    db.add(
+        KnowledgePoint(
+            id=uuid.uuid4(), teacher_id=owner, subject="数学", grade=4,
+            semester="", name="图形的运动（轴对称）",
+        )
+    )
+    db.commit()
+
+    async def _run(other_teacher: uuid.UUID, name: str):
+        provider = _FakeKpHintProvider(
+            hint=SceneKpHint(knowledge_point=name, confidence=0.95)
+        )
+        return await resolve_interactive_scene(
+            provider=provider, session=db, message="出一道题",
+            subject="", grade=0, teacher_id=other_teacher,
+        )
+
+    # 换个老师（非归属）→ 不命中
+    assert asyncio.run(_run(other, "图形的运动（轴对称）")) is None
+    # 名字不完全相等（不做子串模糊）→ 不命中
+    assert asyncio.run(_run(owner, "图形的运动")) is None
+
+
+def test_l0_partial_prefers_row_with_scenes(db):
+    """同名多行（不同学期）时，优先取配了 scenes 的那条——问场景就该找到场景。"""
+    teacher_id = uuid.uuid4()
+    figure = {
+        "kind": "reflection",
+        "figure": {
+            "key": "square", "label": "正方形",
+            "points": [[0.28, 0.28], [0.72, 0.28], [0.72, 0.72], [0.28, 0.72]],
+            "edges": [[0, 1], [1, 2], [2, 3], [3, 0]],
+        },
+        "curated": False,
+    }
+    # 先建「没配场景」的上学期行，再建「配了场景」的下学期行（创建时间更晚）
+    db.add(
+        KnowledgePoint(
+            id=uuid.uuid4(), teacher_id=teacher_id, subject="数学", grade=4,
+            semester="上学期", name="轴对称", scenes=None,
+        )
+    )
+    db.commit()
+    db.add(
+        KnowledgePoint(
+            id=uuid.uuid4(), teacher_id=teacher_id, subject="数学", grade=4,
+            semester="下学期", name="轴对称", scenes=[figure],
+        )
+    )
+    db.commit()
+
+    async def _run():
+        provider = _FakeKpHintProvider(
+            hint=SceneKpHint(knowledge_point="轴对称", confidence=0.95),
+            intent=SceneIntent(should_show=True, figure_key="square"),
+        )
+        result = await resolve_interactive_scene(
+            provider=provider, session=db, message="轴对称有几条对称轴",
+            subject="", grade=0, teacher_id=teacher_id,
+        )
+        assert result is not None
+        assert result["figure"]["key"] == "square"
+
+    asyncio.run(_run())

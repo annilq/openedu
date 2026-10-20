@@ -68,6 +68,14 @@ _VERTEX_EPSILON = 1e-6
 # 自绘键前缀（与 ``_allocate_user_figure_key`` 的 user_ 前缀一致）。
 _USER_KEY_PREFIX = "user_"
 
+# ``inputs`` 里的几何键（ADR-0102）：旧编辑器把几何当成「可调输入项」写进 ``inputs``
+# （``{key:'points', value:[[x,y],…]}`` + ``{key:'figure', value:'house'}``），而不是
+# 顶层 ``points``。旧迁移脚本只认顶层 →「带着完整几何」的快照被一律判成「无几何」而
+# 跳过（本机实测 10 份全跳），读路径又因 ``inputs`` 属旧形键而拒绝整份——两条路一起
+# 把场景能力关死。
+_INPUT_POINTS_KEY = "points"
+_INPUT_FIGURE_KEY = "figure"
+
 # spec 四态：无场景（None/空，不计入扫描）/ 已是新形 / 旧形待改写 / 跳过（畸形或无几何）。
 _STATUS_ABSENT = "absent"
 _STATUS_NEW = "new"
@@ -123,6 +131,34 @@ def _match_library(library: list[FigureLibrary], points: list) -> FigureLibrary 
     return None
 
 
+def _closed_edges(n: int) -> list[list[int]]:
+    """按顶点顺序闭合（= 简单多边形默认连接，与前端 ``closedEdges`` 同口径）。"""
+    return [[i, (i + 1) % n] for i in range(n)]
+
+
+def _geometry_from_inputs(inputs: Any) -> tuple[list | None, str | None]:
+    """从旧形 ``inputs[]`` 里取几何与图形身份键（ADR-0102）。
+
+    返回 ``(points, figure_key)``；没找到几何返回 ``(None, None)``。只按 input 的
+    ``key`` 取两个已知项，其余输入项（轴角度 / 比例等交互参数）一律丢弃——它们归
+    kind 外壳（ADR-0083 决策 5）。
+    """
+    if not isinstance(inputs, list):
+        return None, None
+    points: list | None = None
+    figure_key: str | None = None
+    for item in inputs:
+        if not isinstance(item, dict):
+            continue
+        key = item.get("key")
+        value = item.get("value")
+        if key == _INPUT_POINTS_KEY and isinstance(value, list) and value:
+            points = value
+        elif key == _INPUT_FIGURE_KEY and isinstance(value, str) and value.strip():
+            figure_key = value.strip()
+    return points, figure_key
+
+
 def _figure(
     points: Any, edges: Any, label: str | None, library: list[FigureLibrary]
 ) -> dict[str, Any] | None:
@@ -130,9 +166,14 @@ def _figure(
 
     顶点/边**原样深拷贝保留**（快照不可变：迁移不重绘任何几何）；只补身份键与
     展示名。geometry 畸形（无法过校验）返回 ``None``，由调用方跳过整行。
+
+    ``edges`` 缺省时按顶点顺序闭合——旧 ``inputs`` 形根本没有 edges（连接关系隐含在
+    顶点顺序里），因为「没有 edges」就拒掉整份快照，正是 ADR-0102 要修的东西。
     """
-    if not isinstance(points, list) or not isinstance(edges, list):
+    if not isinstance(points, list) or len(points) < 3:
         return None
+    if not isinstance(edges, list) or not edges:
+        edges = _closed_edges(len(points))
     match = _match_library(library, points)
     if match is not None:
         key, name = match.key, match.label
@@ -176,6 +217,18 @@ def _rewrite(spec: dict, library: list[FigureLibrary]) -> tuple[str, dict | None
         figure = _figure(spec.get("points"), spec.get("edges"), None, library)
         if figure is None:
             return _STATUS_SKIPPED, None
+    else:
+        # ADR-0102：旧编辑器把几何放在 ``inputs[]`` 里，而非顶层 ``points``——只认顶层
+        # 会让这批「明明有几何」的快照全被判成无几何而跳过（场景能力因此静默关闭）。
+        points, input_key = _geometry_from_inputs(spec.get("inputs"))
+        if points is not None:
+            figure = _figure(points, None, None, library)
+            if figure is None:
+                return _STATUS_SKIPPED, None
+            # 身份键以图库顶点反查为权威；反查落空时才用旧 inputs 里记的 key 兜一层
+            # （它是编辑器当初选的图形，比 ``user_<hash>`` 可读且仍是稳定键）。
+            if input_key and figure["key"].startswith(_USER_KEY_PREFIX):
+                figure["key"] = input_key
 
     options: list[dict] | None = None
     curated = False

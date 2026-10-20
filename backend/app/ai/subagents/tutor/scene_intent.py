@@ -339,6 +339,9 @@ async def resolve_interactive_scene(
                 provider, message=message, subject=subject, grade=grade
             )
             if candidate:
+                # allow_partial（ADR-0102）：用户原话往往只给知识点名、不写学科年级
+                # （「请为「图形的运动（轴对称）」出一道选择题」）——四元组缺两格时
+                # 严格匹配恒不命中，场景卡因此永远不出。名字已是强证据，此处显式放宽。
                 kp = find_knowledge_point(
                     session,
                     teacher_id=teacher_id,
@@ -346,11 +349,14 @@ async def resolve_interactive_scene(
                     grade=grade,
                     knowledge_point=candidate,
                     semester=semester,
+                    allow_partial=True,
                 )
                 if kp is not None and kp.name:
                     kp_name = kp.name
         if not kp_name:
             return None
+    # 候选名可能来自 L0 抽取（四元组不全），同样需要 allow_partial 才能落到行上；
+    # 四元组齐时它不生效（与严格匹配同结果，不引入新行为）。
     kp = find_knowledge_point(
         session,
         teacher_id=teacher_id,
@@ -358,6 +364,7 @@ async def resolve_interactive_scene(
         grade=grade,
         knowledge_point=kp_name,
         semester=semester,
+        allow_partial=True,
     )
     figures = available_figures(session, kp=kp)
     if not figures:

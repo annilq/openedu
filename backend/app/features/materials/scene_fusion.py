@@ -254,11 +254,19 @@ def find_knowledge_point(
     grade: int,
     knowledge_point: str,
     semester: str = "",
+    allow_partial: bool = False,
 ) -> KnowledgePoint | None:
     """按 (学期精确 → 整学年回落) 找知识点，**唯一匹配口径**（ADR-0061）。
 
     供目录投影（``figure_stamp.available_figures``）等调用方复用——避免第二处
     各自实现「怎么算匹配上」，那正是「同一知识点换个地方就没图」的复生点。
+
+    [allow_partial]（ADR-0102）：``subject`` / ``grade`` 缺一时是否允许**按名字**落下。
+    默认关——出题侧总带完整四元组（规格里有科目年级），放开只会把别的年级的知识点
+    误当命中。但**答疑侧的 L0 门控**只有一句话和一个知识点名：「请为「图形的运动
+    （轴对称）」出一道选择题」里根本没写「数学」「四年级」，四元组必有两格为空 →
+    严格匹配恒不命中 → 门控不放行 → 场景永远不出图。故由调用方显式选择放宽，
+    而不是把「猜」写进默认路径。
     """
 
     def _match(semester_filter: str) -> KnowledgePoint | None:
@@ -278,7 +286,57 @@ def find_knowledge_point(
     kp = _match(semester) if semester else None
     if kp is None:
         kp = _match("")
-    return kp
+    if kp is not None or not allow_partial:
+        return kp
+    return _find_by_name_only(
+        session,
+        teacher_id=teacher_id,
+        knowledge_point=knowledge_point,
+        subject=subject,
+        grade=grade,
+        semester=semester,
+    )
+
+
+def _find_by_name_only(
+    session: Session,
+    *,
+    teacher_id: Any,
+    knowledge_point: str,
+    subject: str,
+    grade: int,
+    semester: str,
+) -> KnowledgePoint | None:
+    """``allow_partial`` 的回落：已知知识点名、但四元组不全时按名找行（ADR-0102）。
+
+    用途单一——答疑侧 L0 门控：用户原话给了唯一确定的知识点名，却没说学科年级。
+    **name 本身就是强证据**（同一老师下重名极少），比「查不到就不出图」正确。
+
+    过滤规则：只固定 ``teacher_id``（归属不可穿越）+ 名字**完全相等**（不做子串模糊，
+    那才叫猜）；有值的 ``subject`` / ``grade`` 仍参与过滤。排序：**配了 ``scenes``
+    的行优先**（问场景就要能找到场景），其次同学期者，然后按创建时间——结果确定，
+    不依赖数据库返回顺序。
+    """
+    stmt = select(KnowledgePoint).where(
+        KnowledgePoint.teacher_id == teacher_id,
+        KnowledgePoint.name == knowledge_point,
+    )
+    if subject:
+        stmt = stmt.where(KnowledgePoint.subject == subject)
+    if grade:
+        stmt = stmt.where(KnowledgePoint.grade == grade)
+    rows = list(session.exec(stmt.order_by(KnowledgePoint.created_at)).all())
+    if not rows:
+        return None
+    if len(rows) == 1:
+        return rows[0]
+
+    def _rank(row: KnowledgePoint) -> tuple:
+        configured = 1 if isinstance(row.scenes, list) and row.scenes else 0
+        semester_hit = 1 if semester and row.semester == semester else 0
+        return (-configured, -semester_hit, row.created_at)
+
+    return sorted(rows, key=_rank)[0]
 
 
 def build_scene_spec_for_question(

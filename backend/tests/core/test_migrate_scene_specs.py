@@ -367,3 +367,86 @@ def test_spec_without_geometry_is_skipped_not_fabricated(engine):
         {"kind": "reflection", "inputs": {"axisAngle": 90}}
     ]  # 原样不动
     assert report.skipped == 1
+
+
+# ── ADR-0102：几何藏在 inputs[] 里的旧模板 ─────────────────────────────
+
+
+def _inputs_legacy(points: list, figure_key: str) -> dict:
+    """旧编辑器写的模板：几何作为「可调输入项」塞在 inputs，顶层没有 points。
+
+    这是本机实测的真实形状（`app.db` 的 10 份场景全是它）：顶层只有
+    kind/title/narrative/controls/outputs/editable + inputs[]，其中
+    `{key:'points', value:[…]}` 与 `{key:'figure', value:'house'}`。
+    """
+    return {
+        "kind": "reflection",
+        "title": "图形的运动（轴对称）",
+        "inputs": [
+            {"key": "axisAngle", "label": "对称轴角度", "value": 90.0},
+            {"key": "axisX", "label": "对称轴水平", "value": 0.5},
+            {"key": "points", "label": "顶点", "value": points},
+            {"key": "figure", "label": "图形", "value": figure_key},
+        ],
+        "controls": {"play": True},
+        "narrative": "中间的虚线是对称轴。",
+    }
+
+
+def test_geometry_inside_inputs_is_migrated(engine):
+    """ADR-0102：几何在 `inputs[key='points']` 里 → 迁移成新形 figure，不判「无几何」。
+
+    回归的是**整批跳过**：旧脚本只认顶层 `points`/`edges`，于是带完整几何的模板
+    被一律记为「不可迁移（无几何）」——而读路径又因 `inputs` 属旧形键拒绝整份 spec，
+    两条路一起把「关联了场景」变成空话（实测 10/10 全跳过）。
+    """
+    with Session(engine) as s:
+        kp = s.exec(select(KnowledgePoint)).one()
+        kp.scenes = [_inputs_legacy(_PARA_PTS, "para")]
+        s.add(kp)
+        s.commit()
+
+    report = _run(engine, dry_run=False)
+
+    migrated = _one(engine, KnowledgePoint).scenes[0]
+    assert report.migrated >= 1
+    assert "inputs" not in migrated, "旧键必须丢弃（含 inputs），否则读路径仍拒绝"
+    assert migrated["figure"]["key"] == "para", "身份键按顶点反查图库"
+    assert migrated["figure"]["label"] == "平行四边形"
+    assert migrated["figure"]["points"] == _PARA_PTS, "几何原样保留，不重绘"
+    # edges 旧形没有（连接关系隐含在顶点顺序里）→ 按顶点顺序闭合，而不是判畸形
+    assert migrated["figure"]["edges"] == [[0, 1], [1, 2], [2, 3], [3, 0]]
+    # 迁移产物必须过读路径校验（自检门）
+    from app.domain.scene_spec import normalize_scene_spec
+
+    assert normalize_scene_spec(migrated) is not None
+
+
+def test_geometry_inside_inputs_uses_recorded_key_when_lookup_misses(engine):
+    """顶点反查落空时，用 inputs 里记的图形键兜一层（可读且稳定），而不是 user_<hash>。"""
+    with Session(engine) as s:
+        kp = s.exec(select(KnowledgePoint)).one()
+        kp.scenes = [_inputs_legacy(_KITE_PTS, "kite")]
+        s.add(kp)
+        s.commit()
+
+    _run(engine, dry_run=False)
+
+    figure = _one(engine, KnowledgePoint).scenes[0]["figure"]
+    assert figure["key"] == "kite", "编辑器当初选的键比 user_<hash> 可读，且仍是稳定身份"
+    assert figure["points"] == _KITE_PTS
+
+
+def test_inputs_without_points_still_skipped(engine):
+    """inputs 里只有交互参数、没有顶点 → 仍然是「无几何」，跳过不臆造。"""
+    with Session(engine) as s:
+        kp = s.exec(select(KnowledgePoint)).one()
+        kp.scenes = [_inputs_legacy([], "")]
+        s.add(kp)
+        s.commit()
+
+    report = _run(engine, dry_run=False)
+
+    # 报告里其它行（题 / 任务题）本就可迁移，故只看本行状态与「知识点没被改写」。
+    assert report.skipped >= 1
+    assert _one(engine, KnowledgePoint).scenes == [_inputs_legacy([], "")]
