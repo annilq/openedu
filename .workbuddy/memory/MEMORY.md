@@ -42,9 +42,9 @@
 - 03(b) pending_quiz 锁死随 ADR-0089 DROP COLUMN 作废，**不再实现**；03(a) follow-up chips **已 done**（commit `59872f8`）：统一 `build_actions` 入口 + SSE `suggested_actions` 新帧（不落库）+ 前端给定列表模式渲染。ai-prompts-hardening epic **全闭环**（01+02+03(a)），并已 `--no-ff` 合入 main（merge `f183c7f` + fix `4748f58`）+ 推送 origin（`58f7fac..4748f58`，含 ADR-0088-0091/0090）。
 
 ## 8. 分支卫生与合并台账（2026-10-15 大盘点后）
-- **本地长期只有 `main` 一个分支**；integration/ticket 分支合入即删（`git branch -d` 有未合入保护）。曾有分支：adr-0088-0091、ai-prompts-hardening、tool-input-schema-slot-filling、conversation-ownership、replay-structured-extras、slots-01/02/03——全部已合入并删除。
+- **本地长期只有 `main` 一个分支**；integration/ticket 分支合入即删（`git branch -d` 有未合入保护）。曾有分支：adr-0088-0091、ai-prompts-hardening、tool-input-schema-slot-filling、conversation-ownership、replay-structured-extras、slots-01/02/03、ticket/08-decision-routing——全部已合入并删除。
 - **slot-filling 线是后来才真正进 main 的**：早期「已合入 main」的记录与仓库现状不符（内容实际只在分支上），2026-10-15 按 `4fe9f81`(ADR-0095) → `0629b63`(ADR-0096) → `db05e35`(回放补全) 三个 `--no-ff` 合并补齐，合并后主仓复跑绿才删分支。**教训：「记忆/记录说合过了」不可信，以 `git branch --no-merged main` 与 `git log main..<branch>` 实测为准。**
-- main 现 `6ad7bb6` ahead origin/main **1**（2026-10-19 22:48 并行会话把触发词收紧 `6489a97` 推到 origin，随后本地 `6ad7bb6` 对话导出未推）。ADR-0098 分支仍未合（用户令暂停）：合并时 `tasks/manifest.py`（学情行同 hunk）与 `question/manifest.py`（modify/delete）必冲突；裁决方向：把「哪些错题/错题有哪些/错题情况」并入合并版学情段，把「删裸词题目/练」带进 generate 组。
+- main 现 `6582014` ahead origin/main **11**（2026-10-20 用户令「分批提交后 merge 并删分支」：ticket/08-decision-routing 的 5 个路由提交 + 5 个本地批次 `--no-ff` 合入，分支已删；**未推 origin**）。此前 §10 记的「6ad7bb6/未合」已作废——origin/main 实为 `726dba9`，`6ad7bb6` 对话导出一线已被 `6489a97` 等推送覆盖。**未推的 11 个 commit 含 ADR-0104/0105 + 资料库修复，推送前建议主仓复跑绿**（已知环境性红除外）。`integration/two-execution-bodies`（§9）仍未合。
 
 ## 9. ADR-0098 二执行体收敛（分支 `integration/two-execution-bodies`，5 提交全绿，**未合 main**）
 - 拓扑终态：执行体 **tasks / tutor**（students→tasks 票 01、question→tasks 票 02/03）；capability 零 LLM 固定回复不计执行体。tasks = 学情 8 工具（7 读+create_draft）+ 题库 3 + 出题流式 1 = 12。
@@ -52,7 +52,7 @@
 - 等价验证基线：**976 passed / 1 failed（materials `test_empty_text_422` 环境性红）/ 2 skipped**，与 main 同。提交链 9db4c7d→54b4a54→47ea91a→ba6428a（机制层）→3090d1c（合并波次，原子性：删 question/ 斩断测试 import，必须同提交）。
 - **提交纪律**：`git add <部分>` 后**不带 pathspec** 的 `git commit` 会连带提交索引里已暂存的删除/改名——提交前必先 `git diff --cached --stat` 核对。
 
-## 10. 意图路由终态：规则路由整体移除（ADR-0104，2026-10-20，分支 `ticket/08-decision-routing` 未合 main）
+## 10. 意图路由终态：规则路由整体移除（ADR-0104，2026-10-20；分支 `ticket/08-decision-routing` 已 `--no-ff` 合入 main——merge `6582014`，分支已删，**未推 origin**）
 - **§9 的 slot filling 部分已被本节废止**：`intent_schemas`/`RouteDecision.trigger`/`business:intent` 两本账/`_business_triggered`/specs 聊天侧注入/汇总帧全部随 ADR-0104 删除；槽位回归每 business 单键，旧键行不读无需迁移。
 - 路由链：动作直配（ADR-0081，等值匹配，永远最前）→ `decision`（LayaDecisionModel，`agent_core/adapters/laya.py`，**仅 `laya-multilingual`**，英文 laya 构造即 ValueError）→ `llm`（`classify_llm`，`adapters/llm_route.py`，`RoutingDecision(SQLModel)` 只落适配器保内核 stdlib-only）→ 都没有命中 → **无命中引导**：manifest 声明 `fallback_guide=True` 的业务（生产=capability 能力自述，零 LLM 固定清单，ADR-0105）；执行体（tasks/tutor）必须被显式路由到，`min(priority)` 仅是无声明时的最后防线（当前不可达）。策略 `AI_ROUTING_STRATEGY`：`llm=[llm]`/`decision=[decision,llm]`/`auto=[decision,llm]`（默认）。
 - 上下文：`decide(history=…)` 全量透传（近期 12 轮裁剪），manifest 的 name/description/actions 经 `_capability_text` 作候选选项——「每轮带全量上下文、按能力路由」即此。
