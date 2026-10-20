@@ -62,8 +62,9 @@ class RouteDecision:
 # ───────────────────────── 路由策略（可切换：llm / decision / auto） ─────────────────────────
 # 默认 ``auto``＝决策模型若可用则用之、否则通用 LLM 分类（``AI_ROUTING_STRATEGY=llm``）。
 # 规则（关键词/启发式）路由已移除：业务选择完全由模型按上下文 + 能力清单决定。
-# 策略原语均不可用 / 不置信时，回落到「兜底助手」（可见集中优先级最低的业务，通常 tutor），
-# 保证路由永不返回 ``None``（安全闸门拦截除外）。
+# 策略原语均不可用 / 不置信时，回落到「无命中引导」——声明了 ``fallback_guide`` 的业务
+# （生产拓扑即能力自述 capability，ADR-0105），提示用户助手能做什么； tutor 等执行体
+# 必须被模型显式路由到，不再作兜底，保证路由永不返回 ``None``（安全闸门拦截除外）。
 _ROUTING_STRATEGY_OVERRIDE: str | None = None
 
 _STRATEGY_ORDER: dict[str, list[str]] = {
@@ -119,7 +120,7 @@ class AgentRuntime:
         deps: RuntimeDeps,
         history: "list[dict] | None" = None,
     ) -> RouteDecision:
-        """解析路由决策：角色可见性 → 安全闸门 → 动作直配 → 策略原语 → 兜底助手。
+        """解析路由决策：角色可见性 → 安全闸门 → 动作直配 → 策略原语 → 无命中引导。
 
         输入接受 ``str``（迁移期兼容）或 ``IntentSignal``；不产出事件帧、不构建 provider。
         端点可据此在流式前做预航班（配额判定）。
@@ -141,9 +142,10 @@ class AgentRuntime:
         而无需手写黏性分支；也支撑「按 agent 能力路由」（manifest 的 ``description``/
         ``actions`` 即能力清单）。
 
-        策略原语均不可用 / 不置信时，回落到「兜底助手」——可见集中优先级最低的业务
-        （通常为伴学答疑 ``tutor``），保证路由永不返回 ``None``。本方法不产出子意图词
-        （规则路由已移除，ADR-0104），出题引导链路随之走纯 LLM 生成。
+        策略原语均不可用 / 不置信（都没有命中）时，回落到**无命中引导**：声明了
+        ``fallback_guide`` 的业务（生产拓扑即能力自述 ``capability``，ADR-0105）接住并
+        提示「自身能做什么」。执行体（tasks / tutor）必须被模型显式路由到，不再作兜底。
+        本方法不产出子意图词（规则路由已移除，ADR-0104），出题引导链路随之走纯 LLM 生成。
 
         动作命中但业务对当前角色**不可见** → 返回显式 ``action_not_visible``，**禁止**沿用
         「换成第一个可见业务」的静默兜底（那会把越权变成答非所问）。未知动作 → 容错回落文本路由，
@@ -185,8 +187,8 @@ class AgentRuntime:
             if routed is not None:
                 return routed
 
-        # 策略原语均未决策：回落「兜底助手」（可见集中优先级最低的业务，通常 tutor），
-        # 保证路由永不返回 None。
+        # 策略原语均未决策（都没有命中）：回落「无命中引导」——声明了 fallback_guide 的
+        # 业务接住并提示自身能力（ADR-0105），而不是静默把消息塞给某个执行体。
         return self._fallback_decision(visible)
 
     # ── 路由候选（策略分发） ──
@@ -261,9 +263,11 @@ class AgentRuntime:
         )
 
     def _fallback_decision(self, visible: list[str]) -> RouteDecision:
-        """策略原语均未决策时的兜底：可见集中优先级最低的业务（通常为 tutor）。
+        """策略原语均未决策时的无命中引导：声明 ``fallback_guide`` 的业务接住。
 
-        保证路由永不返回 ``None``（安全闸门拦截的路径除外，由调用方处理）。
+        ADR-0105：tutor 等执行体必须被模型显式路由到，不再作兜底；都没有命中时提示
+        「自身能力引导」（生产拓扑即能力自述 capability）。保证路由永不返回 ``None``
+        （安全闸门拦截的路径除外，由调用方处理）。
         """
         biz = self._fallback_business(visible)
         return RouteDecision(
@@ -273,9 +277,17 @@ class AgentRuntime:
         )
 
     def _fallback_business(self, visible: list[str]) -> str | None:
-        """可见集中优先级最低（数值最小）的业务作为兜底助手；无可见集返回 ``None``。"""
+        """无命中落点：可见集中声明了 ``fallback_guide`` 的业务（ADR-0105）。
+
+        没有任何业务声明（或声明业务对当前角色不可见）时，退到可见集中 priority
+        最小者作**最后防线**——当前生产拓扑不可达（capability 双端可见），仅为将来
+        的清单变化保住「路由永不返回 None」。无可见集返回 ``None``。
+        """
         if not visible:
             return None
+        for biz in visible:
+            if self._manifests[biz].fallback_guide:
+                return biz
         return min(visible, key=lambda b: self._manifests[b].priority)
 
     # ── 运行 ──

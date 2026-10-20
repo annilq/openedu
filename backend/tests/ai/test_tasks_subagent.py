@@ -57,8 +57,9 @@ def test_manifest_declares_tasks_domain():
     m = manifests["tasks"]
     assert (m.business, m.name) == ("tasks", "任务学情与出题助手")
     assert m.roles == ["teacher", "student"]
-    # ADR-0104：规则移除后 priority 只剩「兜底助手 + 清单顺序」语义，14 只需高于
-    # tutor(-10)；原「压过泛词 triggers」的竞争不再存在。
+    # ADR-0104/0105：规则移除后 priority 只剩「清单顺序」语义（无命中引导由
+    # capability 的 fallback_guide 声明），14 只需高于 tutor(-10)；
+    # 原「压过泛词 triggers」的竞争不再存在。
     assert m.priority == 14
     # 出题 SOP（自 question 域迁入）：适龄 / 对齐教材 / 题型约定 / 儿童安全闸门
     assert m.skills == ["question_sop"]

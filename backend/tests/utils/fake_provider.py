@@ -107,7 +107,7 @@ class FakeLLMProvider(EducationLLMProvider):
         # route_to：路由分类（schema=RoutingDecision）时表态的业务键。ADR-0104 移除
         # 规则路由后，文本路由由模型按上下文 + 能力清单决定——替身不猜，需要「这句
         # 路由到某业务」的用例（端点级 tool loop 测试）经此旋钮显式声明；不表态则
-        # 不给结构化产出，decide 回落兜底助手（与生产无模型时一致）。
+        # 不给结构化产出，decide 都没有命中 → 落无命中引导（capability，ADR-0105）。
         self.route_to = route_to
         # 可观测（断言用）：requests＝被请求次数；calls＝实际发出的工具调用序列。
         self.requests = 0
@@ -139,7 +139,7 @@ class FakeLLMProvider(EducationLLMProvider):
     async def stream(self, system, prompt, *, schema=None, tools=None, history=None):
         if schema is RoutingDecision:
             # 路由分类桩：route_to 表态才回传业务键；不表态 → 无结构化产出 →
-            # classify_llm 返回 None → decide 回落兜底助手。
+            # classify_llm 返回 None → decide 都没有命中 → 落无命中引导（capability）。
             if self.route_to:
                 yield StructuredDone(
                     data=RoutingDecision(business=self.route_to, confidence=0.9)
@@ -189,8 +189,9 @@ class RoutingFakeProvider(FakeLLMProvider):
     """路由 LLM 桩：schema 为 ``RoutingDecision`` 时回传预设决策，其余行为复用替身。
 
     ADR-0104 后文本路由（``decide`` 的策略原语）是路由确定性的唯一来源：普通替身
-    遇 ``schema=`` 只认识出题题面，喂给路由分类器是畸形产出 → 回落兜底助手。需要
-    「LLM 把某句话路由到某业务」的用例一律经本桩注入，不靠替身猜。
+    遇 ``schema=`` 只认识出题题面，喂给路由分类器是畸形产出 → 都没有命中，落无命中
+    引导（capability，ADR-0105）。需要「LLM 把某句话路由到某业务」的用例一律经本桩
+    注入，不靠替身猜。
     """
 
     def __init__(self, decision: "RoutingDecision | None"):

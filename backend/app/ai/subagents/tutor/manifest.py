@@ -1,9 +1,9 @@
-"""伴学 SubAgent 清单（ADR-0024 / ADR-0104）。
+"""伴学 SubAgent 清单（ADR-0024 / ADR-0104 / ADR-0105）。
 
 双端通用（roles: teacher + student，ADR-0026）：学生端只暴露伴学答疑，不暴露出题/答案。
 ADR-0104：规则（关键词 / 启发式）路由移除后，业务选择由 LLM / 决策模型按上下文 +
-能力清单决定，``triggers`` / ``hints`` 词表删除。``priority=-10`` 的语义随之简化为：
-策略原语均不决策时，本业务作兜底助手接住。
+能力清单决定，``triggers`` / ``hints`` 词表删除。ADR-0105：本业务**不再作兜底**——
+必须被模型显式路由到；``priority=-10`` 仅表示能力清单里排在末位。
 """
 from __future__ import annotations
 
@@ -12,8 +12,8 @@ MANIFEST = {
     "name": "伴学答疑",
     "description": "针对学生的提问给出适龄、纯学习相关的讲解。",
     "roles": ["teacher", "student"],
-    # 兜底助手：策略原语（决策模型 / LLM 分类）均不决策时，可见集中 priority
-    # 最小者接住（ADR-0104）。原「无兜底词」注释随 hints 字段一并删除。
+    # 清单呈现顺序：排在 tasks(14) 之后。ADR-0105 起不再有「兜底助手」语义——
+    # 都没有命中时回落的是声明了 fallback_guide 的 capability（能力引导）。
     "priority": -10,
     # 结构化动作：伴学答疑不再声明任何动作键（ADR-0089）。课件提示由 courseware 上下文
     # 触发、判断题判定由对话历史里的题卡驱动，均不经服务端动作键与待判定态。

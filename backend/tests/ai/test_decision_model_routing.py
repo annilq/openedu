@@ -6,7 +6,7 @@
 
 覆盖（对应 spec 验收）：
 - 决策模型可用 → 按返回业务路由（``routed_by == "decision"``）；
-- 决策模型不可用 / 返回 ``None`` / 返回不可见业务 → 回落 LLM 分类或兜底助手；
+- 决策模型不可用 / 返回 ``None`` / 返回不可见业务 → 回落 LLM 分类或无命中引导；
 - history 进入决策模型的 ``state``（实现「每轮保持所有消息上下文」）；
 - 续接「三年级」留 tasks、作答「选B」交 tutor（golden eval，根除两个已确认 bug）；
 - 动作直配（ADR-0081）仍排在决策模型之前，不受影响。
@@ -107,17 +107,17 @@ def test_decision_model_routes_when_available():
     assert "user: 随便一句" in dm.states[-1]
 
 
-# ── 决策模型不可用 → 回落 LLM 分类；LLM 也不可用（普通替身）→ 兜底助手 ──
+# ── 决策模型不可用 → 回落 LLM 分类；LLM 也不可用（普通替身）→ 无命中引导 ──
 def test_decision_model_unavailable_falls_back_to_default():
     d = _decide("帮我出2道四年级数学题", dm=None)
-    assert d.business == "tutor"  # 兜底助手（规则已移除，ADR-0104）
+    assert d.business == "capability"  # 都没有命中 → 能力引导（规则已移除，ADR-0104/0105）
     assert d.extra.get("routed_by") == "default"
 
 
 def test_decision_model_returns_none_falls_back():
     dm = _StubDecisionModel(None, available=True)
     d = _decide("帮我出几道数学题", dm=dm)
-    assert d.business == "tutor"
+    assert d.business == "capability"
     assert d.extra.get("routed_by") == "default"
 
 

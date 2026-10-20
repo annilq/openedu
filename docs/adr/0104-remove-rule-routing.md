@@ -1,9 +1,11 @@
 # ADR-0104 移除规则路由：业务选择完全由模型按上下文 + 能力清单决定
 
-- 状态：已采纳
+- 状态：已采纳（**§2.1「兜底助手」子句已被 ADR-0105 取代**：都没有命中的落点从
+  「可见集中 priority 最小者（tutor）」改为「声明 `fallback_guide` 的业务
+  （capability 能力引导）」；其余决策不变）
 - 日期：2026-10-20
-- 关联：ADR-0098（二执行体收敛；`intent_schemas` 子意图分组随之删除）、ADR-0099（已确认规格跨轮回灌；聊天链路 specs 注入随之删除）、ADR-0100（缺槽追问一句话引导；机制保留、聊天层暂不可达）、ADR-0101（正则触发词；整条 `trigger_patterns` 随之删除）、ADR-0081（动作直配，不受影响）、ADR-0095（schema 驱动槽位引擎，机制保留）
-- 实现：分支 `ticket/08-decision-routing`，提交 `4fcc686`（决策模型）+ `d8a9ed0`（可切换 LLM 分类）+ 本轮（rule 整体移除）
+- 关联：ADR-0098（二执行体收敛；`intent_schemas` 子意图分组随之删除）、ADR-0099（已确认规格跨轮回灌；聊天链路 specs 注入随之删除）、ADR-0100（缺槽追问一句话引导；机制保留、聊天层暂不可达）、ADR-0101（正则触发词；整条 `trigger_patterns` 随之删除）、ADR-0081（动作直配，不受影响）、ADR-0095（schema 驱动槽位引擎，机制保留）、**ADR-0105（取代本文 §2.1 兜底子句）**
+- 实现：分支 `ticket/08-decision-routing`，提交 `4fcc686`（决策模型）+ `d8a9ed0`（可切换 LLM 分类）+ `20a77a0`（rule 整体移除）+ 本轮 ADR-0105（无命中引导）
 
 ## 1. 背景
 
@@ -34,6 +36,9 @@
   `_STRATEGY_ORDER`：`llm=[llm]`、`decision=[decision,llm]`、`auto=[decision,llm]`（默认）。
   两者均不可用 / 不置信 → **兜底助手**：可见集中 `priority` 最小者（生产拓扑即 tutor），
   路由永不返回 `None`（安全闸门拦截除外）。
+  **〔ADR-0105 取代〕** 兜底助手改为「无命中引导」：声明 `fallback_guide` 的业务
+  （capability）接住并提示自身能力；tutor 必须被显式路由到；priority 最小者降级为
+  无声明时的最后防线。
 - `RouteDecision` 删除 `trigger` 字段（规则命中词的唯一出口，随规则一并下线）。
 
 ### 2.2 清单层（manifest）

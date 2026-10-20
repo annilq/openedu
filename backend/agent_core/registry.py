@@ -3,7 +3,7 @@
 每个 subagent 以文件夹 ``<business>/`` 组织，内含：
 - ``agent.py``     SubAgent 执行体（``BaseSubAgent`` 子类，由发现自动拾取）
 - ``manifest.py`` ``MANIFEST`` 字典：business / name / description / roles / priority /
-  actions / skills / input_schema
+  actions / skills / input_schema / fallback_guide
 - ``skills/``      本 subagent 的提示词/方法论资产（.md，注入 system prompt）
 
 运行时经 ``discover_subagent_manifests(root)`` 扫描文件夹自动注册，新增 subagent = 丢一个文件夹
@@ -33,9 +33,13 @@ class SubAgentManifest:
     # 可见角色：teacher / student（runtime 按当前角色过滤）
     roles: list[str] = field(default_factory=lambda: ["teacher", "student"])
     # 路由优先级：不再参与「触发词排序竞争」（规则路由已移除，ADR-0104）——
-    # 现仅两处语义：① 策略原语均不决策时，数值最小者作兜底助手；② 能力清单
-    # （capability subagent）的呈现顺序。新增业务无需再斟酌「抢词」。
+    # 现仅两处语义：① 能力清单（capability subagent）的呈现顺序；② 无任何业务声明
+    # ``fallback_guide`` 时的最后防线（数值最小者接住）。新增业务无需再斟酌「抢词」。
     priority: int = 0
+    # 无命中引导（ADR-0105）：策略原语（决策模型 / LLM 分类）均不决策时，由本业务
+    # 接住并给出「自身能力引导」，而不是静默把消息塞给某个执行体。至多一个业务声明
+    # （契约测试守护）；对当前角色不可见时退到 priority 最小者。
+    fallback_guide: bool = False
     # 结构化动作键清单（等值匹配，先于触发词；「哪个业务拥有哪个动作」的唯一声明处）。
     # 动作直配不参与优先级排序，因此无需为它设计排序规则（唯一性由契约测试保证）。
     actions: list[str] = field(default_factory=list)
@@ -88,6 +92,7 @@ def _manifest_from_dict(business: str, data: dict[str, Any]) -> SubAgentManifest
         description=str(data.get("description", "")),
         roles=list(data.get("roles", ["teacher", "student"])),
         priority=int(data.get("priority", 0)),
+        fallback_guide=bool(data.get("fallback_guide", False)),
         actions=list(data.get("actions", [])),
         skills=list(data.get("skills", [])),
         raw=data,

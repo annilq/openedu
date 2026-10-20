@@ -1,11 +1,12 @@
-"""AgentRuntime 路由决策与流式契约（ADR-0024 / 0026 / 0031 / 0104）。
+"""AgentRuntime 路由决策与流式契约（ADR-0024 / 0026 / 0031 / 0104 / 0105）。
 
 聚焦「显式路由决策」契约：
 - ``decide`` 纯计算：角色可见性 → 安全闸门 → 动作直配 → 策略原语（决策模型 /
-  LLM 分类）→ 兜底助手，不构建依赖、不流式。
+  LLM 分类）→ 无命中引导，不构建依赖、不流式。
 - 文本路由（ADR-0104）：规则（关键词/启发式）引擎已整体移除，业务选择由路由原语
   按「对话上下文 + 能力清单」决定——测试里用路由 LLM 桩注入；**无任何模型可用时**
-  落「兜底助手」（可见集中 priority 最小者，通常 tutor），不再有关键词命中。
+  （都没有命中）落「无命中引导」（声明 ``fallback_guide`` 的 capability，ADR-0105），
+  不再有关键词命中。
 - ``run`` 直接产出 ``AsyncIterator[AssistantEvent]``（不再返回 (decision, stream)
   元组）；决策由调用方先 ``decide`` 取得，再传入 ``run(..., business=decision.business)``。
 - agent_core 业务无关：``RouteDecision`` 不含 education 专属字段；subject 由端点
@@ -79,9 +80,10 @@ def test_decide_text_routing_can_choose_tutor():
     assert decision.extra.get("routed_by") == "llm"
 
 
-# 无任何路由模型（普通替身只会出题面，喂给路由分类器是畸形产出）时的兜底回归表：
-# ADR-0104 起**不再有关键词命中**——这些句子过去分别归 tasks / capability，现在一律
-# 落兜底助手 tutor。锁的是「规则确已移除」，不是「路由语义正确」（后者归真实模型）。
+# 无任何路由模型（普通替身只会出题面，喂给路由分类器是畸形产出）时的无命中回归表：
+# ADR-0104 起**不再有关键词命中**，ADR-0105 起都没有命中时落「无命中引导」——这些句子
+# 过去分别归 tasks / capability / tutor，现在一律由 capability 给出能力引导。锁的是
+# 「规则确已移除 + tutor 不再作兜底」，不是「路由语义正确」（后者归真实模型）。
 ROUTING_FALLBACK_REGRESSION = [
     "查一下这道题为什么选B",
     "今天有什么作业",
@@ -95,10 +97,10 @@ ROUTING_FALLBACK_REGRESSION = [
 
 
 @pytest.mark.parametrize("message", ROUTING_FALLBACK_REGRESSION)
-def test_decide_without_models_falls_back_to_tutor(message):
+def test_decide_without_models_falls_back_to_capability_guide(message):
     decision = asyncio.run(_decide(message, role="teacher"))
-    assert decision.business == "tutor"
-    assert decision.name == "伴学答疑"
+    assert decision.business == "capability"
+    assert decision.name == "能力自述"
     assert decision.extra.get("routed_by") == "default"
 
 

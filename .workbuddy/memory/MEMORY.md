@@ -54,8 +54,8 @@
 
 ## 10. 意图路由终态：规则路由整体移除（ADR-0104，2026-10-20，分支 `ticket/08-decision-routing` 未合 main）
 - **§9 的 slot filling 部分已被本节废止**：`intent_schemas`/`RouteDecision.trigger`/`business:intent` 两本账/`_business_triggered`/specs 聊天侧注入/汇总帧全部随 ADR-0104 删除；槽位回归每 business 单键，旧键行不读无需迁移。
-- 路由链：动作直配（ADR-0081，等值匹配，永远最前）→ `decision`（LayaDecisionModel，`agent_core/adapters/laya.py`，**仅 `laya-multilingual`**，英文 laya 构造即 ValueError）→ `llm`（`classify_llm`，`adapters/llm_route.py`，`RoutingDecision(SQLModel)` 只落适配器保内核 stdlib-only）→ 兜底 = 可见集中 `priority` 最小者（生产 tutor，`routed_by="default"`），永不返回 None。策略 `AI_ROUTING_STRATEGY`：`llm=[llm]`/`decision=[decision,llm]`/`auto=[decision,llm]`（默认）。
+- 路由链：动作直配（ADR-0081，等值匹配，永远最前）→ `decision`（LayaDecisionModel，`agent_core/adapters/laya.py`，**仅 `laya-multilingual`**，英文 laya 构造即 ValueError）→ `llm`（`classify_llm`，`adapters/llm_route.py`，`RoutingDecision(SQLModel)` 只落适配器保内核 stdlib-only）→ 都没有命中 → **无命中引导**：manifest 声明 `fallback_guide=True` 的业务（生产=capability 能力自述，零 LLM 固定清单，ADR-0105）；执行体（tasks/tutor）必须被显式路由到，`min(priority)` 仅是无声明时的最后防线（当前不可达）。策略 `AI_ROUTING_STRATEGY`：`llm=[llm]`/`decision=[decision,llm]`/`auto=[decision,llm]`（默认）。
 - 上下文：`decide(history=…)` 全量透传（近期 12 轮裁剪），manifest 的 name/description/actions 经 `_capability_text` 作候选选项——「每轮带全量上下文、按能力路由」即此。
 - **纯 LLM 出题（用户接受的 UX 降级）**：聊天出题无澄清引导、无规格回显、无 specs 注入，自由文本生成；按规格结构化出题仍走 `POST /tasks/generate`。通用槽位引擎（`fill_slots`/`clarify_sentence`/DONE 补发 726dba9）保留但聊天层暂不可达（manifest 全 optional），由 `required_slots` 合成 schema 守护。
-- 测试确定性来源 = 路由桩显式表态：`FakeLLMProvider(route_to=...)`（schema 为 RoutingDecision 时表态）+ `RoutingFakeProvider`；**禁止在测试替身里复刻关键词匹配**。`tests/ai` 353 passed；全量基线 1001 passed/2 skipped/1 failed（materials `test_empty_text_422` 环境性红，与 main 同）。
-- scratch：`.scratch/ai-intent-routing/`（spec INDEX + issues 01–09 全 done；gh 未登录仅本地）。工单 09 推翻了 08「规则 classify 保留兜底」纪律。
+- 测试确定性来源 = 路由桩显式表态：`FakeLLMProvider(route_to=...)`（schema 为 RoutingDecision 时表态）+ `RoutingFakeProvider`；**禁止在测试替身里复刻关键词匹配**。都不命中恒落 capability（8 句回归表 + 契约「至多一个 fallback_guide 声明 + 双端可见」守护）；学生 TutorLog 仅显式 tutor 轮落库。`tests/ai` 355 passed；全量基线 1003 passed/2 skipped/1 failed（materials `test_empty_text_422` 环境性红，与 main 同）。
+- scratch：`.scratch/ai-intent-routing/`（spec INDEX + issues 01–10 全 done；gh 未登录仅本地）。工单 09 推翻 08「规则兜底」纪律；工单 10（ADR-0105）把 ADR-0104 §2.1 兜底子句从「min(priority)=tutor」改为「fallback_guide 声明=capability 能力引导」。

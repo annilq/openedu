@@ -6,7 +6,7 @@
 - 动作归属唯一性（无孤儿 / 无悬空 / 不受清单顺序影响）
 - 动作命中且角色可见 → 正确 business
 - 动作命中但角色不可见 → 显式 ``action_not_visible``，**不是**静默回落可见集首个
-- 未知动作 → 容错回落文本路由（策略原语：LLM 分类 / 兜底助手），不报错
+- 未知动作 → 容错回落文本路由（策略原语：LLM 分类 / 无命中引导），不报错
 
 ADR-0104：规则（关键词/启发式）路由已整体移除——``classify`` / ``Classification`` /
 ``trigger_patterns`` / ``intent_schemas`` 连同其契约测试一并删除；业务选择由 LLM /
@@ -154,7 +154,7 @@ def test_decide_action_not_visible_when_role_lacks_manifest():
 
 def test_decide_unknown_action_falls_back_to_text_routing():
     # 未知动作：容错回落自然语言路由（ADR-0104 后＝策略原语），不报错。
-    # 用路由 LLM 桩注入「tasks」证明落的确实是文本路由那条路，而不是兜底助手。
+    # 用路由 LLM 桩注入「tasks」证明落的确实是文本路由那条路，而不是无命中引导。
     provider = RoutingFakeProvider(RoutingDecision(business="tasks", confidence=0.9))
     decision = asyncio.run(
         _decide(

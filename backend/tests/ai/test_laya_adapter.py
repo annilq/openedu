@@ -2,7 +2,7 @@
 
 硬约束守护 + 冒烟（无权重时跳过真实推断）：
 - 仅 ``convaiinnovations/laya-multilingual`` 可用，英文 ``laya`` 显式拒绝；
-- 无服务地址 / 缺权重时 ``available()`` 为 False（路由回落 LLM 分类或兜底助手）；
+- 无服务地址 / 缺权重时 ``available()`` 为 False（路由回落 LLM 分类或无命中引导）；
 - 注入引擎时 ``decide`` 路径正确（key 映射 / 阈值门控 / 不可映射回落）。
 """
 from __future__ import annotations
@@ -36,7 +36,7 @@ def test_available_false_without_service(monkeypatch):
     monkeypatch.delenv("LAYA_SERVE_URL", raising=False)
     model = LayaDecisionModel()
     assert model.available() is False
-    # 不可用 → decide 直接返回 None（路由回落 LLM 分类 / 兜底助手）
+    # 不可用 → decide 直接返回 None（路由回落 LLM 分类 / 无命中引导）
     assert asyncio.run(
         model.decide(state="x", options=[DecisionOption(key="tasks", label="t")])
     ) is None

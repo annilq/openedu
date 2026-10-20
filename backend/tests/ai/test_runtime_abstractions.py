@@ -4,8 +4,9 @@
 1. 引擎单一解析链：显式引擎能一路传到 provider（``build_provider(engine=)``）。
 2. 发现即注册：discover 出的清单自带 ``agent_cls``，``registry`` 不再手工登记。
 3. skills 真消费：manifest 声明的 SOP 文本进 prompt（出题走 persona_hint、伴学走 context）。
-4. 路由无硬编码：ADR-0104 移除规则路由后，``priority`` 只剩「兜底助手」语义——
-   策略原语均不决策时，可见集中数值最小者接住，匹配顺序不再由任何词表决定。
+4. 路由无硬编码：ADR-0104 移除规则路由、ADR-0105 起 tutor 不再作兜底——都没有命中时
+   由声明 ``fallback_guide`` 的业务给出能力引导；``priority`` 只剩「清单呈现顺序 +
+   无声明时的最后防线」语义，匹配顺序不再由任何词表决定。
 """
 from __future__ import annotations
 
@@ -144,21 +145,50 @@ def test_real_sop_does_not_trip_input_safety():
     assert not any(e.blocked for e in assistant_messages)
 
 
-# ── 4. 路由无硬编码（ADR-0104：规则移除后 priority 只剩兜底语义） ──
-def _manifest(business: str, *, priority: int, roles: list[str] | None = None):
+# ── 4. 路由无硬编码（ADR-0104 规则移除；ADR-0105 无命中引导 = 声明的 fallback_guide） ──
+def _manifest(
+    business: str,
+    *,
+    priority: int,
+    roles: list[str] | None = None,
+    fallback_guide: bool = False,
+):
     return SubAgentManifest(
         business=business,
         name=business,
         priority=priority,
         roles=roles if roles is not None else ["teacher", "student"],
+        fallback_guide=fallback_guide,
     )
 
 
-def test_decide_falls_back_to_lowest_priority_business():
-    """策略原语均不决策（无路由模型）时，兜底 = 可见集中 priority 最小者。
+def test_decide_prefers_declared_fallback_guide():
+    """都没有命中时，落**声明了 fallback_guide** 的业务（ADR-0105），与 priority 无关。
 
-    ADR-0104：原「匹配顺序由 priority 决定 + hints 兜底」的规则层整体移除，
-    priority 不再参与任何「抢词」竞争，只在这一处继承旧兜底语义。
+    生产拓扑即能力自述 capability：tutor(-10) 数值更小也不再接住——执行体必须被
+    模型显式路由到，无命中时给的是「自身能力引导」。
+    """
+    manifests = {
+        "tutor": _manifest("tutor", priority=-10),
+        "capability": _manifest("capability", priority=16, fallback_guide=True),
+    }
+    rt = AgentRuntime(manifests)
+    decision = asyncio.run(
+        rt.decide(
+            "都没有命中的一句话",
+            role="teacher",
+            deps=RuntimeDeps(provider=FakeLLMProvider()),
+        )
+    )
+    assert decision.business == "capability"
+    assert decision.extra.get("routed_by") == "default"
+
+
+def test_decide_last_resort_falls_back_to_lowest_priority_business():
+    """没有任何业务声明 fallback_guide 时的最后防线：可见集中 priority 最小者。
+
+    ADR-0105：该路径在当前生产拓扑不可达（capability 双端可见且已声明），仅为将来
+    的清单变化保住「路由永不返回 None」。
     """
     manifests = {
         "a": _manifest("a", priority=5),
@@ -177,9 +207,11 @@ def test_decide_falls_back_to_lowest_priority_business():
 
 
 def test_decide_visible_set_bounds_fallback():
-    """兜底只在**当前角色可见集**里挑：低优先级业务对角色不可见时跳过它。"""
+    """引导 / 最后防线都只在**当前角色可见集**里挑：声明业务或低优先级业务对角色
+    不可见时跳过它。"""
     manifests = {
         "a": _manifest("a", priority=5),
+        "guide": _manifest("guide", priority=16, fallback_guide=True, roles=["student"]),
         "z": _manifest("z", priority=-5, roles=["student"]),
     }
     rt = AgentRuntime(manifests)

@@ -6,7 +6,7 @@
 
 覆盖（对应「新增普通 llm 分类功能，方便切换」）：
 - ``AI_ROUTING_STRATEGY=llm`` → 按 LLM 返回业务路由（``routed_by == "llm"``）；
-- provider 未配置 / 模型回传不可见业务 → 回落兜底助手（ADR-0104，规则已移除）；
+- provider 未配置 / 模型回传不可见业务 → 回落无命中引导（ADR-0104 规则已移除；ADR-0105 落 capability）；
 - 策略切换：``auto``（默认）决策模型不可用即落到 LLM 分类，``decision`` 用决策模型，
   ``llm`` 只用 LLM 分类；
 - 动作直配（ADR-0081）仍在所有策略原语之前。
@@ -97,21 +97,21 @@ def test_llm_routing_routes_when_strategy_llm():
     assert d.extra.get("confidence") == 0.9
 
 
-# ── llm 策略：provider 未配置 → 回落兜底助手 ──
+# ── llm 策略：provider 未配置 → 回落无命中引导（capability） ──
 def test_llm_routing_falls_back_when_provider_none():
     d = _decide("帮我出2道四年级数学题", provider=None, strategy="llm")
-    assert d.business == "tutor"  # 无路由模型 → 兜底助手（规则已移除，ADR-0104）
+    assert d.business == "capability"  # 都没有命中 → 能力引导（规则已移除，ADR-0104/0105）
     assert d.extra.get("routed_by") == "default"
 
 
-# ── llm 策略：provider 未配置（configured=False）→ 回落兜底助手 ──
+# ── llm 策略：provider 未配置（configured=False）→ 回落无命中引导（capability） ──
 def test_llm_routing_falls_back_when_model_unconfigured():
     d = _decide("帮我出2道四年级数学题", provider=_UnconfiguredProvider(), strategy="llm")
-    assert d.business == "tutor"
+    assert d.business == "capability"
     assert d.extra.get("routed_by") == "default"
 
 
-# ── llm 策略：模型回传不可见业务 → 回落兜底助手 ──
+# ── llm 策略：模型回传不可见业务 → 回落无命中引导 ──
 def test_llm_routing_falls_back_when_invalid_business():
     provider = RoutingFakeProvider(
         RoutingDecision(business="nonexistent_biz", confidence=0.9)

@@ -62,9 +62,14 @@ def _stream(client, token, message, extra=None):
     return status, events
 
 
-def test_student_tutor_ask_returns_answer_and_logs(client):
-    """学生正常提问：200 + ASSISTANT_MESSAGE 讲解，且 TutorLog 落库（ADR-008 / F-305）。"""
+def test_student_tutor_ask_returns_answer_and_logs(client, fake_llm):
+    """学生正常提问：200 + ASSISTANT_MESSAGE 讲解，且 TutorLog 落库（ADR-008 / F-305）。
+
+    ADR-0105：tutor 不再作无命中兜底，必须被模型显式路由到——测试经 ``route_to``
+    显式声明落点 tutor（没有声明时都不命中会落 capability 能力引导）。
+    """
     ptoken, student, ctoken = _setup(client, "as1_teacher", "as1_kid")
+    fake_llm.route_to = "tutor"
     status, events = _stream(client, ctoken, "23 + 45 怎么算")
     assert status == 200, events
     types = [e["eventType"] for e in events]
@@ -445,7 +450,8 @@ def test_conversation_list_only_returns_my_own(client, fake_llm):
     setup = _query_setup(client, "ashist1")
     ctoken = login(client, "qt_ashist1_a", KID_PASSWORD).json()["access_token"]
 
-    # 学生聊一段（不表态路由 → 兜底 tutor，与学生端伴学场景一致）
+    # 学生聊一段（不表态路由 → 都不命中落 capability 能力引导，ADR-0105；
+    # 本断言只关心会话归属，不关心 kind）
     _s, ev_student = _stream(client, ctoken, "23 + 45 怎么算")
     student_sid = _of(ev_student, "DONE")[-1]["session_id"]
 

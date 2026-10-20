@@ -1,13 +1,16 @@
-"""``capability`` 能力自述与超范围引导 SubAgent 契约测试（ADR-0079 / ADR-0097 / ADR-0104，零 LLM）。
+"""``capability`` 能力自述与超范围引导 SubAgent 契约测试（ADR-0079 / ADR-0097 / ADR-0104 / ADR-0105，零 LLM）。
 
-守住五条（全部确定性、不接真实模型）：
+守住六条（全部确定性、不接真实模型）：
 
 - 能力清单为 **manifests 的投影**（ADR-0097：单一事实源，非 LLM 生成、非手抄），
   按角色过滤可见 business，无 query/guide 残留字样；
-- 超范围问题落 ``tutor`` 兜底（不硬失败），且 ``tutor_system_prompt`` 含超范围自述句式；
+- 超范围问题落 ``tutor``（显式路由时，不硬失败），且 ``tutor_system_prompt`` 含超范围自述句式；
 - subagent 不持有工具、不调用 provider（零 LLM）；
 - ``priority=16``：规则时代它压过 tasks(14) 的泛词；ADR-0104 移除规则路由后 priority
-  只剩「兜底助手 + 清单呈现顺序」语义，16 保持清单首位。
+  只剩「清单呈现顺序」语义，16 保持清单首位；
+- ADR-0105：``fallback_guide=True``——都没有命中（策略原语均不决策）时由本业务给出
+  能力引导；契约：全清单至多一个业务声明、且对师生双端可见（否则该角色的无命中
+  会静默退到 priority 最小者）。
 
 ADR-0104：原「能力自述问句路由到 capability」一组测试随规则路由移除而删除——
 「你能做什么」类元问题由 LLM / 决策模型按能力清单路由，不再是词表可钉的东西。
@@ -43,12 +46,27 @@ def test_manifest_declares_capability_and_dual_role():
     assert m.roles == ["teacher", "student"]
 
 
+def test_manifest_declares_unique_fallback_guide():
+    """ADR-0105：至多一个业务声明 ``fallback_guide``，且就是 capability、双端可见。
+
+    都不命中时该业务给出「自身能力引导」；若声明不唯一，无命中落点随清单顺序漂移；
+    若对某角色不可见，该角色的无命中会静默退到 priority 最小者（回到「执行体兜底」）。
+    """
+    manifests = discover_subagent_manifests()
+    declared = [b for b, m in manifests.items() if m.fallback_guide]
+    assert declared == ["capability"], f"无命中引导应仅 capability 声明：{declared}"
+    guide = manifests["capability"]
+    for role in ("teacher", "student"):
+        assert role in guide.roles, f"无命中引导必须对 {role} 可见"
+
+
 def test_priority_sits_above_all_business_domains():
     """priority=16 是清单呈现顺序的第一位（ADR-0104 后不再「压词」）。
 
     规则路由时代它必须压过 tasks(14) 的泛词（「查 / 有哪些」），否则「你能查什么」
-    类元问题会被 requires_tool_data 硬失败；规则移除后该竞争消失，16 的现实语义是
-    ① 能力清单中 capability 之后按序排；② 兜底助手仍是最低优先级的 tutor(-10)。
+    类元问题会被 requires_tool_data 硬失败；规则移除后该竞争消失，16 的现实语义只是
+    能力清单中 capability 之后按序排。ADR-0105：都没有命中时的落点由 ``fallback_guide``
+    声明（capability），与 priority 数值无关。
     ADR-0098：students / question 域吸收进 tasks 后，被排序的域只剩两个执行体。
     """
     manifests = discover_subagent_manifests()
