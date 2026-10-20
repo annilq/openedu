@@ -26,7 +26,7 @@ from agent_core.protocol import (
 from agent_core.runtime import RouteDecision
 from sqlmodel import select
 
-from app.db.models import Conversation
+from app.db.models import Conversation, Message
 from app.features.assistant.schemas import AssistantChatReq, CoursewareContext
 from app.features.assistant.service import chat
 
@@ -113,6 +113,73 @@ def test_missing_slots_yields_clarify_and_no_data_card(db):
     assert conv is not None
     assert conv.slots["tasks:generate"]["subject"] == "数学"
     assert "grade" not in (conv.slots["tasks:generate"] or {})
+
+
+def test_clarify_round_yields_done_and_followup_continues_same_conversation(db):
+    """澄清轮必须下发 DONE（带 session_id），否则续接会新建会话、把首轮孤立。
+
+    回归：缺槽预检在 ``rt.run`` 之前 return，而 DONE 帧由 ``rt.run`` 的 finally 产出
+    （agent_core/runtime.py:191）→ 澄清轮原本收不到 DONE。前端 ``_currentSessionId``
+    据此回写，缺失则下一句以 sessionId=null 新建会话，表现即「运行详情 / 会话详情都缺第一轮」。
+    """
+    pid = uuid.uuid4()
+    rt = _StubRuntime()
+
+    # 第一轮：缺 grade/qtype → 澄清（不调 rt.run）
+    frames1 = asyncio.run(
+        _drain(
+            chat(
+                caller=_caller("teacher", user_id=pid, teacher_id=pid),
+                req=_req("出几道数学题"),
+                session=db,
+                runtime=rt,
+            )
+        )
+    )
+    events1 = _parse(frames1)
+    done_frames1 = [e for e in events1 if e["eventType"] == "DONE"]
+    assert done_frames1, "澄清轮必须下发 DONE 帧（回归点）"
+    sid = done_frames1[0].get("session_id")
+    assert sid, "DONE 帧必须回写 session_id"
+
+    # 澄清消息只落一条（修复前 finally 的 final_text 会重复落一条助手消息）
+    cid = uuid.UUID(sid)
+    clarify_msgs = db.exec(
+        select(Message).where(
+            Message.conversation_id == cid,
+            Message.role == "assistant",
+            Message.step == "output",
+        )
+    ).all()
+    assert len(clarify_msgs) == 1, "澄清消息不应重复落库"
+
+    # 第二轮：补齐 grade/qtype → 走到 rt.run 生成题卡；带 sid 续接同一会话
+    frames2 = asyncio.run(
+        _drain(
+            chat(
+                caller=_caller("teacher", user_id=pid, teacher_id=pid),
+                req=_req("三年级选择题", session_id=sid),
+                session=db,
+                runtime=rt,
+            )
+        )
+    )
+    events2 = _parse(frames2)
+    assert any(e["eventType"] == EVENT_DATA for e in events2), "补齐后应生成题卡"
+
+    # 续接：会话数仍为 1，首轮 user 消息保留在第一条
+    convs = db.exec(
+        select(Conversation).where(Conversation.teacher_id == pid)
+    ).all()
+    assert len(convs) == 1, "续接不应新建会话"
+    assert convs[0].id == cid
+    user_msgs = db.exec(
+        select(Message)
+        .where(Message.conversation_id == cid, Message.role == "user")
+        .order_by(Message.turn)
+    ).all()
+    assert user_msgs[0].turn == 0
+    assert "出几道数学题" in (user_msgs[0].content or ""), "首轮 user 消息必须保留"
 
 
 def test_second_turn_merges_and_generates(db):

@@ -24,6 +24,7 @@ from agent_core.ports import RuntimeDeps, TextDelta
 from agent_core.protocol import (
     EVENT_ASSISTANT_MESSAGE,
     EVENT_DATA,
+    EVENT_DONE,
     EVENT_ERROR,
     EVENT_SUGGESTED_ACTIONS,
     EVENT_TOOL_CALL,
@@ -661,6 +662,18 @@ async def chat(
                             payload={"clarify": {"missing_slots": _result["missing"]}},
                         )
                     )
+                    # 澄清轮必须下发 DONE 并回写 session_id：本路径在 ``rt.run`` 之前
+                    # return，而 DONE 帧由 ``rt.run`` 的 finally 产出（agent_core/runtime.py:191），
+                    # 故澄清轮默认收不到 DONE → 前端 ``_currentSessionId`` 始终为 null →
+                    # 下一句以 sessionId=null 新建会话，把首轮孤立进另一条会话
+                    # （表现：运行详情/会话详情都缺第一轮）。补发 DONE 让续接落到同一条会话。
+                    yield AssistantEvent(
+                        eventType=EVENT_DONE,
+                        session_id=str(conv_id),
+                    ).to_sse()
+                    # 澄清消息已单独落库（上一条 Message），清空 final_text 避免 finally
+                    # 的 ``if final_text or cards`` 再落一条重复助手消息。
+                    final_text = ""
                     return
                 # 必填齐备：写回合并后的槽位，先发「已确认规格」汇总，再进生成。
                 # 仅 generate 意图需要「汇总 + 交给定题子代理的 specs 路径」：它是
