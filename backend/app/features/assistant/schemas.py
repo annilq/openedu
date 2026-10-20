@@ -3,7 +3,7 @@
 请求体从 ``router`` 收口到此处：router 只负责 HTTP 适配，不应持有业务契约。
 
 ADR-0048 起本模块也持有**会话历史的读契约**（列表 / 回放）。它与
-``app/features/ai/schemas.py`` 的 ``ConversationResp`` / ``MessageResp`` 刻意不复用：
+``app/features/agent_debug/schemas.py`` 的 ``ConversationResp`` / ``MessageResp`` 刻意不复用：
 那两份是**运行轨迹**的调试投影（全部 step、原始 payload、安全标记），
 这两份是**对话**的用户面投影（气泡 + 卡片）。两者的消费者与保真度要求都不同，
 合并会逼用户面拖走工具原始载荷，也会逼审计侧丢掉保真度。
