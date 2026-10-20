@@ -17,6 +17,11 @@ from agent_core.adapters.genkit import (
     decode_stream,
 )
 from agent_core.adapters.laya import LayaDecisionModel, get_decision_model
+from agent_core.adapters.llm_route import (
+    RoutingDecision,
+    build_routing_prompt,
+    classify_llm,
+)
 
 __all__ = [
     "GenkitEngine",
@@ -27,4 +32,7 @@ __all__ = [
     "decode_stream",
     "LayaDecisionModel",
     "get_decision_model",
+    "RoutingDecision",
+    "build_routing_prompt",
+    "classify_llm",
 ]

@@ -12,10 +12,12 @@ app.* 符号。会话持久化交给端点（复用业务自身的会话表）�
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, AsyncIterator
 
+from agent_core.adapters.llm_route import classify_llm
 from agent_core.errors import ProviderRequestError
 from agent_core.ports import DecisionOption, RuntimeDeps
 from agent_core.protocol import (
@@ -31,8 +33,15 @@ from agent_core.registry import (
     build_subagent,
     discover_subagent_manifests,
 )
-from agent_core.router import IntentSignal, match_action
-from agent_core.router import classify as _classify
+from agent_core.router import (
+    IntentSignal,
+    _build_routing_state,
+    _capability_text,
+    match_action,
+)
+from agent_core.router import (
+    classify as _classify,
+)
 from agent_core.subagent import BaseSubAgent, SubAgentContext, run_with_tools
 
 
@@ -54,44 +63,30 @@ class RouteDecision:
     extra: dict[str, Any] = field(default_factory=dict)
 
 
-# 路由用历史窗口上限（Laya-multilingual 上下文 1024 tok，取近期轮次足够消歧）。
-# 近期 N 轮即可覆盖「上一轮出题 → 本轮补参数 / 作答」这类续接消歧，不撑爆 state。
-ROUTING_HISTORY_LIMIT = 12
+# ───────────────────────── 路由策略（可切换：rule / llm / decision / auto） ─────────────────────────
+# 默认 ``auto``＝决策模型若可用则用之、否则规则（保守：零成本确定性优先，不默认启用 LLM）。
+# 设环境变量 ``AI_ROUTING_STRATEGY=llm`` 即切换到通用 LLM 分类路由；``rule`` 可完全离线确定性运行。
+# 规则 ``classify`` 在任何策略下都作为最终兜底，保证路由永不返回 ``None``（安全闸门拦截除外）。
+_ROUTING_STRATEGY_OVERRIDE: str | None = None
+
+_STRATEGY_ORDER: dict[str, list[str]] = {
+    "rule": ["rule"],
+    "llm": ["llm", "rule"],
+    "decision": ["decision", "rule"],
+    "auto": ["decision", "rule"],
+}
 
 
-def _build_routing_state(
-    history: "list[dict] | None", text: str
-) -> str:
-    """把「近期历史 + 当前消息」拼成决策模型的 ``state`` 文本。
-
-    实现「每轮保持所有消息上下文」：续接时 history 为既有轮次，当前消息追尾，
-    使模型在上下文里区分「补参数（留 tasks）」与「作答（交 tutor）」，无需黏性分支。
-    """
-    parts: list[str] = []
-    if history:
-        for turn in history[-ROUTING_HISTORY_LIMIT:]:
-            if not isinstance(turn, dict):
-                continue
-            role = turn.get("role")
-            content = turn.get("content")
-            if content:
-                parts.append(f"{role or 'user'}: {content}")
-    if text:
-        parts.append(f"user: {text}")
-    return "\n".join(parts)
+def set_routing_strategy(strategy: str | None) -> None:
+    """覆盖路由策略（测试 / 运行时配置用）。``None`` 复位为环境变量值。"""
+    global _ROUTING_STRATEGY_OVERRIDE
+    _ROUTING_STRATEGY_OVERRIDE = (strategy or "").strip().lower() or None
 
 
-def _capability_text(manifest: "SubAgentManifest") -> str:
-    """把 manifest 的 ``name`` / ``description`` / ``actions`` 拼成决策模型的选项描述。
-
-    即「按 agent 能力路由」的能力清单：新增 subagent 自动扩展候选，无需改路由代码。
-    """
-    bits = [manifest.name]
-    if manifest.description:
-        bits.append(manifest.description)
-    if manifest.actions:
-        bits.append("actions: " + ", ".join(manifest.actions))
-    return "\n".join(bits)
+def get_routing_strategy() -> str:
+    """当前路由策略：覆盖值优先，否则环境变量 ``AI_ROUTING_STRATEGY``，默认 ``auto``。"""
+    raw = _ROUTING_STRATEGY_OVERRIDE or os.getenv("AI_ROUTING_STRATEGY", "auto")
+    return (raw or "auto").strip().lower()
 
 
 class AgentRuntime:
@@ -128,20 +123,24 @@ class AgentRuntime:
         deps: RuntimeDeps,
         history: "list[dict] | None" = None,
     ) -> RouteDecision:
-        """解析路由决策：角色可见性 → 安全闸门 → 结构化动作直配 → 决策模型 → 规则兜底。
+        """解析路由决策：角色可见性 → 安全闸门 → 动作直配 → 策略原语 → 规则兜底。
 
         输入接受 ``str``（迁移期兼容）或 ``IntentSignal``；不产出事件帧、不构建 provider。
         端点可据此在流式前做预航班（配额判定）。
 
-        四级路由（动作直配最前，决策模型主路由，规则作确定性兜底）：
+        路由分两级：动作直配恒在最前；其后的路由原语（决策模型 / 通用 LLM 分类 / 规则）
+        由策略开关 ``get_routing_strategy()``（环境变量 ``AI_ROUTING_STRATEGY``，默认
+        ``auto``）选择，**规则恒为确定性兜底**。
 
-        1. **动作直配**：``signal.action`` 与各 manifest ``actions`` 等值匹配，命中即路由，
-           不参与优先级排序、不与文本竞争（ADR-0081，不变）。
-        2. **决策模型主路由**：``deps.decision_model`` 可用时，以「近期 history + 当前消息」
-           为 ``state``、可见 business 的能力清单为选项，调用其返回「业务 + 校准概率」；
-           置信则路由（``extra.routed_by = "decision"``），不置信或不可用则回落规则。
-        3. **规则匹配** / 4. **启发式兜底**：现有文本路由（``classify``），行为不变，
-           作决策模型不可用时的确定性兜底与离线测试用。
+        1. **动作直配**（不变）：``signal.action`` 与各 manifest ``actions`` 等值匹配，
+           命中即路由，不参与优先级排序、不与文本竞争（ADR-0081，不变）。
+        2. **策略原语**（按 ``_STRATEGY_ORDER`` 顺序尝试，首个非空即返回）：
+           - ``decision``：``deps.decision_model``（Laya-multilingual）可用时，以
+             「近期 history + 当前消息」为 ``state``、能力清单为选项，返回「业务 + 校准概率」
+             （``extra.routed_by = "decision"``）；不可用 / 不置信回落下一候选。
+           - ``llm``：通用 LLM 结构化分类（``classify_llm``），history + 能力清单为上下文，
+             返回业务键（``extra.routed_by = "llm"``）；provider 不可用 / 不守 schema 回落。
+           - ``rule``：现有文本路由（``classify``，规则 + 启发式），确定性兜底与离线测试用。
 
         ``history`` 让路由基于完整对话上下文（而非孤立当前句），天然实现「续接留住出题态」
         而无需手写黏性分支；也支撑「按 agent 能力路由」（manifest 的 ``description``/
@@ -179,33 +178,101 @@ class AgentRuntime:
                 )
             # 未知动作：容错回落自然语言路由（不报错）；同名不同步的静默失效由契约测试兜。
 
-        # 第二级：决策模型主路由（Laya-multilingual 等）。不可用 / 低置信 → 落规则兜底。
-        dm = deps.decision_model
-        if dm is not None and dm.available():
-            state = _build_routing_state(history, text)
-            options = [
-                DecisionOption(
-                    key=biz, label=_capability_text(self._manifests[biz])
-                )
-                for biz in visible
-            ]
-            try:
-                result = await dm.decide(state=state, options=options)
-            except Exception:  # noqa: BLE001 — 决策模型异常不应击穿路由
-                result = None
-            if result is not None and result.choice in visible:
-                return RouteDecision(
-                    business=result.choice,
-                    name=self.name_of(result.choice),
-                    extra={
-                        "routed_by": "decision",
-                        "level": "decision",
-                        "prob": result.prob,
-                    },
-                )
+        # 策略路由：按配置顺序尝试 决策模型 / LLM 分类 / 规则，规则恒为最终兜底。
+        strategy = get_routing_strategy()
+        order = _STRATEGY_ORDER.get(strategy, _STRATEGY_ORDER["auto"])
+        for candidate in order:
+            routed = await self._route_candidate(candidate, text, visible, deps, history)
+            if routed is not None:
+                return routed
 
+        # 规则兜底永远返回非 None，正常不会到这；保险再走一次 _classify。
         decision = await _classify(text, available=visible, manifests=self._manifests)
-        # 角色可见性是唯一真相源：classify 只在 visible 内决策。
+        biz = decision.business
+        if biz not in visible:
+            biz = visible[0] if visible else None
+        return RouteDecision(
+            business=biz,
+            name=self.name_of(biz) if biz else None,
+            trigger=decision.trigger,
+        )
+
+    # ── 路由候选（策略分发） ──
+    async def _route_candidate(
+        self,
+        candidate: str,
+        text: str,
+        visible: list[str],
+        deps: RuntimeDeps,
+        history: "list[dict] | None",
+    ) -> "RouteDecision | None":
+        """按策略名尝试单个路由原语；返回 ``None`` 表示「本原语不决策」，由下一候选兜底。"""
+        if candidate == "decision":
+            return await self._route_decision(text, visible, deps, history)
+        if candidate == "llm":
+            return await self._route_llm(text, visible, deps, history)
+        if candidate == "rule":
+            return await self._route_rule(text, visible)
+        return None
+
+    async def _route_decision(
+        self,
+        text: str,
+        visible: list[str],
+        deps: RuntimeDeps,
+        history: "list[dict] | None",
+    ) -> "RouteDecision | None":
+        """决策模型（Laya-multilingual）主路由；不可用 / 低置信 / 不可见 → ``None`` 回落。"""
+        dm = deps.decision_model
+        if dm is None or not dm.available():
+            return None
+        state = _build_routing_state(history, text)
+        options = [
+            DecisionOption(key=biz, label=_capability_text(self._manifests[biz]))
+            for biz in visible
+        ]
+        try:
+            result = await dm.decide(state=state, options=options)
+        except Exception:  # noqa: BLE001 — 决策模型异常不应击穿路由
+            return None
+        if result is not None and result.choice in visible:
+            return RouteDecision(
+                business=result.choice,
+                name=self.name_of(result.choice),
+                extra={
+                    "routed_by": "decision",
+                    "level": "decision",
+                    "prob": result.prob,
+                },
+            )
+        return None
+
+    async def _route_llm(
+        self,
+        text: str,
+        visible: list[str],
+        deps: RuntimeDeps,
+        history: "list[dict] | None",
+    ) -> "RouteDecision | None":
+        """通用 LLM 分类路由（结构化输出）；provider 不可用 / 不守 schema / 业务不可见 → ``None`` 回落。"""
+        decision = await classify_llm(
+            deps.provider, history, text, self._manifests, visible
+        )
+        if decision is None or decision.business not in visible:
+            return None
+        return RouteDecision(
+            business=decision.business,
+            name=self.name_of(decision.business),
+            extra={
+                "routed_by": "llm",
+                "level": "llm",
+                "confidence": decision.confidence,
+            },
+        )
+
+    async def _route_rule(self, text: str, visible: list[str]) -> RouteDecision:
+        """规则匹配 + 启发式兜底（确定性，离线可用）。"""
+        decision = await _classify(text, available=visible, manifests=self._manifests)
         biz = decision.business
         if biz not in visible:
             biz = visible[0] if visible else None
