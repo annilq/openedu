@@ -84,13 +84,18 @@ def _build_routing_state(history: "list[dict] | None", text: str) -> str:
 
 
 def _capability_text(manifest: SubAgentManifest) -> str:
-    """把 manifest 的 ``name`` / ``description`` / ``actions`` 拼成能力描述。
+    """把 manifest 拼成路由用的能力描述（决策模型与 LLM 分类共用）。
 
     即「按 agent 能力路由」的能力清单：新增 subagent 自动扩展候选，无需改路由代码。
+
+    ``routing_criteria``（ADR-0106）声明时**只**替换本投影里的 ``description``，``name``
+    与 ``actions`` 照旧——这样「模型分得开」的措辞可以与「用户读得懂」的措辞分开调优，
+    而面向用户的能力清单（``capability_catalog`` 直读 ``description``）不受影响。
     """
     bits = [manifest.name]
-    if manifest.description:
-        bits.append(manifest.description)
+    body = manifest.routing_criteria or manifest.description
+    if body:
+        bits.append(body)
     if manifest.actions:
         bits.append("actions: " + ", ".join(manifest.actions))
     return "\n".join(bits)

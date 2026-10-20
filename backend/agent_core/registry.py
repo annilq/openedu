@@ -3,7 +3,7 @@
 每个 subagent 以文件夹 ``<business>/`` 组织，内含：
 - ``agent.py``     SubAgent 执行体（``BaseSubAgent`` 子类，由发现自动拾取）
 - ``manifest.py`` ``MANIFEST`` 字典：business / name / description / roles / priority /
-  actions / skills / input_schema / fallback_guide
+  actions / skills / input_schema / fallback_guide / routing_criteria（后两者为可选路由字段）
 - ``skills/``      本 subagent 的提示词/方法论资产（.md，注入 system prompt）
 
 运行时经 ``discover_subagent_manifests(root)`` 扫描文件夹自动注册，新增 subagent = 丢一个文件夹
@@ -30,6 +30,12 @@ class SubAgentManifest:
     business: str
     name: str
     description: str = ""
+    # 路由专用能力描述（ADR-0106）：缺省为空 → 路由用 ``name`` + ``description`` 的投影。
+    # 声明后**只**替换投影里的 description 部分，``name`` / ``actions`` 仍在；面向用户的
+    # 能力清单（``capability_catalog``）始终读 ``description``，不受本字段影响。
+    # 存在的理由：同一份文本要同时服务「用户读得懂」与「模型分得开」时，实测证明会互相
+    # 拖累（ticket 12：把「管理题库」这句留给用户的代价是路由 74% → 56%）。
+    routing_criteria: str = ""
     # 可见角色：teacher / student（runtime 按当前角色过滤）
     roles: list[str] = field(default_factory=lambda: ["teacher", "student"])
     # 路由优先级：不再参与「触发词排序竞争」（规则路由已移除，ADR-0104）——
@@ -90,6 +96,7 @@ def _manifest_from_dict(business: str, data: dict[str, Any]) -> SubAgentManifest
         business=business,
         name=str(data.get("name", business)),
         description=str(data.get("description", "")),
+        routing_criteria=str(data.get("routing_criteria", "")),
         roles=list(data.get("roles", ["teacher", "student"])),
         priority=int(data.get("priority", 0)),
         fallback_guide=bool(data.get("fallback_guide", False)),
