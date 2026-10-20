@@ -109,8 +109,6 @@ class TutorSubAgent(BaseSubAgent):
             base_context = (
                 f"{base_context}\n\n{focus_seg}".strip() if base_context else focus_seg
             )
-        tc = self._tool("tutor_explain", label="伴学答疑")
-        yield tc.call
         # AI 答疑也能出示交互演示（ADR-0073 补齐的唯一缺口）：演示作为 DATA 帧
         # **先于正文**下发——学生先看到图形再读讲解，比纯文字描述「沿对称轴对折」
         # 直观得多。前端 AssistantInteractiveSceneCard 早已就位，这里只需发货。
@@ -142,7 +140,6 @@ class TutorSubAgent(BaseSubAgent):
             elif chunk.delta:
                 yield assistant_message(chunk.delta)
             elif chunk.done:
-                yield tc.result({"blocked": chunk.blocked})
                 # 仅拦截态才补一条收尾消息（拒绝话术）；正常流正文已由 delta 拼出。
                 if chunk.blocked:
                     answer = chunk.answer or ""
