@@ -45,7 +45,8 @@
 
 - `registry.py`：`SubAgentManifest` 删除 `triggers` / `hints` / `trigger_patterns`
   三个规则匹配专用字段及其编译逻辑；`priority` 语义收缩为「兜底助手 + 能力清单呈现顺序」，
-  不再参与任何「抢词」竞争。
+  不再参与任何「抢词」竞争。**〔ADR-0105 追加〕** 兜底职责改由新字段 `fallback_guide`
+  声明（capability），`priority` 只剩「能力清单呈现顺序 + 无声明时的最后防线」。
 - 三个 manifest（tasks / tutor / capability）删除上述字段；tasks 的 `intent_schemas`
   （出题子意图分组）一并删除——它的唯一选择器就是 `trigger`。
 
@@ -94,7 +95,7 @@
 |---|---|
 | `tests/ai/test_agent_runtime.py::test_decide_without_models_falls_back_to_tutor` | 无任何路由模型时恒兜底（规则确已移除，八句实测输入全落 tutor） |
 | `tests/ai/test_llm_routing.py` / `test_decision_model_routing.py` | 策略切换（llm / decision / auto 经 llm）、不可用 / 畸形 / 不可见 → 兜底 |
-| `tests/ai/test_runtime_abstractions.py::test_decide_falls_back_to_lowest_priority_business` | 兜底 = 可见集中 priority 最小者（含角色过滤） |
+| `tests/ai/test_runtime_abstractions.py::test_decide_falls_back_to_lowest_priority_business` | 兜底 = 可见集中 priority 最小者（含角色过滤）。**〔ADR-0105 后改名为 `test_decide_last_resort_falls_back_to_lowest_priority_business`：降级为「无声明时的最后防线」，主路径由 `test_decide_prefers_declared_fallback_guide` 守护〕** |
 | `tests/ai/test_intent_routing_contract.py` | 动作直配四件套（唯一性 / 可见 / 不可见显式 / 未知动作回落文本路由）不变 |
 | `tests/features/assistant/test_slot_filling_integration.py`（真实配置组） | 聊天链路恒放行：不澄清、不注入 specs、不发汇总帧；槽位按 business 单键落库 |
 | 同文件 `required_slots` 组 | 通用澄清路径（追问帧 / DONE 补发 / 落库去回 / 回放气泡白名单）仍工作 |
