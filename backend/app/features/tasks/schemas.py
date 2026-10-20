@@ -60,7 +60,7 @@ class TaskGenerateReq(SQLModel):
     """POST /tasks/generate 请求体（结构化出题，ADR-0034 Phase 1）。
 
     直接接收结构化规格，服务端据此构造出题 prompt（绝不过自然语言往返），经
-    AgentRuntime 的 question subagent 流式返回题卡。前端收卡后走 /tasks/from-generated 落库。
+    AgentRuntime 的 tasks subagent 流式返回题卡。前端收卡后走 /tasks/from-generated 落库。
     """
 
     specs: list[TaskSpec]
