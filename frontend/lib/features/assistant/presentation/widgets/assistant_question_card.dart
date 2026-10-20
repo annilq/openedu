@@ -1,12 +1,18 @@
 import 'package:flutter/widgets.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+import '../../../../shared/domain/figures.dart';
+import '../../../../shared/domain/models/quiz_option.dart';
 import '../../../../shared/domain/scene_spec.dart';
 import '../../../../shared/theme/app_theme.dart';
 import '../../../../shared/utils/option_text.dart';
 import '../../../../shared/utils/question_labels.dart';
 import '../../../../shared/widgets/app_actions.dart';
+import '../../../../shared/widgets/app_focusable_action.dart';
 import '../../../../shared/widgets/app_tags.dart';
+import '../../../../shared/widgets/scene_interpreter/reflection_figure_gallery.dart';
+import '../../../../shared/widgets/scene_interpreter/reflection_scene_data.dart';
+import '../../../../shared/widgets/scene_interpreter/reflection_scene_dialog.dart';
 import '../../../../shared/widgets/scene_interpreter/scene_interpreter.dart';
 import '../../domain/assistant_card.dart';
 import '../../domain/card_payload.dart';
@@ -62,12 +68,12 @@ class AssistantQuestionCard extends StatelessWidget {
                 qtype: cardStr(raw['qtype']),
                 difficulty: cardStr(raw['difficulty']),
                 stem: cardStr(raw['stem']),
-                options: raw['options'] is List
-                    ? (raw['options'] as List)
-                        .map(cardStr)
-                        .where((o) => o.isNotEmpty)
-                        .toList()
-                    : const <String>[],
+                // 选项走 QuizOption.parseList（ADR-0102）：后端下发的是选项**对象**
+                // `{text, figure?}`，用 cardStr 逐条转字符串会把 dict 渲染成
+                // 「{text: 房子, figure: {...}}」——图形永远出不来。tolerant parse
+                // 同时兼容旧的纯字符串选项（老会话回放）。
+                options: QuizOption.parseList(raw['options']) ??
+                    const <QuizOption>[],
                 answer: cardStr(raw['answer']),
                 explanation: cardStr(raw['explanation']),
                 reasoning: cardStr(raw['reasoning']),
@@ -98,7 +104,7 @@ class _QuestionBody extends StatefulWidget {
   final String qtype;
   final String difficulty;
   final String stem;
-  final List<String> options;
+  final List<QuizOption> options;
   final String answer;
   final String explanation;
   final String reasoning;
@@ -205,8 +211,11 @@ class _QuestionBodyState extends State<_QuestionBody> {
 }
 
 /// 选项列表：`A.` / `B.` … 序号取自位置，不受选项文本影响。
+///
+/// 选项带图形（ADR-0102）时右侧渲染行内缩略图，点缩略图打开对折演示——与练习页
+/// `AppOptionTile` 同一套视觉语言；助手题卡不参与作答，故整条不可点（只有缩略图可点）。
 class _QuestionOptions extends StatelessWidget {
-  final List<String> options;
+  final List<QuizOption> options;
 
   const _QuestionOptions({required this.options});
 
@@ -222,7 +231,7 @@ class _QuestionOptions extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(bottom: AppSpacing.xs2),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Text(
                   '${String.fromCharCode(65 + i)}.',
@@ -234,14 +243,66 @@ class _QuestionOptions extends StatelessWidget {
                 const SizedBox(width: AppSpacing.sm),
                 Expanded(
                   child: Text(
-                    cleanOptionText(options[i]),
+                    cleanOptionText(options[i].text),
                     style: text.bodySmall?.copyWith(color: scheme.onSurface),
                   ),
                 ),
+                if (options[i].figure != null) ...[
+                  const SizedBox(width: AppSpacing.sm),
+                  _OptionFigureTile(figure: options[i].figure!),
+                ],
               ],
             ),
           ),
       ],
+    );
+  }
+}
+
+/// 选项行内图形缩略图：点它打开对折演示（只画，不判——ADR-0061 §O）。
+class _OptionFigureTile extends StatelessWidget {
+  final FigureShape figure;
+
+  const _OptionFigureTile({required this.figure});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = AppTheme.colorsOf(context);
+    const size = 52.0;
+    final points = <Offset>[
+      for (final v in figure.vertices) Offset(v.x, v.y),
+    ];
+    // 可点区一律 AppFocusableAction（ADR-0046）：裸 GestureDetector 不进焦点树，
+    // 桌面端 Tab 跳不到、Enter 点不动，而 flutter analyze 照不出来。
+    return AppFocusableAction(
+      semanticLabel: '查看${figure.label}的对折演示',
+      borderRadius: BorderRadius.circular(AppRadius.sm),
+      hoverHighlight: true,
+      // 与练习页 AppOptionTile 同一入口：弹出完整对折演示（不是静态图）。
+      onTap: () => ReflectionSceneDialog.show(
+        context,
+        data: ReflectionSceneData(
+          points: points,
+          edges: figure.edges,
+          figureLabel: cleanOptionText(figure.label),
+        ),
+      ),
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: scheme.surfaceRaised,
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+          border: Border.all(
+            color: scheme.outline,
+            width: AppElevation.borderWidthHairline,
+          ),
+        ),
+        child: CustomPaint(
+          // 竖轴对称轴是 reflection kind 的外壳初值（ADR-0083 决策 5）。
+          painter: FigureThumbPainter(points: points, axisAngle: 90),
+        ),
+      ),
     );
   }
 }

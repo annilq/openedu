@@ -18,6 +18,7 @@ import 'package:kids_learn/features/assistant/domain/assistant_card.dart';
 import 'package:kids_learn/features/assistant/presentation/widgets/assistant_question_card.dart';
 import 'package:kids_learn/features/assistant/presentation/widgets/assistant_reasoning_disclosure.dart';
 import 'package:kids_learn/shared/theme/app_theme.dart';
+import 'package:kids_learn/shared/widgets/scene_interpreter/reflection_figure_gallery.dart';
 
 /// 判断题卡（judge: true）：题干与对/错二选一照常显示，答案 / 解析 / 出题思路待揭示。
 const _judgeCard = AssistantCard(
@@ -140,6 +141,97 @@ void main() {
       await tester.tap(find.text('出题思路'));
       await tester.pumpAndSettle();
       expect(find.text('考「平均分」与分数单位的关系。'), findsOneWidget);
+    });
+  });
+
+  group('图形选项（ADR-0102）', () {
+    // 后端把模型给的 figure_key 盖成内联几何后，选项是 {text, figure} 对象。
+    const figureCard = AssistantCard(
+      kind: AssistantCardKind.question,
+      rawPayload: <String, dynamic>{
+        'subject': '数学',
+        'grade': 4,
+        'qtype': 'choice',
+        'difficulty': 'medium',
+        'stem': '下面哪些图形是轴对称图形？',
+        'options': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'text': 'A. 正方形',
+            'figure': <String, dynamic>{
+              'key': 'square',
+              'label': '正方形',
+              'points': <List<double>>[
+                <double>[0.28, 0.28],
+                <double>[0.72, 0.28],
+                <double>[0.72, 0.72],
+                <double>[0.28, 0.72],
+              ],
+              'edges': <List<int>>[
+                <int>[0, 1],
+                <int>[1, 2],
+                <int>[2, 3],
+                <int>[3, 0],
+              ],
+            },
+          },
+          <String, dynamic>{
+            'text': 'B. 平行四边形',
+            'figure': <String, dynamic>{
+              'key': 'para',
+              'label': '平行四边形',
+              'points': <List<double>>[
+                <double>[0.30, 0.40],
+                <double>[0.70, 0.40],
+                <double>[0.82, 0.70],
+                <double>[0.42, 0.70],
+              ],
+              'edges': <List<int>>[
+                <int>[0, 1],
+                <int>[1, 2],
+                <int>[2, 3],
+                <int>[3, 0],
+              ],
+            },
+          },
+        ],
+        'answer': 'A. 正方形',
+        'explanation': '正方形有四条对称轴。',
+      },
+    );
+
+    testWidgets('选项文字正常渲染，不把 {text, figure} 打成 map 字符串', (tester) async {
+      await _pumpCard(tester, figureCard);
+
+      expect(tester.takeException(), isNull);
+      // 回归的是：原来逐条 cardStr 会把 dict 变成 "{text: A. 正方形, figure: …}"
+      expect(find.textContaining('{text'), findsNothing);
+      expect(find.textContaining('figure'), findsNothing);
+      // 字母前缀由渲染层重画，正文里模型自带的 "A. " 必须剥掉
+      expect(find.text('正方形'), findsOneWidget);
+      expect(find.text('平行四边形'), findsOneWidget);
+    });
+
+    testWidgets('每个带图形的选项渲染一张缩略图', (tester) async {
+      await _pumpCard(tester, figureCard);
+
+      // 两个选项各有一张缩略图。断言按 painter 类型，不用裸 CustomPaint——
+      // shadcn/Cupertino 内部也画 CustomPaint，按类型数会数到别人的。
+      final thumbs = find.byWidgetPredicate(
+        (w) => w is CustomPaint && w.painter is FigureThumbPainter,
+        description: '图形缩略图',
+      );
+      expect(thumbs, findsNWidgets(2));
+    });
+
+    testWidgets('无图形选项时不渲染缩略图（纯文字题零变化）', (tester) async {
+      await _pumpCard(tester, _plainCard);
+
+      final thumbs = find.byWidgetPredicate(
+        (w) => w is CustomPaint && w.painter is FigureThumbPainter,
+        description: '图形缩略图',
+      );
+      expect(thumbs, findsNothing);
+      expect(find.text('3/4'), findsOneWidget);
     });
   });
 

@@ -169,6 +169,9 @@ def make_stream_handler(*, provider, retriever=None):
                     # 溯源快照随题卡下发（ADR-0055 §10）；客户端原样回传落库。
                     if item_refs:
                         data["result"]["source_refs"] = item_refs
+                    # 选项图形盖章 + 本题交互讲解快照（ADR-0102）：聊天题卡也要有图，
+                    # 否则「已关联场景」只在落库后的任务/题库页生效。
+                    _enrich_card(data["result"], item, ctx=ctx, session=session, extra=extra)
                     generated.append(data["result"])
                 yield frame
 
@@ -188,6 +191,114 @@ def make_stream_handler(*, provider, retriever=None):
         )
 
     return stream_handler
+
+
+def _enrich_card(
+    result: dict[str, Any],
+    item: dict[str, Any],
+    *,
+    ctx: SubAgentContext,
+    session: Any,
+    extra: dict[str, Any],
+) -> None:
+    """给聊天题卡补两样落库前才有的东西（ADR-0102）：选项图形几何 + 交互讲解快照。
+
+    为什么必须在**流式帧**上做：题卡先经 SSE 到前端（用户当场看到图），再由前端原样
+    回传落库。若只在前端着色、后端不盖章，题卡就是纯文字；若只在落库时盖章，聊天里
+    永远没图。两处共用同一套盖章原语（``stamp_figures`` / ``build_scene_spec_for_question``），
+    不另写一份几何来源。
+
+    全程容错：任何异常都只是「这张卡没有图」，绝不让一道好题因为图挂掉
+    （与 ``_figure_catalog`` 同一纪律）。
+    """
+    try:
+        _stamp_option_figures(result, item, session=session, extra=extra)
+    except Exception:  # noqa: BLE001 — 选项图形是增强
+        pass
+    try:
+        _attach_scene_spec(result, item, session=session, extra=extra)
+    except Exception:  # noqa: BLE001 — 交互讲解是增强
+        pass
+
+
+def _stamp_option_figures(
+    result: dict[str, Any],
+    item: dict[str, Any],
+    *,
+    session: Any,
+    extra: dict[str, Any],
+) -> None:
+    """把模型给的 ``figure_key`` 盖成内联几何（``{text, figure}``），全-or-无。
+
+    模型只给身份键、绝不产出顶点（ADR-0089）；几何的唯一权威是图库：
+    ``figure_key --(stamp_figures)--> Figure{key,label,points,edges}``。
+    任一键不合法 / 部分选项没图 → 整题退化纯文字（半套图会误导成「这个选项不是图形」）。
+    """
+    from app.features.materials.figure_stamp import (
+        allowed_keys_for_question,
+        stamp_figures,
+    )
+
+    options = result.get("options")
+    if session is None or not isinstance(options, list) or not options:
+        return
+    keys = [o.get("figure_key") if isinstance(o, dict) else None for o in options]
+    if not any(keys):
+        # 全部无图：把每个选项统一成 ``{text, figure: None}``，前端按同一形状解析。
+        result["options"] = [
+            {"text": o.get("text", "") if isinstance(o, dict) else str(o), "figure": None}
+            for o in options
+        ]
+        return
+    allowed = allowed_keys_for_question(
+        session,
+        teacher_id=extra.get("teacher_id"),
+        subject=item["subject"],
+        grade=item["grade"],
+        knowledge_point=item["knowledge_point"],
+        semester=item.get("semester", ""),
+    )
+    figures = stamp_figures(session, keys, allowed=allowed)
+    if figures is None:
+        result["options"] = [
+            {"text": o.get("text", "") if isinstance(o, dict) else str(o), "figure": None}
+            for o in options
+        ]
+        return
+    result["options"] = [
+        {"text": o.get("text", "") if isinstance(o, dict) else str(o), "figure": fig.model_dump()}
+        for o, fig in zip(options, figures, strict=True)
+    ]
+
+
+def _attach_scene_spec(
+    result: dict[str, Any],
+    item: dict[str, Any],
+    *,
+    session: Any,
+    extra: dict[str, Any],
+) -> None:
+    """按「知识点模板」构建本题交互讲解快照（``scene_spec``），随题卡下发（ADR-0061 §M）。
+
+    与落库路径（``tasks/service.py``）共用 ``build_scene_spec_for_question``：出题时算好
+    一份，前端当场可演示、回传后落库即快照（模板再改也不影响已生成的题）。
+
+    取不到模板 → 不写该键（``None`` 会让前端误以为「有 spec 但解析失败」）。
+    """
+    from app.features.materials.scene_fusion import build_scene_spec_for_question
+
+    if session is None or result.get("scene_spec"):
+        return
+    spec = build_scene_spec_for_question(
+        session,
+        teacher_id=extra.get("teacher_id"),
+        subject=item["subject"],
+        grade=item["grade"],
+        knowledge_point=item["knowledge_point"],
+        semester=item.get("semester", ""),
+    )
+    if spec is not None:
+        result["scene_spec"] = spec.model_dump()
 
 
 def _figure_catalog(session, **kwargs) -> str | None:

@@ -1,3 +1,4 @@
+import '../../../shared/domain/models/quiz_option.dart';
 import '../../../shared/utils/option_text.dart';
 import '../../../shared/utils/question_labels.dart';
 import 'assistant_card.dart';
@@ -152,14 +153,18 @@ List<String> cardQuestionLines(AssistantCard card) {
       ].where((e) => e.isNotEmpty).join(' · '),
     if (cardStr(raw['stem']).isNotEmpty) cardStr(raw['stem']),
   ];
-  if (raw['options'] is List) {
-    final options =
-        (raw['options'] as List).map(cardStr).where((o) => o.isNotEmpty).toList();
-    for (var i = 0; i < options.length; i++) {
-      // 标号按位置重画，正文必须先剥掉模型自带的 "A. " 前缀（ADR-0061 §T）——
-      // 否则纯文本题卡会显示成「A. A. 平行四边形」。与 AppOptionTile 同口径。
-      lines.add('${String.fromCharCode(65 + i)}. ${cleanOptionText(options[i])}');
-    }
+  // 选项走 QuizOption.parseList（ADR-0102）：后端下发的是选项**对象**
+  // `{text, figure?}`，用 cardStr 逐条转字符串会把 dict 复制成
+  // 「{text: 房子, figure: {...}}」。图形复制不出几何，但至少要复制出人话。
+  final options = QuizOption.parseList(raw['options']) ?? const <QuizOption>[];
+  for (var i = 0; i < options.length; i++) {
+    // 标号按位置重画，正文必须先剥掉模型自带的 "A. " 前缀（ADR-0061 §T）——
+    // 否则纯文本题卡会显示成「A. A. 平行四边形」。与 AppOptionTile 同口径。
+    final figure = options[i].figure;
+    lines.add(
+      '${String.fromCharCode(65 + i)}. ${cleanOptionText(options[i].text)}'
+      '${figure == null ? '' : '（图：${figure.label}）'}',
+    );
   }
   if (cardStr(raw['answer']).isNotEmpty) {
     lines.add('答案：${cardStr(raw['answer'])}');
