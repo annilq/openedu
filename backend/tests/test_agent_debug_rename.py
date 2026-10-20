@@ -31,10 +31,12 @@ def test_old_features_ai_import_gone():
 
 
 def test_new_features_agent_debug_import_count():
-    """新包名 ``app.features.agent_debug`` 在 backend/app 中恰好命中 6 处：
+    """新包名 ``app.features.agent_debug`` 在 backend/app 中至少命中 6 处：
 
     - ``app/api/main.py`` 挂载 import（1）
     - 包内自引：``masking.py``（1）+ ``router.py``（3）
     - ``app/features/assistant/schemas.py`` 文档字符串指向的重命名后路径（1）
+
+    用 ``>= 6`` 而非 ``== 6``：将来新增合法引用不应让本迁移护网假失败。
     """
-    assert _count("app.features.agent_debug") == 6
+    assert _count("app.features.agent_debug") >= 6

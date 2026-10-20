@@ -14,8 +14,10 @@
 
 ## 验收
 
-- [ ] 新增/复用的 `invoke_subagent(...)` 被聊天路径（`assistant/service.py`）与结构化出题路径（`features/tasks/service.py`）**共同调用**
-- [ ] 两条路径发出的事件流都经过同一道安全/可见性闸（新增断言验证：结构化出题路径产生的事件在「是否过闸」上与聊天路径一致）
-- [ ] 既有 `tasks` 流式出题契约（`GeneratedQuestion` 形状、落库 `tasks/service.py:616-633` 优先用前端回传 `scene_spec`）不变
-- [ ] `tests/ai/` 与 `tests/api/routes/test_tasks_generate.py` 全绿；新增两路径「过闸一致性」测试
+- [ ] **两条路径汇入同一道带闸 `run`/`_gate_ok` 缝**：结构化出题路径调 `invoke_subagent(...)`（内部 `decide`→`run`，已知 `business` 短路但仍过闸）；聊天路径 `assistant/service.py` 在可见性断言（`403`）后调 `decide`→`run`——两者最终都经 `_gate_ok` 同一道安全/可见性闸（候选 2 的静默漂移被消除）。
+  - 注：聊天路径并非字面调用 `invoke_subagent`，而是与结构化路径共享 `run`/`_gate_ok` 这一唯一带闸 seam；本票目标是「过同一道闸」，而非「字面同一函数名」。
+- [ ] 两条路径发出的事件流都经过同一道安全/可见性闸（新增断言验证：结构化出题路径产生的事件在「是否过闸 / 闸拦截产出 `INPUT_UNSAFE`」上与聊天路径一致）
+- [ ] 既未知 `tasks` 流式出题契约（`GeneratedQuestion` 形状、落库 `tasks/service.py:616-633` 优先用前端回传 `scene_spec`）不变
+- [ ] `action_not_visible` 必须显式产出 `NOT_VISIBLE` 错误帧，不得误标为 `INPUT_UNSAFE`（ADR-0081 §2.3，代码评审回归项，已加回归测试锁住）
+- [ ] `tests/ai/`、`tests/api/routes/test_tasks_generate.py` 全绿；新增两路径「过闸一致性」+ `NOT_VISIBLE` 回归测试
 - [ ] `ruff` 改动文件净

@@ -12,6 +12,8 @@ from typing import Any
 from agent_core.adapters.llm_route import RoutingDecision
 from agent_core.ports import RuntimeDeps, Safety, SafetyResult
 from agent_core.protocol import EVENT_DONE, EVENT_ERROR
+from agent_core.registry import SubAgentManifest
+from agent_core.router import IntentSignal
 from agent_core.runtime import AgentRuntime
 from agent_core.subagent import SubAgentContext
 from tests.utils.fake_provider import FakeLLMProvider, RoutingFakeProvider
@@ -58,8 +60,12 @@ def test_structured_path_passes_through_gate():
     assert any(ev.eventType == EVENT_DONE for ev in events)
 
 
-def test_chat_path_passes_through_same_gate():
-    """聊天路径（signal 路由）经 invoke_subagent 过同一道闸。"""
+def test_invoke_subagent_signal_path_passes_through_same_gate():
+    """信号路由路径经 invoke_subagent 过同一道闸（与聊天路径共用 ``run`` 的闸）。
+
+    注：生产聊天路径在 ``assistant/service.py`` 以 ``decide`` → ``run(business=decision.business)``
+    走同一条带闸 ``run``；本测试直接驱动 ``invoke_subagent(signal=...)`` 这一 seam 验证闸一致。
+    """
     safety = _SpySafety()
     rt = _rt()
     provider = RoutingFakeProvider(RoutingDecision(business="tasks", confidence=0.9))
@@ -105,3 +111,36 @@ def test_both_paths_blocked_when_gate_fails():
     assert any(ev.eventType == EVENT_ERROR and ev.code == "INPUT_UNSAFE" for ev in events_c), (
         "聊天路径在闸拦截时必须产出 INPUT_UNSAFE"
     )
+
+
+def test_action_not_visible_returns_not_visible_not_input_unsafe():
+    """动作命中但当前角色不可见：经 invoke_subagent 必须产 NOT_VISIBLE（ADR-0081 §2.3）。
+
+    回归点：聊天分支曾把「动作命中但角色不可见」的显式拒绝（business=None,
+    reason=action_not_visible）误标为 run 闸的 INPUT_UNSAFE，违反 ADR-0081 §2.3
+    「动作不可见必须显式 NOT_VISIBLE，禁止静默兜底成答非所问 / 误标为输入不安全」。
+    """
+    # 最小确定性 runtime：一个仅 teacher 可见、声明了 task_generate 动作的业务。
+    manifest = SubAgentManifest(
+        business="tasks",
+        name="出题助手",
+        roles=["teacher"],
+        actions=["task_generate"],
+    )
+    rt = AgentRuntime(manifests={"tasks": manifest})
+    deps = RuntimeDeps(provider=FakeLLMProvider(), safety=_SpySafety())
+    signal = IntentSignal(action="task_generate", text="")
+    # student 角色看不到 tasks → 命中但不可见。
+    events = asyncio.run(
+        _drain(
+            rt.invoke_subagent(
+                "", role="student", ctx=_ctx(role="student"), deps=deps, signal=signal
+            )
+        )
+    )
+    assert any(ev.eventType == EVENT_ERROR and ev.code == "NOT_VISIBLE" for ev in events), (
+        "动作命中但角色不可见必须产 NOT_VISIBLE（不得误标 INPUT_UNSAFE）"
+    )
+    assert not any(
+        ev.eventType == EVENT_ERROR and ev.code == "INPUT_UNSAFE" for ev in events
+    ), "不得把 action_not_visible 误标为 INPUT_UNSAFE"

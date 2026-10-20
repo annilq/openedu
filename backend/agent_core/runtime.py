@@ -297,7 +297,8 @@ class AgentRuntime:
         """与 ``decide`` 同一道安全 / 可见性闸（T03，候选 2 收口）。
 
         结构化出题此前直调 ``run(business="tasks")`` 绕过 ``decide``，故未过此闸；
-        现聊天 / 结构化两条路径都经 ``_gated_run``，一致地过闸：
+        现聊天路径（decide → run）与结构化路径（invoke_subagent → run）都汇聚到
+        ``run``，一致地过同一道闸：
 
         - 输入安全：``deps.safety`` 配置时校验 ``message``（未配置则跳过，与
           ``decide`` 口径一致）。
@@ -335,7 +336,6 @@ class AgentRuntime:
             yield done(sid)
             return
 
-        assert business is not None  # 闸通过即保证 business 非 None
         name = self.name_of(business)
         yield run_started()
         yield user_message(message)
@@ -394,6 +394,21 @@ class AgentRuntime:
         if signal is not None:
             decision = await self.decide(signal, role=role, deps=deps, history=history)
             business = decision.business
+            # 路由明确拒绝（business=None）必须显式区分，不得落到 run 的 INPUT_UNSAFE
+            # 闸被误标为「输入不安全」（ADR-0081 §2.3：动作命中但角色不可见 → 显式
+            # 不可见，禁止静默兜底）。输入不安全由 run 的闸统一拦截。
+            if business is None:
+                sid = (
+                    ctx.extra.get("session_id")
+                    if isinstance(ctx.extra.get("session_id"), str)
+                    else None
+                )
+                if (decision.extra or {}).get("reason") == "action_not_visible":
+                    yield error("当前角色无权执行该动作。", code="NOT_VISIBLE")
+                else:
+                    yield error("输入含不适当内容，已拒绝。", code="INPUT_UNSAFE")
+                yield done(sid)
+                return
         # 经 self.run 动态分派：生产环境走带闸的真实运行；测试桩若覆写 run 也照常生效。
         async for ev in self.run(
             message, role=role, ctx=ctx, deps=deps, business=business, session=session
