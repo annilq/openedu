@@ -21,6 +21,7 @@ import '../../../providers/knowledge_manage_provider.dart';
 import 'material_folder_actions.dart';
 import 'material_knowledge_manage_view.dart';
 import 'material_library_material_row.dart';
+import 'material_library_refresh_strip.dart';
 import 'material_library_select_bar.dart';
 
 /// 资料库页（ADR-0055 B6）：网盘式目录 + 上传 + 手动向量化 + 状态徽标。
@@ -202,6 +203,9 @@ class _MaterialLibraryViewState extends ConsumerState<MaterialLibraryView> {
     final subfolders = state.folders
         .where((f) => f.teacherFolderId == state.currentFolderId)
         .toList();
+    // 当前视图有没有「可保留的内容」：决定 loading 时是整块转圈还是列表常驻
+    // + 行内刷新提示（见下方加载分支）。
+    final hasList = subfolders.isNotEmpty || state.materials.isNotEmpty;
 
     return AppCard(
       padding: const EdgeInsets.all(AppSpacing.md),
@@ -212,7 +216,15 @@ class _MaterialLibraryViewState extends ConsumerState<MaterialLibraryView> {
             spacing: AppSpacing.md,
             runSpacing: AppSpacing.sm,
             children: [
-              AppPrimaryButton(label: '上传资料', onPressed: _pickAndUpload),
+              // 上传在飞时按钮自转并禁用：既告诉教师「在传」，也防连点发出第二份
+              // 上传（上传流程没有并发守卫，连点会并发两条 upload）。
+              AppPrimaryButton(
+                label: '上传资料',
+                icon: LucideIcons.upload,
+                loadingLabel: '上传中…',
+                loading: state.loading,
+                onPressed: _pickAndUpload,
+              ),
               ShadButton.outline(
                 leading: const Icon(LucideIcons.folderPlus, size: 16),
                 onPressed: _newFolder,
@@ -255,12 +267,19 @@ class _MaterialLibraryViewState extends ConsumerState<MaterialLibraryView> {
                 ],
               ),
             ),
-          if (state.loading)
+          // 刷新中不再整块替换列表：上传 / 向量化 / 删除 / 移动等每个动作都会把
+          // state.loading 置真一段时间，旧行为此时把整块列表换成居中转圈——
+          // 已上传的资料集体从屏上消失，页面像坏了一样（用户实测：上传时页面
+          // 空白 loading、已上传的列表不显示）。现在：只要有内容（目录或资料），
+          // 列表始终留在屏上，只在列表上方挂一条轻量「刷新中」提示；只有首屏 /
+          // 空目录确实什么都还没有时，才用整块转圈兜底。
+          if (state.loading && !hasList)
             const Padding(
               padding: EdgeInsets.all(AppSpacing.lg),
               child: Center(child: AppLoading()),
             )
           else ...[
+            if (state.loading) const MaterialLibraryRefreshStrip(),
             ..._withDividers([
               for (final f in subfolders) _folderRow(f),
               for (final m in state.materials)
@@ -273,7 +292,7 @@ class _MaterialLibraryViewState extends ConsumerState<MaterialLibraryView> {
                       .toggleMaterialSelection(m.id),
                 ),
             ], app),
-            if (subfolders.isEmpty && state.materials.isEmpty)
+            if (!hasList)
               AppEmptyState(
                 icon: LucideIcons.folderOpen,
                 title: current == null ? '这里还没有资料' : '「${current.name}」还是空的',
