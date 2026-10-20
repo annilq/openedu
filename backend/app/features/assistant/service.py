@@ -393,8 +393,9 @@ async def chat(
     # 学生端 teacher_id 为 None → 自动回落 mock（资料库是教师私有的）。
     retriever = build_retriever(session=session, teacher_id=teacher_id)
     safety = StudentSafety() if role == Role.STUDENT else None
-    # 决策模型（Laya-multilingual）：注入路由作主原语；不可用时 available() 为 False，
-    # 路由自动回落 LLM 分类或兜底助手，链路不崩（权重就位 / LAYA_SERVE_URL 配置后自动激活）。
+    # 决策模型（默认 laya:multilingual，本地 ollaya 服务）：注入路由作主原语；
+    # 不可用（未配置 OLLAYA_URL / 权重未拉 / state 超长 422）时 available() 为 False 或
+    # decide 返回 None，路由自动回落 LLM 分类，再不中落能力引导（ADR-0105），链路不崩。
     deps = RuntimeDeps(
         provider=provider,
         retriever=retriever,

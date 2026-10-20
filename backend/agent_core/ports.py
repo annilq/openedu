@@ -211,7 +211,9 @@ class DecisionModel(ABC):
     把「给定 state + 候选业务选项，挑一个并给校准概率」作为路由主原语，
     替代脆弱的「规则词表 + 无状态分类」。参考实现：
     ``convaiinnovations/laya-multilingual``（非自回归 System 1 决策模型：
-    encoder + 决策头，单次前向返回校准概率，本地 ~40ms，Apache-2.0，中文可用）。
+    encoder + 决策头，单次前向返回校准概率，Apache-2.0，中文可用；由本地 ollaya
+    服务以 TypeSafe 兼容的 ``POST /v1/systemone`` 提供，实测 p50 23 ms——见
+    ``agent_core/adapters/laya.py``）。
 
     Agent 执行仍用通用 LLM（genkit / ``LLMProvider``），两者不冲突——
     它是分类器不是聊天模型，强行走 ``provider.stream(schema=)`` 是错配。
