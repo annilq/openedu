@@ -130,19 +130,22 @@ def test_decide_builds_criteria_keyed_by_business():
     assert isinstance(res, DecisionResult) and res.choice == "tasks" and res.prob == 0.8
 
 
-# ── 门控概率：用 probabilities 的 top 值，不用 confidence ──
-def test_decide_thresholds_on_top_probability_not_confidence():
-    """同一份响应里 ``confidence`` 被设成 0.99（高于阈值 0.7），而 ``probabilities``
-    的 top 值只有 0.6：正确行为是盯后者 → 不达阈值 → 返回 ``None``。
+# ── 分数：用 probabilities 的 top 值，不用 confidence ──
+def test_decide_scores_with_top_probability_not_confidence():
+    """同一份响应里 ``confidence`` 是 0.99，而 ``probabilities`` 的 top 值只有 0.6：
+    回传的分数必须是后者。
 
     ``confidence`` 是 ``(K·pmax − 1)/(K − 1)`` 归一化后的值，同一个 pmax 在教师端
-    （K=3）与学生端（K=2）是两个不同的数字；使用它做固定阈值，跨可见集不可比。
+    （K=3）与学生端（K=2）是两个不同的数字；拿它当分数，跨可见集不可比。
+
+    ADR-0107 起适配器只出分数、不做采纳判断（门控在 runtime），故本用例断言的是
+    「分数取自 probabilities」这一事实本身，不再断言「低于阈值 → None」。
     """
     engine = _FakeEngine(
         _response("tasks", {"tasks": 0.6, "tutor": 0.3, "capability": 0.1}, confidence=0.99)
     )
-    model = LayaDecisionModel(threshold=0.7, engine=engine)
-    assert asyncio.run(model.decide(state="s", options=_options())) is None
+    res = asyncio.run(LayaDecisionModel(engine=engine).decide(state="s", options=_options()))
+    assert res is not None and res.choice == "tasks" and res.prob == 0.6
 
 
 def test_decide_falls_back_to_confidence_without_probabilities():
@@ -151,12 +154,15 @@ def test_decide_falls_back_to_confidence_without_probabilities():
     assert res is not None and res.choice == "tutor" and res.prob == 0.9
 
 
-def test_decide_below_threshold_returns_none():
-    engine = _FakeEngine(
-        _response("tasks", {"tasks": 0.9, "tutor": 0.06, "capability": 0.04})
-    )
-    model = LayaDecisionModel(threshold=0.95, engine=engine)
-    assert asyncio.run(model.decide(state="s", options=_options())) is None
+def test_decide_returns_low_score_instead_of_swallowing_it():
+    """低分也要如实回传（ADR-0107 门控上移的前置）。
+
+    旧行为「低于阈值 → ``None``」把「模型回了但只有 0.2」和「模型没回」压成同一个
+    ``None``，runtime 无法区分，也就表达不出「换个原语再问一次」「两个原语互验」。
+    """
+    engine = _FakeEngine(_response("tasks", {"tasks": 0.2, "tutor": 0.1, "capability": 0.05}))
+    res = asyncio.run(LayaDecisionModel(engine=engine).decide(state="s", options=_options()))
+    assert res is not None and res.choice == "tasks" and res.prob == 0.2
 
 
 # ── 解析失败一律回落 ──

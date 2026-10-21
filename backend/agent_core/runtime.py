@@ -62,7 +62,9 @@ class RouteDecision:
 # ───────────────────────── 路由策略（可切换：llm / decision / auto） ─────────────────────────
 # 默认 ``auto``＝决策模型若可用则用之、否则通用 LLM 分类（``AI_ROUTING_STRATEGY=llm``）。
 # 规则（关键词/启发式）路由已移除：业务选择完全由模型按上下文 + 能力清单决定。
-# 策略原语均不可用 / 不置信时，回落到「无命中引导」——声明了 ``fallback_guide`` 的业务
+# 每个原语是否**采纳**由 ``min_adopt_score`` 门控决定（ADR-0107），门控不通过的候选
+# 记进 ``extra["rejected"]``。策略原语均不可用 / 未过门控时，回落到「无命中引导」——
+# 声明了 ``fallback_guide`` 的业务
 # （生产拓扑即能力自述 capability，ADR-0105），提示用户助手能做什么； tutor 等执行体
 # 必须被模型显式路由到，不再作兜底，保证路由永不返回 ``None``（安全闸门拦截除外）。
 _ROUTING_STRATEGY_OVERRIDE: str | None = None
@@ -71,6 +73,10 @@ _STRATEGY_ORDER: dict[str, list[str]] = {
     "llm": ["llm"],
     "decision": ["decision", "llm"],
     "auto": ["decision", "llm"],
+    # 交叉校验（ADR-0107，ticket 13）：两个原语都跑，业务一致且各自过门控才采纳。
+    # **不进默认**——它给每轮消息多加一次 LLM 往返，与「每轮同步路由」的延迟预算
+    # 冲突，故只作显式可选档位。
+    "consensus": ["consensus"],
 }
 
 
@@ -84,6 +90,36 @@ def get_routing_strategy() -> str:
     """当前路由策略：覆盖值优先，否则环境变量 ``AI_ROUTING_STRATEGY``，默认 ``auto``。"""
     raw = _ROUTING_STRATEGY_OVERRIDE or os.getenv("AI_ROUTING_STRATEGY", "auto")
     return (raw or "auto").strip().lower()
+
+
+# ───────────────────────── 路由采纳门控（ADR-0107）─────────────────────────
+# 决策模型 / LLM 分类只负责「给出候选 + 分数」；**是否采纳由 runtime 决定**。此前
+# 阈值是 ``LayaDecisionModel(threshold=0.5)`` 的构造参数，运行时无从按角色 / 按业务
+# 调整，且「不置信」与「没决策」被压成同一个 ``None``。上移后门控是一张**声明式**表：
+#
+#     min_adopt_score(business, role) = 业务自述覆盖 → 角色覆盖 → 全局默认
+#
+# 延续 ADR-0105 的 ``fallback_guide`` 纪律：内核只认「这个业务声明了更高门槛」这个
+# 事实（manifest.min_adopt_score），不认任何业务键字面量。
+DEFAULT_MIN_ADOPT_SCORE = 0.5
+
+# 角色覆盖表。**当前为空是有实测依据的，不是没做完**（ticket 13 / eval 阈值扫描）：
+# 学生端正确路由的 pmax 反而更低（0.41–0.76），抬门槛先掉的是正确路由；唯一一条
+# 学生端有害错（0.702）要 ≥0.75 才挡得住，那会连带挡掉 10 条正确路由。故不设值。
+_ROLE_MIN_ADOPT_SCORE: dict[str, float] = {}
+
+
+def set_role_min_adopt_score(role: str, score: "float | None") -> None:
+    """设置 / 清除某角色的采纳门槛覆盖（``None`` 清除）；测试与运行时配置用。"""
+    if score is None:
+        _ROLE_MIN_ADOPT_SCORE.pop(role, None)
+    else:
+        _ROLE_MIN_ADOPT_SCORE[role] = float(score)
+
+
+def get_role_min_adopt_score(role: str) -> "float | None":
+    """某角色的采纳门槛覆盖；未覆盖返回 ``None``（即走全局默认）。"""
+    return _ROLE_MIN_ADOPT_SCORE.get(role)
 
 
 class AgentRuntime:
@@ -133,18 +169,27 @@ class AgentRuntime:
            命中即路由，不参与优先级排序、不与文本竞争（ADR-0081，不变）。
         2. **策略原语**（按 ``_STRATEGY_ORDER`` 顺序尝试，首个非空即返回）：
            - ``decision``：``deps.decision_model``（Laya-multilingual）可用时，以
-             「近期 history + 当前消息」为 ``state``、能力清单为选项，返回「业务 + 校准概率」
-             （``extra.routed_by = "decision"``）；不可用 / 不置信回落下一候选。
+             「近期 history + 当前消息」为 ``state``、能力清单为选项，返回「业务 + 分数」
+             （``extra.routed_by = "decision"``）；不可用回落下一候选。
            - ``llm``：通用 LLM 结构化分类（``classify_llm``），history + 能力清单为上下文，
              返回业务键（``extra.routed_by = "llm"``）；provider 不可用 / 不守 schema 回落。
+           - ``consensus``**（可选，非默认）**：上述两个原语都跑，业务一致才采纳
+             （``extra.routed_by = "consensus"``）；多一次 LLM 往返，故不进默认策略。
+
+        每个原语给不出「采纳级」的候选时返回 ``None``，由下一候选接住。**采纳与否由
+        门控决定**（ADR-0107）：``分数 >= min_adopt_score(业务, 角色)``，取值序为
+        业务自述（manifest ``min_adopt_score``）→ 角色覆盖 → 全局默认
+        ``DEFAULT_MIN_ADOPT_SCORE``。决策模型的概率与 LLM 的 ``confidence`` 走**同一张
+        门控表**，两个原语被同等对待（此前 LLM 的置信度完全不参与判断）。
 
         ``history`` 让路由基于完整对话上下文（而非孤立当前句），天然实现「续接留住出题态」
         而无需手写黏性分支；也支撑「按 agent 能力路由」（manifest 的 ``description``/
         ``actions`` 即能力清单）。
 
-        策略原语均不可用 / 不置信（都没有命中）时，回落到**无命中引导**：声明了
+        策略原语均不可用 / 未过门控（都没有命中）时，回落到**无命中引导**：声明了
         ``fallback_guide`` 的业务（生产拓扑即能力自述 ``capability``，ADR-0105）接住并
         提示「自身能做什么」。执行体（tasks / tutor）必须被模型显式路由到，不再作兜底。
+        被门控否掉的候选随 ``extra["rejected"]`` 回传（ADR-0107）。
         本方法不产出子意图词（规则路由已移除，ADR-0104），出题引导链路随之走纯 LLM 生成。
 
         动作命中但业务对当前角色**不可见** → 返回显式 ``action_not_visible``，**禁止**沿用
@@ -179,17 +224,22 @@ class AgentRuntime:
                 )
             # 未知动作：容错回落自然语言路由（不报错）；同名不同步的静默失效由契约测试兜。
 
-        # 策略路由：按配置顺序尝试 决策模型 / LLM 分类。
+        # 策略路由：按配置顺序尝试 决策模型 / LLM 分类 / 交叉校验。
         strategy = get_routing_strategy()
         order = _STRATEGY_ORDER.get(strategy, _STRATEGY_ORDER["auto"])
+        # 「有候选但没过门控」与「原语压根没答案」此前都是 ``None``，轨迹上分不出；
+        # 上移后把被否掉的候选记下来，随兜底决策一起回传（可观测，不改变落点）。
+        rejected: list[dict[str, Any]] = []
         for candidate in order:
-            routed = await self._route_candidate(candidate, text, visible, deps, history)
+            routed = await self._route_candidate(
+                candidate, text, visible, deps, history, role=role, rejected=rejected
+            )
             if routed is not None:
                 return routed
 
         # 策略原语均未决策（都没有命中）：回落「无命中引导」——声明了 fallback_guide 的
         # 业务接住并提示自身能力（ADR-0105），而不是静默把消息塞给某个执行体。
-        return self._fallback_decision(visible)
+        return self._fallback_decision(visible, rejected=rejected)
 
     # ── 路由候选（策略分发） ──
     async def _route_candidate(
@@ -199,13 +249,46 @@ class AgentRuntime:
         visible: list[str],
         deps: RuntimeDeps,
         history: "list[dict] | None",
+        *,
+        role: str = "",
+        rejected: "list[dict[str, Any]] | None" = None,
     ) -> "RouteDecision | None":
         """按策略名尝试单个路由原语；返回 ``None`` 表示「本原语不决策」，由下一候选兜底。"""
         if candidate == "decision":
-            return await self._route_decision(text, visible, deps, history)
+            return await self._route_decision(
+                text, visible, deps, history, role=role, rejected=rejected
+            )
         if candidate == "llm":
-            return await self._route_llm(text, visible, deps, history)
+            return await self._route_llm(
+                text, visible, deps, history, role=role, rejected=rejected
+            )
+        if candidate == "consensus":
+            return await self._route_consensus(
+                text, visible, deps, history, role=role, rejected=rejected
+            )
         return None
+
+    # ── 采纳门控 ──
+    def min_adopt_score(self, business: str, role: str) -> float:
+        """该业务在该角色下的采纳门槛：业务自述 → 角色覆盖 → 全局默认（ADR-0107）。
+
+        内核不认识任何业务键：它只读 manifest 自述的 ``min_adopt_score``（``0`` =
+        未声明）。角色覆盖为空表时（生产现状，有实测依据）一律走全局默认。
+        """
+        manifest = self._manifests.get(business)
+        declared = float(getattr(manifest, "min_adopt_score", 0.0) or 0.0)
+        if declared > 0:
+            return declared
+        override = get_role_min_adopt_score(role)
+        return DEFAULT_MIN_ADOPT_SCORE if override is None else override
+
+    def _adopt(self, business: str, score: float, role: str) -> bool:
+        """门控：分数是否够采纳该业务。两个路由原语共用同一张表。"""
+        try:
+            value = float(score)
+        except (TypeError, ValueError):
+            return False
+        return value >= self.min_adopt_score(business, role)
 
     async def _route_decision(
         self,
@@ -213,8 +296,16 @@ class AgentRuntime:
         visible: list[str],
         deps: RuntimeDeps,
         history: "list[dict] | None",
+        *,
+        role: str = "",
+        rejected: "list[dict[str, Any]] | None" = None,
     ) -> "RouteDecision | None":
-        """决策模型（Laya-multilingual）主路由；不可用 / 低置信 / 不可见 → ``None`` 回落。"""
+        """决策模型（Laya-multilingual）主路由；不可用 / 不可见 / **未过门控** → ``None``。
+
+        门控不在此处而在 :meth:`_adopt`（ADR-0107）：模型照实给出「候选 + 分数」，
+        分数不够时把候选记进 ``rejected`` 后返回 ``None``——由下一原语或「无命中引导」
+        接住，而不是静默消失。
+        """
         dm = deps.decision_model
         if dm is None or not dm.available():
             return None
@@ -227,17 +318,30 @@ class AgentRuntime:
             result = await dm.decide(state=state, options=options)
         except Exception:  # noqa: BLE001 — 决策模型异常不应击穿路由
             return None
-        if result is not None and result.choice in visible:
-            return RouteDecision(
-                business=result.choice,
-                name=self.name_of(result.choice),
-                extra={
-                    "routed_by": "decision",
-                    "level": "decision",
-                    "prob": result.prob,
-                },
-            )
-        return None
+        if result is None or result.choice not in visible:
+            return None
+        score = float(result.prob or 0.0)
+        if not self._adopt(result.choice, score, role):
+            if rejected is not None:
+                rejected.append(
+                    {
+                        "primitive": "decision",
+                        "business": result.choice,
+                        "score": score,
+                        "min_adopt_score": self.min_adopt_score(result.choice, role),
+                    }
+                )
+            return None
+        return RouteDecision(
+            business=result.choice,
+            name=self.name_of(result.choice),
+            extra={
+                "routed_by": "decision",
+                "level": "decision",
+                "prob": score,
+                "min_adopt_score": self.min_adopt_score(result.choice, role),
+            },
+        )
 
     async def _route_llm(
         self,
@@ -245,12 +349,33 @@ class AgentRuntime:
         visible: list[str],
         deps: RuntimeDeps,
         history: "list[dict] | None",
+        *,
+        role: str = "",
+        rejected: "list[dict[str, Any]] | None" = None,
     ) -> "RouteDecision | None":
-        """通用 LLM 分类路由（结构化输出）；provider 不可用 / 不守 schema / 业务不可见 → ``None`` 回落。"""
+        """通用 LLM 分类路由；不可用 / 不可见 / **未过门控** → ``None`` 回落。
+
+        LLM 自报的 ``confidence`` 与决策模型的概率走**同一张门控表**（ADR-0107）——
+        此前它只被记进 ``extra``，从不参与采纳判断，两个原语的门控强度不一致。
+        例外：``confidence is None``（模型没填这个字段）时不作比较——那是「未自报」，
+        不是「零置信」；拿 0 去比门槛会误杀正确路由（实测 6 条，ADR-0107）。
+        """
         decision = await classify_llm(
             deps.provider, history, text, self._manifests, visible
         )
         if decision is None or decision.business not in visible:
+            return None
+        score = decision.confidence
+        if score is not None and not self._adopt(decision.business, float(score), role):
+            if rejected is not None:
+                rejected.append(
+                    {
+                        "primitive": "llm",
+                        "business": decision.business,
+                        "score": score,
+                        "min_adopt_score": self.min_adopt_score(decision.business, role),
+                    }
+                )
             return None
         return RouteDecision(
             business=decision.business,
@@ -258,22 +383,84 @@ class AgentRuntime:
             extra={
                 "routed_by": "llm",
                 "level": "llm",
-                "confidence": decision.confidence,
+                "confidence": score,
+                "min_adopt_score": self.min_adopt_score(decision.business, role),
             },
         )
 
-    def _fallback_decision(self, visible: list[str]) -> RouteDecision:
+    async def _route_consensus(
+        self,
+        text: str,
+        visible: list[str],
+        deps: RuntimeDeps,
+        history: "list[dict] | None",
+        *,
+        role: str = "",
+        rejected: "list[dict[str, Any]] | None" = None,
+    ) -> "RouteDecision | None":
+        """交叉校验（consensus）：两个原语都跑，**业务一致且各自过门控**才采纳。
+
+        针对的是「自信但错」——决策模型给 0.9 却判错的那类（ticket 12 的 T03 0.927、
+        T01 0.833），单一门控无论如何调都挡不住，只有第二个原语能否决。
+
+        - 一致 → ``routed_by="consensus"``（两个分数都带在 extra 里，便于复盘）；
+        - 不一致 / 任一不采纳 → ``None`` → 落「无命中引导」（ADR-0105）。
+
+        **代价是显式接受的**：默认策略 ``auto`` 在决策模型采纳时并不调用 LLM，本策略
+        每轮消息多一次 LLM 往返。故只作可选档位（``AI_ROUTING_STRATEGY=consensus``），
+        不进默认（ticket 13 决策 3）。
+        """
+        by_decision = await self._route_decision(
+            text, visible, deps, history, role=role, rejected=rejected
+        )
+        by_llm = await self._route_llm(
+            text, visible, deps, history, role=role, rejected=rejected
+        )
+        if by_decision is None or by_llm is None:
+            return None
+        if by_decision.business != by_llm.business:
+            if rejected is not None:
+                rejected.append(
+                    {
+                        "primitive": "consensus",
+                        "business": None,
+                        "score": 0.0,
+                        "min_adopt_score": DEFAULT_MIN_ADOPT_SCORE,
+                        "disagreement": [by_decision.business, by_llm.business],
+                    }
+                )
+            return None
+        return RouteDecision(
+            business=by_decision.business,
+            name=self.name_of(by_decision.business),
+            extra={
+                "routed_by": "consensus",
+                "level": "consensus",
+                "prob": by_decision.extra.get("prob"),
+                "confidence": by_llm.extra.get("confidence"),
+            },
+        )
+
+    def _fallback_decision(
+        self, visible: list[str], *, rejected: "list[dict[str, Any]] | None" = None
+    ) -> RouteDecision:
         """策略原语均未决策时的无命中引导：声明 ``fallback_guide`` 的业务接住。
 
         ADR-0105：tutor 等执行体必须被模型显式路由到，不再作兜底；都没有命中时提示
         「自身能力引导」（生产拓扑即能力自述 capability）。保证路由永不返回 ``None``
         （安全闸门拦截的路径除外，由调用方处理）。
+
+        ``rejected`` 带出「被门控否掉的候选」（ADR-0107 的可观测增强）：此前
+        ``routed_by="default"`` 里混着「模型没回」与「回了但 0.43」，轨迹上分不出。
         """
         biz = self._fallback_business(visible)
+        extra: dict[str, Any] = {"routed_by": "default", "level": "fallback"}
+        if rejected:
+            extra["rejected"] = list(rejected)
         return RouteDecision(
             business=biz,
             name=self.name_of(biz) if biz else None,
-            extra={"routed_by": "default", "level": "fallback"},
+            extra=extra,
         )
 
     def _fallback_business(self, visible: list[str]) -> str | None:

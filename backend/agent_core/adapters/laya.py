@@ -10,6 +10,11 @@
 只收实测过的多语言权重；新增标签前先用
 ``.scratch/ai-intent-routing/eval/decision_model_eval.py`` 跑一遍中文评测。
 
+2026-10-21（ticket 13 / ADR-0107）：``threshold`` 构造参数**已移除**——适配器只出「候
+选 + 分数」，采纳与否交给 runtime 的声明式门控。此前「低于阈值 → ``None``」把「模型
+回了但只有 0.43」和「模型没回」压成同一个 ``None``，runtime 无从表达「换个原语再问
+一次」或「两个原语互验」。
+
 2026-10-20 本地影子评测（13 条中文用例 + 一条 12 轮长历史，脚本见 eval/）：
 
 - ``laya:multilingual``：8/13 = 62%，p50 23 ms，长历史不截断，平均置信 0.617；
@@ -106,8 +111,10 @@ class LayaDecisionModel(DecisionModel):
     - 路由决策：把可见 business 的能力清单作为 ``choice`` 问题的 ``criteria``
       （键 = 业务键，值 = ``_capability_text(manifest)``），state = 近期对话上下文，
       问「哪个业务处理本 state」，取概率最高者。
-    - 低于 ``threshold`` 或无法决策 → ``decide`` 返回 ``None``，路由回落 LLM 分类，
-      再不中落能力引导（ADR-0105）。
+    - **不做采纳判断**（ADR-0107 门控上移）：解析出选项就回传 ``DecisionResult``，
+      分数一并交给 ``AgentRuntime`` 按声明式门控决定用不用；本适配器不再有
+      ``threshold`` 参数——阈值是策略，不是传输细节。
+    - 解析不出选项 / 服务不可用 → 返回 ``None``（这是「没答案」，不是「分数低」）。
     - ``engine`` 可注入（测试 / 私有部署）；缺省懒连本地 ollaya。
     """
 
@@ -115,12 +122,10 @@ class LayaDecisionModel(DecisionModel):
         self,
         *,
         model: str = _DEFAULT_MODEL,
-        threshold: float = 0.5,
         engine: Any | None = None,
     ) -> None:
         _assert_multilingual(model)
         self._model = model
-        self._threshold = float(threshold)
         self._engine = engine if engine is not None else _OllayaEngine()
 
     def available(self) -> bool:
@@ -160,23 +165,25 @@ class LayaDecisionModel(DecisionModel):
             return None
 
         key = self._resolve_key(answer.get("choice"), options)
-        prob = self._top_probability(answer, options)
-        if key is None or prob < self._threshold:
-            # 无法解析选项 / 低于置信阈值 → 视为无决策，回落 LLM 分类 / 能力引导
+        if key is None:
+            # 解析不出选项（模型幻觉 / 回传了 label / 索引越界）→ 视为没答案
             return None
-        return DecisionResult(choice=key, prob=prob, raw=answer)
+        # 分数照实回传（哪怕是 0.2）：是否采纳由 runtime 门控决定（ADR-0107）。
+        return DecisionResult(
+            choice=key, prob=self._top_probability(answer, options), raw=answer
+        )
 
     @staticmethod
     def _top_probability(answer: dict[str, Any], options: list[DecisionOption]) -> float:
-        """取所选项的校准概率做门控：**不用** TypeSafe 的 ``confidence``。
+        """取模型分布的 top 值作分数：**不用** TypeSafe 的 ``confidence``。
 
         ``confidence`` 是归一化后的 top 概率（K 个选项时为 ``(K·pmax − 1)/(K − 1)``），
         同一个 pmax 在教师端（3 个选项）与学生端（2 个选项）会映射成不同数字，固定
         阈值在不同可见集上不可比。 ``probabilities`` 里的值是模型给出的校准分布，跨
-        K 可比，故以其作为 ``threshold`` 的比较对象；``confidence`` 留在 ``raw`` 里
-        供观测。
+        K 可比，故以其作为分数；``confidence`` 留在 ``raw`` 里供观测。
 
-        ``probabilities`` 缺省时退回 ``confidence``，仍缺省则 0.0（必然不达阈值）。
+        ``probabilities`` 缺省时退回 ``confidence``，仍缺省则 0.0（分数为 0；是否采纳
+        由 runtime 门控决定，此处不再比较）。
         """
         probabilities = answer.get("probabilities")
         keys = {opt.key for opt in options}
@@ -218,21 +225,18 @@ class LayaDecisionModel(DecisionModel):
 _DECISION_MODEL: "LayaDecisionModel | None" = None  # None=未初始化占位
 
 
-def get_decision_model(
-    *,
-    model: str | None = None,
-    threshold: float = 0.5,
-) -> LayaDecisionModel:
+def get_decision_model(*, model: str | None = None) -> LayaDecisionModel:
     """进程内唯一的决策模型；首次调用时构造（多语言守护在构造内执行）。
 
     ``model`` 缺省取 ``OLLAYA_MODEL`` 环境变量，再缺省用白名单里的默认权重。
     配置非法时构造抛 ``ValueError``（此处不吞——那是配置错误，不是运行时降级）；
     模型本身不可用由 ``LayaDecisionModel.available()`` 反映，路由据此回落。
+
+    无 ``threshold`` 参数：采纳门槛是 runtime 的声明式门控（ADR-0107），不在此处。
     """
     global _DECISION_MODEL
     if _DECISION_MODEL is None:
         _DECISION_MODEL = LayaDecisionModel(
             model=model or os.getenv(_OLLAYA_MODEL_ENV) or _DEFAULT_MODEL,
-            threshold=threshold,
         )
     return _DECISION_MODEL

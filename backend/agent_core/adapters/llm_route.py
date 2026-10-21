@@ -26,12 +26,17 @@ class RoutingDecision(SQLModel):
     - ``business``：选中的业务键（如 ``"tasks"``）；``classify_llm`` 会把它解析 /
       容错成可见集内的 key。
     - ``reason``：模型给出的简短理由（仅调试 / 轨迹用，不进正文）。
-    - ``confidence``：模型置信度（0~1）。
+    - ``confidence``：模型**自报**置信度（0~1）；``None`` 表示模型没填。
+
+    ``confidence`` 可空是有实测依据的（ADR-0107 / ticket 13）：44 条中文用例里
+    deepseek 有 13 条没给这个字段；若按 ``0.0`` 参与 0.5 门控，会连带挡掉 6 条
+    **正确**的路由（正确条数 36 → 30）。故 ``None`` 的语义是「未自报」而非「零置信」，
+    runtime 见到 ``None`` 时不拿它去比门槛；给了值的那些仍与决策模型走同一张门控表。
     """
 
     business: str
     reason: str = ""
-    confidence: float = 0.0
+    confidence: "float | None" = None
 
 
 # ADR-0104：路由规则整体移除，不再根据 if/elif 式规则分类路由。本提示词只描述

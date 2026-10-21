@@ -3,7 +3,8 @@
 每个 subagent 以文件夹 ``<business>/`` 组织，内含：
 - ``agent.py``     SubAgent 执行体（``BaseSubAgent`` 子类，由发现自动拾取）
 - ``manifest.py`` ``MANIFEST`` 字典：business / name / description / roles / priority /
-  actions / skills / input_schema / fallback_guide / routing_criteria（后两者为可选路由字段）
+  actions / skills / input_schema / fallback_guide / routing_criteria / min_adopt_score
+  （后三者为可选路由字段）
 - ``skills/``      本 subagent 的提示词/方法论资产（.md，注入 system prompt）
 
 运行时经 ``discover_subagent_manifests(root)`` 扫描文件夹自动注册，新增 subagent = 丢一个文件夹
@@ -46,6 +47,11 @@ class SubAgentManifest:
     # 接住并给出「自身能力引导」，而不是静默把消息塞给某个执行体。至多一个业务声明
     # （契约测试守护）；对当前角色不可见时退到 priority 最小者。
     fallback_guide: bool = False
+    # 采纳门槛自述（ADR-0107）：本业务被路由到所需的最低分数（0–1）。``0``（默认）
+    # 表示不声明 → 走角色覆盖 / 全局默认。存在的理由是**误判代价不对称**：判成执行体
+    # 会答非所问，判成引导类业务则与「都没命中」在用户侧同形——共用一个门槛等于假设
+    # 两者代价相同。内核只认「这个业务声明了更高门槛」这个事实，不认业务键。
+    min_adopt_score: float = 0.0
     # 结构化动作键清单（等值匹配，先于触发词；「哪个业务拥有哪个动作」的唯一声明处）。
     # 动作直配不参与优先级排序，因此无需为它设计排序规则（唯一性由契约测试保证）。
     actions: list[str] = field(default_factory=list)
@@ -100,6 +106,7 @@ def _manifest_from_dict(business: str, data: dict[str, Any]) -> SubAgentManifest
         roles=list(data.get("roles", ["teacher", "student"])),
         priority=int(data.get("priority", 0)),
         fallback_guide=bool(data.get("fallback_guide", False)),
+        min_adopt_score=float(data.get("min_adopt_score", 0.0) or 0.0),
         actions=list(data.get("actions", [])),
         skills=list(data.get("skills", [])),
         raw=data,
