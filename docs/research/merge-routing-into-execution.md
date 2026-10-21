@@ -184,3 +184,47 @@ L1 不再是「收益最大、风险最低」。它在两种前提下才有价�
 顺带一个零成本的小改动：`classify_llm` 的 prompt 只有能力清单 + 对话上下文
 （`agent_core/adapters/llm_route.py:53-59`），**没有注入「本会话当前业务」这个先验**。注入它可能提升
 续轮准确率，但也会提高黏性、让真切换更难识别；在 8.2 的量级下，注入之前需要先确认它不会压低切换的召回。
+
+---
+
+## 9. 四条改进提案的成因（why 追溯，2026-10-21）
+
+对第 2/5/6 项提案做了来源追溯。**四条里三条不是缺陷，是取舍**；两条提案方向撞在已经落地的机制上。
+
+| 提案 | 成因判定 | 证据 |
+|---|---|---|
+| 1 硬失败改重路由 | **刻意取舍**（安全优先于体验） | 事故 `c361dd01`(2026-09-22 真机：1 个娃娃答成 3 个)；`docs/adr/0033:7/12` 明文「绝不静默降级」；代价由 `capability` 路由层前置分流接走（`tasks/agent.py:9-10`、`capability/manifest.py:3-6`、ADR-0105），契约测试 `test_business_tools_contract.py:266` docstring 明写「防止有人为了『让模型能回答元问题』把闸门悄悄关掉」 |
+| 2 出题批量化 | **历史惯性 + 上游约束** | 形状来自 `7d100d4`(2026-09-09)「逐题流式 + 逐卡 UX + 逐题安全闸门」；成本当时就被看到但选择适配：`77f69134`「raise stream receive timeout to 10 minutes so serial per-question calls (19-36s for two) are not cut off」；**批量化在 docs/ 与 .scratch/ 里零讨论** |
+| 3 注入 kind 先验 | **刻意删掉的，不是遗漏** | 见下 |
+| 4 每轮 decide 不复用 kind | **刻意取舍**（ADR-0104 指定的修法） | `docs/adr/0104:16-23` 把「续接落 tutor」定为故障、定调「每一轮保持所有消息上下文」；`.scratch/ai-intent-routing/issues/09:33` 同旨；`kind` 的定义是「首条消息的路由结果」（`docs/adr/0048:20`），`backend/app` 内 `.kind=` 赋值只有 `service.py:489` |
+
+### 9.1 提案 3 是在重加一条 8 小时前刚删掉的规则
+
+`4eab7a5`（2026-10-20 21:33，T04）从 `ROUTING_SYSTEM_PROMPT` 里删掉的第一条规则原文：
+
+> `1. 最新消息若是在「进行中的任务」上改参数（年级 / 学科 / 数量）或要求重出，沿用上一轮的助手（保持连续性）。`
+
+这就是 kind 先验的规则形态。并且它被快照测试钉住：`backend/tests/ai/test_llm_routing.py:156`
+`assert "沿用上一轮" not in ROUTING_SYSTEM_PROMPT`（docstring 明确列出 3 条被删的编号规则）。
+T04 票据还**提前预判了这个改法**：`.scratch/ai-redundancy-cleanup/issues/04:12`「若实测发现『去掉规则后
+LLM 分类在连续性/学生作答两类上退化』，那是路由质量议题，回到 `ai-intent-routing` 的弱意图兜底 backlog，
+**不要**把规则悄悄加回提示词」。
+
+结论：注入 kind 先验在字面断言上未必撞（可避开子串），但在意图上撞 T04 的验收。要做，得先按 issues/04:12
+指明的路径走实测，而不是直接改提示词。
+
+### 9.2 连带的文档引用已腐烂（动 1/2 之前先修）
+
+- `docs/adr/0033:12` 引用的 `test_query_subagent_requires_tool_data` / `tests/ai/test_query_tools_contract.py`
+  **已随 ADR-0097/0098 删除**；现存活的等价契约是 `test_tool_loop_bounds.py:612` 与
+  `test_business_tools_contract.py:266`。
+- `docs/ai-capability-inventory.md:105-107` 仍是 ADR-0098 之前的旧文（写 `QuestionSubAgent` / `question` 业务）。
+
+### 9.3 修订后的优先级
+
+1. **给容器化部署补 `OLLAYA_URL`**（§8.4）。它让提案 4 整条失去必要性，且是唯一不动代码的改动。
+2. 动作直配作为显式切换出口（已存在，需前端在入口带 `action` + `session_id`）。
+3. 提案 2（出题批量化）：唯一没有既存方案挡路的，但会同时改写逐题安全闸门粒度与前端逐卡流式契约。
+4. 提案 1（重路由）：架构代价最大——backend 侧 `reroute` 零命中，是新接缝，且与已落地的 capability
+   分流重复。动手前先回答「已有的那套方案为什么不够」。
+5. 提案 3（kind 先验）：需要先修 ADR-0033 语义、再按 T04 路径走实测，不做直接改动。
