@@ -1,0 +1,137 @@
+{
+  "model": "deepseek-v4-flash",
+  "rows": [
+    {
+      "case": "tutor 会话 · 追问同一题",
+      "biz": "tutor",
+      "expect_switch": false,
+      "full_choice": "tutor",
+      "full_ms": 1959,
+      "switch": false,
+      "switch_ms": 1033,
+      "switch_nostate": false,
+      "switch_nostate_ms": 940
+    },
+    {
+      "case": "tutor 会话 · 换一道同类型题",
+      "biz": "tutor",
+      "expect_switch": false,
+      "full_choice": null,
+      "full_ms": 928,
+      "switch": false,
+      "switch_ms": 925,
+      "switch_nostate": false,
+      "switch_nostate_ms": 1025
+    },
+    {
+      "case": "tutor 会话 · 改要出题",
+      "biz": "tutor",
+      "expect_switch": true,
+      "full_choice": "tasks",
+      "full_ms": 862,
+      "switch": true,
+      "switch_ms": 842,
+      "switch_nostate": true,
+      "switch_nostate_ms": 1354
+    },
+    {
+      "case": "tutor 会话 · 改要查数据",
+      "biz": "tutor",
+      "expect_switch": true,
+      "full_choice": "tasks",
+      "full_ms": 1514,
+      "switch": true,
+      "switch_ms": 889,
+      "switch_nostate": true,
+      "switch_nostate_ms": 839
+    },
+    {
+      "case": "tutor 会话 · 问助手能做什么",
+      "biz": "tutor",
+      "expect_switch": true,
+      "full_choice": "capability",
+      "full_ms": 702,
+      "switch": true,
+      "switch_ms": 1202,
+      "switch_nostate": true,
+      "switch_nostate_ms": 1611
+    },
+    {
+      "case": "tasks 会话 · 继续出题",
+      "biz": "tasks",
+      "expect_switch": false,
+      "full_choice": "tasks",
+      "full_ms": 920,
+      "switch": false,
+      "switch_ms": 1100,
+      "switch_nostate": false,
+      "switch_nostate_ms": 1058
+    },
+    {
+      "case": "tasks 会话 · 删除刚才的题",
+      "biz": "tasks",
+      "expect_switch": false,
+      "full_choice": "tasks",
+      "full_ms": 1425,
+      "switch": false,
+      "switch_ms": 1071,
+      "switch_nostate": false,
+      "switch_nostate_ms": 1173
+    },
+    {
+      "case": "tasks 会话 · 改问解题",
+      "biz": "tasks",
+      "expect_switch": true,
+      "full_choice": "tutor",
+      "full_ms": 1351,
+      "switch": true,
+      "switch_ms": 712,
+      "switch_nostate": true,
+      "switch_nostate_ms": 1822
+    },
+    {
+      "case": "tasks 会话 · 改要讲解概念",
+      "biz": "tasks",
+      "expect_switch": true,
+      "full_choice": "tutor",
+      "full_ms": 912,
+      "switch": true,
+      "switch_ms": 817,
+      "switch_nostate": true,
+      "switch_nostate_ms": 978
+    },
+    {
+      "case": "tasks 会话 · 继续查数据",
+      "biz": "tasks",
+      "expect_switch": false,
+      "full_choice": "tasks",
+      "full_ms": 905,
+      "switch": false,
+      "switch_ms": 2204,
+      "switch_nostate": true,
+      "switch_nostate_ms": 2203
+    },
+    {
+      "case": "capability 会话 · 改要出题",
+      "biz": "capability",
+      "expect_switch": true,
+      "full_choice": "tasks",
+      "full_ms": 928,
+      "switch": true,
+      "switch_ms": 1086,
+      "switch_nostate": true,
+      "switch_nostate_ms": 763
+    },
+    {
+      "case": "capability 会话 · 继续问能力",
+      "biz": "capability",
+      "expect_switch": false,
+      "full_choice": "capability",
+      "full_ms": 2935,
+      "switch": false,
+      "switch_ms": 1518,
+      "switch_nostate": false,
+      "switch_nostate_ms": 2943
+    }
+  ]
+}
