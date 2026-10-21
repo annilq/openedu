@@ -15,10 +15,51 @@ services:
       timeout: 3s
       retries: 10
 
+  # 本地决策模型服务（ticket 13：路由原语）。它决定「这句话该交给哪个助手」，
+  # 每轮消息都要问一次；问本地服务是 p50 23 ms，问家长聊天模型是 p50 928 ms。
+  #
+  # 镜像清单见 ollaya-dev/ollaya 的 docs/distribution.md：默认标签可跑 amd64/arm64
+  # 且纯 CPU（:cuda / :cuda12 才需要 NVIDIA 容器工具包）。本项目用 laya:multilingual
+  # 这种 322M 编码器，CPU 上就够快，故不声明 GPU。
+  ollaya:
+    image: ghcr.io/ollaya-dev/ollaya
+    # 权重落在卷里（镜像内 OLLAYA_MODELS=/home/ollaya/.ollaya/models）。
+    #
+    # **顺序不能反**：``ollaya pull`` 要连服务端——实测「先 pull 再 serve」时容器
+    # 起得来、健康检查也过，但 ``ollaya list`` 恒空，模型根本没进卷；同样的命令在
+    # serve 之后跑就正常下载 683 MB。故这里先把 serve 放后台，探到端口后再拉。
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >-
+        ollaya serve & srv=$!;
+        until bash -c 'exec 3<>/dev/tcp/127.0.0.1/11435' 2>/dev/null; do sleep 1; done;
+        ollaya pull "$${OLLAYA_MODEL:-laya:multilingual}";
+        wait "$${srv}"
+    environment:
+      OLLAYA_MODEL: ${OLLAYA_MODEL:-laya:multilingual}
+    # 镜像自带的健康检查只探端口，会漏掉「服务在、权重不在」——那时后端以为决策
+    # 原语可用，每条路由都拿不到答案。这里两条都要：端口通 + 卷里真有模型。
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          bash -c 'exec 3<>/dev/tcp/127.0.0.1/11435' 2>/dev/null &&
+          ollaya list 2>/dev/null | tail -n +2 | grep -q .
+      start_period: 10s
+      interval: 5s
+      timeout: 10s
+      retries: 60
+    volumes:
+      - ollaya:/home/ollaya/.ollaya
+    restart: unless-stopped
+
   backend:
     build: ./backend
     depends_on:
       db:
+        condition: service_healthy
+      ollaya:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql+psycopg://wawa:wawa@db:5432/wawa
@@ -28,8 +69,17 @@ services:
       # MODEL_APIKEY_SECRET 必须与「添加模型」时一致，否则已存 API Key 解不开（ADR-0038）：
       # 本地开发请与 backend/.env 填同一个值。
       MODEL_APIKEY_SECRET: ${MODEL_APIKEY_SECRET:-}
+      # 决策模型地址。留空即回到「每轮用家长聊天模型分类」——那是本服务缺席时的
+      # 既有降级路径，链路不崩，只是慢。想关掉决策原语就把它设成空字符串。
+      OLLAYA_URL: ${OLLAYA_URL:-http://ollaya:11435}
+      OLLAYA_MODEL: ${OLLAYA_MODEL:-laya:multilingual}
+      # 路由策略（ADR-0107）：auto = 先用决策模型，它不采纳才问 LLM；
+      # llm = 只用 LLM 分类（更准，实测 42 正确 / 1 有害错 vs 29 / 9，但每轮 +928 ms）；
+      # consensus = 两个都跑且一致才采纳（最保守，有害错 0，但最慢）。
+      AI_ROUTING_STRATEGY: ${AI_ROUTING_STRATEGY:-auto}
     ports:
       - "8000:8000"
 
 volumes:
   pgdata:
+  ollaya:
