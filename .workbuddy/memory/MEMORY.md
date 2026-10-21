@@ -45,6 +45,9 @@
 - **调阈值前先扫描、只认留出集**：无分离区间时调阈值只是「少错几条也少对几条」的平移；调优集的收益必须在留出集同向才算数。另：本拓扑里给 capability 设更高门槛是**恒等变换**（拒掉它落点还是它）。
 - **LLM 自报 confidence 不可当概率用**：`RoutingDecision.confidence` 已改 `float | None`，`None`=未自报→不参与门控；按 0 处理曾误杀 6 条正确路由（实测 36→30）。
 - **ticket 14（`needs-decision`，13 的副产品）**：LLM 分类器准确率显著优于本地决策模型（留出集 9/10 vs 5/10，有害错 1 vs 9），但路由延迟 60ms→1081ms。换默认只是改 `_STRATEGY_ORDER["auto"]` 一行，属产品取舍，**等用户拍板**。
+- **「去掉 subagent、一次调用做分类+执行」已调研否决**（`docs/research/merge-routing-into-execution.md`）：三条硬约束——`GenkitProvider.stream` 的 `schema`/`tools` 分支互斥（`genkit.py:460`/`:475`）；`tasks/agent.py:72 requires_tool_data=True`（ADR-0033 反编造）要求「先工具后作答」≥2 轮；出题请求大头是逐题 schema（`pipeline.py:232`）。
+- **生产拓扑里路由确实在付 LLM 请求**：`OLLAYA_URL` 只在 `backend/.env:32`，compose/Dockerfile 未设 → 决策原语恒不可用（`laya.py:131-140`），每轮落 `classify_llm`（p50 1084ms，纯前置不与流式重叠）；本地开发 66ms。
+- **降延迟真正的杠杆**（比合并划算）：① `Conversation.kind` 首轮已定（`service.py:489`）但 `service.py:453` **每轮都重跑 `decide`**、从不复用 → 续轮沿用 + 动作直配/本地模型变更检测出口，N 轮省 N−1 次分类；② 出题 array schema 批量化（3+N→2~3，代价：逐题安全闸门与逐卡流式 UX）。
 - **capability 误判代价不对称**：判成 capability 与「都没命中」在用户侧同形（ADR-0105），判成执行体会答非所问 → 不应共用同一采纳门槛。
 - **`routing_criteria`（ADR-0106，ADR-0097 单一事实源的有据例外）**：可选 manifest 字段，`_capability_text` 用它替换 `description`（name/actions 照旧，未声明行为不变）；**用户可见清单 `capability_catalog` 仍直读 `description`**。启用理由有实测：把「教师可管理题库/组建草稿任务」留在路由文案里准确率 74%→56%，但删了它用户就少一条真实能力 → 两份文本分离。契约测试守「清单显示的 == description」+ 长度 ≤120 + 无排他否定/示例问句 + 各具专属动词。
 - 改 `description` 会同时改用户可见能力清单（`capability_catalog`「name：description」）与轨迹业务名 → 同步核对 `test_capability_subagent`/`test_assistant`/`test_tasks_subagent`/`test_intent_routing_contract`/`test_agent_runtime` 的断言；**只更新断言不改语义**。
