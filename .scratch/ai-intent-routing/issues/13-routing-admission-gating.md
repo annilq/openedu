@@ -1,15 +1,17 @@
-# 13: 路由采纳门控——学生端阈值与 LLM 分类器交叉校验（待议）
+# 13: 路由采纳门控——学生端阈值与 LLM 分类器交叉校验
 
-> 标签：`needs-decision`（用户明确「②再议」；开工前须先有 ticket 12 的实测数据）
+> 标签：`done`（2026-10-21 落地；ADR-0107）
 > 来源对话：2026-10-20 用户「①先改 manifest 的 name/description 文案（criteria 的值）用同一脚本量化收益，而不是换权重；②再议学生端单独阈值或与 LLM 分类器交叉校验」
-> 关联：ADR-0104、ADR-0105（不命中落能力引导 + `fallback_guide` 声明式纪律）、ticket 11（门控改用 `probabilities`、K=2 不可比问题）、ticket 12（先改文案并量化，本票的前置）
+> 关联：ADR-0104、ADR-0105（不命中落能力引导 + `fallback_guide` 声明式纪律；其「命中」定义由 ADR-0107 修订）、**ADR-0107（本票的决策记录）**、ticket 11（门控改用 `probabilities`、K=2 不可比问题）、ticket 12（先改文案并量化，本票的前置）
 > 术语以 `CONTEXT.md` 为准
+
+**落地摘要（先看这段）**：门控从适配器上移到 runtime（决策模型只出分数、`min_adopt_score` 声明式取值、LLM confidence 同表门控、`extra["rejected"]` 可观测），`consensus` 作为可选策略落地。**两个候选都被实测数据否决**：候选 A（学生端更高阈值）在留出集上反向（净收益 −2 → −3），低分段不存在可分离区间；候选 C（交叉校验）把有害错降到 0，但同样是付那次 LLM 往返，直接信 LLM 分类全面更好（正确 42 vs 27）——故不启用、不进默认。顺带修掉 `confidence` 未自报被当 0 而误杀 6 条正确路由的缺陷。**新发现转 ticket 14**：LLM 分类器在准确率上显著优于本地决策模型（留出集 9/10 vs 5/10），但延迟 60 ms → 1081 ms，默认原语选型需用户拍板。
 
 **What to build:** 在 ticket 12 的文案收益见顶之后，回答一个问题——**模型给出了一个业务，我们要不要采纳它**。今天答案是「只要 pmax ≥ 0.5 就采纳」，全角色同一阈值、且不区分业务。本票把这件事从「适配器里的一个浮点数」升级为「runtime 的一处显式门控策略」，并由此让两个候选方案变得可表达、可量化：学生端单独阈值，与 LLM 分类器交叉校验。
 
 **Blocked by:** ticket 12（必须先拿到改文案后的准确率与每条用例的 pmax 分布；没有数据选阈值就是拍脑袋）
 
-**Status:** `needs-decision`（未开工；不是 `ready-for-agent`，等 12 的结论与一次用户拍板）
+**Status:** `done`（2026-10-21）
 
 ---
 
@@ -107,6 +109,73 @@
 - `ROUTING_HISTORY_LIMIT` 与历史压缩、长历史截断策略。
 - 前端任何改动；结构化出题端点链路。
 - 把交叉校验设为默认策略（延迟成本，见决策 3）。
+
+## 落地结果（2026-10-21）
+
+### 1. 门控上移（使改动，A 与 C 都依赖它）—— 已落地
+
+- `agent_core/adapters/laya.py`：`LayaDecisionModel` **移除 `threshold` 构造参数**，
+  解析出选项就回传 `DecisionResult(choice, prob)`；`get_decision_model()` 同步去参。
+- `agent_core/registry.py`：`SubAgentManifest` 新增 `min_adopt_score: float = 0.0`
+  （`0` = 未声明）。
+- `agent_core/runtime.py`：`min_adopt_score(business, role)` = 业务自述 → 角色覆盖
+  （`set_role_min_adopt_score`）→ `DEFAULT_MIN_ADOPT_SCORE = 0.5`；`_route_decision` /
+  `_route_llm` 共用 `self._adopt(...)`；被否掉的候选进 `extra["rejected"]`。
+- `agent_core/adapters/llm_route.py`：`RoutingDecision.confidence` 改 `float | None`，
+  `None`（未自报）不参与门控比较。
+- 新策略档位 `consensus=[consensus]`：`_route_consensus` 两个原语都跑，业务一致且各自
+  过门控才采纳（`routed_by="consensus"`），不一致 → 无命中引导。
+
+### 2. 候选 A（学生端单独阈值）—— **实测否决，角色覆盖表保持空**
+
+`eval/decision_model_eval.py --sweep eval/results-2026-10-21-final-landed.json`（44 条
+计分用例，分调优集 / 留出集 / 分角色）：
+
+| 阈值 | 调优集净收益(+1/−3/−1) | 留出集净收益 |
+|---|---|---|
+| 0.50（现状） | +2 | −2 |
+| 0.53 | **+7** | **−3** |
+| 0.55 | +7 | −3 |
+| 0.60 | −2 | −3 |
+
+低分段逐条摊开：`[0.50,0.53)` 在调优集是 2 有害错 + 1 正确，在留出集是 1 正确 + 0 有害错。
+**不存在可分离区间**；学生端正确路由的 pmax 反而更低（0.41–0.76），抬到 0.75 才够到唯一
+一条学生端有害错（0.702），代价是挡掉 10 条正确路由。→ **默认 0.5 不动，不设角色覆盖**。
+
+### 3. 候选 C（交叉校验）—— 已实现、已实测、**不启用**
+
+`--consensus`（44 条，决策模型 × 生产 LLM `deepseek-v4-flash`，走 `classify_llm`）：
+
+| 策略 | 正确 | 有害错 | 无害错 | 落引导 | 净 | p50 |
+|---|---|---|---|---|---|---|
+| 决策模型（现状默认） | 29 | 9 | 2 | 4 | 0 | 60 ms |
+| LLM 分类 | **42** | 1 | 0 | 1 | **39** | 1081 ms |
+| 交叉校验 | 27 | **0** | 0 | 17 | 27 | 两者相加 |
+| auto 现状（不采纳才问 LLM） | 33 | 9 | 2 | 0 | 4 | — |
+
+留出集同向（5/10 · 9/10 · 4/10）。交叉校验把有害错降到 0，但同样付那次往返时直接信
+LLM 分类全面更好 → **不进默认**，保留为 `AI_ROUTING_STRATEGY=consensus` 可选档位。
+
+### 4. 顺带修掉的误杀（实测发现）
+
+`confidence: float = 0.0` 时代，deepseek 有 13/44 条不填该字段 → 按 0 参与 0.5 门控会
+挡掉 **6 条正确**路由（正确 36 → 30）。改 `float | None = None` 后未自报不再等同零置信
+（且自报率随之上升：13 → 4）。
+
+### 5. 验收对照
+
+| 验收项 | 结果 |
+|---|---|
+| 门控只有一处、可声明式覆盖（US6/US8） | ✅ runtime `min_adopt_score` 三级取值；内核不认业务键（测试用一个清单里没有的 `calendar` 证明） |
+| 「不置信」与「没决策」可区分（US5） | ✅ `extra["rejected"]` |
+| LLM confidence 走同一门控（US7） | ✅（未自报除外，有实测依据） |
+| 学生端单独阈值（US1/US2/US10） | ❌ **数据否决**——见 §2；学生端「23+45」仍由 S01 那条未翻正，属排序能力问题，非阈值可解 |
+| 交叉校验（US11/US12） | ⚠️ 已实现为可选策略，实测不支持启用（同预算下劣于直接信 LLM） |
+| 离线可测（US13） | ✅ `tests/ai/test_routing_gating.py` 15 项，无网络 / 无权重依赖 |
+
+回归：`tests/ai` 406 passed；`tests/ai` + `features/assistant` + `test_assistant`（`.env`
+就位）506 passed；隐藏 `.env` 全量 **1058 passed / 2 skipped / 1 failed**（唯一红为已知的
+`materials test_empty_text_422` 环境性红，同基线）；ruff 改动文件全净。
 
 ## Further Notes
 

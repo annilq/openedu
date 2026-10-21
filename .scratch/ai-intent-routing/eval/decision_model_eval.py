@@ -14,18 +14,32 @@
 延迟、以及长历史是否触发 ``422 STATE_TRUNCATED``。并额外给出「门控后」视角：
 pmax < 0.5 的用例在生产里不采纳 → 落能力引导。
 
+ticket 13 追加两件（门控议题必须用数据说话，不拍脑袋）：
+
+- ``--sweep <results.json>``：**阈值扫描**（离线，读已落盘的 results JSON）。把每条
+  用例的 pmax 摊开，逐档阈值数出「挡掉几条对的 / 放过几条错的」，并按角色、按
+  「有害错（判成执行体＝答非所问）/ 无害错（判成引导＝与没命中同形）」分面，用来
+  判断**是否存在可分离的阈值区间**。
+- ``--consensus``：**交叉校验实测**。同一批用例同时问决策模型与真实 LLM 分类器
+  （走生产的 ``classify_llm``，provider 取自「模型管理」的默认 ModelConfig），数出
+  「两个原语一致才采纳」之后的准确率 / 有害错 / 延迟。没有可用 provider 时该项
+  **跳过并标注**，不得据此下结论。
+
 用法（ollaya 需在 127.0.0.1:11435 运行；须用 backend 的 venv 跑以便 import 本项目）：:
 
     cd <repo>/backend
     .venv/bin/python ../.scratch/ai-intent-routing/eval/decision_model_eval.py
     .venv/bin/python .../decision_model_eval.py --models largha
     .venv/bin/python .../decision_model_eval.py --json ../.scratch/ai-intent-routing/eval/results-X.json
+    .venv/bin/python .../decision_model_eval.py --sweep .../eval/results-2026-10-21-final-landed.json
+    .venv/bin/python .../decision_model_eval.py --consensus --json .../eval/results-2026-10-21-consensus.json
 
 只依赖标准库 + 本项目；显式绕过系统代理（macOS 代理会把 localhost 请求也吞掉）。
 """
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import statistics
 import sys
@@ -34,6 +48,7 @@ import urllib.error
 import urllib.request
 from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 # backend 根目录（本文件位于 <repo>/.scratch/ai-intent-routing/eval/）
 BACKEND = Path(__file__).resolve().parents[3] / "backend"
@@ -374,6 +389,238 @@ def _summarize(rows: list[dict]) -> dict:
     }
 
 
+# ───────────────────────── 阈值扫描（ticket 13 候选 A）─────────────────────────
+# 误判代价不对称（INDEX 决策锚点）：判成**执行体**＝自信地答非所问（有害）；判成
+# **引导类业务**＝与「都没命中」在用户侧同形（无害）。故扫描同时给出两类错误的条数，
+# 而不只给一个准确率数字——「少错几条、也少对几条」的平移在这种视角下会现形。
+SWEEP_THRESHOLDS = [0.0, 0.5, 0.53, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9]
+FALLBACK_BUSINESSES = {"capability"}  # ADR-0105：生产拓扑里声明 fallback_guide 的业务
+
+
+def _kind(row: dict) -> str:
+    """该用例的判定性质：正确 / 无害错（→引导）/ 有害错（→执行体）。"""
+    if row["choice"] == row["expect"]:
+        return "正确"
+    return "无害错" if row["choice"] in FALLBACK_BUSINESSES else "有害错"
+
+
+def sweep(rows: list[dict], *, label: str) -> None:
+    """逐档阈值数「挡掉几条对的 / 放过几条错的」，并给出代价模型下的净收益。"""
+    scored = [r for r in rows if r["scored"] and isinstance(r.get("pmax"), float)]
+    print(f"\n════ 阈值扫描 · {label}（n={len(scored)}）════")
+    print(f"{'阈值':<7}{'采纳':<6}{'对':<5}{'有害错':<8}{'无害错':<8}{'挡掉对':<8}{'净(+1/-3/-1)':<13}")
+    for t in SWEEP_THRESHOLDS:
+        adopted = [r for r in scored if r["pmax"] >= t]
+        ok = sum(1 for r in adopted if _kind(r) == "正确")
+        harmful = sum(1 for r in adopted if _kind(r) == "有害错")
+        harmless = sum(1 for r in adopted if _kind(r) == "无害错")
+        dropped_ok = sum(1 for r in scored if r["pmax"] < t and _kind(r) == "正确")
+        # 代价模型：正确服务 +1；有害错 -3（自信地答非所问）；无害错 -1（落引导，同形于没命中）
+        print(
+            f"{t:<7.2f}{len(adopted):<6}{ok:<5}{harmful:<8}{harmless:<8}"
+            f"{dropped_ok:<8}{ok - 3 * harmful - harmless:<13}"
+        )
+
+
+def sweep_bands(rows: list[dict], lo: float = 0.44, hi: float = 0.60, step: float = 0.03) -> None:
+    """摊开低分段每条用例：可分离区间若存在，会表现为「某段里只有错、没有对」。"""
+    scored = [r for r in rows if r["scored"] and isinstance(r.get("pmax"), float)]
+    print(f"\n════ 低分段逐条（判断是否存在可分离区间）════")
+    t = lo
+    while t < hi:
+        band = [r for r in scored if t <= r["pmax"] < t + step]
+        if band:
+            marks = [_kind(r) for r in band]
+            print(
+                f"[{t:.2f},{t + step:.2f}) 对{marks.count('正确')} "
+                f"有害{marks.count('有害错')} 无害{marks.count('无害错')}"
+            )
+            for r in sorted(band, key=lambda r: r["pmax"]):
+                print(
+                    f"    {r['case']:<18}{r['role']:<9}{r['pmax']:.4f}  {_kind(r)}"
+                    f"（期望 {r['expect']} 实得 {r['choice']}）"
+                )
+        t += step
+
+
+def load_results(path: str) -> list[dict]:
+    """读已落盘的 results JSON，返回全部计分行（含留出集）。"""
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    rows: list[dict] = []
+    for key, value in data.items():
+        if not isinstance(value, list):
+            continue
+        for row in value:
+            if isinstance(row, dict) and row.get("scored"):
+                rows.append(row)
+    return rows
+
+
+# ───────────────────────── 交叉校验实测（ticket 13 候选 C）─────────────────────────
+def build_real_provider():
+    """构造生产同款 LLM provider（模型管理的默认 ModelConfig → genkit 引擎）。
+
+    拿不到（未配置 / 密钥解不开 / 引擎构造失败）返回 ``None``，调用方据此**跳过**
+    而不伪造——ticket 13 的纪律：没有真实 provider 就不得对交叉校验下结论。
+    """
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(BACKEND / ".env")
+        import sqlite3
+
+        from app.ai.engine import build_engine
+        from app.core.crypto import decrypt
+        from app.domain import build_provider
+
+        conn = sqlite3.connect(BACKEND / "app.db")
+        row = conn.execute(
+            "select provider, model_name, base_url, api_key_enc "
+            "from modelconfig where is_default = 1"
+        ).fetchone()
+        if row is None:
+            return None
+        provider_kind, model_name, base_url, key_enc = row
+        api_key = decrypt(key_enc) if key_enc else None
+        return build_provider(
+            engine=build_engine(provider_kind, base_url, api_key, model_name)
+        ), model_name
+    except Exception as exc:  # noqa: BLE001 — 评测脚本：拿不到就跳过，不猜
+        print(f"  [跳过] 真实 provider 不可用：{type(exc).__name__}: {exc}")
+        return None
+
+
+async def _llm_choice(provider, history: list[dict] | None, current: str, role: str):
+    """走生产的 ``classify_llm`` 问一次真实 LLM 分类器。"""
+    from agent_core.adapters.llm_route import classify_llm
+
+    turns = [{"role": r, "content": c} for r, c in (history or [])]
+    visible = _RUNTIME.visible_businesses(role)
+    dec = await classify_llm(provider, turns, current, _MANIFESTS, visible)
+    if dec is None:
+        return None, None
+    # confidence 可空：None = 模型没自报（runtime 不拿它比门槛，此处同样如实记录）
+    return dec.business, dec.confidence
+
+
+def _tally(rows: list[dict], kind_of: "callable") -> dict:
+    """按「该策略下每条用例的最终落点」计数（不采纳 → 落引导，等同没命中）。"""
+    served = [r for r in rows if r["scored"] and kind_of(r)[0] is not None]
+    out = {
+        "served": len(served),
+        "correct": 0,
+        "harmful": 0,
+        "harmless": 0,
+        "guide": 0,
+    }
+    for r in rows:
+        if not r["scored"]:
+            continue
+        final, _score = kind_of(r)
+        if final is None:
+            out["guide"] += 1  # 未采纳 → 无命中引导（ADR-0105）
+        elif final == r["expect"]:
+            out["correct"] += 1
+        elif final in FALLBACK_BUSINESSES:
+            out["harmless"] += 1
+        else:
+            out["harmful"] += 1
+    out["net"] = out["correct"] - 3 * out["harmful"] - out["harmless"]
+    return out
+
+
+async def run_consensus(model: str, provider: Any) -> list[dict]:
+    """同一批用例同时问决策模型 + 真实 LLM 分类器，落成交叉校验的原始行。"""
+    rows: list[dict] = []
+    for cid, role, expect, current, history, source in CASES + HOLDOUT_CASES:
+        d = ask(model, build_state(current, history), criteria_for(role))
+        started = time.monotonic()
+        llm_biz, llm_conf = await _llm_choice(provider, history, current, role)
+        rows.append(
+            {
+                "case": cid,
+                "role": role,
+                "expect": expect,
+                "scored": expect is not None,
+                "source": source,
+                "choice": d.get("choice"),
+                "pmax": d.get("pmax"),
+                "decision_ms": d.get("latency_ms"),
+                "llm_choice": llm_biz,
+                "llm_confidence": llm_conf,
+                "llm_ms": int((time.monotonic() - started) * 1000),
+            }
+        )
+    return rows
+
+
+def print_consensus(rows: list[dict], *, llm_model: str) -> None:
+    """三种策略同源对照：决策模型单跑 / LLM 单跑 / 交叉校验（一致才采纳）。"""
+    gate = 0.5
+
+    def _gated(biz: "str | None", score: "float | None") -> bool:
+        """生产门控语义：给了分数才比门槛；``None``（未自报）不作比较（ADR-0107）。"""
+        return biz is not None and (score is None or score >= gate)
+
+    strategies: dict[str, "callable"] = {
+        "决策模型（默认 auto）": lambda r: (
+            (r["choice"], r["pmax"])
+            if _gated(r["choice"], r["pmax"])
+            else (None, r["pmax"])
+        ),
+        f"LLM 分类（{llm_model}）": lambda r: (
+            (r["llm_choice"], r["llm_confidence"])
+            if _gated(r["llm_choice"], r["llm_confidence"])
+            else (None, r["llm_confidence"])
+        ),
+        "交叉校验（一致才采纳）": lambda r: (
+            (r["choice"], r["pmax"])
+            if _gated(r["choice"], r["pmax"])
+            and _gated(r["llm_choice"], r["llm_confidence"])
+            and r["choice"] == r["llm_choice"]
+            else (None, r["pmax"])
+        ),
+        "auto 现状（不采纳才问 LLM）": lambda r: (
+            (r["choice"], r["pmax"])
+            if _gated(r["choice"], r["pmax"])
+            else (
+                (r["llm_choice"], r["llm_confidence"])
+                if _gated(r["llm_choice"], r["llm_confidence"])
+                else (None, None)
+            )
+        ),
+    }
+    scored = [r for r in rows if r["scored"]]
+    print(f"\n════ 交叉校验实测（n={len(scored)}，门控 0.5）════")
+    print(f"{'策略':<26}{'正确':<7}{'有害错':<8}{'无害错':<8}{'落引导':<8}{'净':<6}")
+    for name, kind_of in strategies.items():
+        t = _tally(scored, kind_of)
+        print(
+            f"{name:<26}{t['correct']:<7}{t['harmful']:<8}{t['harmless']:<8}"
+            f"{t['guide']:<8}{t['net']:<6}"
+        )
+    lat = [r["decision_ms"] for r in scored if isinstance(r["decision_ms"], int)]
+    llm_lat = [r["llm_ms"] for r in scored if isinstance(r["llm_ms"], int)]
+    if lat and llm_lat:
+        print(
+            f"  延迟：决策模型 p50 {statistics.median(lat):.0f} ms · "
+            f"LLM 分类 p50 {statistics.median(llm_lat):.0f} ms"
+            f"（交叉校验 = 两者相加，这是它不进默认策略的代价）"
+        )
+    print("\n  分歧明细（两个原语不一致 → 落引导）：")
+
+    def _fmt(v: "float | None") -> str:
+        return "—" if v is None else f"{v:.2f}"
+
+    for r in scored:
+        if r["choice"] != r["llm_choice"]:
+            print(
+                f"    {r['case']:<18} 决策模型={str(r['choice']):<11}{_fmt(r['pmax'])}"
+                f"  LLM={str(r['llm_choice']):<11}{_fmt(r['llm_confidence'])}"
+                f"  期望={r['expect']}"
+            )
+
+
 def _print_model(model: str, rows: list[dict], long_row: dict, warm: dict) -> None:
     print(f"\n══ {model}（预热 {warm['latency_ms']} ms）══")
     print(f"{'用例':<22}{'期望':<12}{'实得':<12}{'判':<4}{'pmax':<8}{'门控':<8}{'ms':>6}  备注")
@@ -429,9 +676,52 @@ def main() -> int:
         "--variants",
         help="文案变体 JSON 文件：{变体名: {业务键: description}}，批量对比用",
     )
+    parser.add_argument(
+        "--sweep",
+        help="阈值扫描：读已落盘的 results JSON，逐档数「挡掉几条对的 / 放过几条错的」",
+    )
+    parser.add_argument(
+        "--consensus",
+        action="store_true",
+        help="交叉校验实测：同时问决策模型与真实 LLM 分类器（需可用 provider）",
+    )
     args = parser.parse_args()
 
     HOST = args.host.rstrip("/")
+
+    if args.sweep:
+        rows = load_results(args.sweep)
+        print(f"阈值扫描数据源：{args.sweep}（{len(rows)} 条计分行）")
+        # 先分集再分角色：调优集是文案选过型的，只有留出集能分辨「真涨」还是「背下来」。
+        tuning = [r for r in rows if r.get("source") != "留出"]
+        holdout = [r for r in rows if r.get("source") == "留出"]
+        if tuning:
+            sweep(tuning, label="调优集（参与过选型，只能看趋势）")
+        if holdout:
+            sweep(holdout, label="留出集（未参与选型，用它裁决）")
+        sweep(rows, label="全部")
+        for role in ("teacher", "student"):
+            sub = [r for r in rows if r["role"] == role]
+            if sub:
+                sweep(sub, label=f"{role} 端")
+        sweep_bands(rows)
+        return 0
+    if args.consensus:
+        built = build_real_provider()
+        if built is None:
+            print("交叉校验：**跳过**——无可用真实 provider，不得据此下结论（ticket 13 纪律）")
+            return 1
+        provider, llm_model = built
+        print(f"交叉校验实测：决策模型 {args.models[0]} × LLM 分类器 {llm_model}")
+        rows = asyncio.run(run_consensus(args.models[0], provider))
+        print_consensus(rows, llm_model=llm_model)
+        if args.json_out:
+            Path(args.json_out).write_text(
+                json.dumps({"consensus": rows}, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            print(f"\n原始结果：{args.json_out}")
+        return 0
     lengths = {b: len(_capability_text(m)) for b, m in _MANIFESTS.items()}
     print(f"目标服务 {HOST} · 模型 {', '.join(args.models)} · criteria 字符数 {lengths}")
     variants = None

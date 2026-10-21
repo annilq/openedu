@@ -25,7 +25,8 @@
 | 10 | 无命中兜底改为能力引导（tutor 显式化，ADR-0105） | 09 | done（实现于分支 `ticket/08-decision-routing`；取代 ADR-0104 §2.1 兜底子句） |
 | 11 | 本地 Ollaya 决策服务接入 + 侯选模型中文本地评测 | 10 | done（2026-10-20；`eval/decision_model_eval.py` 实测否决 largha，laya:multilingual 留任） |
 | 12 | 路由能力清单文案调优（改 criteria，用同一脚本量化） | 11 | done（2026-10-21；59% → 74%，并触发熔断改用 `routing_criteria`，ADR-0106） |
-| 13 | 路由采纳门控（学生端阈值 / 与 LLM 分类器交叉校验） | 12 | `needs-decision`（用户「②再议」；须先有 12 的实测数据才能定阈值） |
+| 13 | 路由采纳门控（学生端阈值 / 与 LLM 分类器交叉校验） | 12 | done（2026-10-21，ADR-0107：门控上移 runtime + `consensus` 可选策略；**两个候选均被实测否决**） |
+| 14 | 路由主原语选型重估（决策模型 vs LLM 分类） | 13 | `needs-decision`（13 的实测副产品：LLM 分类留出集 9/10 vs 决策模型 5/10，但 60 ms → 1081 ms，须用户拍板） |
 
 **全部 ticket 已落地（含 08、09、10、11）。** 08 在分支 `ticket/08-decision-routing` 实现并自测通过：新增 `DecisionModel` 端口（`agent_core/ports.py`）+ `LayaDecisionModel` 适配器（仅 `laya-multilingual`，英文 `laya` 显式拒绝；`available()` 无权重/无 `LAYA_SERVE_URL` 时为 False）+ `runtime.decide` 透传 `history` 并接入决策模型作主路由、规则 `classify` 当时退为兜底 + `service.py` 路由前算 `prior_history` 并注入 `get_decision_model()`；随后 `d8a9ed0` 新增可切换的通用 LLM 结构化分类 `classify_llm` 与 `AI_ROUTING_STRATEGY` 开关。新增 `tests/ai/test_decision_model_routing.py` / `test_laya_adapter.py`（内存桩，无权重/网络依赖）。
 
@@ -35,7 +36,18 @@
 **11 让决策模型真正上线并用实测淘汰候选**（用户「本地安装了 ollaya，请根据教程来配置」）：本机 ollaya 0.15.0 服务 `127.0.0.1:11435`（TypeSafe 兼容 `POST /v1/systemone`），与 Ollama(11434) 并存；拉了 `laya:multilingual`(683 MB) 与 `largha`(328 MB)。**旧适配器的传输形状是纸面契约**——直连 ollaya 实测 `422 INVALID_REQUEST`（`model` 必填、`questions` 必须是字典），遂把 `predict` 改为 `{model, state, questions:{id:{type,instructions,criteria:{业务键: 能力描述}}}}`，模型参数从 HF 仓库名改为 ollaya 标签（多语言白名单保留），`LAYA_SERVE_URL` → `OLLAYA_URL`；**门控概率改用 `probabilities` 的 top 值而非 TypeSafe 的 `confidence`**（后者按 `(K·pmax−1)/(K−1)` 归一化，同一置信在教师端 K=3 与学生端 K=2 是两个数字，阈值跨可见集不可比；实测 `pmax=0.823 → confidence=0.7345` 印证）。**候选取舍改由本项目数据说话**：`.scratch/ai-intent-routing/eval/decision_model_eval.py` 用真实 state + 能力清单跑 13 条中文用例（含 trace `73000ee0` 的续接失败形状）+ 一条 12 轮长历史，结果 `laya:multilingual` 8/13=62% / p50 23 ms / 长历史不截断，`largha` 5/13=38% / 平均置信 0.270（阈值 0.5 下近乎恒不决策）/ 12 轮中文历史直接 `422 STATE_TRUNCATED`——**推翻上一轮按公开英文基准做的「largha 为首选升级」推断**。失败面集中在 tasks↔tutor↔capability 的描述可分性（最坏是学生「23+45 怎么算」被 0.913 置信判成 capability），留 Follow-ups：先改 manifest 文案而非换权重。验证：`tests/ai` + features/assistant + test_assistant（`.env` 就位）**467 passed**；全量 **1015 passed / 2 skipped / 1 环境性红**（同基线）；新增 22 项适配器契约测试。
 **12 把 criteria 文案调优做完了，并撞出 ADR-0106**（用户「开工票 12」）：先修评测脚本两处漂移——`criteria` 是手抄副本（改为直接 import 生产 `_capability_text`）、**学生端可见集写成了 K=2 而生产实为 K=3**（tasks 对学生可见，ticket 11 那条「学生 23+45 被 0.956 判 capability」是在错误选项集上测的）。基线（34 条计分用例 + 10 条留出）top-1 59%、采纳且正确 15/34。七轮单变量爬山（`--variants` 批量对比，`eval/variants-*.json` 可复跑）得到三条**反直觉**教训：criteria 里**禁止排他式否定**（35%、高置信错 6 条）、**禁止堆示例问句**（50%）、capability **不要窄化**（44%）。最优变体 D4：74%、采纳且正确 24/34、未采纳落引导 2 条。但 D4 的 tasks 文案删掉了「管理题库/组建草稿任务」——用户该知道的能力，加回去准确率掉到 56%，即 ticket 预设的熔断条件成立，故启用 `routing_criteria`（ADR-0106：只替换路由投影里的 description，用户清单直读 description 不受影响，契约测试守「清单 = description」）。**留出集揭示收益性质**：top-1 未提升（60%→60%），提升全在「正确路由过得了 0.5 门控」（30%→50%）——改的是置信度分布而非排序能力。两项验收未达成（新增 2 条高置信错误、学生端 S01 未翻正）均为门控/排序议题，转 13。验证：`tests/ai`+features/assistant+test_assistant 491 passed；全量 1043 passed / 2 skipped / 1 环境性红；新增 `tests/ai/test_routing_criteria.py` 17 项。
 
-**Frontier：13。** ticket 11 的 Follow-ups 已按用户定的次序转成两张票：**12「先改文案、用同一脚本量化」**（`ready-for-agent`：只改三个 manifest 的 `name`/`description`——即喂给决策模型的 `criteria` 值；评测脚本改吃生产 manifest 投影以消除手抄副本；用例集从 13 条扩到 ~30 条并先用旧文案建对照基线；单变量迭代；验收线含「不出现 pmax ≥ 0.8 的错误」与「学生端 S01 必须翻正」；达不到才启用 `routing_criteria` 字段的降级方案并在 ADR-0097 上补修订）；**13「再议门控」**（`needs-decision`：把阈值从适配器的构造参数上移为 runtime 的一处声明式门控——决策模型只出分布、runtime 决定是否采纳，LLM 分类的 confidence 一并纳入同一门控；在此之上才谈「学生端单独阈值」与「与 LLM 分类器交叉校验」，阈值取值必须由 12 的 pmax 分布数据定）。仍在 Follow-ups 里、未成票的：长历史余量与 Modelfile `CALIBRATION` 重标定（需标注集）。
+**13 把门控从适配器上移到了 runtime，并用实测否决了两个候选**（2026-10-21）：`LayaDecisionModel`
+去掉 `threshold` 参数（只出分数，低分不再被吞成 `None`），`min_adopt_score` 三级取值（业务自述
+`min_adopt_score` → 角色覆盖 → 默认 0.5），LLM 的 `confidence` 走同一张表（`None` = 未自报、不
+作比较——此前按 0 处理会误杀 6 条正确路由），被否掉的候选进 `extra["rejected"]`；`consensus`
+作为可选策略落地（两原语一致且各自过门控才采纳）。**候选 A（学生端单独阈值）被数据否决**：
+`--sweep` 显示低分段不存在可分离区间，抬到 0.53 在调优集净 +7、在留出集却是 −3（反向），学生端
+正确路由的 pmax 反而更低。**候选 C（交叉校验）实测不支持启用**：有害错 9 → 0，但同样付那次 LLM
+往返时直接信 LLM 分类全面更好（正确 42 vs 27、留出集 9/10 vs 4/10），故不进默认。验证：`tests/ai`
+406 passed；全量 1058 passed / 2 skipped / 1 环境性红；ruff 全净。新增 `tests/ai/test_routing_gating.py`
+15 项 + `eval` 的 `--sweep` / `--consensus` 两个可复跑入口。
+
+**Frontier：14。** ticket 11 的 Follow-ups 已按用户定的次序转成两张票：**12「先改文案、用同一脚本量化」**（`ready-for-agent`：只改三个 manifest 的 `name`/`description`——即喂给决策模型的 `criteria` 值；评测脚本改吃生产 manifest 投影以消除手抄副本；用例集从 13 条扩到 ~30 条并先用旧文案建对照基线；单变量迭代；验收线含「不出现 pmax ≥ 0.8 的错误」与「学生端 S01 必须翻正」；达不到才启用 `routing_criteria` 字段的降级方案并在 ADR-0097 上补修订）；**13「再议门控」**（`needs-decision`：把阈值从适配器的构造参数上移为 runtime 的一处声明式门控——决策模型只出分布、runtime 决定是否采纳，LLM 分类的 confidence 一并纳入同一门控；在此之上才谈「学生端单独阈值」与「与 LLM 分类器交叉校验」，阈值取值必须由 12 的 pmax 分布数据定）。仍在 Follow-ups 里、未成票的：长历史余量与 Modelfile `CALIBRATION` 重标定（需标注集）。
 
 > 并行执行分析：T05 ‖ T06 文件集不相交（T05=`features/tasks/*`，T06=`features/assistant/*`+清单），可并行；T07 与 T06 改同一段对话编排，**必须串行**（票据已注明）。实际执行即按此：T05/T06 并行于两个 worktree，T07 待 T06 合并后开工。
 
@@ -57,6 +69,10 @@
   交叉校验（ticket 13），换权重已在 11 用实测否决过一轮。
 - **capability 的误判代价不对称**：判成 capability 与「都没命中」在用户侧同形（ADR-0105），而判成执行体会
   答非所问——故不应与执行体共用同一采纳门槛（ticket 13 的输入）。
+- **调阈值前先做扫描，且只认留出集**（ticket 13 结论）：低分段若不存在可分离区间，调阈值只是
+  「少错几条、也少对几条」的平移；调优集上的净收益必须在留出集上同向才算数（0.53 那档：调优
+  +7、留出 −3，即反向）。另外：在本拓扑里给 capability 设更高门槛是**恒等变换**——拒掉它，落点
+  还是它（`fallback_guide` 的声明者）。
 
 ## 实测底稿（实施时不可省，别重新猜）
 
