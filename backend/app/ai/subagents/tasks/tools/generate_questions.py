@@ -20,9 +20,10 @@ from agent_core.protocol import EVENT_STEP, step
 from agent_core.subagent import SubAgentContext
 from agent_core.tools import ToolOutcome, ToolSpec
 from app.ai.subagents.tasks.generation.pipeline import (
+    batch_step_label,
     build_question_prompts,
-    step_label,
     stream_question,
+    stream_questions,
 )
 from app.ai.subagents.tasks.generation.specs import (
     build_question_context,
@@ -67,6 +68,32 @@ def _spec_from_args(args: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+def _identity(item: dict[str, Any]) -> tuple:
+    """一道题的不可变身份（批量分组的键）：这些字段由调用方回填，不由模型决定。"""
+    return (
+        item["subject"],
+        item["grade"],
+        item["knowledge_point"],
+        item["qtype"],
+        item["difficulty"],
+        item.get("semester", ""),
+        bool(item.get("multi", False)),
+        bool(item.get("judge", False)),
+    )
+
+
+def _group_items(items: list[dict]) -> list[tuple[dict, int]]:
+    """把展开后的题按身份分组，返回 ``[(代表规格, 题数), ...]``（保持首次出现序）。
+
+    ``count=5`` 展开成 5 个同规格项 → 一组 5 道，一次请求；「数学 2 道 + 语文 1 道」
+    → 两组，两次请求。组内题数即该次请求要的题数。
+    """
+    groups: dict[tuple, list[dict]] = {}
+    for item in items:
+        groups.setdefault(_identity(item), []).append(item)
+    return [(g[0], len(g)) for g in groups.values()]
+
+
 def make_stream_handler(*, provider, retriever=None):
     """构造流式 handler：provider / retriever 闭包注入（装配期一次）。"""
 
@@ -100,13 +127,15 @@ def make_stream_handler(*, provider, retriever=None):
         weak_examples = extra.get("weak_examples")
 
         generated: list[dict] = []
-        # 单题失败原因（按题序）：引擎未配置 / 解析或安全闸门未过。逐题串行出题时
-        # 「某一题失败」必须留痕——否则多学科出题会静默少题（教师只看到少了某一科，
+        # 失败原因：引擎未配置 / 解析或安全闸门未过 / 批量下模型少给。
+        # 「某一题失败」必须留痕——否则多规格出题会静默少题（教师只看到少了某一科，
         # 却没有任何提示）。
         failures: list[str] = []
-        # 资料溯源（ADR-0055 §13）：逐题快照 + 去重后的「参考了 N 份资料」计数。
+        # 资料溯源（ADR-0055 §13）：逐组快照 + 去重后的「参考了 N 份资料」计数。
         referenced: set[str] = set()
-        for item in items:
+        for item, count in _group_items(items):
+            # 只有同规格的题才并成一次请求：批量 schema 的元素不携带身份字段。
+            # 多学科 / 多题型请求自然分成多组，每组一次往返。
             rag_context, persona_hint, item_refs = build_question_context(
                 subject=item["subject"],
                 grade=item["grade"],
@@ -123,6 +152,7 @@ def make_stream_handler(*, provider, retriever=None):
                 qtype=item["qtype"],
                 difficulty=item["difficulty"],
                 semester=item.get("semester", ""),
+                count=count,
                 rag_context=rag_context,
                 persona_hint=persona_hint,
                 history=ctx.history,
@@ -140,28 +170,43 @@ def make_stream_handler(*, provider, retriever=None):
                     semester=item.get("semester", ""),
                 ),
             )
-            # STEP 进度锚点（原 run() 的 yield step(...)）：前端据此展示「正在出第 N 题」。
+            # STEP 进度锚点（原 run() 的 yield step(...)）：前端据此展示「正在出 N 道」。
             yield step(
-                step_label(
+                batch_step_label(
                     item["subject"],
                     item["grade"],
                     item["knowledge_point"],
                     item["qtype"],
+                    count,
                 )
             )
-            async for frame in translate_stream(
-                stream_question(
+            # 单题仍走单题路径（约束 schema 是单个对象）：N=1 时没有批量可言，
+            # 硬套数组只会让模型多一个「包一层」的机会。
+            if count == 1:
+                source = stream_question(
                     provider,
                     system_prompt=system_prompt,
                     user_prompt=user_prompt,
                     spec=spec,
                     history=ctx.history,
                 )
-            ):
-                # 单题失败：translate_stream 把 QuestionFailed 转成 STEP(status="error")。
+            else:
+                source = stream_questions(
+                    provider,
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    spec=spec,
+                    count=count,
+                    history=ctx.history,
+                )
+            cards = 0
+            fatal = False
+            async for frame in translate_stream(source):
+                # 整批失败：translate_stream 把 QuestionFailed 转成 STEP(status="error")。
                 # 帧照常下发（前端据此展示失败），同时留痕到 failures 供收尾汇总。
                 if frame.eventType == EVENT_STEP and frame.status == "error":
                     failures.append(frame.label or "生成失败")
+                    fatal = True
                     yield frame
                     continue
                 data = frame.data
@@ -173,7 +218,14 @@ def make_stream_handler(*, provider, retriever=None):
                     # 否则「已关联场景」只在落库后的任务/题库页生效。
                     _enrich_card(data["result"], item, ctx=ctx, session=session, extra=extra)
                     generated.append(data["result"])
+                    cards += 1
                 yield frame
+            # 批量下「少给」不会有帧：模型少出几道时用户侧只会静默少几张卡，
+            # 这里补一条失败痕，收尾轮才说得清「应出 N 道、实出 M 道」。
+            # 整批失败（fatal）时不再补——那次失败已经记过，否则一道题算两笔。
+            if cards < count and not fatal:
+                failures.append(f"少出 {count - cards} 道（未通过安全校验）")
+                yield step(f"少出 {count - cards} 道", status="error")
 
         # 回灌计数（不带题卡全文——那会让收尾轮上下文爆炸；话术据计数生成）。
         yield ToolOutcome(

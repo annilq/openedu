@@ -194,15 +194,22 @@ def test_expand_specs_expands_count():
 
 
 def test_tasks_subagent_run_per_item_rag_and_persona():
-    """流式 tool 路径：每题独立触发 RAG + 学科 Persona 注入（不触真实 genkit）。"""
+    """流式 tool 路径：RAG + 学科 Persona 各自注入出题 prompt（不触真实 genkit）。
+
+    ADR-0108：同规格的题并成一组、共用一次检索——两题的知识点与学科完全相同，
+    逐题各检一次拿到的是同一份内容，按组只检一次才是本次要省的那部分。
+    多规格（如数学+语文）仍是每组一次，检索次数 = 规格组数。
+    """
     retriever = _FakeRetriever()
     agent = TasksSubAgent(provider=_FakeProvider(), retriever=retriever)
     ctx = SubAgentContext(role="teacher", message="帮我出2道三年级数学分数选择题")
 
     asyncio.run(_drive(agent, ctx))
 
-    # 两题每题触发一次检索
-    assert len(retriever.calls) == 2
+    # 同规格的两题共用一次检索（不是每题一次）
+    assert len(retriever.calls) == 1
+    # 组内题数进了 prompt：模型按这句话决定数组里给几道题
+    assert "出2道" in _last_user_prompt(agent)
     # 末尾题（数学）的 user_prompt 含数学 Persona
     assert provider_user_prompt_contains(agent, "【学科人格：数学】")
 

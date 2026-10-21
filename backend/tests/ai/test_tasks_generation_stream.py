@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import uuid
 from dataclasses import asdict
 
@@ -33,7 +34,9 @@ from agent_core.protocol import (
 )
 from agent_core.subagent import SubAgentContext
 from app.ai.subagents.tasks.agent import TasksSubAgent
+from app.ai.subagents.tasks.generation.parsers import QuestionListSchema
 from app.domain.provider import GeneratedQuestion
+from app.domain.safety import SafetyVerdict
 
 _Q = GeneratedQuestion(
     subject="数学",
@@ -48,27 +51,47 @@ _Q = GeneratedQuestion(
 )
 
 
+def _shaped(schema, prompt: str) -> dict:
+    """按本次请求实际约束的 schema 组装产出：批量 schema 包一层数组。
+
+    假 provider 若不跟着 schema 走，批量路径上就会拿到单个对象——那正是要防的
+    「契约与解析器漂移」：真实 provider 返回什么由 output_schema 决定。
+
+    数组里给几个元素照 prompt 里说的「出 N 道」来（真模型也是照这句话给的），
+    这样「模型少给」的用例才能被显式编排出来。
+    """
+    payload = asdict(_Q)
+    if schema is not QuestionListSchema:
+        return payload
+    m = re.search(r"出\s*(\d+)\s*道", prompt)
+    return {"questions": [payload] * (int(m.group(1)) if m else 1)}
+
+
 class _FakeProvider(LLMProvider):
     """按「每次出题产出的事件序列」构造的假 provider（消息级 stream）。
 
     ADR-0097：tools 非空 = tool loop 调用。首轮（``tool_rounds == 1``）产出
     ``generate_questions`` ToolCall（args 留空——规格走 message 正则兜底路径）；
     回灌后的收尾轮记录 history（供断言「模型有据可依」）并产正文。
+
+    ADR-0108：批量 schema 时按数组出货（每组一次请求，组内 N 道逐题返回）。
     """
 
     def __init__(self, *, fail: bool = False) -> None:
         self._fail = fail
         self.tool_rounds = 0
         self.wrapup_history: list | None = None
+        self.gen_calls = 0
 
     async def stream(self, system, prompt, *, schema=None, tools=None, history=None):
         if schema is not None:
+            self.gen_calls += 1
             if self._fail:
                 yield TextDelta(delta="想错了")
                 return
             yield TextDelta(delta="先确认分母相同，")
             yield TextDelta(delta="再让分子相加。")
-            yield StructuredDone(data=asdict(_Q))
+            yield StructuredDone(data=_shaped(schema, prompt))
             return
         if tools:
             self.tool_rounds += 1
@@ -101,7 +124,7 @@ class _ScriptedProvider(LLMProvider):
                 yield TextDelta(delta="想错了")
                 return
             yield TextDelta(delta="先确认分母相同，")
-            yield StructuredDone(data=asdict(_Q))
+            yield StructuredDone(data=_shaped(schema, prompt))
             return
         if tools:
             self.tool_rounds += 1
@@ -157,14 +180,16 @@ def _wrapup_tool_payload(provider) -> dict:
 
 
 def test_emits_step_thinking_and_data_per_question():
-    events, _ = _run("帮我出2道三年级数学选择题，关于分数")
+    events, provider = _run("帮我出2道三年级数学选择题，关于分数")
 
     types = [e.eventType for e in events]
     assert EVENT_TOOL_CALL in types
-    # 每题一个进度锚点：2 题 → 2 个 STEP
-    assert types.count(EVENT_STEP) == 2
-    # 每题 2 个推理增量，攒批（15 字 < 阈值）后合并为 1 帧 → 共 2 个 THINKING
-    assert types.count(EVENT_THINKING) == 2
+    # ADR-0108：同规格的 2 道并成一次请求 → 一个进度锚点（此前是每题一个）
+    assert types.count(EVENT_STEP) == 1
+    assert provider.gen_calls == 1
+    # 2 个推理增量攒批（15 字 < 阈值）后合并为 1 帧
+    assert types.count(EVENT_THINKING) == 1
+    # 题卡仍是一题一卡：批量改的是请求数，不是卡片契约
     assert types.count(EVENT_DATA) == 2
     assert EVENT_TOOL_RESULT in types
     assert EVENT_ASSISTANT_MESSAGE in types
@@ -251,6 +276,146 @@ def test_multi_subject_summary_reaches_wrapup_turn():
     payload = _wrapup_tool_payload(provider)
     assert payload["count"] == 2
     assert payload["subject_summary"] == "数学 1 道、语文 1 道"
+
+
+# ── ADR-0108：批量出题（同规格一组一次请求） ─────────────────────────
+
+
+class _BatchProvider(LLMProvider):
+    """批量出题的假 provider：数组里给几道照 prompt 说的来。
+
+    ``short`` 少给几道（模拟模型只出了一部分）；``unsafe_at`` 第几道题面不过闸。
+    两者都是为了让「少题 / 部分不过闸」从隐性变成显式可断言。
+    """
+
+    def __init__(self, *, short: int = 0, unsafe_at: set[int] | None = None) -> None:
+        self._short = short
+        self._unsafe_at = unsafe_at or set()
+        self.gen_calls = 0
+        self.tool_rounds = 0
+        self.wrapup_history: list | None = None
+
+    async def stream(self, system, prompt, *, schema=None, tools=None, history=None):
+        if schema is not None:
+            self.gen_calls += 1
+            m = re.search(r"出\s*(\d+)\s*道", prompt)
+            n = max(0, (int(m.group(1)) if m else 1) - self._short)
+            questions = []
+            for i in range(n):
+                q = asdict(_Q)
+                q["stem"] = f"第{i + 1}题：1/2 + 1/2 = ?"
+                if i in self._unsafe_at:
+                    q["stem"] = "BAD 题面"
+                questions.append(q)
+            if not questions:
+                return  # 一道都没给 → 流水线应报「模型未返回结构化题卡」
+            yield StructuredDone(
+                data=(
+                    {"questions": questions}
+                    if schema is QuestionListSchema
+                    else questions[0]
+                )
+            )
+            return
+        if tools:
+            self.tool_rounds += 1
+            if self.tool_rounds == 1:
+                yield ToolCall(name="generate_questions", args={})
+                return
+            self.wrapup_history = history
+            yield TextDelta(delta="已生成。")
+            return
+        yield TextDelta(delta="讲解")
+
+
+def _run_batch(specs: list[dict], **kw):
+    provider = _BatchProvider(**kw)
+    agent = TasksSubAgent(provider=provider, retriever=None)
+    ctx = SubAgentContext(role="teacher", message="", extra={"specs": specs})
+
+    async def _go():
+        return [ev async for ev in agent.run("", ctx)]
+
+    return asyncio.run(_go()), provider
+
+
+def _cards_of(events) -> list[dict]:
+    return [
+        e.data["result"]
+        for e in events
+        if e.eventType == EVENT_DATA and e.data and e.data.get("type") == "question"
+    ]
+
+
+def test_same_spec_batch_uses_one_request():
+    """同规格 N 道 → 一次请求（ADR-0108：此前是逐题 N 次）。"""
+    events, provider = _run_batch([_spec("数学", count=3)])
+
+    assert provider.gen_calls == 1
+    cards = _cards_of(events)
+    assert len(cards) == 3
+    # 三张卡是三道题（逐题装配，不是同一张卡复制三份）
+    assert [c["stem"] for c in cards] == [f"第{i}题：1/2 + 1/2 = ?" for i in (1, 2, 3)]
+
+
+def test_multi_spec_uses_one_request_per_group():
+    """多规格按规格分组，一组一次请求：规格不同就不该并进一次请求。"""
+    events, provider = _run_batch([_spec("数学", count=2), _spec("语文", count=1)])
+
+    assert provider.gen_calls == 2
+    assert len(_cards_of(events)) == 3
+
+
+def test_batch_progress_label_states_how_many():
+    """批量进度锚点写明题数（前端据此显示「正在出 N 道」）。"""
+    events, _ = _run_batch([_spec("数学", count=3)])
+    steps = [e for e in events if e.eventType == EVENT_STEP]
+    assert any("出 3 道" in (s.label or "") for s in steps)
+
+
+def test_batch_shortfall_is_reported_not_silent():
+    """模型少给：静默少题是最坏结果，必须有失败痕且进收尾轮计数。"""
+    events, provider = _run_batch([_spec("数学", count=3)], short=1)
+
+    assert len(_cards_of(events)) == 2
+    error_steps = [
+        s.label for s in events if s.eventType == EVENT_STEP and s.status == "error"
+    ]
+    assert error_steps == ["少出 1 道"]
+
+    result = [e for e in events if e.eventType == EVENT_TOOL_RESULT][0].result
+    assert result["requested"] == 3
+    assert result["count"] == 2
+    assert result["failed"] == 1
+
+
+def test_batch_empty_questions_reports_not_silent():
+    """数组为空（模型一道没给）→ 整批失败，不静默跳过。"""
+    events, _ = _run_batch([_spec("数学", count=2)], short=2)
+
+    assert _cards_of(events) == []
+    error_steps = [
+        s.label for s in events if s.eventType == EVENT_STEP and s.status == "error"
+    ]
+    assert error_steps == ["模型未返回结构化题卡"]
+
+
+def test_batch_drops_only_the_unsafe_question(monkeypatch):
+    """逐题闸门：一道不过闸只丢那一道，同批其它题照发（不连坐）。"""
+    monkeypatch.setattr(
+        "app.ai.subagents.tasks.generation.parsers.check_output",
+        lambda text: SafetyVerdict(safe=("BAD" not in text), reason="测试"),
+    )
+    events, _ = _run_batch([_spec("数学", count=3)], unsafe_at={1})
+
+    cards = _cards_of(events)
+    assert len(cards) == 2
+    assert all("BAD" not in c["stem"] for c in cards)
+    # 少掉的那一道要留痕，收尾轮才说得清「应出 3 道、实出 2 道」
+    result = [e for e in events if e.eventType == EVENT_TOOL_RESULT][0].result
+    assert result["requested"] == 3
+    assert result["count"] == 2
+    assert result["failed"] == 1
 
 
 # ── ADR-0102：流式题卡也要带图（选项盖章 + 交互讲解快照） ──────────────

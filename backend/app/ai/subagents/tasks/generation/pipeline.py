@@ -19,9 +19,12 @@ from collections.abc import AsyncIterator
 
 from agent_core.ports import LLMProvider, StructuredDone, TextDelta
 from app.ai.subagents.tasks.generation.parsers import (
+    QuestionListSchema,
+    QuestionOut,
     QuestionSchema,
     QuestionSpec,
     assemble_question,
+    assemble_questions,
     qtype_label,
 )
 from app.domain.prompts import (  # noqa: F401  (再导出)
@@ -43,6 +46,22 @@ def step_label(subject: str, grade: int, knowledge_point: str, qtype: str) -> st
     return f"正在为《{subject}》{grade}年级「{knowledge_point}」出{qtype_label(qtype)}…"
 
 
+def batch_step_label(
+    subject: str, grade: int, knowledge_point: str, qtype: str, count: int
+) -> str:
+    """批量进度标签（STEP 帧）：``正在为《数学》3年级「分数」出 5 道选择题…``。
+
+    ``count==1`` 时与 :func:`step_label` 逐字一致——单题请求仍走单题路径，
+    进度文案不该因为走哪条路而变。
+    """
+    if count <= 1:
+        return step_label(subject, grade, knowledge_point, qtype)
+    return (
+        f"正在为《{subject}》{grade}年级「{knowledge_point}」"
+        f"出 {count} 道{qtype_label(qtype)}…"
+    )
+
+
 def _build_question_clause(
     *,
     subject: str,
@@ -51,16 +70,27 @@ def _build_question_clause(
     qtype: str,
     difficulty: str,
     semester: str,
+    count: int = 1,
     multi: bool = False,
     judge: bool = False,
 ) -> str:
     """出题语境内核（情境/难度/兴趣包装）：流式与落库共用，保证口径一致
-    （ADR-0021：RAG / 学科 Persona 在调用方注入）。"""
+    （ADR-0021：RAG / 学科 Persona 在调用方注入）。
+
+    ``count`` 为这一批的题数（1 = 单题）。批量时额外要求逐题异构——否则模型一次性
+    产出 N 道题时会把同一道题换个数字重出 N 遍，那比逐题串行调用还糟。
+    """
     sem_hint = f"{semester}" if semester else "整学年"
+    how_many = f"{count}道" if count > 1 else "一道"
     clause = (
-        f"请为{grade}年级《{subject}》（{sem_hint}）的“{knowledge_point}”出一道{qtype}题，"
-        f"难度{difficulty}。"
+        f"请为{grade}年级《{subject}》（{sem_hint}）的“{knowledge_point}”"
+        f"出{how_many}{qtype}题，难度{difficulty}。"
     )
+    if count > 1:
+        clause += (
+            f"这 {count} 道题必须彼此不同：题干的情境、已知条件与答案都要换，"
+            "考查角度互补（不要只是把数字改一改），否则等于只出了一道题。"
+        )
     # 多选题提示（ADR-0004 D5）：正确答案可能不止一个，answer 用「｜」连接所有
     # 正确选项的**完整文本**（与 options 中某一行完全一致），例如「苹果｜香蕉」。
     if multi:
@@ -97,6 +127,7 @@ def _build_question_prompt(
     qtype: str,
     difficulty: str,
     semester: str = "",
+    count: int = 1,
     rag_context: str | None = None,
     persona_hint: str | None = None,
     history: list[dict] | None = None,
@@ -109,7 +140,7 @@ def _build_question_prompt(
     clause = _build_question_clause(
         subject=subject, grade=grade, knowledge_point=knowledge_point,
         qtype=qtype, difficulty=difficulty, semester=semester,
-        multi=multi, judge=judge,
+        count=count, multi=multi, judge=judge,
     )
     if persona_hint:
         clause += f"\n\n{persona_hint}"
@@ -154,11 +185,17 @@ def _build_question_prompt(
             "不要照抄或改写原题，而要据此出一道**全新的、同知识点同难度**的题，"
             "考查角度可与样例互补：\n" + "\n\n".join(samples)
         )
-    return (
-        clause + "\n\n"
+    tail = (
         "另外用 1-3 句写出你的出题思路（情境如何选取、干扰项/答案如何设计、难度如何把控，"
         "纯学习相关），填入 reasoning 字段。"
     )
+    if count > 1:
+        tail = (
+            f"把 {count} 道题放进 questions 数组，每道题一个元素；"
+            "每道题再用 1-3 句写出该题的出题思路（情境如何选取、干扰项/答案如何设计、"
+            "难度如何把控，纯学习相关），填入该题的 reasoning 字段。"
+        )
+    return clause + "\n\n" + tail
 
 
 def build_question_prompts(
@@ -169,6 +206,7 @@ def build_question_prompts(
     qtype: str,
     difficulty: str,
     semester: str = "",
+    count: int = 1,
     rag_context: str | None = None,
     persona_hint: str | None = None,
     history: list[dict] | None = None,
@@ -190,7 +228,8 @@ def build_question_prompts(
     """
     user_prompt = _build_question_prompt(
         subject=subject, grade=grade, knowledge_point=knowledge_point, qtype=qtype,
-        difficulty=difficulty, semester=semester, rag_context=rag_context,
+        difficulty=difficulty, semester=semester, count=count,
+        rag_context=rag_context,
         persona_hint=persona_hint, history=history, weak_examples=weak_examples,
         multi=multi, judge=judge, figure_catalog=figure_catalog,
     )
@@ -205,6 +244,78 @@ def build_question_prompts(
         judge=judge,
     )
     return QUESTION_SYSTEM_PROMPT, user_prompt, spec
+
+
+def _card_from(out: QuestionOut) -> QuestionCard:
+    """``QuestionOut`` → 题卡事件（单题与批量共用同一份装配，落库字段逐字一致）。"""
+    return QuestionCard(
+        question=GeneratedQuestion(
+            subject=out.subject,
+            grade=out.grade,
+            knowledge_point=out.knowledge_point,
+            qtype=out.qtype,
+            stem=out.stem,
+            options=out.options,
+            answer=out.answer,
+            explanation=out.explanation,
+            difficulty=out.difficulty,
+            semester=out.semester,
+            multi=out.multi,
+            judge=out.judge,
+        ),
+        reasoning=out.reasoning,
+    )
+
+
+async def stream_questions(
+    provider: LLMProvider,
+    *,
+    system_prompt: str,
+    user_prompt: str,
+    spec: QuestionSpec,
+    count: int,
+    history: list[dict] | None = None,
+) -> AsyncIterator[QuestionStreamEvent]:
+    """批量流式出题：一次 ``provider.stream(schema=QuestionListSchema)`` 出一组同规格题。
+
+    与 :func:`stream_question` 的差别只有两处：约束 schema 是数组、产出多张题卡。
+    闸门仍是那一个（``assemble_questions`` 逐元素过），题面不过闸的整题丢弃、不影响
+    同批其它题；全部不过闸才发 ``QuestionFailed``。
+
+    **代价**（改用它前必须接受）：schema 路的 JSON 只在末帧整块到达，题卡因此不再
+    逐题流出，而是一次性到齐。换来的省下的 N-1 次往返——本地小模型上逐题串行出 2 道
+    实测 19-36 秒（提交 77f69134 为此把 SSE 超时抬到 10 分钟），批量后这部分时间是
+    一次请求的时长。
+    """
+    if not getattr(provider, "configured", True):
+        yield QuestionFailed(
+            reason="未配置 AI 出题引擎，无法生成题目。请在「模型管理」中添加模型并设为默认后重试。"
+        )
+        return
+    reasoning: list[str] = []
+    async for ev in provider.stream(
+        system_prompt, user_prompt, schema=QuestionListSchema, history=history
+    ):
+        if isinstance(ev, TextDelta):
+            reasoning.append(ev.delta)
+            yield ReasoningDelta(delta=ev.delta)
+        elif isinstance(ev, StructuredDone):
+            raw = coerce_dict(ev.data)
+            raw_list = raw.get("questions")
+            picked = raw_list if isinstance(raw_list, list) else []
+            outs = assemble_questions(
+                raw_list=[i for i in picked if isinstance(i, dict)],
+                spec=spec,
+                reasoning="".join(reasoning).strip(),
+                limit=count,
+            )
+            if not outs:
+                yield QuestionFailed(reason="生成内容未通过安全校验")
+            else:
+                for out in outs:
+                    yield _card_from(out)
+            return
+    yield QuestionFailed(reason="模型未返回结构化题卡")
 
 
 async def stream_question(
@@ -242,23 +353,7 @@ async def stream_question(
             if out is None:
                 yield QuestionFailed(reason="生成内容未通过安全校验")
             else:
-                yield QuestionCard(
-                    question=GeneratedQuestion(
-                        subject=out.subject,
-                        grade=out.grade,
-                        knowledge_point=out.knowledge_point,
-                        qtype=out.qtype,
-                        stem=out.stem,
-                        options=out.options,
-                        answer=out.answer,
-                        explanation=out.explanation,
-                        difficulty=out.difficulty,
-                        semester=out.semester,
-                        multi=out.multi,
-                        judge=out.judge,
-                    ),
-                    reasoning=out.reasoning,
-                )
+                yield _card_from(out)
             return
     yield QuestionFailed(reason="模型未返回结构化题卡")
 

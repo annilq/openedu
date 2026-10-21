@@ -98,6 +98,21 @@ class QuestionSchema(BaseModel):
     multi: bool = False
 
 
+class QuestionListSchema(BaseModel):
+    """批量出题的 ``output_schema``：一次请求出 N 道**同规格**的题。
+
+    数组元素是同一个 ``QuestionSchema``——契约复用，模型不需要学第二套字段；
+    逐题安全闸门也照样逐元素过（见 :func:`assemble_questions`）。
+
+    为什么只支持「同规格一批」而不是混装任意规格：混装要把 subject/grade/qtype
+    都变成数组元素上的可变字段，而那些是 :class:`QuestionSpec` 里的**不可变身份**，
+    由调用方回填而非模型决定。让模型改写身份等于把规格决定权交出去。
+    多规格请求在调用方按规格分组，一组一次请求。
+    """
+
+    questions: list[QuestionSchema]
+
+
 @dataclass(frozen=True)
 class QuestionSpec:
     """题目的不可变部分（由调用方按 spec 回填，模型只出可变字段）。"""
@@ -152,6 +167,35 @@ def assemble_question(
         multi=spec.multi,
         judge=spec.judge,
     )
+
+
+def assemble_questions(
+    *,
+    raw_list: list[dict],
+    spec: QuestionSpec,
+    reasoning: str = "",
+    limit: int = 0,
+) -> list[QuestionOut]:
+    """批量装配：逐元素过同一道闸门，不过的**整题丢弃**，不影响同批其它题。
+
+    与 :func:`assemble_question` 的关系：闸门只有那一个，批量只是把它逐个套一遍。
+    少题由调用方按「请求 N 道、实出 M 道」记账，这里不补位也不抛错——补位等于
+    拿一道不过闸的题冒充好题。
+
+    ``limit`` 为正时截断到该数量：模型可能超产，超出的部分直接丢（用户要的是 N 道）。
+    """
+    outs: list[QuestionOut] = []
+    for raw in raw_list:
+        # 每题自己的思路优先；模型没逐题填时才退回整批的思维链（流式收到那份）。
+        out = assemble_question(
+            raw=raw, spec=spec, reasoning=(raw.get("reasoning") or "").strip() or reasoning
+        )
+        if out is None:
+            continue
+        outs.append(out)
+        if 0 < limit <= len(outs):
+            break
+    return outs
 
 
 class QuestionStreamParser(Protocol):

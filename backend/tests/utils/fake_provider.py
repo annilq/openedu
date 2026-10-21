@@ -14,7 +14,10 @@
 替身实现 agent_core 消息级 ``LLMProvider.stream``（schema / tools / 纯文本三态）：
 
 - ``schema``：产出推理 + 末帧 ``StructuredDone(data=题面字典)``，供出题 SubAgent 解析成题卡；
-  **例外**：schema 为路由分类 ``RoutingDecision`` 时改走 ``route_to`` 旋钮（ADR-0104）；
+  **例外 1**：schema 为路由分类 ``RoutingDecision`` 时改走 ``route_to`` 旋钮（ADR-0104）；
+  **例外 2**：schema 为批量契约 ``QuestionListSchema`` 时包一层 ``questions`` 数组，
+  元素个数照 prompt 里说的「出 N 道」给（ADR-0108）——替身不跟着 output_schema 走，
+  就等于替身替生产隐藏了「契约与解析器漂移」这类缺陷；
 - ``tools``：按**工具脚本**逐跳发 ``ToolCall``，脚本走完后给收尾文本；
 - 纯文本：直接产出讲解文本。
 
@@ -31,11 +34,13 @@
 """
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from typing import Any
 
 from agent_core.adapters.llm_route import RoutingDecision
 from agent_core.ports import StructuredDone, TextDelta, ToolCall
+from app.ai.subagents.tasks.generation.parsers import QuestionListSchema
 from app.domain.provider import EducationLLMProvider
 
 # 固定讲解文本（须与安全词表无交集，保证 check_output 放行）。
@@ -57,6 +62,26 @@ _REASONING = "先确认考查点，再设计干扰项与答案，难度与年级
 
 # 一跳工具调用：``(工具名, 入参)``；也接受裸字符串（等价于空入参）。
 ToolStep = tuple[str, dict[str, Any]]
+
+
+def _requested_count(prompt: str) -> int:
+    """模型是按 prompt 里说的「出 N 道」给的，替身也必须照这句话给。
+
+    没有这句话（单题 prompt）时给 1 道——单题请求本来就不走批量 schema。
+    """
+    m = re.search(r"出\s*(\d+)\s*道", prompt or "")
+    return max(1, int(m.group(1))) if m else 1
+
+
+def _question_payload(schema: Any, prompt: str) -> dict:
+    """按本次请求的 ``output_schema`` 组装产出：批量 schema 包一层 ``questions``。
+
+    替身不跟 schema 走时，「契约与解析器漂移」这类最该被替身钉死的缺陷会变成
+    静默少题——那正是 ADR-0108 要防的事故形态。
+    """
+    if schema is QuestionListSchema:
+        return {"questions": [dict(_FAKE_QUESTION) for _ in range(_requested_count(prompt))]}
+    return dict(_FAKE_QUESTION)
 
 
 def _normalize_script(steps: Sequence[ToolStep | str] | None) -> list[ToolStep] | None:
@@ -161,7 +186,7 @@ class FakeLLMProvider(EducationLLMProvider):
             if self.schema_calls in self._fail_at:
                 # 只吐推理、不给结构化结果 → 解析层判定为「模型未返回结构化题卡」。
                 return
-            yield StructuredDone(data=dict(_FAKE_QUESTION))
+            yield StructuredDone(data=_question_payload(schema, prompt))
             return
         yield TextDelta(delta=_TUTOR_TEMPLATE)
 
