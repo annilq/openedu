@@ -125,10 +125,13 @@ class AssistantNotifier extends StateNotifier<AssistantState> {
   }
 
   /// 发送一条消息并消费 SSE 事件流。角色由后端 JWT 解析（教师 / 学生自动分流）。
+  /// [action] 是 ADR-0081 的结构化动作键（如 `task_generate`），由建议入口 chip
+  /// 点击时带入；非空时后端走动作直配，这一轮不付分类开销、也不会被短句带偏。
   Future<void> send(
     String raw, {
     String? model,
     AssistantCoursewareContext? courseware,
+    String? action,
   }) async {
     final message = raw.trim();
     if (message.isEmpty || _submitting) return;
@@ -161,6 +164,7 @@ class AssistantNotifier extends StateNotifier<AssistantState> {
           // 与 courseware 同源：课件入口带知识点 id 时一并透传，后端据此解析知识点
           // 场景（L0 门控），否则为 null 走普通对话。补上此前漏传的字段。
           knowledgePointId: courseware?.knowledgePointId,
+          action: action,
         ),
       )) {
         // 会话身份随 DONE 帧回写：首轮建立；归属校验失败时后端换新 id，此处自愈覆盖。

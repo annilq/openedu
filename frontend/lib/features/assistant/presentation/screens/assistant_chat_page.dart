@@ -236,6 +236,14 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
   void _handleCardAction(AssistantCardAction action) =>
       _dispatchTarget(action.target);
 
+  /// 推荐操作（prompt 类）出口。
+  ///
+  /// [action] 非空时连动作键一起发（ADR-0081 动作直配）：出题 chip 点下去就是明确
+  /// 要出题，服务端不必再让模型从短句里猜业务。
+  void _sendPrompt(String payload, {String? action}) => ref
+      .read(assistantNotifierProvider.notifier)
+      .send(payload, courseware: widget.coursewareContext, action: action);
+
   /// 新对话：丢弃当前会话身份与气泡。
   ///
   /// 后端按 `session_id` 续接，不显式断开的话「新对话」只是一句空话。
@@ -350,10 +358,9 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
                                   messages: messages,
                                   controller: _scroll,
                                   onCardAction: _handleCardAction,
-                                  onPrompt: (payload) => ref
-                                      .read(assistantNotifierProvider.notifier)
-                                      .send(payload, courseware: widget.coursewareContext),
+                                  onPrompt: _sendPrompt,
                                   onNavigate: _dispatchTarget,
+                                  onAction: (p, a) => _sendPrompt(p, action: a),
                                 ),
                           _AssistantMode.history => AssistantHistoryView(
                               onOpen: _open,
@@ -462,10 +469,9 @@ class _AssistantChatPageState extends ConsumerState<AssistantChatPage> {
         _WelcomeHint(isTeacher: widget.isTeacher),
         AssistantSuggestedActions(
           coursewareContext: widget.coursewareContext,
-          onPrompt: (payload) => ref
-              .read(assistantNotifierProvider.notifier)
-              .send(payload, courseware: widget.coursewareContext),
+          onPrompt: _sendPrompt,
           onNavigate: _dispatchTarget,
+          onAction: (p, a) => _sendPrompt(p, action: a),
         ),
       ],
     );

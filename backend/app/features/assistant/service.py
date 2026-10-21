@@ -200,11 +200,15 @@ _FOLLOWUP_BY_BUSINESS: dict[str, list[SuggestedAction]] = {
         # 自 students 域迁入（ADR-0098）：名单问句之后的学情出口
         SuggestedAction(label="看看学生近期学情", kind="prompt",
                         payload="请帮我分析一下学生最近的学习情况。"),
-        # 自 question 域迁入（ADR-0098）：出题链的续出口
+        # 自 question 域迁入（ADR-0098）：出题链的续出口。
+        # 这两条带 action：它们是在会话中途把意图切回出题的显式信号，走动作直配
+        # 就不必再让模型从「再出几道」这种短句里猜业务（短句正是分类最没把握的一类）。
         SuggestedAction(label="再出几道", kind="prompt",
-                        payload="请再给我出几道同类型的练习题。"),
+                        payload="请再给我出几道同类型的练习题。",
+                        action="task_generate"),
         SuggestedAction(label="降低难度", kind="prompt",
-                        payload="这些题有点难，请降低难度再出几道。"),
+                        payload="这些题有点难，请降低难度再出几道。",
+                        action="task_generate"),
         SuggestedAction(label="讲解这道题", kind="prompt",
                         payload="请讲解一下刚才出的题该怎么思考。"),
         SuggestedAction(label="回到首页", kind="navigate", payload="home"),
@@ -213,7 +217,8 @@ _FOLLOWUP_BY_BUSINESS: dict[str, list[SuggestedAction]] = {
         SuggestedAction(label="我要问个问题", kind="prompt",
                         payload="我有学习上的疑问，请帮我解答。"),
         SuggestedAction(label="出几道题练练", kind="prompt",
-                        payload="请给我出几道练习题，巩固一下最近学的知识。"),
+                        payload="请给我出几道练习题，巩固一下最近学的知识。",
+                        action="task_generate"),
     ],
 }
 
@@ -222,7 +227,8 @@ _KP_FOLLOWUP: list[SuggestedAction] = [
     SuggestedAction(label="深入这个知识点", kind="prompt",
                     payload="请围绕这个知识点再深入讲讲。"),
     SuggestedAction(label="出一道判断题", kind="prompt",
-                    payload="请就这个知识点出一道判断题考考我。"),
+                    payload="请就这个知识点出一道判断题考考我。",
+                    action="task_generate"),
 ]
 
 
@@ -272,6 +278,7 @@ def _build_empty_suggested_actions(
         SuggestedAction(
             label="出几道题练练", kind="prompt",
             payload="请给我出几道练习题，巩固一下最近学的知识。",
+            action="task_generate",
         ),
     ]
     global_actions.append(
@@ -311,6 +318,7 @@ def _build_empty_suggested_actions(
         SuggestedAction(
             label="出一道判断题", kind="prompt",
             payload=f"请为「{name}」出一道判断题，只展示题目和两个选项，等我回答。",
+            action="task_generate",
         ),
         SuggestedAction(
             label="讲解这个知识点", kind="prompt",
@@ -643,6 +651,9 @@ async def chat(
                     return
 
         # 复用预航班决策（decision），避免重复路由；run 返回事件流。
+        # ``allow_reroute=True``（ADR-0109）：本路径的业务是路由算出来的，算错了才谈得上
+        # 改判——业务自述「结论必须有据」却整轮没查过数据时，runtime 会丢弃那句无据正文、
+        # 排除当前业务再问一次路由，问不出落点才回到原来的 TOOL_UNSUPPORTED。
         stream: AsyncIterator[AssistantEvent] = rt.run(
             message,
             role=_surface_of(role),
@@ -650,6 +661,7 @@ async def chat(
             deps=deps,
             business=decision.business,
             session=session,
+            allow_reroute=True,
         )
 
         # 路由步落库：用结构化决策，去掉 THINKING(extra.business) 隐式契约

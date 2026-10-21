@@ -9,6 +9,9 @@ class AssistantChatReq {
   final List<Map<String, dynamic>>? history;
   final AssistantCoursewareContext? courseware;
   final String? knowledgePointId;
+  // ADR-0081：结构化动作键（如 task_generate）。非空时后端走动作直配，不再让
+  // 决策模型 / LLM 分类器猜业务。会话内点 chip 切换意图靠它。
+  final String? action;
 
   const AssistantChatReq({
     required this.message,
@@ -17,6 +20,7 @@ class AssistantChatReq {
     this.history,
     this.courseware,
     this.knowledgePointId,
+    this.action,
   });
 
   Map<String, dynamic> toJson() => {
@@ -26,6 +30,7 @@ class AssistantChatReq {
     if (history != null) 'history': history,
     if (courseware != null) 'courseware': courseware!.toJson(),
     if (knowledgePointId != null) 'knowledge_point_id': knowledgePointId,
+    if (action != null) 'action': action,
   };
 }
 

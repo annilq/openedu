@@ -119,7 +119,9 @@ class _JudgeLoopRuntime:
                 )
         return RouteDecision(business="tutor", name="伴学答疑")
 
-    async def run(self, message, *, role, ctx, deps, business=None, session=None):
+    async def run(
+        self, message, *, role, ctx, deps, business=None, session=None, allow_reroute=False
+    ):
         self.business = business
         self.extra = ctx.extra
         self.history = ctx.history

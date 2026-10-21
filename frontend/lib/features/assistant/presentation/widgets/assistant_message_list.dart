@@ -45,9 +45,14 @@ class AssistantMessageList extends StatelessWidget {
   /// 「动作之后怎么走」只有宿主知道（见 `assistant_chat_page.dart`）。
   final void Function(AssistantCardAction action)? onCardAction;
 
-  /// 回复后 follow-up chips 出口（票 03(a）：挂在 ai 消息下方，点击即 send/navigate）。
+  /// 回复后 follow-up chips 出口（票 03(a)：挂在 ai 消息下方，点击即 send/navigate）。
+  ///
+  /// [onAction] 只承接「意图已知」的 chip（出题类，带 task_generate）：点击它时连
+  /// 文本带动作键一起发，服务端走动作直配，不必让模型猜业务。没有动作键的 chip
+  /// 走 [onPrompt]，两条路互斥。
   final void Function(String payload) onPrompt;
   final void Function(String target) onNavigate;
+  final void Function(String payload, String action)? onAction;
 
   static const double _maxBubbleWidthPx = 760;
 
@@ -59,6 +64,7 @@ class AssistantMessageList extends StatelessWidget {
     this.onCardAction,
     required this.onPrompt,
     required this.onNavigate,
+    this.onAction,
   });
 
   @override
@@ -74,6 +80,7 @@ class AssistantMessageList extends StatelessWidget {
         onCardAction: onCardAction,
         onPrompt: onPrompt,
         onNavigate: onNavigate,
+        onAction: onAction,
       ),
     );
   }
@@ -85,6 +92,7 @@ class _Bubble extends StatelessWidget {
   final void Function(AssistantCardAction action)? onCardAction;
   final void Function(String payload) onPrompt;
   final void Function(String target) onNavigate;
+  final void Function(String payload, String action)? onAction;
 
   const _Bubble({
     required this.message,
@@ -92,6 +100,7 @@ class _Bubble extends StatelessWidget {
     this.onCardAction,
     required this.onPrompt,
     required this.onNavigate,
+    this.onAction,
   });
 
   /// 气泡与卡片共用的宽度上限：可用宽度 × [maxWidthFactor]，再夹一个像素上限，
@@ -217,6 +226,7 @@ class _Bubble extends StatelessWidget {
                 givenActions: message.followups,
                 onPrompt: onPrompt,
                 onNavigate: onNavigate,
+                onAction: onAction,
               ),
           ],
         );

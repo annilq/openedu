@@ -43,11 +43,17 @@ class SuggestedAction(SQLModel):
     - ``kind='prompt'``：``payload`` 是预置提示文本，前端点击即 ``send(payload)``。
     - ``kind='navigate'``：``payload`` 是既有 ``ShellDestination`` 枚举（如
       ``teacher_question_bank``），前端点击走壳导航。
+
+    ``action`` 是「这条入口的意图其实已知」的显式声明：非空时前端连同文本一起
+    回传，路由走动作直配（ADR-0081），不再让模型猜。它同时也是会话中途切换意图的
+    可靠信号——用户点 chip 就是在切换，不需要连续性与当前业务互相拉扯。
+    值必须落在某个 manifest 的 ``actions`` 里，由契约测试盯住；留空即退回文本路由。
     """
 
     label: str
     kind: str  # 'prompt' | 'navigate'
     payload: str
+    action: str | None = None
 
 
 class AssistantChatReq(SQLModel):

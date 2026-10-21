@@ -26,9 +26,20 @@ class _StubRuntime(AgentRuntime):
     async def decide(self, *args, **kwargs):
         return SimpleNamespace(business="tasks", name="任务学情与出题")
 
-    def run(self, message, *, role, ctx, deps, business, session) -> AsyncIterator[AssistantEvent]:
+    def run(
+        self,
+        message,
+        *,
+        role,
+        ctx,
+        deps,
+        business,
+        session,
+        allow_reroute=False,  # ADR-0109：结构化路径恒为 False（规格即意图，不改判）
+    ) -> AsyncIterator[AssistantEvent]:
         self.captured_ctx = ctx
         self.captured_business = business
+        self.captured_allow_reroute = allow_reroute
 
         async def _gen():
             for ev in self._events:
@@ -76,6 +87,8 @@ def test_generate_task_stream_passthrough_and_ctx():
 
         assert len(frames) == 2
         assert rt.captured_business == "tasks"
+        # ADR-0109：结构化出题自带 business，不得被改判到别的业务
+        assert rt.captured_allow_reroute is False
         assert rt.captured_ctx is not None
         assert rt.captured_ctx.extra["subject"] == "数学"
         assert rt.captured_ctx.extra["teacher_id"] == teacher.id

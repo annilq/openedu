@@ -23,7 +23,11 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator
 
-from agent_core.errors import ProviderRequestError, ToolUnsupportedError
+from agent_core.errors import (
+    ProviderRequestError,
+    ToolUnsupportedError,
+    UnverifiedAnswerError,
+)
 from agent_core.ports import (
     Hooks,
     LLMProvider,
@@ -88,8 +92,9 @@ class BaseSubAgent(ABC):
     max_turns: int = 3
 
     # 结论必须有据（ADR-0033）：为 True 时，本 subagent 的结论**必须**建立在工具数据之上
-    # ——整轮结束时若从未成功执行过任何工具却产出了正文，判为硬失败而非下发（见
-    # ``run_with_tools`` 末段与 ``_UNVERIFIED_ANSWER_HINT``）。
+    # ——整轮结束时若从未成功执行过任何工具却产出了正文，不下发（见 ``run_with_tools``
+    # 末段与 ``UNVERIFIED_ANSWER_HINT``）。ADR-0109：runtime 可据此改为「换一个业务
+    # 重来一次」，换不出落点才回到原硬失败提示。
     #
     # 触发真机案例（2026-09-22）：本地小模型在「流式 + 长 system + 8 个工具」下不产出原生
     # ``ToolCall``，直接编造「你有 3 个娃娃：小明 / 小红 / 小华」并给出明细数字——权限层
@@ -176,7 +181,9 @@ _PARTIAL_TOOL_CALL_HINT = (
 # 「未查先答」（ADR-0033）：整轮零工具调用却给了结论——结论没有任何数据支撑。
 # 与上面两条的区别：上面拦的是「拿不到数据」，这条拦的是「根本没去拿、却装作拿到了」。
 # 文案必须说清**拦的是什么**（缺少数据支撑），否则用户会以为「真查了、没查到」。
-_UNVERIFIED_ANSWER_HINT = (
+# 公开：``AgentRuntime`` 在重路由换不出落点时要用**同一句**提示收尾
+# （ADR-0109：换人与放行是两回事，但换不了人时的口径必须一致）。
+UNVERIFIED_ANSWER_HINT = (
     "当前模型没有调用任何查询工具就给出了结论，该回答缺少数据支撑，已拦截不下发。"
     "请重试；若反复出现，请改用支持原生工具调用的模型（本地小模型在流式下常见此问题）。"
 )
@@ -219,6 +226,7 @@ async def run_with_tools(
     *,
     session: Any = None,
     hooks: "Hooks | None" = None,
+    raise_unverified: bool = False,
 ) -> AsyncIterator[Any]:
     """真实 tool loop 驱动（框架提供，subagent opt-in）。
 
@@ -246,6 +254,12 @@ async def run_with_tools(
     因此「工具型 subagent 整轮没有原生 ``ToolCall`` 且正文为空」只剩一种解释：模型把调用
     意图留在了思维链里、没走原生 function calling——此时硬失败（TOOL_UNSUPPORTED），
     绝不把内部独白当答复下发（这正是真机上「英文独白被当答案」的结构性根因）。
+
+    **无据正文的两种去向**（ADR-0109）：末闸命中时若调用方传了 ``raise_unverified=True``，
+    抛 :class:`~agent_core.errors.UnverifiedAnswerError`（正文随异常丢弃，由调用方换业务
+    重来一次）而非产出 ``ERROR`` 帧；缺省仍是原硬失败。抛而非 yield 是刻意的——正文
+    **从未进过事件轨**（思考缓冲要到 422 行才 flush），换业务时它自然不存在，调用方
+    不可能误把它转发下去。
     """
     tools = agent.tools
     if not tools:
@@ -416,7 +430,10 @@ async def run_with_tools(
         # 但它的结论从未经过任何一次查询——此时下发等于把编造的业务数据递给用户
         # （小模型在流式下尤其常见）。``native_fc_seen`` 为真说明前面确实查过数据，放行。
         if not native_fc_seen and getattr(agent, "requires_tool_data", False):
-            yield error(_UNVERIFIED_ANSWER_HINT, code="TOOL_UNSUPPORTED")
+            if raise_unverified:
+                # ADR-0109：交给调用方换业务重来一次（``acc`` 尚未下发，随异常丢弃）。
+                raise UnverifiedAnswerError(getattr(agent, "business", ""), text=acc)
+            yield error(UNVERIFIED_ANSWER_HINT, code="TOOL_UNSUPPORTED")
             return
 
         for t in _flushable_thinking(turn_thinking, tool_names):

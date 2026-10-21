@@ -13,6 +13,10 @@ import '../../providers/assistant_provider.dart';
 ///   是否出判断题（不再有 quiz 旗标，ADR-0089）。
 /// - navigate 类：点击 `onNavigate(payload)`（payload 是既有 `ShellDestination` 枚举）。
 ///
+/// 出题类 chip 带动作键 `task_generate`，它们走 `onAction(payload, action)`：点这条
+/// 就是明确要出题，服务端走动作直配，不必让模型从「再出几道」这类短句里猜业务。
+/// 没有动作键的 chip 仍走 `onPrompt`。
+///
 /// 目录由后端按 `knowledge_point_id` 装配：无 id→全局能力；有 id→知识点目录(叠加全局)。
 /// 失败 / 空 → 不渲染，避免空态反而多一块报错区。
 final suggestedActionsProvider = FutureProvider.autoDispose
@@ -32,12 +36,17 @@ class AssistantSuggestedActions extends ConsumerWidget {
   final void Function(String payload) onPrompt;
   final void Function(String target) onNavigate;
 
+  /// 意图已知的 chip 走这里：连文本带动作键一起发（ADR-0081 动作直配）。
+  /// 可为空——不提供时带动作键的 chip 退回 [onPrompt]，只是丢掉直配这一层。
+  final void Function(String payload, String action)? onAction;
+
   const AssistantSuggestedActions({
     super.key,
     this.coursewareContext,
     this.givenActions,
     required this.onPrompt,
     required this.onNavigate,
+    this.onAction,
   });
 
   @override
@@ -93,6 +102,8 @@ class AssistantSuggestedActions extends ConsumerWidget {
                     onTap: () {
                       if (a.kind == 'navigate') {
                         onNavigate(a.payload);
+                      } else if (a.action != null && onAction != null) {
+                        onAction!(a.payload, a.action!);
                       } else {
                         onPrompt(a.payload);
                       }

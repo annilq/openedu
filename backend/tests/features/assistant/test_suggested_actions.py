@@ -181,6 +181,83 @@ def test_followup_kp_unauthorized_no_overlap(db):
     assert _labels(actions) == ["再举一个例子", "出一道类似的题", "换个角度讲"]
 
 
+def _all_catalog_entries(db, tid) -> list:
+    """把目录的每一条分支都摊开（空态两角色 + follow-up 三个业务 + 知识点向）。"""
+    entries: list = []
+    for role in ("teacher", "student"):
+        entries += build_actions(
+            situation="empty", knowledge_point_id=None, role=role,
+            teacher_id=tid, session=db,
+        )
+    for business in ("tutor", "tasks", "capability"):
+        entries += build_actions(
+            situation="followup", business=business, knowledge_point_id=None,
+            role="teacher", teacher_id=tid, session=db,
+        )
+    return entries
+
+
+def test_action_keys_exist_in_some_manifest(db):
+    """目录里声明的动作键必须真的落在某个 manifest 的 ``actions`` 里。
+
+    动作名打错（或清单改了名字没跟上）时，路由等值匹配不上 → 静默退回文本路由，
+    用户看不出区别，但这条入口就白声明了。用契约测试把这种静默失效钉住。
+    """
+    from agent_core.registry import discover_subagent_manifests
+
+    declared = set()
+    for manifest in discover_subagent_manifests().values():
+        declared |= set(getattr(manifest, "actions", []) or [])
+
+    with_actions = [
+        a for a in _all_catalog_entries(db, uuid.uuid4()) if a.action is not None
+    ]
+    assert with_actions, "目录里一条带动作键的入口都没有，动作直配形同虚设"
+    for a in with_actions:
+        assert a.action in declared, f"「{a.label}」声明了清单里不存在的动作 {a.action!r}"
+
+
+def test_generate_entries_carry_task_generate(db):
+    """出题类入口带 ``task_generate``：它们是在会话中途把意图切回出题的显式信号。"""
+    tid = uuid.uuid4()
+    kp = _make_kp(db, teacher_id=tid, name="轴对称")
+
+    empty = _by_label(
+        build_actions(
+            situation="empty", knowledge_point_id=None, role="teacher",
+            teacher_id=tid, session=db,
+        )
+    )
+    assert empty["出几道题练练"].action == "task_generate"
+
+    tasks_followup = _by_label(
+        build_actions(
+            situation="followup", business="tasks", knowledge_point_id=None,
+            role="teacher", teacher_id=tid, session=db,
+        )
+    )
+    assert tasks_followup["再出几道"].action == "task_generate"
+    assert tasks_followup["降低难度"].action == "task_generate"
+
+    kp_entries = _by_label(
+        build_actions(
+            situation="empty", knowledge_point_id=kp.id, role="teacher",
+            teacher_id=tid, session=db,
+        )
+    )
+    assert kp_entries["出一道判断题"].action == "task_generate"
+
+    # 讲题 / 查数据类入口不声明动作键：清单里没有对应的动作，声明了就是空转。
+    tutor_followup = _by_label(
+        build_actions(
+            situation="followup", business="tutor", knowledge_point_id=None,
+            role="teacher", teacher_id=tid, session=db,
+        )
+    )
+    assert tutor_followup["再举一个例子"].action is None
+    assert tasks_followup["查看学习进度"].action is None
+
+
 def test_suggested_actions_frame_shape():
     """SSE 新帧：eventType=SUGGESTED_ACTIONS，data.actions 为 SuggestedAction 列表（非 LLM）。"""
     from app.features.assistant.schemas import SuggestedAction
@@ -196,6 +273,11 @@ def test_suggested_actions_frame_shape():
     d = frame.to_dict()
     assert d["eventType"] == EVENT_SUGGESTED_ACTIONS
     assert d["data"]["actions"] == [
-        {"label": "我要问个问题", "kind": "prompt", "payload": "q"},
-        {"label": "看看孩子错题", "kind": "navigate", "payload": "teacher_task_list"},
+        {"label": "我要问个问题", "kind": "prompt", "payload": "q", "action": None},
+        {
+            "label": "看看孩子错题",
+            "kind": "navigate",
+            "payload": "teacher_task_list",
+            "action": None,
+        },
     ]

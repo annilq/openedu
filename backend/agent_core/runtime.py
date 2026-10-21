@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, AsyncIterator
 
 from agent_core.adapters.llm_route import classify_llm
-from agent_core.errors import ProviderRequestError
+from agent_core.errors import ProviderRequestError, UnverifiedAnswerError
 from agent_core.ports import DecisionOption, RuntimeDeps
 from agent_core.protocol import (
     AssistantEvent,
@@ -39,7 +39,12 @@ from agent_core.router import (
     _capability_text,
     match_action,
 )
-from agent_core.subagent import BaseSubAgent, SubAgentContext, run_with_tools
+from agent_core.subagent import (
+    UNVERIFIED_ANSWER_HINT,
+    BaseSubAgent,
+    SubAgentContext,
+    run_with_tools,
+)
 
 
 @dataclass
@@ -508,6 +513,7 @@ class AgentRuntime:
         deps: RuntimeDeps,
         business: str | None = None,
         session: Any = None,
+        allow_reroute: bool = False,
     ) -> AsyncIterator[AssistantEvent]:
         """产出统一事件流（AgentRuntime 不负责 SSE 推送，仅产出帧）。
 
@@ -516,6 +522,10 @@ class AgentRuntime:
         - 每次运行都先过 ``_gate_ok`` 这道安全 / 可见性闸，与聊天 / 结构化两条路径
           共用同一道闸（T03：结构化出题此前直调本方法却绕过了 ``decide`` 的闸，如今
           无论哪条路径都一致过闸）。
+
+        ``allow_reroute`` 只由**自然语言路径**开启（ADR-0109）：业务是路由算出来的，
+        算错了才谈得上改判；结构化路径自带 ``business``（规格即意图），把它改判到别
+        的业务等于推翻调用方的显式指定。
         """
         sid = ctx.extra.get("session_id") if isinstance(ctx.extra.get("session_id"), str) else None
         if not self._gate_ok(message, role=role, deps=deps, business=business):
@@ -544,16 +554,123 @@ class AgentRuntime:
 
         try:
             async for ev in run_with_tools(
-                agent, message, ctx, session=session, hooks=deps.hooks
+                agent,
+                message,
+                ctx,
+                session=session,
+                hooks=deps.hooks,
+                raise_unverified=allow_reroute,
             ):
                 yield ev
         except ProviderRequestError as exc:
             # 厂商拒绝请求（认证/限流/网络）：给可操作提示，别把 401 说成「助手执行出错」（ADR-0038）。
             yield error(exc.user_hint, code="PROVIDER_ERROR")
+        except UnverifiedAnswerError as exc:
+            async for ev in self._reroute_unverified(
+                message,
+                role=role,
+                ctx=ctx,
+                deps=deps,
+                business=exc.business or business,
+                session=session,
+            ):
+                yield ev
         except Exception as exc:  # noqa: BLE001 — 单 subagent 异常不应让整条流崩
             yield error(f"助手执行出错：{exc}", code="AGENT_ERROR")
         finally:
             yield done(sid)
+
+    # ── 无据重路由（ADR-0109：至多一次） ──
+    async def _reroute_unverified(
+        self,
+        message: str,
+        *,
+        role: str,
+        ctx: SubAgentContext,
+        deps: RuntimeDeps,
+        business: str | None,
+        session: Any = None,
+    ) -> AsyncIterator[AssistantEvent]:
+        """「这句话不属于我」的接手路径：换一个业务再来一次，换不出落点就照旧硬失败。
+
+        ``requires_tool_data`` 的业务整轮没查过任何数据却给出正文，有两种成因，且
+        **在该业务内部无从分辨**（正文都是干净的自然语言，不含任何调用协议痕迹）：
+
+        - **路由误判**（值得修）：这句话本来不需要查数据——「23+45 怎么算」被判给了
+          任务学情。此时原硬失败提示让用户「重试 / 换模型」，而重试永远得到同一条错误。
+        - **模型能力**（不该动）：小模型流式下产不出原生 function calling，直接编造
+          业务数字。此时「换模型」恰恰是正确的提示（ADR-0033 的原型事故）。
+
+        分辨的办法是**再问一次路由原语，但把当前业务排除在候选之外**：
+
+        - 判得出且过门控 → 换业务重来一次。用户侧的代价只是多等一轮；未验证的正文
+          早已随异常丢弃，**永不出现在事件轨上**。
+        - 判不出 / 不过门控 → 维持 ``TOOL_UNSUPPORTED`` 原文。
+
+        与 ADR-0033 的关系是本设计的全部要点：静默降级是**放行**那段正文（用户拿到
+        假数据还以为是真的）；重路由是**换人**——正文丢弃、交接在事件轨上显式可见。
+
+        只问**决策模型**原语（本地 23ms），不问 LLM 分类（p50 1084ms）：它本就产出
+        ``probabilities`` 全量分布，排除一项后概率重新归一化但仍**跨 K 可比**
+        （``LayaDecisionModel._top_probability`` 取的是概率而非 TypeSafe 的
+        ``confidence``），故门控口径不变。决策模型不可用 → 不猜，维持硬失败。
+
+        **至多一次**：候选集已排除当前业务；接手业务再无据时不再重路由
+        （``raise_unverified`` 缺省为 ``False``），直接产出原硬失败帧。
+        """
+        target = await self._reroute_target(
+            message, deps, ctx.history, role=role, exclude=business
+        )
+        if target is None:
+            yield error(UNVERIFIED_ANSWER_HINT, code="TOOL_UNSUPPORTED")
+            return
+        yield thinking(
+            f"「{self.name_of(business)}」这次的回答没有数据依据，改由「{target.name}」接手。",
+            extra={"routing": True},
+        )
+        agent = build_subagent(
+            self._manifests,
+            target.business,
+            provider=deps.provider,
+            retriever=deps.retriever,
+        )
+        if agent is None:
+            yield error(UNVERIFIED_ANSWER_HINT, code="TOOL_UNSUPPORTED")
+            return
+        manifest = self._manifests.get(target.business)
+        if not ctx.skills and manifest:
+            ctx.skills = manifest.skill_prompt
+        # 与 :meth:`run` 同款的分级收口：本块在 ``run`` 的 except 分支里执行，
+        # 异常若漏出去会绕过 ``run`` 自己的 except 链，故在此自行兜住。
+        try:
+            async for ev in run_with_tools(
+                agent, message, ctx, session=session, hooks=deps.hooks
+            ):
+                yield ev
+        except ProviderRequestError as exc:
+            yield error(exc.user_hint, code="PROVIDER_ERROR")
+        except Exception as exc:  # noqa: BLE001 — 接手业务出错也不该让整条流崩
+            yield error(f"助手执行出错：{exc}", code="AGENT_ERROR")
+
+    async def _reroute_target(
+        self,
+        text: str,
+        deps: RuntimeDeps,
+        history: "list[dict] | None",
+        *,
+        role: str,
+        exclude: str | None,
+    ) -> "RouteDecision | None":
+        """排除当前业务后再问一次决策模型；采纳不到返回 ``None``（即维持硬失败）。
+
+        复用 :meth:`_route_decision` 而非新写一条路径：候选是它算的、门控是它过的、
+        「过不了门控就等于没决策」是它定下的语义（ADR-0107）——排除一项只是换了个
+        ``visible`` 入参。
+        """
+        visible = [b for b in self.visible_businesses(role) if b != exclude]
+        if not visible:
+            return None
+        return await self._route_decision(text, visible, deps, history, role=role)
 
     async def invoke_subagent(
         self,
@@ -597,7 +714,15 @@ class AgentRuntime:
                 yield done(sid)
                 return
         # 经 self.run 动态分派：生产环境走带闸的真实运行；测试桩若覆写 run 也照常生效。
+        # ``allow_reroute`` 只在传了 ``signal`` 时开启：那条路径的业务是路由算出来的，
+        # 算错了才谈得上改判（ADR-0109）；结构化路径自带 business，不得被改判。
         async for ev in self.run(
-            message, role=role, ctx=ctx, deps=deps, business=business, session=session
+            message,
+            role=role,
+            ctx=ctx,
+            deps=deps,
+            business=business,
+            session=session,
+            allow_reroute=signal is not None,
         ):
             yield ev

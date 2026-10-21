@@ -35,7 +35,15 @@ class _StubRuntime:
         return RouteDecision(business=self._business, name=self._name)
 
     async def run(
-        self, message: str, *, role: str, ctx, deps, business=None, session=None
+        self,
+        message: str,
+        *,
+        role: str,
+        ctx,
+        deps,
+        business=None,
+        session=None,
+        allow_reroute=False,
     ) -> AsyncIterator:
         yield tool_call("calc", label="计算", args={"a": 23, "b": 45})
         yield tool_result("calc", {"sum": 68})

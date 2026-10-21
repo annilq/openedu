@@ -246,7 +246,9 @@ class _JudgeCardRuntime:
             business="tasks", name="任务学情与出题助手"
         )
 
-    async def run(self, message, *, role, ctx, deps, business=None, session=None):
+    async def run(
+        self, message, *, role, ctx, deps, business=None, session=None, allow_reroute=False
+    ):
         self.business = business
         self.extra = ctx.extra
         yield run_started()

@@ -54,7 +54,9 @@ class _StubRuntime:
     async def decide(self, signal, *, role: str, deps, history=None) -> RouteDecision:
         return RouteDecision(business=self.business, name="桩业务")
 
-    async def run(self, message, *, role, ctx, deps, business=None, session=None):
+    async def run(
+        self, message, *, role, ctx, deps, business=None, session=None, allow_reroute=False
+    ):
         self.last_ctx_extra = ctx.extra
         yield data_event(
             {"subject": "数学", "stem": "1+1=?", "options": ["2"], "answer": "2"},

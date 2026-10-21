@@ -52,7 +52,15 @@ class _StubRuntime:
         return RouteDecision(business=self._business, name="伴学答疑")
 
     async def run(
-        self, message, *, role, ctx, deps, business=None, session=None
+        self,
+        message,
+        *,
+        role,
+        ctx,
+        deps,
+        business=None,
+        session=None,
+        allow_reroute=False,
     ):
         if self._unsafe:
             yield error("输入含不适当内容，已拒绝。", code="INPUT_UNSAFE")
